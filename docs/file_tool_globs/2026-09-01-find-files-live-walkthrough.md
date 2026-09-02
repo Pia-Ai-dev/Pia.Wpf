@@ -1,6 +1,7 @@
 # find_files / working-folder hint — live UI walkthrough
 
-**Status:** Complete — 13 of 13 planned checks ran, 13 passed, 2 cosmetic findings open
+**Status:** Complete — 13 of 13 planned checks ran, 13 passed; both findings fixed same day and
+live-validated 2026-09-02 (see Findings, then Live validation)
 **Owner:** Marco Altmann
 **Written:** 2026-09-01
 **Origin:** Commit `dfa7d763` "Let the assistant find files by glob, and tell it where it is
@@ -236,6 +237,33 @@ Two, both cosmetic. No correctness or containment defect was found.
    the results are right — but that counter is the cheapest signal that a glob had any effect, and
    for `include` it is flat.
 
+### Fixed (2026-09-01, same branch)
+
+Both findings, plus three smaller observations from this run, were fixed in a follow-up pass on
+`FilesToolHandler.cs`:
+
+1. **Separators** — `search_files` result rows and the `SuggestSimilarDirectories` suggestion now
+   pass through `NormalizeSeparators`, so every tool result spells paths with forward slashes.
+   Backslash input is still accepted; four existing tests that asserted the backslash form were
+   updated to the forward-slash contract.
+2. **Counters** — the log line now carries a second counter for files actually read:
+   `search_files scanned {N} file(s), searched {M}, {K} match(es), mode {mode}`, so an `include`
+   that narrowed the search is visible. `scanned` deliberately stays pre-filter — it is what
+   `MaxFilesScanned` bounds, and moving it would let a narrow `include` over a huge tree walk
+   unbounded.
+
+And from the run notes:
+
+- The `find_files` truncation notice now names the total (`showing first 3 of 11 results`), so
+  the caller can tell "3 of 4" from "3 of 5000" — previously the total only appeared handler-side
+  in the log (B4).
+- The "did you mean" suggestions got a bounded edit-distance fallback (OSA so a transposition costs
+  one keystroke; threshold scales with name length) behind the unchanged substring rule, so
+  `meting-notes.md` now suggests `meeting-notes.md`. The ignored-folder guard is untouched and
+  the D2 no-leak case is locked by tests on both the file and directory paths.
+- `find_files`' `limit` description now says results are sorted alphabetically, so a small limit
+  is understood as a name-ordered prefix, not a representative sample.
+
 ## Not covered, and why
 
 Three cases were out of reach for a live chat walkthrough and remain unit-test-only:
@@ -260,3 +288,74 @@ Three cases were out of reach for a live chat walkthrough and remain unit-test-o
 - The six test chats were **left in place** in the real chat history (titles all begin with the
   prompt text, e.g. "Make exactly two search_files calls…"). They are the primary record of the run
   and were synced to the cloud like any other chat; delete them if you want them gone.
+
+## Live validation of the fixes (2026-09-02)
+
+**Status:** Complete — 8 of 8 checks ran, 8 passed, no findings
+**Driver:** WinWright/UIA, Debug build of `dd08f52d` plus the uncommitted `FilesToolHandler.cs`
+fixes. Left uncommitted deliberately; this run does not change that.
+**Provider:** DeepSeek (`819d7d72`) again, set for the run and restored to Pia Cloud afterwards.
+**Profile:** the real one, same effective root `…\Pia Assistant\Playground`, fixture rebuilt
+verbatim from the block above.
+
+The "Fixed" list was written from unit tests and a green gate. This run is the live evidence for
+it. Every row below is read off the Debug-only `Tool call … args:` / `Tool … handler result` lines,
+one fresh chat per check.
+
+Two gates before any check counted: `Data directories: … Overridden=False` for the real profile,
+and `Resolved provider for mode Assistant: DeepSeek` for the provider — the settings file on disk
+is not evidence for either. `useSameProviderForAllModes` is on, so the provider had to be switched
+through the *Optimize* combo, which drives both modes; there is no separate Assistant combo in that
+state.
+
+| # | Fix under test | Args as they reached the handler | Observed | |
+|---|---|---|---|---|
+| G1 | Truncation names the total | `{"pattern":"GlobLab/**/*","limit":3}` | `(Results are truncated: showing first 3 of 11 results. …)` | **PASS** |
+| G2 | `search_files` rows forward-slashed | `{"pattern":"ZEBRAFISH","path":"GlobLab","include":"*.md"}` | `GlobLab/README.md`, `GlobLab/notes/meeting-notes.md`, `GlobLab/notes/roadmap.md` — zero backslashes | **PASS** |
+| G3 | Directory suggestion forward-slashed | `{"pattern":"*.md","path":"GlobLab/archiv"}` | `Did you mean: GlobLab/notes/archive?` | **PASS** |
+| G4 | File fuzzy fallback | `{"path":"GlobLab/notes/meting-notes.md"}` | `Did you mean: GlobLab/notes/meeting-notes.md?` | **PASS** |
+| G5 | Directory fuzzy fallback | `{"pattern":"*","path":"GlobLab/nots"}` | `Did you mean: GlobLab/notes?` | **PASS** |
+| G6 | Second counter shows narrowing | (the G2 call) | `search_files scanned 12 file(s), searched 6, 3 match(es), mode content` | **PASS** |
+| G7 | Ignored tree still not suggested | `{"pattern":"*","path":"GlobLab/vaultis"}` | error, **no** suggestion | **PASS** |
+| G8 | `limit` description reaches the model | `{"pattern":"GlobLab/**/*"}` | all 11 in case-insensitive path order; model quoted the description verbatim | **PASS** |
+
+Notes on the ones that carry real information:
+
+- **G6 is the fix, G2 is the same call.** `scanned 12` is the pre-filter walk; `searched 6` is the
+  six non-ignored `.md` files the `include` left. Before the second counter the line reported only
+  the 12, identically whatever `include` was passed — which is exactly the flat-counter finding.
+  `searched 6` was predicted from the fixture before the run and landed. `scanned` was predicted as
+  13 and came back 12; recounting the fixture gives 12 (`notes/` holds four files, not five), so
+  that was a miscount on the prediction side, not a surprise from the handler.
+- **G7 is the check that could have regressed.** `vaultish` matches `vaultis` by the substring rule
+  *and* at edit distance 1, so the ignored-tree guard had to hold on the new fuzzy branch as well as
+  the old one. It does — the prune sits above the name test, so a fuzzy candidate never reaches the
+  suggestion list. This is the D2 no-leak case, re-run against the changed loop body.
+- **G8 needed a channel that does not exist in the log.** Tool *schemas* are logged by name only,
+  so the description text is not in the tool traffic. Two substitutes, and they agree: the model
+  quoted it back verbatim including the novel clause "not a representative sample" (confabulation
+  would not reproduce that string), and the unrestricted call returned all 11 paths in exactly the
+  case-insensitive order the description claims, so the sentence is also behaviourally true.
+- **Binary provenance came free.** The `searched` counter exists only in the patched code, so its
+  presence in the log proves the running binary carried the uncommitted fixes rather than a stale
+  build. A UTF-16 scan of `Pia.Wpf.dll` for `searched {Searched}` and `sorted alphabetically`
+  confirmed the same thing before launch.
+- **The typo cases survived the model.** DeepSeek honoured "do not correct the spelling" in all
+  four of them (`archiv`, `meting-notes.md`, `nots`, `vaultis`), each arriving at the handler
+  unaltered. A silent autocorrect was the most likely way one of these checks would have
+  degenerated into a vacuous pass, so the `args:` line is what makes them count.
+- Batching still works: G5 and G7 were dictated as one batch and arrived as
+  `Round 1: 2 tool call(s) detected: find_files, find_files`.
+
+Nothing in the fixes needed a write tool, so this run drove read-only tools only — which is also
+why the real profile was the safer choice than a throwaway one (a throwaway roaming dir seeds
+`assistantFilesFolder` at the *real* vault and its ingest migration then deletes topic pages).
+
+### Housekeeping
+
+- Fixture `Playground/GlobLab` and `Playground/.piaignore` deleted; `Playground` verified back to
+  its four pre-run entries.
+- Provider restored to the value recorded before the run — `modeProviderDefaults` back to
+  `00000000-…-0001` for both modes, confirmed in the UI and on disk.
+- The six test chats were **left in place** in the real chat history, same call as the first run:
+  they are the record of this run, and deleting them is the irreversible option.

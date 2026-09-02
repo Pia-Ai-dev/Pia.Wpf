@@ -239,6 +239,17 @@ public class FilesToolHandlerReadTests : IDisposable
     }
 
     [Fact]
+    public async Task Read_Eml_RendersHeadersThenBody()
+    {
+        var rel = WriteFile("thread.eml", "Subject: Rezept\r\n\r\nKekse mit Zimt\r\n");
+
+        var result = (string)(await ReadAsync(rel))!;
+
+        Assert.Contains("1|Subject: Rezept", result);
+        Assert.Contains("|Kekse mit Zimt", result);
+    }
+
+    [Fact]
     public async Task Read_Xlsx_NumbersExtractedText()
     {
         var rel = "book.xlsx";
@@ -450,6 +461,62 @@ public class FilesToolHandlerReadTests : IDisposable
 
         Assert.Contains("not found", result);
         Assert.DoesNotContain("Did you mean", result);
+        Assert.DoesNotContain("passwords.txt", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_DroppedLetterTypo_SuggestsTheSibling()
+    {
+        WriteFile("meeting-notes.md", "x");
+
+        var result = (string)(await ReadAsync("meting-notes.md"))!;
+
+        Assert.Contains("Did you mean: meeting-notes.md?", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_TranspositionTypo_SuggestsTheSibling()
+    {
+        WriteFile("readme.md", "x");
+
+        var result = (string)(await ReadAsync("raedme.md"))!;
+
+        Assert.Contains("Did you mean: readme.md?", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_WhollyUnrelatedName_SuggestsNothing()
+    {
+        WriteFile("alpha.md", "x");
+
+        var result = (string)(await ReadAsync("zzz-qqq.txt"))!;
+
+        Assert.Contains("not found", result);
+        Assert.DoesNotContain("Did you mean", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_TypoOnAnIgnoredName_DoesNotLeakIt()
+    {
+        WriteFile(".piaignore", "hidden-notes.txt\n");
+        WriteFile("hidden-notes.txt", "x");
+
+        var result = (string)(await ReadAsync("hiden-notes.txt"))!;
+
+        Assert.Contains("not found", result);
+        Assert.DoesNotContain("hidden-notes.txt", result);
+    }
+
+    [Fact]
+    public async Task Read_NotFound_TypoInsideAnIgnoredFolder_DoesNotLeak()
+    {
+        WriteFile(".piaignore", "secret/\n");
+        Directory.CreateDirectory(Path.Combine(_root, "secret"));
+        WriteFile(Path.Combine("secret", "passwords.txt"), "x");
+
+        var result = (string)(await ReadAsync("secret/paswords.txt"))!;
+
+        Assert.Contains("not found", result);
         Assert.DoesNotContain("passwords.txt", result);
     }
 

@@ -110,6 +110,13 @@ Successor to 1.3.389, covering roughly six weeks of work.
   recall index.
 - New vault tools let the assistant correct or stage a source document, and
   per-topic synthesis during ingest now runs in parallel.
+- Pia can look inside the documents in your assistant folder. Searching the
+  folder's contents now covers Word documents, Excel workbooks and saved
+  Outlook mail, which were previously skipped as binary files; reading one
+  shows the same extracted text. A file it cannot read at all — a PDF, an
+  image — is named in the result, so an unsearchable document no longer looks
+  like an absent answer. Saved mail is read-only: Pia will not write over a
+  .msg or .eml.
 - Answers can be exported to a file, and Pia asks where it should go.
 
 ## Privacy, security and administration

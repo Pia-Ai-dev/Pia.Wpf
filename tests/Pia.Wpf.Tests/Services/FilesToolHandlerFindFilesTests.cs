@@ -183,9 +183,61 @@ public class FilesToolHandlerFindFilesTests : IDisposable
         var result = await FindAsync("*.md", limit: 2);
 
         Assert.Equal(
-            "f1.md\nf2.md\n(Results are truncated: showing first 2 results. " +
+            "f1.md\nf2.md\n(Results are truncated: showing first 2 of 5 results. " +
             "Consider using a more specific path or pattern.)",
             result);
+    }
+
+    [Fact]
+    public async Task Find_HitsEqualToLimit_HasNoTruncationNote()
+    {
+        Write("a.md");
+        Write("b.md");
+
+        var result = await FindAsync("*.md", limit: 2);
+
+        Assert.Equal("a.md\nb.md", result);
+    }
+
+    [Fact]
+    public async Task Find_PathTypo_Transposition_SuggestsTheDirectory()
+    {
+        Write("reports/q1.md");
+
+        var result = await FindAsync("*.md", path: "reprots");
+
+        Assert.Contains("Did you mean: reports?", result);
+    }
+
+    [Fact]
+    public async Task Find_PathTypo_DroppedLetter_SuggestsTheDirectory()
+    {
+        Write("reports/q1.md");
+
+        var result = await FindAsync("*.md", path: "reprts");
+
+        Assert.Contains("Did you mean: reports?", result);
+    }
+
+    [Fact]
+    public async Task Find_PathWhollyUnrelated_SuggestsNothing()
+    {
+        Write("reports/q1.md");
+
+        var result = await FindAsync("*.md", path: "zzz-qqq");
+
+        Assert.Contains("was not found", result);
+        Assert.DoesNotContain("Did you mean", result);
+    }
+
+    [Fact]
+    public async Task Find_PathNotFound_SuggestionUsesForwardSlashes()
+    {
+        Write("docs/reports/q1.md");
+
+        var result = await FindAsync("*.md", path: "docs/report");
+
+        Assert.Contains("Did you mean: docs/reports?", result);
     }
 
     [Fact]

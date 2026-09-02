@@ -29,6 +29,8 @@ public class FilesToolHandler : IFilesToolHandler
     // search_files caps (mirror the MaxListEntries convention + its truncation message).
     private const int MaxMatches = 500;          // hard stop on collected matches
     private const int MaxFilesScanned = 20_000;  // hard stop on files visited during the walk
+    private const int MaxExtractions = 200;      // hard stop on .docx/.xlsx/.msg/.eml extractions per search
+    private const int SkippedNamesShown = 5;     // unsearchable files named in the diagnostic before "…"
 
     // find_files result window.
     private const int DefaultFindLimit = 100;
@@ -54,6 +56,13 @@ public class FilesToolHandler : IFilesToolHandler
     private static readonly HashSet<string> MacroOrTemplateWriteExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".docm", ".dotm", ".dotx", ".xlsm", ".xltm", ".xltx",
+    };
+
+    // read_file renders these rather than returning the file's own bytes, so an edit round-trip would
+    // write the rendering over the original. Unlike docx/xlsx there is no patch-in-place path to add.
+    private static readonly HashSet<string> RenderedReadOnlyExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".msg", ".eml",
     };
 
     private readonly ISettingsService _settingsService;
@@ -152,8 +161,9 @@ public class FilesToolHandler : IFilesToolHandler
             AIFunctionFactory.Create(ReadFileSchema, "read_file",
                 "Read the contents of a text file inside the assistant files folder. Use this before summarizing or updating a file. " +
                 "Locate the file with find_files first if you do not already know its path. " +
-                "Also reads .docx (one line per paragraph) and .xlsx/.xlsm (each sheet as a '## Sheet: name' header followed by " +
-                "tab-separated rows) as plain text — .docm and other macro-enabled Word/template variants are not supported."),
+                "Also reads .docx (one line per paragraph), .xlsx/.xlsm (each sheet as a '## Sheet: name' header followed by " +
+                "tab-separated rows) and .msg/.eml (headers, then the message body) as plain text — .docm and other " +
+                "macro-enabled Word/template variants are not supported."),
 
             AIFunctionFactory.Create(WriteFileSchema, "write_file",
                 "Create or overwrite a text file inside the assistant files folder. Used for both creating new files and updating existing ones. " +
@@ -176,7 +186,7 @@ public class FilesToolHandler : IFilesToolHandler
                 "Delete a file inside the assistant files folder."),
 
             AIFunctionFactory.Create(SearchFilesSchema, "search_files",
-                "Scan the CONTENT of text files inside the assistant files folder for a regular-expression pattern. Read-only; returns matching lines, matching file paths, or a count. Narrow it with 'include' to a file glob. To find a file by its name or path instead, use find_files.")
+                "Scan the CONTENT of files inside the assistant files folder for a regular-expression pattern — text files, and .docx/.xlsx/.msg/.eml as the same extracted text read_file returns, so a hit's line number is the read_file line number. Read-only; returns matching lines, matching file paths, or a count. Narrow it with 'include' to a file glob. To find a file by its name or path instead, use find_files.")
         ];
     }
 
@@ -215,7 +225,7 @@ public class FilesToolHandler : IFilesToolHandler
             "write_file" => await PrepareWriteFileAsync(root, args, cancellationToken),
             "edit_file" => await PrepareEditFileAsync(root, args, cancellationToken),
             "delete_file" => PrepareDeleteFile(root, args),
-            "search_files" => (HandleSearchFiles(root, args), null),
+            "search_files" => (await HandleSearchFilesAsync(root, args, cancellationToken), null),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (FilesToolCall?)null)
         };
     }
@@ -551,7 +561,7 @@ public class FilesToolHandler : IFilesToolHandler
         var shown = Math.Min(limit, hits.Count);
         for (int i = 0; i < shown; i++) sb.Append(hits[i]).Append('\n');
         if (hits.Count > shown)
-            sb.Append($"(Results are truncated: showing first {shown} results. Consider using a more specific path or pattern.)\n");
+            sb.Append($"(Results are truncated: showing first {shown} of {hits.Count} results. Consider using a more specific path or pattern.)\n");
 
         return sb.ToString().TrimEnd('\n');
     }
@@ -559,14 +569,16 @@ public class FilesToolHandler : IFilesToolHandler
     private static readonly TimeSpan SearchRegexTimeout = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// Hand-rolled, in-process, synchronous regex search over the sandbox. Walks the tree with a
-    /// manual stack (pruning directories matched by the ignore matcher before descending so we never
-    /// spend the scan budget on .git/bin/obj/node_modules or the user's ignored trees), matches each
-    /// line against the user regex (guarded by a match timeout against catastrophic backtracking), and
-    /// emits a diagnostics block followed by a results body. Read-only: the caller wraps the return as
-    /// (result, null) — no action card.
+    /// Hand-rolled, in-process regex search over the sandbox. Walks the tree with a manual stack
+    /// (pruning directories matched by the ignore matcher before descending so we never spend the
+    /// scan budget on .git/bin/obj/node_modules or the user's ignored trees), reads each file through
+    /// <see cref="ReadFileTextAsync"/> so .docx/.xlsx/.msg/.eml are searched as extracted text rather
+    /// than skipped as binary, matches each line against the user regex (guarded by a match timeout
+    /// against catastrophic backtracking), and emits a diagnostics block followed by a results body.
+    /// Read-only: the caller wraps the return as (result, null) — no action card.
     /// </summary>
-    private object HandleSearchFiles(string root, IDictionary<string, object?> args)
+    private async Task<object> HandleSearchFilesAsync(
+        string root, IDictionary<string, object?> args, CancellationToken cancellationToken)
     {
         var pattern = GetStringArg(args, "pattern");
         if (string.IsNullOrEmpty(pattern))
@@ -642,9 +654,21 @@ public class FilesToolHandler : IFilesToolHandler
         // mode each entry is one file (with an optional count).
         var matches = new List<(string Rel, int Line, string Text, int Count)>();
         int filesScanned = 0;
+        int filesSearched = 0;
+        int extractions = 0;
+        int skippedCount = 0;
+        var skippedNames = new List<string>();
         bool scanTruncated = false;
         bool matchTruncated = false;
+        bool extractionTruncated = false;
         bool regexTimedOut = false;
+
+        // Named, not just counted: "3 PDFs I can't search" is actionable, "0 matches" is misleading.
+        void RecordSkipped(string rel)
+        {
+            skippedCount++;
+            if (skippedNames.Count < SkippedNamesShown) skippedNames.Add(rel);
+        }
 
         var stack = new Stack<string>();
         stack.Push(searchRoot);
@@ -682,7 +706,13 @@ public class FilesToolHandler : IFilesToolHandler
 
                 foreach (var full in files)
                 {
+                    // The extraction readers swallow cancellation into a Failed result, so without this
+                    // a cancelled search would walk the whole tree marking every file as skipped.
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     if (filesScanned >= MaxFilesScanned) { scanTruncated = true; break; }
+                    // Counted before the filters on purpose: MaxFilesScanned bounds the walk itself, so a
+                    // narrow include over a huge tree still trips the guard.
                     filesScanned++;
 
                     // Defense in depth: re-filter every path through the canonicalized root prefix,
@@ -701,22 +731,29 @@ public class FilesToolHandler : IFilesToolHandler
                     if (includeGlob is not null &&
                         !includeGlob.IsMatch(NormalizeSeparators(SafeRelative(searchRoot, full)))) continue;
 
+                    // Emit a SANDBOX-ROOT-relative path (the same form list_files/read_file accept) so a
+                    // scoped hit round-trips: read_file resolves both the path and the line number.
+                    var rel = NormalizeSeparators(SafeRelative(root, full));
+
+                    // Opening an OpenXml/mail container costs orders of magnitude more than a byte
+                    // read, so extraction gets a budget of its own.
+                    bool extracts = IsExtractedKind(DroppedFileReader.Classify(canon));
+                    if (extracts && extractions >= MaxExtractions) { extractionTruncated = true; continue; }
+                    if (extracts) extractions++;
+
                     string[] lines;
                     try
                     {
-                        // Per-file size guard mirroring read_file (:536): skip oversized files instead of
-                        // loading them whole into memory (a multi-GB file in a cloned repo would otherwise
-                        // allocate the entire file and could OOM the process).
-                        if (new FileInfo(full).Length > MaxReadFileBytes) continue;
-                        var bytes = File.ReadAllBytes(full);
-                        if (LooksBinary(bytes)) continue; // skip binaries
-                        lines = DecodeText(bytes).Split('\n');
+                        // Same routing read_file uses, so .docx/.xlsx/.msg/.eml are searched as extracted
+                        // text and the size/binary/image guards stay in one place.
+                        var (text, readError) = await ReadFileTextAsync(canon, rel, cancellationToken);
+                        if (readError is not null) { RecordSkipped(rel); continue; }
+                        lines = text!.Split('\n');
                     }
-                    catch { continue; }
+                    catch (OperationCanceledException) { throw; }
+                    catch { RecordSkipped(rel); continue; }
 
-                    // Emit a SANDBOX-ROOT-relative path (the same form list_files/read_file accept) so a
-                    // scoped search hit is round-trippable: read_file(<emitted path>) resolves to the hit.
-                    var rel = SafeRelative(root, full);
+                    filesSearched++;
 
                     int fileMatchCount = 0;
                     for (int i = 0; i < lines.Length; i++)
@@ -756,6 +793,10 @@ public class FilesToolHandler : IFilesToolHandler
                 if (scanTruncated || matchTruncated || regexTimedOut) break;
             }
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "search_files walk failed");
@@ -766,12 +807,18 @@ public class FilesToolHandler : IFilesToolHandler
             diagnostics.Add($"Warning: the pattern took too long to evaluate (over {SearchRegexTimeout.TotalSeconds:0}s) and was stopped; results may be incomplete. Simplify the regular expression.");
         if (scanTruncated)
             diagnostics.Add($"Warning: stopped after scanning {MaxFilesScanned} files; results may be incomplete. Narrow the search with a 'path'.");
+        if (extractionTruncated)
+            diagnostics.Add($"Warning: stopped extracting .docx/.xlsx/.msg/.eml after {MaxExtractions} file(s); the rest were not searched. Narrow the search with a 'path' or 'include'.");
+        if (skippedCount > 0)
+            diagnostics.Add(
+                $"Note: {skippedCount} file(s) could not be searched (binary, image, or over the size limit): " +
+                string.Join(", ", skippedNames) + (skippedCount > skippedNames.Count ? ", …" : "") + ".");
         if (matchTruncated)
             diagnostics.Add($"Note: more than {MaxMatches} matches; collection stopped at {MaxMatches} (truncated at {MaxMatches}).");
 
         _logger.LogInformation(
-            "search_files scanned {Files} file(s), {Matches} match(es), mode {Mode}",
-            filesScanned, matches.Count, mode);
+            "search_files scanned {Files} file(s), searched {Searched}, extracted {Extracted}, skipped {Skipped}, {Matches} match(es), mode {Mode}",
+            filesScanned, filesSearched, extractions, skippedCount, matches.Count, mode);
         _logger.SensitiveDebug("search_files pattern {Pattern} under {Path}", pattern, requestedPath ?? "(root)");
 
         return FormatSearchResults(matches, mode, offset, limit, diagnostics);
@@ -847,9 +894,10 @@ public class FilesToolHandler : IFilesToolHandler
 
     /// <summary>
     /// Best-effort similar-name suggestions for a not-found <paramref name="requestedPath"/>: returns
-    /// up to three sandbox subdirectory names that share the leaf name's prefix or substring. Walks with
-    /// a manual stack so directories matched by <paramref name="ignore"/> are pruned before descending
-    /// (same pruning the search itself uses — a suggestion should never point at an ignored tree).
+    /// up to three sandbox subdirectory names sharing a substring with the leaf name (edit-distance
+    /// fallback when none does), emitted root-relative with forward slashes. Walks with a manual stack
+    /// so directories matched by <paramref name="ignore"/> are pruned before descending — a suggestion
+    /// must never point at an ignored tree.
     /// </summary>
     private static List<string> SuggestSimilarDirectories(string root, string requestedPath, GitignoreMatcher ignore)
     {
@@ -858,6 +906,7 @@ public class FilesToolHandler : IFilesToolHandler
 
         var rootWithSep = SafeFolderPath.WithTrailingSeparator(root);
         var hits = new List<string>();
+        var fuzzy = new List<string>();
         var stack = new Stack<string>();
         stack.Push(root);
         try
@@ -877,28 +926,37 @@ public class FilesToolHandler : IFilesToolHandler
                     stack.Push(sub);
 
                     var name = Path.GetFileName(sub);
-                    if (name.Contains(leaf, StringComparison.OrdinalIgnoreCase) ||
-                        leaf.Contains(name, StringComparison.OrdinalIgnoreCase))
+                    var contains = name.Contains(leaf, StringComparison.OrdinalIgnoreCase) ||
+                                   leaf.Contains(name, StringComparison.OrdinalIgnoreCase);
+                    if (!contains && (fuzzy.Count >= 3 || !IsFuzzyNameMatch(name, leaf))) continue;
+
+                    var rel = sub.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase)
+                        ? NormalizeSeparators(sub.Substring(rootWithSep.Length)) : name;
+                    if (contains)
                     {
-                        var rel = sub.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase)
-                            ? sub.Substring(rootWithSep.Length) : name;
                         hits.Add(rel);
                         if (hits.Count >= 3) break;
+                    }
+                    else
+                    {
+                        fuzzy.Add(rel);
                     }
                 }
             }
         }
         catch { /* best effort */ }
-        return hits;
+        return hits.Count > 0 ? hits : fuzzy;
     }
 
     /// <summary>
     /// Best-effort similar-name suggestions for a read_file miss: up to three sibling files whose
-    /// name shares a substring with the requested one, emitted root-relative with forward slashes.
+    /// name shares a substring with the requested one (edit-distance fallback when none does),
+    /// emitted root-relative with forward slashes.
     /// </summary>
     private static List<string> SuggestSimilarFiles(string root, string requestedFullPath, GitignoreMatcher ignore)
     {
         var hits = new List<string>();
+        var fuzzy = new List<string>();
         try
         {
             var parent = Path.GetDirectoryName(requestedFullPath);
@@ -914,20 +972,28 @@ public class FilesToolHandler : IFilesToolHandler
             foreach (var full in Directory.EnumerateFiles(parent))
             {
                 var name = Path.GetFileName(full);
-                if (!name.Contains(leaf, StringComparison.OrdinalIgnoreCase) &&
-                    !leaf.Contains(name, StringComparison.OrdinalIgnoreCase)) continue;
+                var contains = name.Contains(leaf, StringComparison.OrdinalIgnoreCase) ||
+                               leaf.Contains(name, StringComparison.OrdinalIgnoreCase);
+                if (!contains && (fuzzy.Count >= 3 || !IsFuzzyNameMatch(name, leaf))) continue;
                 if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, full, out var canon)) continue;
                 if (SensitivePathGuard.IsBlocked(canon, out _)) continue;
 
                 var rel = NormalizeSeparators(SafeRelative(root, full));
                 if (ignore.IsIgnored(rel, isDirectory: false)) continue;
 
-                hits.Add(rel);
-                if (hits.Count >= 3) break;
+                if (contains)
+                {
+                    hits.Add(rel);
+                    if (hits.Count >= 3) break;
+                }
+                else
+                {
+                    fuzzy.Add(rel);
+                }
             }
         }
         catch { /* best effort */ }
-        return hits;
+        return hits.Count > 0 ? hits : fuzzy;
     }
 
     private static bool IsUnderIgnoredDirectory(string root, string directory, GitignoreMatcher ignore)
@@ -940,6 +1006,36 @@ public class FilesToolHandler : IFilesToolHandler
             dir = Path.GetDirectoryName(dir);
         }
         return false;
+    }
+
+    // Substring matches stay the first choice; this only fires when none exist. OSA variant so a
+    // transposition costs 1 like the other one-keystroke typos; the threshold scales with length.
+    private static bool IsFuzzyNameMatch(string name, string leaf)
+        => EditDistance(name, leaf) <= Math.Max(1, leaf.Length / 4);
+
+    private static int EditDistance(string a, string b)
+    {
+        var prev2 = new int[b.Length + 1];
+        var prev = new int[b.Length + 1];
+        var cur = new int[b.Length + 1];
+        for (int j = 0; j <= b.Length; j++) prev[j] = j;
+        for (int i = 1; i <= a.Length; i++)
+        {
+            cur[0] = i;
+            for (int j = 1; j <= b.Length; j++)
+            {
+                var cost = char.ToLowerInvariant(a[i - 1]) == char.ToLowerInvariant(b[j - 1]) ? 0 : 1;
+                cur[j] = Math.Min(Math.Min(prev[j] + 1, cur[j - 1] + 1), prev[j - 1] + cost);
+                if (i > 1 && j > 1 &&
+                    char.ToLowerInvariant(a[i - 1]) == char.ToLowerInvariant(b[j - 2]) &&
+                    char.ToLowerInvariant(a[i - 2]) == char.ToLowerInvariant(b[j - 1]))
+                {
+                    cur[j] = Math.Min(cur[j], prev2[j - 2] + 1);
+                }
+            }
+            (prev2, prev, cur) = (prev, cur, prev2);
+        }
+        return prev[b.Length];
     }
 
     private async Task<object> HandleReadFileAsync(
@@ -1011,33 +1107,30 @@ public class FilesToolHandler : IFilesToolHandler
     /// containers full of NUL bytes — sniffing them as binary would falsely reject them; NUL-sniff
     /// only on the plain-text path). Returns <c>(text, null)</c> on success or <c>(null, error)</c>
     /// for an oversized/binary/unsupported file. Shared by <see cref="HandleReadFileAsync"/> (which
-    /// then windows + records staleness) and <see cref="ReadPromptPreviewAsync"/> (which caps for the
-    /// prompt). <paramref name="requested"/> is the model-supplied path, used only in error text.
+    /// then windows + records staleness), <see cref="HandleSearchFilesAsync"/> and
+    /// <see cref="ReadPromptPreviewAsync"/> (which caps for the prompt) — it does NOT record
+    /// staleness, so a search hit can never satisfy the read-before-edit gate.
+    /// <paramref name="requested"/> is the model-supplied path, used only in error text.
     /// </summary>
     private async Task<(string? Text, string? Error)> ReadFileTextAsync(
         string safePath, string requested, CancellationToken cancellationToken)
     {
         var ext = Path.GetExtension(safePath);
 
-        if (string.Equals(ext, ".docx", StringComparison.OrdinalIgnoreCase))
+        var kind = DroppedFileReader.Classify(safePath);
+        if (IsExtractedKind(kind))
         {
-            var docx = await DroppedFileReader.ReadDocxAsync(safePath, cancellationToken);
-            if (docx.Status == DroppedFileReader.ReadStatus.TooLarge)
+            var extracted = kind switch
+            {
+                FileKind.Docx => await DroppedFileReader.ReadDocxAsync(safePath, cancellationToken),
+                FileKind.Xlsx => await DroppedFileReader.ReadXlsxAsync(safePath, cancellationToken),
+                _             => await DroppedFileReader.ReadEmailAsync(safePath, cancellationToken),
+            };
+            if (extracted.Status == DroppedFileReader.ReadStatus.TooLarge)
                 return (null, $"Error: File is too large to read (max {MaxReadFileBytes / 1024} KB of extracted text).");
-            if (docx.Status == DroppedFileReader.ReadStatus.Failed)
-                return (null, $"Error: Could not read file ({docx.Error}).");
-            return (docx.Text ?? string.Empty, null);
-        }
-
-        if (string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(ext, ".xlsm", StringComparison.OrdinalIgnoreCase))
-        {
-            var xlsx = await DroppedFileReader.ReadXlsxAsync(safePath, cancellationToken);
-            if (xlsx.Status == DroppedFileReader.ReadStatus.TooLarge)
-                return (null, $"Error: File is too large to read (max {MaxReadFileBytes / 1024} KB of extracted text).");
-            if (xlsx.Status == DroppedFileReader.ReadStatus.Failed)
-                return (null, $"Error: Could not read file ({xlsx.Error}).");
-            return (xlsx.Text ?? string.Empty, null);
+            if (extracted.Status == DroppedFileReader.ReadStatus.Failed)
+                return (null, $"Error: Could not read file ({extracted.Error}).");
+            return (extracted.Text ?? string.Empty, null);
         }
 
         if (IsImageExtension(ext))
@@ -1213,6 +1306,10 @@ public class FilesToolHandler : IFilesToolHandler
     private static bool IsImageExtension(string ext)
         => !string.IsNullOrEmpty(ext) && ReadImageExtensions.Contains(ext);
 
+    /// <summary>Formats whose text is extracted from a container rather than read as the file's own bytes.</summary>
+    private static bool IsExtractedKind(FileKind kind)
+        => kind is FileKind.Docx or FileKind.Xlsx or FileKind.Email;
+
     /// <summary>NUL-byte content sniff: a NUL in the first 8 KB strongly implies a binary file.</summary>
     private static bool LooksBinary(byte[] bytes)
     {
@@ -1351,6 +1448,12 @@ public class FilesToolHandler : IFilesToolHandler
                 $"Error: '{ext}' files can't be edited by write_file — macro-enabled and template Office " +
                 "formats are read-only here (regenerating any part of the package risks losing the macro " +
                 "project). Save a .docx/.xlsx copy and edit that instead.");
+
+        if (RenderedReadOnlyExtensions.Contains(ext))
+            return WriteFailure(
+                $"Error: '{ext}' files are read-only here — read_file returns a rendered view of the " +
+                "message (headers, then body), not the file's own bytes, so writing that back would " +
+                "destroy the original. Write the text to a new .md or .txt file instead.");
 
         var exists = File.Exists(safePath);
         var rel = SafeRelative(root, safePath);
@@ -1916,7 +2019,7 @@ public class FilesToolHandler : IFilesToolHandler
     private static string ListFilesSchema(
         [Description("Optional file-name glob, e.g. '*.md' or 'notes*' (matched against file names at any depth). Must not contain a path separator. Defaults to all files.")] string? pattern = null) => "";
 
-    [Description("Read the contents of a text file (also .docx/.xlsx, extracted as text) in the assistant files folder. Output is line-numbered as LINE|CONTENT (1-indexed), windowed by offset/limit, and prefixed with total_lines.")]
+    [Description("Read the contents of a text file (also .docx/.xlsx/.msg/.eml, extracted as text) in the assistant files folder. Output is line-numbered as LINE|CONTENT (1-indexed), windowed by offset/limit, and prefixed with total_lines.")]
     private static string ReadFileSchema(
         [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path,
         [Description("1-indexed line to start reading from (default 1, minimum 1).")] int offset = 1,
@@ -1942,7 +2045,7 @@ public class FilesToolHandler : IFilesToolHandler
     private static string FindFilesSchema(
         [Description("Glob pattern matched against the file path relative to the searched folder — e.g. '*.md' or 'docs/**/*.md'.")] string pattern,
         [Description("Optional subdirectory (relative to the assistant files folder) to scope the search. Defaults to the whole folder.")] string? path = null,
-        [Description("Maximum number of results to return (default 100, maximum 500).")] int limit = 100) => "";
+        [Description("Maximum number of results to return (default 100, maximum 500). Results are sorted alphabetically, so a small limit returns the first names in that order, not a representative sample.")] int limit = 100) => "";
 
     [Description("Search text files in the assistant files folder for a regular-expression pattern. Read-only. Ignored paths (built-in defaults such as .git/bin/obj/node_modules, plus any .gitignore/.piaignore in the folder) are skipped.")]
     private static string SearchFilesSchema(

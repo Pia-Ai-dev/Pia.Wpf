@@ -41,33 +41,10 @@ public class FilesToolHandlerDocxXlsxWriteTests : IDisposable
     }
 
     private static void CreateDocx(string path, params string[] paragraphs)
-    {
-        using var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
-        var main = doc.AddMainDocumentPart();
-        main.Document = new Document();
-        var body = new Body();
-        main.Document.Append(body);
-        foreach (var p in paragraphs)
-            body.Append(new Paragraph(new DW.Run(new DW.Text(p))));
-        main.Document.Save();
-    }
+        => OfficeDocuments.CreateDocx(path, paragraphs);
 
     private static void CreateXlsx(string path, string sheetName, params (string Ref, string Value)[] cells)
-    {
-        using var doc = SpreadsheetDocument.Create(path, SpreadsheetDocumentType.Workbook);
-        var wbPart = doc.AddWorkbookPart();
-        wbPart.Workbook = new SS.Workbook();
-        var wsPart = wbPart.AddNewPart<WorksheetPart>();
-
-        var row = new SS.Row { RowIndex = 1 };
-        foreach (var (r, v) in cells)
-            row.Append(new SS.Cell { CellReference = r, DataType = SS.CellValues.String, CellValue = new SS.CellValue(v) });
-        wsPart.Worksheet = new SS.Worksheet(new SS.SheetData(row));
-
-        var sheets = wbPart.Workbook.AppendChild(new SS.Sheets());
-        sheets.Append(new SS.Sheet { Id = wbPart.GetIdOfPart(wsPart), SheetId = 1, Name = sheetName });
-        wbPart.Workbook.Save();
-    }
+        => OfficeDocuments.CreateXlsx(path, sheetName, cells);
 
     private async Task<(object? Result, FilesToolCall? Pending)> Prepare(string path, string content)
     {
@@ -151,6 +128,18 @@ public class FilesToolHandlerDocxXlsxWriteTests : IDisposable
         Assert.Null(pending);
         Assert.False(Prop<bool>(result!, "success"));
         Assert.Contains("macro", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("thread.eml")]
+    [InlineData("thread.msg")]
+    public async Task Mail_IsRejected_AtPrepareTime_NoActionCard(string name)
+    {
+        var (result, pending) = await Prepare(name, "Subject: x\n===\n\nbody");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("read-only", Prop<string?>(result!, "error")!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

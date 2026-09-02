@@ -186,6 +186,17 @@ public class FilesToolHandlerSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_EmitsRootRelativeForwardSlashPaths()
+    {
+        Write("docs/sub/a.txt", "HIT here");
+
+        var result = await SearchAsync("HIT");
+
+        Assert.Contains("docs/sub/a.txt:1:HIT here", result);
+        Assert.DoesNotContain('\\', result);
+    }
+
+    [Fact]
     public async Task Search_NonexistentPath_SuggestsAndDoesNotCrash()
     {
         Write("reports/q1.txt", "data");
@@ -231,8 +242,10 @@ public class FilesToolHandlerSearchTests : IDisposable
 
         var result = await SearchAsync("BIGMATCH", mode: "files");
 
+        // Not searched — but named in the diagnostic, because a silent skip reads as "not there".
+        Assert.Contains("matches=1", result);
         Assert.Contains("small.txt", result);
-        Assert.DoesNotContain("huge.txt", result);
+        Assert.Contains("could not be searched", result);
     }
 
     [Fact]
@@ -245,7 +258,7 @@ public class FilesToolHandlerSearchTests : IDisposable
 
         // The emitted path must be SANDBOX-ROOT-relative ("sub/only.txt"), not subdir-relative
         // ("only.txt") — only the root-relative form round-trips back through read_file.
-        var expected = "sub" + Path.DirectorySeparatorChar + "only.txt";
+        var expected = "sub/only.txt";
         Assert.Contains(expected, result);
         Assert.DoesNotContain("other.txt", result);
         Assert.Contains("matches=1", result);
@@ -260,7 +273,7 @@ public class FilesToolHandlerSearchTests : IDisposable
 
         // Extract the emitted relative path and feed it straight into read_file. The contract is
         // that a scoped search hit is consumable by the other file tools without re-derivation.
-        var rel = "sub" + Path.DirectorySeparatorChar + "only.txt";
+        var rel = "sub/only.txt";
         Assert.Contains(rel, search);
 
         var read = new FunctionCallContent("c2", "read_file", new Dictionary<string, object?> { ["path"] = rel });
@@ -303,7 +316,7 @@ public class FilesToolHandlerSearchTests : IDisposable
 
         var result = await SearchAsync("TARGET", mode: "files", include: "docs/**/*.md");
 
-        Assert.Contains("docs" + Path.DirectorySeparatorChar + "a.md", result);
+        Assert.Contains("docs/a.md", result);
         Assert.DoesNotContain("other", result);
     }
 
@@ -317,7 +330,7 @@ public class FilesToolHandlerSearchTests : IDisposable
         // "docs/sub/a.md", so a root-anchored "sub/*.md" would find nothing.
         var result = await SearchAsync("TARGET", path: "docs", mode: "files", include: "sub/*.md");
 
-        Assert.Contains("sub" + Path.DirectorySeparatorChar + "a.md", result);
+        Assert.Contains("sub/a.md", result);
         Assert.DoesNotContain("other.md", result);
     }
 
@@ -332,5 +345,71 @@ public class FilesToolHandlerSearchTests : IDisposable
 
         Assert.Contains("keep.cs", result);
         Assert.DoesNotContain("secret.cs", result);
+    }
+
+    private async Task<string> ReadWindowAsync(string path, int offset, int limit)
+    {
+        var args = new Dictionary<string, object?> { ["path"] = path, ["offset"] = offset, ["limit"] = limit };
+        var call = new FunctionCallContent("c2", "read_file", args);
+        var (result, _) = await _handler.HandleToolCallAsync(call);
+        return (string)result!;
+    }
+
+    [Fact]
+    public async Task Search_ReadsInsideADocx()
+    {
+        OfficeDocuments.CreateDocx(Path.Combine(_root, "rezepte.docx"), "Vorspeise", "Kekse mit Zimt", "Nachtisch");
+
+        var result = await SearchAsync("Kekse");
+
+        Assert.Contains("rezepte.docx:2:Kekse mit Zimt", result);
+    }
+
+    [Fact]
+    public async Task Search_ReadsInsideAnXlsx()
+    {
+        OfficeDocuments.CreateXlsx(Path.Combine(_root, "zutaten.xlsx"), "Liste", ("A1", "Zucker"), ("B1", "Kekse"));
+
+        var result = await SearchAsync("Kekse", mode: "files");
+
+        Assert.Contains("zutaten.xlsx", result);
+    }
+
+    [Fact]
+    public async Task Search_ReadsInsideAnEml()
+    {
+        File.WriteAllText(Path.Combine(_root, "mail.eml"), "Subject: Rezept\r\n\r\nKekse mit Zimt\r\n");
+
+        var result = await SearchAsync("Kekse", mode: "files");
+
+        Assert.Contains("mail.eml", result);
+    }
+
+    [Theory]
+    [InlineData("rezepte.docx")]
+    [InlineData("mail.eml")]
+    public async Task Search_HitLineNumberIsTheReadFileLineNumber(string name)
+    {
+        OfficeDocuments.CreateDocx(Path.Combine(_root, "rezepte.docx"), "Vorspeise", "Kekse mit Zimt", "Nachtisch");
+        File.WriteAllText(Path.Combine(_root, "mail.eml"), "Subject: Rezept\r\n\r\nKekse mit Zimt\r\n");
+
+        var hit = (await SearchAsync("Kekse")).Split('\n')
+            .Single(l => l.StartsWith(name + ":", StringComparison.Ordinal));
+        var line = int.Parse(hit.Split(':')[1]);
+
+        Assert.Contains($"{line}|Kekse mit Zimt", await ReadWindowAsync(name, line, 1));
+    }
+
+    [Fact]
+    public async Task Search_NamesTheFilesItCouldNotRead()
+    {
+        Write("notes.txt", "Kekse hier");
+        File.WriteAllBytes(Path.Combine(_root, "scan.pdf"), [0x25, 0x50, 0x44, 0x46, 0x00, 0x01]);
+
+        var result = await SearchAsync("Kekse");
+
+        Assert.Contains("1 file(s) could not be searched", result);
+        Assert.Contains("scan.pdf", result);
+        Assert.Contains("notes.txt:1:", result);
     }
 }
