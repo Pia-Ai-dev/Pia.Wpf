@@ -1,6 +1,7 @@
 # Dragging a mail straight out of Outlook: the virtual-file drop
 
-**Status:** Shipped — confirmed end to end in the real app 2026-09-01 (§9); new Outlook measured and ruled out
+**Status:** Shipped — confirmed end to end in the real app 2026-09-01 (§9); new Outlook measured and ruled out.
+Extended 2026-09-02 with a third gate so a nested target can claim a drop (§10)
 **Owner:** Marco Altmann
 **Written:** 2026-09-01
 **Origin:** Open question 5 of [2026-08-31-file-drop-attachments-plan.md](2026-08-31-file-drop-attachments-plan.md) ("Does the Outlook drag have to work before this ships?"), answered *yes* by the owner. §16 of that plan sketched this branch and priced it `L`; gate **G0** had closed it out of scope for round 1.
@@ -55,6 +56,8 @@ DragEnter (first enter only)          Drop
 reused by `DragOver`. Both reads cross a process boundary and `DragOver` fires at mouse-move frequency, so
 recomputing it per move would put a cross-process call on every mouse message. This mirrors the existing
 `DragCounterProperty` trick.
+
+**A third gate arrived 2026-09-02**, ahead of both of the above: see §10.
 
 **Materialisation runs synchronously on the drag's own thread**, inside `OnDrop`. The source is free to tear
 its data object down the moment `DoDragDrop` returns, and the interface is apartment-bound, so awaiting or
@@ -169,7 +172,7 @@ confirmed on screen against a real new-Outlook drag.
 | `src/Pia.Wpf/Helpers/FileGroupDescriptor.cs` | new — the 592-byte `FILEDESCRIPTORW` parser and `ToSafeFileName` |
 | `src/Pia.Wpf/Helpers/ShellFileContentsMaterializer.cs` | new — descriptor fetch, per-`lindex` `FileContents` pull, the three media, the COM CF_HDROP read |
 | `src/Pia.Wpf/Helpers/ShellDropCache.cs` | new — the scratch directory and its three deletions |
-| `src/Pia.Wpf/Behaviors/FileDropBehavior.cs` | the second gate, the cached verdict, `DropFailedCommand` |
+| `src/Pia.Wpf/Behaviors/FileDropBehavior.cs` | the second gate, the cached verdict, `DropFailedCommand`; `HasNearerTarget` (§10) |
 | `src/Pia.Wpf/Paths/PiaPaths.cs` | `DropCacheDirectory` |
 | `src/Pia.Wpf/App.xaml.cs` | the startup clear |
 | `src/Pia.Wpf/ViewModels/AssistantViewModel.cs`, `OptimizeViewModel.cs` | `HandleDropFailedCommand` |
@@ -220,3 +223,43 @@ Each line is a log-backed observation, not an inference.
 
 Still owed, and unrelated to the materialiser: checklist **C5**, the mail-quality pass over a wider spread of
 real mail — an HTML-only message and one relayed through Gmail for the `(UTC)` date suffix.
+
+## 10. The nested-target gate, 2026-09-02
+
+Added for the meeting-invite drop, which needed the meeting attendee overlay — a child of
+`AssistantView`'s `RootGrid` — to receive a `.msg` that `RootGrid` already accepts.
+
+The handlers here are **tunnelling** (`PreviewDragEnter`/`Over`/`Leave`/`Drop`) and `TryAcceptDrag` set
+`e.Handled = true` unconditionally, so an ancestor with the behavior saw every drag first and swallowed it.
+A drop meant for the overlay became a chat attachment, under the chat's own hint — which is drawn at
+`Panel.ZIndex="20"`, above the overlay's `11`, so the wrong overlay was on screen too.
+
+```
+every handler
+  |
+  +-- HasNearerTarget(sender, e.OriginalSource)?
+        yes -> return, touching neither e.Effects nor e.Handled, so the tunnel reaches the nearer target
+        no  -> the two gates of §3
+```
+
+`HasNearerTarget` walks from `e.OriginalSource` to `sender` (visual parent, logical for a
+`ContentElement`) and answers yes if any node between them has `IsEnabled` set. Three things make it safe
+for the chat path this doc shipped:
+
+- **A collapsed subtree is not hit-tested**, so `OriginalSource` can never land inside a hidden inner
+  target. That matters because the overlay binds `IsEnabled` to `IsJoinSetupVisible`, which is true even
+  while the overlay is collapsed.
+- **The check is symmetric across enter and leave**, so `DragCounterProperty` stays balanced: a matched
+  pair is either both skipped or both counted.
+- **In `OnDrop` the stand-down runs *after* the counter and `IsDragOver` reset.** The drag is over either
+  way, and returning first would strand the ancestor's hint on screen.
+
+It also means the ancestor's `IsDragOver` never goes true while an inner target is under the cursor, so the
+inner target's own hint is the only one drawn — no ZIndex fight.
+
+`HasNearerTarget` is `internal` so `FileDropBehaviorTests` can drive it directly; the handlers cannot be
+tested, because `DragEventArgs` has no public constructor (§8 still stands).
+
+Confirmed by hand 2026-09-02 across all three legs: Explorer → overlay, Outlook classic → overlay (the same
+link out of both, so the materialiser reaches the nested target), and — the regression this change could have
+caused — a drop on the chat with the overlay closed still staging its chip.
