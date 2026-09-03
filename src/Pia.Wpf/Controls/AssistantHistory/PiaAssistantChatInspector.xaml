@@ -24,6 +24,7 @@
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
           </Grid.ColumnDefinitions>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -52,6 +53,14 @@
           </ui:Button>
 
           <ui:Button Grid.Row="0" Grid.Column="2"
+                     Icon="{ui:SymbolIcon Symbol=Rename20}"
+                     Appearance="Transparent"
+                     ToolTip="{loc:Str AssistantHistory_Rename}"
+                     Margin="6,0,0,0"
+                     AutomationProperties.AutomationId="AssistantHistory_Rename"
+                     Command="{Binding DataContext.RenameChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+
+          <ui:Button Grid.Row="0" Grid.Column="3"
                      Icon="{ui:SymbolIcon Symbol=ArrowDownload20}"
                      Appearance="Transparent"
                      ToolTip="{loc:Str AssistantHistory_ExportMarkdown}"
@@ -59,7 +68,7 @@
                      AutomationProperties.AutomationId="AssistantHistory_ExportMarkdown"
                      Command="{Binding DataContext.ExportChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
 
-          <ui:Button Grid.Row="0" Grid.Column="3"
+          <ui:Button Grid.Row="0" Grid.Column="4"
                      Icon="{ui:SymbolIcon Symbol=ArrowExportLtr20}"
                      Appearance="Transparent"
                      ToolTip="{loc:Str AssistantHistory_ExportArchive}"
@@ -67,7 +76,7 @@
                      AutomationProperties.AutomationId="AssistantHistory_ExportArchive"
                      Command="{Binding DataContext.ExportChatArchiveCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
 
-          <ui:Button Grid.Row="0" Grid.Column="4"
+          <ui:Button Grid.Row="0" Grid.Column="5"
                      Icon="{ui:SymbolIcon Symbol=Delete20}"
                      Appearance="Transparent"
                      ToolTip="{loc:Str History_Delete}"
@@ -76,7 +85,7 @@
                      AutomationProperties.AutomationId="AssistantHistory_Delete"
                      Command="{Binding DataContext.DeleteChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
 
-          <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
+          <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="6"
                      Margin="0,8,0,0"
                      FontSize="11.5"
                      TextWrapping="Wrap">

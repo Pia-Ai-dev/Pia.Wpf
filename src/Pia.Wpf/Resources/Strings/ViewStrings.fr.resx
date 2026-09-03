@@ -271,6 +271,8 @@
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>Aucun chat pour l'instant</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Démarrez un chat en mode Assistant pour alimenter l'historique</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Reprendre ce chat</value></data>
+  <data name="AssistantHistory_Rename" xml:space="preserve"><value>Renommer</value></data>
+  <data name="AssistantHistory_RenamePrompt" xml:space="preserve"><value>Comment ce chat doit-il s’appeler ?</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Historique des chats</value></data>
   <data name="AssistantHistory_DeleteAll" xml:space="preserve"><value>Tout supprimer</value></data>
   <data name="AssistantHistory_ExportMarkdown" xml:space="preserve"><value>Exporter en Markdown</value></data>

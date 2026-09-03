@@ -105,6 +105,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     public ObservableCollection<AiProvider> Providers { get; } = new();
 
+    public IAsyncRelayCommand RenameChatCommand { get; }
     public IAsyncRelayCommand DeleteChatCommand { get; }
     public IAsyncRelayCommand<AssistantChatRowViewModel> QuickDeleteChatCommand { get; }
     public IAsyncRelayCommand DeleteAllChatsCommand { get; }
@@ -159,6 +160,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         StateFilterOptions = BuildStateFilterOptions(localizationService);
         _selectedStateOption = StateFilterOptions[0];
 
+        RenameChatCommand = new AsyncRelayCommand(ExecuteRenameChatAsync, CanExecuteWithSelection);
         DeleteChatCommand = new AsyncRelayCommand(ExecuteDeleteChatAsync, CanExecuteWithSelection);
         QuickDeleteChatCommand = new AsyncRelayCommand<AssistantChatRowViewModel>(ExecuteQuickDeleteChatAsync);
         DeleteAllChatsCommand = new AsyncRelayCommand(ExecuteDeleteAllChatsAsync);
@@ -398,6 +400,43 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         var token = _debounceCts.Token;
         Pia.Helpers.TaskExtensions.DebounceAsync(DebounceMs, LoadChatsAsync, token)
             .SafeFireAndForget(_logger);
+    }
+
+    private async Task ExecuteRenameChatAsync()
+    {
+        var row = SelectedChat;
+        if (row is null) return;
+
+        var entered = await _dialogService.ShowInputDialogAsync(
+            _localizationService["AssistantHistory_Rename"],
+            _localizationService["AssistantHistory_RenamePrompt"],
+            row.Title);
+
+        var title = entered?.Trim();
+        if (string.IsNullOrEmpty(title) || title == row.Title) return;
+
+        try
+        {
+            if (!await _chatService.SetTitleAsync(row.Id, title))
+            {
+                await LoadChatsAsync();
+                return;
+            }
+
+            row.SetTitle(title);
+            _chatSessionManager.ApplyExternalTitle(row.Id, title);
+            if (SelectedChatDetail is { } detail && detail.Id == row.Id)
+                detail.Title = title;
+            RebuildGroups();
+            _logger.LogInformation("Renamed assistant chat {ChatId}", row.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rename chat {ChatId}", row.Id);
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Msg_Error"],
+                _localizationService.Format("Msg_History_RenameFailed", ex.Message));
+        }
     }
 
     private async Task ExecuteDeleteChatAsync()

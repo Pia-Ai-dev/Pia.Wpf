@@ -4,8 +4,9 @@ using System.Net.Sockets;
 namespace Pia.Helpers;
 
 /// <summary>
-/// Tells "this machine cannot reach the network" apart from "the service answered with a problem",
-/// so the first can be said in the user's language instead of surfacing a socket message.
+/// Tells "the AI service could not be reached at all" apart from "it answered with a problem", so
+/// the first can be said in the user's language instead of surfacing a socket message. A timeout is
+/// deliberately not here: a slow server is reachable.
 /// </summary>
 public static class NetworkFailure
 {
@@ -37,6 +38,5 @@ public static class NetworkFailure
         or SocketError.NetworkDown
         or SocketError.NetworkUnreachable
         or SocketError.HostUnreachable
-        or SocketError.ConnectionRefused
-        or SocketError.TimedOut;
+        or SocketError.ConnectionRefused;
 }

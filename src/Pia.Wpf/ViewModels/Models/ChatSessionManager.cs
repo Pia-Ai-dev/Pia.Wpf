@@ -451,6 +451,14 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     public ChatSession? TryGetLive(Guid chatId) =>
         _sessions.TryGetValue(chatId, out var session) ? session : null;
 
+    public void ApplyExternalTitle(Guid chatId, string title)
+    {
+        if (!_sessions.TryGetValue(chatId, out var session)) return;
+
+        session.SetTitle(title);
+        RaiseTitleChanged(session, title);
+    }
+
     public ChatState GetState(Guid chatId) =>
         _sessions.TryGetValue(chatId, out var session) ? session.State : ChatState.Idle;
 
@@ -1304,7 +1312,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         {
             Id = chatId,
             SchemaVersion = 1,
-            Title = DeriveChatTitle(session),
+            // Derived only while the chat has no title. Re-deriving on every persist would put the
+            // truncated first message back over an auto-generated title, or over a user's rename.
+            Title = string.IsNullOrWhiteSpace(session.Title) ? DeriveChatTitle(session) : session.Title,
             CreatedAt = session.CreatedAt,
             UpdatedAt = nowUtc,
             LastAccessedAt = nowUtc,

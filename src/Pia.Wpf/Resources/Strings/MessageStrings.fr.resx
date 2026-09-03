@@ -104,8 +104,8 @@
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>L'assistant n'a pas fourni de réponse. Veuillez réessayer.</value></data>
   <data name="Msg_Assistant_ToolRoundsExhausted" xml:space="preserve"><value>L'assistant a atteint sa limite d'appels d'outils avant de terminer et n'a pas fourni de réponse finale. Essayez de continuer la conversation, ou augmentez la limite de tours d'outils dans les paramètres.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Échec de la récupération de la réponse IA : {0}</value></data>
-  <data name="Msg_Assistant_OfflineTitle" xml:space="preserve"><value>Pas de connexion</value></data>
-  <data name="Msg_Assistant_Offline" xml:space="preserve"><value>Pia n’a pas pu joindre Internet. Vérifiez votre connexion et renvoyez — rien n’a été perdu.</value></data>
+  <data name="Msg_Assistant_OfflineTitle" xml:space="preserve"><value>Injoignable</value></data>
+  <data name="Msg_Assistant_Offline" xml:space="preserve"><value>Pia n’a pas pu joindre le service d’IA. Vérifiez votre connexion — ou que le service fonctionne — et renvoyez. Rien n’a été perdu.</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Vérification de la mémoire...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Vérification des rappels...</value></data>
   <data name="Msg_Assistant_StatusCheckingTodos" xml:space="preserve"><value>Vérification des tâches...</value></data>
@@ -151,6 +151,7 @@
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Supprimer la session</value></data>
   <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Échec de la copie dans le presse-papiers : {0}</value></data>
   <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Échec de la suppression de la session : {0}</value></data>
+  <data name="Msg_History_RenameFailed" xml:space="preserve"><value>Impossible de renommer le chat : {0}</value></data>
   <data name="Msg_AssistantHistory_Exported" xml:space="preserve"><value>Exporté</value></data>
   <data name="Msg_AssistantHistory_ExportedToFile" xml:space="preserve"><value>Chat exporté vers {0}</value></data>
   <data name="Msg_AssistantHistory_ExportFailed" xml:space="preserve"><value>Échec de l'exportation du chat : {0}</value></data>

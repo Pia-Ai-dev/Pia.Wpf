@@ -903,6 +903,29 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task ARenamedChatKeepsItsTitleThroughTheNextPersist()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = false });
+        SyncAssistantChat? saved = null;
+        await _chatService.SaveAsync(Arg.Do<SyncAssistantChat>(c => saved = c), Arg.Any<CancellationToken>());
+
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "plan my week"));
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.Assistant, "step 1 done"));
+        session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
+        await Eventually.TrueAsync(() => session.Id is not null,
+            "the first persist to key the session in", TestContext.Current.CancellationToken);
+
+        sut.ApplyExternalTitle(session.Id!.Value, "Kickoff with the works council");
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "and next week"));
+        session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
+
+        await Eventually.TrueAsync(() => saved?.Title == "Kickoff with the works council",
+            "the renamed title to survive the next persist", TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task AutoTitle_WritesTheTitleOnly_AndNeverFullReplacesTheChat()
     {
         // The rename used to be a fire-and-forget read-modify-write whose snapshot was stale by the time it landed

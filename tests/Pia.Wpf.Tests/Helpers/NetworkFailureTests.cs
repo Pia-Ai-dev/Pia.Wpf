@@ -23,6 +23,18 @@ public sealed class NetworkFailureTests
         Assert.True(NetworkFailure.IsOffline(
             new InvalidOperationException("chat failed", new SocketException((int)SocketError.HostNotFound))));
 
+    /// <summary>A local provider that is simply not running — the sentence has to fit this too.</summary>
+    [Fact]
+    public void ALocalProviderThatIsNotListeningIsUnreachable() =>
+        Assert.True(NetworkFailure.IsOffline(
+            new HttpRequestException(HttpRequestError.ConnectionError, "localhost:11434")));
+
+    /// <summary>A slow-but-alive server is reachable, and keeps its own message.</summary>
+    [Fact]
+    public void ATimeoutIsNotUnreachable() =>
+        Assert.False(NetworkFailure.IsOffline(
+            new InvalidOperationException("slow", new SocketException((int)SocketError.TimedOut))));
+
     [Fact]
     public void AServerThatAnsweredIsNotOffline() =>
         Assert.False(NetworkFailure.IsOffline(

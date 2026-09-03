@@ -104,8 +104,8 @@
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>Der Assistent hat keine Antwort geliefert. Bitte versuche es erneut.</value></data>
   <data name="Msg_Assistant_ToolRoundsExhausted" xml:space="preserve"><value>Der Assistent hat sein Tool-Aufruf-Limit erreicht, bevor er fertig war, und keine endgültige Antwort geliefert. Setze die Unterhaltung fort oder erhöhe das Tool-Runden-Limit in den Einstellungen.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Fehler beim Abrufen der KI-Antwort: {0}</value></data>
-  <data name="Msg_Assistant_OfflineTitle" xml:space="preserve"><value>Keine Verbindung</value></data>
-  <data name="Msg_Assistant_Offline" xml:space="preserve"><value>Pia konnte das Internet nicht erreichen. Bitte die Verbindung prüfen und erneut senden – es ist nichts verloren gegangen.</value></data>
+  <data name="Msg_Assistant_OfflineTitle" xml:space="preserve"><value>Nicht erreichbar</value></data>
+  <data name="Msg_Assistant_Offline" xml:space="preserve"><value>Pia konnte den KI-Dienst nicht erreichen. Bitte die Verbindung prüfen – oder ob der Dienst läuft – und erneut senden. Es ist nichts verloren gegangen.</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Gedächtnis wird überprüft...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Erinnerungen werden überprüft...</value></data>
   <data name="Msg_Assistant_StatusCheckingTodos" xml:space="preserve"><value>Aufgaben werden überprüft...</value></data>
@@ -152,6 +152,7 @@
   <data name="Msg_History_ConfirmDeleteTitle" xml:space="preserve"><value>Sitzung löschen</value></data>
   <data name="Msg_History_CopyFailed" xml:space="preserve"><value>Kopieren in die Zwischenablage fehlgeschlagen: {0}</value></data>
   <data name="Msg_History_DeleteSessionFailed" xml:space="preserve"><value>Löschen der Sitzung fehlgeschlagen: {0}</value></data>
+  <data name="Msg_History_RenameFailed" xml:space="preserve"><value>Der Chat konnte nicht umbenannt werden: {0}</value></data>
   <data name="Msg_AssistantHistory_Exported" xml:space="preserve"><value>Exportiert</value></data>
   <data name="Msg_AssistantHistory_ExportedToFile" xml:space="preserve"><value>Chat exportiert nach {0}</value></data>
   <data name="Msg_AssistantHistory_ExportFailed" xml:space="preserve"><value>Export des Chats fehlgeschlagen: {0}</value></data>

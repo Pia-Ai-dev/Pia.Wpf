@@ -559,6 +559,28 @@ public class LocalizationTests
             $"to the same consent body, so the user reads the same clause twice: \"{byCap[..shared]}\"");
     }
 
+    /// <summary>Optimize's length refusal is formatted with the text length and, when the server reports
+    /// one, the cap. A locale that drops or invents a placeholder throws at render time.</summary>
+    [Theory]
+    [InlineData("Msg_Optimize_TextTooLong", 2)]
+    [InlineData("Msg_Optimize_TextTooLongNoLimit", 1)]
+    [InlineData("Msg_Assistant_Offline", 0)]
+    [InlineData("Msg_Assistant_OfflineTitle", 0)]
+    public void AFailureMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
+    {
+        var placeholder = new Regex(@"\{(\d+)");
+        var cultures = new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") };
+
+        foreach (var culture in cultures)
+        {
+            var value = MessageStrings.ResourceManager.GetString(key, culture);
+            Assert.False(string.IsNullOrWhiteSpace(value), $"{key} is missing for {culture.Name}");
+            var indexes = placeholder.Matches(value!).Select(m => m.Groups[1].Value).Distinct().Order().ToArray();
+            Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),
+                indexes);
+        }
+    }
+
     /// <summary>The snackbar bodies take one argument each, so a stray {1} throws at render time.</summary>
     [Theory]
     [InlineData("Msg_Settings_DiagnosticsExported_Body", 1)]
@@ -583,6 +605,7 @@ public class LocalizationTests
     [InlineData("Msg_File_AttachLimit", 2)]
     [InlineData("Msg_File_ReadFailed", 2)]
     [InlineData("Msg_File_AttachBudget", 1)]
+    [InlineData("Msg_File_PdfNoText", 1)]
     [InlineData("Msg_File_TooLarge", 2)]
     [InlineData("Msg_File_TooLargeAttachment", 2)]
     [InlineData("Msg_File_UnsupportedAttachment", 1)]

@@ -101,7 +101,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.History.PiaHistoryInspector), 6, 0, "PiaHistoryInspectorHeader")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryInspectorHeader), 1, 0, "")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryStatusBar), 1, 0, "")]
-    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatInspector), 6, 2,
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatInspector), 7, 2,
         "PiaAssistantMessage,PiaPersonaAvatar")]
     // Pia.Views.OptimizeView is the Optimize hotkey window, not the same-named settings view above.
     [InlineData(typeof(Pia.Views.OptimizeView), 12, 0, "TodoPanelControl")]

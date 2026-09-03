@@ -19,6 +19,13 @@ public sealed partial class AssistantChatRowViewModel : ObservableObject
     /// <summary>Proxied for the row XAML (so existing <c>{Binding Title}</c> shapes keep working via <c>Chat.Title</c>).</summary>
     public string? Title => Chat.Title;
 
+    /// <summary><see cref="Title"/> reads through to a plain DTO field, so a rename has to raise for it.</summary>
+    public void SetTitle(string title)
+    {
+        Chat.Title = title;
+        OnPropertyChanged(nameof(Title));
+    }
+
     public DateTime UpdatedAt => Chat.UpdatedAt;
 
     [ObservableProperty]

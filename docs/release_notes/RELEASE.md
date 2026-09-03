@@ -8,6 +8,14 @@
   Optimize window already could — but only when nothing is typed, attached or
   still running.
 
+## Assistant
+
+- A chat can be given a name of your own. Pick it in the history, next to
+  Resume, and it is what the history shows from then on — useful above all
+  with automatic titles switched off.
+- A chat also keeps the name it has. Every save used to write the first
+  message back over it, so an automatic title lasted until the next reply.
+
 ## Notifications
 
 - The ✕ on a message that slides in at the top left now closes it while the

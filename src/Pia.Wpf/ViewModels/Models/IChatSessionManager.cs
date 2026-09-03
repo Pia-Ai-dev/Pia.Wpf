@@ -31,6 +31,10 @@ public interface IChatSessionManager
     /// <summary>Returns the live session for <paramref name="chatId"/>, or null if not live.</summary>
     ChatSession? TryGetLive(Guid chatId);
 
+    /// <summary>Carry a title set outside a turn — a rename in the history view — into the live session,
+    /// so the next persist does not write the old one back.</summary>
+    void ApplyExternalTitle(Guid chatId, string title);
+
     /// <summary>Resume a chat: activate the live session if present, otherwise hydrate from the store.</summary>
     Task<ChatSession?> ActivateAsync(Guid chatId);
 

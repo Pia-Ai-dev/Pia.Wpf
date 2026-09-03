@@ -237,6 +237,8 @@
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>No chats yet</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Start a chat in Assistant mode to build history</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Resume this chat</value></data>
+  <data name="AssistantHistory_Rename" xml:space="preserve"><value>Rename</value></data>
+  <data name="AssistantHistory_RenamePrompt" xml:space="preserve"><value>What should this chat be called?</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Chat history</value></data>
   <data name="AssistantHistory_DeleteAll" xml:space="preserve"><value>Delete all</value></data>
   <data name="AssistantHistory_ExportMarkdown" xml:space="preserve"><value>Export as Markdown</value></data>

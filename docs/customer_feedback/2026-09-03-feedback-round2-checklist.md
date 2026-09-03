@@ -1,6 +1,6 @@
 # Customer feedback round 2 — checklist
 
-**Status:** In progress — A1, A2, B2, C1, E1, E2, G2a, H1, H2 landed; F1 half-done
+**Status:** In progress — A1, A2, B2, C1, D1, E1, E2, G2a, H1, H2 landed; F1 half-done
 **Owner:** Marco Altmann
 **Written:** 2026-09-03
 **Origin:** [2026-09-03-feedback-round2-plan.md](2026-09-03-feedback-round2-plan.md)
@@ -56,7 +56,7 @@ Do not tick a step below an open gate without revisiting it.
       the generic arm and surface a localized, actionable sentence instead of a raw English
       socket message in the chat bubble.
       *Deps:* — · *Effort:* S · *Value:* High
-- [ ] **D1 — User-set chat titles.** Rename from the history row and the chat header through
+- [x] **D1 — User-set chat titles.** Rename from the history row and the chat header through
       the existing title-only writer, with a hand-set title immune to auto-titling.
       *Deps:* — · *Effort:* S · *Value:* High
 - [ ] **F1 — Repro the snackbar's close button.** One blocker is fixed (the flow scrim
