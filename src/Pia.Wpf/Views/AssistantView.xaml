@@ -460,8 +460,8 @@
                         PlaceholderEnabled="True"
                         TextWrapping="Wrap"
                         AcceptsReturn="True"
-                        MaxHeight="120"
                         VerticalScrollBarVisibility="Auto"
+                        TextChanged="InputTextBox_TextChanged"
                         FontSize="14"
                         Padding="6,6"
                         BorderThickness="0"
@@ -481,6 +481,22 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+              <!-- Grow the composer past the few lines it collapses to. Only offered once the draft is
+                   actually taller than that, so it does not sit there as a dead control. -->
+              <ui:Button x:Name="ComposerExpandButton"
+                         Click="ComposerExpandButton_Click"
+                         Appearance="Transparent"
+                         Padding="6,4"
+                         Margin="0,0,2,0"
+                         AutomationProperties.Name="{loc:Str Assistant_ExpandComposer_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_ExpandComposer"
+                         Visibility="{Binding IsComposerOverflowing, RelativeSource={RelativeSource AncestorType=local:AssistantView}, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ui:Button.ToolTip>
+                  <ToolTip Content="{loc:Str Assistant_ExpandComposer_Tooltip}" />
+                </ui:Button.ToolTip>
+                <ui:SymbolIcon x:Name="ComposerExpandIcon" Symbol="ChevronUp24" FontSize="16" />
+              </ui:Button>
+
               <!-- New chat: additive, so a turn in flight keeps streaming in the chat it belongs to. -->
               <ui:Button Command="{Binding NewChatCommand}"
                          Appearance="Transparent"

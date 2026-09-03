@@ -286,6 +286,39 @@ failure reasons separated before its string can name a number.
 
 ---
 
+## I — a third round, 2026-09-03: the composer and where a chat opens
+
+**Report (two items).** A very long draft should leave the input collapsed to four or five rows
+with a way to expand it. And a chat entered from the history or the picker should open at the very
+bottom.
+
+### I-a — the composer
+
+It already collapsed: the input carried `MaxHeight="120"` with an auto scrollbar, which is about
+five lines at its font size. What was missing is the other half of the ask — a way to grow it. The
+height now lives in the code-behind (`CollapsedComposerHeight` / `ExpandedComposerHeight`), a toggle
+sits at the head of the composer's button strip, and it is only offered while the draft is measured
+taller than the collapsed box, so it is never a dead control. Sending — which clears the draft —
+puts the box back.
+
+### I-b — where a chat opens
+
+`AssistantViewModel.Messages` is **re-pointed** to the new session's list
+(`AssistantViewModel.cs:545`), and that list is already full. No `Add` is raised, so
+`OnMessagesCollectionChanged` — the only thing that scrolled — never ran, and the view kept the
+offset from the chat before it.
+
+One `ScrollToEnd` would not have been enough either: the markdown bubbles keep growing the extent
+for several layout passes after the swap, and `MessageScrollViewer_ScrollChanged` deliberately
+ignored growth. So the re-point now re-arms auto-scroll and posts a scroll, **and** growth is
+honoured while auto-scroll is on. `IsAutoScrollEnabled` carries both meanings; a second flag was
+tried and removed.
+
+Two smaller things fell out. A duplicate `ScrollChanged` handler and its `_autoScroll` field were
+dead — `ScrollToBottom` only ever read the dependency property — and are gone. And the collapsed
+composer height was being applied on `Loaded`, leaving the box unbounded until then; it is applied
+at construction now, which is how the test found it.
+
 ## What this plan does not cover
 
 - Any server-side change. Gate **G2** may conclude that the Optimize cap belongs in a

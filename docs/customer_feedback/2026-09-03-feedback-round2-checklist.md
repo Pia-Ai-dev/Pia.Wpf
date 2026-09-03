@@ -1,6 +1,6 @@
-# Customer feedback round 2 — checklist
+# Customer feedback rounds 2–3 — checklist
 
-**Status:** In progress — A1, A2, B2, C1, D1, E1, E2, G2a, H1, H2 landed; F1 half-done
+**Status:** In progress — A1, A2, B2, C1, D1, E1, E2, G2a, H1, H2, I1, I2 landed; F1 half-done
 **Owner:** Marco Altmann
 **Written:** 2026-09-03
 **Origin:** [2026-09-03-feedback-round2-plan.md](2026-09-03-feedback-round2-plan.md)
@@ -75,6 +75,13 @@ Do not tick a step below an open gate without revisiting it.
       *Deps:* C1 · *Effort:* M · *Value:* Med
 - [ ] **C3 — Providers as master–detail.** The same rebuild for the Providers tab.
       *Deps:* C2 · *Effort:* M · *Value:* Med
+
+- [x] **I2 — Open a chat at its newest turn.** A chat entered from history or the picker lands at
+      the bottom, however the reader had scrolled the one before it.
+      *Deps:* — · *Effort:* XS · *Value:* High
+- [x] **I1 — Expand the composer.** The input stays collapsed to a few lines and offers a toggle
+      once the draft outgrows it, back to collapsed when the draft is sent or cleared.
+      *Deps:* — · *Effort:* S · *Value:* Med
 
 ## Not yet planned
 

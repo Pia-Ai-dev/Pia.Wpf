@@ -27,9 +27,30 @@ public partial class AssistantView : UserControl
         set => SetValue(IsAutoScrollEnabledProperty, value);
     }
 
+    public static readonly DependencyProperty IsComposerOverflowingProperty =
+        DependencyProperty.Register(
+            nameof(IsComposerOverflowing),
+            typeof(bool),
+            typeof(AssistantView),
+            new PropertyMetadata(false));
+
+    /// <summary>True while the draft is taller than the collapsed composer — i.e. the expand toggle is worth offering.</summary>
+    public bool IsComposerOverflowing
+    {
+        get => (bool)GetValue(IsComposerOverflowingProperty);
+        set => SetValue(IsComposerOverflowingProperty, value);
+    }
+
+    /// <summary>Roughly five lines at the composer's font size; the box scrolls past this until expanded.</summary>
+    private const double CollapsedComposerHeight = 120;
+    private const double ExpandedComposerHeight = 360;
+
+    /// <summary>Padding and border, which sit inside MaxHeight but outside the text's own extent.</summary>
+    private const double ComposerChrome = 14;
+
     private AssistantViewModel? ViewModel => DataContext as AssistantViewModel;
-    private bool _autoScroll = true;
     private ObservableCollection<AssistantMessage>? _subscribedMessages;
+    private bool _composerExpanded;
 
     // The host clears DataContext before Unloaded, so resolving the VM again there finds nothing and the
     // subscription would outlive the view — a production dump held 18 of them that way.
@@ -38,6 +59,7 @@ public partial class AssistantView : UserControl
     public AssistantView()
     {
         InitializeComponent();
+        ApplyComposerHeight();
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -55,14 +77,46 @@ public partial class AssistantView : UserControl
             SubscribeMessages(_subscribedViewModel.Messages);
         }
 
-        MessageScrollViewer.ScrollChanged += OnMessageScrollChanged;
+        PinToEnd();
         InputTextBox.Focus();
+    }
+
+    private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        // ExtentHeight is only right once the new text has been measured.
+        Dispatcher.BeginInvoke(RefreshComposerOverflow, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void RefreshComposerOverflow()
+    {
+        IsComposerOverflowing = InputTextBox.ExtentHeight > CollapsedComposerHeight - ComposerChrome;
+
+        // A send clears the draft, and an expanded box with two lines in it is just a hole in the view.
+        if (!IsComposerOverflowing && _composerExpanded)
+        {
+            _composerExpanded = false;
+            ApplyComposerHeight();
+        }
+    }
+
+    private void ComposerExpandButton_Click(object sender, RoutedEventArgs e)
+    {
+        _composerExpanded = !_composerExpanded;
+        ApplyComposerHeight();
+        InputTextBox.Focus();
+    }
+
+    private void ApplyComposerHeight()
+    {
+        InputTextBox.MaxHeight = _composerExpanded ? ExpandedComposerHeight : CollapsedComposerHeight;
+        ComposerExpandIcon.Symbol = _composerExpanded
+            ? Wpf.Ui.Controls.SymbolRegular.ChevronDown24
+            : Wpf.Ui.Controls.SymbolRegular.ChevronUp24;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         DetachViewModel();
-        MessageScrollViewer.ScrollChanged -= OnMessageScrollChanged;
     }
 
     private void DetachViewModel()
@@ -79,8 +133,18 @@ public partial class AssistantView : UserControl
     // tracking the instance here keeps auto-scroll and the per-message streaming hooks on the live one.
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(AssistantViewModel.Messages))
-            SubscribeMessages(ViewModel?.Messages);
+        if (e.PropertyName != nameof(AssistantViewModel.Messages))
+            return;
+
+        SubscribeMessages(ViewModel?.Messages);
+        PinToEnd();
+    }
+
+    /// <summary>Opening a chat shows its latest turn, whatever the reader had scrolled to before.</summary>
+    private void PinToEnd()
+    {
+        IsAutoScrollEnabled = true;
+        Dispatcher.BeginInvoke(ScrollToBottom, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void SubscribeMessages(ObservableCollection<AssistantMessage>? messages)
@@ -104,17 +168,6 @@ public partial class AssistantView : UserControl
         }
     }
 
-    private void OnMessageScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        // Re-evaluate auto-scroll only when the viewport moved without content growing —
-        // that's a user-driven scroll. Content growth during streaming leaves VerticalOffset
-        // unchanged when the user has scrolled away from the bottom, so we never confuse the two.
-        if (e.ExtentHeightChange == 0 && e.VerticalChange != 0)
-        {
-            _autoScroll = MessageScrollViewer.VerticalOffset >= MessageScrollViewer.ScrollableHeight - 1.0;
-        }
-    }
-
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems is not null)
@@ -131,7 +184,7 @@ public partial class AssistantView : UserControl
         else if (e.Action == NotifyCollectionChangedAction.Reset)
         {
             // All items removed — unsubscribe handled implicitly since objects are gone
-            _autoScroll = true;
+            IsAutoScrollEnabled = true;
         }
     }
 
@@ -153,8 +206,15 @@ public partial class AssistantView : UserControl
     {
         // Distinguish a user-driven vertical scroll from a scroll caused by content growth.
         // ExtentHeightChange != 0 means new content arrived; ignore those.
+        // A chat opened from history arrives already populated, and its markdown bubbles keep growing
+        // the extent for several passes — one ScrollToEnd would land short of the newest turn.
+        if (e.ExtentHeightChange != 0)
+        {
+            if (IsAutoScrollEnabled) MessageScrollViewer.ScrollToEnd();
+            return;
+        }
+
         if (e.VerticalChange == 0) return;
-        if (e.ExtentHeightChange != 0) return;
 
         var atBottom = e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 1;
         IsAutoScrollEnabled = atBottom;
