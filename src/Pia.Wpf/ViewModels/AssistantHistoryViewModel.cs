@@ -902,6 +902,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     private void UpdateCommandStates()
     {
+        RenameChatCommand.NotifyCanExecuteChanged();
         DeleteChatCommand.NotifyCanExecuteChanged();
         ResumeChatCommand.NotifyCanExecuteChanged();
         ExportChatArchiveCommand.NotifyCanExecuteChanged();
