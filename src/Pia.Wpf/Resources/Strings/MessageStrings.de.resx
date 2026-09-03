@@ -54,6 +54,7 @@
   <data name="Msg_File_Unsupported" xml:space="preserve"><value>„{0}" kann hier nicht eingefügt werden – Dateityp wird nicht unterstützt.</value></data>
   <data name="Msg_File_TooLarge" xml:space="preserve"><value>„{0}“ ist zu groß zum Einfügen – das Limit liegt bei {1}.</value></data>
   <data name="Msg_File_ReadFailed" xml:space="preserve"><value>„{0}" konnte nicht gelesen werden: {1}</value></data>
+  <data name="Msg_File_PdfNoText" xml:space="preserve"><value>„{0}“ enthält keinen lesbaren Text – offenbar ein Scan. Gescannte PDFs kann Pia noch nicht lesen.</value></data>
   <data name="Msg_File_ImageTooLarge" xml:space="preserve"><value>Bild ist nach dem Verkleinern immer noch zu groß. Bitte ein kleineres Bild wählen.</value></data>
   <data name="Msg_File_ImageProviderUnsupported" xml:space="preserve"><value>Bildanhänge sind nur mit dem PiaCloud-Anbieter verfügbar.</value></data>
   <data name="Msg_Assistant_ProviderNoVision" xml:space="preserve"><value>Der aktive KI-Anbieter unterstützt keine Bilder. Anhang entfernen oder Anbieter wechseln.</value></data>

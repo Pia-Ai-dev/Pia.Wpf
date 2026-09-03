@@ -19,7 +19,7 @@ public static class DroppedFileAttachmentImporter
     /// <summary>The kinds this staging path can read. A drop target's accepted-extension list is checked
     /// against this, so widening one without the other cannot silently discard a supported file.</summary>
     public static readonly IReadOnlySet<FileKind> ReadableKinds =
-        new HashSet<FileKind> { FileKind.Text, FileKind.Docx, FileKind.Xlsx, FileKind.Email };
+        new HashSet<FileKind> { FileKind.Text, FileKind.Docx, FileKind.Xlsx, FileKind.Pdf, FileKind.Email };
 
     public sealed record StageResult(
         IReadOnlyList<PendingFileAttachment> Staged,
@@ -86,6 +86,9 @@ public static class DroppedFileAttachmentImporter
                 case FileKind.Xlsx:
                     result = await DroppedFileReader.ReadXlsxAsync(path, ct);
                     break;
+                case FileKind.Pdf:
+                    result = await DroppedFileReader.ReadPdfAsync(path, ct);
+                    break;
                 default:
                     result = await DroppedFileReader.ReadEmailAsync(path, ct);
                     break;
@@ -95,6 +98,14 @@ public static class DroppedFileAttachmentImporter
             {
                 Caution(snackbarService, localizationService,
                     localizationService.Format("Msg_File_TooLargeAttachment", fileName, DroppedFileReader.FormatLimit(result.LimitBytes)));
+                continue;
+            }
+
+            if (result.Status == DroppedFileReader.ReadStatus.Failed
+                && result.Error == DroppedFileReader.NoTextLayer)
+            {
+                Caution(snackbarService, localizationService,
+                    localizationService.Format("Msg_File_PdfNoText", fileName));
                 continue;
             }
 
@@ -165,7 +176,7 @@ public static class DroppedFileAttachmentImporter
     private static PendingFileKind ToPendingKind(FileKind kind) => kind switch
     {
         FileKind.Email => PendingFileKind.Email,
-        FileKind.Docx or FileKind.Xlsx => PendingFileKind.Document,
+        FileKind.Docx or FileKind.Xlsx or FileKind.Pdf => PendingFileKind.Document,
         _ => PendingFileKind.Text,
     };
 

@@ -57,6 +57,7 @@
   <data name="Msg_File_Unsupported" xml:space="preserve"><value>"{0}" can't be inserted here — file type isn't supported.</value></data>
   <data name="Msg_File_TooLarge" xml:space="preserve"><value>"{0}" is too large to insert — the limit is {1}.</value></data>
   <data name="Msg_File_ReadFailed" xml:space="preserve"><value>Couldn't read "{0}": {1}</value></data>
+  <data name="Msg_File_PdfNoText" xml:space="preserve"><value>"{0}" has no text to read — it looks like a scan. Pia cannot read scanned PDFs yet.</value></data>
   <data name="Msg_File_ImageTooLarge" xml:space="preserve"><value>Image is too large to send even after resize. Pick a smaller image.</value></data>
   <data name="Msg_File_ImageProviderUnsupported" xml:space="preserve"><value>Image attachments are only available when using the PiaCloud provider.</value></data>
   <data name="Msg_Assistant_ProviderNoVision" xml:space="preserve"><value>The current AI provider does not support images. Remove the attachment or switch providers.</value></data>

@@ -159,6 +159,53 @@ public static class DroppedFileReader
         return new DocxParagraphWalk(all, lines, ordinals);
     }
 
+    public static Task<ReadResult> ReadPdfAsync(string path, CancellationToken ct)
+    {
+        // PdfPig is sync; offload to thread pool. ct checked at page boundaries.
+        return Task.Run(() =>
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (info.Length > MaxContainerBytes) return ReadResult.TooLarge(MaxContainerBytes);
+
+                using var document = UglyToad.PdfPig.PdfDocument.Open(path);
+
+                var sb = new StringBuilder();
+                foreach (var page in document.GetPages())
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    var text = UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor.ContentOrderTextExtractor
+                        .GetText(page);
+                    if (text.Length == 0) continue;
+
+                    if (sb.Length > 0) sb.AppendLine();
+                    sb.AppendLine(text.TrimEnd());
+
+                    if (sb.Length > MaxTextBytes) return ReadResult.TooLarge(MaxTextBytes);
+                }
+
+                // A PDF whose pages are scans carries no text layer at all — say so rather than
+                // handing the model an empty attachment.
+                if (sb.Length == 0) return ReadResult.Fail(NoTextLayer);
+
+                return ReadResult.Success(sb.ToString().TrimEnd());
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return ReadResult.Fail(ex.Message);
+            }
+        }, ct);
+    }
+
+    /// <summary>Marks the one PDF failure the UI has its own sentence for.</summary>
+    public const string NoTextLayer = "pdf_no_text_layer";
+
     public static Task<ReadResult> ReadXlsxAsync(string path, CancellationToken ct)
     {
         // OpenXml SDK is sync; offload to thread pool. ct checked at row boundaries.

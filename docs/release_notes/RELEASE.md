@@ -31,6 +31,9 @@
 
 ## Files
 
+- PDFs can be dropped on the Assistant and on Optimize. Their text is read the
+  way a Word or Excel file's already is; a scanned PDF says it holds no text
+  rather than failing silently.
 - A file Pia turns down for its size now says what the limit is, instead of
   only that the file was too large.
 

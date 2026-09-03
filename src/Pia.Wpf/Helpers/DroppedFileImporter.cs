@@ -42,13 +42,15 @@ public static class DroppedFileImporter
                 case FileKind.Xlsx:
                     result = await DroppedFileReader.ReadXlsxAsync(path, ct);
                     break;
+                case FileKind.Pdf:
+                    result = await DroppedFileReader.ReadPdfAsync(path, ct);
+                    break;
                 case FileKind.Email:
                     result = await DroppedFileReader.ReadEmailAsync(path, ct);
                     break;
                 default:
-                    // Image / Pdf / Audio / Unsupported — Stage 2 will replace Image and Pdf
-                    // with vision attachments. Stage 1: surface a snackbar so the user gets
-                    // immediate feedback that nothing was inserted.
+                    // Image / Audio / Unsupported. Images become vision attachments on the
+                    // assistant path only; here nothing is inserted, so say so.
                     logger.LogInformation("File drop rejected for kind {Kind}", kind);
                     snackbarService.Show(
                         localizationService["Msg_Warning"],
@@ -68,6 +70,12 @@ public static class DroppedFileImporter
                     snackbarService.Show(
                         localizationService["Msg_Warning"],
                         localizationService.Format("Msg_File_TooLarge", fileName, DroppedFileReader.FormatLimit(result.LimitBytes)),
+                        ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                    break;
+                case DroppedFileReader.ReadStatus.Failed when result.Error == DroppedFileReader.NoTextLayer:
+                    snackbarService.Show(
+                        localizationService["Msg_Warning"],
+                        localizationService.Format("Msg_File_PdfNoText", fileName),
                         ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                     break;
                 case DroppedFileReader.ReadStatus.Failed:

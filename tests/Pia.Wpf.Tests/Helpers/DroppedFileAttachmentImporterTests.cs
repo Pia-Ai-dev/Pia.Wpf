@@ -163,13 +163,30 @@ public sealed class DroppedFileAttachmentImporterTests : IDisposable
     [Fact]
     public async Task TryStageAsync_SkipsAnUnsupportedFileButKeepsTheRest()
     {
-        var pdf = Write("paper.pdf", "%PDF-1.4");
+        var archive = Write("bundle.zip", "PK");
         var text = Write("notes.txt", "hello");
 
-        var result = await StageAsync([pdf, text]);
+        var result = await StageAsync([archive, text]);
 
         Assert.Equal("notes.txt", Assert.Single(result.Staged).FileName);
         AssertShown("Msg_File_UnsupportedAttachment");
+    }
+
+    [Fact]
+    public async Task TryStageAsync_StagesAPdfAsADocument()
+    {
+        var builder = new UglyToad.PdfPig.Writer.PdfDocumentBuilder();
+        var font = builder.AddStandard14Font(UglyToad.PdfPig.Fonts.Standard14Fonts.Standard14Font.Helvetica);
+        builder.AddPage(595, 842).AddText("the quarterly numbers", 12, new UglyToad.PdfPig.Core.PdfPoint(50, 780), font);
+        var path = Path.Combine(_dir, "report.pdf");
+        File.WriteAllBytes(path, builder.Build());
+
+        var result = await StageAsync([path]);
+
+        var staged = Assert.Single(result.Staged);
+        Assert.Equal("report.pdf", staged.FileName);
+        Assert.Equal(PendingFileKind.Document, staged.Kind);
+        Assert.Contains("quarterly numbers", staged.Text);
     }
 
     [Fact]

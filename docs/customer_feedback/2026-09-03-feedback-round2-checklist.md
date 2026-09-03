@@ -1,6 +1,6 @@
 # Customer feedback round 2 — checklist
 
-**Status:** In progress — A1, A2, B2, C1, E1, E2, G2a, H2 landed; F1 half-done
+**Status:** In progress — A1, A2, B2, C1, E1, E2, G2a, H1, H2 landed; F1 half-done
 **Owner:** Marco Altmann
 **Written:** 2026-09-03
 **Origin:** [2026-09-03-feedback-round2-plan.md](2026-09-03-feedback-round2-plan.md)
@@ -67,7 +67,7 @@ Do not tick a step below an open gate without revisiting it.
       then decide between leaving minimize as a real minimize and smoothing the
       hide-and-restore sequence.
       *Deps:* G4 · *Effort:* S · *Value:* Med
-- [ ] **H1 — PDF drop.** Whatever G5 picks, behind the existing `ReadResult` contract so the
+- [x] **H1 — PDF drop.** Whatever G5 picks, behind the existing `ReadResult` contract so the
       chip, the wrapper and the caps are untouched.
       *Deps:* G5 · *Effort:* S · *Value:* High
 - [ ] **C2 — Optimize templates as master–detail.** Rebuild the templates section in the
