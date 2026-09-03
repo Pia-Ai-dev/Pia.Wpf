@@ -43,7 +43,7 @@ Dropping an image behaves the way we want: `PrepareImageAttachmentAsync` (`:1727
 | D8 | Do **not** route text/mail through `PrepareImageAttachmentAsync` — it hard-gates on `ProviderType == PiaCloud`, correct for vision, wrong for text. A BYOK user must be able to drop a `.txt`. |
 | D9 | Do **not** change `DroppedFileImporter.TryImportAsync`'s contract — `OptimizeViewModel.cs:690` shares it and Optimize is out of scope. Add a sibling API. |
 | D10 | Mixed drops work: image → `PendingAttachment`, text/mail → `PendingFiles`, in one drop. |
-| D11 | Mail parsing is hand-rolled. No new NuGet package. |
+| D11 | Mail parsing is hand-rolled. No new NuGet package. **Amended 2026-09-03:** still true of mail. PDF text extraction is not hand-rollable at this size (font encodings, CMaps), and a customer asked for it, so `PdfPig` 0.1.16 (Apache-2.0, pure managed) was added — see [../customer_feedback/2026-09-03-feedback-round2-plan.md](../customer_feedback/2026-09-03-feedback-round2-plan.md) §H-a. |
 | D12 | A DEBUG-only bypass (env var) lets a WinWright script feed a path list straight into the drop handler — UIA cannot synthesize a shell OLE drag-drop into a WPF window. |
 | D13 | Icons must be `SymbolRegular` members inside the BMP (≤ U+FFFF). Verified safe: `Mail24` (U+F507), `DocumentText24` (U+E558), `Document24` (U+F379), `Attach24` (U+F1AA), `Dismiss16`. |
 

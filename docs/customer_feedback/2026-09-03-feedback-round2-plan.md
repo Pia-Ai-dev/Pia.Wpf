@@ -1,6 +1,8 @@
 # Customer feedback, round 2 — twelve reports across six surfaces
 
-**Status:** In progress — A1, C1, E1, E2 and H2 landed in de729b7a
+**Status:** In progress — 11 of 15 steps landed (de729b7a, f52dc026, ce3fee9d, bed9e8b7,
+97e25f38). Left: B1 (needs the server half), F1 and G1a (need a live run), C2 and C3 (the
+redesign).
 **Owner:** Marco Altmann
 **Written:** 2026-09-03
 **Origin:** A customer's written feedback list handed over on 2026-09-03, with the owner's
