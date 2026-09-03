@@ -11,6 +11,12 @@
   failure card and an interactive chat alike, so a timeout or an upstream
   error reads as what it was.
 
+## Transcription
+
+- Stopping a live or meeting transcription keeps what you just said. Audio the
+  microphone had already handed over could be dropped while the recogniser shut
+  down, cutting the last words off the transcript.
+
 ## Performance
 
 - Leaving a screen and coming back no longer leaves the old copy behind in

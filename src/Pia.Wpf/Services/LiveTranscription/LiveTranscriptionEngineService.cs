@@ -103,6 +103,12 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         }
         finally
         {
+            // Cancellation is observed by WaitToReadAsync, so a stop that lands before the loop's first
+            // read leaves everything the source already produced unread — the speaker's last words. Only
+            // what is buffered is taken, so this cannot wait on a source that never completes.
+            while (_source.Reader.TryRead(out var pending))
+                _vad.Process(pending);
+
             _vad.Drain();
             _segmentQueue.Writer.TryComplete();
         }
