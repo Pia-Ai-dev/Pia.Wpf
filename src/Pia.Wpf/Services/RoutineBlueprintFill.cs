@@ -9,9 +9,13 @@ public static class RoutineBlueprintFill
 {
     private static readonly Regex Placeholder = new(@"\{([^{}]*)\}", RegexOptions.Compiled);
 
+    /// <param name="text">The blueprint's template and defaults in the locale the job is being created in.</param>
     /// <param name="values">Slot name to value. A blank value counts as unsupplied, so an empty string cannot
     /// blank a slot that has a default.</param>
-    public static RoutineFillResult ToCreateArgs(RoutineBlueprint blueprint, IReadOnlyDictionary<string, string>? values = null)
+    public static RoutineFillResult ToCreateArgs(
+        RoutineBlueprint blueprint,
+        RoutineBlueprintText text,
+        IReadOnlyDictionary<string, string>? values = null)
     {
         var slots = blueprint.Slots.ToDictionary(s => s.Name, StringComparer.Ordinal);
 
@@ -23,10 +27,10 @@ public static class RoutineBlueprintFill
         }
 
         RoutineFillError? error = null;
-        var rendered = Placeholder.Replace(blueprint.QueryTemplate, match =>
+        var rendered = Placeholder.Replace(text.Template, match =>
         {
             var name = match.Groups[1].Value;
-            if (!slots.TryGetValue(name, out var slot))
+            if (!slots.ContainsKey(name))
             {
                 error ??= new RoutineFillError(RoutineFillErrorKind.UnknownPlaceholder, name);
                 return match.Value;
@@ -35,8 +39,8 @@ public static class RoutineBlueprintFill
             if (values is not null && values.TryGetValue(name, out var supplied) && !string.IsNullOrWhiteSpace(supplied))
                 return supplied.Trim();
 
-            if (slot.Default is not null)
-                return slot.Default;
+            if (text.SlotDefaults.TryGetValue(name, out var fallback) && fallback is not null)
+                return fallback;
 
             error ??= new RoutineFillError(RoutineFillErrorKind.MissingRequiredSlot, name);
             return match.Value;

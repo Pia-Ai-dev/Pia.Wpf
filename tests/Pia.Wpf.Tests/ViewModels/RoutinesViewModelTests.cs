@@ -23,11 +23,32 @@ public class RoutinesViewModelTests
         // Echoes the key back, and formats by appending the argument — enough to assert WHICH message was
         // chosen without pinning any English text, which LocalizationTests owns.
         var loc = Substitute.For<ILocalizationService>();
-        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        loc[Arg.Any<string>()].Returns(ci =>
+        {
+            var key = (string)ci[0];
+            return IsBlueprintText(key) ? BlueprintLookup(key) : key;
+        });
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
             .Returns(ci => $"{(string)ci[0]}:{string.Join(",", (object[])ci[1])}");
         return loc;
     }
+
+    /// <summary>A blueprint's template, slot defaults and guard are resx values, so echoing their keys would
+    /// leave the goal box with no {slot} to render and the slot facts below untestable. Every other key still
+    /// echoes, which is what keeps the message assertions free of English.</summary>
+    private static bool IsBlueprintText(string key) =>
+        key.EndsWith("_Query", StringComparison.Ordinal)
+        || (key.Contains("_Slot_", StringComparison.Ordinal) && key.EndsWith("_Default", StringComparison.Ordinal))
+        || (key.StartsWith("Routines_Catalog_", StringComparison.Ordinal) && key.EndsWith("Guard", StringComparison.Ordinal));
+
+    private static string BlueprintLookup(string key) =>
+        ViewStrings.ResourceManager.GetString(key, CultureInfo.InvariantCulture) ?? key;
+
+    private static RoutineBlueprintText TextOf(RoutineBlueprint blueprint) =>
+        RoutineBlueprintText.Resolve(blueprint, BlueprintLookup);
+
+    private static string SlotDefault(RoutineBlueprint blueprint, int index) =>
+        TextOf(blueprint).SlotDefaults[blueprint.Slots[index].Name]!;
 
     private static readonly Guid FilesPlugin = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid TodoPlugin = Guid.Parse("22222222-2222-2222-2222-222222222222");
@@ -52,7 +73,8 @@ public class RoutinesViewModelTests
         IAgentRunService Runs,
         IDialogService Dialogs,
         IWindowManagerService Windows,
-        IPluginService Plugins);
+        IPluginService Plugins,
+        ITextOptimizationService Drafting);
 
     private static Sut CreateSut(params ScheduledJob[] jobs) => CreateSut(runs: null, jobs);
 
@@ -90,10 +112,465 @@ public class RoutinesViewModelTests
         var plugins = Substitute.For<IPluginService>();
         plugins.GetToolCatalog().Returns(ToolCatalog());
 
-        var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
-            plugins, Substitute.For<IBrowserProvisioner>(), NullLogger<RoutinesViewModel>.Instance);
+        var drafting = Substitute.For<ITextOptimizationService>();
 
-        return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins);
+        var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
+            plugins, Substitute.For<IBrowserProvisioner>(), NullLogger<RoutinesViewModel>.Instance, drafting);
+
+        return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins, drafting);
+    }
+
+    private static RoutineDraft Draft(
+        string? name = "Drafted",
+        string? goal = "Do the thing.",
+        RecurrenceType? recurrence = RecurrenceType.Weekly,
+        DayOfWeek? dayOfWeek = DayOfWeek.Thursday,
+        string? timeOfDay = "06:45",
+        ReasoningEffort? effort = ReasoningEffort.High,
+        bool needsWebSearch = false,
+        IReadOnlyList<string>? tools = null) =>
+        new(name, goal, recurrence, dayOfWeek,
+            timeOfDay is null ? null : TimeOnly.ParseExact(timeOfDay, "HH\\:mm"), effort, needsWebSearch,
+            tools);
+
+    // ---- required fields ------------------------------------------------------------------------
+
+    /// <summary>The set SaveAsync refuses on, surfaced before the click so the editor can grey out Save.</summary>
+    [Fact]
+    public void ABlankNameOrGoal_CannotSave()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.False(sut.Vm.CanSave);
+
+        sut.Vm.EditName = "Nightly";
+        Assert.False(sut.Vm.CanSave);
+
+        sut.Vm.EditQuery = "Report what changed.";
+        Assert.True(sut.Vm.CanSave);
+
+        sut.Vm.EditTimeOfDay = "   ";
+        Assert.False(sut.Vm.CanSave);
+    }
+
+    /// <summary>A meeting has no goal — the link is the instruction — so the two meeting fields take its place.</summary>
+    [Fact]
+    public void AMeetingNeedsItsLinkAndItsConsentInsteadOfAGoal()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Standup";
+        sut.Vm.EditKind = ScheduledJobKind.MeetingAttendance;
+
+        Assert.False(sut.Vm.CanSave);
+
+        sut.Vm.EditMeetingUrl = "https://teams.microsoft.com/l/meetup-join/x";
+        Assert.False(sut.Vm.CanSave);
+
+        sut.Vm.EditMeetingConsent = true;
+        Assert.True(sut.Vm.CanSave);
+    }
+
+    /// <summary>CanSave is a required-field marker, so the FORMAT check has to stay on the save path — the
+    /// alternative is a greyed-out button with nothing saying the time is malformed.</summary>
+    [Fact]
+    public async Task AMalformedTime_StillPassesCanSaveAndIsRefusedOnSave()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Nightly";
+        sut.Vm.EditQuery = "Report what changed.";
+        sut.Vm.EditTimeOfDay = "25:99";
+
+        Assert.True(sut.Vm.CanSave);
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal("Settings_ScheduledJobs_Validation_Time", sut.Vm.StatusMessage);
+    }
+
+    // ---- drafting -------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ADraft_FillsTheNameGoalAndSchedule()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>()).Returns(Draft());
+        sut.Vm.EditDescription = "remind me what shipped every Thursday morning";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("Drafted", sut.Vm.EditName);
+        Assert.Equal("Do the thing.", sut.Vm.EditQuery);
+        // Not AgentTask, which a blank start opens on: an AgentTask with no grants is remapped by the launcher
+        // to write_file, so a drafted read-only routine would run able to write files.
+        Assert.Equal(ScheduledJobKind.Research, sut.Vm.EditKind);
+        Assert.Equal(RecurrenceType.Weekly, sut.Vm.EditRecurrence);
+        Assert.Equal(DayOfWeek.Thursday, sut.Vm.EditDayOfWeek);
+        Assert.Equal("06:45", sut.Vm.EditTimeOfDay);
+        Assert.Equal(ReasoningEffort.High, sut.Vm.EditEffort!.Value);
+        Assert.False(sut.Vm.IsDrafting);
+    }
+
+    /// <summary>Prefill, not overwrite: a draft after some typing must leave the typing alone.</summary>
+    [Fact]
+    public async Task ADraft_LeavesWhatTheUserAlreadyTypedAlone()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>()).Returns(Draft());
+        sut.Vm.EditName = "my own name";
+        sut.Vm.EditQuery = "my own wording";
+        sut.Vm.EditTimeOfDay = "23:15";
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("my own name", sut.Vm.EditName);
+        Assert.Equal("my own wording", sut.Vm.EditQuery);
+        // A typed field has no blank state, so the latch is what protects a schedule the user has chosen.
+        Assert.Equal("23:15", sut.Vm.EditTimeOfDay);
+        Assert.Equal(RecurrenceType.Daily, sut.Vm.EditRecurrence);
+    }
+
+    /// <summary>A kind the user actually picked is a choice, so the draft leaves it alone — a routine set up
+    /// to sit in a meeting must not come back as a research job. The editor's own AgentTask default is NOT
+    /// protected, deliberately: it is a default nobody chose, and an AgentTask with no grants is the case the
+    /// launcher remaps to write_file.</summary>
+    [Fact]
+    public async Task ADraft_LeavesAHandPickedKindAlone()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>()).Returns(Draft());
+        sut.Vm.EditKind = ScheduledJobKind.MeetingAttendance;
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(ScheduledJobKind.MeetingAttendance, sut.Vm.EditKind);
+    }
+
+    /// <summary>A card carries its own kind, and the shortened templates are all Research, so the draft has
+    /// nothing to correct there.</summary>
+    [Fact]
+    public async Task ADraftOnTopOfACard_LeavesTheCardsKind()
+    {
+        var sut = CreateSut();
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>()).Returns(Draft());
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.MeetingFollowup);
+        var kind = sut.Vm.EditKind;
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(kind, sut.Vm.EditKind);
+    }
+
+    /// <summary>A card already chose a schedule, so a draft on top of one must not move it.</summary>
+    [Fact]
+    public async Task ADraftOnTopOfACard_LeavesTheCardsSchedule()
+    {
+        var sut = CreateSut();
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>()).Returns(Draft());
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("09:00", sut.Vm.EditTimeOfDay);
+        Assert.Equal(RecurrenceType.Daily, sut.Vm.EditRecurrence);
+    }
+
+    /// <summary>A drafted goal carries no guard, so a provider that cannot search would answer from memory.</summary>
+    [Fact]
+    public async Task ADraftThatNeedsTheWeb_CarriesTheWebSearchGuard()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(Draft(goal: "Report the news.", needsWebSearch: true));
+        sut.Vm.EditDescription = "the news every morning";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.StartsWith("Report the news. ", sut.Vm.EditQuery);
+        Assert.EndsWith(BlueprintLookup(RoutineBlueprintCatalog.WebSearchGuardKey), sut.Vm.EditQuery);
+    }
+
+    [Fact]
+    public async Task ADraftThatDoesNotNeedTheWeb_CarriesNoGuard()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(Draft(goal: "Report the news.", needsWebSearch: false));
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("Report the news.", sut.Vm.EditQuery);
+    }
+
+    [Fact]
+    public async Task ABlankDescription_DraftsNothing()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditDescription = "   ";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        await sut.Drafting.DidNotReceive().GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>());
+    }
+
+    /// <summary>The gap the persona assist has: a provider failure escapes its command with nothing shown.</summary>
+    [Fact]
+    public async Task ADraftThatThrows_ReportsItAndClearsTheSpinner()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Throws(new InvalidOperationException("No AI provider configured"));
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("Routines_Draft_Failed", sut.Vm.StatusMessage);
+        Assert.False(sut.Vm.IsDrafting);
+        Assert.Empty(sut.Vm.EditName);
+    }
+
+    // ---- drafted tool grants --------------------------------------------------------------------
+
+    [Fact]
+    public async Task ADraft_TicksTheToolsItAsksFor()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(Draft(tools: ["create_todo"]));
+        sut.Vm.EditDescription = "turn my meeting notes into todos every evening";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(["create_todo"], TickedTools(sut.Vm));
+    }
+
+    /// <summary>The model is offered the catalogue so it need not guess, and what it picks is checked against
+    /// it anyway — an invented name would otherwise reach a stored grant and sync to every other device.</summary>
+    [Fact]
+    public async Task ADraft_DropsAToolThisDeviceDoesNotOffer()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(Draft(tools: ["create_todo", "send_email", "post_to_slack"]));
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(["create_todo"], TickedTools(sut.Vm));
+    }
+
+    /// <summary>The same create-time rule the model already faces on the tool path: a destructive name we do
+    /// not ship is never offered, so it can never be picked.</summary>
+    [Fact]
+    public async Task ADraft_IsNeverOfferedAPresumedExternalDeleteTool()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        IReadOnlyList<RoutineDraftTool>? offered = null;
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(ci => { offered = (IReadOnlyList<RoutineDraftTool>)ci[1]!; return Draft(tools: ["purge_records"]); });
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.NotNull(offered);
+        Assert.DoesNotContain("purge_records", offered!.Select(t => t.Name));
+        // delete_file is one of ours, so the picker still offers it — the filter is about names we do not ship.
+        Assert.Contains("delete_file", offered!.Select(t => t.Name));
+        Assert.Empty(TickedTools(sut.Vm));
+    }
+
+    /// <summary>A grant has a blank state, so nothing ticked is the only case the draft may fill — a tick the
+    /// user made, or a card that deliberately grants nothing, both stand.</summary>
+    [Fact]
+    public async Task ADraft_LeavesAToolTheUserAlreadyTickedAlone()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(Draft(tools: ["create_todo"]));
+        var row = sut.Vm.EditToolGroups.SelectMany(g => g.Tools).First(t => t.ToolName == "write_file");
+        row.IsSelected = true;
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(["write_file"], TickedTools(sut.Vm));
+    }
+
+    [Fact]
+    public async Task ADraftThatNeedsNoTools_TicksNothing()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(Draft(tools: []));
+        sut.Vm.EditDescription = "the news every morning";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Empty(TickedTools(sut.Vm));
+    }
+
+    // ---- the slot value inside the goal ---------------------------------------------------------
+
+    /// <summary>The span the editor tints, which is the only thing connecting the slot field to the prose.</summary>
+    [Fact]
+    public void ACardWithSlots_MarksWhereItsValueLandedInTheGoal()
+    {
+        var sut = CreateSut();
+        var blueprint = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!;
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        var value = SlotDefault(blueprint, 0);
+        Assert.Equal(value.Length, sut.Vm.GoalHighlightLength);
+        Assert.Equal(value, sut.Vm.EditQuery.Substring(sut.Vm.GoalHighlightStart, sut.Vm.GoalHighlightLength));
+    }
+
+    [Fact]
+    public void TypingASlotValue_MovesTheMarkToTheNewValue()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        sut.Vm.EditSlots[0].Value = "quantum computing";
+
+        Assert.Equal("quantum computing",
+            sut.Vm.EditQuery.Substring(sut.Vm.GoalHighlightStart, sut.Vm.GoalHighlightLength));
+    }
+
+    /// <summary>Once the prose is the user's own, the span no longer describes it.</summary>
+    [Fact]
+    public void AHandEditedGoal_DropsTheMark()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        Assert.True(sut.Vm.GoalHighlightLength > 0);
+
+        sut.Vm.EditQuery = "my own wording";
+
+        Assert.Equal(0, sut.Vm.GoalHighlightLength);
+    }
+
+    [Fact]
+    public void ACardWithoutSlots_MarksNothing()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.MorningBrief);
+
+        Assert.Equal(0, sut.Vm.GoalHighlightLength);
+    }
+
+    [Fact]
+    public void ABlankStart_MarksNothing()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.Equal(0, sut.Vm.GoalHighlightLength);
+    }
+
+    /// <summary>The three Runs the preview binds have to reassemble into exactly the stored goal, or the user
+    /// is reading something other than what will run.</summary>
+    [Fact]
+    public void TheGoalPreview_SplitsTheGoalWithoutChangingIt()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        Assert.True(sut.Vm.ShowsGoalPreview);
+        Assert.Equal(sut.Vm.EditQuery, sut.Vm.GoalPrefix + sut.Vm.GoalHighlightText + sut.Vm.GoalSuffix);
+        Assert.Equal(SlotDefault(RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!, 0),
+            sut.Vm.GoalHighlightText);
+    }
+
+    [Fact]
+    public void EditingTheGoal_ReplacesThePreviewWithTheBoxForTheRestOfTheEdit()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        sut.Vm.EditGoalCommand.Execute(null);
+
+        Assert.False(sut.Vm.ShowsGoalPreview);
+        // The goal itself is untouched by the hand-over — only who renders it changes.
+        Assert.Contains(SlotDefault(RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!, 0),
+            sut.Vm.EditQuery);
+
+        // A slot keystroke after the hand-over must not drag the preview back over the box.
+        sut.Vm.EditSlots[0].Value = "quantum computing";
+        Assert.False(sut.Vm.ShowsGoalPreview);
+    }
+
+    [Fact]
+    public void ACardWithoutSlots_ShowsTheGoalBoxRatherThanAPreview()
+    {
+        var sut = CreateSut();
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.MorningBrief);
+
+        Assert.False(sut.Vm.ShowsGoalPreview);
+    }
+
+    /// <summary>A meeting routine has no goal at all, so the preview must not claim the row.</summary>
+    [Fact]
+    public void AMeetingRoutine_ShowsNoGoalPreview()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        Assert.True(sut.Vm.ShowsGoalPreview);
+
+        sut.Vm.EditKind = ScheduledJobKind.MeetingAttendance;
+
+        Assert.False(sut.Vm.ShowsGoalPreview);
+    }
+
+    /// <summary>Reopening the editor on another card has to put the preview back, or the second card opens on
+    /// a plain box and the tint is a one-shot.</summary>
+    [Fact]
+    public void OpeningAnotherCard_RestoresThePreview()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+        sut.Vm.EditGoalCommand.Execute(null);
+        Assert.False(sut.Vm.ShowsGoalPreview);
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.NewsBriefing);
+
+        Assert.True(sut.Vm.ShowsGoalPreview);
+    }
+
+    /// <summary>A description left behind would follow the user onto the next routine they open.</summary>
+    [Fact]
+    public void OpeningTheEditorAgain_ClearsTheDescription()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditDescription = "left behind";
+
+        sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
+
+        Assert.Empty(sut.Vm.EditDescription);
     }
 
     /// <summary>Distinct because one tool name can appear under two plugins, and that is a single grant.</summary>
@@ -686,7 +1163,7 @@ public class RoutinesViewModelTests
         Assert.Null(sut.Vm.EditingJobId);
         Assert.Equal(blueprint.TitleKey, sut.Vm.EditName);
         // Rendered, not the template: the goal box is in front of the user, so a literal {topic} is a defect.
-        Assert.Equal(RoutineBlueprintFill.ToCreateArgs(blueprint).Query, sut.Vm.EditQuery);
+        Assert.Equal(RoutineBlueprintFill.ToCreateArgs(blueprint, TextOf(blueprint)).Query, sut.Vm.EditQuery);
         Assert.DoesNotContain("{", sut.Vm.EditQuery);
         Assert.Equal(blueprint.Kind, sut.Vm.EditKind);
         Assert.Equal(blueprint.Recurrence, sut.Vm.EditRecurrence);
@@ -734,7 +1211,7 @@ public class RoutinesViewModelTests
 
         Assert.Null(sut.Vm.StatusMessage);
         await sut.Jobs.Received(1).CreateAsync(blueprint.TitleKey,
-            RoutineBlueprintFill.ToCreateArgs(blueprint).Query!,
+            RoutineBlueprintFill.ToCreateArgs(blueprint, TextOf(blueprint)).Query!,
             blueprint.Recurrence, new TimeOnly(9, 0), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
             Arg.Is<IReadOnlyCollection<string>>(g => g.Count == 0), blueprint.Kind, false,
@@ -1395,8 +1872,8 @@ public class RoutinesViewModelTests
         Assert.True(sut.Vm.HasEditSlots);
         var row = Assert.Single(sut.Vm.EditSlots);
         Assert.Equal("topic", row.Name);
-        Assert.Equal(blueprint.Slots[0].Default, row.Value);
-        Assert.Contains(blueprint.Slots[0].Default!, sut.Vm.EditQuery);
+        Assert.Equal(SlotDefault(blueprint, 0), row.Value);
+        Assert.Contains(SlotDefault(blueprint, 0), sut.Vm.EditQuery);
     }
 
     [Fact]
@@ -1455,7 +1932,7 @@ public class RoutinesViewModelTests
     public void ClearingASlotField_FallsBackToThatSlotsDefault()
     {
         var sut = CreateSut();
-        var fallback = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!.Slots[0].Default!;
+        var fallback = SlotDefault(RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.TopicDigest)!, 0);
         sut.Vm.StartFromBlueprintCommand.Execute(RoutineBlueprintCatalog.TopicDigest);
         sut.Vm.EditSlots[0].Value = "quantum computing";
 

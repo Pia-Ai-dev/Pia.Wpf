@@ -40,6 +40,20 @@ public class RoutineBlueprintCatalogTests
         "weekly-review",
     ];
 
+    /// <summary>Templates and slot defaults are resx values now, so every rule about them has to hold in
+    /// each locale — a de translation that drops a {slot} would otherwise ship a literal brace to the model.</summary>
+    private static readonly CultureInfo[] Locales =
+        [CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr")];
+
+    private static RoutineBlueprintText TextFor(RoutineBlueprint blueprint, CultureInfo culture) =>
+        RoutineBlueprintText.Resolve(blueprint, key => ViewStrings.ResourceManager.GetString(key, culture)
+            ?? throw new InvalidOperationException($"{culture.Name}: '{key}' resolves to nothing"));
+
+    /// <summary>The body alone — the guard suffix is shared, so counting it would punish the fourteen cards
+    /// that carry one.</summary>
+    private static string BodyFor(RoutineBlueprint blueprint, CultureInfo culture) =>
+        ViewStrings.ResourceManager.GetString(blueprint.QueryKey, culture)!;
+
     [Fact]
     public void EveryShippedKeyIsPinnedAndFindable()
     {
@@ -105,10 +119,11 @@ public class RoutineBlueprintCatalogTests
             Assert.False(string.IsNullOrWhiteSpace(bp.TitleKey));
             Assert.False(string.IsNullOrWhiteSpace(bp.DescriptionKey));
             Assert.False(string.IsNullOrWhiteSpace(bp.Category));
-            Assert.False(string.IsNullOrWhiteSpace(bp.QueryTemplate));
+            Assert.False(string.IsNullOrWhiteSpace(bp.QueryKey));
             // A key, not a sentence — literal prose renders as "[Some literal prose]".
             Assert.DoesNotContain(" ", bp.TitleKey);
             Assert.DoesNotContain(" ", bp.DescriptionKey);
+            Assert.DoesNotContain(" ", bp.QueryKey);
         }
     }
 
@@ -125,35 +140,77 @@ public class RoutineBlueprintCatalogTests
     public void TheWebSearchFlagAndTheGuardClauseAgree()
     {
         foreach (var bp in RoutineBlueprintCatalog.All)
-            Assert.Equal(
-                bp.RequiresWebSearch,
-                bp.QueryTemplate.Contains(RoutineBlueprintCatalog.WebSearchGuard, StringComparison.Ordinal));
+        {
+            Assert.Equal(bp.RequiresWebSearch, bp.GuardKey == RoutineBlueprintCatalog.WebSearchGuardKey);
+
+            if (bp.GuardKey is null) continue;
+
+            // Appended, never inlined: a body that also spells the guard out ships it twice and drifts from
+            // the shared one the next time either is edited.
+            foreach (var culture in Locales)
+            {
+                var guard = ViewStrings.ResourceManager.GetString(bp.GuardKey, culture)!;
+                Assert.DoesNotContain(guard, BodyFor(bp, culture), StringComparison.Ordinal);
+                Assert.EndsWith(guard, TextFor(bp, culture).Template, StringComparison.Ordinal);
+            }
+        }
     }
 
-    /// <summary>A template that restates its own slot default keeps two copies of it, and only one of them
-    /// moves when the default is edited.</summary>
+    /// <summary>Parity tests only prove the key exists in all three files. A body pasted over untranslated is
+    /// exactly what "make the prefill read natively" rules out, and it looks identical to a real translation
+    /// from the key list alone.</summary>
     [Fact]
-    public void ATemplateThatQuotesItsOwnDefault_QuotesItVerbatim()
+    public void EveryTemplateBodyAndSlotDefaultIsActuallyTranslated()
     {
+        var untranslated = new List<string>();
+
         foreach (var bp in RoutineBlueprintCatalog.All)
         {
-            if (!bp.QueryTemplate.Contains("still names", StringComparison.Ordinal)) continue;
-
-            Assert.True(
-                bp.Slots.Any(s => s.Default is { } d && bp.QueryTemplate.Contains(d, StringComparison.Ordinal)),
-                $"{bp.Key} branches on its list still naming the shipped example, so its template has to quote "
-                + "that default verbatim — otherwise editing the default leaves the sentence naming the old "
-                + "one and the placeholder warning never fires again");
+            var keys = new[] { bp.QueryKey }.Concat(bp.Slots.Select(sl => sl.DefaultKey!));
+            foreach (var key in keys)
+            {
+                var en = ViewStrings.ResourceManager.GetString(key, CultureInfo.InvariantCulture)!;
+                foreach (var culture in Locales.Where(c => c != CultureInfo.InvariantCulture))
+                    if (ViewStrings.ResourceManager.GetString(key, culture) == en)
+                        untranslated.Add($"{key} [{culture.Name}]");
+            }
         }
+
+        // The tool-name lists inside a template are identical across locales, so this compares the WHOLE value
+        // rather than looking for English words in it.
+        Assert.True(untranslated.Count == 0,
+            $"these values are still the English text: {string.Join(", ", untranslated)}");
+    }
+
+    /// <summary>The bar test users asked for: a body long enough to be a wall of text is the thing they could
+    /// not edit. The guard is excluded — it is shared, so it reads as boilerplate rather than as instruction.</summary>
+    [Fact]
+    public void NoTemplateBodyOutgrowsTheLengthBar()
+    {
+        const int bar = 320;
+        var over = new List<string>();
+
+        foreach (var bp in RoutineBlueprintCatalog.All)
+            foreach (var culture in Locales)
+            {
+                var body = BodyFor(bp, culture);
+                if (body.Length > bar) over.Add($"{bp.Key} [{culture.Name}] {body.Length}");
+            }
+
+        Assert.True(over.Count == 0,
+            $"every template body must stay within {bar} characters, but these do not: {string.Join(", ", over)}");
     }
 
     /// <summary>The pair above only proves flag and text agree; this is the direction the bug travels.</summary>
     [Fact]
     public void ATemplateThatSearchesTheWeb_AdvertisesThatItNeedsWebSearch()
     {
+        // English only: the phrase is the needle, and the flag is per blueprint rather than per locale, so one
+        // locale proves it for all three.
         foreach (var bp in RoutineBlueprintCatalog.All)
         {
-            if (!bp.QueryTemplate.Contains("search the web", StringComparison.OrdinalIgnoreCase)) continue;
+            var body = BodyFor(bp, CultureInfo.InvariantCulture);
+            if (!body.Contains("search the web", StringComparison.OrdinalIgnoreCase)) continue;
 
             Assert.True(bp.RequiresWebSearch,
                 $"{bp.Key} tells the model to search the web but sets RequiresWebSearch false, so its card "
@@ -173,12 +230,14 @@ public class RoutineBlueprintCatalogTests
 
             Assert.Equal($"Routines_Blueprint_{stem}_Title", bp.TitleKey);
             Assert.Equal($"Routines_Blueprint_{stem}_Description", bp.DescriptionKey);
+            Assert.Equal($"Routines_Blueprint_{stem}_Query", bp.QueryKey);
 
             foreach (var slot in bp.Slots)
             {
                 var slotStem = char.ToUpperInvariant(slot.Name[0]) + slot.Name[1..];
                 Assert.Equal($"Routines_Blueprint_{stem}_Slot_{slotStem}_Label", slot.LabelKey);
                 Assert.Equal($"Routines_Blueprint_{stem}_Slot_{slotStem}_Help", slot.HelpKey);
+                Assert.Equal($"Routines_Blueprint_{stem}_Slot_{slotStem}_Default", slot.DefaultKey);
             }
         }
     }
@@ -187,14 +246,18 @@ public class RoutineBlueprintCatalogTests
     public void EveryBraceInATemplateNamesADeclaredSlotOfThatBlueprint()
     {
         foreach (var bp in RoutineBlueprintCatalog.All)
-        {
-            Assert.True(RoutineBlueprintFill.BracesAreAllPlaceholders(bp.QueryTemplate),
-                $"{bp.Key} has a brace that is not part of a {{slot}} placeholder, so it would reach the model verbatim");
+            foreach (var culture in Locales)
+            {
+                var template = TextFor(bp, culture).Template;
 
-            foreach (var name in Placeholders(bp.QueryTemplate))
-                Assert.True(bp.Slots.Any(s => s.Name == name),
-                    $"{bp.Key} references {{{name}}} but declares no such slot");
-        }
+                Assert.True(RoutineBlueprintFill.BracesAreAllPlaceholders(template),
+                    $"{bp.Key} [{culture.Name}] has a brace that is not part of a {{slot}} placeholder, so it "
+                    + "would reach the model verbatim");
+
+                foreach (var name in Placeholders(template))
+                    Assert.True(bp.Slots.Any(s => s.Name == name),
+                        $"{bp.Key} [{culture.Name}] references {{{name}}} but declares no such slot");
+            }
     }
 
     /// <summary>A slot the template never mentions can never be filled, so it would show up in the tool's slot
@@ -204,9 +267,12 @@ public class RoutineBlueprintCatalogTests
     {
         foreach (var bp in RoutineBlueprintCatalog.All)
         {
-            var referenced = Placeholders(bp.QueryTemplate);
-            foreach (var slot in bp.Slots)
-                Assert.Contains(slot.Name, referenced);
+            foreach (var culture in Locales)
+            {
+                var referenced = Placeholders(TextFor(bp, culture).Template);
+                foreach (var slot in bp.Slots)
+                    Assert.Contains(slot.Name, referenced);
+            }
 
             Assert.Equal(bp.Slots.Count, bp.Slots.Select(s => s.Name).Distinct(StringComparer.Ordinal).Count());
         }
@@ -218,13 +284,15 @@ public class RoutineBlueprintCatalogTests
     public void EveryBlueprintRendersCleanlyFromItsOwnDefaults()
     {
         foreach (var bp in RoutineBlueprintCatalog.All)
-        {
-            var fill = RoutineBlueprintFill.ToCreateArgs(bp);
+            foreach (var culture in Locales)
+            {
+                var fill = RoutineBlueprintFill.ToCreateArgs(bp, TextFor(bp, culture));
 
-            Assert.True(fill.IsSuccess, $"{bp.Key} did not render: {fill.Error?.Kind} on '{fill.Error?.SlotName}'");
-            Assert.DoesNotContain("{", fill.Query!);
-            Assert.DoesNotContain("}", fill.Query!);
-        }
+                Assert.True(fill.IsSuccess,
+                    $"{bp.Key} [{culture.Name}] did not render: {fill.Error?.Kind} on '{fill.Error?.SlotName}'");
+                Assert.DoesNotContain("{", fill.Query!);
+                Assert.DoesNotContain("}", fill.Query!);
+            }
     }
 
     private static List<string> Placeholders(string template) =>
@@ -315,12 +383,17 @@ public class RoutineBlueprintCatalogTests
     {
         var bp = RoutineBlueprintCatalog.Find(RoutineBlueprintCatalog.MeetingFollowup)!;
 
-        var query = bp.QueryTemplate.IndexOf("query_todos", StringComparison.Ordinal);
-        var create = bp.QueryTemplate.IndexOf("create_todo", StringComparison.Ordinal);
+        foreach (var culture in Locales)
+        {
+            var template = TextFor(bp, culture).Template;
+            var query = template.IndexOf("query_todos", StringComparison.Ordinal);
+            var create = template.IndexOf("create_todo", StringComparison.Ordinal);
 
-        Assert.True(query >= 0, "the template must read the todo list");
-        Assert.True(create > query,
-            "the template must read the todo list before it creates one, or a re-run duplicates every follow-up");
+            Assert.True(query >= 0, $"[{culture.Name}] the template must read the todo list");
+            Assert.True(create > query,
+                $"[{culture.Name}] the template must read the todo list before it creates one, or a re-run "
+                + "duplicates every follow-up");
+        }
     }
 
     [Fact]
@@ -336,16 +409,19 @@ public class RoutineBlueprintCatalogTests
     public void EveryBlueprintKeyResolvesInAllThreeLocales()
     {
         var keys = RoutineBlueprintCatalog.All
-            .SelectMany(b => new[] { b.TitleKey, b.DescriptionKey }
-                .Concat(b.Slots.SelectMany(s => new[] { s.LabelKey, s.HelpKey })))
+            .SelectMany(b => new[] { b.TitleKey, b.DescriptionKey, b.QueryKey }
+                .Concat(b.GuardKey is null ? [] : new[] { b.GuardKey })
+                .Concat(b.Slots.SelectMany(s => new[] { s.LabelKey, s.HelpKey, s.DefaultKey! })))
             .Distinct()
             .ToList();
 
-        // One title and one description per blueprint plus a label and a help per slot, so a copy-pasted key
-        // shrinks this loudly.
+        // A title, a description and a query per blueprint, a label, a help and a default per slot, plus the
+        // three shared guards — so a copy-pasted key shrinks this loudly.
         Assert.NotEmpty(keys);
-        Assert.Equal((RoutineBlueprintCatalog.All.Count * 2)
-            + (RoutineBlueprintCatalog.All.Sum(b => b.Slots.Count) * 2), keys.Count);
+        Assert.Equal((RoutineBlueprintCatalog.All.Count * 3)
+            + (RoutineBlueprintCatalog.All.Sum(b => b.Slots.Count) * 3)
+            + RoutineBlueprintCatalog.All.Select(b => b.GuardKey).Where(k => k is not null).Distinct().Count(),
+            keys.Count);
 
         var missing = new List<string>();
         foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })

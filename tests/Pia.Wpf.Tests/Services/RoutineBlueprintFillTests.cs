@@ -21,19 +21,24 @@ public class RoutineBlueprintFillTests
             Recurrence: RecurrenceType.Daily,
             DefaultTime: new TimeOnly(8, 0),
             DefaultDayOfWeek: null,
-            QueryTemplate: template,
+            QueryKey: template,
+            GuardKey: null,
             GrantedTools: [],
             Slots: slots);
 
     private static RoutineSlot Slot(string name, string? @default = null) =>
         new(name, RoutineSlotKind.Text, $"Label_{name}", $"Help_{name}", @default);
 
+    // The resx lookup is the identity here, so a "key" is its own text and the fill rules read without a
+    // resx round-trip.
+    private static RoutineBlueprintText Text(RoutineBlueprint bp) => RoutineBlueprintText.Resolve(bp, key => key);
+
     [Fact]
     public void ASuppliedValueReplacesEveryOccurrence()
     {
         var bp = Blueprint("Watch {topic}. Report only {topic}.", Slot("topic", "AI"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["topic"] = "shipping" });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["topic"] = "shipping" });
 
         Assert.True(result.IsSuccess);
         Assert.Equal("Watch shipping. Report only shipping.", result.Query);
@@ -44,7 +49,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic", "AI"));
 
-        Assert.Equal("Watch AI.", RoutineBlueprintFill.ToCreateArgs(bp).Query);
+        Assert.Equal("Watch AI.", RoutineBlueprintFill.ToCreateArgs(bp, Text(bp)).Query);
     }
 
     /// <summary>An empty string is not a topic. Treating it as one would blank a prompt the blueprint has a
@@ -56,7 +61,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic", "AI"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["topic"] = supplied });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["topic"] = supplied });
 
         Assert.Equal("Watch AI.", result.Query);
     }
@@ -66,7 +71,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic", "AI"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["topic"] = "  shipping  " });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["topic"] = "  shipping  " });
 
         Assert.Equal("Watch shipping.", result.Query);
     }
@@ -77,7 +82,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic", "AI"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["tpoic"] = "shipping" });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["tpoic"] = "shipping" });
 
         Assert.False(result.IsSuccess);
         Assert.Null(result.Query);
@@ -93,7 +98,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic", "AI"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["tpoic"] = "" });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["tpoic"] = "" });
 
         Assert.Equal(RoutineFillErrorKind.UnknownSlot, result.Error!.Kind);
     }
@@ -103,7 +108,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic", "AI"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["Topic"] = "shipping" });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["Topic"] = "shipping" });
 
         Assert.Equal(RoutineFillErrorKind.UnknownSlot, result.Error!.Kind);
     }
@@ -115,7 +120,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp);
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp));
 
         Assert.False(result.IsSuccess);
         Assert.Null(result.Query);
@@ -129,7 +134,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic}.", Slot("topic"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["topic"] = "shipping" });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["topic"] = "shipping" });
 
         Assert.Equal("Watch shipping.", result.Query);
     }
@@ -141,7 +146,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Watch {topic} for {region}.", Slot("topic", "AI"));
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp);
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp));
 
         Assert.False(result.IsSuccess);
         Assert.Null(result.Query);
@@ -154,7 +159,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Report what changed.");
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp);
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp));
 
         Assert.Equal("Report what changed.", result.Query);
     }
@@ -164,7 +169,7 @@ public class RoutineBlueprintFillTests
     {
         var bp = Blueprint("Report what changed.");
 
-        var result = RoutineBlueprintFill.ToCreateArgs(bp, new Dictionary<string, string> { ["topic"] = "shipping" });
+        var result = RoutineBlueprintFill.ToCreateArgs(bp, Text(bp), new Dictionary<string, string> { ["topic"] = "shipping" });
 
         Assert.Equal(RoutineFillErrorKind.UnknownSlot, result.Error!.Kind);
     }

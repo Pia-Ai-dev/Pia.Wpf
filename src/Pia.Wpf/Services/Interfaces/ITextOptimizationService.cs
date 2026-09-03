@@ -21,4 +21,16 @@ public interface ITextOptimizationService
     /// from a short free-text description. <paramref name="providerId"/> null ⇒ Assistant-mode default.
     /// </summary>
     Task<PersonaDraft> GeneratePersonaDraftAsync(string description, Guid? providerId = null);
+
+    /// <summary>
+    /// Drafts a routine's fields (name, goal, schedule, effort, write tools) from a short free-text
+    /// description, in the language the description is written in.
+    /// <paramref name="providerId"/> null ⇒ Assistant-mode default.
+    /// </summary>
+    /// <param name="availableTools">What this device offers, so the model picks a real name. Empty ⇒ the
+    /// draft is asked for no tools at all rather than invited to guess.</param>
+    Task<RoutineDraft> GenerateRoutineDraftAsync(
+        string description,
+        IReadOnlyList<RoutineDraftTool> availableTools,
+        Guid? providerId = null);
 }

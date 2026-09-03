@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -9,9 +10,36 @@ namespace Pia.Views;
 
 public partial class RoutinesView : UserControl
 {
+    private INotifyPropertyChanged? _watched;
+
     public RoutinesView()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    // A TextBox colours a substring only through its selection, so the view has to place it. Re-hooked on every
+    // DataContext change rather than once: a re-hosted view keeps the old view model's subscription otherwise.
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_watched is not null) _watched.PropertyChanged -= OnViewModelPropertyChanged;
+        _watched = e.NewValue as INotifyPropertyChanged;
+        if (_watched is not null) _watched.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != "IsGoalEditing") return;
+        if (DataContext is not ViewModels.RoutinesViewModel { IsGoalEditing: true }) return;
+
+        // The click landed on the preview, which is about to be collapsed, so the caret has to be handed on or
+        // the user is left typing into nothing. Deferred: the box is still collapsed when this fires.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            EditorGoalBox.Focus();
+            Keyboard.Focus(EditorGoalBox);
+            EditorGoalBox.CaretIndex = EditorGoalBox.Text.Length;
+        }), DispatcherPriority.Input);
     }
 
     // The blueprint card that opened the editor leaves the tree with the placeholder, so a keyboard user would be

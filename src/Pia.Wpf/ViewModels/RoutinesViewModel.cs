@@ -31,6 +31,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly IWindowManagerService _windowManager;
     private readonly ILocalizationService _localization;
     private readonly IPluginService _plugins;
+    private readonly ITextOptimizationService? _textOptimization;
     private readonly ILogger<RoutinesViewModel> _logger;
 
     /// <summary>The grant list as it will be persisted: insertion-ordered, deduped OrdinalIgnoreCase. The rows
@@ -42,7 +43,23 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// and an edit of an existing job both clear it.</summary>
     private string? _editBlueprintKey;
 
+    /// <summary>Resolves a blueprint's text in the UI language at the moment a card is opened; the rendered goal
+    /// is then stored, so a later language switch leaves an existing routine alone.</summary>
+    private string Localize(string key) => _localization[key];
+
     private bool _searchWasActive;
+
+    /// <summary>True while the kind, recurrence, day, time and effort are still what opening the editor set.
+    /// None of those has a blank state, so the draft prefill needs this rather than an emptiness check.</summary>
+    private bool _pickersUntouched;
+
+    // The draft writes the same properties the user does, so it announces itself rather than tripping the latch.
+    private bool _applyingDraft;
+
+    private void PickersTouched()
+    {
+        if (!_applyingDraft) _pickersUntouched = false;
+    }
 
     public ObservableCollection<RoutineRow> Jobs { get; } = [];
 
@@ -172,16 +189,107 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     partial void OnEditingJobIdChanged(Guid? value) => OnPropertyChanged(nameof(EditorPinsEnabled));
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _editName = string.Empty;
 
     /// <summary>The job's goal — USER CONTENT. Rendered here, never logged above SensitiveDebug.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _editQuery = string.Empty;
+
+    /// <summary>Free text the AI assist drafts a routine from — USER CONTENT, never logged above SensitiveDebug.</summary>
+    [ObservableProperty]
+    private string _editDescription = string.Empty;
+
+    [ObservableProperty]
+    private bool _isDrafting;
 
     /// <summary>Slot fields for the card the editor came from; empty for a blank start and for an edit.</summary>
     public ObservableCollection<RoutineSlotRow> EditSlots { get; } = [];
 
     public bool HasEditSlots => EditSlots.Count > 0;
+
+    /// <summary>Where the slot value sits inside the rendered goal, so the editor can tint it and the link
+    /// between the two fields is visible without touching either. Length 0 = nothing to mark.</summary>
+    [ObservableProperty]
+    private int _goalHighlightStart;
+
+    [ObservableProperty]
+    private int _goalHighlightLength;
+
+    /// <summary>True once the user has asked to edit the instruction by hand. A TextBox cannot tint part of
+    /// its own text, so the goal is shown as read-only coloured text until then and as a plain box after —
+    /// only ever one of the two, which is what keeps them from having to line up pixel for pixel.</summary>
+    [ObservableProperty]
+    private bool _isGoalEditing;
+
+    public bool ShowsGoalPreview => GoalHighlightLength > 0 && !IsGoalEditing && !EditorIsMeeting;
+
+    /// <summary>The rendered goal split around the slot value, so the preview can bind three Runs rather
+    /// than cut the string up in XAML.</summary>
+    public string GoalPrefix => GoalSpanIsSound ? EditQuery[..GoalHighlightStart] : EditQuery;
+
+    public string GoalHighlightText =>
+        GoalSpanIsSound ? EditQuery.Substring(GoalHighlightStart, GoalHighlightLength) : string.Empty;
+
+    public string GoalSuffix =>
+        GoalSpanIsSound ? EditQuery[(GoalHighlightStart + GoalHighlightLength)..] : string.Empty;
+
+    // The span is published before the goal it describes on at least one path, so every read is guarded.
+    private bool GoalSpanIsSound =>
+        GoalHighlightLength > 0
+        && GoalHighlightStart >= 0
+        && GoalHighlightStart + GoalHighlightLength <= EditQuery.Length;
+
+    private void NotifyGoalPreviewChanged()
+    {
+        OnPropertyChanged(nameof(ShowsGoalPreview));
+        OnPropertyChanged(nameof(GoalPrefix));
+        OnPropertyChanged(nameof(GoalHighlightText));
+        OnPropertyChanged(nameof(GoalSuffix));
+    }
+
+    partial void OnGoalHighlightStartChanged(int value) => NotifyGoalPreviewChanged();
+
+    partial void OnGoalHighlightLengthChanged(int value) => NotifyGoalPreviewChanged();
+
+    partial void OnIsGoalEditingChanged(bool value) => NotifyGoalPreviewChanged();
+
+    /// <summary>Hands the instruction over to the plain editable box. The preview does not edit in place: the
+    /// tint describes a machine-rendered goal, and the moment the prose is the user's it stops being true.</summary>
+    [RelayCommand]
+    private void EditGoal() => IsGoalEditing = true;
+
+    private void ClearGoalHighlight() => GoalHighlightLength = 0;
+
+    /// <summary>One slot per blueprint and one placeholder per template — asserted in the catalog tests — so
+    /// a single span is exactly enough and the placeholder index in the template IS the index in the
+    /// rendered goal.</summary>
+    private void SetGoalHighlight(RoutineBlueprint blueprint, RoutineBlueprintText text)
+    {
+        if (blueprint.Slots.FirstOrDefault() is not { } slot)
+        {
+            ClearGoalHighlight();
+            return;
+        }
+
+        var at = text.Template.IndexOf($"{{{slot.Name}}}", StringComparison.Ordinal);
+        if (at < 0)
+        {
+            ClearGoalHighlight();
+            return;
+        }
+
+        // The effective value, which is what the fill engine substituted: the row when it holds something,
+        // the localized default when it is blank.
+        var row = EditSlots.FirstOrDefault(r => string.Equals(r.Name, slot.Name, StringComparison.Ordinal));
+        var value = row is not null && !string.IsNullOrWhiteSpace(row.Value)
+            ? row.Value.Trim()
+            : text.SlotDefaults.GetValueOrDefault(slot.Name) ?? string.Empty;
+
+        GoalHighlightStart = at;
+        GoalHighlightLength = value.Length;
+    }
 
     // A keystroke in the goal box and the renderer's own write are the same PropertyChanged event, so the
     // renderer announces itself rather than the handler guessing.
@@ -190,7 +298,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     partial void OnEditQueryChanged(string value)
     {
-        if (!_renderingGoal) _goalHandEdited = true;
+        NotifyGoalPreviewChanged();
+        if (_renderingGoal) return;
+
+        _goalHandEdited = true;
+        // The prose is theirs now, so the span no longer describes it.
+        ClearGoalHighlight();
     }
 
     private void RenderGoalFromSlots()
@@ -198,30 +311,44 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         if (_goalHandEdited) return;
         if (RoutineBlueprintCatalog.Find(_editBlueprintKey) is not { } blueprint) return;
 
+        var text = RoutineBlueprintText.Resolve(blueprint, Localize);
         var values = EditSlots.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
-        if (RoutineBlueprintFill.ToCreateArgs(blueprint, values).Query is not { } rendered) return;
+        if (RoutineBlueprintFill.ToCreateArgs(blueprint, text, values).Query is not { } rendered) return;
 
         _renderingGoal = true;
         EditQuery = rendered;
         _renderingGoal = false;
+
+        SetGoalHighlight(blueprint, text);
     }
 
-    private void ResetEditSlots(RoutineBlueprint? blueprint)
+    private void ResetEditSlots(RoutineBlueprint? blueprint, RoutineBlueprintText? text = null)
     {
         EditSlots.Clear();
-        if (blueprint is not null)
+        if (blueprint is not null && text is not null)
             foreach (var slot in blueprint.Slots)
                 EditSlots.Add(new RoutineSlotRow(
                     slot.Name,
                     _localization[slot.LabelKey],
                     _localization[slot.HelpKey],
-                    slot.Default,
+                    text.SlotDefaults.GetValueOrDefault(slot.Name),
                     RenderGoalFromSlots));
 
         OnPropertyChanged(nameof(HasEditSlots));
     }
 
+    /// <summary>What <c>SaveAsync</c> requires, so the editor can mark the fields and grey out Save instead
+    /// of refusing after the click. The time FORMAT is still checked there — a required marker cannot say
+    /// "that is not HH:mm".</summary>
+    public bool CanSave =>
+        !string.IsNullOrWhiteSpace(EditName)
+        && !string.IsNullOrWhiteSpace(EditTimeOfDay)
+        && (EditorIsMeeting
+            ? !string.IsNullOrWhiteSpace(EditMeetingUrl) && EditMeetingConsent
+            : !string.IsNullOrWhiteSpace(EditQuery));
+
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private ScheduledJobKind _editKind = ScheduledJobKind.AgentTask;
 
     [ObservableProperty]
@@ -230,10 +357,15 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// <summary>"HH:mm", parsed on save. A string rather than a TimeOnly because the failure mode of a mistyped
     /// time must be a refused save with a message, not a silently coerced schedule.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _editTimeOfDay = "09:00";
+
+    partial void OnEditTimeOfDayChanged(string value) => PickersTouched();
 
     [ObservableProperty]
     private DayOfWeek _editDayOfWeek = DateTime.Now.DayOfWeek;
+
+    partial void OnEditDayOfWeekChanged(DayOfWeek value) => PickersTouched();
 
     [ObservableProperty]
     private int _editDayOfMonth = DateTime.Now.Day;
@@ -265,10 +397,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     /// <summary>Device-local: the Teams link is a bearer token for the meeting and never reaches the wire.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _editMeetingUrl = string.Empty;
 
     /// <summary>The overlay's consent tick is per-session; an unattended join has to carry its own.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private bool _editMeetingConsent;
 
     /// <summary>The collapsed picker's one line. Names the launcher's default OUT LOUD when nothing is ticked
@@ -291,6 +425,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     [ObservableProperty]
     private RoutineEffortChoice? _editEffort;
 
+    partial void OnEditEffortChanged(RoutineEffortChoice? value) => PickersTouched();
+
     /// <summary>False only while editing a routine another device owns. Not selection-bound: <see cref="StartCreate"/>
     /// leaves a foreign row selected, and the new routine it opens must stay editable.</summary>
     public bool EditorPinsEnabled =>
@@ -303,6 +439,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
     partial void OnEditRecurrenceChanged(RecurrenceType value)
     {
+        PickersTouched();
         OnPropertyChanged(nameof(EditorWantsSpecificDate));
         OnPropertyChanged(nameof(EditorWantsDayOfWeek));
         OnPropertyChanged(nameof(EditorWantsDayOfMonth));
@@ -312,6 +449,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     // The kind decides what an EMPTY grant list means, so switching it rewrites both lines the picker shows.
     partial void OnEditKindChanged(ScheduledJobKind value)
     {
+        PickersTouched();
+        OnPropertyChanged(nameof(ShowsGoalPreview));
         OnPropertyChanged(nameof(EditorIsAgentTask));
         OnPropertyChanged(nameof(EditorIsMeeting));
         OnPropertyChanged(nameof(EditToolsSummary));
@@ -330,7 +469,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ILocalizationService localization,
         IPluginService plugins,
         Services.MeetingAttendee.IBrowserProvisioner browserProvisioner,
-        ILogger<RoutinesViewModel> logger)
+        ILogger<RoutinesViewModel> logger,
+        ITextOptimizationService? textOptimization = null)
     {
         _jobs = jobs;
         _runner = runner;
@@ -343,6 +483,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _plugins = plugins;
         _browserProvisioner = browserProvisioner;
         _logger = logger;
+        _textOptimization = textOptimization;
 
         JobKinds = [.. Enum.GetValues<ScheduledJobKind>()
             .Select(k => new RoutineKindChoice(k, _localization[$"Settings_ScheduledJobs_Kind_{k}"]))];
@@ -588,6 +729,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _editBlueprintKey = null;
         EditName = string.Empty;
         EditQuery = string.Empty;
+        EditDescription = string.Empty;
         EditKind = ScheduledJobKind.AgentTask;
         EditRecurrence = RecurrenceType.Daily;
         EditTimeOfDay = "09:00";
@@ -602,6 +744,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ApplyPinChoices(null, null, null);
         ResetEditSlots(null);
         _goalHandEdited = false;
+        ClearGoalHighlight();
+        IsGoalEditing = false;
+        // Last, after the field writes above have each reported a touch.
+        _pickersUntouched = true;
         StatusMessage = null;
         IsEditorOpen = true;
     }
@@ -686,7 +832,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
         // A card that cannot render is refused rather than opened on the raw template: falling back would put
         // a literal {slot} in the goal box and let the user schedule it. The tool path refuses the same case.
-        var fill = RoutineBlueprintFill.ToCreateArgs(blueprint);
+        var text = RoutineBlueprintText.Resolve(blueprint, Localize);
+        var fill = RoutineBlueprintFill.ToCreateArgs(blueprint, text);
         if (fill.Query is not { } rendered)
         {
             _logger.LogWarning("Blueprint {Key} did not render: {Kind} on slot {Slot}",
@@ -700,6 +847,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _editBlueprintKey = blueprint.Key;
         EditName = _localization[blueprint.TitleKey];
         EditQuery = rendered;
+        EditDescription = string.Empty;
         EditKind = blueprint.Kind;
         EditRecurrence = blueprint.Recurrence;
         EditTimeOfDay = blueprint.DefaultTime.ToString("HH\\:mm");
@@ -710,8 +858,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ResetEditTools(blueprint.GrantedTools);
         EditQuietOnSuccess = blueprint.QuietOnSuccess;
         ApplyPinChoices(null, null, blueprint.DefaultEffort);
-        ResetEditSlots(blueprint);
+        ResetEditSlots(blueprint, text);
         _goalHandEdited = false;
+        // After the slot rows exist: the span is measured against the value they hold.
+        SetGoalHighlight(blueprint, text);
+        IsGoalEditing = false;
+        _pickersUntouched = false;
         StatusMessage = null;
         IsEditorOpen = true;
 
@@ -729,6 +881,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _editBlueprintKey = null;
         EditName = row.Name;
         EditQuery = row.Query;
+        EditDescription = string.Empty;
         EditKind = row.Kind;
         EditRecurrence = row.Recurrence;
         EditTimeOfDay = row.TimeOfDay.ToString("HH\\:mm");
@@ -747,6 +900,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         // defaults would overwrite exactly what the fields exist to protect.
         ResetEditSlots(null);
         _goalHandEdited = false;
+        ClearGoalHighlight();
+        IsGoalEditing = false;
+        _pickersUntouched = false;
         StatusMessage = null;
         IsEditorOpen = true;
     }
@@ -865,6 +1021,133 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         OnPropertyChanged(nameof(HasEditToolCatalog));
         OnPropertyChanged(nameof(HasEditMissingTools));
     }
+
+    /// <summary>Drafts the whole routine from one sentence, the way the persona editor drafts a persona.</summary>
+    [RelayCommand]
+    private async Task GenerateDraftAsync()
+    {
+        if (string.IsNullOrWhiteSpace(EditDescription) || _textOptimization is null) return;
+
+        IsDrafting = true;
+        StatusMessage = null;
+        try
+        {
+            var offered = OfferableDraftTools();
+            var draft = await _textOptimization.GenerateRoutineDraftAsync(
+                EditDescription, offered, EditProvider?.Id);
+
+            // Text fills only what is still blank, so re-drafting cannot clobber what the user typed.
+            if (string.IsNullOrWhiteSpace(EditName) && draft.Name is { } name) EditName = name;
+            if (string.IsNullOrWhiteSpace(EditQuery) && draft.Goal is { } goal) EditQuery = ApplyWebSearchGuard(goal, draft);
+
+            // The schedule fills only while it still holds what StartCreate set: a draft must not move a time
+            // the user has already chosen, and there is no "blank" for a typed field to test.
+            if (_pickersUntouched)
+            {
+                _applyingDraft = true;
+                try
+                {
+                    // Not drafted, decided: a blank start opens on AgentTask, and an AgentTask with an empty
+                    // grant list is remapped by the launcher to its write_file default — so a drafted routine
+                    // advertising no grants could write files. Research grants exactly what it says.
+                    EditKind = ScheduledJobKind.Research;
+                    if (draft.Recurrence is { } recurrence) EditRecurrence = recurrence;
+                    if (draft.DayOfWeek is { } day) EditDayOfWeek = day;
+                    if (draft.TimeOfDay is { } time) EditTimeOfDay = time.ToString("HH\\:mm");
+                    if (draft.Effort is { } effort)
+                        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == effort) ?? EditEffort;
+                }
+                finally
+                {
+                    _applyingDraft = false;
+                }
+
+                // A grant HAS a blank state, so it needs no latch of its own: anything already ticked is the
+                // user's, and a card's empty list is a deliberate "this one only reads".
+                if (_editGrantSelection.Count == 0)
+                    ResetEditTools(AcceptableDraftTools(draft.Tools, offered));
+
+                // The draft has now chosen them, so a second draft must not move them again.
+                _pickersUntouched = false;
+            }
+
+            _logger.LogInformation("Drafted a routine from a description (web search needed: {Needed})",
+                draft.NeedsWebSearch);
+            _logger.SensitiveDebug("Routine draft from {Description} produced name: {Name} goal: {Goal}",
+                EditDescription, EditName, EditQuery);
+        }
+        catch (Exception ex)
+        {
+            // The persona assist lets this escape; here the provider failure has a place to land.
+            _logger.LogWarning(ex, "Drafting a routine failed");
+            StatusMessage = _localization["Routines_Draft_Failed"];
+        }
+        finally
+        {
+            IsDrafting = false;
+        }
+    }
+
+    /// <summary>What the drafting model may pick from: one entry per distinct tool name this device offers,
+    /// minus the names a create-time grant is refused anyway — no point offering what would be dropped.</summary>
+    private List<RoutineDraftTool> OfferableDraftTools()
+    {
+        IReadOnlyList<ToolCatalogEntry> catalog;
+        try
+        {
+            catalog = _plugins.GetToolCatalog();
+        }
+        catch (Exception ex)
+        {
+            // Same degradation as the picker: offer nothing rather than fail the draft.
+            _logger.LogWarning(ex, "Could not read the tool catalog for the routine draft");
+            return [];
+        }
+
+        return [.. catalog
+            .Where(e => !ToolPermissionService.IsPresumedExternalDeleteLike(e.ToolName))
+            .Where(e => !e.ServerDeclaredDestructive)
+            .GroupBy(e => e.ToolName, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new RoutineDraftTool(g.Key, g.Select(e => e.Description).FirstOrDefault(d => !string.IsNullOrWhiteSpace(d))))];
+    }
+
+    /// <summary>The drafted grant list, filtered to what may actually be stored. A name the catalog does not
+    /// offer is dropped rather than kept as an orphan row: the user did not ask for it, and it would travel
+    /// to every other device on the next sync.</summary>
+    private List<string> AcceptableDraftTools(IReadOnlyList<string>? proposed, List<RoutineDraftTool> offered)
+    {
+        if (proposed is null || proposed.Count == 0) return [];
+
+        var allowed = new HashSet<string>(offered.Select(t => t.Name), StringComparer.OrdinalIgnoreCase);
+        var accepted = new List<string>();
+        var refused = new List<string>();
+        foreach (var name in proposed)
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0) continue;
+            if (accepted.Contains(trimmed, StringComparer.OrdinalIgnoreCase)) continue;
+
+            if (allowed.Contains(trimmed)) accepted.Add(trimmed);
+            else refused.Add(trimmed);
+        }
+
+        if (refused.Count > 0)
+            _logger.LogInformation("A routine draft proposed {Count} tool(s) this device does not offer", refused.Count);
+        if (accepted.Count > 0)
+            _logger.LogInformation("A routine draft selected {Count} tool grant(s)", accepted.Count);
+        _logger.SensitiveDebug("Draft tools accepted: {Accepted} refused: {Refused}",
+            string.Join(", ", accepted), string.Join(", ", refused));
+
+        return accepted;
+    }
+
+    /// <summary>A drafted goal carries no guard of its own, so a provider that cannot search would answer a
+    /// web question from memory — the same failure the blueprint guard exists for.</summary>
+    private string ApplyWebSearchGuard(string goal, RoutineDraft draft) =>
+        draft.NeedsWebSearch
+            ? $"{goal} {_localization[RoutineBlueprintCatalog.WebSearchGuardKey]}"
+            : goal;
 
     [RelayCommand]
     private void CancelEdit()

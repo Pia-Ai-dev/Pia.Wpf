@@ -1,7 +1,9 @@
+using System.Globalization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Xunit;
@@ -21,8 +23,18 @@ public class ScheduledJobBlueprintToolTests
         var providers = Substitute.For<IProviderService>();
         providers.GetProvidersAsync().Returns(Array.Empty<AiProvider>());
 
+        // Template, slot defaults and guard resolve for real — an echoed key carries no {topic} to render.
         var loc = Substitute.For<ILocalizationService>();
-        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]!);
+        loc[Arg.Any<string>()].Returns(ci =>
+        {
+            var key = (string)ci[0]!;
+            var isBlueprintText = key.EndsWith("_Query", StringComparison.Ordinal)
+                || (key.Contains("_Slot_", StringComparison.Ordinal) && key.EndsWith("_Default", StringComparison.Ordinal))
+                || (key.StartsWith("Routines_Catalog_", StringComparison.Ordinal) && key.EndsWith("Guard", StringComparison.Ordinal));
+            return isBlueprintText
+                ? ViewStrings.ResourceManager.GetString(key, CultureInfo.InvariantCulture) ?? key
+                : key;
+        });
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]!);
 
         return new ScheduledJobToolHandler(jobs.Service, providers, loc,

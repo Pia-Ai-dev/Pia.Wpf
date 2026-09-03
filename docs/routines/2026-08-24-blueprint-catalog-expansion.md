@@ -164,7 +164,9 @@ twelve appear to the model automatically. Each entry now also prints its **categ
 web search** state, so the model can steer a user to something that will work on their provider.
 
 Localization: two keys per blueprint plus two per slot, plus the catalog chrome, in
-`ViewStrings{,.de,.fr}.resx`. `QueryTemplate` stays English-only. All three files are `i/lf w/crlf` —
+`ViewStrings{,.de,.fr}.resx`. `QueryTemplate` stays English-only — **superseded 2026-09-02**, see
+[`2026-09-02-routines-editor-refresh.md`](2026-09-02-routines-editor-refresh.md) §5: the template and
+each slot default moved to resx and resolve in the UI locale at creation time. All three files are `i/lf w/crlf` —
 edit in the working tree as CRLF. Chrome keys are `Routines_Catalog_*` / `Routines_Search_*` /
 `Routines_Category_*`; `Routines_Blueprint_*` is reserved for the per-blueprint namespace that
 `EveryResxStemIsItsKeyInPascalCase` defines, so no chrome string may be parked there.

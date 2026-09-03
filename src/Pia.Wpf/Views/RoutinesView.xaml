@@ -80,6 +80,43 @@
       </Setter>
     </Style>
 
+    <!-- Reads as the enabled goal field it stands in for, not as a disabled one: the whole point is that it
+         invites the click that swaps it for the real box. -->
+    <Style x:Key="RoutineGoalPreviewStyle" TargetType="Button">
+      <Setter Property="Cursor" Value="IBeam"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="MinHeight" Value="150"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="VerticalContentAlignment" Value="Top"/>
+      <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush_}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Field"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    Padding="{TemplateBinding Padding}"
+                    CornerRadius="4"
+                    SnapsToDevicePixels="True">
+              <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Field" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Field" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style TargetType="ui:Button" BasedOn="{StaticResource PiaHandCursorButtonStyle}"/>
 
   </UserControl.Resources>
@@ -538,7 +575,50 @@
                         IsVisibleChanged="EditorPane_IsVisibleChanged"
                         Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel Margin="0,0,10,0">
-              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Name}"
+
+              <!-- Save is bound to CanSave rather than gated by CanExecute, so the reason has to be visible
+                   here. A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+              <Border Style="{StaticResource PiaRequiredHintStyle}"
+                      Visibility="{Binding CanSave, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Dialog_Edit_RequiredHint}"
+                           AutomationProperties.AutomationId="Routines_RequiredHint"
+                           TextWrapping="Wrap"/>
+              </Border>
+
+              <!-- AI-assist: draft the whole routine from a description -->
+              <TextBlock Text="{loc:Str Routines_Draft_Describe}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Routines_Draft_DescribeHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding EditDescription, UpdateSourceTrigger=PropertyChanged}"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          MinHeight="60"
+                          IsReadOnly="{Binding IsDrafting}"
+                          AutomationProperties.AutomationId="Routines_Draft_Description"
+                          Margin="0,0,0,8"/>
+              <ui:Button Command="{Binding GenerateDraftCommand}"
+                         IsEnabled="{Binding IsDrafting, Converter={StaticResource InverseBooleanConverter}}"
+                         AutomationProperties.AutomationId="Routines_Draft_Generate"
+                         HorizontalAlignment="Left"
+                         Margin="0,0,0,16">
+                <Grid>
+                  <StackPanel Orientation="Horizontal"
+                              Visibility="{Binding IsDrafting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str Routines_Draft_Button}"/>
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal"
+                              Visibility="{Binding IsDrafting, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str Routines_Draft_Working}"/>
+                  </StackPanel>
+                </Grid>
+              </ui:Button>
+
+              <TextBlock Text="{loc:Str Routines_Field_Name}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
               <ui:TextBox x:Name="EditorNameBox"
                           Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
@@ -565,27 +645,74 @@
 
               <!-- A meeting routine has no goal: the link is the whole instruction. -->
               <StackPanel Visibility="{Binding EditorIsMeeting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Goal}"
+                <TextBlock Text="{loc:Str Routines_Field_Goal}"
                            Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <ui:TextBox Text="{Binding EditQuery, UpdateSourceTrigger=PropertyChanged}"
+                <!-- Tall enough for the whole instruction: a prefilled goal that has to be scrolled to be read
+                     is the complaint this height answers. -->
+                <!-- The slot value tinted inside the prose, which is the only thing tying the two fields
+                     together. A TextBox cannot colour a substring, so this stands in for it until the user
+                     clicks to write their own wording — and then it is gone for the rest of the edit. -->
+                <Button Style="{StaticResource RoutineGoalPreviewStyle}"
+                        Margin="0,2,0,8"
+                        AutomationProperties.AutomationId="Routines_Field_Goal_Preview"
+                        Visibility="{Binding ShowsGoalPreview, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        Command="{Binding EditGoalCommand}">
+                  <TextBlock TextWrapping="Wrap">
+                    <Run Text="{Binding GoalPrefix, Mode=OneWay}"/><Run Text="{Binding GoalHighlightText, Mode=OneWay}"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource PiaAccentBrush}"/><Run Text="{Binding GoalSuffix, Mode=OneWay}"/>
+                  </TextBlock>
+                </Button>
+
+                <ui:TextBox x:Name="EditorGoalBox"
+                            Text="{Binding EditQuery, UpdateSourceTrigger=PropertyChanged}"
                             AcceptsReturn="True"
                             TextWrapping="Wrap"
-                            MinHeight="60"
+                            MinHeight="150"
+                            VerticalContentAlignment="Top"
                             AutomationProperties.AutomationId="Routines_Field_Goal"
+                            Visibility="{Binding ShowsGoalPreview, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
                             Margin="0,2,0,8"/>
+                <TextBlock Text="{loc:Str Routines_Field_Goal_SlotHint}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,8"
+                           Visibility="{Binding ShowsGoalPreview, Converter={StaticResource BooleanToVisibilityConverter}}"/>
               </StackPanel>
 
-              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Kind}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <!-- SelectedValuePath, not SelectedItem: the list carries localized (value, label) pairs so the
-                   ComboBox does not render the C# enum identifier, while the VM keeps holding the enum. -->
-              <ComboBox ItemsSource="{Binding JobKinds}"
-                        DisplayMemberPath="Label"
-                        SelectedValuePath="Value"
-                        SelectedValue="{Binding EditKind, Mode=TwoWay}"
-                        HorizontalAlignment="Left" Width="240"
-                        AutomationProperties.AutomationId="Routines_Field_Kind"
-                        Margin="0,2,0,8"/>
+              <!-- Paired two-up from here down: one dropdown per row left half the editor empty and pushed the
+                   goal box off the screen. -->
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="16"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                  <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Kind}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                  <!-- SelectedValuePath, not SelectedItem: the list carries localized (value, label) pairs so
+                       the ComboBox does not render the C# enum identifier, while the VM keeps holding the enum. -->
+                  <ComboBox ItemsSource="{Binding JobKinds}"
+                            DisplayMemberPath="Label"
+                            SelectedValuePath="Value"
+                            SelectedValue="{Binding EditKind, Mode=TwoWay}"
+                            AutomationProperties.AutomationId="Routines_Field_Kind"
+                            Margin="0,2,0,8"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Recurrence}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                  <ComboBox ItemsSource="{Binding Recurrences}"
+                            DisplayMemberPath="Label"
+                            SelectedValuePath="Value"
+                            SelectedValue="{Binding EditRecurrence, Mode=TwoWay}"
+                            AutomationProperties.AutomationId="Routines_Field_Recurrence"
+                            Margin="0,2,0,8"/>
+                </StackPanel>
+              </Grid>
 
               <StackPanel Visibility="{Binding EditorIsMeeting, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <TextBlock Text="{loc:Str Routines_Field_MeetingUrl}"
@@ -600,113 +727,131 @@
                           Margin="0,0,0,8"/>
               </StackPanel>
 
-              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Recurrence}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <ComboBox ItemsSource="{Binding Recurrences}"
-                        DisplayMemberPath="Label"
-                        SelectedValuePath="Value"
-                        SelectedValue="{Binding EditRecurrence, Mode=TwoWay}"
-                        HorizontalAlignment="Left" Width="240"
-                        AutomationProperties.AutomationId="Routines_Field_Recurrence"
-                        Margin="0,2,0,8"/>
+              <!-- Time on the left because it is the only one of the pair that always shows; the recurrence
+                   detail sits on the right, under the Repeats picker it belongs to. Each detail field is shown
+                   only for the recurrences that read it — without them the calculator substitutes today's day
+                   on every recompute and the job walks. Only Yearly shows two, which is why they stack. -->
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="16"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-              <!-- One row per recurrence field, each shown only for the recurrences that read it. Without these
-                   the calculator substitutes today's day on every recompute and the job walks. -->
-              <StackPanel Visibility="{Binding EditorWantsDayOfWeek, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Routines_Field_DayOfWeek}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <ComboBox ItemsSource="{Binding DayOfWeekChoices}"
-                          DisplayMemberPath="Label"
-                          SelectedValuePath="Value"
-                          SelectedValue="{Binding EditDayOfWeek, Mode=TwoWay}"
-                          HorizontalAlignment="Left" Width="240"
-                          AutomationProperties.AutomationId="Routines_Field_DayOfWeek"
-                          Margin="0,2,0,8"/>
-              </StackPanel>
+                <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                  <TextBlock Text="{loc:Str Routines_Field_Time}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                  <ui:TextBox Text="{Binding EditTimeOfDay, UpdateSourceTrigger=PropertyChanged}"
+                              AutomationProperties.AutomationId="Routines_Field_Time"
+                              Margin="0,2,0,8"/>
+                </StackPanel>
 
-              <StackPanel Visibility="{Binding EditorWantsMonth, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Routines_Field_Month}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <ComboBox ItemsSource="{Binding MonthChoices}"
-                          DisplayMemberPath="Label"
-                          SelectedValuePath="Value"
-                          SelectedValue="{Binding EditMonth, Mode=TwoWay}"
-                          HorizontalAlignment="Left" Width="240"
-                          AutomationProperties.AutomationId="Routines_Field_Month"
-                          Margin="0,2,0,8"/>
-              </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <StackPanel Visibility="{Binding EditorWantsDayOfWeek, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{loc:Str Routines_Field_DayOfWeek}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding DayOfWeekChoices}"
+                              DisplayMemberPath="Label"
+                              SelectedValuePath="Value"
+                              SelectedValue="{Binding EditDayOfWeek, Mode=TwoWay}"
+                              AutomationProperties.AutomationId="Routines_Field_DayOfWeek"
+                              Margin="0,2,0,8"/>
+                  </StackPanel>
 
-              <StackPanel Visibility="{Binding EditorWantsDayOfMonth, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Routines_Field_DayOfMonth}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <ComboBox ItemsSource="{Binding DayOfMonthChoices}"
-                          SelectedItem="{Binding EditDayOfMonth, Mode=TwoWay}"
-                          HorizontalAlignment="Left" Width="120"
-                          AutomationProperties.AutomationId="Routines_Field_DayOfMonth"
-                          Margin="0,2,0,4"/>
-                <TextBlock Text="{loc:Str Routines_Field_DayOfMonth_Hint}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,8"/>
-              </StackPanel>
+                  <StackPanel Visibility="{Binding EditorWantsMonth, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{loc:Str Routines_Field_Month}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding MonthChoices}"
+                              DisplayMemberPath="Label"
+                              SelectedValuePath="Value"
+                              SelectedValue="{Binding EditMonth, Mode=TwoWay}"
+                              AutomationProperties.AutomationId="Routines_Field_Month"
+                              Margin="0,2,0,8"/>
+                  </StackPanel>
 
-              <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Time}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-              <ui:TextBox Text="{Binding EditTimeOfDay, UpdateSourceTrigger=PropertyChanged}"
-                          HorizontalAlignment="Left" Width="120"
-                          AutomationProperties.AutomationId="Routines_Field_Time"
-                          Margin="0,2,0,8"/>
+                  <StackPanel Visibility="{Binding EditorWantsDayOfMonth, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{loc:Str Routines_Field_DayOfMonth}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding DayOfMonthChoices}"
+                              SelectedItem="{Binding EditDayOfMonth, Mode=TwoWay}"
+                              AutomationProperties.AutomationId="Routines_Field_DayOfMonth"
+                              Margin="0,2,0,4"/>
+                    <TextBlock Text="{loc:Str Routines_Field_DayOfMonth_Hint}"
+                               Style="{StaticResource PiaSettingsDescriptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+                  </StackPanel>
 
-              <StackPanel Visibility="{Binding EditorWantsSpecificDate, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Date}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <DatePicker SelectedDate="{Binding EditSpecificDate, Mode=TwoWay}"
-                            HorizontalAlignment="Left" Width="240"
-                            AutomationProperties.AutomationId="Routines_Field_Date"
-                            Margin="0,2,0,8"/>
-              </StackPanel>
+                  <StackPanel Visibility="{Binding EditorWantsSpecificDate, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Date}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <DatePicker SelectedDate="{Binding EditSpecificDate, Mode=TwoWay}"
+                                AutomationProperties.AutomationId="Routines_Field_Date"
+                                Margin="0,2,0,8"/>
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
 
               <!-- None of these apply to a meeting: there is no model call, no persona and no tool grant in
                    sitting in a call and writing down what was said. -->
               <StackPanel Visibility="{Binding EditorIsMeeting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Provider}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <ComboBox ItemsSource="{Binding ProviderChoices}"
-                          SelectedItem="{Binding EditProvider, Mode=TwoWay}"
-                          DisplayMemberPath="Name"
-                          HorizontalAlignment="Left" Width="240"
-                          AutomationProperties.AutomationId="Routines_Field_Provider"
-                          Margin="0,2,0,8"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
 
-                <!-- SelectedItem, not SelectedValue: both lists lead with a NULL-valued row, and WPF reads a null
-                     SelectedValue as no selection at all, so that row could never be shown as chosen. -->
-                <TextBlock Text="{loc:Str Routines_Field_Persona}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <ComboBox ItemsSource="{Binding PersonaChoices}"
-                          SelectedItem="{Binding EditPersona, Mode=TwoWay}"
-                          DisplayMemberPath="Name"
-                          IsEnabled="{Binding EditorPinsEnabled}"
-                          HorizontalAlignment="Left" Width="240"
-                          AutomationProperties.AutomationId="Routines_Field_Persona"
-                          Margin="0,2,0,4"/>
-                <TextBlock Text="{loc:Str Routines_Field_Persona_Hint}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,8"/>
+                  <StackPanel Grid.Column="0">
+                    <TextBlock Text="{loc:Str Settings_ScheduledJobs_Field_Provider}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding ProviderChoices}"
+                              SelectedItem="{Binding EditProvider, Mode=TwoWay}"
+                              DisplayMemberPath="Name"
+                              AutomationProperties.AutomationId="Routines_Field_Provider"
+                              Margin="0,2,0,8"/>
+                  </StackPanel>
 
-                <TextBlock Text="{loc:Str Routines_Field_Effort}"
-                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                <ComboBox ItemsSource="{Binding EffortChoices}"
-                          SelectedItem="{Binding EditEffort, Mode=TwoWay}"
-                          DisplayMemberPath="Label"
-                          IsEnabled="{Binding EditorPinsEnabled}"
-                          HorizontalAlignment="Left" Width="240"
-                          AutomationProperties.AutomationId="Routines_Field_Effort"
-                          Margin="0,2,0,4"/>
-                <TextBlock Text="{loc:Str Routines_Field_Effort_Hint}"
-                           Style="{StaticResource PiaSettingsDescriptionStyle}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,4"/>
+                  <!-- SelectedItem, not SelectedValue: both lists lead with a NULL-valued row, and WPF reads a
+                       null SelectedValue as no selection at all, so that row could never be shown as chosen. -->
+                  <StackPanel Grid.Column="2">
+                    <TextBlock Text="{loc:Str Routines_Field_Persona}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding PersonaChoices}"
+                              SelectedItem="{Binding EditPersona, Mode=TwoWay}"
+                              DisplayMemberPath="Name"
+                              IsEnabled="{Binding EditorPinsEnabled}"
+                              AutomationProperties.AutomationId="Routines_Field_Persona"
+                              Margin="0,2,0,4"/>
+                    <TextBlock Text="{loc:Str Routines_Field_Persona_Hint}"
+                               Style="{StaticResource PiaSettingsDescriptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+                  </StackPanel>
+                </Grid>
+
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+
+                  <StackPanel Grid.Column="0">
+                    <TextBlock Text="{loc:Str Routines_Field_Effort}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ComboBox ItemsSource="{Binding EffortChoices}"
+                              SelectedItem="{Binding EditEffort, Mode=TwoWay}"
+                              DisplayMemberPath="Label"
+                              IsEnabled="{Binding EditorPinsEnabled}"
+                              AutomationProperties.AutomationId="Routines_Field_Effort"
+                              Margin="0,2,0,4"/>
+                    <TextBlock Text="{loc:Str Routines_Field_Effort_Hint}"
+                               Style="{StaticResource PiaSettingsDescriptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
+                  </StackPanel>
+                </Grid>
 
                 <!-- Disabled pickers with no explanation read as a bug, so the same banner says whose device owns them. -->
                 <Border Margin="0,4,0,8"
@@ -841,6 +986,7 @@
                            Icon="{ui:SymbolIcon Save24}"
                            Appearance="Primary"
                            Margin="0,0,8,0"
+                           IsEnabled="{Binding CanSave}"
                            AutomationProperties.AutomationId="Routines_Save"
                            Command="{Binding SaveCommand}"/>
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_Cancel}"

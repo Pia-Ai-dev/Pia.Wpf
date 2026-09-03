@@ -50,7 +50,9 @@ standalone value, unblocks a High.
 - [x] **9. Localization and tests.** ~177 resx entries across en/de/fr, the catalog and view-model
   facts, the `ViewAutomationIdTests` rows, and the playbook ids.
   *Deps:* 3, 6 · *Effort:* M · *Value:* High
-- [ ] **10. The two hand checks.** Walk a throwaway profile through the catalog per §8.3 of the plan,
+- [ ] **10. The two hand checks.** *(rolled into step 8 of
+  [`2026-09-02-routines-editor-refresh-checklist.md`](2026-09-02-routines-editor-refresh-checklist.md),
+  which shortened the templates these checks would have read.)* Walk a throwaway profile through the catalog per §8.3 of the plan,
   then fire `market-snapshot` for real per §8.4 — once on a searching provider, once on one that cannot
   search. A passing suite cannot see either.
   *Deps:* 9 · *Effort:* XS · *Value:* High
@@ -71,7 +73,7 @@ standalone value, unblocks a High.
 
 - **Slot-prompt UI** — a card would ask for its slot values before opening the editor. Deferred: every
   slot has a default and the rendered goal is editable in the goal box, which for a ticker list beats a
-  modal.
+  modal. **Reaffirmed 2026-09-02** as an owner decision ("shorten only") rather than an omission.
 - **Monthly blueprints** — needs `DefaultDayOfMonth` on the record; the editor test asserts the weekly
   biconditional today.
 - **Localized search keywords** — owner chose title and description only. The cost is that a German

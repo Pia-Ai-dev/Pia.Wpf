@@ -1193,11 +1193,9 @@
   <data name="Settings_ScheduledJobs_RunNow" xml:space="preserve"><value>Run now</value></data>
   <data name="Settings_ScheduledJobs_Save" xml:space="preserve"><value>Save</value></data>
   <data name="Settings_ScheduledJobs_Cancel" xml:space="preserve"><value>Cancel</value></data>
-  <data name="Settings_ScheduledJobs_Field_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Settings_ScheduledJobs_Field_Goal" xml:space="preserve"><value>Goal</value></data>
   <data name="Settings_ScheduledJobs_Field_Kind" xml:space="preserve"><value>Type</value></data>
   <data name="Settings_ScheduledJobs_Field_Recurrence" xml:space="preserve"><value>Repeats</value></data>
-  <data name="Settings_ScheduledJobs_Field_Time" xml:space="preserve"><value>Time (HH:mm)</value></data>
   <data name="Settings_ScheduledJobs_Field_Date" xml:space="preserve"><value>Date</value></data>
   <data name="Settings_ScheduledJobs_Field_Provider" xml:space="preserve"><value>Provider</value></data>
   <data name="Settings_ScheduledJobs_Field_QuietOnSuccess" xml:space="preserve"><value>Quiet: no notification when it succeeds</value></data>
@@ -1304,7 +1302,7 @@
   <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Label" xml:space="preserve"><value>Topic</value></data>
   <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Help" xml:space="preserve"><value>The subject to search for each morning, for example "artificial intelligence" or "EU energy policy".</value></data>
   <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Label" xml:space="preserve"><value>Companies</value></data>
-  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Help" xml:space="preserve"><value>The companies to watch, separated by commas. Leave it blank to watch whichever companies the vault already tracks.</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Help" xml:space="preserve"><value>The companies to watch, separated by commas. Replace the example list with your own.</value></data>
   <data name="Routines_Blueprint_NewsBriefing_Slot_Focus_Label" xml:space="preserve"><value>Focus</value></data>
   <data name="Routines_Blueprint_NewsBriefing_Slot_Focus_Help" xml:space="preserve"><value>The kind of news to cover, for example "world news and business" or "technology and science".</value></data>
   <data name="Routines_Blueprint_WordOfTheDay_Slot_Language_Label" xml:space="preserve"><value>Language</value></data>
@@ -1329,6 +1327,43 @@
   <data name="Routines_Blueprint_MealIdeas_Slot_Preferences_Help" xml:space="preserve"><value>How you eat and how much time you have — diet, allergies, how many people, how long.</value></data>
   <data name="Routines_Blueprint_LearnOneThing_Slot_Subject_Label" xml:space="preserve"><value>Subject</value></data>
   <data name="Routines_Blueprint_LearnOneThing_Slot_Subject_Help" xml:space="preserve"><value>The field to draw an idea from each week, for example "economics" or "astronomy".</value></data>
+  <data name="Routines_Catalog_WebSearchGuard" xml:space="preserve"><value>Report only what a web search actually returned, each item with its source link and its date. If you cannot search the web, say only that.</value></data>
+  <data name="Routines_Catalog_ReadOnlyGuard" xml:space="preserve"><value>Read only: create, edit and complete nothing. If a read comes back empty or unavailable, name it in one line rather than filling the gap. If there is nothing to report, say so in one line.</value></data>
+  <data name="Routines_Catalog_WriteGuard" xml:space="preserve"><value>Name anything you could not read before you act on it. Call query_todos with filter all first and skip whatever is already listed, then call create_todo once per new item with the meeting title and date in the notes.</value></data>
+  <data name="Routines_Blueprint_NewsBriefing_Query" xml:space="preserve"><value>Search the web for the main news of the past day about {focus}. At most six headlines, one sentence each, with a source link and a date. Lead with what changed, not with who commented on it, and leave out opinion pieces and yesterday’s news retold. If nothing material happened, say so in one line.</value></data>
+  <data name="Routines_Blueprint_WordOfTheDay_Query" xml:space="preserve"><value>Teach one word or phrase in {language}: the word, its pronunciation in plain letters, what it literally means, and three everyday example sentences with translations. Pick something a learner would actually say in conversation. Let today’s date decide which area of life it comes from.</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Query" xml:space="preserve"><value>Search the web for what is new on {topic} in the past day. At most five items, one sentence each, with a source link and a date. Only material developments — releases, announcements, results, reversals — never speculation or a retelling of old coverage. If nothing happened, say so in one line.</value></data>
+  <data name="Routines_Blueprint_SecurityAdvisories_Query" xml:space="preserve"><value>Search the web for security advisories and patches published in the past day for {products}. One line each: product and version, what the flaw allows, whether a fix or a workaround exists, and the CVE. Anything already being exploited comes first. At most six, from the vendor’s own advisory.</value></data>
+  <data name="Routines_Blueprint_MarketSnapshot_Query" xml:space="preserve"><value>Search the web for where these markets stand: {markets}. One line each: the level, the move on the day in percent, and the time the figure is quoted for; if a market is shut, quote its last close and say so. Then at most three lines on what moved them. No forecast and no recommendation.</value></data>
+  <data name="Routines_Blueprint_StockWatchlist_Query" xml:space="preserve"><value>Search the web for where these holdings stand: {holdings}. One line each: the last price, the move on the day in percent, and the time the figure is quoted for; if the market is shut, quote the last close and say so. Then at most three lines on what moved them. No forecast, no recommendation.</value></data>
+  <data name="Routines_Blueprint_SportsRoundup_Query" xml:space="preserve"><value>Search the web for the past week’s results and the coming week’s fixtures for {teams}. One line per result with the score and the competition, one line per fixture with its date and kick-off time, each with a source link. Add at most two lines on an injury, a transfer or a new manager.</value></data>
+  <data name="Routines_Blueprint_ClientWatch_Query" xml:space="preserve"><value>Search the web for what changed in the past week at {accounts} that could affect working with them: funding, results, leadership, acquisitions, a large win or a large loss. At most two items each, one sentence each, with a source link and a date. Close with up to three things to raise next time.</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Query" xml:space="preserve"><value>Search the web for material developments in the past week at {companies}: launches, pricing changes, funding, leadership changes, outages, withdrawals. At most two items per company, one sentence each, with a source link and a date. A company with nothing material gets its own one-line entry.</value></data>
+  <data name="Routines_Blueprint_IndustryPulse_Query" xml:space="preserve"><value>Search the web for what moved in {industry} over the past week. At most six items; for each, one line on what happened, one on why it matters, and one on what to watch next, with a source link and a date. Cover the sector rather than one company, and prefer results and deals over commentary.</value></data>
+  <data name="Routines_Blueprint_RegulationWatch_Query" xml:space="preserve"><value>Search the web for regulatory changes published in the past week covering {scope}. For each one: the instrument, the body that issued it, the date it was published, the date it takes effect, and a link to the official text. Then one line on why it matters. At most five. This is not legal advice.</value></data>
+  <data name="Routines_Blueprint_ReleaseWatch_Query" xml:space="preserve"><value>Search the web for new releases of {projects} in the past week. One line each: the project, the version, the release date, and the one change most likely to matter to somebody already using it, with a link to the release notes. Mark security fixes and breaking changes. At most six.</value></data>
+  <data name="Routines_Blueprint_MealIdeas_Query" xml:space="preserve"><value>Plan the coming week’s dinners around this: {preferences}. Five ideas, one line each, with the dish, roughly how long it takes and its main ingredients. Vary the protein and the cuisine. End with one combined shopping list grouped by aisle, and nothing after it. No calorie counts.</value></data>
+  <data name="Routines_Blueprint_LearnOneThing_Query" xml:space="preserve"><value>Explain one idea from {subject} in plain language: the idea in a sentence, how it works in at most five short paragraphs, one worked example, and one common misunderstanding of it. Pick something a curious beginner meets early. Let this week’s date decide which branch it comes from.</value></data>
+  <data name="Routines_Blueprint_MorningBrief_Query" xml:space="preserve"><value>Call query_todos with filter pending and query_reminders with filter active, then report today and nothing else: every todo due today, everything marked OVERDUE, and every reminder firing today. One line each with its time, ordered by time of day. No advice and no encouragement.</value></data>
+  <data name="Routines_Blueprint_MeetingFollowup_Query" xml:space="preserve"><value>Turn today’s meetings into follow-ups. Find them with recall, then read_topic and read_source for the transcript itself; browse_index only if recall misses. Not search_files — it reads the assistant files folder, not the vault. Name an owner for an action item only where the transcript does.</value></data>
+  <data name="Routines_Blueprint_EveningWinddown_Query" xml:space="preserve"><value>Call query_todos with filter pending and query_reminders with filter active. Two short lists and nothing else: what went overdue today and is still open, then what is due or fires tomorrow. One line each with its time. No verdict on the day, no encouragement, no advice.</value></data>
+  <data name="Routines_Blueprint_HabitCheckin_Query" xml:space="preserve"><value>Call query_reminders and treat every reminder whose recurrence is not Once as a standing commitment, then call query_todos with filter completed. In at most three lines: which commitments were due today and whether anything matching them was ticked off. Then one question about the worst of them.</value></data>
+  <data name="Routines_Blueprint_BillsRenewals_Query" xml:space="preserve"><value>Call query_todos with filter all and query_reminders with filter all, then scan the titles, notes and descriptions for renewal, subscription, invoice, licence, insurance and membership wording. Report only what falls due in the next fourteen days, one line each, with its date and where you found it.</value></data>
+  <data name="Routines_Blueprint_WeeklyReview_Query" xml:space="preserve"><value>Call query_todos with filter completed, then with filter all plus list_columns, then browse_index and read_topic. Four short sections: what was completed, what is open and past its due date, how the open items sit across the kanban columns, and two or three notes to carry into next week.</value></data>
+  <data name="Routines_Blueprint_NewsBriefing_Slot_Focus_Default" xml:space="preserve"><value>world news and business</value></data>
+  <data name="Routines_Blueprint_WordOfTheDay_Slot_Language_Default" xml:space="preserve"><value>Spanish</value></data>
+  <data name="Routines_Blueprint_TopicDigest_Slot_Topic_Default" xml:space="preserve"><value>artificial intelligence</value></data>
+  <data name="Routines_Blueprint_SecurityAdvisories_Slot_Products_Default" xml:space="preserve"><value>Windows, Microsoft 365 and Google Chrome</value></data>
+  <data name="Routines_Blueprint_MarketSnapshot_Slot_Markets_Default" xml:space="preserve"><value>the S&amp;P 500, the Nasdaq, the DAX, EUR/USD and gold</value></data>
+  <data name="Routines_Blueprint_StockWatchlist_Slot_Holdings_Default" xml:space="preserve"><value>Apple, Microsoft and Nvidia</value></data>
+  <data name="Routines_Blueprint_SportsRoundup_Slot_Teams_Default" xml:space="preserve"><value>Bayern Munich and Real Madrid</value></data>
+  <data name="Routines_Blueprint_ClientWatch_Slot_Accounts_Default" xml:space="preserve"><value>Microsoft, SAP and Salesforce</value></data>
+  <data name="Routines_Blueprint_CompetitorWatch_Slot_Companies_Default" xml:space="preserve"><value>Microsoft, Google, OpenAI and Anthropic</value></data>
+  <data name="Routines_Blueprint_IndustryPulse_Slot_Industry_Default" xml:space="preserve"><value>information technology</value></data>
+  <data name="Routines_Blueprint_RegulationWatch_Slot_Scope_Default" xml:space="preserve"><value>data protection and IT security in the European Union</value></data>
+  <data name="Routines_Blueprint_ReleaseWatch_Slot_Projects_Default" xml:space="preserve"><value>.NET, Python and Node.js</value></data>
+  <data name="Routines_Blueprint_MealIdeas_Slot_Preferences_Default" xml:space="preserve"><value>quick weeknight dinners for two, nothing that needs special equipment</value></data>
+  <data name="Routines_Blueprint_LearnOneThing_Slot_Subject_Default" xml:space="preserve"><value>economics</value></data>
   <data name="Settings_ScheduledJobs_Provider_Default" xml:space="preserve"><value>Default provider</value></data>
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>This job has a status this version does not recognise, so it is shown read-only. Update Pia to manage it.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Running the job…</value></data>
@@ -1349,9 +1384,18 @@
   <data name="Settings_ScheduledJobs_Kind_Research" xml:space="preserve"><value>Research</value></data>
   <data name="Settings_ScheduledJobs_Kind_AgentTask" xml:space="preserve"><value>Agent run</value></data>
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Teams meeting</value></data>
-  <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams link</value></data>
+  <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams link *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Paste the meeting invite link</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed *</value></data>
+  <data name="Routines_Draft_Describe" xml:space="preserve"><value>Describe it in a sentence</value></data>
+  <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Say what you want to happen and how often. Pia fills in the name, the instruction and the schedule — you can change all of it before saving.</value></data>
+  <data name="Routines_Draft_Button" xml:space="preserve"><value>Draft with AI</value></data>
+  <data name="Routines_Draft_Working" xml:space="preserve"><value>Drafting…</value></data>
+  <data name="Routines_Draft_Failed" xml:space="preserve"><value>Drafting failed. Check that an AI provider is set up, then try again.</value></data>
+  <data name="Routines_Field_Name" xml:space="preserve"><value>Name *</value></data>
+  <data name="Routines_Field_Goal" xml:space="preserve"><value>Goal *</value></data>
+  <data name="Routines_Field_Goal_SlotHint" xml:space="preserve"><value>The highlighted words above come from the field you filled in — edit the field to change them, or write over the whole instruction here.</value></data>
+  <data name="Routines_Field_Time" xml:space="preserve"><value>Time (HH:mm) *</value></data>
   <data name="Routines_Validation_MeetingUrl" xml:space="preserve"><value>Enter a valid Teams meeting link.</value></data>
   <data name="Routines_Validation_MeetingConsent" xml:space="preserve"><value>Acknowledge the recording notice before saving.</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Once" xml:space="preserve"><value>Once</value></data>

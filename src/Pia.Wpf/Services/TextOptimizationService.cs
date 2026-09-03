@@ -183,6 +183,100 @@ Description:
         return ParsePersonaDraft(buffer.ToString());
     }
 
+    public async Task<RoutineDraft> GenerateRoutineDraftAsync(
+        string description,
+        IReadOnlyList<RoutineDraftTool> availableTools,
+        Guid? providerId = null)
+    {
+        var provider = providerId.HasValue
+            ? await _providerService.GetProviderAsync(providerId.Value)
+            : await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+
+        if (provider is null)
+            throw new InvalidOperationException("No AI provider configured");
+
+        var toolSection = availableTools.Count == 0
+            ? "- \"tools\": an empty array. This device offers no tools a routine may be granted."
+            : "- \"tools\": the tools this routine cannot be carried out without, as an array of names copied "
+              + "EXACTLY from the list below. Most routines need none, because reading and reporting needs no "
+              + "grant at all — return an empty array unless the goal has to CHANGE something. Never invent a "
+              + "name that is not on the list.\n\nTools available on this device:\n"
+              + string.Join("\n", availableTools.Select(t => string.IsNullOrWhiteSpace(t.Description)
+                  ? $"- {t.Name}"
+                  : $"- {t.Name}: {t.Description}"))
+              + "\n";
+
+        var draftPrompt = $@"You are designing a scheduled routine: one instruction an assistant will carry out on its own, on a schedule, with nobody there to answer a follow-up question. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
+- ""name"": a short display name for the routine (max 40 characters)
+- ""goal"": the instruction the assistant will be given every time it runs, written in the second person as a command. Two to three sentences, at most 300 characters. Say what to look at, what shape the answer takes, and how long it may be. Do not tell it to remember anything from a previous run — each run is a fresh conversation with no memory of the last one.
+- ""recurrence"": exactly one of ""once"", ""daily"", ""weekly"", ""monthly"", ""yearly""
+- ""dayOfWeek"": the English weekday name when the recurrence is weekly, otherwise an empty string
+- ""timeOfDay"": the time of day to run, as ""HH:mm"" on a 24-hour clock
+- ""effort"": how much reasoning it needs — exactly one of ""minimal"", ""low"", ""medium"", ""high""
+- ""needsWebSearch"": true when the goal cannot be answered without searching the web, false otherwise
+{toolSection}
+
+Write ""name"" and ""goal"" in the same language as the description below.
+
+Description:
+{description}";
+
+        // Same streaming path and same reason as the persona draft: Pia Cloud only returns the expected shape
+        // there, and the system message keeps a reasoning model from wrapping the JSON in commentary.
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(Microsoft.Extensions.AI.ChatRole.System,
+                "You produce only the requested output. Do not reason, think, or explain."),
+            new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
+        };
+
+        var buffer = new StringBuilder();
+        await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
+            messages, provider, tools: null, toolHandler: null, mode: nameof(WindowMode.Assistant)))
+        {
+            if (item is TextDelta delta)
+                buffer.Append(delta.Text);
+        }
+
+        return ParseRoutineDraft(buffer.ToString());
+    }
+
+    private static RoutineDraft ParseRoutineDraft(string raw)
+    {
+        var json = ExtractJsonObject(raw);
+        if (json is null)
+            return RawGoal(raw);
+
+        try
+        {
+            var dto = JsonSerializer.Deserialize<RoutineDraftDto>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            if (dto is null)
+                return RawGoal(raw);
+
+            return new RoutineDraft(
+                Clean(dto.Name),
+                Clean(dto.Goal),
+                Enum.TryParse<RecurrenceType>(dto.Recurrence, ignoreCase: true, out var recurrence) ? recurrence : null,
+                Enum.TryParse<DayOfWeek>(dto.DayOfWeek, ignoreCase: true, out var day) ? day : null,
+                TimeOnly.TryParseExact(dto.TimeOfDay, "HH\\:mm", out var time) ? time : null,
+                Enum.TryParse<ReasoningEffort>(dto.Effort, ignoreCase: true, out var effort) ? effort : null,
+                dto.NeedsWebSearch,
+                dto.Tools?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList());
+        }
+        catch (JsonException)
+        {
+            return RawGoal(raw);
+        }
+
+        static RoutineDraft RawGoal(string text) =>
+            new(null, text.Trim(), null, null, null, null, false, null);
+
+        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     private static PersonaDraft ParsePersonaDraft(string raw)
     {
         var json = ExtractJsonObject(raw);
@@ -226,6 +320,18 @@ Description:
         var end = text.LastIndexOf('}');
         if (start < 0 || end <= start) return null;
         return text.Substring(start, end - start + 1);
+    }
+
+    private sealed class RoutineDraftDto
+    {
+        public string? Name { get; set; }
+        public string? Goal { get; set; }
+        public string? Recurrence { get; set; }
+        public string? DayOfWeek { get; set; }
+        public string? TimeOfDay { get; set; }
+        public string? Effort { get; set; }
+        public bool NeedsWebSearch { get; set; }
+        public List<string>? Tools { get; set; }
     }
 
     private sealed class PersonaDraftDto

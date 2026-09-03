@@ -240,10 +240,14 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                 continue;
             }
 
+            var text = RoutineBlueprintText.Resolve(b, key => _localizationService[key]);
             foreach (var slot in b.Slots)
+            {
+                var fallback = text.SlotDefaults.GetValueOrDefault(slot.Name);
                 sb.AppendLine($"  Slot '{slot.Name}' ({_localizationService[slot.LabelKey]}): "
                     + $"{_localizationService[slot.HelpKey]} "
-                    + $"If omitted: {(slot.Default is null ? "REQUIRED, the call is refused" : $"\"{slot.Default}\"")}");
+                    + $"If omitted: {(fallback is null ? "REQUIRED, the call is refused" : $"\"{fallback}\"")}");
+            }
         }
 
         return sb.ToString();
@@ -268,7 +272,9 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             return ($"Error: {slotsError}", null);
         }
 
-        var fill = RoutineBlueprintFill.ToCreateArgs(blueprint, values);
+        // The UI locale, not English: the rendered goal is stored and then read by the user in the editor.
+        var text = RoutineBlueprintText.Resolve(blueprint, key => _localizationService[key]);
+        var fill = RoutineBlueprintFill.ToCreateArgs(blueprint, text, values);
         if (fill.Error is { } fillError)
         {
             _logger.LogWarning("create_routine_from_blueprint refused {Key}: {Kind}", blueprint.Key, fillError.Kind);
