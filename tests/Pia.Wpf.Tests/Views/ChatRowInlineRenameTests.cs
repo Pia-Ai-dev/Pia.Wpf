@@ -134,6 +134,31 @@ public class ChatRowInlineRenameTests : IDisposable
         Assert.Equal(Visibility.Collapsed, editor);
     }
 
+    /// <summary>
+    /// The editor swallows a click on its own background so it cannot reach the host's row button. It
+    /// must swallow it on the BUBBLING pass: a Preview-side guard tunnels first and eats the press the
+    /// box and the two buttons need, which no synthetic RaiseEvent here reproduces — WPF promotes the
+    /// button-specific mouse events as the underlying one travels, so that half needs a real click.
+    /// </summary>
+    [Fact]
+    public void TheEditorsOwnBackgroundKeepsTheClickOffTheHostRow()
+    {
+        var handled = WpfStaHost.Run(() =>
+        {
+            var content = Build(out _);
+            StartRenaming(content);
+
+            var args = MouseDown(UIElement.MouseLeftButtonDownEvent);
+            Editor(content).RaiseEvent(args);
+            return args.Handled;
+        });
+
+        Assert.True(handled, "a click on the editor's background would resume the chat mid-edit");
+    }
+
+    private static MouseButtonEventArgs MouseDown(RoutedEvent routedEvent) =>
+        new(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = routedEvent };
+
     private PiaAssistantChatRowContent Build(out RecordingCommand command)
     {
         command = new RecordingCommand();

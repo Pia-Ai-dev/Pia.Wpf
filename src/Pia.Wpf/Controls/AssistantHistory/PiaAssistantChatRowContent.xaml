@@ -158,7 +158,7 @@
     <Border x:Name="RenameEditor"
             Visibility="Collapsed"
             Background="Transparent"
-            PreviewMouseLeftButtonDown="RenameEditor_PreviewMouseLeftButtonDown">
+            MouseLeftButtonDown="RenameEditor_MouseLeftButtonDown">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*"/>

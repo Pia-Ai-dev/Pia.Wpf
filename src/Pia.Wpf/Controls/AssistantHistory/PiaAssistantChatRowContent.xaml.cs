@@ -98,16 +98,12 @@ public partial class PiaAssistantChatRowContent : UserControl
         }
     }
 
-    /// <summary>Clicks on the editor's own padding would otherwise reach the host's row button and resume
-    /// the chat mid-edit. The box itself is exempt, or it never sees the click that places the caret.</summary>
-    private void RenameEditor_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.OriginalSource is DependencyObject source
-            && (ReferenceEquals(source, RenameBox) || RenameBox.IsAncestorOf(source)))
-            return;
-
+    /// <summary>A click on the editor's bare background would otherwise reach the host's row button and
+    /// resume the chat mid-edit. Bubbling, not Preview, on purpose: the box and the two buttons handle
+    /// their own mouse-down, so only what none of them wanted arrives here — tunnelling would take the
+    /// caret click off the box and the press off the buttons.</summary>
+    private void RenameEditor_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
         e.Handled = true;
-    }
 
     private void Commit()
     {
