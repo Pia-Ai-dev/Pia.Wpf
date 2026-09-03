@@ -16,6 +16,10 @@
 - Stopping a live or meeting transcription keeps what you just said. Audio the
   microphone had already handed over could be dropped while the recogniser shut
   down, cutting the last words off the transcript.
+- Saving a transcript to a file now opens in the working folder of the chat you
+  are in, rather than Pia's own meetings folder, and the suggested name leads
+  with the date — 2026-09-03_meeting.md. Saving a second transcript on the same
+  day asks before it overwrites.
 
 ## Performance
 

@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
@@ -124,9 +125,13 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         IIngestScheduler ingestScheduler,
         Wpf.Ui.ISnackbarService snackbarService,
         ILogger<MeetingAttendeeViewModel> logger,
-        IUiDispatcher uiDispatcher)
+        IUiDispatcher uiDispatcher,
+        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves both.
+        IChatSessionManager? chatSessionManager = null,
+        IWorkingDirectoryService? workingDirectoryService = null)
         : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
-            ingestScheduler, snackbarService, logger, uiDispatcher)
+            ingestScheduler, snackbarService, logger, uiDispatcher, chatSessionManager,
+            workingDirectoryService)
     {
         _service = service;
         CounterpartName = _localizationService["MeetingAttendee_Speaker_Placeholder"];
