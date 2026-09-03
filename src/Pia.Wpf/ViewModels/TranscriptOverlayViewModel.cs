@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading.Channels;
@@ -10,6 +11,7 @@ using Pia.Converters;
 using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.ViewModels.Models;
@@ -65,6 +67,8 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     protected readonly Wpf.Ui.ISnackbarService _snackbarService;
     protected readonly ILogger _logger;
     protected readonly IUiDispatcher _uiDispatcher;
+    private readonly IChatSessionManager? _chatSessionManager;
+    private readonly IWorkingDirectoryService? _workingDirectoryService;
 
     private CancellationTokenSource? _readerCts;
     private Task? _readerTask;
@@ -102,7 +106,9 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         IIngestScheduler ingestScheduler,
         Wpf.Ui.ISnackbarService snackbarService,
         ILogger logger,
-        IUiDispatcher uiDispatcher)
+        IUiDispatcher uiDispatcher,
+        IChatSessionManager? chatSessionManager,
+        IWorkingDirectoryService? workingDirectoryService)
     {
         _settingsService = settingsService;
         _localizationService = localizationService;
@@ -113,6 +119,8 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         _snackbarService = snackbarService;
         _logger = logger;
         _uiDispatcher = uiDispatcher;
+        _chatSessionManager = chatSessionManager;
+        _workingDirectoryService = workingDirectoryService;
 
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke(this, EventArgs.Empty));
         SaveTranscriptCommand = new AsyncRelayCommand(SaveTranscriptAsync, CanSaveTranscript);
@@ -489,17 +497,18 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-            folder = MeetingTranscriptPaths.ResolveFolder(settings);
+            folder = ResolveSaveFolder(settings);
             try { Directory.CreateDirectory(folder); }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to ensure transcript folder {Folder}", folder); }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to resolve meeting transcript folder");
+            _logger.LogError(ex, "Failed to resolve the transcript save folder");
             folder = MeetingTranscriptPaths.DefaultMeetingFolder;
         }
 
-        var defaultName = $"{SaveFileNamePrefix}-{_sessionStart.LocalDateTime:yyyyMMdd-HHmmss}.md";
+        var defaultName = string.Create(CultureInfo.InvariantCulture,
+            $"{_sessionStart.LocalDateTime:yyyy-MM-dd}_{SaveFileNamePrefix}.md");
         var path = _fileDialogService.PromptSaveFile(
             title: _localizationService[SaveDialogTitleKey],
             filter: _localizationService[SaveDialogFilterKey],
@@ -517,6 +526,17 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         {
             _logger.LogError(ex, "Failed to save transcript to {Path}", path);
         }
+    }
+
+    private string ResolveSaveFolder(AppSettings settings)
+    {
+        // A pinned transcript folder is an invisible, deliberate override — it still wins.
+        if (!string.IsNullOrWhiteSpace(settings.MeetingTranscriptFolder))
+            return MeetingTranscriptPaths.ResolveFolder(settings);
+
+        return _workingDirectoryService?.ResolveAbsolutePath(
+                _chatSessionManager?.ActiveSession?.WorkingDirectory)
+            ?? MeetingTranscriptPaths.DefaultMeetingFolder;
     }
 
     // ---- Save into the memory vault --------------------------------------------------------------

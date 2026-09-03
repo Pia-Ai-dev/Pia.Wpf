@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
@@ -102,9 +103,13 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         ILogger<DirectTranscriptionViewModel> logger,
         IUiDispatcher uiDispatcher,
         IClipboardService? clipboardService = null,
-        IConsentSoundPlayer? consentSoundPlayer = null)
+        IConsentSoundPlayer? consentSoundPlayer = null,
+        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves both.
+        IChatSessionManager? chatSessionManager = null,
+        IWorkingDirectoryService? workingDirectoryService = null)
         : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
-            ingestScheduler, snackbarService, logger, uiDispatcher)
+            ingestScheduler, snackbarService, logger, uiDispatcher, chatSessionManager,
+            workingDirectoryService)
     {
         _service = service;
         _clipboardService = clipboardService;
