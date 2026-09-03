@@ -1,5 +1,21 @@
 # Pia 1.4
 
+## Shortcuts
+
+- Holding a global shortcut no longer flips its window open and shut. Windows
+  repeats a held shortcut, and Ctrl+Alt+O toggles, so the Optimize window
+  reopened and closed for as long as the keys were down.
+
+## To do
+
+- The Closed column stays open once you open it. Adding or removing a task
+  collapsed it again.
+
+## Files
+
+- A file Pia turns down for its size now says what the limit is, instead of
+  only that the file was too large.
+
 ## Settings
 
 - Turning a built-in plugin off in Settings → Plugins now sticks. The switch
@@ -9,6 +25,9 @@
   "never touched it", so the administrator's default came back on the next
   save — most visibly, the interface language could not be set to English
   under a German default.
+- The Edit and Delete buttons on your own Optimize templates are fully
+  visible again. They sat past the edge of the card and could not be
+  clicked.
 
 ## Navigation
 

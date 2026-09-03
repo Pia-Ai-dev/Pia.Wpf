@@ -94,7 +94,7 @@ public static class DroppedFileAttachmentImporter
             if (result.Status == DroppedFileReader.ReadStatus.TooLarge)
             {
                 Caution(snackbarService, localizationService,
-                    localizationService.Format("Msg_File_TooLargeAttachment", fileName));
+                    localizationService.Format("Msg_File_TooLargeAttachment", fileName, DroppedFileReader.FormatLimit(result.LimitBytes)));
                 continue;
             }
 

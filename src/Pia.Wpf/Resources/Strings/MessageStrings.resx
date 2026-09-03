@@ -55,7 +55,7 @@
 
   <!-- File drop -->
   <data name="Msg_File_Unsupported" xml:space="preserve"><value>"{0}" can't be inserted here — file type isn't supported.</value></data>
-  <data name="Msg_File_TooLarge" xml:space="preserve"><value>"{0}" is too large to insert.</value></data>
+  <data name="Msg_File_TooLarge" xml:space="preserve"><value>"{0}" is too large to insert — the limit is {1}.</value></data>
   <data name="Msg_File_ReadFailed" xml:space="preserve"><value>Couldn't read "{0}": {1}</value></data>
   <data name="Msg_File_ImageTooLarge" xml:space="preserve"><value>Image is too large to send even after resize. Pick a smaller image.</value></data>
   <data name="Msg_File_ImageProviderUnsupported" xml:space="preserve"><value>Image attachments are only available when using the PiaCloud provider.</value></data>
@@ -70,7 +70,7 @@
   <data name="Msg_File_Saved" xml:space="preserve"><value>"{0}" was saved to the working directory ({1}).</value></data>
   <data name="Msg_File_SaveFailed" xml:space="preserve"><value>"{0}" could not be saved to the working directory.</value></data>
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>At most {0} files can be attached to one message — "{1}" was skipped.</value></data>
-  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach.</value></data>
+  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach — the limit is {1}.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>The attached files already fill this message — "{0}" was skipped.</value></data>
   <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Only one image can be attached — kept "{0}".</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>Couldn't take "{0}" from the app you dragged it from. Save it as a file and drag that instead.</value></data>

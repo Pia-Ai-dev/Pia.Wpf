@@ -6,6 +6,11 @@ namespace Pia.Services;
 public unsafe partial class NativeHotkeyService : INativeHotkeyService
 {
     private const int WM_HOTKEY = 0x0312;
+
+    // Without this a held combo re-posts WM_HOTKEY at the keyboard repeat rate, and a toggling
+    // handler flips the window open and shut for as long as the keys are down.
+    private const uint MOD_NOREPEAT = 0x4000;
+
     private static readonly IntPtr HWND_MESSAGE = new(-3);
 
     private readonly IntPtr _hwnd;
@@ -52,7 +57,7 @@ public unsafe partial class NativeHotkeyService : INativeHotkeyService
         if (_hwnd == IntPtr.Zero)
             throw new Exception("Failed to create message window.");
 
-        if (!RegisterHotKey(_hwnd, _id, modifiers, vk))
+        if (!RegisterHotKey(_hwnd, _id, modifiers | MOD_NOREPEAT, vk))
             throw new InvalidOperationException("Hotkey already in use.");
     }
 

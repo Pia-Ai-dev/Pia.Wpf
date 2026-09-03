@@ -264,6 +264,10 @@ public partial class TodoViewModel : UiThreadViewModel, INavigationAware, IDispo
             var completedToday = await _todoService.GetCompletedTodayAsync();
             var settings = await _settingsService.GetSettingsAsync();
 
+            // Column view-models are rebuilt on every reload, so an expanded Closed column would
+            // snap shut each time a todo is added or removed.
+            var expansionByColumn = Columns.ToDictionary(c => c.Id, c => c.IsExpanded);
+
             UnsubscribeAllColumns();
             Columns.Clear();
             PendingTodos.Clear();
@@ -276,6 +280,9 @@ public partial class TodoViewModel : UiThreadViewModel, INavigationAware, IDispo
             {
                 var todos = await _todoService.GetByColumnAsync(column.Id);
                 var vm = new KanbanColumnViewModel(column);
+
+                if (expansionByColumn.TryGetValue(column.Id, out var wasExpanded))
+                    vm.IsExpanded = wasExpanded;
 
                 if (settings.TodoColumnWidths.TryGetValue(column.Id, out var savedWidth))
                 {

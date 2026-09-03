@@ -52,7 +52,7 @@
 
   <!-- File drop -->
   <data name="Msg_File_Unsupported" xml:space="preserve"><value>« {0} » ne peut pas être inséré ici – type de fichier non pris en charge.</value></data>
-  <data name="Msg_File_TooLarge" xml:space="preserve"><value>« {0} » est trop volumineux pour être inséré.</value></data>
+  <data name="Msg_File_TooLarge" xml:space="preserve"><value>« {0} » est trop volumineux pour être inséré — la limite est de {1}.</value></data>
   <data name="Msg_File_ReadFailed" xml:space="preserve"><value>Impossible de lire « {0} » : {1}</value></data>
   <data name="Msg_File_ImageTooLarge" xml:space="preserve"><value>L'image reste trop grande même après redimensionnement. Choisissez une image plus petite.</value></data>
   <data name="Msg_File_ImageProviderUnsupported" xml:space="preserve"><value>Les pièces jointes image ne sont disponibles qu'avec le fournisseur PiaCloud.</value></data>
@@ -67,7 +67,7 @@
   <data name="Msg_File_Saved" xml:space="preserve"><value>« {0} » a été enregistré dans le répertoire de travail ({1}).</value></data>
   <data name="Msg_File_SaveFailed" xml:space="preserve"><value>« {0} » n'a pas pu être enregistré dans le répertoire de travail.</value></data>
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Au maximum {0} fichiers peuvent être joints à un message – « {1} » a été ignoré.</value></data>
-  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>« {0} » est trop volumineux pour être joint.</value></data>
+  <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>« {0} » est trop volumineux pour être joint — la limite est de {1}.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Les fichiers joints remplissent déjà ce message – « {0} » a été ignoré.</value></data>
   <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Une seule image peut être jointe – « {0} » a été conservée.</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>Impossible de récupérer « {0} » depuis l'application source. Enregistrez l'élément dans un fichier et faites glisser celui-ci.</value></data>

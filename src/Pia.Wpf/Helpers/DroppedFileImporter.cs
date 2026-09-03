@@ -67,7 +67,7 @@ public static class DroppedFileImporter
                 case DroppedFileReader.ReadStatus.TooLarge:
                     snackbarService.Show(
                         localizationService["Msg_Warning"],
-                        localizationService.Format("Msg_File_TooLarge", fileName),
+                        localizationService.Format("Msg_File_TooLarge", fileName, DroppedFileReader.FormatLimit(result.LimitBytes)),
                         ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
                     break;
                 case DroppedFileReader.ReadStatus.Failed:

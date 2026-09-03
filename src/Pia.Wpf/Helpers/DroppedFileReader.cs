@@ -25,6 +25,9 @@ public static class DroppedFileReader
 {
     public const int MaxTextBytes = 1 * 1024 * 1024;
 
+    // A zipped or encoded container may hold far less text than its own size suggests.
+    public const int MaxContainerBytes = MaxTextBytes * 8;
+
     private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".txt", ".md", ".json", ".xml", ".yaml", ".yml", ".csv", ".log", ".ini",
@@ -57,6 +60,10 @@ public static class DroppedFileReader
         .Concat(TextExtensions.Select(e => new KeyValuePair<string, FileKind>(e, FileKind.Text)))
         .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
+    public static string FormatLimit(long bytes) => bytes < 1024 * 1024
+        ? $"{bytes / 1024.0:N0} KB"
+        : $"{bytes / (1024.0 * 1024.0):N0} MB";
+
     public static FileKind Classify(string path)
     {
         var ext = Path.GetExtension(path);
@@ -67,10 +74,11 @@ public static class DroppedFileReader
 
     public enum ReadStatus { Ok, TooLarge, Failed }
 
-    public readonly record struct ReadResult(ReadStatus Status, string? Text, string? Error)
+    public readonly record struct ReadResult(ReadStatus Status, string? Text, string? Error, long LimitBytes = 0)
     {
         public static ReadResult Success(string text) => new(ReadStatus.Ok, text, null);
-        public static readonly ReadResult TooLarge = new(ReadStatus.TooLarge, null, null);
+        // The limit rides along so the message can name it — it differs by file type.
+        public static ReadResult TooLarge(long limitBytes) => new(ReadStatus.TooLarge, null, null, limitBytes);
         public static ReadResult Fail(string error) => new(ReadStatus.Failed, null, error);
     }
 
@@ -79,7 +87,7 @@ public static class DroppedFileReader
         try
         {
             var info = new FileInfo(path);
-            if (info.Length > MaxTextBytes) return ReadResult.TooLarge;
+            if (info.Length > MaxTextBytes) return ReadResult.TooLarge(MaxTextBytes);
 
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
             using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
@@ -100,7 +108,7 @@ public static class DroppedFileReader
             try
             {
                 var info = new FileInfo(path);
-                if (info.Length > MaxTextBytes * 8) return ReadResult.TooLarge;
+                if (info.Length > MaxContainerBytes) return ReadResult.TooLarge(MaxContainerBytes);
 
                 using var doc = WordprocessingDocument.Open(path, isEditable: false);
                 var body = doc.MainDocumentPart?.Document?.Body;
@@ -112,7 +120,7 @@ public static class DroppedFileReader
                 foreach (var line in walk.Lines) sb.AppendLine(line);
 
                 if (sb.Length > MaxTextBytes)
-                    return ReadResult.TooLarge;
+                    return ReadResult.TooLarge(MaxTextBytes);
 
                 return ReadResult.Success(sb.ToString().TrimEnd());
             }
@@ -159,14 +167,14 @@ public static class DroppedFileReader
             try
             {
                 var info = new FileInfo(path);
-                if (info.Length > MaxTextBytes * 8) return ReadResult.TooLarge;
+                if (info.Length > MaxContainerBytes) return ReadResult.TooLarge(MaxContainerBytes);
 
                 using var doc = SpreadsheetDocument.Open(path, isEditable: false);
                 var workbookPart = doc.WorkbookPart;
                 if (workbookPart is null) return ReadResult.Success(string.Empty);
 
                 var walk = WalkXlsxWorkbook(workbookPart, ct);
-                if (walk.Truncated) return ReadResult.TooLarge;
+                if (walk.Truncated) return ReadResult.TooLarge(MaxTextBytes);
                 if (walk.Lines.Count == 0) return ReadResult.Success(string.Empty);
 
                 var sb = new StringBuilder();
@@ -176,7 +184,7 @@ public static class DroppedFileReader
                     else sb.AppendLine(line.Text);
                 }
 
-                if (sb.Length > MaxTextBytes) return ReadResult.TooLarge;
+                if (sb.Length > MaxTextBytes) return ReadResult.TooLarge(MaxTextBytes);
                 return ReadResult.Success(sb.ToString().TrimEnd());
             }
             catch (Exception ex)
@@ -282,14 +290,14 @@ public static class DroppedFileReader
             try
             {
                 var info = new FileInfo(path);
-                if (info.Length > MaxTextBytes * 8) return ReadResult.TooLarge;
+                if (info.Length > MaxContainerBytes) return ReadResult.TooLarge(MaxContainerBytes);
 
                 var mail = Path.GetExtension(path).Equals(".eml", StringComparison.OrdinalIgnoreCase)
                     ? EmlReader.Read(path)
                     : MsgReader.Read(path);
 
                 var text = RenderEmail(mail);
-                return text.Length > MaxTextBytes ? ReadResult.TooLarge : ReadResult.Success(text);
+                return text.Length > MaxTextBytes ? ReadResult.TooLarge(MaxTextBytes) : ReadResult.Success(text);
             }
             catch (Exception ex)
             {
