@@ -31,6 +31,10 @@ public partial class AssistantView : UserControl
     private bool _autoScroll = true;
     private ObservableCollection<AssistantMessage>? _subscribedMessages;
 
+    // The host clears DataContext before Unloaded, so resolving the VM again there finds nothing and the
+    // subscription would outlive the view — a production dump held 18 of them that way.
+    private AssistantViewModel? _subscribedViewModel;
+
     public AssistantView()
     {
         InitializeComponent();
@@ -41,10 +45,14 @@ public partial class AssistantView : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is not null)
+        // Loaded repeats without an Unloaded on re-parenting, so drop the previous hook before taking a new one.
+        DetachViewModel();
+
+        _subscribedViewModel = ViewModel;
+        if (_subscribedViewModel is not null)
         {
-            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
-            SubscribeMessages(ViewModel.Messages);
+            _subscribedViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            SubscribeMessages(_subscribedViewModel.Messages);
         }
 
         MessageScrollViewer.ScrollChanged += OnMessageScrollChanged;
@@ -53,12 +61,18 @@ public partial class AssistantView : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is not null)
-        {
-            ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
-            SubscribeMessages(null);
-        }
+        DetachViewModel();
         MessageScrollViewer.ScrollChanged -= OnMessageScrollChanged;
+    }
+
+    private void DetachViewModel()
+    {
+        if (_subscribedViewModel is null)
+            return;
+
+        _subscribedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _subscribedViewModel = null;
+        SubscribeMessages(null);
     }
 
     // The VM re-points Messages when the manager's async activation completes after this view loaded;

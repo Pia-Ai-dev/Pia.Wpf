@@ -10,3 +10,9 @@
   no answer." Its actual message reaches the routine's run, the agent run's
   failure card and an interactive chat alike, so a timeout or an upstream
   error reads as what it was.
+
+## Performance
+
+- Leaving a screen and coming back no longer leaves the old copy behind in
+  memory. A long session that moves between the chat and the other views used
+  to climb into the gigabytes; it now stays flat.

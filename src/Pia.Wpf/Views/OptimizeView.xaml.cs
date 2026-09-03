@@ -12,6 +12,11 @@ public partial class OptimizeView : UserControl
 {
     private OptimizeViewModel? ViewModel => DataContext as OptimizeViewModel;
 
+    // Both are resolved again in OnUnloaded otherwise, and by then DataContext is cleared and the view has left
+    // the tree — so neither hook came off and an app-lifetime Window kept this view alive.
+    private OptimizeViewModel? _subscribedViewModel;
+    private Window? _subscribedWindow;
+
     public OptimizeView()
     {
         InitializeComponent();
@@ -22,36 +27,43 @@ public partial class OptimizeView : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is not null)
-        {
-            ViewModel.PropertyChanged += OnPropertyChanged;
-            ViewModel.FocusInputRequested += OnFocusInputRequested;
+        // Loaded repeats without an Unloaded on re-parenting, so drop the previous hooks before taking new ones.
+        Detach();
 
-            if (ViewModel.ShouldFocusInput)
+        _subscribedViewModel = ViewModel;
+        if (_subscribedViewModel is not null)
+        {
+            _subscribedViewModel.PropertyChanged += OnPropertyChanged;
+            _subscribedViewModel.FocusInputRequested += OnFocusInputRequested;
+
+            if (_subscribedViewModel.ShouldFocusInput)
             {
-                ViewModel.RequestFocus();
+                _subscribedViewModel.RequestFocus();
             }
         }
 
-        var parentWindow = Window.GetWindow(this);
-        if (parentWindow is not null)
+        _subscribedWindow = Window.GetWindow(this);
+        if (_subscribedWindow is not null)
         {
-            parentWindow.Activated += OnParentWindowActivated;
+            _subscribedWindow.Activated += OnParentWindowActivated;
         }
     }
 
-    private void OnUnloaded(object sender, RoutedEventArgs e)
+    private void OnUnloaded(object sender, RoutedEventArgs e) => Detach();
+
+    private void Detach()
     {
-        if (ViewModel is not null)
+        if (_subscribedViewModel is not null)
         {
-            ViewModel.PropertyChanged -= OnPropertyChanged;
-            ViewModel.FocusInputRequested -= OnFocusInputRequested;
+            _subscribedViewModel.PropertyChanged -= OnPropertyChanged;
+            _subscribedViewModel.FocusInputRequested -= OnFocusInputRequested;
+            _subscribedViewModel = null;
         }
 
-        var parentWindow = Window.GetWindow(this);
-        if (parentWindow is not null)
+        if (_subscribedWindow is not null)
         {
-            parentWindow.Activated -= OnParentWindowActivated;
+            _subscribedWindow.Activated -= OnParentWindowActivated;
+            _subscribedWindow = null;
         }
     }
 
