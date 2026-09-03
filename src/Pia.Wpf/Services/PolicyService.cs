@@ -330,9 +330,7 @@ public class PolicyService : IPolicyService
                 continue;
 
             var userValue = prop.GetValue(userSettings);
-            if (!MatchesBuiltInDefault(prop, userValue, prop.GetValue(builtIn))
-                && !MatchesSupersededDefault(prop, userValue, name)
-                && !MatchesAppliedDefault(prop, userValue, applied, name))
+            if (!IsStillOnADefault(prop, userValue, name, applied, builtIn))
                 continue;
 
             var policyValue = prop.GetValue(defaults);
@@ -355,6 +353,16 @@ public class PolicyService : IPolicyService
             && ReferenceEquals(Volatile.Read(ref _snapshot)?.Record, record))
             PersistCacheRecord(record);
     }
+
+    /// <summary>Once a default has been applied for a key, the recorded value is the ONLY baseline that
+    /// counts. Falling back to the built-in default there would re-apply the policy over a user who picked
+    /// that same value on purpose — which is every user who wants the English UI under a German default.</summary>
+    private static bool IsStillOnADefault(
+        PropertyInfo prop, object? userValue, string name, Dictionary<string, string>? applied, AppSettings builtIn) =>
+        applied is not null && applied.ContainsKey(name)
+            ? MatchesAppliedDefault(prop, userValue, applied, name)
+            : MatchesBuiltInDefault(prop, userValue, prop.GetValue(builtIn))
+              || MatchesSupersededDefault(prop, userValue, name);
 
     /// <summary>Value comparison that also works for the collection- and object-typed settings, whose
     /// built-in default is a fresh instance and therefore never reference-equal.</summary>

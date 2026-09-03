@@ -806,6 +806,37 @@ public class PolicyServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPolicy_UserPickedTheBuiltInDefault_IsNotReApplied()
+    {
+        var service = await LoadedService(null, """{ "defaults": { "uiLanguage": "DE" } }""");
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+        Assert.Equal(TargetLanguage.DE, settings.UiLanguage);
+
+        // English is also the built-in default, so nothing but the applied-default record can tell
+        // "the user switched back" from "never set".
+        settings.UiLanguage = TargetLanguage.EN;
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(TargetLanguage.EN, settings.UiLanguage);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_UserPickedTheBuiltInDefault_SurvivesARestart()
+    {
+        var first = await LoadedService(null, """{ "defaults": { "uiLanguage": "DE" } }""");
+        first.ApplyPolicy(new AppSettings());
+
+        var restarted = CreateService();
+        await restarted.GetPolicyAsync();
+
+        var settings = new AppSettings { UiLanguage = TargetLanguage.EN };
+        restarted.ApplyPolicy(settings);
+
+        Assert.Equal(TargetLanguage.EN, settings.UiLanguage);
+    }
+
+    [Fact]
     public async Task ApplyPolicy_ChangedServerCollectionDefault_ReAppliesOnNextLoad()
     {
         var first = await LoadedService(null, """{ "defaults": { "allowedSyncProviders": ["local"] } }""");
@@ -866,10 +897,28 @@ public class PolicyServiceTests : IDisposable
 
         var restarted = CreateService();
         await restarted.GetPolicyAsync();
-        var afterRestart = new AppSettings();
+        // The settings a restart loads, not a fresh object: the previous line already persisted FR. Once a
+        // default has been recorded, a value back at the built-in counts as one the user picked — the two
+        // cases are indistinguishable, and preserving the choice is the side that matters.
+        var afterRestart = new AppSettings { TargetSpeechLanguage = TargetSpeechLanguage.FR };
         restarted.ApplyPolicy(afterRestart);
 
         Assert.Equal(TargetSpeechLanguage.FR, afterRestart.TargetSpeechLanguage);
+    }
+
+    [Fact]
+    public async Task ApplyPolicy_DeviceWithNoAppliedDefaultsRecord_StillGetsTheDefault()
+    {
+        // A device joining the group has the document but no applied-defaults record, so the built-in
+        // comparison is what has to carry the default onto it.
+        await SeedServerPolicy("""{ "defaults": { "targetSpeechLanguage": "FR" } }""");
+        var service = CreateService();
+        await service.GetPolicyAsync();
+
+        var settings = new AppSettings();
+        service.ApplyPolicy(settings);
+
+        Assert.Equal(TargetSpeechLanguage.FR, settings.TargetSpeechLanguage);
     }
 
     [Fact]
