@@ -89,8 +89,11 @@ public class PluginService : IPluginService
 
     private void InitializeBuiltInPlugins()
     {
-        foreach (var (id, config) in BuiltInPluginDefaults.Defaults)
+        foreach (var (id, shipped) in BuiltInPluginDefaults.Defaults)
         {
+            // A copy: Defaults holds one shared instance per plugin, so writing UserEnabled onto it would
+            // follow the process into every other service that reads the same static.
+            var config = CopyOf(shipped);
             _pluginConfigs[id] = config;
 
             IPluginToolHandler adapter = GetHandlerId(config.ConfigJson) switch
@@ -113,6 +116,23 @@ public class PluginService : IPluginService
         _logger.LogInformation("PluginService initialized with {Count} built-in plugins", _handlers.Count);
     }
 
+    private static SyncPlugin CopyOf(SyncPlugin source) => new()
+    {
+        Id = source.Id,
+        Kind = source.Kind,
+        Name = source.Name,
+        Description = source.Description,
+        IconUrl = source.IconUrl,
+        ConfigJson = source.ConfigJson,
+        Version = source.Version,
+        IsPreloaded = source.IsPreloaded,
+        IsActive = source.IsActive,
+        UserEnabled = source.UserEnabled,
+        UpdatedAt = source.UpdatedAt,
+        CabHash = source.CabHash,
+        CabSize = source.CabSize
+    };
+
     private void LoadPersistedPlugins()
     {
         try
@@ -121,7 +141,13 @@ public class PluginService : IPluginService
             foreach (var plugin in plugins)
             {
                 if (BuiltInPluginDefaults.PreloadedPluginIds.Contains(plugin.Id))
-                    continue; // Built-ins are handled separately
+                {
+                    // A built-in's definition ships in code, so the row contributes nothing but the
+                    // user's switch — taking the whole row would pin a retired release's prompt.
+                    if (_pluginConfigs.TryGetValue(plugin.Id, out var builtIn))
+                        builtIn.UserEnabled = plugin.UserEnabled;
+                    continue;
+                }
 
                 _pluginConfigs[plugin.Id] = plugin;
             }
@@ -645,8 +671,9 @@ public class PluginService : IPluginService
         {
             config.UserEnabled = enabled;
 
-            if (!config.IsPreloaded)
-                SavePluginToDb(config);
+            // Built-ins too: the server round-trip below is a push, so the row is the only thing that
+            // carries the switch across a restart.
+            SavePluginToDb(config);
 
             lock (_pendingPrefs)
             {
