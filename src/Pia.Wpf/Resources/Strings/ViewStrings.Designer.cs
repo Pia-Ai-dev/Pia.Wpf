@@ -268,141 +268,6 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Remember that my favorite color is blue.
-        /// </summary>
-        public static string Assistant_Suggestion_Memory1 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Memory1", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to What do you know about me?.
-        /// </summary>
-        public static string Assistant_Suggestion_Memory2 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Memory2", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Remember that I&apos;m allergic to peanuts.
-        /// </summary>
-        public static string Assistant_Suggestion_Memory3 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Memory3", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Update my preferred language to French.
-        /// </summary>
-        public static string Assistant_Suggestion_Memory4 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Memory4", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Remember my partner&apos;s name is Alex.
-        /// </summary>
-        public static string Assistant_Suggestion_Memory5 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Memory5", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Remind me to call the dentist tomorrow.
-        /// </summary>
-        public static string Assistant_Suggestion_Reminder1 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Reminder1", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Set a daily reminder to drink water.
-        /// </summary>
-        public static string Assistant_Suggestion_Reminder2 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Reminder2", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Remind me about the meeting at 3 PM.
-        /// </summary>
-        public static string Assistant_Suggestion_Reminder3 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Reminder3", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Create a weekly reminder to review my goals.
-        /// </summary>
-        public static string Assistant_Suggestion_Reminder4 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Reminder4", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Remind me to pick up the package on Friday.
-        /// </summary>
-        public static string Assistant_Suggestion_Reminder5 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Reminder5", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Add &quot;buy groceries&quot; to my todo list.
-        /// </summary>
-        public static string Assistant_Suggestion_Todo1 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Todo1", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to What&apos;s on my todo list?.
-        /// </summary>
-        public static string Assistant_Suggestion_Todo2 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Todo2", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Mark the laundry task as done.
-        /// </summary>
-        public static string Assistant_Suggestion_Todo3 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Todo3", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Add a high-priority task to finish the report.
-        /// </summary>
-        public static string Assistant_Suggestion_Todo4 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Todo4", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to What tasks are due this week?.
-        /// </summary>
-        public static string Assistant_Suggestion_Todo5 {
-            get {
-                return ResourceManager.GetString("Assistant_Suggestion_Todo5", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Toggle todo panel.
         /// </summary>
         public static string Assistant_ToggleTodoPanel_Tooltip {
@@ -1294,15 +1159,6 @@ namespace Pia.Resources.Strings {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Regenerate embeddings for all memory objects.
-        /// </summary>
-        public static string Memory_RegenerateTooltip {
-            get {
-                return ResourceManager.GetString("Memory_RegenerateTooltip", resourceCulture);
-            }
-        }
-        
-        /// <summary>
         ///   Looks up a localized string similar to Review Stale.
         /// </summary>
         public static string Memory_ReviewStale {
@@ -1434,15 +1290,6 @@ namespace Pia.Resources.Strings {
         public static string Nav_Reminders {
             get {
                 return ResourceManager.GetString("Nav_Reminders", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Research.
-        /// </summary>
-        public static string Nav_Research {
-            get {
-                return ResourceManager.GetString("Nav_Research", resourceCulture);
             }
         }
         
@@ -2343,24 +2190,6 @@ namespace Pia.Resources.Strings {
         public static string Settings_ResetAppData_Description {
             get {
                 return ResourceManager.GetString("Settings_ResetAppData_Description", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Show todo panel button.
-        /// </summary>
-        public static string Settings_ShowTodoPanelButton {
-            get {
-                return ResourceManager.GetString("Settings_ShowTodoPanelButton", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to Show the todo panel toggle button in Optimize, Assistant, and Research views.
-        /// </summary>
-        public static string Settings_ShowTodoPanelButton_Description {
-            get {
-                return ResourceManager.GetString("Settings_ShowTodoPanelButton_Description", resourceCulture);
             }
         }
         

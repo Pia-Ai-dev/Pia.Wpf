@@ -168,6 +168,31 @@ public class LocalizationTests
             $"translation files should not contain keys absent from the base file: {string.Join(", ", orphanedTranslations)}");
     }
 
+    /// <summary>The generated accessors drift the other way too: a property whose key was deleted from the
+    /// .resx still compiles and just returns null, so the loss only ever shows up as a blank label.</summary>
+    [Fact]
+    public void EveryGeneratedStringAccessor_StillResolvesToAResource()
+    {
+        var accessors = new[]
+            {
+                typeof(CommonStrings), typeof(ViewStrings),
+                typeof(MessageStrings), typeof(OptimizingStrings)
+            }
+            .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Static)
+                .Where(p => p.PropertyType == typeof(string))
+                .Select(p => (Name: $"{t.Name}.{p.Name}", Value: (string?)p.GetValue(null))))
+            .ToArray();
+
+        // Non-vacuity: reflection returning nothing would make the assertion below pass on an empty set.
+        Assert.True(accessors.Length >= 300,
+            $"only {accessors.Length} generated string accessors were found, which is below the floor.");
+
+        var orphans = accessors.Where(a => a.Value is null).Select(a => a.Name).ToArray();
+        Assert.True(orphans.Length == 0,
+            "these generated accessors in Resources/Strings/*.Designer.cs name a resource key that no longer " +
+            $"exists in the .resx, so they return null at runtime: {string.Join(", ", orphans)}");
+    }
+
     /// <summary>The mapping lives in a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
     [Fact]
     public void EveryRunStateLabelKeyResolvesInAllThreeLocales()
