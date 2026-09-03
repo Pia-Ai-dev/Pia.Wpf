@@ -14,6 +14,8 @@
   wherever you had scrolled to in the chat before it.
 - A long draft no longer fills the window. The input stays a few lines tall
   and offers to grow, and goes back once the message is sent.
+- A long message you have sent no longer fills the window either. Its bubble
+  shows five lines and offers "Show more"; the answer to it stays in view.
 - A chat can be given a name of your own. Pick it in the history, next to
   Resume, and it is what the history shows from then on — useful above all
   with automatic titles switched off.

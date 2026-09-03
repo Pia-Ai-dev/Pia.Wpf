@@ -82,6 +82,12 @@ Do not tick a step below an open gate without revisiting it.
 - [x] **I1 — Expand the composer.** The input stays collapsed to a few lines and offers a toggle
       once the draft outgrows it, back to collapsed when the draft is sent or cleared.
       *Deps:* — · *Effort:* S · *Value:* Med
+- [x] **I3 — Fold a long message you have sent.** I1 covered the composer; the bubble in the
+      transcript still rendered every line, so a nine-line prompt pushed its own answer off
+      screen. The bubble now shows five lines with an inline Show more / Show less
+      (`PiaCollapsibleMessageText`), measured rather than guessed so the toggle is never dead.
+      The history inspector deliberately keeps showing the whole prompt.
+      *Deps:* I1 · *Effort:* XS · *Value:* High
 
 ## Not yet planned
 

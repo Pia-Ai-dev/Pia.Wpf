@@ -301,6 +301,13 @@ sits at the head of the composer's button strip, and it is only offered while th
 taller than the collapsed box, so it is never a dead control. Sending — which clears the draft —
 puts the box back.
 
+**The transcript bubble was a second surface, and it was missed here.** "The input" was read as the
+composer alone, so a sent message still rendered every line and a nine-line prompt pushed its own
+answer off screen — which is what the reporter actually saw. Closed as **I3**: the user bubble folds
+to five lines with an inline Show more / Show less (`PiaCollapsibleMessageText`), measured the same
+way the composer's toggle is. The history inspector reuses the bubble's styles and deliberately keeps
+showing the whole prompt: there you are reviewing a chat, not reading past it.
+
 ### I-b — where a chat opens
 
 `AssistantViewModel.Messages` is **re-pointed** to the new session's list

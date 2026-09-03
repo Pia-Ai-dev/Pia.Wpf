@@ -48,7 +48,8 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 6, 4, "")]
     [InlineData(typeof(Pia.Views.AssistantView), 26, 6,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
-        "PiaChatQuickSwitcher,PiaChatTitleChip,PiaPersonaAvatar,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
+        "PiaChatQuickSwitcher,PiaChatTitleChip,PiaCollapsibleMessageText,PiaPersonaAvatar,RunProgressPanel," +
+        "TodoPanelControl,VoiceModeOverlay")]
     [InlineData(typeof(Pia.Views.AssistantHistoryView), 10, 1,
         "PiaAssistantChatInspector,PiaAssistantChatRowContent,PiaEmptyState,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.RoutinesView), 21, 1, "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar")]
@@ -81,6 +82,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 23, 10, "PiaPersonaAvatar")]
     [InlineData(typeof(Pia.Controls.Chat.PiaFileChip), 3, 3, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaAttachedFileChip), 2, 2, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaCollapsibleMessageText), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
     [InlineData(typeof(Pia.Views.AssignmentsView), 4, 2, "PiaEmptyState,PiaHelpHint")]

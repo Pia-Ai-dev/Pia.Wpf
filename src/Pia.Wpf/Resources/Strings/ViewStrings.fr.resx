@@ -114,6 +114,8 @@
   <data name="Assistant_ToolCallCount" xml:space="preserve"><value>Appels d'outils : {0}</value></data>
   <data name="Assistant_NewChat_Tooltip" xml:space="preserve"><value>Nouveau chat</value></data>
   <data name="Assistant_ExpandComposer_Tooltip" xml:space="preserve"><value>Agrandir la saisie</value></data>
+  <data name="Assistant_ExpandMessage" xml:space="preserve"><value>Afficher plus</value></data>
+  <data name="Assistant_CollapseMessage" xml:space="preserve"><value>Afficher moins</value></data>
   <data name="Assistant_DeleteChat_Tooltip" xml:space="preserve"><value>Supprimer ce chat</value></data>
   <data name="Assistant_Cancel_Tooltip" xml:space="preserve"><value>Annuler</value></data>
   <data name="Assistant_ToggleTts_Tooltip" xml:space="preserve"><value>Activer/désactiver la synthèse vocale</value></data>

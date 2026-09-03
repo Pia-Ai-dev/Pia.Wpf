@@ -184,8 +184,9 @@
                         </Style>
                       </Image.Style>
                     </Image>
-                    <TextBlock behaviors:AtCommandHighlightBehavior.Text="{Binding Content}"
-                               Style="{StaticResource UserBubbleTextStyle}" />
+                    <chat:PiaCollapsibleMessageText
+                        Text="{Binding Content}"
+                        ToggleAutomationId="{Binding Id, StringFormat='Assistant_ExpandMessage_{0}'}" />
                   </StackPanel>
                 </Border>
                 <!-- What the user attached. Saved files reopen; the rest kept only their name. -->
