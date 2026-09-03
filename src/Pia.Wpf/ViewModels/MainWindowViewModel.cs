@@ -89,6 +89,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     public IRelayCommand ToggleThemeCommand { get; }
     public IRelayCommand OpenDefaultWindowCommand { get; }
     public IRelayCommand<WindowMode> OpenNewWindowCommand { get; }
+    public IRelayCommand OpenDocumentationCommand { get; }
 
     public MainWindowViewModel(
         ILogger<MainWindowViewModel> logger,
@@ -132,6 +133,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             () => !_policyService.IsEnforced(nameof(AppSettings.Theme)));
         OpenDefaultWindowCommand = new AsyncRelayCommand(ExecuteOpenDefaultWindowAsync);
         OpenNewWindowCommand = new RelayCommand<WindowMode>(ExecuteOpenNewWindow);
+        OpenDocumentationCommand = new RelayCommand(ExecuteOpenDocumentation);
 
         _navigationService.ViewModelChanged += OnViewModelChanged;
         _settingsService.SettingsChanged += OnSettingsChanged;
@@ -396,6 +398,19 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private void ExecuteOpenNewWindow(WindowMode mode)
     {
         _windowManagerService.ShowWindow(mode);
+    }
+
+    private void ExecuteOpenDocumentation()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(PiaLinks.Documentation) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open the documentation");
+        }
     }
 
     partial void OnIsUpdateReadyChanged(bool value) => OnPropertyChanged(nameof(ShowUpdateBar));

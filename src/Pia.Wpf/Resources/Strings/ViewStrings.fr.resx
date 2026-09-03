@@ -52,6 +52,10 @@
   <data name="Nav_Settings" xml:space="preserve"><value>Paramètres</value></data>
   <data name="Nav_NewWindow" xml:space="preserve"><value>Nouvelle fenêtre</value></data>
   <data name="Nav_NewWindow_Tooltip" xml:space="preserve"><value>Ouvrir une nouvelle fenêtre</value></data>
+  <data name="Nav_Theme" xml:space="preserve"><value>Apparence</value></data>
+  <data name="Nav_Theme_Tooltip" xml:space="preserve"><value>Changer l'apparence : système, clair ou sombre</value></data>
+  <data name="Nav_Help" xml:space="preserve"><value>Aide</value></data>
+  <data name="Nav_Help_Tooltip" xml:space="preserve"><value>Ouvrir la documentation Pia dans le navigateur</value></data>
   <!-- Optimize View -->
   <data name="Optimize_Title" xml:space="preserve"><value>Optimisation de texte</value></data>
   <data name="Optimize_Subtitle" xml:space="preserve"><value>Optimisez votre texte pour tout usage. Tapez ou dictez votre texte, choisissez un modèle et laissez Pia l'améliorer.</value></data>

@@ -50,6 +50,27 @@ public class NavigationSidebarViewParseTests
             string.Join(", ", unresolved));
     }
 
+    /// <summary>The footer is the only place a script can reach these two, and the help item sits between the
+    /// new-window and theme items on purpose — that ORDER is what users were asked about.</summary>
+    [Fact]
+    public void TheFooterOffersNewWindowThenHelpThenTheThemeSwitch()
+    {
+        var ids = WpfStaHost.Run(() =>
+        {
+            var sidebar = new Pia.Views.NavigationSidebarView();
+            if (sidebar.FindName("SidebarNavigationView") is not NavigationView nav)
+                return new[] { "<SidebarNavigationView not found by name>" };
+
+            return (nav.FooterMenuItems?.Cast<object>() ?? [])
+                .OfType<NavigationViewItem>()
+                .Select(item => System.Windows.Automation.AutomationProperties.GetAutomationId(
+                    (System.Windows.DependencyObject)item.Content))
+                .ToArray();
+        });
+
+        Assert.Equal(["NavItem_NewWindow", "NavItem_Help", "NavItem_ThemeToggle"], ids);
+    }
+
     [Fact]
     public void TheViewRootItself_HasNoLogicallyReachableBindings_WhichIsWhyTheFactAboveReadsTheCollections()
     {

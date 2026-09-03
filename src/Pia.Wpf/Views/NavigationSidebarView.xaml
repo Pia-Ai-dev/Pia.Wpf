@@ -265,14 +265,31 @@
           </ContextMenu>
         </ui:NavigationViewItem.ContextMenu>
       </ui:NavigationViewItem>
+      <ui:NavigationViewItem Command="{Binding OpenDocumentationCommand}"
+                             ToolTip="{loc:Str Nav_Help_Tooltip}">
+        <ui:NavigationViewItem.Content>
+          <Button Style="{StaticResource NavItemInvokeButtonStyle}"
+                  Command="{Binding OpenDocumentationCommand}"
+                  AutomationProperties.AutomationId="NavItem_Help"
+                  AutomationProperties.Name="{loc:Str Nav_Help}">
+            <TextBlock Text="{loc:Str Nav_Help}" />
+          </Button>
+        </ui:NavigationViewItem.Content>
+        <ui:NavigationViewItem.Icon>
+          <ui:SymbolIcon Symbol="QuestionCircle24" />
+        </ui:NavigationViewItem.Icon>
+      </ui:NavigationViewItem>
+      <!-- Labelled by what it does, not by the theme it is on: the icon already carries the state, and a
+           bare "Dark" read as a section heading rather than a switch. -->
       <ui:NavigationViewItem Command="{Binding ToggleThemeCommand}"
-                             Tag="ThemeToggle">
+                             Tag="ThemeToggle"
+                             ToolTip="{loc:Str Nav_Theme_Tooltip}">
         <ui:NavigationViewItem.Content>
           <Button Style="{StaticResource NavItemInvokeButtonStyle}"
                   Command="{Binding ToggleThemeCommand}"
                   AutomationProperties.AutomationId="NavItem_ThemeToggle"
-                  AutomationProperties.Name="{Binding Theme}">
-            <TextBlock Text="{Binding Theme}" />
+                  AutomationProperties.Name="{loc:Str Nav_Theme}">
+            <TextBlock Text="{loc:Str Nav_Theme}" />
           </Button>
         </ui:NavigationViewItem.Content>
         <ui:NavigationViewItem.Icon>
