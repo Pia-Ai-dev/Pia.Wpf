@@ -517,24 +517,32 @@
                             CornerRadius="6"
                             Padding="10,6"
                             Margin="0,0,0,4">
-                      <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding SettledAt, StringFormat=g}"
-                                   Style="{StaticResource PiaMetaTextStyle}"/>
-                        <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
-                        <TextBlock Text="{Binding StateLabel}"
+                      <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                          <TextBlock Text="{Binding SettledAt, StringFormat=g}"
+                                     Style="{StaticResource PiaMetaTextStyle}"/>
+                          <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                          <TextBlock Text="{Binding StateLabel}"
+                                     Style="{StaticResource PiaMetaTextStyle}"
+                                     FontWeight="SemiBold"/>
+                          <!-- A failed firing produced no chat, so the link is hidden rather than dead. -->
+                          <ui:HyperlinkButton Content="{loc:Str Routines_Detail_OpenChat}"
+                                              Cursor="Hand"
+                                              Padding="0"
+                                              Margin="10,0,0,0"
+                                              FontSize="11"
+                                              VerticalAlignment="Center"
+                                              Visibility="{Binding HasChat, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                              Command="{Binding DataContext.OpenRunChatCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                              CommandParameter="{Binding}"
+                                              AutomationProperties.AutomationId="{Binding ChatId, StringFormat='Routines_OpenRunChat_{0}'}"/>
+                        </StackPanel>
+                        <!-- The run's own failure reason; a server or exception message is shown verbatim. -->
+                        <TextBlock Text="{Binding Reason}"
                                    Style="{StaticResource PiaMetaTextStyle}"
-                                   FontWeight="SemiBold"/>
-                        <!-- A failed firing produced no chat, so the link is hidden rather than dead. -->
-                        <ui:HyperlinkButton Content="{loc:Str Routines_Detail_OpenChat}"
-                                            Cursor="Hand"
-                                            Padding="0"
-                                            Margin="10,0,0,0"
-                                            FontSize="11"
-                                            VerticalAlignment="Center"
-                                            Visibility="{Binding HasChat, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                            Command="{Binding DataContext.OpenRunChatCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                            CommandParameter="{Binding}"
-                                            AutomationProperties.AutomationId="{Binding ChatId, StringFormat='Routines_OpenRunChat_{0}'}"/>
+                                   TextWrapping="Wrap"
+                                   Margin="0,2,0,0"
+                                   Visibility="{Binding HasReason, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                       </StackPanel>
                     </Border>
                   </DataTemplate>

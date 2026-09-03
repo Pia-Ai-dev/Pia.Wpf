@@ -828,6 +828,38 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.DoesNotContain(firings, f => f.RunId == loose.Id);
     }
 
+    /// <summary>The failed run's free-text reason rides on the outcome, so the routine list can say WHY a firing
+    /// failed instead of only that it did; a completed firing carries none.</summary>
+    [Fact]
+    public async Task Firings_CarryTheFailureReason_ForFailedRunsOnly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var job = Guid.NewGuid();
+        const string reason = "Request to upstream AI provider timed out.";
+
+        var failedChat = await MakeChatAsync();
+        var failed = await _service.CreateAsync(new AgentRunCreateRequest(
+            failedChat, RunShape.SingleTurn, AgentRunTrigger.Schedule, job, null, "failing"), ct);
+        await _service.FailAsync(failed.Id, reason, ct: ct);
+        SetCompletedAt(failed.Id, DateTime.UtcNow.AddHours(-2));
+
+        var okChat = await MakeChatAsync();
+        var ok = await _service.CreateAsync(new AgentRunCreateRequest(
+            okChat, RunShape.SingleTurn, AgentRunTrigger.Schedule, job, null, "fine"), ct);
+        await _service.CompleteAsync(ok.Id, ct: ct);
+        SetCompletedAt(ok.Id, DateTime.UtcNow.AddHours(-1));
+
+        var list = await _service.GetFiringsForTriggerAsync(job, 10, ct);
+        Assert.Equal(reason, Assert.Single(list, f => f.RunId == failed.Id).FailureReason);
+        Assert.Null(Assert.Single(list, f => f.RunId == ok.Id).FailureReason);
+
+        // The latest-per-trigger aggregate reads the same column off the MAX row.
+        SetCompletedAt(failed.Id, DateTime.UtcNow);
+        var latest = Assert.Single(await _service.GetLatestSettledFiringsAsync(ct), f => f.JobId == job);
+        Assert.Equal(failed.Id, latest.RunId);
+        Assert.Equal(reason, latest.FailureReason);
+    }
+
     // The index DDL lives inside EnsureSchema, which runs on EVERY open, so the index arrives at next launch with
     // no MigrateSchema entry; dropping it leaves exactly the pre-upgrade shape.
     [Fact]

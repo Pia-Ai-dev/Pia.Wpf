@@ -84,6 +84,19 @@ public class FailureMapperTests
             FailureMapper.ForException(new InvalidOperationException("HttpRequestException: x")).Layer);
     }
 
+    /// <summary>The server's in-stream error is the upstream AI provider failing, so the card names the
+    /// Provider layer — and it stays distinct from the generic InvalidOperationException it derives from.</summary>
+    [Fact]
+    public void AnInStreamServerError_IsAProviderFailure_ThatIsNotSafeToReRun()
+    {
+        var failure = FailureMapper.ForException(
+            new PiaCloudStreamException("Bad Gateway", "Request to upstream AI provider timed out."));
+
+        Assert.Equal(FailureLayer.Provider, failure.Layer);
+        Assert.Equal("Upstream", failure.Code);
+        Assert.False(failure.SafeToReRun);
+    }
+
     /// <summary>
     /// Found by running it: a refused connection reaches the orchestrator as AggregateException →
     /// ClientResultException → HttpRequestException → SocketException. Matching only the outermost type

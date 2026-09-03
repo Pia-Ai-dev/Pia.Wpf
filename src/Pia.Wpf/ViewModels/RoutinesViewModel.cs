@@ -651,6 +651,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             ? _localization[$"Settings_ScheduledJobs_RunState_{firing.State}"]
             : ((int)firing.State).ToString(),
         ChatId = firing.ChatId,
+        // A cancel may have a stored reason too; it is not a failure the user should read as one.
+        Reason = firing.State == AgentRunState.Failed
+            ? FailureReasonText.Describe(firing.FailureReason, _localization)
+            : null,
     };
 
     private RoutineRow BuildRow(ScheduledJob job, string? providerName, string? personaName, bool ownedHere,
@@ -1542,6 +1546,11 @@ public sealed class RoutineRunRow
 
     /// <summary>Drives the open-chat affordance: a failed firing produced no chat to point at.</summary>
     public bool HasChat => ChatId != Guid.Empty;
+
+    /// <summary>Why a failed firing failed, in the run's own words; null for every other settle.</summary>
+    public string? Reason { get; init; }
+
+    public bool HasReason => !string.IsNullOrEmpty(Reason);
 }
 
 /// <summary>A display projection of one <see cref="ScheduledJob"/>, labels included, so no converter has to

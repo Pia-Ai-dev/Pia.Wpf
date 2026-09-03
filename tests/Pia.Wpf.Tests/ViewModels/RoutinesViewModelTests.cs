@@ -642,6 +642,40 @@ public class RoutinesViewModelTests
         Assert.Single(row.RecentRuns, r => r.Succeeded);
     }
 
+    /// <summary>A failed firing says WHY, in the words the run recorded: an app-owned token is localized, a
+    /// server or exception message is shown verbatim. Any other settle shows no reason even if one was stored.</summary>
+    [Fact]
+    public async Task AFailedFiring_ShowsItsReason_AndOtherSettlesDoNot()
+    {
+        var job = NewJob();
+        var runs = Substitute.For<IAgentRunService>();
+        var settled = new DateTime(2026, 9, 3, 7, 0, 0, DateTimeKind.Utc);
+        var verbatim = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var cancelled = Guid.NewGuid();
+        runs.GetFiringsForTriggerAsync(job.Id, Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(
+        [
+            new ScheduledFiringOutcome(job.Id, verbatim, Guid.NewGuid(), settled, AgentRunState.Failed,
+                "Request to upstream AI provider timed out."),
+            new ScheduledFiringOutcome(job.Id, token, Guid.NewGuid(), settled.AddHours(-1), AgentRunState.Failed,
+                AgentStepTools.EmptyResponseFailure),
+            new ScheduledFiringOutcome(job.Id, cancelled, Guid.NewGuid(), settled.AddHours(-2), AgentRunState.Cancelled,
+                "interrupted"),
+            new ScheduledFiringOutcome(job.Id, Guid.NewGuid(), Guid.NewGuid(), settled.AddHours(-3), AgentRunState.Completed),
+        ]);
+        var sut = CreateSut(runs, job);
+
+        await sut.Vm.RefreshAsync();
+
+        var rows = Assert.Single(sut.Vm.Jobs).RecentRuns;
+        Assert.Equal("Request to upstream AI provider timed out.", rows[0].Reason);
+        Assert.True(rows[0].HasReason);
+        Assert.Equal("Run_Failed_EmptyResponse", rows[1].Reason);
+        Assert.Null(rows[2].Reason);
+        Assert.False(rows[2].HasReason);
+        Assert.Null(rows[3].Reason);
+    }
+
     /// <summary>A history read that throws must not cost the jobs list: the row renders without the line.</summary>
     [Fact]
     public async Task AFailingHistoryRead_LeavesTheRowIntact()

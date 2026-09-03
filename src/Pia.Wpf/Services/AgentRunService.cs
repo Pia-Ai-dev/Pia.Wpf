@@ -299,6 +299,27 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>The <c>error</c> member <see cref="FailAsync"/> writes into <c>ExtraJson</c>; null when absent,
+    /// not a string, or unparseable. Lives beside the writer so no reader can disagree with it.</summary>
+    public static string? ReadFailureReason(string? extraJson)
+    {
+        if (string.IsNullOrEmpty(extraJson)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(extraJson);
+            // TryGetProperty throws on a non-object root rather than returning false.
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+                ? error.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public Task FailAsync(
         Guid runId, string? error, bool cancelled = false, CancellationToken ct = default,
         PiaFailure? failure = null)
@@ -921,7 +942,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     /// </summary>
     private static readonly string LatestSettledFiringsSql =
         """
-        SELECT TriggerRef, Id, ChatId, State, MAX(CompletedAt)
+        SELECT TriggerRef, Id, ChatId, State, MAX(CompletedAt), ExtraJson
         FROM AgentRuns
         WHERE TriggerRef IS NOT NULL AND CompletedAt IS NOT NULL AND State IN (
         """
@@ -951,7 +972,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                     // Same parse+normalize as MapRun's CompletedAt: the stored string is UTC, but
                     // DateTime.Parse hands back a LOCAL-kind value, and this record promises UTC.
                     DateTime.Parse(reader.GetString(4)).ToUniversalTime(),
-                    (AgentRunState)reader.GetInt32(3)));
+                    (AgentRunState)reader.GetInt32(3),
+                    ReadFiringFailureReason(reader)));
             }
 
             return Task.FromResult<IReadOnlyList<ScheduledFiringOutcome>>(list);
@@ -966,11 +988,18 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     /// </summary>
     private static readonly string FiringsForTriggerSql =
         """
-        SELECT TriggerRef, Id, ChatId, State, CompletedAt
+        SELECT TriggerRef, Id, ChatId, State, CompletedAt, ExtraJson
         FROM AgentRuns
         WHERE TriggerRef=@Trigger AND CompletedAt IS NOT NULL AND State IN (
         """
         + string.Join(",", SettledStates) + ") ORDER BY CompletedAt DESC LIMIT @Limit";
+
+    // Both firing queries share this column layout: State at 3, ExtraJson at 5. Only a Failed settle carries
+    // a reason the record promises; a cancel may have written one too, and that must not read as a failure.
+    private static string? ReadFiringFailureReason(SqliteDataReader reader) =>
+        (AgentRunState)reader.GetInt32(3) == AgentRunState.Failed && !reader.IsDBNull(5)
+            ? ReadFailureReason(reader.GetString(5))
+            : null;
 
     public Task<IReadOnlyList<ScheduledFiringOutcome>> GetFiringsForTriggerAsync(
         Guid triggerRef, int limit, CancellationToken ct = default)
@@ -998,7 +1027,8 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
                     // Same parse+normalize as above: the stored string is UTC, DateTime.Parse hands back a
                     // LOCAL-kind value, and this record promises UTC.
                     DateTime.Parse(reader.GetString(4)).ToUniversalTime(),
-                    (AgentRunState)reader.GetInt32(3)));
+                    (AgentRunState)reader.GetInt32(3),
+                    ReadFiringFailureReason(reader)));
             }
 
             return Task.FromResult<IReadOnlyList<ScheduledFiringOutcome>>(list);

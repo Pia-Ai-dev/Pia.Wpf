@@ -1317,23 +1317,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         _ => _localization["Run_EndedEarly"],
     };
 
-    /// <summary>
-    /// The failure vocabulary is OPEN, which is the one structural difference from
-    /// <see cref="DescribeTruncation"/> above. Five app-owned tokens are localized; everything else is the
-    /// model's own summary or an exception message and falls through UNCHANGED — the default arm is the
-    /// informative case here, not the fallback. Every token is referenced by name rather than re-spelled, so a
-    /// writer renaming one gets a compile error instead of a run that silently shows the raw string.
-    /// </summary>
-    private string? DescribeFailureReason(string? error) => error switch
-    {
-        null or "" => null,
-        AgentStepTools.EmptyResponseFailure => _localization["Run_Failed_EmptyResponse"],
-        AgentStepTools.UndetailedFailure => _localization["Run_Failed_Undetailed"],
-        HeadlessRunLauncher.WorkspaceSetupFailure => _localization["Run_Failed_WorkspaceSetup"],
-        HeadlessRunLauncher.ShutdownInterruptedFailure => _localization["Run_Failed_Interrupted"],
-        AgentRunOrchestrator.SupersededFailureReason => _localization["Run_Failed_Superseded"],
-        _ => error,
-    };
+    /// <summary>Unlike <see cref="DescribeTruncation"/> the vocabulary is open — see <see cref="FailureReasonText"/>.</summary>
+    private string? DescribeFailureReason(string? error) => FailureReasonText.Describe(error, _localization);
 
     /// <summary>
     /// Its own column, not <c>ExtraJson</c>: a Retry would be a <c>Failed → Running</c> claim, and every
@@ -1389,21 +1374,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <c>{error}</c>. Guarded on <see cref="JsonValueKind.String"/> rather than on presence — a member the
     /// caller does not control can be any kind, and the typed getters throw rather than returning false.
     /// </summary>
-    private static string? ReadFailureReason(AgentRun run)
-    {
-        if (string.IsNullOrEmpty(run.ExtraJson)) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(run.ExtraJson);
-            return doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
-                ? error.GetString()
-                : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private static string? ReadFailureReason(AgentRun run) => AgentRunService.ReadFailureReason(run.ExtraJson);
 
     // The pause vocabulary, like the truncation vocabulary above, is a fixed set of APP-OWNED tokens written by
     // the run loop and the startup reconcile — never user content. An unknown or absent reason keeps the budget

@@ -122,8 +122,9 @@ public readonly record struct PlanMutationResult(PlanMutationOutcome Outcome, in
 /// LOCAL, and comparing the two without normalizing is a bug that cannot reproduce on a UTC+0 machine.
 /// </param>
 /// <param name="State">Which settle it was — <see cref="AgentRunState.Completed"/> is the only success.</param>
+/// <param name="FailureReason">The free-text reason a failed run recorded, verbatim; null for any other settle.</param>
 public sealed record ScheduledFiringOutcome(
-    Guid JobId, Guid RunId, Guid ChatId, DateTime SettledAtUtc, AgentRunState State);
+    Guid JobId, Guid RunId, Guid ChatId, DateTime SettledAtUtc, AgentRunState State, string? FailureReason = null);
 
 /// <summary>Raised after a state-changing run write. The 1.4 UI/Flow event source; no consumers in 1.1.</summary>
 public sealed class AgentRunChangedEventArgs : EventArgs

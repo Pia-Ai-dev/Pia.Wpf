@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Xunit;
@@ -25,8 +26,29 @@ public class BackgroundAssistantTurnRunnerTests
         TimeoutSeconds = 60,
     };
 
+    /// <summary>Echoes keys and joins format arguments, so a test can assert WHICH message was chosen and what
+    /// went into it without pinning any English text.</summary>
+    private static ILocalizationService KeyEchoLocalizer()
+    {
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci[0]}:{string.Join(",", (object[])ci[1])}");
+        return loc;
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> Throwing(Exception ex)
+    {
+        await Task.Yield();
+        if (ex is not null) throw ex;
+        yield break;
+    }
+
     private sealed class Harness
     {
+        /// <summary>Null keeps the runner on its English fallback; a test that asserts on the message sets one.</summary>
+        public ILocalizationService? Localization;
+
         public IAiClientService Ai = Substitute.For<IAiClientService>();
         public IPluginService Plugins = Substitute.For<IPluginService>();
 
@@ -95,7 +117,7 @@ public class BackgroundAssistantTurnRunnerTests
             return new BackgroundAssistantTurnRunner(
                 Ai, Plugins, Permissions, Composer, Personas, Chats, Titles, Settings,
                 TokenMapFactory, Runs, new ExecutingRunStore(),
-                NullLogger<BackgroundAssistantTurnRunner>.Instance);
+                NullLogger<BackgroundAssistantTurnRunner>.Instance, Localization);
         }
 
         private async IAsyncEnumerable<ChatStreamItem> Drive(
@@ -634,11 +656,12 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
-    public async Task EmptyAnswer_ReturnsFailure_ButPersistsStubChat()
+    public async Task EmptyAnswer_ReturnsFailure_AndPersistsThePromptWithAFailedResponseMessage()
     {
-        // Even the empty path leaves a stub AssistantChats row up front so the run's FK
-        // target (and thus a Failed run's ChatId) resolves. No assistant/user messages are written.
-        var h = new Harness();
+        // The stub AssistantChats row still goes in up front (the run's FK target), and the failed turn is then
+        // written over it: opening the chat used to show nothing at all, now it shows what was asked and why it
+        // failed — the same message an interactive turn shows when its provider call fails.
+        var h = new Harness { Localization = KeyEchoLocalizer() };
         var runner = h.Build([], answer: "");
 
         var result = await runner.RunAsync(new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
@@ -646,14 +669,44 @@ public class BackgroundAssistantTurnRunnerTests
         Assert.False(result.Succeeded);
         Assert.NotNull(h.Saved);
         Assert.Equal(result.ChatId, h.Saved!.Id);
-        Assert.Empty(h.Saved.Messages);
-        // Exactly one save: the stub (the full 2-message chat is never reached on the empty path).
-        Assert.Single(h.AllSaved);
-        // The empty path marks the run Failed so a resolvable (stub) chat still carries a Failed run, and
-        // it hands over the descriptor rather than only the reason text.
+        Assert.Equal(2, h.AllSaved.Count); // the stub, then the failed turn
+        Assert.Equal(2, h.Saved.Messages.Count);
+        Assert.Equal("user", h.Saved.Messages[0].Role);
+        Assert.Equal("go", h.Saved.Messages[0].Content);
+        Assert.Equal("assistant", h.Saved.Messages[1].Role);
+        Assert.Equal("Msg_Assistant_ResponseFailed:Run_Failed_EmptyResponse", h.Saved.Messages[1].Content);
+        Assert.Equal(h.ModePersona.Name, h.Saved.Messages[1].Persona?.Name);
+        // The empty path marks the run Failed so a resolvable chat still carries a Failed run, and it hands
+        // over the descriptor rather than only the reason text.
         await h.Runs.Received().FailAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>(),
             Arg.Is<PiaFailure?>(f => f != null && f.Layer == FailureLayer.Provider && !f.SafeToReRun));
+    }
+
+    /// <summary>A provider failure mid-stream (the server's relayed upstream error) is the case the routine
+    /// list and the chat were blind to: the message must reach the run row AND the chat, verbatim.</summary>
+    [Fact]
+    public async Task AThrownExchange_ReturnsTheMessage_AndPersistsItAsTheFailedResponse()
+    {
+        const string serverMessage = "Request to upstream AI provider timed out.";
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var runner = h.Build([]);
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(_ => Throwing(new PiaCloudStreamException("Bad Gateway", serverMessage)));
+
+        var result = await runner.RunAsync(new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(serverMessage, result.Error);
+        Assert.NotNull(h.Saved);
+        Assert.Equal(2, h.Saved!.Messages.Count);
+        Assert.Equal("go", h.Saved.Messages[0].Content);
+        Assert.Equal($"Msg_Assistant_ResponseFailed:{serverMessage}", h.Saved.Messages[1].Content);
+        await h.Runs.Received().FailAsync(
+            Arg.Any<Guid>(), serverMessage, Arg.Any<bool>(), Arg.Any<CancellationToken>(),
+            Arg.Is<PiaFailure?>(f => f != null && f.Layer == FailureLayer.Provider));
     }
 
     // ---- the unattended gate records its decisions ----

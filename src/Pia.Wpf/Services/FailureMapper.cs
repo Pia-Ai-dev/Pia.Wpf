@@ -79,6 +79,8 @@ public static class FailureMapper
         PreModelLaunchException => new(FailureLayer.Provider, "NoProvider", true),
         LlmTimeoutException => new(FailureLayer.Provider, "Timeout", false),
         LlmTruncatedException => new(FailureLayer.Provider, "Truncated", false),
+        // The server's in-stream relay of an upstream AI failure; the card shows its message verbatim.
+        PiaCloudStreamException => new(FailureLayer.Provider, "Upstream", false),
         BrowserLaunchException => new(FailureLayer.Tool, "BrowserLaunch", false),
         HttpRequestException => new(FailureLayer.Endpoint, "Transport", false),
         TaskCanceledException or OperationCanceledException => new(FailureLayer.Cancelled, "Cancelled", false),

@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
+using Pia.Services.Exceptions;
 
 namespace Pia.Services;
 
@@ -154,6 +155,11 @@ public sealed class PiaCloudChatClient : IChatClient
                     AdditionalProperties = new AdditionalPropertiesDictionary { [GuardrailMarker.AdditionalPropertyKey] = true }
                 };
             }
+
+            // The server relays an upstream failure as a choiceless chunk inside the 200 stream; skipping it
+            // like any other choiceless line is how a whole turn used to end as a silent empty answer.
+            if (json?["error"] is { } error)
+                throw StreamError(error, json);
 
             var choices = json?["choices"]?.AsArray();
             if (choices is null || choices.Count == 0) continue;
@@ -655,6 +661,15 @@ public sealed class PiaCloudChatClient : IChatClient
 
         return new ChatMessage(ChatRole.Assistant, contents);
     }
+
+    // Two wire shapes: ChatStreamService's {"error":"Bad Gateway","message":…}, and an OpenAI-style upstream
+    // {"error":{"message":…,"type":…}} the proxy forwards unchanged.
+    private static PiaCloudStreamException StreamError(JsonNode error, JsonNode chunk) =>
+        error is JsonObject upstream
+            ? new PiaCloudStreamException(
+                ReadString(upstream["type"]) ?? ReadString(upstream["code"]) ?? "Upstream Error",
+                ReadString(upstream["message"]))
+            : new PiaCloudStreamException(ReadString(error) ?? "Upstream Error", ReadString(chunk["message"]));
 
     private static async Task HandleErrorResponse(HttpResponseMessage response, string responseJson)
     {

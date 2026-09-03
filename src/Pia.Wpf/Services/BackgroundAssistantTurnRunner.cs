@@ -33,6 +33,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     private readonly IAgentRunService _runService;
     private readonly IExecutingRunStore _executingRuns;
     private readonly ILogger<BackgroundAssistantTurnRunner> _logger;
+    private readonly ILocalizationService? _localization;
 
     public BackgroundAssistantTurnRunner(
         IAiClientService aiClient,
@@ -46,8 +47,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         Func<ITokenMapService> tokenMapFactory,
         IAgentRunService runService,
         IExecutingRunStore executingRuns,
-        ILogger<BackgroundAssistantTurnRunner> logger)
+        ILogger<BackgroundAssistantTurnRunner> logger,
+        // Optional so the many hand-built test harnesses keep compiling; DI always supplies it.
+        ILocalizationService? localization = null)
     {
+        _localization = localization;
         _aiClient = aiClient;
         _pluginService = pluginService;
         _permissions = permissions;
@@ -66,6 +70,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     {
         var chatId = Guid.NewGuid();
         AgentRun? run = null;
+        Persona? persona = null;
         try
         {
             // The AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON, so the
@@ -113,7 +118,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var settings = await _settingsService.GetSettingsAsync();
             var tokenizationEnabled = settings.Privacy.TokenizationEnabled;
 
-            var persona = await RunPinResolver.ResolvePersonaAsync(
+            persona = await RunPinResolver.ResolvePersonaAsync(
                 _personaService, request.PersonaId,
                 settings.UserOperatingMode ?? UserOperatingMode.Personal, _logger);
 
@@ -202,6 +207,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     }
                     catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail/empty) failed for {RunId}", run.Id); }
                 }
+                await PersistFailedTurnAsync(chatId, request, persona, AgentStepTools.EmptyResponseFailure, ct);
                 return new BackgroundTurnResult(chatId, false, "Empty response");
             }
 
@@ -292,6 +298,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 }
                 catch (Exception bk) { _logger.LogWarning(bk, "Run bookkeeping (fail) failed for {RunId}", run.Id); }
             }
+            await PersistFailedTurnAsync(chatId, request, persona, ex.Message, CancellationToken.None);
             return new BackgroundTurnResult(chatId, false, ex.Message);
         }
         finally
@@ -719,6 +726,59 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             return true;
         }
     }
+
+    /// <summary>Prompt plus the failed-response message an interactive turn shows, written over the stub chat
+    /// so it is not blank. Best-effort, like the run bookkeeping beside it.</summary>
+    private async Task PersistFailedTurnAsync(
+        Guid chatId, BackgroundTurnRequest request, Persona? persona, string reason, CancellationToken ct)
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+            var chat = new SyncAssistantChat
+            {
+                Id = chatId,
+                SchemaVersion = 1,
+                Title = string.IsNullOrWhiteSpace(request.Title) ? DeriveTitle(request.Prompt) : request.Title,
+                CreatedAt = now,
+                UpdatedAt = now,
+                LastAccessedAt = now,
+                WindowMode = WindowMode.Assistant.ToString(),
+                ProviderId = request.Provider.Id,
+                Messages =
+                [
+                    new SyncAssistantChatMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        Role = "user",
+                        Content = request.Prompt,
+                        Timestamp = now,
+                    },
+                    new SyncAssistantChatMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        Role = "assistant",
+                        Content = FailedResponseText(reason),
+                        Timestamp = now,
+                        Persona = persona is null
+                            ? null
+                            : new SyncMessagePersona { Id = persona.Id, Name = persona.Name, Emoji = persona.Emoji },
+                    },
+                ],
+            };
+            await _chatService.SaveAsync(chat, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist the failed background turn for chat {ChatId}", chatId);
+        }
+    }
+
+    // English only when no localizer was supplied, i.e. a hand-built test harness.
+    private string FailedResponseText(string reason) =>
+        _localization is null
+            ? $"Failed to get AI response: {reason}"
+            : _localization.Format("Msg_Assistant_ResponseFailed", FailureReasonText.Describe(reason, _localization) ?? reason);
 
     private static string DeriveTitle(string prompt)
     {
