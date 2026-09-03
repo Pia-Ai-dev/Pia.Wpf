@@ -20,7 +20,7 @@ Do not tick a step below an open gate without revisiting it.
 |------|--------------------|--------|
 | G1 | Should a second press of the Optimize hotkey still close the window, or should it only ever show and focus, like every other mode? | A2 |
 | G2 | Does the 10,000-character cap stay a client constant mirroring the server default, or does the server start telling the client its limit? | B1 |
-| G3 | On a live run, is the snackbar's X unclickable or clickable-but-inert? | F1 |
+| G3 | The command is not inert and the flow scrim that outranked the snackbar is fixed — does a live Dismiss all still show an X that does nothing? | F1 |
 | G4 | What does the customer actually see when restoring after a minimize, and on which path? | G1a |
 | G5 | PDF via PdfPig text extraction, via `Windows.Data.Pdf` page rendering, or not at all? | H1 |
 
@@ -59,8 +59,9 @@ Do not tick a step below an open gate without revisiting it.
 - [ ] **D1 — User-set chat titles.** Rename from the history row and the chat header through
       the existing title-only writer, with a hand-set title immune to auto-titling.
       *Deps:* — · *Effort:* S · *Value:* High
-- [ ] **F1 — Repro then fix the snackbar's close button.** Drive Reminders → Dismiss all in
-      a live run, establish which half of G3 is true, and fix that half.
+- [ ] **F1 — Repro the snackbar's close button.** One blocker is fixed (the flow scrim
+      outranked the presenter); a live Reminders → Dismiss all still has to say whether that
+      was the one the customer hit.
       *Deps:* G3 · *Effort:* S · *Value:* Med
 - [ ] **G1a — Repro then fix restore-after-minimize.** Reproduce what the customer sees,
       then decide between leaving minimize as a real minimize and smoothing the

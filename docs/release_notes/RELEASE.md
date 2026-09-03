@@ -2,11 +2,15 @@
 
 ## Shortcuts
 
-- Holding a global shortcut no longer flips its window open and shut. Windows
-  repeats a held shortcut, and Ctrl+Alt+O toggles, so the Optimize window
-  reopened and closed for as long as the keys were down.
+- Holding a global shortcut no longer flips its window open and shut. The
+  Optimize window reopened and closed for as long as Ctrl+Alt+O was held.
 
-## To do
+## Notifications
+
+- The ✕ on a message that slides in at the top left now closes it while the
+  flow rail is open. The click went to the rail instead.
+
+## Todo
 
 - The Closed column stays open once you open it. Adding or removing a task
   collapsed it again.

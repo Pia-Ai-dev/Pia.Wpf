@@ -200,7 +200,7 @@
                           HorizontalAlignment="Left"
                           VerticalAlignment="Top"
                           Margin="0,36,0,0"
-                          Panel.ZIndex="15" />
+                          Panel.ZIndex="17" />
     <flow:FlowView x:Name="RootFlowView" Panel.ZIndex="16" />
     <ui:TitleBar x:Name="TitleBar"
                  Title="{Binding WindowTitle}"
