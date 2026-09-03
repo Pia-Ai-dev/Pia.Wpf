@@ -1074,6 +1074,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive
         && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null || PendingFiles.Count > 0);
 
+    /// <summary>Nothing typed, attached or in flight — the hotkey may tuck the window away.</summary>
+    public bool CanDismissWithHotkey =>
+        string.IsNullOrWhiteSpace(InputText) && PendingAttachment is null && PendingFiles.Count == 0
+        && !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive;
+
     // Factored out so the gate below and the hint that explains it cannot drift out of sync.
     private bool HasCandidateGoalText() => !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
 

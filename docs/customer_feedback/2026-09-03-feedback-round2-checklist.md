@@ -1,6 +1,6 @@
 # Customer feedback round 2 — checklist
 
-**Status:** In progress — the five ungated XS steps have landed
+**Status:** In progress — A1, A2, B2, C1, E1, E2, G2a, H2 landed; F1 half-done
 **Owner:** Marco Altmann
 **Written:** 2026-09-03
 **Origin:** [2026-09-03-feedback-round2-plan.md](2026-09-03-feedback-round2-plan.md)
@@ -18,21 +18,21 @@ Do not tick a step below an open gate without revisiting it.
 
 | Gate | Question it answers | Blocks |
 |------|--------------------|--------|
-| G1 | Should a second press of the Optimize hotkey still close the window, or should it only ever show and focus, like every other mode? | A2 |
-| G2 | Does the 10,000-character cap stay a client constant mirroring the server default, or does the server start telling the client its limit? | B1 |
+| G1 | **ANSWERED 2026-09-03: the Assistant gains the toggle.** Extend the empty-composer dismiss rule to it rather than taking it away from Optimize. | A2 |
+| G2 | **ANSWERED 2026-09-03: the server publishes its limits.** B1 reads the cap from a payload the client fetches, and needs a matching change in the server repo plus a version-skew fallback. | B1 |
 | G3 | The command is not inert and the flow scrim that outranked the snackbar is fixed — does a live Dismiss all still show an X that does nothing? | F1 |
 | G4 | What does the customer actually see when restoring after a minimize, and on which path? | G1a |
-| G5 | PDF via PdfPig text extraction, via `Windows.Data.Pdf` page rendering, or not at all? | H1 |
+| G5 | **ANSWERED 2026-09-03: PdfPig.** Text extraction behind the existing `ReadResult` contract; the OS route has no text API and does not fit the chip path. | H1 |
 
 ## Steps
 
 - [x] **A1 — Stop the hotkey repeating.** Pass `MOD_NOREPEAT` when registering a global
       hotkey so holding the combo fires once instead of toggling the window continuously.
       *Deps:* — · *Effort:* XS · *Value:* High
-- [ ] **A2 — Settle the Optimize/Assistant hotkey asymmetry.** Apply whichever direction G1
+- [x] **A2 — Settle the Optimize/Assistant hotkey asymmetry.** Apply whichever direction G1
       picks to `CanDismissWithHotkey`, and cover it with a test per mode.
       *Deps:* A1, G1 · *Effort:* XS · *Value:* Med
-- [ ] **B2 — Localize the over-length rejection.** Map the proxy's 400 for an over-long
+- [x] **B2 — Localize the over-length rejection.** Map the proxy's 400 for an over-long
       Optimize payload to a sentence that names the limit and the text's length.
       *Deps:* — · *Effort:* XS · *Value:* High
 - [ ] **B1 — Character counter on the Optimize composer.** Show a live count once the text
@@ -52,7 +52,7 @@ Do not tick a step below an open gate without revisiting it.
       cap, the way Outlook's does; the image path keeps its generic wording until its
       failure reasons are separated.
       *Deps:* — · *Effort:* XS · *Value:* Med
-- [ ] **G2a — A named offline failure.** Catch a name-resolution or connect failure ahead of
+- [x] **G2a — A named offline failure.** Catch a name-resolution or connect failure ahead of
       the generic arm and surface a localized, actionable sentence instead of a raw English
       socket message in the chat bubble.
       *Deps:* — · *Effort:* S · *Value:* High

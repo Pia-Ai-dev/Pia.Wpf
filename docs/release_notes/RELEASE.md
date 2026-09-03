@@ -4,6 +4,9 @@
 
 - Holding a global shortcut no longer flips its window open and shut. The
   Optimize window reopened and closed for as long as Ctrl+Alt+O was held.
+- The Assistant window can be tucked away with its own shortcut, the way the
+  Optimize window already could — but only when nothing is typed, attached or
+  still running.
 
 ## Notifications
 
@@ -14,6 +17,17 @@
 
 - The Closed column stays open once you open it. Adding or removing a task
   collapsed it again.
+
+## Connection
+
+- Losing your internet connection now says so, in your language, and says the
+  message can be sent again. It used to land in the chat as an English socket
+  error that stayed in the transcript.
+
+## Optimize
+
+- Text too long for Pia Cloud's optimizer is turned down with a sentence that
+  names your length and the limit, instead of an English server message.
 
 ## Files
 

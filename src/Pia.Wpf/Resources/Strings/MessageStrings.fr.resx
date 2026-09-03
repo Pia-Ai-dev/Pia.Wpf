@@ -103,6 +103,8 @@
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>L'assistant n'a pas fourni de réponse. Veuillez réessayer.</value></data>
   <data name="Msg_Assistant_ToolRoundsExhausted" xml:space="preserve"><value>L'assistant a atteint sa limite d'appels d'outils avant de terminer et n'a pas fourni de réponse finale. Essayez de continuer la conversation, ou augmentez la limite de tours d'outils dans les paramètres.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Échec de la récupération de la réponse IA : {0}</value></data>
+  <data name="Msg_Assistant_OfflineTitle" xml:space="preserve"><value>Pas de connexion</value></data>
+  <data name="Msg_Assistant_Offline" xml:space="preserve"><value>Pia n’a pas pu joindre Internet. Vérifiez votre connexion et renvoyez — rien n’a été perdu.</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Vérification de la mémoire...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Vérification des rappels...</value></data>
   <data name="Msg_Assistant_StatusCheckingTodos" xml:space="preserve"><value>Vérification des tâches...</value></data>
@@ -345,6 +347,8 @@
   <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>L'optimisation a été annulée</value></data>
   <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Échec de l'optimisation : {0}</value></data>
   <data name="Msg_Optimize_Truncated" xml:space="preserve"><value>Le modèle a tronqué la réponse (limite de tokens atteinte). Veuillez réessayer ou raccourcir votre saisie.</value></data>
+  <data name="Msg_Optimize_TextTooLong" xml:space="preserve"><value>Votre texte fait {0:N0} caractères — Pia Cloud en optimise jusqu’à {1:N0}. Raccourcissez-le et réessayez.</value></data>
+  <data name="Msg_Optimize_TextTooLongNoLimit" xml:space="preserve"><value>Votre texte fait {0:N0} caractères, au-delà de ce que Pia Cloud optimise. Raccourcissez-le et réessayez.</value></data>
   <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Échec du collage</value></data>
   <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Impossible de coller dans {0}. Le texte a été copié dans le presse-papiers.</value></data>
   <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Fenêtre inconnue</value></data>

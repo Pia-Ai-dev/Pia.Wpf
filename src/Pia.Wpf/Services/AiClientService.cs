@@ -873,6 +873,13 @@ public class AiClientService : IAiClientService
             {
                 _logger.LogWarning("PiaCloud optimize returned {StatusCode}", (int)response.StatusCode);
                 _logger.SensitiveDebug("PiaCloud optimize body: {Body}", responseJson);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.BadRequest
+                    && TryReadTextTooLongLimit(responseJson, out var limit))
+                {
+                    throw new Exceptions.OptimizeTextTooLongException(text.Length, limit);
+                }
+
                 throw new HttpRequestException(
                     $"PiaCloud optimization failed ({(int)response.StatusCode}): {responseJson}");
             }
@@ -895,6 +902,37 @@ public class AiClientService : IAiClientService
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
             throw new LlmTimeoutException("Pia Cloud", timeout.TotalSeconds);
+        }
+    }
+
+    /// <summary>
+    /// Recognises the proxy's over-length refusal by its <c>code</c>, and reads the cap out of the
+    /// numeric <c>limit</c> the server sends beside it — absent on an older server, hence the null.
+    /// </summary>
+    internal static bool TryReadTextTooLongLimit(string responseJson, out int? limit)
+    {
+        limit = null;
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+            var root = doc.RootElement;
+
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !root.TryGetProperty("code", out var codeEl)
+                || codeEl.GetString() != "optimize_text_too_long")
+            {
+                return false;
+            }
+
+            if (root.TryGetProperty("limit", out var limitEl) && limitEl.TryGetInt32(out var parsed))
+                limit = parsed;
+
+            return true;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
         }
     }
 

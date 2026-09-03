@@ -487,6 +487,20 @@ public sealed class ChatSession : IDisposable
                 RestoreInputText = userMessage.Content,
             });
         }
+        catch (Exception ex) when (Pia.Helpers.NetworkFailure.IsOffline(ex))
+        {
+            _logger.LogWarning(ex, "AI request could not reach the network");
+            var offline = _localizationService["Msg_Assistant_Offline"];
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+                assistantMessage.Content = offline;
+            SetState(ChatState.Error);
+            RunFailed?.Invoke(this, new RunFailedEventArgs
+            {
+                Kind = RunFailureKind.Generic,
+                Title = _localizationService["Msg_Assistant_OfflineTitle"],
+                Message = offline,
+            });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to get AI response");
@@ -839,6 +853,13 @@ public sealed class ChatSession : IDisposable
         {
             _logger.LogWarning("Provider rejected image attachment (vision disabled) in agent step");
             error = _localizationService["Msg_Assistant_ProviderNoVision"];
+            if (string.IsNullOrEmpty(assistantMessage.Content))
+                assistantMessage.Content = error;
+        }
+        catch (Exception ex) when (Pia.Helpers.NetworkFailure.IsOffline(ex))
+        {
+            _logger.LogWarning(ex, "Agent step could not reach the network");
+            error = _localizationService["Msg_Assistant_Offline"];
             if (string.IsNullOrEmpty(assistantMessage.Content))
                 assistantMessage.Content = error;
         }

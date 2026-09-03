@@ -104,6 +104,8 @@
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>The assistant did not provide a response. Please try again.</value></data>
   <data name="Msg_Assistant_ToolRoundsExhausted" xml:space="preserve"><value>The assistant reached its tool-call limit before it could finish and didn't return a final answer. Try continuing the conversation, or raise the tool-round limit in Settings.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Failed to get AI response: {0}</value></data>
+  <data name="Msg_Assistant_OfflineTitle" xml:space="preserve"><value>No connection</value></data>
+  <data name="Msg_Assistant_Offline" xml:space="preserve"><value>Pia could not reach the internet. Check your connection and send again — nothing was lost.</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Checking memory...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Checking reminders...</value></data>
   <data name="Msg_Assistant_StatusCheckingTodos" xml:space="preserve"><value>Checking todos...</value></data>
@@ -354,6 +356,8 @@
   <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>Optimization was cancelled</value></data>
   <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Optimization failed: {0}</value></data>
   <data name="Msg_Optimize_Truncated" xml:space="preserve"><value>The model cut the response short (token limit hit). Try again or shorten your input.</value></data>
+  <data name="Msg_Optimize_TextTooLong" xml:space="preserve"><value>Your text is {0:N0} characters — Pia Cloud optimizes up to {1:N0}. Shorten it and try again.</value></data>
+  <data name="Msg_Optimize_TextTooLongNoLimit" xml:space="preserve"><value>Your text is {0:N0} characters, past the length Pia Cloud optimizes. Shorten it and try again.</value></data>
   <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Paste failed</value></data>
   <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Could not paste to {0}. Text copied to clipboard instead.</value></data>
   <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Unknown window</value></data>

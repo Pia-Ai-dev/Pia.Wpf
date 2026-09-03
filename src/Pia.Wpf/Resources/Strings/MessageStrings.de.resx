@@ -103,6 +103,8 @@
   <data name="Msg_Assistant_EmptyResponse" xml:space="preserve"><value>Der Assistent hat keine Antwort geliefert. Bitte versuche es erneut.</value></data>
   <data name="Msg_Assistant_ToolRoundsExhausted" xml:space="preserve"><value>Der Assistent hat sein Tool-Aufruf-Limit erreicht, bevor er fertig war, und keine endgültige Antwort geliefert. Setze die Unterhaltung fort oder erhöhe das Tool-Runden-Limit in den Einstellungen.</value></data>
   <data name="Msg_Assistant_ResponseFailed" xml:space="preserve"><value>Fehler beim Abrufen der KI-Antwort: {0}</value></data>
+  <data name="Msg_Assistant_OfflineTitle" xml:space="preserve"><value>Keine Verbindung</value></data>
+  <data name="Msg_Assistant_Offline" xml:space="preserve"><value>Pia konnte das Internet nicht erreichen. Bitte die Verbindung prüfen und erneut senden – es ist nichts verloren gegangen.</value></data>
   <data name="Msg_Assistant_StatusCheckingMemory" xml:space="preserve"><value>Gedächtnis wird überprüft...</value></data>
   <data name="Msg_Assistant_StatusCheckingReminders" xml:space="preserve"><value>Erinnerungen werden überprüft...</value></data>
   <data name="Msg_Assistant_StatusCheckingTodos" xml:space="preserve"><value>Aufgaben werden überprüft...</value></data>
@@ -346,6 +348,8 @@
   <data name="Msg_Optimize_Cancelled" xml:space="preserve"><value>Optimierung wurde abgebrochen</value></data>
   <data name="Msg_Optimize_Failed" xml:space="preserve"><value>Optimierung fehlgeschlagen: {0}</value></data>
   <data name="Msg_Optimize_Truncated" xml:space="preserve"><value>Das Modell hat die Antwort abgeschnitten (Token-Limit erreicht). Bitte erneut versuchen oder Eingabe kürzen.</value></data>
+  <data name="Msg_Optimize_TextTooLong" xml:space="preserve"><value>Ihr Text hat {0:N0} Zeichen – Pia Cloud optimiert bis zu {1:N0}. Bitte kürzen und erneut versuchen.</value></data>
+  <data name="Msg_Optimize_TextTooLongNoLimit" xml:space="preserve"><value>Ihr Text hat {0:N0} Zeichen und ist damit länger, als Pia Cloud optimiert. Bitte kürzen und erneut versuchen.</value></data>
   <data name="Msg_Optimize_PasteFailed_Title" xml:space="preserve"><value>Einfügen fehlgeschlagen</value></data>
   <data name="Msg_Optimize_PasteFailed" xml:space="preserve"><value>Konnte nicht in {0} einfügen. Text wurde stattdessen in die Zwischenablage kopiert.</value></data>
   <data name="Msg_Optimize_UnknownWindow" xml:space="preserve"><value>Unbekanntes Fenster</value></data>

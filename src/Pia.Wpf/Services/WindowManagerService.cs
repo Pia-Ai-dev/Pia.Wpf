@@ -351,12 +351,13 @@ public partial class WindowManagerService : IWindowManagerService
         if (!_windows.TryGetValue(mode, out var managed))
             return false;
 
-        if (mode == WindowMode.Optimize)
+        return mode switch
         {
-            var vm = managed.Scope.ServiceProvider.GetRequiredService<OptimizeViewModel>();
-            return string.IsNullOrWhiteSpace(vm.InputText) && !vm.IsComparisonView && !vm.IsOptimizing;
-        }
-
-        return false;
+            WindowMode.Optimize =>
+                managed.Scope.ServiceProvider.GetRequiredService<OptimizeViewModel>().CanDismissWithHotkey,
+            WindowMode.Assistant =>
+                managed.Scope.ServiceProvider.GetRequiredService<AssistantViewModel>().CanDismissWithHotkey,
+            _ => false,
+        };
     }
 }

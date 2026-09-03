@@ -69,6 +69,10 @@ public partial class OptimizeViewModel : UiThreadViewModel, INavigationAware, ID
     [ObservableProperty]
     private string _selectedLanguage = "EN";
 
+    /// <summary>Nothing typed and nothing in flight — the hotkey may tuck the window away.</summary>
+    public bool CanDismissWithHotkey =>
+        string.IsNullOrWhiteSpace(InputText) && !IsComparisonView && !IsOptimizing;
+
     public ObservableCollection<string> Languages { get; } = new ObservableCollection<string>(["EN", "DE", "FR"]);
 
     [ObservableProperty]
@@ -262,6 +266,19 @@ public partial class OptimizeViewModel : UiThreadViewModel, INavigationAware, ID
         {
             dialogCancellation.Cancel();
             _snackbarService.Show(_localizationService["Msg_Warning"], _localizationService["Msg_Optimize_Truncated"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(5));
+        }
+        catch (OptimizeTextTooLongException ex)
+        {
+            dialogCancellation.Cancel();
+            var message = ex.LimitCharacters is { } limit
+                ? _localizationService.Format("Msg_Optimize_TextTooLong", ex.TextLength, limit)
+                : _localizationService.Format("Msg_Optimize_TextTooLongNoLimit", ex.TextLength);
+            _snackbarService.Show(_localizationService["Msg_Warning"], message, Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
+        }
+        catch (Exception ex) when (NetworkFailure.IsOffline(ex))
+        {
+            dialogCancellation.Cancel();
+            _snackbarService.Show(_localizationService["Msg_Assistant_OfflineTitle"], _localizationService["Msg_Assistant_Offline"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
         }
         catch (Exception ex)
         {
