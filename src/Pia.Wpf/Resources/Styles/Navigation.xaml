@@ -11,6 +11,9 @@
        so a NavigationViewItem can never expose Invoke — an invokable element must live in its
        content. Chromeless: the item itself supplies all hover/press feedback. -->
   <Style x:Key="NavItemInvokeButtonStyle" TargetType="Button">
+    <!-- Button's theme style pins Foreground to the classic system control text, which stays black under a
+         dark app theme and outranks inheritance. Dropping it is what lets the label take the item's colour. -->
+    <Setter Property="OverridesDefaultStyle" Value="True" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="BorderThickness" Value="0" />
     <Setter Property="Padding" Value="0" />
