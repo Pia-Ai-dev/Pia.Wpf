@@ -27,105 +27,180 @@
        State (ChatState).
 
        Hovering the row replaces the date (same cell) with whichever actions the host
-       supplied: OpenCommand and DeleteCommand are independent, and a host that sets
-       neither keeps its date. -->
+       supplied: OpenCommand, RenameCommand and DeleteCommand are independent, and a host
+       that sets none keeps its date. -->
   <Grid x:Name="ContentRoot" Background="Transparent">
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="48"/>
-      <ColumnDefinition Width="*"/>
-      <ColumnDefinition Width="Auto"/>
-      <ColumnDefinition Width="Auto"/>
-    </Grid.ColumnDefinitions>
+    <Grid x:Name="RowBody">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="48"/>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
 
-    <TextBlock Grid.Column="0"
-               Text="{Binding UpdatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:HH:mm}', ConverterCulture=en-US}"
-               FontSize="11.5"
-               FontFamily="{DynamicResource PiaMonoFont}"
-               Foreground="{DynamicResource TextSubtleBrush}"
-               VerticalAlignment="Center"/>
-
-    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-      <TextBlock FontSize="13"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource TextDefaultBrush}"
-                 behaviors:EmojiTextBehavior.Text="{Binding Title, FallbackValue='—'}"
-                 TextTrimming="CharacterEllipsis"
-                 TextWrapping="NoWrap"/>
-    </StackPanel>
-
-    <ah:PiaChatStateBadge Grid.Column="2" Margin="8,0,0,0"/>
-
-    <!-- Date + hover actions share column 3; on hover the date fades out and the actions fade in. -->
-    <Grid Grid.Column="3" Margin="10,0,0,0">
-      <TextBlock x:Name="DateText"
-                 Text="{Binding UpdatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:MM-dd}'}"
-                 FontSize="10.5"
+      <TextBlock Grid.Column="0"
+                 Text="{Binding UpdatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:HH:mm}', ConverterCulture=en-US}"
+                 FontSize="11.5"
                  FontFamily="{DynamicResource PiaMonoFont}"
                  Foreground="{DynamicResource TextSubtleBrush}"
-                 TextAlignment="Right"
-                 MinWidth="42"
-                 VerticalAlignment="Center">
-        <TextBlock.Style>
-          <Style TargetType="TextBlock">
-            <Setter Property="Opacity" Value="1"/>
-            <Style.Triggers>
-              <!-- One trigger per action: a MultiDataTrigger is an AND, and either action hides the date. -->
-              <MultiDataTrigger>
-                <MultiDataTrigger.Conditions>
-                  <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
-                  <Condition Binding="{Binding Visibility, ElementName=OpenHost}" Value="Visible"/>
-                </MultiDataTrigger.Conditions>
-                <Setter Property="Opacity" Value="0"/>
-              </MultiDataTrigger>
-              <MultiDataTrigger>
-                <MultiDataTrigger.Conditions>
-                  <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
-                  <Condition Binding="{Binding Visibility, ElementName=DeleteHost}" Value="Visible"/>
-                </MultiDataTrigger.Conditions>
-                <Setter Property="Opacity" Value="0"/>
-              </MultiDataTrigger>
-            </Style.Triggers>
-          </Style>
-        </TextBlock.Style>
-      </TextBlock>
+                 VerticalAlignment="Center"/>
 
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-        <Border x:Name="OpenHost"
-                Style="{StaticResource PiaChatRowActionHost}"
-                Visibility="{Binding OpenCommand,
-                             RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
-                             Converter={StaticResource NullToVisibilityConverter}}">
-          <Button Style="{StaticResource UnstyledButton}"
-                  Padding="3"
-                  ToolTip="{loc:Str AssistantHistory_Resume}"
-                  Command="{Binding OpenCommand,
-                            RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
-                  CommandParameter="{Binding}"
-                  AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Open_{0}'}">
-            <ui:SymbolIcon Symbol="Play24" FontSize="14"
-                           Foreground="{DynamicResource PiaAccentBrush}"/>
-          </Button>
-        </Border>
-
-        <Border x:Name="DeleteHost"
-                Style="{StaticResource PiaChatRowActionHost}"
-                Visibility="{Binding DeleteCommand,
-                             RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
-                             Converter={StaticResource NullToVisibilityConverter}}">
-          <!-- Opacity 0 still measures, so this button sets the row's minimum height —
-               keep it near the title's line height. -->
-          <Button Style="{StaticResource UnstyledButton}"
-                  Padding="3"
-                  ToolTip="{loc:Str History_Delete}"
-                  Command="{Binding DeleteCommand,
-                            RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
-                  CommandParameter="{Binding}"
-                  AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Delete_{0}'}">
-            <ui:SymbolIcon Symbol="Delete24" FontSize="14"
-                           Foreground="{DynamicResource PiaDangerBrush}"/>
-          </Button>
-        </Border>
+      <StackPanel Grid.Column="1" VerticalAlignment="Center">
+        <TextBlock FontSize="13"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"
+                   behaviors:EmojiTextBehavior.Text="{Binding Title, FallbackValue='—'}"
+                   TextTrimming="CharacterEllipsis"
+                   TextWrapping="NoWrap"/>
       </StackPanel>
+
+      <ah:PiaChatStateBadge Grid.Column="2" Margin="8,0,0,0"/>
+
+      <!-- Date + hover actions share column 3; on hover the date fades out and the actions fade in. -->
+      <Grid Grid.Column="3" Margin="10,0,0,0">
+        <TextBlock x:Name="DateText"
+                   Text="{Binding UpdatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:MM-dd}'}"
+                   FontSize="10.5"
+                   FontFamily="{DynamicResource PiaMonoFont}"
+                   Foreground="{DynamicResource TextSubtleBrush}"
+                   TextAlignment="Right"
+                   MinWidth="42"
+                   VerticalAlignment="Center">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock">
+              <Setter Property="Opacity" Value="1"/>
+              <Style.Triggers>
+                <!-- One trigger per action: a MultiDataTrigger is an AND, and any action hides the date. -->
+                <MultiDataTrigger>
+                  <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
+                    <Condition Binding="{Binding Visibility, ElementName=OpenHost}" Value="Visible"/>
+                  </MultiDataTrigger.Conditions>
+                  <Setter Property="Opacity" Value="0"/>
+                </MultiDataTrigger>
+                <MultiDataTrigger>
+                  <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
+                    <Condition Binding="{Binding Visibility, ElementName=RenameHost}" Value="Visible"/>
+                  </MultiDataTrigger.Conditions>
+                  <Setter Property="Opacity" Value="0"/>
+                </MultiDataTrigger>
+                <MultiDataTrigger>
+                  <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True"/>
+                    <Condition Binding="{Binding Visibility, ElementName=DeleteHost}" Value="Visible"/>
+                  </MultiDataTrigger.Conditions>
+                  <Setter Property="Opacity" Value="0"/>
+                </MultiDataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <Border x:Name="OpenHost"
+                  Style="{StaticResource PiaChatRowActionHost}"
+                  Visibility="{Binding OpenCommand,
+                               RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
+                               Converter={StaticResource NullToVisibilityConverter}}">
+            <Button Style="{StaticResource UnstyledButton}"
+                    Padding="3"
+                    ToolTip="{loc:Str AssistantHistory_Resume}"
+                    Command="{Binding OpenCommand,
+                              RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
+                    CommandParameter="{Binding}"
+                    AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Open_{0}'}">
+              <ui:SymbolIcon Symbol="Play24" FontSize="14"
+                             Foreground="{DynamicResource PiaAccentBrush}"/>
+            </Button>
+          </Border>
+
+          <Border x:Name="RenameHost"
+                  Style="{StaticResource PiaChatRowActionHost}"
+                  Visibility="{Binding RenameCommand,
+                               RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
+                               Converter={StaticResource NullToVisibilityConverter}}">
+            <Button x:Name="RenamePencil"
+                    Style="{StaticResource UnstyledButton}"
+                    Padding="3"
+                    ToolTip="{loc:Str AssistantHistory_Rename}"
+                    Click="RenameButton_Click"
+                    AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Rename_{0}'}">
+              <ui:SymbolIcon Symbol="Rename20" FontSize="14"
+                             Foreground="{DynamicResource TextMutedBrush}"/>
+            </Button>
+          </Border>
+
+          <Border x:Name="DeleteHost"
+                  Style="{StaticResource PiaChatRowActionHost}"
+                  Visibility="{Binding DeleteCommand,
+                               RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
+                               Converter={StaticResource NullToVisibilityConverter}}">
+            <!-- Opacity 0 still measures, so this button sets the row's minimum height —
+                 keep it near the title's line height. -->
+            <Button Style="{StaticResource UnstyledButton}"
+                    Padding="3"
+                    ToolTip="{loc:Str History_Delete}"
+                    Command="{Binding DeleteCommand,
+                              RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
+                    CommandParameter="{Binding}"
+                    AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Delete_{0}'}">
+              <ui:SymbolIcon Symbol="Delete24" FontSize="14"
+                             Foreground="{DynamicResource PiaDangerBrush}"/>
+            </Button>
+          </Border>
+        </StackPanel>
+      </Grid>
     </Grid>
+
+    <!-- Inline rename, in place of the row while it is open. Only a host that supplies RenameCommand
+         can get here, and the mouse handler keeps the click off that host's own row button. -->
+    <Border x:Name="RenameEditor"
+            Visibility="Collapsed"
+            Background="Transparent"
+            PreviewMouseLeftButtonDown="RenameEditor_PreviewMouseLeftButtonDown">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <ui:TextBox x:Name="RenameBox"
+                    Grid.Column="0"
+                    Padding="6,2"
+                    FontSize="13"
+                    VerticalAlignment="Center"
+                    AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_RenameName_{0}'}"
+                    PreviewKeyDown="RenameBox_PreviewKeyDown"/>
+
+        <Button x:Name="RenameConfirm"
+                Grid.Column="1"
+                Style="{StaticResource UnstyledButton}"
+                Cursor="Hand"
+                Padding="6,2"
+                Margin="4,0,0,0"
+                VerticalAlignment="Center"
+                Click="ConfirmRenameButton_Click"
+                ToolTip="{loc:Str Common_Save}"
+                AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_RenameConfirm_{0}'}">
+          <ui:SymbolIcon Symbol="Checkmark24" FontSize="15"
+                         Foreground="{DynamicResource PiaAccentBrush}"/>
+        </Button>
+
+        <Button x:Name="RenameCancel"
+                Grid.Column="2"
+                Style="{StaticResource UnstyledButton}"
+                Cursor="Hand"
+                Padding="6,2"
+                VerticalAlignment="Center"
+                Click="CancelRenameButton_Click"
+                ToolTip="{loc:Str Common_Cancel}"
+                AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_RenameCancel_{0}'}">
+          <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"
+                         Foreground="{DynamicResource TextMutedBrush}"/>
+        </Button>
+      </Grid>
+    </Border>
   </Grid>
 </UserControl>

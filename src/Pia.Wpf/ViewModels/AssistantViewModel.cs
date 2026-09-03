@@ -440,6 +440,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _loggerFactory.CreateLogger<ChatTitleChipViewModel>(),
             ResumeChatAsync,
             DeleteChatFromChipAsync,
+            RenameChatFromChipAsync,
             NewChat,
             NavigateToAssistantHistory,
             _chatSessionManager.GetState,
@@ -1371,6 +1372,25 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         if (!deletesOpenChat) return;
         AbandonActiveChat(inheritedDir);
+    }
+
+    /// <summary>Persists an inline rename from the flyout and puts the name on the live session too — a
+    /// later save from that session would otherwise write the old one back.</summary>
+    private async Task<bool> RenameChatFromChipAsync(Guid chatId, string title)
+    {
+        try
+        {
+            if (!await _chatService.SetTitleAsync(chatId, title)) return false;
+
+            _chatSessionManager.ApplyExternalTitle(chatId, title);
+            _logger.LogInformation("Renamed assistant chat {ChatId} from the flyout", chatId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rename chat {ChatId} from the flyout", chatId);
+            return false;
+        }
     }
 
     private Task<bool> ConfirmChatDeleteAsync() => _dialogService.ShowConfirmationDialogAsync(

@@ -19,6 +19,8 @@
 - A chat can be given a name of your own. Pick it in the history, next to
   Resume, and it is what the history shows from then on — useful above all
   with automatic titles switched off.
+- The same rename sits in the chat picker at the top of the Assistant: hover a
+  row, click the pencil, type and press Enter. The list stays open around you.
 - A chat also keeps the name it has. Every save used to write the first
   message back over it, so an automatic title lasted until the next reply.
 

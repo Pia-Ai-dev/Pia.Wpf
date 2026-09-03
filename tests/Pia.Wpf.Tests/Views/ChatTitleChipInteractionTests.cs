@@ -143,6 +143,7 @@ public class ChatTitleChipInteractionTests
             NullLogger<ChatTitleChipViewModel>.Instance,
             _ => Task.CompletedTask,
             _ => Task.CompletedTask,
+            (_, _) => Task.FromResult(true),
             _ => { },
             () => { },
             _ => ChatState.Idle,

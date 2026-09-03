@@ -24,6 +24,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     private readonly ILogger<ChatTitleChipViewModel> _logger;
     private readonly Func<Guid, Task> _resumeChat;
     private readonly Func<Guid, Task> _deleteChat;
+    private readonly Func<Guid, string, Task<bool>> _renameChat;
     private readonly Action<string?> _newChat;
     private readonly Action _showAllChats;
     private readonly Func<Guid, ChatState> _resolveState;
@@ -84,6 +85,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
 
     public IAsyncRelayCommand<Guid?> ResumeChatCommand { get; }
     public IAsyncRelayCommand<ChatChipItemViewModel?> DeleteChatCommand { get; }
+    public IAsyncRelayCommand<ChatRowRenameRequest?> RenameChatCommand { get; }
     public IRelayCommand NewChatCommand { get; }
     public IRelayCommand ShowAllChatsCommand { get; }
     public IRelayCommand OpenQuickSwitcherCommand { get; }
@@ -98,6 +100,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         ILogger<ChatTitleChipViewModel> logger,
         Func<Guid, Task> resumeChat,
         Func<Guid, Task> deleteChat,
+        Func<Guid, string, Task<bool>> renameChat,
         Action<string?> newChat,
         Action showAllChats,
         Func<Guid, ChatState> resolveState,
@@ -111,6 +114,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         _logger = logger;
         _resumeChat = resumeChat;
         _deleteChat = deleteChat;
+        _renameChat = renameChat;
         _newChat = newChat;
         _showAllChats = showAllChats;
         _resolveState = resolveState;
@@ -125,6 +129,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
 
         ResumeChatCommand = new AsyncRelayCommand<Guid?>(ExecuteResumeChat);
         DeleteChatCommand = new AsyncRelayCommand<ChatChipItemViewModel?>(ExecuteDeleteChat);
+        RenameChatCommand = new AsyncRelayCommand<ChatRowRenameRequest?>(ExecuteRenameChat);
         NewChatCommand = new RelayCommand(ExecuteNewChat);
         ShowAllChatsCommand = new RelayCommand(ExecuteShowAllChats);
         OpenQuickSwitcherCommand = new RelayCommand(ExecuteOpenQuickSwitcher);
@@ -245,6 +250,11 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
             _logger.LogInformation("Loaded {Count} recent chats for flyout (hasQuery={HasQuery})",
                 chats.Count, !string.IsNullOrWhiteSpace(SearchQuery));
 
+            // Rebuilding re-creates every row control, which throws away an inline rename someone is
+            // typing into. The flyout reloads on each open and on every ChatsChanged, so an unchanged
+            // list is the common case and worth not paying for.
+            if (SameRows(_lastFlyoutChats, chats)) return;
+
             _lastFlyoutChats = [.. chats];
             RebuildGroups();
         }
@@ -252,6 +262,21 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         {
             _logger.LogWarning(ex, "Failed to load recent chats for flyout");
         }
+    }
+
+    private static bool SameRows(List<SyncAssistantChat> current, IReadOnlyList<SyncAssistantChat> incoming)
+    {
+        if (current.Count != incoming.Count) return false;
+
+        for (var i = 0; i < current.Count; i++)
+        {
+            if (current[i].Id != incoming[i].Id
+                || current[i].Title != incoming[i].Title
+                || current[i].UpdatedAt != incoming[i].UpdatedAt)
+                return false;
+        }
+
+        return true;
     }
 
     private void RebuildGroups()
@@ -322,6 +347,30 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to delete chat {ChatId} from flyout", item.Id);
+        }
+    }
+
+    /// <summary>Renames from the flyout's own row editor. The flyout stays open: the point of editing in
+    /// place is that the list you were reading is still there afterwards.</summary>
+    private async Task ExecuteRenameChat(ChatRowRenameRequest? request)
+    {
+        if (request is not { Row: ChatChipItemViewModel item }) return;
+
+        var title = request.Title.Trim();
+        if (title.Length == 0 || title == item.Title) return;
+
+        try
+        {
+            if (!await _renameChat(item.Id, title)) return;
+
+            // The cached DTOs are what RebuildGroups reads, so the row keeps its old name without this.
+            foreach (var chat in _lastFlyoutChats.Where(c => c.Id == item.Id))
+                chat.Title = title;
+            RebuildGroups();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to rename chat {ChatId} from flyout", item.Id);
         }
     }
 

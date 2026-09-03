@@ -5,6 +5,7 @@ using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.ViewModels;
+using Pia.ViewModels.Models;
 using Xunit;
 
 namespace Pia.Tests.ViewModels;
@@ -44,6 +45,7 @@ public class ChatTitleChipFlyoutGroupingTests
             NullLogger<ChatTitleChipViewModel>.Instance,
             _ => Task.CompletedTask,
             _ => Task.CompletedTask,
+            (_, _) => Task.FromResult(true),
             dir => _capturedNewChatDir = dir,
             () => { },
             id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle,
@@ -59,6 +61,58 @@ public class ChatTitleChipFlyoutGroupingTests
             _states[id] = s;
         return new SyncAssistantChat { Id = id, Title = title, UpdatedAt = updatedAt };
     }
+
+    /// <summary>Re-creating the rows drops an inline rename someone is typing into one of them, and the
+    /// flyout reloads on every open.</summary>
+    [Fact]
+    public void Flyout_ReopenedWithAnUnchangedList_KeepsItsRows()
+    {
+        var sut = CreateSut([Chat("one", DateTime.UtcNow)]);
+
+        sut.IsFlyoutOpen = true;
+        var first = sut.Groups[0].Items[0];
+
+        sut.IsFlyoutOpen = false;
+        sut.IsFlyoutOpen = true;
+
+        Assert.Same(first, sut.Groups[0].Items[0]);
+    }
+
+    [Fact]
+    public void Flyout_ReopenedAfterARename_ShowsTheNewName()
+    {
+        var original = Chat("the old name", DateTime.UtcNow);
+        var sut = CreateSut([original]);
+        sut.IsFlyoutOpen = true;
+
+        // A separate instance: mutating the one the VM cached would hide the change from the guard.
+        Restub([new SyncAssistantChat { Id = original.Id, Title = "the new name", UpdatedAt = original.UpdatedAt }]);
+
+        sut.IsFlyoutOpen = false;
+        sut.IsFlyoutOpen = true;
+
+        Assert.Equal("the new name", sut.Groups[0].Items[0].Title);
+    }
+
+    /// <summary>The inline rename mutates the cached DTO the reload compares against, so the
+    /// unchanged-list guard must not hand back rows still carrying the old name.</summary>
+    [Fact]
+    public void Flyout_ReopenedAfterAnInlineRename_ShowsTheNewName()
+    {
+        var sut = CreateSut([Chat("the old name", DateTime.UtcNow)]);
+        sut.IsFlyoutOpen = true;
+
+        var row = sut.Groups[0].Items[0];
+        sut.RenameChatCommand.Execute(new ChatRowRenameRequest(row, "a name of my own"));
+
+        sut.IsFlyoutOpen = false;
+        sut.IsFlyoutOpen = true;
+
+        Assert.Equal("a name of my own", sut.Groups[0].Items[0].Title);
+    }
+
+    private void Restub(IReadOnlyList<SyncAssistantChat> chats) =>
+        _chatService.SearchAsync().ReturnsForAnyArgs(Task.FromResult(chats));
 
     [Fact]
     public void Flyout_GroupsByDate_TodayThenOlder()

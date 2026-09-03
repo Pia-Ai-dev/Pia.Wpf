@@ -488,7 +488,9 @@
                                    snapshot read once at flyout build. Hover reveals a quick-delete
                                    trash (replaces the date) wired to the chip's delete command. -->
                               <ah:PiaAssistantChatRowContent
-                                  DeleteCommand="{Binding DataContext.DeleteChatCommand, ElementName=ChipRoot}"/>
+                                  DeleteCommand="{Binding DataContext.DeleteChatCommand, ElementName=ChipRoot}"
+                                  RenameCommand="{Binding DataContext.RenameChatCommand, ElementName=ChipRoot}"
+                                  EditableTitle="{Binding Title}"/>
                             </Button>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>

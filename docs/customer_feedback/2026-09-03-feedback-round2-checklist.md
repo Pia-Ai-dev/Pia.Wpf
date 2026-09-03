@@ -59,6 +59,12 @@ Do not tick a step below an open gate without revisiting it.
 - [x] **D1 — User-set chat titles.** Rename from the history row and the chat header through
       the existing title-only writer, with a hand-set title immune to auto-titling.
       *Deps:* — · *Effort:* S · *Value:* High
+- [x] **D1a — Rename from the chat picker too.** The flyout is where you pick a chat, so it is where
+      you want to fix its name. Inline, not a dialog: the popup is `StaysOpen=False` and a modal
+      would close the list you were reading. The row's hover strip gains a pencil beside the trash
+      and swaps itself for a name box; Enter commits, Escape abandons. The flyout also stopped
+      rebuilding its rows for an unchanged list, which used to throw the open editor away.
+      *Deps:* D1 · *Effort:* S · *Value:* Med
 - [ ] **F1 — Repro the snackbar's close button.** One blocker is fixed (the flow scrim
       outranked the presenter); a live Reminders → Dismiss all still has to say whether that
       was the one the customer hit.

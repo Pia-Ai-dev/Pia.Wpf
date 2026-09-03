@@ -73,7 +73,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Reminders.PiaReminderRow), 4, 4, "PiaReminderStatusChip")]
     [InlineData(typeof(Pia.Controls.Reminders.PiaReminderGroupCard), 5, 5, "PiaReminderStatusChip")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryGroupCard), 1, 1, "")]
-    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatRowContent), 2, 2, "PiaChatStateBadge")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatRowContent), 6, 6, "PiaChatStateBadge")]
     [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatGroupCard), 1, 1, "PiaAssistantChatRowContent")]
     [InlineData(typeof(Pia.Views.TodoView), 9, 5, "PiaTodoHeader,PiaTodoSearchBar")]
     [InlineData(typeof(Pia.Views.TodoPanelControl), 6, 1, "")]
