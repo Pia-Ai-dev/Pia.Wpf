@@ -54,13 +54,15 @@ jobs:
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
           [ -n "$PREV_TAG" ] && [ -s "$NOTES" ] || exit 0
 
-          # Line 1 is the version header, which the notes step rewrites anyway.
-          PREV_BODY=$(git show "$PREV_TAG:$NOTES" 2>/dev/null | tail -n +2) || exit 0
+          # Line 1 is the version header, which the notes step rewrites anyway. Both sides lose their CR:
+          # the file is checked out CRLF on Windows, while git show hands back the LF index bytes.
+          PREV_BODY=$(git show "$PREV_TAG:$NOTES" 2>/dev/null | tail -n +2 | tr -d '\r') || exit 0
           [ -n "$(printf '%s' "$PREV_BODY" | tr -d '[:space:]')" ] || exit 0
 
-          # -z makes this a true multi-line substring test: does the WHOLE shipped body still sit in
-          # the file? A rewritten file cannot match, so only a never-truncated one trips this.
-          if tail -n +2 "$NOTES" | grep -qzF "$PREV_BODY"; then
+          # Does the WHOLE shipped body still sit in the file? Not grep: -F splits its pattern on newlines, so
+          # the blank line every body has becomes an empty alternative and the check passes anything.
+          NOTES_BODY=$(tail -n +2 "$NOTES" | tr -d '\r')
+          if [[ "$NOTES_BODY" == *"$PREV_BODY"* ]]; then
             echo "::error::$NOTES still contains the body released at $PREV_TAG, so this release would republish it. Archive it first: cp $NOTES docs/release_notes/$(date +%Y-%m-%d)-<version>.md, truncate $NOTES, commit with [skip ci]."
             exit 1
           fi
