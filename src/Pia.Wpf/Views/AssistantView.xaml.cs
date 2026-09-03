@@ -45,8 +45,12 @@ public partial class AssistantView : UserControl
     private const double CollapsedComposerHeight = 120;
     private const double ExpandedComposerHeight = 360;
 
-    /// <summary>Padding and border, which sit inside MaxHeight but outside the text's own extent.</summary>
-    private const double ComposerChrome = 14;
+    /// <summary>Padding and border sit inside MaxHeight but outside the text's own extent, so the
+    /// overflow threshold has to subtract them. Read from the control, not guessed, so restyling it
+    /// cannot silently move the threshold.</summary>
+    private double ComposerChrome =>
+        InputTextBox.Padding.Top + InputTextBox.Padding.Bottom
+        + InputTextBox.BorderThickness.Top + InputTextBox.BorderThickness.Bottom;
 
     private AssistantViewModel? ViewModel => DataContext as AssistantViewModel;
     private ObservableCollection<AssistantMessage>? _subscribedMessages;
@@ -77,7 +81,8 @@ public partial class AssistantView : UserControl
             SubscribeMessages(_subscribedViewModel.Messages);
         }
 
-        PinToEnd();
+        // Deliberately NOT re-arming auto-scroll here: Loaded repeats on a re-parent, and a reader who
+        // scrolled up mid-answer would be yanked back to the newest turn.
         InputTextBox.Focus();
     }
 

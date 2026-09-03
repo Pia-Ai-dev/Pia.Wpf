@@ -86,6 +86,69 @@ public class AssistantOpensAtTheLatestTurnTests
         Assert.True(offset >= scrollable - 1, $"landed at {offset} of {scrollable}");
     }
 
+    /// <summary>Loaded repeats on a re-parent, which must not count as opening a chat: a reader who
+    /// scrolled up mid-answer would be yanked back to the newest turn.</summary>
+    [Fact]
+    public void ReParentingLeavesAScrolledAwayReaderWhereTheyAre()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        ScrollViewer? scroller = null;
+        double scrollable, offset;
+
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = AssistantViewModelBuilder.Create();
+                view = new AssistantView { DataContext = vm };
+                Lay(view);
+                view.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, view));
+                scroller = (ScrollViewer)view.FindName("MessageScrollViewer");
+
+                vm.Messages = Transcript(60, "only");
+                vm.HasMessages = true;
+                Lay(view);
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            WpfStaHost.Run(() =>
+            {
+                scroller!.ScrollToVerticalOffset(0);
+                Lay(view!);
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            WpfStaHost.Run(() =>
+            {
+                view!.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, view));
+                Lay(view);
+                return 0;
+            });
+            // Loaded's work is posted, so the offset is only settled after the queue drains.
+            WpfStaHost.Pump();
+
+            (scrollable, offset) = WpfStaHost.Run(() =>
+            {
+                Lay(view!);
+                return (scroller!.ScrollableHeight, scroller.VerticalOffset);
+            });
+        }
+        finally
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm?.Dispose();
+                return 0;
+            });
+        }
+
+        Assert.True(scrollable > 0, "nothing overflowed, so staying put proves nothing");
+        Assert.Equal(0, offset);
+    }
+
     private static ObservableCollection<AssistantMessage> Transcript(int turns, string chat) =>
         [.. Enumerable.Range(1, turns).Select(i => new AssistantMessage(
             i % 2 == 0 ? ChatRole.Assistant : ChatRole.User,

@@ -314,6 +314,13 @@ ignored growth. So the re-point now re-arms auto-scroll and posts a scroll, **an
 honoured while auto-scroll is on. `IsAutoScrollEnabled` carries both meanings; a second flag was
 tried and removed.
 
+Two things this must NOT do, both held by tests. `Loaded` repeats on a re-parent, so it does not
+re-arm auto-scroll — a reader who scrolled up mid-answer would be yanked to the bottom by a layout
+event they never caused. And the growth branch fires on *every* growth while auto-scroll is on,
+including a streaming `Content` change that `OnMessagePropertyChanged` already posts a scroll for.
+Two `ScrollToEnd` calls per delta, which WPF coalesces into one layout pass — do not "fix" the
+duplicate by deleting either one; each covers a case the other misses.
+
 Two smaller things fell out. A duplicate `ScrollChanged` handler and its `_autoScroll` field were
 dead — `ScrollToBottom` only ever read the dependency property — and are gone. And the collapsed
 composer height was being applied on `Loaded`, leaving the box unbounded until then; it is applied
