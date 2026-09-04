@@ -121,6 +121,28 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
 
     public event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned;
 
+    public event EventHandler<TranscriptionPartialTextChangedEventArgs>? PartialTextChanged;
+
+    // The attendee only ever hears the far end, so the speaker is not in question the way it is on
+    // the direct path, where a mic and a loopback service both raise this.
+    private void WirePartialText(IAsyncDisposable engineService)
+    {
+        if (engineService is not LiveTranscriptionEngineService concrete) return;
+
+        concrete.PartialTextChanged += (_, text) =>
+        {
+            try
+            {
+                PartialTextChanged?.Invoke(
+                    this, new TranscriptionPartialTextChangedEventArgs(TranscriptSpeaker.Them, text));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PartialTextChanged subscriber threw");
+            }
+        };
+    }
+
     private void OnSpeakersReassigned(object? sender, IReadOnlyList<SpeakerReassignment> changes)
         => SpeakersReassigned?.Invoke(this, changes);
 
@@ -341,6 +363,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             var minDiarizationSamples = (int)System.Math.Round(minSpeechSeconds * 16000);
             _engineService = await _engineServiceFactory(source, sileroPath, engine, _utterances.Writer, _speakerId, minDiarizationSamples, startToken)
                 .ConfigureAwait(false);
+            WirePartialText(_engineService);
 
             startToken.ThrowIfCancellationRequested();
             TransitionState(MeetingAttendeeState.Attending);

@@ -75,6 +75,14 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     protected DateTimeOffset _sessionStart;
 
+    /// <summary>Running hypothesis shown below the last bubble. Deliberately outside the journal:
+    /// a rebuild replays only committed utterances, so a journaled partial would duplicate or vanish.</summary>
+    [ObservableProperty]
+    private string _partialText = string.Empty;
+
+    [ObservableProperty]
+    private TranscriptSpeaker _partialSpeaker;
+
     [ObservableProperty]
     private string _counterpartName = string.Empty;
 
@@ -217,12 +225,24 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     // ---- Bubble mapping --------------------------------------------------------------------------
 
+    internal void SetPartial(TranscriptSpeaker speaker, string text)
+    {
+        DispatchToUi(() =>
+        {
+            PartialSpeaker = speaker;
+            PartialText = text ?? string.Empty;
+        });
+    }
+
     internal void AddUtterance(TranscriptUtterance utterance)
     {
         DispatchToUi(() =>
         {
             try
             {
+                // The committed text supersedes whatever preview was on screen for it.
+                PartialText = string.Empty;
+
                 var label = utterance.SpeakerLabel;
                 if (utterance.SegmentId is long pending
                     && _pendingReassignments.Remove(pending, out var corrected))

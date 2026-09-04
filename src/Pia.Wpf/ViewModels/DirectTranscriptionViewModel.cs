@@ -128,6 +128,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _service.SpeakerConsentChanged += OnSpeakerConsentChanged;
         _service.SpeakerRegistered += OnSpeakerRegistered;
         _service.SpeakingChanged += OnSpeakingChanged;
+        _service.PartialTextChanged += OnPartialTextChanged;
         _service.ConsentSessionReset += OnConsentSessionReset;
         _localizationService.LanguageChanged += OnUiLanguageChanged;
 
@@ -597,6 +598,9 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     /// a session with no transcribed speech, and vanishing on any journal rebuild because it had no journal
     /// entry.</para>
     /// </summary>
+    private void OnPartialTextChanged(object? sender, TranscriptionPartialTextChangedEventArgs e)
+        => SetPartial(e.Speaker, e.Text);
+
     private void OnSpeakingChanged(object? sender, TranscriptionSpeakingChangedEventArgs e)
     {
         if (e.Speaker != TranscriptSpeaker.You) return;
@@ -674,6 +678,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _service.SpeakerConsentChanged -= OnSpeakerConsentChanged;
         _service.SpeakerRegistered -= OnSpeakerRegistered;
         _service.SpeakingChanged -= OnSpeakingChanged;
+        _service.PartialTextChanged -= OnPartialTextChanged;
         _service.ConsentSessionReset -= OnConsentSessionReset;
         _localizationService.LanguageChanged -= OnUiLanguageChanged;
 

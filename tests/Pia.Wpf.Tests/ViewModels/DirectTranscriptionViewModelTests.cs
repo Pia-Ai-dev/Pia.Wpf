@@ -103,6 +103,26 @@ public class DirectTranscriptionViewModelTests
     }
 
     [Fact]
+    public void PartialText_ReachesTheOverlayAsDraftTextAndNeverAsABubble()
+    {
+        var (vm, service) = CreateSut();
+
+        service.RaisePartialText(TranscriptSpeaker.You, "guten Mor");
+        Assert.Equal("guten Mor", vm.PartialText);
+        Assert.Equal(TranscriptSpeaker.You, vm.PartialSpeaker);
+        Assert.Empty(vm.Bubbles);
+
+        service.RaisePartialText(TranscriptSpeaker.You, "guten Morgen");
+        Assert.Equal("guten Morgen", vm.PartialText);
+        Assert.Empty(vm.Bubbles);
+
+        // Speech end withdraws the hypothesis; the committed bubble arrives on the utterance channel.
+        service.RaisePartialText(TranscriptSpeaker.You, string.Empty);
+        Assert.Equal(string.Empty, vm.PartialText);
+        Assert.Empty(vm.Bubbles);
+    }
+
+    [Fact]
     public void MicSpeakingStarted_DoesNotMaterializeAnEmptyBubble()
     {
         // Voice activity that never produces transcribable text used to leave an EMPTY "me" bubble behind
@@ -552,6 +572,8 @@ public class DirectTranscriptionViewModelTests
         public event EventHandler<SpeakerConsentChangedEventArgs>? SpeakerConsentChanged;
         public event EventHandler<string>? SpeakerRegistered;
         public event EventHandler<TranscriptionSpeakingChangedEventArgs>? SpeakingChanged;
+
+        public event EventHandler<TranscriptionPartialTextChangedEventArgs>? PartialTextChanged;
         public event EventHandler? ConsentSessionReset;
 
         public int PrepareCount { get; private set; }
@@ -637,5 +659,8 @@ public class DirectTranscriptionViewModelTests
 
         public void RaiseSpeaking(TranscriptSpeaker speaker, bool isSpeaking)
             => SpeakingChanged?.Invoke(this, new TranscriptionSpeakingChangedEventArgs(speaker, isSpeaking));
+
+        public void RaisePartialText(TranscriptSpeaker speaker, string text)
+            => PartialTextChanged?.Invoke(this, new TranscriptionPartialTextChangedEventArgs(speaker, text));
     }
 }

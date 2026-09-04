@@ -47,6 +47,8 @@ public sealed class ScheduledMeetingRecorderTests
         public MeetingAttendeeState State { get; private set; } = MeetingAttendeeState.Idle;
         public event EventHandler<MeetingAttendeeState>? StateChanged;
         public event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned;
+
+        public event EventHandler<TranscriptionPartialTextChangedEventArgs>? PartialTextChanged { add { } remove { } }
         public ChannelReader<TranscriptUtterance> Utterances => _channel.Reader;
         public IReadOnlyCollection<string> ObservedAttendees { get; set; } = ["Marco Altmann", "Jane Doe"];
 
@@ -278,6 +280,8 @@ public sealed class ScheduledMeetingRecorderTests
         public MeetingAttendeeState State => MeetingAttendeeState.Error;
         public event EventHandler<MeetingAttendeeState>? StateChanged { add { } remove { } }
         public event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned { add { } remove { } }
+
+        public event EventHandler<TranscriptionPartialTextChangedEventArgs>? PartialTextChanged { add { } remove { } }
         public ChannelReader<TranscriptUtterance> Utterances => _channel.Reader;
         public IReadOnlyCollection<string> ObservedAttendees => [];
 

@@ -147,6 +147,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
         _service.StateChanged += OnServiceStateChanged;
         _service.SpeakersReassigned += OnSpeakersReassigned;
+        _service.PartialTextChanged += OnPartialTextChanged;
 
         StatusText = _localizationService["MeetingAttendee_Status_Idle"];
 
@@ -445,6 +446,9 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     /// <summary>Test seam: exposes the base VM's protected <see cref="TranscriptOverlayViewModel.RelabelSpeaker"/>.</summary>
     internal void RelabelSpeakerForTest(string oldLabel, string newLabel) => RelabelSpeaker(oldLabel, newLabel);
 
+    private void OnPartialTextChanged(object? sender, TranscriptionPartialTextChangedEventArgs e)
+        => SetPartial(e.Speaker, e.Text);
+
     private void OnSpeakersReassigned(object? sender, IReadOnlyList<SpeakerReassignment> changes)
         => ApplyReassignments(changes);
 
@@ -507,6 +511,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         // invisible chrome.exe tree that survives process exit.
         _service.StateChanged -= OnServiceStateChanged;
         _service.SpeakersReassigned -= OnSpeakersReassigned;
+        _service.PartialTextChanged -= OnPartialTextChanged;
 
         if (_service.State is not (MeetingAttendeeState.Idle or MeetingAttendeeState.Error))
         {

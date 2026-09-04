@@ -56,6 +56,9 @@ public interface IMeetingAttendeeService
     /// </summary>
     event EventHandler<IReadOnlyList<SpeakerReassignment>>? SpeakersReassigned;
 
+    /// <summary>Only raised by a backend that can stream; the others simply never fire it.</summary>
+    event EventHandler<TranscriptionPartialTextChangedEventArgs>? PartialTextChanged;
+
     /// <summary>
     /// Reader of the attendee's utterance stream. The reader instance is stable for the lifetime of
     /// the service; the channel is completed only on <see cref="IAsyncDisposable.DisposeAsync"/>

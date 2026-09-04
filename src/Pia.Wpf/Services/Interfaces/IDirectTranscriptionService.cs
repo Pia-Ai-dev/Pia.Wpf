@@ -63,6 +63,13 @@ public sealed record SpeakerConsentChangedEventArgs(
 public sealed record TranscriptionSpeakingChangedEventArgs(TranscriptSpeaker Speaker, bool IsSpeaking);
 
 /// <summary>
+/// Payload of a running speech-recognition hypothesis. A preview only — the same words arrive again
+/// as a <see cref="TranscriptUtterance"/> once the segment closes, so this must never be journaled.
+/// Empty text means the hypothesis has been withdrawn.
+/// </summary>
+public sealed record TranscriptionPartialTextChangedEventArgs(TranscriptSpeaker Speaker, string Text);
+
+/// <summary>
 /// Transcribes the local microphone and the system audio output into one consent-gated transcript.
 /// Only speech from the local user and from speakers who have given spoken consent ever leaves this
 /// service — the consent gate is inside the implementation, not in its consumers.
@@ -95,6 +102,9 @@ public interface IDirectTranscriptionService : IAsyncDisposable
 
     /// <summary>Raised on the audio reader thread when voice activity starts or stops on one side.</summary>
     event EventHandler<TranscriptionSpeakingChangedEventArgs>? SpeakingChanged;
+
+    /// <summary>Only raised by a backend that can stream; the others simply never fire it.</summary>
+    event EventHandler<TranscriptionPartialTextChangedEventArgs>? PartialTextChanged;
 
     /// <summary>
     /// Raised whenever <see cref="PrepareAsync"/> discards the consent map — which it must, because it also

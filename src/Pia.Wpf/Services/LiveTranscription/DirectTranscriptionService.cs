@@ -103,6 +103,8 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     public event EventHandler<SpeakerConsentChangedEventArgs>? SpeakerConsentChanged;
     public event EventHandler<string>? SpeakerRegistered;
     public event EventHandler<TranscriptionSpeakingChangedEventArgs>? SpeakingChanged;
+
+    public event EventHandler<TranscriptionPartialTextChangedEventArgs>? PartialTextChanged;
     public event EventHandler? ConsentSessionReset;
 
     /// <summary>Production constructor (used by DI). Wires default seams over the real dependencies.</summary>
@@ -807,6 +809,22 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
             RaiseSpeakingChanged(speaker, isSpeaking);
         };
+
+        concrete.PartialTextChanged += (_, text) => RaisePartialTextChanged(speaker, text);
+    }
+
+    private void RaisePartialTextChanged(TranscriptSpeaker speaker, string text)
+    {
+        var handler = PartialTextChanged;
+        if (handler is null) return;
+        try
+        {
+            handler.Invoke(this, new TranscriptionPartialTextChangedEventArgs(speaker, text));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PartialTextChanged subscriber threw");
+        }
     }
 
     private void RaiseSpeakingChanged(TranscriptSpeaker speaker, bool isSpeaking)
