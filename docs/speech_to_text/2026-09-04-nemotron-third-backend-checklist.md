@@ -1,6 +1,6 @@
 # Nemotron-3.5 as a third STT backend — checklist
 
-**Status:** Phase 1 complete (steps 1-4). G1 open.
+**Status:** Phase 1 complete (steps 1-5). **G1 passed 2026-09-04** — Phase 2 proceeds.
 **Owner:** Marco Altmann
 **Written:** 2026-09-04
 **Origin:** [2026-09-04-nemotron-third-backend-plan.md](2026-09-04-nemotron-third-backend-plan.md),
@@ -15,7 +15,7 @@ closed · `Med` worthwhile, not headline · `Enabler` little standalone value, u
 
 | Gate | Question it answers | What it can cancel |
 |---|---|---|
-| **G1** | Does nemotron beat or match Parakeet TDT v3 on German, measured on `artifacts/wav/`? | Everything from step 6 down. If it loses clearly, stop after step 4: the third option still ships, the streaming UX does not get built on a model nobody will pick. |
+| **G1** | Does nemotron beat or match Parakeet TDT v3 on German? | Everything from step 6 down. **Answered 2026-09-04: yes.** Matches Parakeet on substantive speech, punctuates and capitalises, RTF 0.35. Drops 14 of 37 very short utterances, against Parakeet inventing English on those same ones. See [2026-09-04-nemotron-german-comparison.md](2026-09-04-nemotron-german-comparison.md). |
 | **G2** | Does the 560 ms chunk cadence produce text that *grows* rather than lurches? | Nothing, but a "no" sends step 1 back through all four URL pin sites for the 320 ms variant. Answered by step 10, so it is a late and therefore expensive gate — accept that rather than trying to answer it early with a model you have not run. |
 
 Do not tick a dependant of an open gate without revisiting it.
@@ -42,9 +42,9 @@ Do not tick a dependant of an open gate without revisiting it.
       `GeneralView.xaml` with its automation id.
       *Deps:* 3 · *Effort:* S · *Value:* High
 
-- [ ] **5. Measure it against Parakeet on German.** Transcribe the `artifacts/wav/` fixtures with all
-      three backends, record decode times and whether nemotron punctuates, and write the comparison
-      doc. **This is G1.**
+- [x] **5. Measure it against Parakeet on German.** Transcribed 180 s of a German standup recording
+      with all three backends through a new `[BenchFact]` harness — `artifacts/wav/` no longer exists
+      on any checkout, so the recording replaced it. **This is G1, and it passed.**
       *Deps:* 4 · *Effort:* XS · *Value:* High
 
 ## Phase 2 — the streaming UX (gated on G1)
