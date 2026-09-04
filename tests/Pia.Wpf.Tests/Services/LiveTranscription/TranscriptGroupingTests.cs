@@ -47,6 +47,31 @@ public class TranscriptGroupingTests
         Assert.True(TranscriptGrouping.ShouldReuse(
             Bubble("Speaker 1"), TranscriptSpeaker.Them, Start.AddSeconds(1), null));
 
+    // The same interjection eighteen seconds after the run went quiet is somebody else's.
+    [Fact]
+    public void ShouldReuse_LetsAnUnlabeledSegmentInheritTheRun_OnlyNextToTheRun() =>
+        Assert.False(TranscriptGrouping.ShouldReuse(
+            Bubble("Speaker 1"), TranscriptSpeaker.Them,
+            Start.AddSeconds(TranscriptGrouping.InheritanceAdjacencySeconds), null));
+
+    // Adjacency gates inheritance only. A speaker who keeps their own label is still one bubble.
+    [Fact]
+    public void ShouldReuse_StillMergesTheSameLabel_LongAfterTheRunsLastWord() =>
+        Assert.True(TranscriptGrouping.ShouldReuse(
+            Bubble("Speaker 1"), TranscriptSpeaker.Them, Start.AddSeconds(20), "Speaker 1"));
+
+    [Fact]
+    public void ShouldReuse_MeasuresInheritanceFromTheRunsLastWord_NotItsStart()
+    {
+        var bubble = Bubble("Speaker 1");
+        bubble.Append("still talking", Start.AddSeconds(20));
+
+        // 22 s into the bubble window but 2 s after the last word: both bounds are satisfied, and they
+        // are independent — the run is long, not stale.
+        Assert.True(TranscriptGrouping.ShouldReuse(
+            bubble, TranscriptSpeaker.Them, Start.AddSeconds(22), null));
+    }
+
     [Fact]
     public void ShouldReuse_DoesNotAttachALabeledSegmentToAnUnlabeledRun() =>
         Assert.False(TranscriptGrouping.ShouldReuse(
