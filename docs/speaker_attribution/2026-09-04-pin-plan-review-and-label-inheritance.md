@@ -148,7 +148,11 @@ which is why the grouping rule is the lever here.
 
 - **(a) Leave it.** Defensible today, and it is the right default for a two-party call. Weakest for
   exactly the meeting shape in the field report.
-- **(b) Decouple the inheritance window from the bubble window** — *recommended.* Keep the 25 s bubble
+- **(b) Decouple the inheritance window from the bubble window** — *recommended, and then measured
+  inert: see [2026-09-04-inheritance-adjacency-measurement.md](2026-09-04-inheritance-adjacency-measurement.md).
+  Across the three references no real inheritance sits more than 7.25 s after the run, and every
+  threshold low enough to bite removes correct inheritances before wrong ones — adjacency does not
+  separate the two.* Keep the 25 s bubble
   window on `StartTimestamp`, but allow inheritance only when the new utterance is close to
   `last.EndTimestamp` (a few seconds). A "genau" a second after someone stops speaking is theirs; one
   after eighteen seconds of silence is not. One added condition in one pure function, no new state, and
