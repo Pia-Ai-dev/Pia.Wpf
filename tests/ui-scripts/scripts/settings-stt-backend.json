@@ -33,29 +33,16 @@
           "testCaseId": "TC-001"
         },
         {
-          "tool": "ww_select",
+          "tool": "ww_set_value",
           "selector": "automationId=Settings_General_SttEngine",
-          "optionIndex": 2,
-          "assertion": {
-            "type": "assert",
-            "selector": "automationId=Settings_General_SttEngine",
-            "property": "value",
-            "op": "eq",
-            "expected": "Nemotron",
-            "message": "SelectionPattern reports the enum member, not the localized item text"
-          },
-          "testCaseId": "TC-001"
-        },
-        {
-          "tool": "ww_assert",
-          "selector": "automationId=Settings_General_DownloadNemotronModel",
+          "extra": "Nemotron",
           "assertion": {
             "type": "assert",
             "selector": "automationId=Settings_General_DownloadNemotronModel",
             "property": "enabled",
             "op": "eq",
-            "expected": "True",
-            "message": "Nemotron's download button is only rendered for the Nemotron backend, so selecting it must bring the button into reach"
+            "expected": "true",
+            "message": "Nemotron's download button is not merely hidden but absent from the tree until its backend is selected, so resolving it at all is the assertion"
           },
           "testCaseId": "TC-001"
         }
@@ -63,7 +50,7 @@
     },
     {
       "id": "TC-002",
-      "title": "Settings Speech: switching back to Parakeet swaps the download button",
+      "title": "Settings Speech: switching back to Parakeet brings its button back",
       "steps": [
         {
           "tool": "ww_select",
@@ -72,28 +59,15 @@
           "testCaseId": "TC-002"
         },
         {
-          "tool": "ww_select",
+          "tool": "ww_set_value",
           "selector": "automationId=Settings_General_SttEngine",
-          "optionIndex": 1,
-          "assertion": {
-            "type": "assert",
-            "selector": "automationId=Settings_General_SttEngine",
-            "property": "value",
-            "op": "eq",
-            "expected": "Parakeet",
-            "message": "SelectionPattern reports the enum member, not the localized item text"
-          },
-          "testCaseId": "TC-002"
-        },
-        {
-          "tool": "ww_assert",
-          "selector": "automationId=Settings_General_DownloadParakeetModel",
+          "extra": "Parakeet",
           "assertion": {
             "type": "assert",
             "selector": "automationId=Settings_General_DownloadParakeetModel",
             "property": "enabled",
             "op": "eq",
-            "expected": "True",
+            "expected": "true",
             "message": "Each backend renders its own download button; a third enum value must not leave Parakeet's panel hidden"
           },
           "testCaseId": "TC-002"

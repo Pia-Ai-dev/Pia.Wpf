@@ -72,8 +72,8 @@ Do not tick a dependant of an open gate without revisiting it.
 - [ ] **10. Prove it on the real desktop and write the release notes.** **Partly done.** The UI
       script is written (`tests/ui-scripts/scripts/settings-stt-backend.json`) and every selector in
       it was driven against the running app, which is what caught that
-      `Settings_General_SttEngine` needs `optionIndex` rather than `optionText`. `RELEASE.md` is
-      rewritten. **Still open, and it needs a person at the machine:** replaying the script through
+      `Settings_General_SttEngine` needs `ww_set_value` rather than `ww_select` and that an
+      `enabled` assertion reads lowercase `true`. `RELEASE.md` is rewritten. **Still open, and it needs a person at the machine:** replaying the script through
       `Invoke-UiScripts.ps1` (WinWright's `Civyk.WinWright.Mcp.exe` is not installed on the dev box),
       and driving a real meeting with live speech plus a speaker rename to watch the partial grow and
       confirm the rebuild neither duplicates nor drops it. **This is G2.**

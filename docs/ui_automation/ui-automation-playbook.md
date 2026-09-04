@@ -180,12 +180,16 @@ once `Settings_Assistant_ToolCatalog` (a `CardExpander`) is expanded. Note also 
 `Settings_Assistant_Agent_AutoApproveBuiltInWrites` are one property rendered on two tabs; either
 one moves the setting, and both share an accessible name.
 
-`Settings_General_SttEngine` takes `optionIndex`, **not** `optionText`: its `ItemTemplate` renders
-the item through a converter, so the option elements expose neither `SelectionItemPattern` nor
-`InvokePattern` under their display text and `optionText` fails with `pattern_not_supported`. The
-indices are the `SttBackend` ordinals — 0 Whisper, 1 Parakeet, 2 Nemotron. `ww_get_value` on the
-ComboBox likewise reports the **enum member** ("Nemotron"), not the localized label
-("Nemotron 3.5 Streaming"), because it reads `SelectionPattern`; assert on the former.
+`Settings_General_SttEngine` needs **`ww_set_value`, not `ww_select`**. Its `ItemTemplate` renders
+each item through a converter, so the option elements expose neither `SelectionItemPattern` nor
+`InvokePattern` under their display text and `ww_select`'s `optionText` fails with
+`pattern_not_supported`. `optionIndex` drives it from the MCP tool, but a recorded step carries a
+single untyped `extra`, so it cannot reach a script — `ww_set_value` can, and does.
+
+The value to set is the **enum member** (`Whisper` / `Parakeet` / `Nemotron`), not the localized
+label ("Nemotron 3.5 Streaming"): `ww_get_value` reads `SelectionPattern` and reports the member,
+so that is also what an assertion must expect. And `ww_assert_value` on `property: "enabled"`
+returns lowercase `"true"` — expecting `"True"` fails.
 
 ## Navigation
 

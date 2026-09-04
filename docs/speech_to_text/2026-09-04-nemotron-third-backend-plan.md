@@ -4,7 +4,9 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Plan, not started.
+**Status:** Tasks 1-9 built on `feature/nemo_stt`. G1 passed 2026-09-04
+([2026-09-04-nemotron-german-comparison.md](2026-09-04-nemotron-german-comparison.md)); Task 10 is
+partly done and its remainder needs a human at the machine. Track it in the checklist below.
 **Owner:** Marco Altmann
 **Written:** 2026-09-04
 **Origin:** Owner decision on 2026-09-04, taken against
