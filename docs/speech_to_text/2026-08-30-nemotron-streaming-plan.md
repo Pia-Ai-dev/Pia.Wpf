@@ -1,6 +1,6 @@
 # Nemotron-3.5 streaming ASR — update path
 
-**Status:** Plan, not started. **G0 cleared 2026-08-30** — the package prerequisite landed, so this is now
+**Status:** Superseded 2026-09-04. **G0 cleared 2026-08-30** — the package prerequisite landed, so this is now
 blocked only on someone choosing to do it. G1 and G2 are still open.
 **Owner:** Marco Altmann
 **Written:** 2026-08-30
@@ -9,8 +9,22 @@ blocked only on someone choosing to do it. G1 and G2 are still open.
 Whisper and no newer *multilingual* Parakeet, leaving `nemotron-3.5-asr-streaming-0.6b` as the only
 upstream model that would change what the client can do rather than just which version it runs.
 
-Still no checklist file: G0 cleared, but G1 and G2 remain, and G2 can still cancel everything from step 5
-down. Create `2026-08-30-nemotron-streaming-checklist.md` when someone actually schedules this.
+**Superseded by
+[2026-09-04-nemotron-third-backend-plan.md](2026-09-04-nemotron-third-backend-plan.md)** and its
+checklist. The owner settled this plan's two open questions on 2026-09-04: nemotron becomes an
+*additional* third backend rather than a replacement for Parakeet TDT v3 (so G2 no longer cancels
+the work, it only gates the streaming phase), the streaming UX is in scope, and the 560 ms variant
+is the pin. Everything measured here — bundle contents, the five chunk variants, the per-stream
+`language` option, the CPU-provider implementation-selection trap — still holds and is cited by the
+new plan. Read this document for the measurements; execute the new one.
+
+One measurement has been added since: sherpa-onnx 1.13.5's streaming NeMo implementations support
+**greedy search only**, have **no hotword or contextual-biasing support**, and call `exit(-1)` on any
+other decoding method — a process kill with no catchable .NET exception. Verified against
+`sherpa-onnx/csrc` at tag `v1.13.5`.
+
+The checklist now lives with the superseding plan:
+[2026-09-04-nemotron-third-backend-checklist.md](2026-09-04-nemotron-third-backend-checklist.md).
 
 ## Why bother
 
