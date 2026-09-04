@@ -369,6 +369,27 @@
               </ui:Button>
             </StackPanel>
 
+            <!-- Nemotron (visible when Nemotron backend is selected) -->
+            <StackPanel Margin="0,0,0,20"
+                        Visibility="{Binding IsNemotronSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <TextBlock Text="{loc:Str Settings_Nemotron_DisplayName}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Settings_Nemotron_Description}"
+                         FontSize="12"
+                         Foreground="{DynamicResource TextMutedBrush}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,8"/>
+              <ui:Button Command="{Binding DownloadNemotronModelCommand}"
+                         AutomationProperties.AutomationId="Settings_General_DownloadNemotronModel"
+                         Appearance="Secondary"
+                         HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" Margin="0,0,8,0"/>
+                  <TextBlock Text="{loc:Str Settings_DownloadNemotronModel}"/>
+                </StackPanel>
+              </ui:Button>
+            </StackPanel>
+
             <!-- STT Language -->
             <StackPanel Margin="0,0,0,20">
               <TextBlock Text="{loc:Str Settings_SpeechToTextLanguage}"

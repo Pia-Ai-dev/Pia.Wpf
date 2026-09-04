@@ -1,6 +1,6 @@
 # Nemotron-3.5 as a third STT backend — checklist
 
-**Status:** Not started.
+**Status:** Phase 1 complete (steps 1-4). G1 open.
 **Owner:** Marco Altmann
 **Written:** 2026-09-04
 **Origin:** [2026-09-04-nemotron-third-backend-plan.md](2026-09-04-nemotron-third-backend-plan.md),
@@ -22,22 +22,22 @@ Do not tick a dependant of an open gate without revisiting it.
 
 ## Phase 1 — the third backend (shippable on its own)
 
-- [ ] **1. Pin the nemotron bundle.** Add the 560 ms int8 asset to `LiveTranscriptionModels`,
+- [x] **1. Pin the nemotron bundle.** Add the 560 ms int8 asset to `LiveTranscriptionModels`,
       `RuntimeAssetCatalog`, `scripts/RuntimeAssetCatalogue.ps1` and `ModelDownloadUrlTests`, then
       confirm the URL returns 200 by hand.
       *Deps:* — · *Effort:* XS · *Value:* Enabler
 
-- [ ] **2. Add the `Nemotron` backend value and route all eight `SttBackend` sites.** Append the enum
+- [x] **2. Add the `Nemotron` backend value and route all eight `SttBackend` sites.** Append the enum
       member last, then fix five two-way `== SttBackend.Parakeet` ternaries that silently mean
       "Whisper" on a third value — including the one that stamps the model id into saved meeting
       metadata.
       *Deps:* 1 · *Effort:* S · *Value:* Enabler
 
-- [ ] **3. Build `NemotronStreamingEngine` behind `ITranscriptionEngine`.** Wrap `OnlineRecognizer`,
+- [x] **3. Build `NemotronStreamingEngine` behind `ITranscriptionEngine`.** Wrap `OnlineRecognizer`,
       decode a whole VAD segment to final text, and route both factory methods to it.
       *Deps:* 2 · *Effort:* S · *Value:* High
 
-- [ ] **4. Wire the settings UI.** Add `DownloadNemotronModelAsync` through the service interface,
+- [x] **4. Wire the settings UI.** Add `DownloadNemotronModelAsync` through the service interface,
       `IsNemotronSelected` and the download command on the ViewModel, and the panel in
       `GeneralView.xaml` with its automation id.
       *Deps:* 3 · *Effort:* S · *Value:* High

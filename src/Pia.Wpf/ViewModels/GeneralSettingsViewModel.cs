@@ -143,6 +143,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
 
     public bool IsWhisperSelected => SttBackend == SttBackend.Whisper;
     public bool IsParakeetSelected => SttBackend == SttBackend.Parakeet;
+    public bool IsNemotronSelected => SttBackend == SttBackend.Nemotron;
 
     [ObservableProperty]
     private ObservableCollection<TtsVoice> _ttsVoices = new();
@@ -200,6 +201,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     {
         OnPropertyChanged(nameof(IsWhisperSelected));
         OnPropertyChanged(nameof(IsParakeetSelected));
+        OnPropertyChanged(nameof(IsNemotronSelected));
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
@@ -374,6 +376,14 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         await DownloadModelInternalAsync(
             _localizationService["Settings_Parakeet_DisplayName"],
             (progress, ct) => _transcriptionService.DownloadParakeetModelAsync(progress, ct));
+    }
+
+    [RelayCommand]
+    private async Task DownloadNemotronModelAsync()
+    {
+        await DownloadModelInternalAsync(
+            _localizationService["Settings_Nemotron_DisplayName"],
+            (progress, ct) => _transcriptionService.DownloadNemotronModelAsync(progress, ct));
     }
 
     private async Task DownloadModelInternalAsync(

@@ -503,6 +503,9 @@
   <data name="Settings_DownloadModel" xml:space="preserve"><value>Modell herunterladen</value></data>
   <data name="Settings_DownloadParakeetModel" xml:space="preserve"><value>Parakeet-Modell herunterladen</value></data>
   <data name="Settings_Parakeet_DisplayName" xml:space="preserve"><value>Parakeet TDT v3 (mehrsprachig)</value></data>
+  <data name="Settings_DownloadNemotronModel" xml:space="preserve"><value>Nemotron-Modell herunterladen</value></data>
+  <data name="Settings_Nemotron_DisplayName" xml:space="preserve"><value>Nemotron 3.5 Streaming (mehrsprachig)</value></data>
+  <data name="Settings_Nemotron_Description" xml:space="preserve"><value>Streaming-Erkennung in 36 Sprachen. Der Text erscheint schon beim Sprechen. Etwa 453 MB.</value></data>
   <data name="Settings_SpeakerModel_DisplayName" xml:space="preserve"><value>Sprechererkennungsmodell</value></data>
   <data name="Settings_Parakeet_Description" xml:space="preserve"><value>NVIDIA NeMo Parakeet Transducer-Modell. Unterstützt mehrere europäische Sprachen mit automatischer Erkennung. Etwa 340 MB auf der Festplatte.</value></data>
   <data name="Settings_SpeechToTextLanguage" xml:space="preserve"><value>Sprache-zu-Text Sprache</value></data>
