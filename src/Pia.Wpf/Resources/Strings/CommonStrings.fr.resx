@@ -83,6 +83,11 @@
   <data name="MeetingAttendee_RenameSpeaker_Title" xml:space="preserve"><value>Renommer l'intervenant</value></data>
   <data name="MeetingAttendee_RenameSpeaker_Prompt" xml:space="preserve"><value>Saisissez un nom pour «&#160;{0}&#160;» :</value></data>
   <data name="MeetingAttendee_RenameSpeaker_MenuItem" xml:space="preserve"><value>Renommer l'intervenant…</value></data>
+  <data name="MeetingAttendee_AssignSpeaker_MenuItem" xml:space="preserve"><value>C'est un autre intervenant…</value></data>
+  <data name="MeetingAttendee_AssignSpeaker_Title" xml:space="preserve"><value>Attribuer à un autre intervenant</value></data>
+  <data name="MeetingAttendee_AssignSpeaker_Prompt" xml:space="preserve"><value>Qui a dit cela ?</value></data>
+  <data name="MeetingAttendee_RedetectSpeaker_MenuItem" xml:space="preserve"><value>Détecter l'intervenant à nouveau</value></data>
+  <data name="MeetingAttendee_CorrectSpeaker_Refused" xml:space="preserve"><value>Pia n'a pas pu changer l'intervenant de ce message.</value></data>
   <data name="MeetingAttendee_DisplayName_Label" xml:space="preserve"><value>Nom de l'assistant dans la réunion</value></data>
   <data name="MeetingAttendee_DisplayName_Placeholder" xml:space="preserve"><value>Nom affiché aux participants à la réunion</value></data>
   <data name="MeetingAttendee_Requirements_Title" xml:space="preserve"><value>Prérequis</value></data>

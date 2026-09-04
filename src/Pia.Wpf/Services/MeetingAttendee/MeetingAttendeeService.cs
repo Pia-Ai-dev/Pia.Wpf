@@ -556,6 +556,17 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     public void RenameSpeaker(string oldLabel, string newLabel) => _speakerId?.Rename(oldLabel, newLabel);
 
     /// <summary>
+    /// Both corrections reach the transcript through the existing <c>SpeakersReassigned</c> fan-out, not
+    /// through the return value — the unattended journal has no other path and would otherwise go stale.
+    /// </summary>
+    public bool AssignSegmentsToSpeaker(IReadOnlyList<long> segmentIds, string targetLabel)
+        => _speakerId?.AssignSegments(segmentIds, targetLabel) ?? false;
+
+    /// <inheritdoc cref="AssignSegmentsToSpeaker"/>
+    public bool RedetectSpeakerForSegments(IReadOnlyList<long> segmentIds)
+        => _speakerId?.RedetectSegments(segmentIds) ?? false;
+
+    /// <summary>
     /// Periodically snapshots the meeting roster (an immediate first snapshot, then every
     /// <paramref name="interval"/>) and folds each into <see cref="_attendees"/>. Best-effort: a failed
     /// snapshot is logged at Debug and the loop continues; cancellation ends it cleanly. Never throws into

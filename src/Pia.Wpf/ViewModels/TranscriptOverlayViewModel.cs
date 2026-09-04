@@ -239,7 +239,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
                 if (_journal.Count > JournalCap) _journal.RemoveAt(0);
 
                 var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, label, createIfMissing: true);
-                bubble!.Append(utterance.Text, utterance.Timestamp);
+                bubble!.Append(utterance.Text, utterance.Timestamp, utterance.SegmentId);
                 TrimIfNeeded();
             }
             catch (Exception ex)
@@ -374,7 +374,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         foreach (var entry in _journal)
         {
             var bubble = GetOrCreateBubble(entry.Speaker, entry.Timestamp, entry.Label, createIfMissing: true);
-            bubble!.Append(entry.Text, entry.Timestamp);
+            bubble!.Append(entry.Text, entry.Timestamp, entry.SegmentId);
         }
         while (Bubbles.Count > MaxBubbles) Bubbles.RemoveAt(0);
     }

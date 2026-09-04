@@ -77,6 +77,10 @@ public sealed class ScheduledMeetingRecorderTests
 
         public void RenameSpeaker(string oldLabel, string newLabel) { }
 
+        public bool AssignSegmentsToSpeaker(IReadOnlyList<long> segmentIds, string targetLabel) => false;
+
+        public bool RedetectSpeakerForSegments(IReadOnlyList<long> segmentIds) => false;
+
         public void Emit(TranscriptUtterance utterance) => _channel.Writer.TryWrite(utterance);
 
         public void Reassign(params SpeakerReassignment[] changes) =>
@@ -292,5 +296,9 @@ public sealed class ScheduledMeetingRecorderTests
 
         public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public void RenameSpeaker(string oldLabel, string newLabel) { }
+
+        public bool AssignSegmentsToSpeaker(IReadOnlyList<long> segmentIds, string targetLabel) => false;
+
+        public bool RedetectSpeakerForSegments(IReadOnlyList<long> segmentIds) => false;
     }
 }

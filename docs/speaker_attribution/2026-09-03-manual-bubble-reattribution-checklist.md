@@ -1,6 +1,7 @@
 # Checklist: manual per-bubble speaker re-attribution
 
-**Status.** In progress — A1–A6 and E1 landed 2026-09-04 on `feature/long-meeting-degradation`.
+**Status.** In progress — A1–A6, B1, C1, D1 and E1 landed 2026-09-04 on
+`feature/long-meeting-degradation`. A6a next; D2/D3 wait on its gates.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-03.
 **Origin.** The tracking surface for
@@ -68,16 +69,17 @@ Do not tick a dependant of an open gate without revisiting it.
       a measurement rather than a claim.
       *Deps:* A6 · *Effort:* S · *Value:* High
 
-- [ ] **B1 — `TranscriptBubble.SegmentIds`.** The id list plus the optional `Append` parameter, fed
+- [x] **B1 — `TranscriptBubble.SegmentIds`.** The id list plus the optional `Append` parameter, fed
       from both `AddUtterance` and `RebuildBubblesFromJournal`, with the rebuild-equivalence and
       skip-null tests. Includes the stale `TranscriptUtterance.cs:19` doc fix.
       *Deps:* — · *Effort:* XS · *Value:* Enabler
 
-- [ ] **C1 — `IDialogService.ShowSelectionDialogAsync`.** One new dialog method, its view, and its
-      registration — the picker the assign command needs. Localised keys in all three resx files.
+- [x] **C1 — `IDialogService.ShowSelectionDialogAsync`.** One new dialog method — built in
+      `DialogService` from a `ListBox`, following `ShowInputDialogAsync`, which has no view file of
+      its own either. Localised keys in all three resx files.
       *Deps:* — · *Effort:* S · *Value:* Enabler
 
-- [ ] **D1 — Service forwarding.** `AssignSegmentsToSpeaker` / `RedetectSpeakerForSegments` on
+- [x] **D1 — Service forwarding.** `AssignSegmentsToSpeaker` / `RedetectSpeakerForSegments` on
       `IMeetingAttendeeService` and `MeetingAttendeeService`, plus the three test fakes and the
       null-`_speakerId` no-op test.
       *Deps:* A1 · *Effort:* XS · *Value:* Enabler

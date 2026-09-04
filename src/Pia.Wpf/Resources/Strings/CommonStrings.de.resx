@@ -83,6 +83,11 @@
   <data name="MeetingAttendee_RenameSpeaker_Title" xml:space="preserve"><value>Sprecher umbenennen</value></data>
   <data name="MeetingAttendee_RenameSpeaker_Prompt" xml:space="preserve"><value>Geben Sie einen Namen für „{0}“ ein:</value></data>
   <data name="MeetingAttendee_RenameSpeaker_MenuItem" xml:space="preserve"><value>Sprecher umbenennen…</value></data>
+  <data name="MeetingAttendee_AssignSpeaker_MenuItem" xml:space="preserve"><value>Das ist ein anderer Sprecher…</value></data>
+  <data name="MeetingAttendee_AssignSpeaker_Title" xml:space="preserve"><value>Anderem Sprecher zuordnen</value></data>
+  <data name="MeetingAttendee_AssignSpeaker_Prompt" xml:space="preserve"><value>Wer hat das gesagt?</value></data>
+  <data name="MeetingAttendee_RedetectSpeaker_MenuItem" xml:space="preserve"><value>Sprecher neu erkennen</value></data>
+  <data name="MeetingAttendee_CorrectSpeaker_Refused" xml:space="preserve"><value>Pia konnte den Sprecher für diese Nachricht nicht ändern.</value></data>
   <data name="MeetingAttendee_DisplayName_Label" xml:space="preserve"><value>Name des Assistenten im Meeting</value></data>
   <data name="MeetingAttendee_DisplayName_Placeholder" xml:space="preserve"><value>Den Teilnehmern angezeigter Name</value></data>
   <data name="MeetingAttendee_Requirements_Title" xml:space="preserve"><value>Voraussetzungen</value></data>

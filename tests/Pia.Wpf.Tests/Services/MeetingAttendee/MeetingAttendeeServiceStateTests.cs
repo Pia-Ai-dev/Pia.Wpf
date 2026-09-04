@@ -802,6 +802,16 @@ public sealed class MeetingAttendeeServiceStateTests
         Assert.Null(ex);
     }
 
+    [Fact]
+    public void SpeakerCorrections_AreSafeNoOps_WhenSpeakerIdNull()
+    {
+        var fixture = new Fixture();
+
+        // Refused rather than silently reported as done, so the caller can say so.
+        Assert.False(fixture.Service.AssignSegmentsToSpeaker([1, 2], "Speaker 1"));
+        Assert.False(fixture.Service.RedetectSpeakerForSegments([1, 2]));
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static async Task WaitForStateAsync(IMeetingAttendeeService service, MeetingAttendeeState target)

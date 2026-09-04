@@ -105,4 +105,17 @@ public interface IMeetingAttendeeService
     /// not throw.
     /// </summary>
     void RenameSpeaker(string oldLabel, string newLabel);
+
+    /// <summary>
+    /// Moves the given diarizer segments onto <paramref name="targetLabel"/> and pins them there for the
+    /// rest of the meeting. False when the correction was refused. Same contract as
+    /// <see cref="RenameSpeaker"/>: a no-op when diarization is off, and it must not throw.
+    /// </summary>
+    bool AssignSegmentsToSpeaker(IReadOnlyList<long> segmentIds, string targetLabel);
+
+    /// <summary>
+    /// Asks the diarizer to decide the given segments again against every voice but the one they carry,
+    /// and pins the answer. Same contract as <see cref="AssignSegmentsToSpeaker"/>.
+    /// </summary>
+    bool RedetectSpeakerForSegments(IReadOnlyList<long> segmentIds);
 }

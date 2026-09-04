@@ -276,4 +276,32 @@ public class DialogService : IDialogService
 
         return result == ContentDialogResult.Primary ? textBox.Text : null;
     }
+
+    public async Task<string?> ShowSelectionDialogAsync(string title, string prompt, IReadOnlyList<string> options)
+    {
+        var list = new System.Windows.Controls.ListBox
+        {
+            Margin = new System.Windows.Thickness(0, 8, 0, 0),
+            MaxHeight = 240,
+            ItemsSource = options,
+        };
+        // Nothing preselected: OK without a pick is indistinguishable from cancel, and doing nothing is
+        // the safe reading of an accidental confirm.
+        AutomationProperties.SetAutomationId(list, "SelectionDialog_Options");
+
+        var stackPanel = new System.Windows.Controls.StackPanel();
+        stackPanel.Children.Add(new System.Windows.Controls.TextBlock { Text = prompt });
+        stackPanel.Children.Add(list);
+
+        var result = await _contentDialogService.ShowSimpleDialogAsync(
+            new SimpleContentDialogCreateOptions
+            {
+                Title = title,
+                Content = stackPanel,
+                PrimaryButtonText = _localizationService["Common_OK"],
+                CloseButtonText = _localizationService["Common_Cancel"]
+            });
+
+        return result == ContentDialogResult.Primary ? list.SelectedItem as string : null;
+    }
 }

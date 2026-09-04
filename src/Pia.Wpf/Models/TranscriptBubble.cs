@@ -47,6 +47,14 @@ public sealed partial class TranscriptBubble : ObservableObject
     [ObservableProperty]
     private int _colorIndex;
 
+    private readonly List<long> _segmentIds = [];
+
+    /// <summary>
+    /// Diarizer segment ids behind this bubble's text, so a correction can name what it is moving.
+    /// Nothing binds to it. A segment whose text came back empty is not a member.
+    /// </summary>
+    public IReadOnlyList<long> SegmentIds => _segmentIds;
+
     public TranscriptBubble(TranscriptSpeaker speaker, DateTimeOffset startTimestamp,
                             string text = "", string? speakerLabel = null, string? displayLabel = null)
     {
@@ -58,10 +66,11 @@ public sealed partial class TranscriptBubble : ObservableObject
         _displayLabel = displayLabel;
     }
 
-    public void Append(string text, DateTimeOffset endTimestamp)
+    public void Append(string text, DateTimeOffset endTimestamp, long? segmentId = null)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         Text = string.IsNullOrEmpty(Text) ? text : Text + " " + text;
         if (endTimestamp > EndTimestamp) EndTimestamp = endTimestamp;
+        if (segmentId is long id) _segmentIds.Add(id);
     }
 }

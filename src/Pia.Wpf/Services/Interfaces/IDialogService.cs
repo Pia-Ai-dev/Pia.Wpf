@@ -30,6 +30,9 @@ public interface IDialogService
     Task<bool> ShowTranscribingDialogAsync(CancellationToken cancellationToken);
     Task<string?> ShowInputDialogAsync(string title, string prompt, string? initialValue = null);
 
+    /// <summary>Picks one of <paramref name="options"/>, or null when nothing was chosen.</summary>
+    Task<string?> ShowSelectionDialogAsync(string title, string prompt, IReadOnlyList<string> options);
+
     /// <summary>True once the user affirmed the selection; the caller then awaits
     /// <see cref="AssignmentConsentViewModel.SendAsync"/> and surfaces its <c>ResultMessage</c>.</summary>
     Task<bool> ShowAssignmentConsentDialogAsync(AssignmentConsentViewModel viewModel);

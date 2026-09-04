@@ -16,7 +16,10 @@ public enum TranscriptSpeaker
 /// Diarizer label, or <c>null</c> when the segment was not diarized: no diarizer was attached, the
 /// segment was shorter than the diarization minimum, or the diarizer threw and the engine swallowed it.
 /// </param>
-/// <param name="SegmentId">Monotonic diarizer segment id, <c>null</c> whenever <paramref name="SpeakerLabel"/> is.</param>
+/// <param name="SegmentId">
+/// Monotonic diarizer segment id, present whenever the diarizer ran. It is <c>not</c> tied to
+/// <paramref name="SpeakerLabel"/> — an unplaceable segment gets an id and a null label.
+/// </param>
 /// <param name="DurationSeconds">
 /// Length of the audio the text was transcribed from, in seconds, or <c>null</c> when the producer did
 /// not measure it. Feeds the per-speaker voice statistics; never used for ordering or merging.

@@ -328,6 +328,47 @@ public class MeetingAttendeeViewModelTests
 
     // ---- ApplyReassignments (adaptive retro rebuild) ---------------------------------------------
 
+    /// <summary>
+    /// The ids are derived from the same journal replay rather than carried across it, so the
+    /// partition is identical by construction — this pins that the wiring actually is that way.
+    /// </summary>
+    [Fact]
+    public void Bubble_SegmentIds_SurviveAJournalRebuild()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 1", "b", 5, segmentId: 11);
+        Utter(vm, "Speaker 2", "c", 40, segmentId: 12);
+        var before = vm.Bubbles.Select(b => b.SegmentIds.ToArray()).ToArray();
+
+        vm.ApplyReassignments([new SpeakerReassignment(12, "Speaker 3")]);
+
+        Assert.Equal(before, vm.Bubbles.Select(b => b.SegmentIds.ToArray()));
+        Assert.Equal([[10L, 11L], [12L]], vm.Bubbles.Select(b => b.SegmentIds.ToArray()));
+    }
+
+    [Fact]
+    public void Bubble_SegmentIds_SkipUtterancesWithoutOne()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, null, "genau", 2);
+
+        // The interjection inherits the run and its text lands in the bubble, but it has no id, so a
+        // correction cannot claim to move it.
+        Assert.Equal([10L], Assert.Single(vm.Bubbles).SegmentIds);
+    }
+
+    [Fact]
+    public void Bubble_SegmentIds_SkipASegmentWhoseTextWasDropped()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 1", "   ", 2, segmentId: 11);
+
+        Assert.Equal([10L], Assert.Single(vm.Bubbles).SegmentIds);
+    }
+
     [Fact]
     public void ApplyReassignments_MergesBubbles_WhenTwoLabelsCollapse()
     {
@@ -1394,6 +1435,24 @@ public class MeetingAttendeeViewModelTests
         {
             LastRename = (oldLabel, newLabel);
             RenameCount++;
+        }
+
+        public List<(IReadOnlyList<long> SegmentIds, string TargetLabel)> Assigns { get; } = [];
+        public List<IReadOnlyList<long>> Redetects { get; } = [];
+
+        /// <summary>Set false to model the diarizer refusing a correction (manual mode, unknown label).</summary>
+        public bool CorrectionSucceeds { get; set; } = true;
+
+        public bool AssignSegmentsToSpeaker(IReadOnlyList<long> segmentIds, string targetLabel)
+        {
+            Assigns.Add((segmentIds, targetLabel));
+            return CorrectionSucceeds;
+        }
+
+        public bool RedetectSpeakerForSegments(IReadOnlyList<long> segmentIds)
+        {
+            Redetects.Add(segmentIds);
+            return CorrectionSucceeds;
         }
 
         public void RaiseState(MeetingAttendeeState state)
