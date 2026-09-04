@@ -21,6 +21,7 @@ internal sealed class DiarizationBench
     // The engine gates diarization at 1.5 s before the service ever sees a segment.
     private const int MinDiarizationSamples = 16000 * 3 / 2;
     private const int BubbleWindowSeconds = Pia.ViewModels.TranscriptOverlayViewModel.BubbleWindowSeconds;
+    private const int InheritanceAdjacencySeconds = TranscriptGrouping.InheritanceAdjacencySeconds;
     private static readonly DateTimeOffset ClockEpoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>Decodes the recording through the same reader and hop resampler the replay path uses,
@@ -54,7 +55,8 @@ internal sealed class DiarizationBench
     /// first, so one segment list can be replayed under several option sets.</summary>
     public static IReadOnlyList<string> Identify(
         List<BenchSegment> segments, int rosterSize, CachedEmbeddingExtractor extractor,
-        AdaptiveSpeakerOptions? options = null)
+        AdaptiveSpeakerOptions? options = null,
+        Action<AdaptiveSpeakerIdentificationService, long, double>? afterIdentify = null)
     {
         foreach (var segment in segments) { segment.Label = null; segment.FinalLabel = null; }
 
@@ -97,6 +99,10 @@ internal sealed class DiarizationBench
             segment.FinalLabel = pending.Remove(result.SegmentId, out var corrected)
                 ? corrected
                 : result.Label;
+
+            // The seam a user correction arrives through in the app, minus the UI: it fires between two
+            // identify calls, exactly where a right-click lands.
+            afterIdentify?.Invoke(service, result.SegmentId, segment.StartSeconds);
         }
 
         return [.. logger.Entries.Select(e => e.Message)];
@@ -137,19 +143,23 @@ internal sealed class DiarizationBench
         IEnumerable<BenchSegment> segments, double windowSeconds = BubbleWindowSeconds)
     {
         var rendered = new Dictionary<BenchSegment, string?>();
-        double bubbleStart = 0;
+        double bubbleStart = 0, bubbleEnd = 0;
         string? bubbleLabel = null;
         var open = false;
         foreach (var s in segments)
         {
+            var end = s.StartSeconds + s.DurationSeconds;
             var inWindow = open && s.StartSeconds - bubbleStart < windowSeconds;
-            if (inWindow && (string.Equals(s.FinalLabel, bubbleLabel, StringComparison.Ordinal)
-                             || (string.IsNullOrWhiteSpace(s.FinalLabel) && !string.IsNullOrWhiteSpace(bubbleLabel))))
+            var inherits = string.IsNullOrWhiteSpace(s.FinalLabel) && !string.IsNullOrWhiteSpace(bubbleLabel)
+                           && end - bubbleEnd < InheritanceAdjacencySeconds;
+            if (inWindow && (string.Equals(s.FinalLabel, bubbleLabel, StringComparison.Ordinal) || inherits))
             {
                 rendered[s] = bubbleLabel;
+                bubbleEnd = Math.Max(bubbleEnd, end);
                 continue;
             }
             bubbleStart = s.StartSeconds;
+            bubbleEnd = end;
             bubbleLabel = s.FinalLabel;
             open = true;
             rendered[s] = bubbleLabel;

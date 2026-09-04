@@ -1,7 +1,7 @@
 # Checklist: manual per-bubble speaker re-attribution
 
-**Status.** In progress — A1–A6, B1, C1, D1 and E1 landed 2026-09-04 on
-`feature/long-meeting-degradation`. A6a next; D2/D3 wait on its gates.
+**Status.** In progress — A1–A6a, B1, C1, D1 and E1 landed 2026-09-04 on
+`feature/long-meeting-degradation`. Gates G-A and G-B are cleared, so D2/D3 are unblocked.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-03.
 **Origin.** The tracking surface for
@@ -20,8 +20,8 @@ little standalone value, unblocks a High.
 
 | Gate | Question it answers | Cleared by | Affects |
 |---|---|---|---|
-| G-A | Does the pin actually survive a real 20-minute replay, not just the unit tests? | A6a — a replay with the correction fired through a **test seam** (the shape of `MeetingAttendeeViewModel.RelabelSpeakerForTest` `:441`), so no UI is needed | A negative cancels D2 and D3. A correction that silently unsticks in the field is worse than no button, and the design goes back to the drawing board before any UI ships |
-| G-B | Does the change stay inert when unused — no accuracy or label-count movement on a clean replay? | A6a's second run, scored by `Measure-SpeakerAttribution.ps1` | A negative means the pass surgery has a side effect the unit tests missed; blocks D2 and F2 |
+| G-A | Does the pin actually survive a real 20-minute meeting, not just the unit tests? | **CLEARED 2026-09-04.** Three Teams recordings through `DiarizationBench`, correction fired a quarter in, 26–43 passes followed, 0 pinned ids moved — one-segment and five-segment pins alike. [2026-09-04-pin-gate-evidence.md](2026-09-04-pin-gate-evidence.md) | A negative cancels D2 and D3. A correction that silently unsticks in the field is worse than no button, and the design goes back to the drawing board before any UI ships |
+| G-B | Does the change stay inert when unused — no accuracy or label-count movement on a clean run? | **CLEARED 2026-09-04.** Same three recordings, no correction, this branch vs `main` on a shared embedding cache: 673 segments, byte-identical per-segment output | A negative means the pass surgery has a side effect the unit tests missed; blocks D2 and F2 |
 
 Do not tick a dependant of an open gate without revisiting it.
 
@@ -62,11 +62,13 @@ Do not tick a dependant of an open gate without revisiting it.
       call, sub-floor moves but never mints, refusals, `Reset` clears pins, default members refuse.
       *Deps:* A4, A5 · *Effort:* S · *Value:* High
 
-- [ ] **A6a — Replay evidence, before any UI (gates G-A and G-B).** Two
-      `Invoke-MeetingReplay.ps1` runs: one firing a correction mid-replay through a test seam and
-      checking the log for later reassignments of the pinned ids, one clean run scored by
-      `Measure-SpeakerAttribution.ps1` against the existing baselines. This is what makes "reliable"
-      a measurement rather than a claim.
+- [x] **A6a — Real-recording evidence, before any UI (gates G-A and G-B).** Done with
+      `DiarizationBench` rather than `Invoke-MeetingReplay.ps1`: no reference exists for these
+      recordings, so `Measure-SpeakerAttribution.ps1` could not score them, and the bench compares
+      the per-segment assignment itself instead of two summary numbers. `MediaFoundationReader`
+      reads the mp4 directly, so no WAV tee was needed. Both gates cleared —
+      [2026-09-04-pin-gate-evidence.md](2026-09-04-pin-gate-evidence.md) records the numbers and what
+      the bench does not cover.
       *Deps:* A6 · *Effort:* S · *Value:* High
 
 - [x] **B1 — `TranscriptBubble.SegmentIds`.** The id list plus the optional `Append` parameter, fed
