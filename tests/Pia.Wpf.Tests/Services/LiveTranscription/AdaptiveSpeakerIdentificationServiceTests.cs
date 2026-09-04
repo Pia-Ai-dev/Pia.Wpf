@@ -375,6 +375,283 @@ public class AdaptiveSpeakerIdentificationServiceTests
         Assert.Equal(5, svc.KnownLabels.Count);
     }
 
+    // ---- user speaker corrections ------------------------------------------------------------------
+
+    /// <summary>
+    /// The one failure in this feature that is worse than the bug it fixes. Pinned segments leave the
+    /// dendrogram, so if the warm-up gate keeps counting them a pass runs on near-empty input, rebuilds
+    /// the label map from it and nulls every segment — the whole transcript, not one stuck pin.
+    /// </summary>
+    [Fact]
+    public void Pass_IsSkipped_WhenTooFewUnpinnedEligibleSegmentsRemain()
+    {
+        var clusterer = new RecordingClusterer();
+        using var svc = Create(clusterer);
+
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        Assert.Single(clusterer.Calls);
+        var labels = svc.KnownLabels.ToArray();
+
+        Assert.True(svc.AssignSegments([0, 1, 2, 3, 4, 5], labels[0]));
+
+        // Four more clears the stride twice over, but only 4 of 10 eligible segments are unpinned.
+        for (var i = 0; i < 4; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        Assert.Single(clusterer.Calls);
+        Assert.Equal(labels, svc.KnownLabels);
+
+        // Two more reaches six unpinned, and the pass sees exactly those six.
+        for (var i = 0; i < 2; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        Assert.Equal(2, clusterer.Calls.Count);
+        Assert.Equal(6, clusterer.Calls[1].Inputs);
+    }
+
+    [Fact]
+    public void Assign_SticksAcrossTwoLaterPasses()
+    {
+        using var svc = Create();
+        var events = new List<IReadOnlyList<SpeakerReassignment>>();
+        // Two voices, six segments each, so a pass has plenty to re-decide.
+        foreach (var deg in new double[] { 0, 2, 4, 100, 102, 104 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+        var far = svc.KnownLabels.Last();
+        svc.SpeakersReassigned += (_, e) => events.Add(e);
+
+        // Segment 0 belongs acoustically with the first voice; the user says otherwise.
+        Assert.True(svc.AssignSegments([0], far));
+        events.Clear();
+
+        for (var i = 0; i < 12; i++) svc.IdentifyOrRegisterSegment(Seg(i % 2 == 0 ? 1 : 101), 16000);
+
+        // The silence is the strong assertion: not "it ended up right", but "no pass touched it".
+        Assert.DoesNotContain(events.SelectMany(e => e), c => c.SegmentId == 0);
+    }
+
+    [Fact]
+    public void Assign_KeepsTheTargetAlive_WhenThePassWouldMergeItAway()
+    {
+        var clusterer = new RecordingClusterer();
+        using var svc = Create(clusterer);
+        foreach (var deg in new double[] { 0, 2, 4, 100, 102, 104 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+        // Pin every segment of the second voice onto its own label, then script a pass that puts
+        // everything left into one cluster — the merge that deletes an unpinned label outright.
+        Assert.True(svc.AssignSegments([3, 4, 5], "Speaker 2"));
+        clusterer.Scripted.Enqueue(new ClusterResult(new int[8], 1, 0.3f));
+
+        for (var i = 0; i < 5; i++) svc.IdentifyOrRegisterSegment(Seg(1), 16000);
+
+        // A length mismatch throws inside the pass and is swallowed, which would pass this test for
+        // the wrong reason: assert the scripted pass saw exactly the eight unpinned segments.
+        Assert.Equal(2, clusterer.Calls.Count);
+        Assert.Equal(8, clusterer.Calls[1].Inputs);
+        Assert.Contains("Speaker 2", svc.KnownLabels);
+    }
+
+    [Fact]
+    public void Redetect_SticksAcrossTwoLaterPasses()
+    {
+        using var svc = Create();
+        var events = new List<IReadOnlyList<SpeakerReassignment>>();
+        foreach (var deg in new double[] { 0, 2, 4, 100, 102, 104 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+        svc.SpeakersReassigned += (_, e) => events.Add(e);
+
+        Assert.True(svc.RedetectSegments([0]));
+        events.Clear();
+
+        for (var i = 0; i < 12; i++) svc.IdentifyOrRegisterSegment(Seg(i % 2 == 0 ? 1 : 101), 16000);
+
+        Assert.DoesNotContain(events.SelectMany(e => e), c => c.SegmentId == 0);
+    }
+
+    [Fact]
+    public void Redetect_MintedLabel_SurvivesTheNextPass()
+    {
+        using var svc = Create();
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+
+        Assert.True(svc.RedetectSegments([0, 1]));
+        Assert.Equal(2, svc.KnownLabels.Count);
+
+        // Without the ghost-centroid rebuild the minted label dies here, and the next segment of that
+        // voice mints a second one — the correction degrading the thing it fixed.
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        Assert.Equal(2, svc.KnownLabels.Count);
+    }
+
+    /// <summary>
+    /// Exclusion is also what keeps a pin off the target's centroid: the user may be correcting for a
+    /// reason the audio does not support — a speakerphone, two people on one device — and a forced
+    /// match must not drag a voice's average toward it.
+    /// </summary>
+    [Fact]
+    public void Pass_ExcludesPinnedSegmentsFromTheDendrogram()
+    {
+        var clusterer = new RecordingClusterer();
+        using var svc = Create(clusterer);
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+
+        Assert.True(svc.AssignSegments([0, 1], svc.KnownLabels.Single()));
+        for (var i = 0; i < 5; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+
+        Assert.Equal(2, clusterer.Calls.Count);
+        Assert.Equal(9, clusterer.Calls[1].Inputs);   // 11 journaled, 2 pinned out
+    }
+
+    [Fact]
+    public void Assign_ToAnUnknownLabel_IsRefused()
+    {
+        using var svc = Create();
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+
+        Assert.False(svc.AssignSegments([0], "Speaker 99"));
+    }
+
+    [Fact]
+    public void Assign_ToAnEvictedSegment_IsRefused()
+    {
+        using var svc = new AdaptiveSpeakerIdentificationService(
+            new DegreeEmbeddingExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance,
+            now: null, maxJournaledSegments: 8);
+        for (var i = 0; i < 12; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+
+        // Segment 0 fell off the journal; segment 11 is still there.
+        Assert.False(svc.AssignSegments([0], svc.KnownLabels.First()));
+        Assert.True(svc.AssignSegments([11], svc.KnownLabels.First()));
+    }
+
+    [Fact]
+    public void Assign_ToTheSegmentsOwnCluster_ReturnsTrue_AndEmitsNothing()
+    {
+        using var svc = Create();
+        var events = new List<IReadOnlyList<SpeakerReassignment>>();
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        svc.SpeakersReassigned += (_, e) => events.Add(e);
+
+        // "This one is right, freeze it" is a real operation, and it moves nothing.
+        Assert.True(svc.AssignSegments([2], svc.KnownLabels.Single()));
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public void Redetect_TakesTheNearestOtherVoice()
+    {
+        using var svc = Create();
+        var events = new List<IReadOnlyList<SpeakerReassignment>>();
+        foreach (var deg in new double[] { 0, 2, 4, 100, 102, 104 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+        svc.SpeakersReassigned += (_, e) => events.Add(e);
+
+        Assert.True(svc.RedetectSegments([0]));
+
+        var moved = Assert.Single(Assert.Single(events));
+        Assert.Equal(0, moved.SegmentId);
+        Assert.NotEqual("Speaker 1", moved.NewLabel);
+    }
+
+    [Fact]
+    public void Redetect_MintsOnce_ForSeveralSegments()
+    {
+        using var svc = Create();
+        var registered = new List<string>();
+        // One voice only, so nothing else is near enough to take them.
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        svc.SpeakerRegistered += (_, l) => registered.Add(l);
+
+        Assert.True(svc.RedetectSegments([0, 1, 2]));
+
+        Assert.Equal(new[] { "Speaker 2" }, registered);
+        Assert.Equal(2, svc.KnownLabels.Count);
+    }
+
+    [Fact]
+    public void Redetect_MovesASubFloorSegment_ButNeverMintsFromOne()
+    {
+        using var svc = Create();
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(0), 16000);
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(100), 16000);
+        var interjection = svc.IdentifyOrRegisterSegment(Seg(2, seconds: 1.0), 16000);
+
+        Assert.True(svc.RedetectSegments([interjection.SegmentId]));
+        Assert.Equal(2, svc.KnownLabels.Count);
+
+        // Alone with one voice it has nowhere to go, and inventing one would put a speaker behind the
+        // clustering floor where no correction can reach it.
+        using var solo = Create();
+        for (var i = 0; i < 6; i++) solo.IdentifyOrRegisterSegment(Seg(0), 16000);
+        var lone = solo.IdentifyOrRegisterSegment(Seg(2, seconds: 1.0), 16000);
+        solo.RedetectSegments([lone.SegmentId]);
+        Assert.Single(solo.KnownLabels);
+    }
+
+    /// <summary>
+    /// The losing half of <see cref="Rename_SurvivesReclusterPasses"/>, which only ever covered the
+    /// cluster that keeps its overlap. When a pass merges a renamed cluster away it wins no vote, is
+    /// skipped by orphan recycling precisely because it is renamed, and the typed name is deleted —
+    /// reproduced before the pin existed.
+    /// </summary>
+    [Fact]
+    public void Rename_SurvivesAScriptedMerge()
+    {
+        var clusterer = new RecordingClusterer();
+        using var svc = Create(clusterer);
+        foreach (var deg in new double[] { 0, 2, 4, 100, 102, 104 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+
+        Assert.True(svc.Rename("Speaker 2", "Nils"));
+        clusterer.Scripted.Enqueue(new ClusterResult(new int[8], 1, 0.3f));
+
+        for (var i = 0; i < 5; i++) svc.IdentifyOrRegisterSegment(Seg(1), 16000);
+
+        Assert.Equal(2, clusterer.Calls.Count);
+        Assert.Equal(8, clusterer.Calls[1].Inputs);   // the three renamed segments left the dendrogram
+        Assert.Contains("Nils", svc.KnownLabels);
+    }
+
+    [Fact]
+    public void Rename_RenamesEveryClusterCarryingTheLabel()
+    {
+        using var svc = Create();
+        foreach (var deg in new double[] { 0, 2, 4, 100, 102, 104 })
+            svc.IdentifyOrRegisterSegment(Seg(deg), 16000);
+
+        // Renaming onto a name that already exists leaves two clusters sharing it — stable, and it
+        // renders correctly. Renaming again used to move only the first and half-split the speaker.
+        Assert.True(svc.Rename("Speaker 1", "Nils"));
+        Assert.True(svc.Rename("Speaker 2", "Nils"));
+
+        Assert.True(svc.Rename("Nils", "Nils Berger"));
+        Assert.DoesNotContain("Nils", svc.KnownLabels);
+        Assert.Equal(2, svc.KnownLabels.Count(l => l == "Nils Berger"));
+    }
+
+    [Fact]
+    public void Reset_ClearsThePins()
+    {
+        var clusterer = new RecordingClusterer();
+        using var svc = Create(clusterer);
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+        svc.AssignSegments([0, 1, 2, 3, 4, 5], svc.KnownLabels.Single());
+
+        svc.Reset();
+        for (var i = 0; i < 6; i++) svc.IdentifyOrRegisterSegment(Seg(i), 16000);
+
+        // A pass ran on all six, so nothing carried a pin over.
+        Assert.Equal(2, clusterer.Calls.Count);
+        Assert.Equal(6, clusterer.Calls[1].Inputs);
+    }
+
+    // An implementation that re-decides nothing has nothing to pin, so it refuses truthfully rather
+    // than reporting a success the caller cannot see.
+    [Fact]
+    public void DefaultInterfaceMembers_RefuseBothCorrections()
+    {
+        using ISpeakerIdentificationService svc = new FakeSpeakerIdentificationService();
+
+        Assert.False(svc.AssignSegments([0], "Speaker 1"));
+        Assert.False(svc.RedetectSegments([0]));
+    }
+
     [Fact]
     public void Pass_HasNoClusterDefinedOnlyBySubFloorSegments()
     {

@@ -104,7 +104,11 @@ no vectors, so it adds no new `Array.Clear` site. Cleared in `WipeBiometricState
 never be resurrected by a colliding id.
 
 **`AssignSegments`** — resolve label → cluster over `_labelByCluster`, lowest cluster id wins (see
-§5 on why two clusters can share a label), no match → `false`. Per id: linear-scan `_segments`,
+§5 on why two clusters can share a label), no match → `false`. Lowest-id is a **decision, not a
+tie-break**: §5 makes the duplicate state more reachable rather than less, so assigning to a
+duplicated label lands on whichever cluster happens to have the lower id, invisibly to the user, and
+that choice decides which centroid their correction is measured against later. Accepted as low
+severity; recorded so it is not mistaken for an accident. Per id: linear-scan `_segments`,
 skip if evicted, set both `_clusterBySegment[id]` and `_pinnedClusterBySegment[id]`, and queue a
 `SpeakerReassignment` when the label actually changed. Probe `_segments`, **not**
 `_clusterBySegment` — a journaled sub-floor segment that was never placed has no entry there

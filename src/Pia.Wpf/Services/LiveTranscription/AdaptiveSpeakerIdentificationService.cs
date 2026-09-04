@@ -46,6 +46,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     private readonly Dictionary<int, string> _labelByCluster = new();
     private readonly Dictionary<int, RunningCentroid> _centroidByCluster = new();
     private readonly HashSet<int> _renamedClusters = new();
+    // Segments the user placed by hand. Ids and cluster ids only, so it adds no vector to wipe.
+    private readonly Dictionary<long, int> _pinnedClusterBySegment = new();
     private long _nextSegmentId;
     private int _nextClusterId;
     private int _speakerCounter;
@@ -136,6 +138,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
                 // VM's own journal is far smaller, so no rebuildable utterance references it).
                 Array.Clear(_segments[0].Embedding);
                 _clusterBySegment.Remove(_segments[0].SegmentId);
+                _pinnedClusterBySegment.Remove(_segments[0].SegmentId);
                 _segments.RemoveAt(0);
             }
 
@@ -205,22 +208,27 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         if (newLabel is not null) RaiseSpeakerRegistered(newLabel);
         if (passLabels is not null)
             foreach (var label in passLabels) RaiseSpeakerRegistered(label);
-        if (reassignments is { Count: > 0 })
-        {
-            try { SpeakersReassigned?.Invoke(this, reassignments); }
-            catch (Exception ex) { _logger.LogError(ex, "SpeakersReassigned subscriber threw"); }
-        }
+        if (reassignments is { Count: > 0 }) RaiseSpeakersReassigned(reassignments);
 
         return result;
     }
 
+    /// <summary>
+    /// Counts what a pass would actually cluster. Pinned segments leave the dendrogram, so counting
+    /// them here would let a pass run on near-empty input and rebuild the label map from it — a wiped
+    /// transcript, not a stuck pin.
+    /// </summary>
     private int EligibleCountUnderLock()
     {
         var eligible = 0;
         foreach (var segment in _segments)
-            if (segment.DurationSeconds >= _options.MinClusterSegmentSeconds) eligible++;
+            if (IsPassInputUnderLock(segment.DurationSeconds, segment.SegmentId)) eligible++;
         return eligible;
     }
+
+    private bool IsPassInputUnderLock(float durationSeconds, long segmentId)
+        => durationSeconds >= _options.MinClusterSegmentSeconds
+           && !_pinnedClusterBySegment.ContainsKey(segmentId);
 
     /// <summary>
     /// Re-clusters the journaled embeddings that clear <see cref="MinClusterSegmentSeconds"/> and
@@ -232,10 +240,14 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     private (List<SpeakerReassignment> Reassignments, List<string> NewLabels) RunPassUnderLock()
     {
         // Eligible → journal index. Sub-floor segments keep their provisional label but never enter
-        // the dendrogram, so every site below indexes the journal through this map.
+        // the dendrogram, so every site below indexes the journal through this map. Pinned segments
+        // leave it too, which is what holds a correction: left in, a pin votes under its own cluster
+        // in the overlap match below and two pins can swap a stable id between two voices.
         var journalIndex = new List<int>(_segments.Count);
         for (int i = 0; i < _segments.Count; i++)
-            if (_segments[i].DurationSeconds >= _options.MinClusterSegmentSeconds) journalIndex.Add(i);
+            if (IsPassInputUnderLock(_segments[i].DurationSeconds, _segments[i].SegmentId)) journalIndex.Add(i);
+
+        var pinnedClusters = new HashSet<int>(_pinnedClusterBySegment.Values);
 
         var embeddings = new float[journalIndex.Count][];
         for (int i = 0; i < journalIndex.Count; i++) embeddings[i] = _segments[journalIndex[i]].Embedding;
@@ -293,7 +305,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         var orphans = new List<int>();
         foreach (var cluster in _labelByCluster.Keys)
         {
-            if (takenPrev.Contains(cluster) || _renamedClusters.Contains(cluster)) continue;
+            if (takenPrev.Contains(cluster) || _renamedClusters.Contains(cluster)
+                || pinnedClusters.Contains(cluster)) continue;
             orphans.Add(cluster);
         }
         orphans.Sort();
@@ -345,6 +358,33 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
                 centroid.Add(embedding);
         }
 
+        // A pin target the pass matched to nothing is about to be deleted by the label rebuild below,
+        // taking the correction with it. Immunity from recycling is not the same as being carried.
+        foreach (var cluster in pinnedClusters)
+        {
+            if (newLabelByCluster.ContainsKey(cluster)) continue;
+            if (!_labelByCluster.TryGetValue(cluster, out var carried)) continue;
+            newLabelByCluster[cluster] = carried;
+            if (_renamedClusters.Contains(cluster)) newRenamed.Add(cluster);
+        }
+
+        // A target with earned members keeps the centroid the pass computed: a pin is the most forced
+        // match there is, and it must not drag a voice's average toward it. But a target with none —
+        // every freshly minted re-detect label is one — would vanish from _centroidByCluster, never be
+        // instant-matched again, and the next segment of that voice would mint a second label. Rebuild
+        // those from their own still-journaled eligible pins.
+        foreach (var cluster in pinnedClusters)
+        {
+            if (!newLabelByCluster.ContainsKey(cluster) || newCentroidByCluster.ContainsKey(cluster)) continue;
+            foreach (var (segId, embedding, duration) in _segments)
+            {
+                if (duration < _options.MinClusterSegmentSeconds) continue;
+                if (_pinnedClusterBySegment.GetValueOrDefault(segId, -1) != cluster) continue;
+                if (newCentroidByCluster.TryGetValue(cluster, out var ghost)) ghost.Add(embedding);
+                else newCentroidByCluster[cluster] = new RunningCentroid(embedding);
+            }
+        }
+
         // Old centroids are biometric state too — zero every one the rebuild did not carry over.
         foreach (var (_, old) in _centroidByCluster) old.Wipe();
         _centroidByCluster.Clear();
@@ -381,12 +421,13 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         return (reassignments, newLabels);
     }
 
-    private (int Cluster, float Similarity) BestClusterUnderLock(float[] embedding)
+    private (int Cluster, float Similarity) BestClusterUnderLock(float[] embedding, int excludeCluster = -1)
     {
         var best = float.NegativeInfinity;
         var bestCluster = -1;
         foreach (var (cluster, centroid) in _centroidByCluster)
         {
+            if (cluster == excludeCluster) continue;
             var sim = centroid.Similarity(embedding);
             // A centroid a segment or two old is one voice caught once, not that voice's average, so
             // it wins comparisons it has not earned. Handicap it rather than hide it: losing outright
@@ -397,21 +438,174 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         return (bestCluster, best);
     }
 
+    // ---- user speaker corrections --------------------------------------------------------------
+
+    public bool AssignSegments(IReadOnlyList<long> segmentIds, string targetLabel)
+    {
+        if (segmentIds.Count == 0 || string.IsNullOrWhiteSpace(targetLabel)) return false;
+
+        List<SpeakerReassignment>? changes = null;
+        int pinned;
+        int target;
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            target = -1;
+            foreach (var (cluster, label) in _labelByCluster)
+            {
+                if (label != targetLabel) continue;
+                if (target < 0 || cluster < target) target = cluster;
+            }
+            if (target < 0) return false;
+
+            pinned = 0;
+            foreach (var id in segmentIds)
+            {
+                // Probe the journal, not _clusterBySegment: a sub-floor segment that was never placed
+                // has no entry there but is legitimately assignable.
+                if (JournalIndexUnderLock(id) < 0) continue;
+                if (PinUnderLock(id, target) is string moved) (changes ??= []).Add(new SpeakerReassignment(id, moved));
+                pinned++;
+            }
+            if (pinned == 0) return false;
+        }
+
+        LogCorrection("assign", pinned, targetLabel, changes);
+        if (changes is { Count: > 0 }) RaiseSpeakersReassigned(changes);
+        return true;
+    }
+
+    public bool RedetectSegments(IReadOnlyList<long> segmentIds)
+    {
+        if (segmentIds.Count == 0) return false;
+
+        List<SpeakerReassignment>? changes = null;
+        string? mintedLabel = null;
+        int moved;
+        lock (_lock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            var minted = -1;
+            moved = 0;
+            foreach (var id in segmentIds)
+            {
+                var index = JournalIndexUnderLock(id);
+                if (index < 0) continue;
+                var (_, embedding, duration) = _segments[index];
+                var current = _clusterBySegment.GetValueOrDefault(id, -1);
+
+                // MatchSimilarityMin, not the live adaptive threshold: the nearest-centroid result this
+                // is built on was measured on segments that had already failed the live bar.
+                var (best, similarity) = BestClusterUnderLock(embedding, excludeCluster: current);
+                int target;
+                if (best >= 0 && similarity >= _options.MatchSimilarityMin)
+                {
+                    target = best;
+                }
+                else if (duration < _options.MinClusterSegmentSeconds)
+                {
+                    // A sub-floor segment may move but may never mint: a cluster only it defines would
+                    // sit behind the clustering floor, out of reach of every correction.
+                    if (_clusterBySegment.Remove(id)) (changes ??= []).Add(new SpeakerReassignment(id, null));
+                    moved++;
+                    continue;
+                }
+                else if (minted >= 0)
+                {
+                    target = minted;
+                    _centroidByCluster[minted].Add(embedding);
+                }
+                else
+                {
+                    // Past the roster ceiling on purpose: the user has asserted a voice the head count
+                    // scraped off a meeting panel did not know about, and that is the better authority.
+                    target = minted = _nextClusterId++;
+                    mintedLabel = $"Speaker {++_speakerCounter}";
+                    _labelByCluster[target] = mintedLabel;
+                    _centroidByCluster[target] = new RunningCentroid(embedding);
+                }
+
+                if (PinUnderLock(id, target) is string label) (changes ??= []).Add(new SpeakerReassignment(id, label));
+                moved++;
+            }
+            if (moved == 0) return false;
+        }
+
+        LogCorrection("redetect", moved, mintedLabel, changes);
+        if (mintedLabel is not null) RaiseSpeakerRegistered(mintedLabel);
+        if (changes is { Count: > 0 }) RaiseSpeakersReassigned(changes);
+        return true;
+    }
+
+    /// <summary>Pins the segment to the cluster; returns the new label when it actually moved.</summary>
+    private string? PinUnderLock(long segmentId, int cluster)
+    {
+        var oldLabel = _clusterBySegment.TryGetValue(segmentId, out var previous)
+            ? _labelByCluster.GetValueOrDefault(previous)
+            : null;
+        _clusterBySegment[segmentId] = cluster;
+        _pinnedClusterBySegment[segmentId] = cluster;
+
+        var label = _labelByCluster[cluster];
+        return string.Equals(oldLabel, label, StringComparison.Ordinal) ? null : label;
+    }
+
+    private int JournalIndexUnderLock(long segmentId)
+    {
+        for (int i = 0; i < _segments.Count; i++)
+            if (_segments[i].SegmentId == segmentId) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// A prefix of its own on purpose — Measure-SpeakerAttribution.ps1 greps "Adaptive pass reassigned"
+    /// to score the detector, and a hand correction is not something it detected.
+    /// </summary>
+    private void LogCorrection(string kind, int count, string? label, List<SpeakerReassignment>? changes)
+    {
+        _logger.LogInformation("Speaker correction ({Kind}): {Count} segments, {Moved} moved",
+            kind, count, changes?.Count ?? 0);
+        if (label is not null) _logger.SensitiveInformation("Speaker correction label: '{Label}'", label);
+        if (changes is { Count: > 0 })
+            _logger.SensitiveDebug("Speaker correction moved: [{Pairs}]",
+                string.Join(", ", changes.Select(c => $"{c.SegmentId}={c.NewLabel}")));
+    }
+
+    /// <summary>
+    /// Renames <em>every</em> cluster carrying <paramref name="oldLabel"/> — two can legitimately share
+    /// one — and pins their segments. Without the pin a pass that merges the cluster away wins the
+    /// overlap vote, is skipped by orphan recycling because it is renamed, and deletes the typed name
+    /// outright; and that merge is the same event that made the name wrong enough to type.
+    /// </summary>
     public bool Rename(string oldLabel, string newLabel)
     {
         if (string.IsNullOrWhiteSpace(newLabel)) return false;
         lock (_lock)
         {
+            var renamed = new List<int>();
             foreach (var (cluster, label) in _labelByCluster)
             {
-                if (label != oldLabel) continue;
+                if (label == oldLabel) renamed.Add(cluster);
+            }
+            if (renamed.Count == 0) return false;
+
+            foreach (var cluster in renamed)
+            {
                 _labelByCluster[cluster] = newLabel;
                 _renamedClusters.Add(cluster);
-                _logger.SensitiveInformation("Speaker renamed: '{Old}' → '{New}' (cluster={Cluster})",
-                    oldLabel, newLabel, cluster);
-                return true;
             }
-            return false;
+            // Pinning both halves of a cluster that holds two people is the known cost; RedetectSegments
+            // is the way back out.
+            foreach (var (segId, cluster) in _clusterBySegment)
+            {
+                if (renamed.Contains(cluster)) _pinnedClusterBySegment[segId] = cluster;
+            }
+
+            _logger.SensitiveInformation("Speaker renamed: '{Old}' → '{New}' ({Clusters} clusters)",
+                oldLabel, newLabel, renamed.Count);
+            return true;
         }
     }
 
@@ -436,6 +630,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         foreach (var centroid in _centroidByCluster.Values) centroid.Wipe();
         _centroidByCluster.Clear();
         _clusterBySegment.Clear();
+        _pinnedClusterBySegment.Clear();
         _labelByCluster.Clear();
         _renamedClusters.Clear();
         _nextClusterId = 0;
@@ -457,6 +652,12 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             WipeBiometricStateUnderLock();
             _extractor.Dispose();
         }
+    }
+
+    private void RaiseSpeakersReassigned(IReadOnlyList<SpeakerReassignment> changes)
+    {
+        try { SpeakersReassigned?.Invoke(this, changes); }
+        catch (Exception ex) { _logger.LogError(ex, "SpeakersReassigned subscriber threw"); }
     }
 
     private void RaiseSpeakerRegistered(string label)

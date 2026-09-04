@@ -1,6 +1,6 @@
 # Checklist: manual per-bubble speaker re-attribution
 
-**Status.** Not started.
+**Status.** In progress — A1–A6 and E1 landed 2026-09-04 on `feature/long-meeting-degradation`.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-03.
 **Origin.** The tracking surface for
@@ -26,36 +26,36 @@ Do not tick a dependant of an open gate without revisiting it.
 
 ## Steps
 
-- [ ] **A1 — Pin state and the two service operations.** Add
+- [x] **A1 — Pin state and the two service operations.** Add
       `Dictionary<long, int> _pinnedClusterBySegment`, `AssignSegments` and `RedetectSegments` to
       `AdaptiveSpeakerIdentificationService`, plus the two default-bodied members on
       `ISpeakerIdentificationService` and the `excludeCluster` parameter on `BestClusterUnderLock`.
       No pass changes yet, so a pin does not stick at this point.
       *Deps:* — · *Effort:* S · *Value:* Enabler
 
-- [ ] **A2 — The warm-up count guard, and its test, before any other pass change.** Exclude pinned
+- [x] **A2 — The warm-up count guard, and its test, before any other pass change.** Exclude pinned
       segments from `EligibleCountUnderLock` and land
       `Pass_IsSkipped_WhenTooFewUnpinnedEligibleSegmentsRemain`. Its failure mode is a wiped
       transcript, not a stuck pin, so it goes in ahead of the rest of the surgery.
       *Deps:* A1 · *Effort:* XS · *Value:* High
 
-- [ ] **A3 — Pass surgery: exclusion, orphan skip, pin-target carry.** The remaining three sites in
+- [x] **A3 — Pass surgery: exclusion, orphan skip, pin-target carry.** The remaining three sites in
       `RunPassUnderLock` — skip pins in `journalIndex`, skip pin-holding clusters in the orphan
       sweep, and carry unmatched pin targets into `newLabelByCluster`.
       *Deps:* A2 · *Effort:* S · *Value:* High
 
-- [ ] **A4 — Ghost-centroid rebuild.** A pin target with zero earned members gets its centroid
+- [x] **A4 — Ghost-centroid rebuild.** A pin target with zero earned members gets its centroid
       rebuilt from its own still-journaled eligible pins. Without this, every freshly minted
       re-detect label dies on the next pass and the next segment of that voice mints a second one.
       *Deps:* A3 · *Effort:* XS · *Value:* High
 
-- [ ] **A5 — Wipe, eviction and threading.** Clear the pin map in `WipeBiometricStateUnderLock` and
+- [x] **A5 — Wipe, eviction and threading.** Clear the pin map in `WipeBiometricStateUnderLock` and
       on journal eviction; move both events outside `_lock` through a helper shared with
       `ProcessEmbedding`; add the distinct log prefix that `Measure-SpeakerAttribution.ps1` does not
       grep.
       *Deps:* A1 · *Effort:* XS · *Value:* High
 
-- [ ] **A6 — Stickiness and mechanics tests.** The rest of the
+- [x] **A6 — Stickiness and mechanics tests.** The rest of the
       `AdaptiveSpeakerIdentificationServiceTests` section: assign and re-detect surviving two
       passes, target-kept-alive, dendrogram exclusion, centroid does not follow a pin, one mint per
       call, sub-floor moves but never mints, refusals, `Reset` clears pins, default members refuse.
@@ -92,9 +92,11 @@ Do not tick a dependant of an open gate without revisiting it.
       bump, and the playbook's overlay row.
       *Deps:* D2 · *Effort:* XS · *Value:* High
 
-- [ ] **E1 — `Rename` renames every matching cluster.** The two-line companion fix, so a later
-      rename of a name shared by two clusters no longer half-splits the speaker.
-      *Deps:* — · *Effort:* XS · *Value:* Med
+- [x] **E1 — `Rename` renames every matching cluster, and pins it.** The companion fix, so a later
+      rename of a name shared by two clusters no longer half-splits the speaker — plus the F1
+      decision (owner, 2026-09-04: **pin on rename**), so a pass that merges the cluster away can no
+      longer delete the typed name. `Rename_SurvivesAScriptedMerge` covers the losing case.
+      *Deps:* A1 · *Effort:* XS · *Value:* High
 
 - [ ] **F1 — UIA smoke through the real menu.** Open the overlay, right-click a "Them" bubble, and
       confirm `MeetingAttendee_BubbleAssign_*` and `_BubbleRedetect_*` resolve and act. A6a already
