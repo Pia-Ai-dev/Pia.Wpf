@@ -20,9 +20,14 @@ three — not because it is right. Whisper is visibly wrong in places (see segme
 number is claimed here, and none should be quoted from this document.
 
 All three engines saw **identical input**: one Silero VAD pass produced 37 segments, and the same 37
-float buffers were handed to each engine in turn. Language was forced to `de` rather than `auto`, so
-this does not measure auto-detection. Everything ran on the CPU provider at `NumThreads = 1`, which
-is the production shape.
+float buffers were handed to each engine in turn. Everything ran on the CPU provider at
+`NumThreads = 1`, which is the production shape.
+
+Language handling is **not** uniform across the three, and it cannot be made so. Whisper took
+`Whisper.Language = "de"` and nemotron took `SetOption("language", "de")`, but
+`ParakeetSherpaEngine` has no language parameter at all — Parakeet TDT v3 always auto-detects. So
+where the table below shows Parakeet answering a German utterance in English, that is not a
+misconfiguration in this run; it is the only mode Parakeet has.
 
 Reproduce with the bench that produced it:
 
@@ -93,7 +98,8 @@ answering not at all, because a wrong word enters the transcript and the summary
   N: <empty>            N: <empty>            N: <empty>            N: <empty>
 ```
 
-`pět` is Czech. On a German meeting, Parakeet's auto-detection is the weaker failure mode.
+`pět` is Czech. On a German meeting, Parakeet's auto-detection is the weaker failure mode — and
+because the engine exposes no language knob, there is no setting that fixes it.
 
 **Nemotron keeps disfluencies the other two smooth away** — "was was die äh was das was die
 Teamstärke angeht". More faithful to what was said, noisier for a summary.
@@ -117,7 +123,15 @@ the meeting audio, doubling it again recovers only 2 of the 14 empty segments fo
 (RTF 0.35 to 0.47), so 560 ms is the pin. The short-utterance drops are a property of the model on
 very short input, not a padding shortfall.
 
-The streaming path in Phase 2 needs no padding — there the cache is already warm.
+The streaming path needs no padding *within* an utterance — there the cache is already warm. It
+does need it at the boundary: `Reset()` on speech-end empties the cache, so the streaming session
+feeds one chunk of silence immediately afterwards. Without it every partial preview would open
+missing its first word, for the same reason `de.wav` lost "Alles".
+
+That is also why the streaming session feeds **every** frame rather than gating on the VAD's
+speaking state. Room audio between utterances keeps the cache warm; gating would hand the model a
+cold, silence-trimmed start on every single utterance, which is the shape that produced the 14
+empty segments above.
 
 ## Verdict
 

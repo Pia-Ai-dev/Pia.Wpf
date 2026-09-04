@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SherpaOnnx;
 
@@ -8,7 +9,7 @@ namespace Pia.Services.LiveTranscription;
 /// sherpa-onnx OnlineRecognizer wrapper for NVIDIA nemotron-3.5 streaming (560 ms chunks).
 /// Cache-aware streaming transducer; language is chosen per stream rather than baked into the config.
 /// </summary>
-public sealed class NemotronStreamingEngine : ITranscriptionEngine
+public sealed class NemotronStreamingEngine : ITranscriptionEngine, IStreamingTranscriptionEngine
 {
     private const int SampleRate = 16000;
 
@@ -80,6 +81,80 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine
         finally
         {
             _decodeGate.Release();
+        }
+    }
+
+    public IStreamingSession BeginSession() => new Session(_recognizer, _decodeGate, _languageCode);
+
+    /// <summary>One chunk of silence, fed after a reset so the next utterance does not decode cold.</summary>
+    internal static float[] CacheWarmupSilence() => new float[ChunkSamples];
+
+    private sealed class Session : IStreamingSession
+    {
+        // A frame handed over while the gate is held by a segment-final decode must not park the
+        // caller: the caller is the audio capture reader, and a stalled reader overruns its buffer.
+        private static readonly float[] ResetSentinel = [];
+
+        private readonly OnlineRecognizer _recognizer;
+        private readonly SemaphoreSlim _gate;
+        private readonly OnlineStream _stream;
+        private readonly Channel<float[]> _pending = Channel.CreateBounded<float[]>(
+            new BoundedChannelOptions(256)
+            {
+                // Never DropOldest: a hole in the audio corrupts the running hypothesis. Let the
+                // backlog drain and the preview lag instead.
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+            });
+        private readonly Task _drain;
+        private string _partial = string.Empty;
+
+        public Session(OnlineRecognizer recognizer, SemaphoreSlim gate, string languageCode)
+        {
+            _recognizer = recognizer;
+            _gate = gate;
+            _stream = recognizer.CreateStream();
+            _stream.SetOption("language", languageCode);
+            _drain = Task.Run(DrainAsync);
+        }
+
+        // Only the drain task writes _partial, so a plain read is enough for a preview.
+        public string CurrentPartial => _partial;
+
+        public void Feed(float[] samples16kMono) => _pending.Writer.TryWrite(samples16kMono);
+
+        public void Reset() => _pending.Writer.TryWrite(ResetSentinel);
+
+        private async Task DrainAsync()
+        {
+            await foreach (var frame in _pending.Reader.ReadAllAsync().ConfigureAwait(false))
+            {
+                await _gate.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    if (ReferenceEquals(frame, ResetSentinel))
+                    {
+                        _recognizer.Reset(_stream);
+                        // Reset empties the encoder cache, so without this the next utterance loses
+                        // its opening words exactly as a cold segment decode does.
+                        _stream.AcceptWaveform(SampleRate, CacheWarmupSilence());
+                        _partial = string.Empty;
+                        continue;
+                    }
+
+                    _stream.AcceptWaveform(SampleRate, frame);
+                    while (_recognizer.IsReady(_stream)) _recognizer.Decode(_stream);
+                    _partial = _recognizer.GetResult(_stream).Text?.Trim() ?? string.Empty;
+                }
+                finally { _gate.Release(); }
+            }
+        }
+
+        public void Dispose()
+        {
+            _pending.Writer.TryComplete();
+            try { _drain.Wait(TimeSpan.FromSeconds(2)); } catch { /* a parked native decode must not block teardown */ }
+            _stream.Dispose();
         }
     }
 
