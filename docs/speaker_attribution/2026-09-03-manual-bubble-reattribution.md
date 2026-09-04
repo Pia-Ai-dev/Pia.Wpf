@@ -182,6 +182,16 @@ fold hand-corrections into the measured accuracy.
   deduped to. If it proves wrong, the one-line fix is to count only clusters that have a centroid.
 - Exclusion is single-shot, so on a two-voice meeting pressing re-detect twice toggles back to the
   original answer. Intended: with two voices, "not this speaker" has exactly one other answer.
+- **Pin on rename is retroactive only** (owner decision on F1, 2026-09-04). Renaming pins the
+  segments the cluster holds *at that moment*, so the typed name survives a merge and its existing
+  bubbles stay put — but a *later* segment of that voice is unpinned and follows the algorithm as
+  before. That is the same per-segment granularity the rest of the feature has, and the alternative
+  (pinning the cluster forever) is the whole-label freeze the plan rejects above.
+- **Renaming the dominant speaker can pause passes for a stride or two.** Pinned segments leave the
+  warm-up count, so renaming a cluster that holds most of the eligible segments can drop the unpinned
+  count below `WarmupSegments` until new audio arrives. Self-correcting, and it is the guard working
+  as intended rather than a defect — a pass on the handful that remain is exactly what
+  `Pass_IsSkipped_WhenTooFewUnpinnedEligibleSegmentsRemain` exists to prevent.
 
 ### 3. Bubble → segment ids
 

@@ -104,9 +104,11 @@ Do not tick a dependant of an open gate without revisiting it.
       longer delete the typed name. `Rename_SurvivesAScriptedMerge` covers the losing case.
       *Deps:* A1 · *Effort:* XS · *Value:* High
 
-- [ ] **F1 — UIA smoke through the real menu.** Open the overlay, right-click a "Them" bubble, and
-      confirm `MeetingAttendee_BubbleAssign_*` and `_BubbleRedetect_*` resolve and act. A6a already
-      proved the pin; this proves the affordance reaches it.
+- [x] **F1 — UIA smoke through the real menu.** Done 2026-09-04 against a throwaway profile with a
+      real recording replayed through the attendee pipeline. Both ids resolve on right-click;
+      re-detect moved one segment and assign moved three, both logged under the correction prefix;
+      the picker offered exactly the other speakers on screen. The sticky numbering was visible in
+      the same run — the transcript showed Speaker 1,2,3,4,6,7 with no 5 and no shifting.
       *Deps:* D3 · *Effort:* XS · *Value:* Med
 
 - [x] **F2 — Release note.** Two bullets in `docs/release_notes/RELEASE.md` — the per-bubble

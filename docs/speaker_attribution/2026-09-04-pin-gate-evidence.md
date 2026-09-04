@@ -1,7 +1,8 @@
 # Evidence: the bubble pin holds, and costs nothing when unused
 
-**Status.** Both gates cleared, 2026-09-04, on three real Teams recordings. Method differs from the
-one the checklist proposed — see *Why the bench and not the replay*.
+**Status.** Both gates cleared, 2026-09-04, on three real Teams recordings, plus one app-level
+replay through the real menu. Method differs from the one the checklist proposed — see *Why the bench
+and not the replay*.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-04.
 **Origin.** Step A6a and decision gates G-A and G-B of
@@ -66,13 +67,28 @@ What the bench does **not** cover, and where the evidence for it is instead:
 - **The ViewModel/journal round-trip** — that a correction actually reaches a bubble.
   `AssignSpeaker_LandsOnTheBubbleThroughTheReassignmentEvent` wires a real
   `AdaptiveSpeakerIdentificationService` to `ApplyReassignments` and asserts the bubble moved. It is
-  the test the plan describes as the one that catches an API reporting success and doing nothing.
+  the test the plan describes as the one that catches an API reporting success and doing nothing —
+  and the app-level run below covers the same ground end to end.
 - **Wall-clock pass triggering.** The bench advances the clock with the stream, so the 30 s latency
   trigger fires on stream time. A live meeting with transcription backpressure visits a slightly
   different pass sequence. The pin mechanism does not depend on which passes run, only that they do —
   and 26 to 43 of them ran.
 - **Speech-to-text.** Nothing is dropped to transcription backpressure and no segment is discarded
   for producing empty text, so the bench sees slightly more segments than the app would.
+
+## The app-level check the bench cannot do
+
+Run 2026-09-04 against a throwaway profile, with the 16.9-minute recording replayed through the real
+attendee pipeline and both corrections fired from the real right-click menu.
+
+- Both `MeetingAttendee_BubbleAssign_*` and `_BubbleRedetect_*` resolve on the bubble's context menu
+  and act. Re-detect moved one segment; the picker offered exactly the other speakers visible on
+  screen and assign moved three.
+- **11 further passes and 3 reassignment batches followed, and not one named a pinned segment id.**
+  That is the ViewModel/journal round-trip the bench cannot see, on the wall clock rather than stream
+  time.
+- Sticky display numbering was visible in the same transcript: Speaker 1, 2, 3, 4, 6, 7 — a gap where
+  the diarizer dropped a label, and no number moved under a speaker who had not spoken.
 
 ## Caveats on the numbers
 
