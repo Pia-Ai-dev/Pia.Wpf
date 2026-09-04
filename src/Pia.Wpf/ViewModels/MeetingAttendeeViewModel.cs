@@ -445,10 +445,8 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     // ---- Per-bubble speaker corrections ----------------------------------------------------------
 
     /// <summary>
-    /// Moves one bubble's segments onto a speaker the user picks, and pins them so no later pass takes
-    /// them back. The user picks by <c>DisplayLabel</c> and the diarizer needs <c>SpeakerLabel</c>, so
-    /// the options are built as pairs and the pick is resolved through them — never by parsing the
-    /// display text back.
+    /// Moves one bubble's segments onto a speaker the user picks. The pick comes back as a
+    /// <c>DisplayLabel</c> and the diarizer needs the <c>SpeakerLabel</c>, so it resolves through pairs.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanAssignSpeaker))]
     private async Task AssignSpeakerAsync(TranscriptBubble? bubble)
@@ -489,9 +487,8 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
            && !string.IsNullOrWhiteSpace(bubble.SpeakerLabel);
 
     /// <summary>
-    /// The speakers on screen other than this bubble's, as (identity, display) pairs. Built from
-    /// <c>Bubbles</c> rather than the diarizer's label set — exactly what the user can see, and the pair
-    /// invariant is already locked by <c>Bubbles_NeverCarryALabelTheDiarizerHasDropped</c>.
+    /// The speakers on screen other than this bubble's, as (identity, display) pairs. From
+    /// <c>Bubbles</c>, not the diarizer's label set — exactly what the user can see.
     /// </summary>
     private List<(string Identity, string Display)> OtherSpeakers(TranscriptBubble bubble)
     {

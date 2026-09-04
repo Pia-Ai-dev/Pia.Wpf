@@ -3,11 +3,9 @@ using System.Text.RegularExpressions;
 namespace Pia.Services.LiveTranscription;
 
 /// <summary>
-/// Renumbers auto-generated speaker labels by first appearance. <c>Speaker 17</c> for the fourth voice
-/// is the identification service's mint counter leaking out; a user-renamed label carries a real name
-/// and passes through untouched. A number is assigned once and never re-derived or reused, so a label
-/// the diarizer drops leaves a gap rather than shifting everyone after it down. Stateful — one
-/// instance per transcript.
+/// Renumbers the mint counter's <c>Speaker 17</c> by first appearance; a renamed label passes through.
+/// A number is assigned once and never reused, so a dropped label leaves a gap instead of shifting
+/// everyone after it down. One instance per transcript.
 /// </summary>
 public sealed partial class SpeakerDisplayNumbering
 {

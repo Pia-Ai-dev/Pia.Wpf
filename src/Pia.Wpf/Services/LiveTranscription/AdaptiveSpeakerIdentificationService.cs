@@ -214,9 +214,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     }
 
     /// <summary>
-    /// Counts what a pass would actually cluster. Pinned segments leave the dendrogram, so counting
-    /// them here would let a pass run on near-empty input and rebuild the label map from it — a wiped
-    /// transcript, not a stuck pin.
+    /// Counts what a pass would actually cluster. Counting pinned segments here lets a pass run on a
+    /// near-empty dendrogram and rebuild the label map from it — a wiped transcript.
     /// </summary>
     private int EligibleCountUnderLock()
     {
@@ -240,9 +239,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     private (List<SpeakerReassignment> Reassignments, List<string> NewLabels) RunPassUnderLock()
     {
         // Eligible → journal index. Sub-floor segments keep their provisional label but never enter
-        // the dendrogram, so every site below indexes the journal through this map. Pinned segments
-        // leave it too, which is what holds a correction: left in, a pin votes under its own cluster
-        // in the overlap match below and two pins can swap a stable id between two voices.
+        // the dendrogram, so every site below indexes the journal through this map. Pins leave it too:
+        // left in, two of them can swap a stable id between two voices via the overlap match below.
         var journalIndex = new List<int>(_segments.Count);
         for (int i = 0; i < _segments.Count; i++)
             if (IsPassInputUnderLock(_segments[i].DurationSeconds, _segments[i].SegmentId)) journalIndex.Add(i);
@@ -368,11 +366,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             if (_renamedClusters.Contains(cluster)) newRenamed.Add(cluster);
         }
 
-        // A target with earned members keeps the centroid the pass computed: a pin is the most forced
-        // match there is, and it must not drag a voice's average toward it. But a target with none —
-        // every freshly minted re-detect label is one — would vanish from _centroidByCluster, never be
-        // instant-matched again, and the next segment of that voice would mint a second label. Rebuild
-        // those from their own still-journaled eligible pins.
+        // A pin must not drag an earned centroid, but a target with no earned members — every freshly
+        // minted re-detect label — would vanish here and its voice would mint a second label next time.
         foreach (var cluster in pinnedClusters)
         {
             if (!newLabelByCluster.ContainsKey(cluster) || newCentroidByCluster.ContainsKey(cluster)) continue;
@@ -560,8 +555,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     }
 
     /// <summary>
-    /// A prefix of its own on purpose — Measure-SpeakerAttribution.ps1 greps "Adaptive pass reassigned"
-    /// to score the detector, and a hand correction is not something it detected.
+    /// Its own prefix on purpose: the attribution metric greps the pass lines to score the detector,
+    /// and a hand correction is not something it detected.
     /// </summary>
     private void LogCorrection(string kind, int count, string? label, List<SpeakerReassignment>? changes)
     {
@@ -574,10 +569,8 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
     }
 
     /// <summary>
-    /// Renames <em>every</em> cluster carrying <paramref name="oldLabel"/> — two can legitimately share
-    /// one — and pins their segments. Without the pin a pass that merges the cluster away wins the
-    /// overlap vote, is skipped by orphan recycling because it is renamed, and deletes the typed name
-    /// outright; and that merge is the same event that made the name wrong enough to type.
+    /// Renames every cluster carrying <paramref name="oldLabel"/> — two can legitimately share one —
+    /// and pins their segments, without which a pass that merges the cluster away deletes the name.
     /// </summary>
     public bool Rename(string oldLabel, string newLabel)
     {

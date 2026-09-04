@@ -44,16 +44,13 @@ public interface ISpeakerIdentificationService : IDisposable
 
     /// <summary>
     /// Move <paramref name="segmentIds"/> onto the voice carrying <paramref name="targetLabel"/> and pin
-    /// them there, so no later re-decision moves them off it. False when no voice carries that label or
-    /// every id is unknown; assigning a segment to the voice it already has is a real operation that
-    /// returns true and moves nothing. Only an implementation that re-decides has anything to pin.
+    /// them there. Assigning to the voice a segment already has succeeds and moves nothing.
     /// </summary>
     bool AssignSegments(IReadOnlyList<long> segmentIds, string targetLabel) => false;
 
     /// <summary>
-    /// Re-decide <paramref name="segmentIds"/> against every voice except the one they carry now, and
-    /// pin the answer. Mints at most one new speaker per call, so a voice spread over several segments
-    /// gets one label rather than one each.
+    /// Re-decide <paramref name="segmentIds"/> against every voice but the one they carry, and pin the
+    /// answer. Mints at most once per call, so a voice spread over several segments gets one label.
     /// </summary>
     bool RedetectSegments(IReadOnlyList<long> segmentIds) => false;
 
