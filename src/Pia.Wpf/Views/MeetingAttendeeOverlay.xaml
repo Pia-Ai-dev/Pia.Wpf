@@ -272,6 +272,7 @@
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled"
                     Padding="24,8,24,8">
+        <StackPanel>
         <ItemsControl ItemsSource="{Binding Bubbles}">
           <ItemsControl.ItemTemplate>
             <DataTemplate DataType="{x:Type models:TranscriptBubble}">
@@ -447,6 +448,16 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+
+          <!-- Draft text: the recognizer's running guess, dimmed and italic so it never reads as
+               settled transcript. Undiarized on purpose — diarization runs on the closed segment. -->
+          <TextBlock Text="{Binding PartialText}"
+                     Visibility="{Binding PartialText.Length, Converter={StaticResource IntToVisibilityConverter}}"
+                     Opacity="0.55"
+                     FontStyle="Italic"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,10" />
+        </StackPanel>
       </ScrollViewer>
     </Grid>
 
