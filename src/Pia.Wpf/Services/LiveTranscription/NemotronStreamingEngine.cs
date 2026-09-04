@@ -12,6 +12,10 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine
 {
     private const int SampleRate = 16000;
 
+    // Baked into the export, so this is the model rather than a setting.
+    private const int ChunkMs = 560;
+    private const int ChunkSamples = SampleRate * ChunkMs / 1000;
+
     private readonly OnlineRecognizer _recognizer;
     private readonly string _languageCode;
     private readonly ILogger _logger;
@@ -67,7 +71,7 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine
             {
                 using var stream = _recognizer.CreateStream();
                 stream.SetOption("language", _languageCode);
-                stream.AcceptWaveform(SampleRate, samples16kMono);
+                stream.AcceptWaveform(SampleRate, PadForColdDecode(samples16kMono));
                 stream.InputFinished();
                 while (_recognizer.IsReady(stream)) _recognizer.Decode(stream);
                 return _recognizer.GetResult(stream).Text?.Trim() ?? string.Empty;
@@ -77,6 +81,20 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine
         {
             _decodeGate.Release();
         }
+    }
+
+    /// <summary>
+    /// A VAD segment arrives silence-trimmed and hits an empty encoder cache. Without a chunk of
+    /// lead-in the model loses the words before its first full chunk, and without a chunk of
+    /// trailing silence it never flushes the last partial one — measured on the bundle's own de.wav
+    /// as "hat ein Ende nur die Wurst hat" against "Alles hat ein Ende, nur die Wurst hat zwei".
+    /// The streaming path needs none of this: there the cache is already warm.
+    /// </summary>
+    internal static float[] PadForColdDecode(float[] samples16kMono)
+    {
+        var padded = new float[ChunkSamples + samples16kMono.Length + ChunkSamples];
+        samples16kMono.CopyTo(padded, ChunkSamples);
+        return padded;
     }
 
     private static string ResolveTransducerFile(string dir, string role)

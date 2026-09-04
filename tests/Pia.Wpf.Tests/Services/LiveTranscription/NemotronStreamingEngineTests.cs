@@ -69,6 +69,38 @@ public class NemotronStreamingEngineTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    /// <summary>
+    /// Measured against the bundle's own de.wav: unpadded, a cold decode returns "hat ein Ende nur
+    /// die Wurst hat" — it loses the words before its first full chunk and never flushes the last
+    /// partial one. One chunk of silence at each end returns "Alles hat ein Ende, nur die Wurst hat
+    /// zwei", punctuation included. Two chunks buy nothing more.
+    /// </summary>
+    [Fact]
+    public void PadForColdDecode_brackets_the_segment_with_one_chunk_of_silence()
+    {
+        const int chunk = 16000 * 560 / 1000;
+        var speech = new float[1000];
+        Array.Fill(speech, 0.5f);
+
+        var padded = NemotronStreamingEngine.PadForColdDecode(speech);
+
+        Assert.Equal(chunk + speech.Length + chunk, padded.Length);
+        Assert.All(padded[..chunk], v => Assert.Equal(0f, v));
+        Assert.All(padded[chunk..(chunk + speech.Length)], v => Assert.Equal(0.5f, v));
+        Assert.All(padded[(chunk + speech.Length)..], v => Assert.Equal(0f, v));
+    }
+
+    [Fact]
+    public void PadForColdDecode_leaves_the_callers_buffer_alone()
+    {
+        var speech = new float[10];
+        Array.Fill(speech, 0.25f);
+
+        NemotronStreamingEngine.PadForColdDecode(speech);
+
+        Assert.All(speech, v => Assert.Equal(0.25f, v));
+    }
+
     [Fact]
     public void BuildConfig_fails_loudly_when_a_transducer_file_is_missing()
     {
