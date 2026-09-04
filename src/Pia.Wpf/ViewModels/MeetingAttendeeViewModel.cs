@@ -442,6 +442,75 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
     private static bool CanRenameSpeakerLabel(string? oldLabel) => !string.IsNullOrWhiteSpace(oldLabel);
 
+    // ---- Per-bubble speaker corrections ----------------------------------------------------------
+
+    /// <summary>
+    /// Moves one bubble's segments onto a speaker the user picks, and pins them so no later pass takes
+    /// them back. The user picks by <c>DisplayLabel</c> and the diarizer needs <c>SpeakerLabel</c>, so
+    /// the options are built as pairs and the pick is resolved through them — never by parsing the
+    /// display text back.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanAssignSpeaker))]
+    private async Task AssignSpeakerAsync(TranscriptBubble? bubble)
+    {
+        if (bubble is null) return;
+
+        var options = OtherSpeakers(bubble);
+        if (options.Count == 0) return;
+
+        var picked = await _dialogService.ShowSelectionDialogAsync(
+            _localizationService["MeetingAttendee_AssignSpeaker_Title"],
+            _localizationService["MeetingAttendee_AssignSpeaker_Prompt"],
+            [.. options.Select(o => o.Display)]).ConfigureAwait(true);
+        // No pick is a cancel, not a refusal — say nothing.
+        if (picked is null) return;
+
+        var target = options.FirstOrDefault(o => o.Display == picked);
+        if (target.Identity is null || !_service.AssignSegmentsToSpeaker([.. bubble.SegmentIds], target.Identity))
+            ShowCorrectionRefused();
+    }
+
+    /// <summary>Asks the diarizer for a second opinion on one bubble, excluding the voice it carries now.</summary>
+    [RelayCommand(CanExecute = nameof(CanRedetectSpeaker))]
+    private void RedetectSpeaker(TranscriptBubble? bubble)
+    {
+        if (bubble is null) return;
+        if (!_service.RedetectSpeakerForSegments([.. bubble.SegmentIds])) ShowCorrectionRefused();
+    }
+
+    private bool CanAssignSpeaker(TranscriptBubble? bubble)
+        => bubble is not null && bubble.SegmentIds.Count > 0 && !SuppressSpeakerLabels
+           && OtherSpeakers(bubble).Count > 0;
+
+    // "That 'genau' was Alice" is worth fixing, so assign does not need a label — but "not this
+    // speaker" is meaningless without one.
+    private bool CanRedetectSpeaker(TranscriptBubble? bubble)
+        => bubble is not null && bubble.SegmentIds.Count > 0 && !SuppressSpeakerLabels
+           && !string.IsNullOrWhiteSpace(bubble.SpeakerLabel);
+
+    /// <summary>
+    /// The speakers on screen other than this bubble's, as (identity, display) pairs. Built from
+    /// <c>Bubbles</c> rather than the diarizer's label set — exactly what the user can see, and the pair
+    /// invariant is already locked by <c>Bubbles_NeverCarryALabelTheDiarizerHasDropped</c>.
+    /// </summary>
+    private List<(string Identity, string Display)> OtherSpeakers(TranscriptBubble bubble)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var options = new List<(string Identity, string Display)>();
+        foreach (var candidate in Bubbles)
+        {
+            if (string.IsNullOrWhiteSpace(candidate.SpeakerLabel)) continue;
+            if (string.Equals(candidate.SpeakerLabel, bubble.SpeakerLabel, StringComparison.Ordinal)) continue;
+            if (!seen.Add(candidate.SpeakerLabel)) continue;
+            options.Add((candidate.SpeakerLabel, candidate.DisplayLabel ?? candidate.SpeakerLabel));
+        }
+        return options;
+    }
+
+    private void ShowCorrectionRefused() => _snackbarService.Show(
+        _localizationService["MeetingAttendee_CorrectSpeaker_Refused"], string.Empty,
+        Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+
     /// <summary>Test seam: exposes the base VM's protected <see cref="TranscriptOverlayViewModel.RelabelSpeaker"/>.</summary>
     internal void RelabelSpeakerForTest(string oldLabel, string newLabel) => RelabelSpeaker(oldLabel, newLabel);
 

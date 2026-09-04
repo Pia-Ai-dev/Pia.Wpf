@@ -421,6 +421,25 @@
                                   AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.SpeakerLabel,
                                                                      RelativeSource={RelativeSource AncestorType=ContextMenu},
                                                                      StringFormat='MeetingAttendee_ChipRename_{0}'}" />
+                        <Separator />
+                        <!-- These two take the bubble itself, not its label: the correction is
+                             per-segment, and only the bubble knows which segments it holds. -->
+                        <MenuItem Header="{loc:Str MeetingAttendee_AssignSpeaker_MenuItem}"
+                                  Command="{Binding PlacementTarget.Tag.AssignSpeakerCommand,
+                                             RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext,
+                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.StartTimestamp,
+                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu},
+                                                                     StringFormat='MeetingAttendee_BubbleAssign_{0:HHmmssfff}'}" />
+                        <MenuItem Header="{loc:Str MeetingAttendee_RedetectSpeaker_MenuItem}"
+                                  Command="{Binding PlacementTarget.Tag.RedetectSpeakerCommand,
+                                             RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  CommandParameter="{Binding PlacementTarget.DataContext,
+                                                      RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                  AutomationProperties.AutomationId="{Binding PlacementTarget.DataContext.StartTimestamp,
+                                                                     RelativeSource={RelativeSource AncestorType=ContextMenu},
+                                                                     StringFormat='MeetingAttendee_BubbleRedetect_{0:HHmmssfff}'}" />
                       </ContextMenu>
                     </Border.ContextMenu>
                     <Border.Tag>

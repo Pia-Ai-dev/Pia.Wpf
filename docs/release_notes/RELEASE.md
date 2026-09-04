@@ -89,6 +89,12 @@
 
 ## Transcription
 
+- A message in a meeting transcript can be put on the right speaker. Right-click
+  it: "This is another speaker…" moves it to someone already in the
+  transcript, "Detect the speaker again" asks for a second opinion. It stays
+  where you put it — detection keeps running and no longer moves it back.
+- Renaming a speaker also holds now. A name you typed could disappear later in
+  the meeting, when detection merged that voice into another one.
 - Speaker numbers in a meeting transcript stay put. Detection keeps refining
   itself while a meeting runs, and each round used to renumber the speakers —
   so someone became Speaker 2 without having said a word. Numbers now hold for

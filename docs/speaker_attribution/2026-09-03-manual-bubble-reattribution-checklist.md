@@ -86,14 +86,16 @@ Do not tick a dependant of an open gate without revisiting it.
       null-`_speakerId` no-op test.
       *Deps:* A1 · *Effort:* XS · *Value:* Enabler
 
-- [ ] **D2 — The two view-model commands.** `AssignSpeakerCommand` and `RedetectSpeakerCommand`
+- [x] **D2 — The two view-model commands.** `AssignSpeakerCommand` and `RedetectSpeakerCommand`
       with their `CanExecute` rules, the option list built from `Bubbles`, the display↔identity
       mapping, and the refusal snackbar. Tests including the real-service pair test.
       *Deps:* B1, C1, D1, gates G-A + G-B · *Effort:* S · *Value:* High
 
-- [ ] **D3 — Context-menu items.** Two `MenuItem`s in `MeetingAttendeeOverlay.xaml` on the
-      `MeetingAttendee_BubbleAssign_` / `_BubbleRedetect_` prefixes, the `ViewAutomationIdTests` row
-      bump, and the playbook's overlay row.
+- [x] **D3 — Context-menu items.** Two `MenuItem`s in `MeetingAttendeeOverlay.xaml` on the
+      `MeetingAttendee_BubbleAssign_` / `_BubbleRedetect_` prefixes, keyed on the bubble's start
+      timestamp because these correct one bubble rather than a whole label. No
+      `ViewAutomationIdTests` row bump: that walk does not descend into a `ContextMenu`, which is why
+      the existing `_ChipRename_` is not counted either. Playbook row updated.
       *Deps:* D2 · *Effort:* XS · *Value:* High
 
 - [x] **E1 — `Rename` renames every matching cluster, and pins it.** The companion fix, so a later
@@ -107,7 +109,8 @@ Do not tick a dependant of an open gate without revisiting it.
       proved the pin; this proves the affordance reaches it.
       *Deps:* D3 · *Effort:* XS · *Value:* Med
 
-- [ ] **F2 — Release note.** One bullet in `docs/release_notes/RELEASE.md`, per that folder's README.
+- [x] **F2 — Release note.** Two bullets in `docs/release_notes/RELEASE.md` — the per-bubble
+      correction and the now-sticky rename — per that folder's README.
       *Deps:* F1 · *Effort:* XS · *Value:* Med
 
 ## Not yet planned

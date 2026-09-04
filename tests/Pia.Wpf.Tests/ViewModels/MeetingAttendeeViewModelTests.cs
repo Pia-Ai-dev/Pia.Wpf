@@ -958,6 +958,184 @@ public class MeetingAttendeeViewModelTests
         Assert.False(vm.SaveToVaultCommand.CanExecute(null));
     }
 
+    // ---- per-bubble speaker corrections -----------------------------------------------------------
+
+    /// <summary>
+    /// The mix-up most likely to ship: the user picks by display label and the diarizer only knows
+    /// identity labels, so a picker that hands its own string straight to the service corrects the
+    /// wrong speaker.
+    /// </summary>
+    [Fact]
+    public async Task AssignSpeaker_ForwardsTheSegmentIds_AndTheIdentityLabel()
+    {
+        var (vm, service, dialog) = CreateSutWithDialog();
+        Utter(vm, "Speaker 9", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 3", "b", 40, segmentId: 11);
+        Assert.Equal(["Speaker 1", "Speaker 2"], vm.Bubbles.Select(b => b.DisplayLabel));
+
+        dialog.ShowSelectionDialogAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns("Speaker 2");
+
+        await vm.AssignSpeakerCommand.ExecuteAsync(vm.Bubbles[0]);
+
+        var (ids, target) = Assert.Single(service.Assigns);
+        Assert.Equal([10L], ids);
+        Assert.Equal("Speaker 3", target);   // the identity behind display "Speaker 2", not the string
+    }
+
+    [Fact]
+    public async Task AssignSpeaker_OffersOnlyOtherSpeakersDisplayLabels()
+    {
+        var (vm, _, dialog) = CreateSutWithDialog();
+        Utter(vm, "Speaker 9", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 3", "b", 40, segmentId: 11);
+        Utter(vm, "Speaker 9", "c", 80, segmentId: 12);
+
+        await vm.AssignSpeakerCommand.ExecuteAsync(vm.Bubbles[0]);
+
+        await dialog.Received(1).ShowSelectionDialogAsync(
+            Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(o => o.Count == 1 && o[0] == "Speaker 2"));
+    }
+
+    [Fact]
+    public async Task AssignSpeaker_SaysNothing_WhenTheUserPicksNothing()
+    {
+        var (vm, service, dialog, snackbar) = CreateSutWithSnackbar();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 2", "b", 40, segmentId: 11);
+        dialog.ShowSelectionDialogAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns((string?)null);
+
+        await vm.AssignSpeakerCommand.ExecuteAsync(vm.Bubbles[0]);
+
+        // Cancelling is not a refusal.
+        Assert.Empty(service.Assigns);
+        snackbar.DidNotReceiveWithAnyArgs().Show(default!, default!, default, default, default);
+    }
+
+    [Fact]
+    public async Task AssignSpeaker_ShowsTheSnackbar_WhenTheDiarizerRefuses()
+    {
+        var (vm, service, dialog, snackbar) = CreateSutWithSnackbar();
+        service.CorrectionSucceeds = false;      // manual mode, or a label no cluster carries
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 2", "b", 40, segmentId: 11);
+        dialog.ShowSelectionDialogAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+            .Returns("Speaker 2");
+
+        await vm.AssignSpeakerCommand.ExecuteAsync(vm.Bubbles[0]);
+
+        snackbar.ReceivedWithAnyArgs(1).Show(default!, default!, default, default, default);
+    }
+
+    [Fact]
+    public void RedetectSpeaker_ForwardsTheSegmentIds()
+    {
+        var (vm, service) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 1", "b", 2, segmentId: 11);
+
+        vm.RedetectSpeakerCommand.Execute(vm.Bubbles[0]);
+
+        Assert.Equal([10L, 11L], Assert.Single(service.Redetects));
+    }
+
+    [Fact]
+    public void Corrections_AreDisabled_WhenLabelsAreSuppressed()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 2", "b", 40, segmentId: 11);
+        Assert.True(vm.AssignSpeakerCommand.CanExecute(vm.Bubbles[0]));
+
+        vm.SuppressSpeakerLabels = true;
+
+        Assert.False(vm.AssignSpeakerCommand.CanExecute(vm.Bubbles[0]));
+        Assert.False(vm.RedetectSpeakerCommand.CanExecute(vm.Bubbles[0]));
+    }
+
+    [Fact]
+    public void Corrections_AreDisabled_ForABubbleWithNoSegmentIds()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0);          // below the VAD gate: no id, structurally out of reach
+        Utter(vm, "Speaker 2", "b", 40, segmentId: 11);
+
+        Assert.False(vm.AssignSpeakerCommand.CanExecute(vm.Bubbles[0]));
+        Assert.False(vm.RedetectSpeakerCommand.CanExecute(vm.Bubbles[0]));
+    }
+
+    [Fact]
+    public void Redetect_IsDisabledForAnUnlabelledBubble_ButAssignIsNot()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, null, "genau", 0, segmentId: 10);
+        Utter(vm, "Speaker 2", "b", 40, segmentId: 11);
+
+        // "Not this speaker" is meaningless with no speaker; "that 'genau' was Alice" is the case
+        // worth fixing.
+        Assert.False(vm.RedetectSpeakerCommand.CanExecute(vm.Bubbles[0]));
+        Assert.True(vm.AssignSpeakerCommand.CanExecute(vm.Bubbles[0]));
+    }
+
+    [Fact]
+    public void AssignSpeaker_IsDisabled_WhenThereIsNoOtherSpeaker()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+
+        Assert.False(vm.AssignSpeakerCommand.CanExecute(vm.Bubbles[0]));
+    }
+
+    /// <summary>
+    /// Per-segment, not per-bubble: moving one segment out of a three-segment bubble legitimately
+    /// splits it, and the unlabelled interjection follows whichever run now precedes it.
+    /// </summary>
+    [Fact]
+    public void Redetect_CanSplitABubble()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 1", "a", 0, segmentId: 10);
+        Utter(vm, "Speaker 1", "b", 2, segmentId: 11);
+        Utter(vm, null, "genau", 3);
+        Utter(vm, "Speaker 1", "c", 4, segmentId: 12);
+        Assert.Single(vm.Bubbles);
+
+        vm.ApplyReassignments([new SpeakerReassignment(11, "Speaker 2")]);
+
+        Assert.Equal(["Speaker 1", "Speaker 2", "Speaker 1"], vm.Bubbles.Select(b => b.SpeakerLabel));
+        Assert.Equal(["a", "b genau", "c"], vm.Bubbles.Select(b => b.Text));
+    }
+
+    /// <summary>
+    /// The one test that catches an API reporting success and doing nothing: a real diarizer wired to
+    /// the real reconciliation path, with no fake in between.
+    /// </summary>
+    [Fact]
+    public void AssignSpeaker_LandsOnTheBubbleThroughTheReassignmentEvent()
+    {
+        var (vm, _) = CreateSut();
+        using var svc = new AdaptiveSpeakerIdentificationService(
+            new DegreeEmbeddingExtractor(), NullLogger<AdaptiveSpeakerIdentificationService>.Instance);
+        svc.SpeakersReassigned += (_, changes) => vm.ApplyReassignments(changes);
+
+        var t = new DateTimeOffset(2026, 8, 21, 14, 0, 0, TimeSpan.Zero);
+        foreach (var degrees in new double[] { 0, 2, 4, 100, 102, 104 })
+        {
+            var seg = svc.IdentifyOrRegisterSegment(SpeakerSegments.Seg(degrees), 16000);
+            vm.AddUtterance(new TranscriptUtterance(
+                TranscriptSpeaker.Them, $"{degrees}", t, seg.Label, seg.SegmentId));
+            t = t.AddSeconds(40);       // every utterance its own bubble
+        }
+        var first = vm.Bubbles[0];
+        var other = vm.Bubbles.First(b => b.SpeakerLabel != first.SpeakerLabel);
+
+        Assert.True(svc.AssignSegments([.. first.SegmentIds], other.SpeakerLabel!));
+
+        Assert.Equal(other.SpeakerLabel, vm.Bubbles[0].SpeakerLabel);
+    }
+
     // ---- service + VM pair: the label invariant ---------------------------------------------------
 
     /// <summary>
@@ -1327,6 +1505,24 @@ public class MeetingAttendeeViewModelTests
     {
         var (vm, service, dialog, _, _) = CreateSutWithVault();
         return (vm, service, dialog);
+    }
+
+    private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service, IDialogService dialog,
+        Wpf.Ui.ISnackbarService snackbar) CreateSutWithSnackbar()
+    {
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync().Returns(new AppSettings());
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
+        var dialog = Substitute.For<IDialogService>();
+        var snackbar = Substitute.For<Wpf.Ui.ISnackbarService>();
+        var service = new FakeMeetingAttendeeService();
+
+        var vm = new MeetingAttendeeViewModel(
+            service, settingsService, loc, Substitute.For<IFileDialogService>(), dialog,
+            Substitute.For<IMemoryService>(), Substitute.For<IIngestScheduler>(), snackbar,
+            NullLogger<MeetingAttendeeViewModel>.Instance, new InlineUiDispatcher());
+        return (vm, service, dialog, snackbar);
     }
 
     private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service, IDialogService dialog,
