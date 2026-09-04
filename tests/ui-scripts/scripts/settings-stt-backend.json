@@ -1,0 +1,104 @@
+{
+  "version": "1",
+  "mode": "test",
+  "launchPath": "{{APP_EXE}}",
+  "runConfig": {
+    "captureScreenshots": false,
+    "screenshotFormat": "png",
+    "screenshotOnFailureOnly": false,
+    "continueOnFailure": false,
+    "stepTimeoutMs": 10000,
+    "maxFailures": 0
+  },
+  "testCases": [
+    {
+      "id": "TC-001",
+      "title": "Settings Speech: picking Nemotron reveals its download button",
+      "steps": [
+        {
+          "tool": "ww_invoke",
+          "selector": "automationId=NavItem_Settings",
+          "testCaseId": "TC-001"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "automationId=Settings_CategoryList",
+          "extra": "General",
+          "testCaseId": "TC-001"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "type=TabControl",
+          "extra": "Speech",
+          "testCaseId": "TC-001"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "automationId=Settings_General_SttEngine",
+          "optionIndex": 2,
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_General_SttEngine",
+            "property": "value",
+            "op": "eq",
+            "expected": "Nemotron",
+            "message": "SelectionPattern reports the enum member, not the localized item text"
+          },
+          "testCaseId": "TC-001"
+        },
+        {
+          "tool": "ww_assert",
+          "selector": "automationId=Settings_General_DownloadNemotronModel",
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_General_DownloadNemotronModel",
+            "property": "enabled",
+            "op": "eq",
+            "expected": "True",
+            "message": "Nemotron's download button is only rendered for the Nemotron backend, so selecting it must bring the button into reach"
+          },
+          "testCaseId": "TC-001"
+        }
+      ]
+    },
+    {
+      "id": "TC-002",
+      "title": "Settings Speech: switching back to Parakeet swaps the download button",
+      "steps": [
+        {
+          "tool": "ww_select",
+          "selector": "type=TabControl",
+          "extra": "Speech",
+          "testCaseId": "TC-002"
+        },
+        {
+          "tool": "ww_select",
+          "selector": "automationId=Settings_General_SttEngine",
+          "optionIndex": 1,
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_General_SttEngine",
+            "property": "value",
+            "op": "eq",
+            "expected": "Parakeet",
+            "message": "SelectionPattern reports the enum member, not the localized item text"
+          },
+          "testCaseId": "TC-002"
+        },
+        {
+          "tool": "ww_assert",
+          "selector": "automationId=Settings_General_DownloadParakeetModel",
+          "assertion": {
+            "type": "assert",
+            "selector": "automationId=Settings_General_DownloadParakeetModel",
+            "property": "enabled",
+            "op": "eq",
+            "expected": "True",
+            "message": "Each backend renders its own download button; a third enum value must not leave Parakeet's panel hidden"
+          },
+          "testCaseId": "TC-002"
+        }
+      ]
+    }
+  ]
+}

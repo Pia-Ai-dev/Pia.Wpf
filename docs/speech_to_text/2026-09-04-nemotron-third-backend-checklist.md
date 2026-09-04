@@ -1,6 +1,7 @@
 # Nemotron-3.5 as a third STT backend — checklist
 
-**Status:** Phase 1 complete (steps 1-5). **G1 passed 2026-09-04** — Phase 2 proceeds.
+**Status:** Steps 1-9 complete. **G1 passed 2026-09-04.** Step 10 is all that is left, and
+it needs a human at the machine — see the step itself.
 **Owner:** Marco Altmann
 **Written:** 2026-09-04
 **Origin:** [2026-09-04-nemotron-third-backend-plan.md](2026-09-04-nemotron-third-backend-plan.md),
@@ -16,7 +17,7 @@ closed · `Med` worthwhile, not headline · `Enabler` little standalone value, u
 | Gate | Question it answers | What it can cancel |
 |---|---|---|
 | **G1** | Does nemotron beat or match Parakeet TDT v3 on German? | Everything from step 6 down. **Answered 2026-09-04: yes.** Matches Parakeet on substantive speech, punctuates and capitalises, RTF 0.35. Drops 14 of 37 very short utterances, against Parakeet inventing English on those same ones. See [2026-09-04-nemotron-german-comparison.md](2026-09-04-nemotron-german-comparison.md). |
-| **G2** | Does the 560 ms chunk cadence produce text that *grows* rather than lurches? | Nothing, but a "no" sends step 1 back through all four URL pin sites for the 320 ms variant. Answered by step 10, so it is a late and therefore expensive gate — accept that rather than trying to answer it early with a model you have not run. |
+| **G2** | Does the 560 ms chunk cadence produce text that *grows* rather than lurches? | Nothing, but a "no" sends step 1 back through all four URL pin sites for the 320 ms variant. **Provisionally yes, 2026-09-04**, from `Bench_GrowsAPartialWhileSpeechIsStillRunning` replaying a recording at real-time pace: `So` -> `So das fangen wir` -> `So das fangen wir Selbstportal`. That is the cadence question answered on real audio; step 10 still has to confirm it reads that way on screen. |
 
 Do not tick a dependant of an open gate without revisiting it.
 
@@ -49,28 +50,33 @@ Do not tick a dependant of an open gate without revisiting it.
 
 ## Phase 2 — the streaming UX (gated on G1)
 
-- [ ] **6. Add the `IStreamingTranscriptionEngine` contract.** Define the per-source session
+- [x] **6. Add the `IStreamingTranscriptionEngine` contract.** Define the per-source session
       interface and implement it on the nemotron engine — the session queues frames onto its own
       drain task so a segment-final decode holding the shared gate can never park the audio capture
       reader.
       *Deps:* 5 (G1) · *Effort:* M · *Value:* Enabler
 
-- [ ] **7. Pump partials from `LiveTranscriptionEngineService`.** Feed the reader loop's frames to
+- [x] **7. Pump partials from `LiveTranscriptionEngineService`.** Feed the reader loop's frames to
       the session, raise `PartialTextChanged` on change, reset on speech end, dispose the session.
       *Deps:* 6 · *Effort:* S · *Value:* Enabler
 
-- [ ] **8. Surface partials in `TranscriptOverlayViewModel`.** Add `PartialText` outside the journal
+- [x] **8. Surface partials in `TranscriptOverlayViewModel`.** Add `PartialText` outside the journal
       and clear it when the final utterance lands, so `RebuildBubblesFromJournal` stays equivalent to
       the incremental path.
       *Deps:* 7 · *Effort:* S · *Value:* High
 
-- [ ] **9. Render the draft text in both overlays.** Dimmed italic below the bubble list, hidden when
+- [x] **9. Render the draft text in both overlays.** Dimmed italic below the bubble list, hidden when
       empty, visually distinct from committed text.
       *Deps:* 8 · *Effort:* XS · *Value:* High
 
-- [ ] **10. Prove it on the real desktop and write the release notes.** Record a UI script for
-      backend selection, drive a real meeting including a speaker rename, and rewrite
-      `docs/release_notes/RELEASE.md`. **This is G2.**
+- [ ] **10. Prove it on the real desktop and write the release notes.** **Partly done.** The UI
+      script is written (`tests/ui-scripts/scripts/settings-stt-backend.json`) and every selector in
+      it was driven against the running app, which is what caught that
+      `Settings_General_SttEngine` needs `optionIndex` rather than `optionText`. `RELEASE.md` is
+      rewritten. **Still open, and it needs a person at the machine:** replaying the script through
+      `Invoke-UiScripts.ps1` (WinWright's `Civyk.WinWright.Mcp.exe` is not installed on the dev box),
+      and driving a real meeting with live speech plus a speaker rename to watch the partial grow and
+      confirm the rebuild neither duplicates nor drops it. **This is G2.**
       *Deps:* 9 · *Effort:* XS · *Value:* High
 
 ## Suggested order

@@ -89,6 +89,15 @@
 
 ## Transcription
 
+- A third speech-to-text engine is selectable under Settings → General:
+  Nemotron 3.5 Streaming, which recognises 36 languages and downloads once at
+  around 453 MB. Whisper and Parakeet TDT v3 are unchanged and stay available.
+- On Nemotron the transcript fills in while you are still talking. The words
+  appear dimmed and in italics below the last message, and the finished line
+  replaces them when you stop speaking.
+- Nemotron does leave very short answers out of the finished transcript — a
+  bare "ja" or "hm". Parakeet TDT v3 stays the better pick for a meeting you
+  intend to summarise, and is still the faster of the two.
 - Stopping a live or meeting transcription keeps what you just said. Audio the
   microphone had already handed over could be dropped while the recogniser shut
   down, cutting the last words off the transcript.

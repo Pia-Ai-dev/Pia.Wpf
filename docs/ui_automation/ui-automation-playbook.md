@@ -180,6 +180,13 @@ once `Settings_Assistant_ToolCatalog` (a `CardExpander`) is expanded. Note also 
 `Settings_Assistant_Agent_AutoApproveBuiltInWrites` are one property rendered on two tabs; either
 one moves the setting, and both share an accessible name.
 
+`Settings_General_SttEngine` takes `optionIndex`, **not** `optionText`: its `ItemTemplate` renders
+the item through a converter, so the option elements expose neither `SelectionItemPattern` nor
+`InvokePattern` under their display text and `optionText` fails with `pattern_not_supported`. The
+indices are the `SttBackend` ordinals — 0 Whisper, 1 Parakeet, 2 Nemotron. `ww_get_value` on the
+ComboBox likewise reports the **enum member** ("Nemotron"), not the localized label
+("Nemotron 3.5 Streaming"), because it reads `SelectionPattern`; assert on the former.
+
 ## Navigation
 
 Sidebar items are `Button`s with InvokePattern — `ww_invoke` on `automationId=NavItem_Memory`
