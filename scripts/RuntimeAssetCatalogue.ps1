@@ -94,6 +94,12 @@ function Get-RuntimeAssetCatalogue {
                MirrorKey = 'models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2'
                Target = Join-Path $modelsDir 'sherpa-parakeet-tdt-v3'; SizeHint = 487170055 }
         )
+        Nemotron = @(
+            @{ Kind = 'Bundle'; Name = 'Nemotron 3.5 Streaming 560ms'
+               Url = "$script:SherpaAsr/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2"
+               MirrorKey = 'models/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2'
+               Target = Join-Path $modelsDir 'sherpa-nemotron-3.5-streaming-560ms'; SizeHint = 475271763 }
+        )
         # No MirrorKey, and it is not an oversight: Playwright picks the browser revision to match the
         # pinned package, and mirroring it means reproducing its CDN layout per revision. The app has a
         # PLAYWRIGHT_DOWNLOAD_HOST hook (ChromiumProvisioner.DownloadHostOverride) if that is ever wanted.

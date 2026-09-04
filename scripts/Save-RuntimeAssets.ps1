@@ -67,7 +67,7 @@ param(
     # as one string, which a ValidateSet rejects. The names are normalised and checked below instead,
     # so the documented command lines actually work.
     [ArgumentCompletions('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'Chromium')]
+                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'Nemotron', 'Chromium')]
     [string[]]$Include = @('Vad', 'Speaker', 'Embeddings', 'WhisperBase'),
 
     [switch]$All,

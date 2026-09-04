@@ -29,6 +29,10 @@ public static class LiveTranscriptionModels
 
     private const string SileroVadFileName = "silero_vad.onnx";
 
+    // The chunk size is part of the directory name: switching variants must not silently reuse the
+    // previous variant's extracted files.
+    private const string NemotronDirectoryName = "sherpa-nemotron-3.5-streaming-560ms";
+
     // Pinned to a tag, not to master: this is the only asset served off a branch, so upstream could
     // otherwise swap the model under us without any URL changing.
     internal const string SileroVadUrl =
@@ -137,6 +141,27 @@ public static class LiveTranscriptionModels
             RuntimeAssetCatalog.Parakeet, targetDir, downloader, progress, logger, cancellationToken);
     }
 
+    public static bool IsNemotronOnnxAvailable()
+    {
+        var dir = Path.Combine(ModelsDirectory, NemotronDirectoryName);
+        return Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*.onnx").Any();
+    }
+
+    /// <summary>
+    /// Downloads (if missing) and extracts the sherpa-onnx nemotron-3.5 streaming bundle into
+    /// <c>%LOCALAPPDATA%\Pia\Models\sherpa-nemotron-3.5-streaming-560ms\</c>. Returns the directory.
+    /// </summary>
+    public static Task<string> EnsureNemotronOnnxAsync(
+        IAssetDownloader downloader,
+        IProgress<ModelDownloadProgress>? progress,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        var targetDir = Path.Combine(ModelsDirectory, NemotronDirectoryName);
+        return EnsureBundleAsync(
+            RuntimeAssetCatalog.Nemotron, targetDir, downloader, progress, logger, cancellationToken);
+    }
+
     private static async Task<string> EnsureBundleAsync(
         RuntimeAsset asset,
         string targetDir,
@@ -218,6 +243,9 @@ public static class LiveTranscriptionModels
 
     internal static string ParakeetBundleUrl =>
         $"{SherpaReleasesBase}/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2";
+
+    internal static string NemotronBundleUrl =>
+        $"{SherpaReleasesBase}/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2";
 
     internal static string SpeakerEmbeddingUrl =>
         $"{SherpaSpeakerReleasesBase}/{SpeakerEmbeddingFileName}";

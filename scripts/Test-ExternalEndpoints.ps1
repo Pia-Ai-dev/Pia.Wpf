@@ -57,6 +57,7 @@ $endpoints = @(
     @{ Group = 'Models'; Name = 'Whisper large';   Url = "$sherpaAsr/sherpa-onnx-whisper-turbo.tar.bz2"; Ok = @(200)
        Note = 'large-v3-turbo ships as the bare "turbo" asset' }
     @{ Group = 'Models'; Name = 'Parakeet TDT v3'; Url = "$sherpaAsr/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"; Ok = @(200) }
+    @{ Group = 'Models'; Name = 'Nemotron 3.5 560ms'; Url = "$sherpaAsr/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2"; Ok = @(200) }
     @{ Group = 'Models'; Name = 'Speaker embedding'; Url = "$sherpaSpk/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"; Ok = @(200)
        Note = 'The "recongition" misspelling is the real release tag' }
     @{ Group = 'Models'; Name = 'Silero VAD';      Url = 'https://github.com/snakers4/silero-vad/raw/v6.2.1/src/silero_vad/data/silero_vad.onnx'; Ok = @(200)

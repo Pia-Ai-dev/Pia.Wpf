@@ -54,9 +54,9 @@
 [CmdletBinding()]
 param(
     [ArgumentCompletions('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                         'WhisperMedium', 'WhisperLarge', 'Parakeet')]
+                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'Nemotron')]
     [string[]]$Include = @('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                           'WhisperMedium', 'WhisperLarge', 'Parakeet'),
+                           'WhisperMedium', 'WhisperLarge', 'Parakeet', 'Nemotron'),
 
     [string]$StorageBase = 'https://storage.pia-ai.de',
     [string]$Prefix = 'assets',

@@ -36,6 +36,15 @@ public class ModelDownloadUrlTests
             LiveTranscriptionModels.ParakeetBundleUrl);
     }
 
+    /// <summary>The 560 ms variant. Chunk size is baked into the export, so the number is the model.</summary>
+    [Fact]
+    public void NemotronBundleUrl_is_pinned()
+    {
+        Assert.Equal(
+            $"{SherpaAsr}/sherpa-onnx-nemotron-3.5-asr-streaming-0.6b-560ms-int8-2026-06-11.tar.bz2",
+            LiveTranscriptionModels.NemotronBundleUrl);
+    }
+
     /// <summary>The "recongition" misspelling is the real release tag; the corrected spelling 404s.</summary>
     [Fact]
     public void SpeakerEmbeddingUrl_keeps_the_misspelled_release_tag()

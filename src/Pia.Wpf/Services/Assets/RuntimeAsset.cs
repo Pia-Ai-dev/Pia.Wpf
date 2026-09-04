@@ -32,6 +32,8 @@ public static class RuntimeAssetCatalog
 
     public static RuntimeAsset Parakeet { get; } = Bundle(LiveTranscriptionModels.ParakeetBundleUrl);
 
+    public static RuntimeAsset Nemotron { get; } = Bundle(LiveTranscriptionModels.NemotronBundleUrl);
+
     // The ONNX is renamed on the way in — EmbeddingService looks for the model under the model's own
     // name, and "model.onnx" would collide with anything else mirrored under the same prefix.
     public static RuntimeAsset EmbeddingModel { get; } = new(
@@ -57,6 +59,7 @@ public static class RuntimeAssetCatalog
         Whisper(WhisperModelSize.Medium),
         Whisper(WhisperModelSize.Large),
         Parakeet,
+        Nemotron,
     ];
 
     // A sherpa bundle keeps its released archive name: mirroring the archive rather than the extracted
