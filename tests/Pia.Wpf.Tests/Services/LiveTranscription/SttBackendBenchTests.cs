@@ -140,6 +140,91 @@ public class SttBackendBenchTests
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Drives the streaming session the way the reader loop does — every frame, including the gaps,
+    /// with a Reset at each speech end — because nothing in the gate reaches it: the session owns a
+    /// native OnlineStream, and a misbehaving Reset would otherwise only surface on a real desktop.
+    /// </summary>
+    [BenchFact]
+    public async Task Bench_GrowsAPartialWhileSpeechIsStillRunning()
+    {
+        var media = Environment.GetEnvironmentVariable("PIA_STT_BENCH_MEDIA");
+        if (string.IsNullOrWhiteSpace(media) || !File.Exists(media))
+            Assert.Skip("Set PIA_STT_BENCH_MEDIA to an audio or video file Media Foundation can open.");
+
+        var maxSeconds = int.TryParse(
+            Environment.GetEnvironmentVariable("PIA_STT_BENCH_SECONDS"),
+            CultureInfo.InvariantCulture, out var s) ? s : 60;
+
+        void Say(string line) => TestContext.Current.SendDiagnosticMessage(line);
+
+        var downloader = BuildDownloader();
+        var logger = NullLogger.Instance;
+        var samples = Decode(media, maxSeconds);
+
+        var vadPath = await LiveTranscriptionModels
+            .EnsureSileroVadAsync(downloader, logger, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+
+        var settings = new AppSettings
+        {
+            SttBackend = SttBackend.Nemotron,
+            TargetSpeechLanguage = ParseLanguage(Environment.GetEnvironmentVariable("PIA_STT_BENCH_LANGUAGE")),
+        };
+
+        await using var engine = await TranscriptionEngineFactory
+            .CreateAsync(settings, downloader, null, logger, TestContext.Current.CancellationToken)
+            .ConfigureAwait(false);
+
+        var streaming = Assert.IsAssignableFrom<IStreamingTranscriptionEngine>(engine);
+        using var session = streaming.BeginSession();
+
+        // The same 30 ms cadence the reader loop hands the VAD, and the same Reset trigger.
+        using var vad = new SileroVadDetector(vadPath, logger);
+        var resets = 0;
+        vad.OnSpeechEnded += () => { session.Reset(); resets++; };
+
+        var growth = new List<string>();
+        var relay = new PartialHypothesisRelay(growth.Add);
+
+        // Paced to real time on purpose. Feeding flat out overruns the session's 256-frame queue
+        // within a second, which is a harness artefact rather than anything the reader loop does —
+        // and it hides whether the preview keeps up at the rate audio actually arrives.
+        const int frame = SampleRate / 100 * 3;
+        var clock = Stopwatch.StartNew();
+        for (var offset = 0; offset < samples.Length; offset += frame)
+        {
+            var chunk = samples[offset..Math.Min(offset + frame, samples.Length)];
+            vad.Process(chunk);
+            session.Feed(chunk);
+            relay.Offer(session.CurrentPartial);
+
+            var due = TimeSpan.FromSeconds(offset / (double)SampleRate);
+            var lag = due - clock.Elapsed;
+            if (lag > TimeSpan.Zero)
+                await Task.Delay(lag, TestContext.Current.CancellationToken).ConfigureAwait(false);
+        }
+        vad.Drain();
+
+        // The drain task runs behind the feed, so the tail of the backlog lands after the loop.
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < deadline)
+        {
+            var before = growth.Count;
+            await Task.Delay(500, TestContext.Current.CancellationToken).ConfigureAwait(false);
+            relay.Offer(session.CurrentPartial);
+            if (growth.Count == before) break;
+        }
+
+        Say($"resets   : {resets}");
+        Say($"revisions: {growth.Count}");
+        foreach (var line in growth.TakeLast(40)) Say($"  | {line}");
+
+        // The point of the feature: the hypothesis has to change more than once, or there is nothing
+        // growing on screen for a user to read.
+        Assert.True(growth.Count > 1, $"only {growth.Count} hypothesis revision(s) — nothing grows");
+    }
+
     private static float[] Pad(float[] samples, int padMs)
     {
         var n = SampleRate * padMs / 1000;

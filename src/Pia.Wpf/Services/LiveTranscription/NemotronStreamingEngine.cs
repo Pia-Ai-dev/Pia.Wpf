@@ -84,7 +84,7 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine, IStreamingTr
         }
     }
 
-    public IStreamingSession BeginSession() => new Session(_recognizer, _decodeGate, _languageCode);
+    public IStreamingSession BeginSession() => new Session(_recognizer, _decodeGate, _languageCode, _logger);
 
     /// <summary>One chunk of silence, fed after a reset so the next utterance does not decode cold.</summary>
     internal static float[] CacheWarmupSilence() => new float[ChunkSamples];
@@ -106,13 +106,17 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine, IStreamingTr
                 FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = true,
             });
+        private readonly ILogger _logger;
         private readonly Task _drain;
         private string _partial = string.Empty;
+        private long _dropped;
+        private volatile bool _stopping;
 
-        public Session(OnlineRecognizer recognizer, SemaphoreSlim gate, string languageCode)
+        public Session(OnlineRecognizer recognizer, SemaphoreSlim gate, string languageCode, ILogger logger)
         {
             _recognizer = recognizer;
             _gate = gate;
+            _logger = logger;
             _stream = recognizer.CreateStream();
             _stream.SetOption("language", languageCode);
             _drain = Task.Run(DrainAsync);
@@ -121,14 +125,27 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine, IStreamingTr
         // Only the drain task writes _partial, so a plain read is enough for a preview.
         public string CurrentPartial => _partial;
 
-        public void Feed(float[] samples16kMono) => _pending.Writer.TryWrite(samples16kMono);
+        // TryWrite, not WriteAsync: the caller is the audio capture reader and must never park. A
+        // full queue therefore drops the frame — 256 frames is ~7.7 s of backlog, so this only
+        // happens when a segment-final decode has held the gate for longer than that. One preview
+        // degrades; blocking the reader instead would lose committed audio.
+        public void Feed(float[] samples16kMono)
+        {
+            if (!_pending.Writer.TryWrite(samples16kMono)) Interlocked.Increment(ref _dropped);
+        }
 
-        public void Reset() => _pending.Writer.TryWrite(ResetSentinel);
+        public void Reset()
+        {
+            if (!_pending.Writer.TryWrite(ResetSentinel)) Interlocked.Increment(ref _dropped);
+        }
 
         private async Task DrainAsync()
         {
             await foreach (var frame in _pending.Reader.ReadAllAsync().ConfigureAwait(false))
             {
+                // Checked before the gate so disposal waits on at most one in-flight decode.
+                if (_stopping) return;
+
                 await _gate.WaitAsync().ConfigureAwait(false);
                 try
                 {
@@ -152,9 +169,22 @@ public sealed class NemotronStreamingEngine : ITranscriptionEngine, IStreamingTr
 
         public void Dispose()
         {
+            _stopping = true;
             _pending.Writer.TryComplete();
-            try { _drain.Wait(TimeSpan.FromSeconds(2)); } catch { /* a parked native decode must not block teardown */ }
-            _stream.Dispose();
+
+            var finished = false;
+            try { finished = _drain.Wait(TimeSpan.FromSeconds(10)); }
+            catch { /* the drain's own failure is not this method's problem */ }
+
+            var dropped = Interlocked.Read(ref _dropped);
+            if (dropped > 0)
+                _logger.LogWarning("Streaming session dropped {Dropped} frames to preview backpressure", dropped);
+
+            // Freeing the stream while the drain is still inside a native Decode is an access
+            // violation, not an exception — it takes the whole process with it. A leaked native
+            // stream on a pathological shutdown is the cheaper failure.
+            if (finished) _stream.Dispose();
+            else _logger.LogWarning("Streaming session drain did not stop; leaving its native stream to the finalizer");
         }
     }
 

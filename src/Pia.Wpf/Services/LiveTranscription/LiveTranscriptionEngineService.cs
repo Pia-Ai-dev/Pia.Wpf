@@ -21,6 +21,8 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     private readonly IAudioCaptureSource _source;
     private readonly SileroVadDetector _vad;
     private readonly ITranscriptionEngine _engine;
+    private readonly IStreamingSession? _streamingSession;
+    private readonly PartialHypothesisRelay _partialRelay;
     private readonly ChannelWriter<TranscriptUtterance> _sink;
     private readonly ILogger _logger;
     private readonly ISpeakerIdentificationService? _speakerId;
@@ -56,6 +58,13 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _minDiarizationSamples = minDiarizationSamples;
 
         _logger.LogInformation("Engine init: speaker={Speaker}", speaker);
+
+        _streamingSession = (engine as IStreamingTranscriptionEngine)?.BeginSession();
+        _partialRelay = new PartialHypothesisRelay(text =>
+        {
+            _logger.SensitiveDebug("Partial for {Speaker}: {Text}", _speaker, text);
+            PartialTextChanged?.Invoke(this, text);
+        });
 
         _vad = new SileroVadDetector(sileroVadModelPath, logger);
         _vad.OnSegment += EnqueueSegmentForTranscription;
@@ -94,6 +103,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
             await foreach (var frame in _source.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
                 _vad.Process(frame);
+                PumpPartial(frame);
             }
         }
         catch (OperationCanceledException) { /* expected on shutdown */ }
@@ -154,8 +164,27 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
     /// </summary>
     public event EventHandler<bool>? IsSpeakingChanged;
 
+    /// <summary>Running hypothesis for the segment being spoken, or empty when there is none.
+    /// A preview: it is never journaled and never becomes a <see cref="TranscriptUtterance"/>.</summary>
+    public event EventHandler<string>? PartialTextChanged;
+
+    // Deliberately not gated on the VAD's speaking state: room audio between utterances is what keeps
+    // the recognizer's encoder cache warm, and a cold start costs the opening words of the preview.
+    private void PumpPartial(float[] frame)
+    {
+        if (_streamingSession is null) return;
+        _streamingSession.Feed(frame);
+        _partialRelay.Offer(_streamingSession.CurrentPartial);
+    }
+
     private void OnVadSpeechStarted() => RaiseSpeakingChanged(true);
-    private void OnVadSpeechEnded() => RaiseSpeakingChanged(false);
+
+    private void OnVadSpeechEnded()
+    {
+        _streamingSession?.Reset();
+        _partialRelay.Clear();
+        RaiseSpeakingChanged(false);
+    }
 
     private void RaiseSpeakingChanged(bool isSpeaking)
     {
@@ -240,6 +269,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         _vad.OnSpeechStarted -= OnVadSpeechStarted;
         _vad.OnSpeechEnded -= OnVadSpeechEnded;
         _vad.Dispose();
+        _streamingSession?.Dispose();
         _readerCts?.Dispose();
         _segmentCts?.Dispose();
         // _engine is owned by the caller — do not dispose here.
