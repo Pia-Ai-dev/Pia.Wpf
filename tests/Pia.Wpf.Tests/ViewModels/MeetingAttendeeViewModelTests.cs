@@ -1016,18 +1016,41 @@ public class MeetingAttendeeViewModelTests
         Assert.Equal(["Speaker 1", "Speaker 2", "Speaker 3"], vm.Bubbles.Select(b => b.DisplayLabel));
     }
 
+    /// <summary>
+    /// The reason numbering is sticky rather than re-derived: a pass merging one speaker away used to
+    /// shift every number after it down, so a participant changed number without a single one of their
+    /// own segments moving. A gap in the sequence costs the user nothing; a moving number costs them
+    /// the ability to follow who said what.
+    /// </summary>
     [Fact]
-    public void DisplayLabel_SurvivesARebuildIdentically()
+    public void DisplayLabel_KeepsItsNumber_WhenAPassMergesAnEarlierSpeakerAway()
     {
         var (vm, _) = CreateSut();
         Utter(vm, "Speaker 9", "a", 0, segmentId: 1);
         Utter(vm, "Speaker 3", "b", 30, segmentId: 2);
-        var before = vm.Bubbles.Select(b => b.DisplayLabel).ToArray();
+        Utter(vm, "Speaker 5", "c", 60, segmentId: 3);
 
-        // A reassignment that changes nothing still has to leave the numbering where it was.
+        // Speaker 3 loses its cluster to Speaker 9; "Speaker 2" is now nobody's.
+        vm.ApplyReassignments([new SpeakerReassignment(2, "Speaker 9")]);
+
+        Assert.Equal(["Speaker 1", "Speaker 1", "Speaker 3"], vm.Bubbles.Select(b => b.DisplayLabel));
+        Assert.Equal(["Speaker 9", "Speaker 9", "Speaker 5"], vm.Bubbles.Select(b => b.SpeakerLabel));
+    }
+
+    /// <summary>
+    /// The other side of the trade, recorded rather than defended: a pass that moves a speaker onto a
+    /// service label nobody has seen mints a fresh display number. Gap-closing hid that by accident.
+    /// </summary>
+    [Fact]
+    public void DisplayLabel_TakesAFreshNumber_WhenAPassMovesASpeakerToAnUnseenLabel()
+    {
+        var (vm, _) = CreateSut();
+        Utter(vm, "Speaker 9", "a", 0, segmentId: 1);
+        Utter(vm, "Speaker 3", "b", 30, segmentId: 2);
+
         vm.ApplyReassignments([new SpeakerReassignment(2, "Speaker 4")]);
 
-        Assert.Equal(before, vm.Bubbles.Select(b => b.DisplayLabel));
+        Assert.Equal(["Speaker 1", "Speaker 3"], vm.Bubbles.Select(b => b.DisplayLabel));
         Assert.Equal(["Speaker 9", "Speaker 4"], vm.Bubbles.Select(b => b.SpeakerLabel));
     }
 

@@ -76,14 +76,25 @@ public class TranscriptGroupingTests
         Assert.Null(new SpeakerDisplayNumbering().Resolve(null, suppressLabels: false));
 
     [Fact]
-    public void Numbering_Reset_ClosesTheGapAStaleLabelLeaves()
+    public void Numbering_KeepsANumber_OnceAssigned()
     {
         var numbering = new SpeakerDisplayNumbering();
         numbering.Resolve("Speaker 4", suppressLabels: false);
         numbering.Resolve("Speaker 17", suppressLabels: false);
 
-        // A rebuild re-derives numbers from the surviving labels; without the reset, Speaker 17 would keep
-        // number 2 even after Speaker 4 was clustered away.
+        // Speaker 4 is clustered away and never resolved again. Speaker 17 keeps number 2 and the
+        // sequence keeps the gap — a number that moves is worse than a number that is missing.
+        Assert.Equal("Speaker 2", numbering.Resolve("Speaker 17", suppressLabels: false));
+        Assert.Equal("Speaker 3", numbering.Resolve("Speaker 8", suppressLabels: false));
+    }
+
+    [Fact]
+    public void Numbering_Reset_StartsTheNextTranscriptAtOne()
+    {
+        var numbering = new SpeakerDisplayNumbering();
+        numbering.Resolve("Speaker 4", suppressLabels: false);
+        numbering.Resolve("Speaker 17", suppressLabels: false);
+
         numbering.Reset();
         Assert.Equal("Speaker 1", numbering.Resolve("Speaker 17", suppressLabels: false));
     }

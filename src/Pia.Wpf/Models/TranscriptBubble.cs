@@ -32,9 +32,10 @@ public sealed partial class TranscriptBubble : ObservableObject
     private string? _speakerLabel;
 
     /// <summary>
-    /// What the UI shows for <see cref="SpeakerLabel"/>: auto-generated labels are renumbered 1..k in
-    /// first-appearance order, because the raw number is a mint counter that only ever grows. Identity
-    /// stays on <see cref="SpeakerLabel"/> — it keys the palette, the consent map and rename.
+    /// What the UI shows for <see cref="SpeakerLabel"/>: auto-generated labels are renumbered in
+    /// first-appearance order, because the raw number is a mint counter that only ever grows. The
+    /// number sticks for the session, so the sequence can have gaps. Identity stays on
+    /// <see cref="SpeakerLabel"/> — it keys the palette, the consent map and rename.
     /// </summary>
     [ObservableProperty]
     private string? _displayLabel;

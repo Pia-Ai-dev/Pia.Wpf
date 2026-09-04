@@ -281,8 +281,8 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     }
 
     /// <summary>
-    /// Numbers auto-generated labels 1..k by first appearance. <c>Speaker 17</c> for the fourth voice
-    /// is <see cref="ISpeakerIdentificationService"/>'s mint counter leaking into the UI; a user-renamed
+    /// Numbers auto-generated labels by first appearance. <c>Speaker 17</c> for the fourth voice is
+    /// <see cref="ISpeakerIdentificationService"/>'s mint counter leaking into the UI; a user-renamed
     /// label carries a real name and passes through untouched.
     /// </summary>
     private string? ResolveDisplayLabel(string? speakerLabel) =>
@@ -363,16 +363,14 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
 
     /// <summary>
     /// Replays the journal through the SAME incremental path (<see cref="GetOrCreateBubble"/> +
-    /// Append), so rebuild-vs-incremental equivalence holds by construction. The palette map is
-    /// deliberately NOT reset — speakers keep their colors across rebuilds. Trims in a loop
-    /// (TrimIfNeeded removes at most one batch per call).
+    /// Append), so rebuild-vs-incremental equivalence holds by construction. Neither the palette map
+    /// nor the display numbering is reset — a rebuild runs several times a minute, and re-deriving
+    /// either renumbers or recolours speakers the pass never touched. Trims in a loop (TrimIfNeeded
+    /// removes at most one batch per call).
     /// </summary>
     private void RebuildBubblesFromJournal()
     {
         Bubbles.Clear();
-        // Rebuilt from scratch, unlike the palette map: a stale label dropped by a pass must not keep
-        // its number, or the renumbering would not close the gaps it exists to close.
-        _displayNumbering.Reset();
         foreach (var entry in _journal)
         {
             var bubble = GetOrCreateBubble(entry.Speaker, entry.Timestamp, entry.Label, createIfMissing: true);

@@ -89,6 +89,10 @@
 
 ## Transcription
 
+- Speaker numbers in a meeting transcript stay put. Detection keeps refining
+  itself while a meeting runs, and each round used to renumber the speakers —
+  so someone became Speaker 2 without having said a word. Numbers now hold for
+  the whole meeting, which means the sequence can skip one.
 - Stopping a live or meeting transcription keeps what you just said. Audio the
   microphone had already handed over could be dropped while the recogniser shut
   down, cutting the last words off the transcript.
