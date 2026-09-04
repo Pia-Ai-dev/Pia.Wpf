@@ -946,8 +946,10 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     /// </summary>
     internal static bool ShouldUseAdaptiveDiarizer(AppSettings settings) => false;
 
-    private static string ComputeSttModelId(AppSettings settings)
-        => settings.SttBackend == SttBackend.Parakeet
-            ? "parakeet-tdt-v3"
-            : $"whisper-{settings.WhisperModel}".ToLowerInvariant();
+    internal static string ComputeSttModelId(AppSettings settings) => settings.SttBackend switch
+    {
+        SttBackend.Nemotron => "nemotron-3.5-streaming-560ms",
+        SttBackend.Parakeet => "parakeet-tdt-v3",
+        _ => $"whisper-{settings.WhisperModel}".ToLowerInvariant(),
+    };
 }

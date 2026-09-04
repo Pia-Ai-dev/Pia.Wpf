@@ -85,6 +85,13 @@ public class TranscriptionService : ITranscriptionService
             .ConfigureAwait(false);
     }
 
+    public async Task DownloadNemotronModelAsync(IProgress<ModelDownloadProgress> progress, CancellationToken cancellationToken = default)
+    {
+        await LiveTranscriptionModels
+            .EnsureNemotronOnnxAsync(_downloader, progress, _logger, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Decodes any audio container that Media Foundation can open (wav, mp3, m4a, …) to a
     /// 16 kHz mono float32 buffer matching the engine's expectations.

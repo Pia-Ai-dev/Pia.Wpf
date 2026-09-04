@@ -186,14 +186,18 @@ public class VoiceInputService : IVoiceInputService
 
         var alreadyDownloaded = settings.SttBackend switch
         {
+            SttBackend.Nemotron => LiveTranscriptionModels.IsNemotronOnnxAvailable(),
             SttBackend.Parakeet => LiveTranscriptionModels.IsParakeetOnnxAvailable(),
             _ => LiveTranscriptionModels.IsWhisperOnnxAvailable(settings.WhisperModel),
         };
         if (alreadyDownloaded) return true;
 
-        var modelDisplayName = settings.SttBackend == SttBackend.Parakeet
-            ? "Parakeet TDT v3"
-            : TranscriptionService.GetModelName(settings.WhisperModel);
+        var modelDisplayName = settings.SttBackend switch
+        {
+            SttBackend.Nemotron => "Nemotron 3.5 Streaming",
+            SttBackend.Parakeet => "Parakeet TDT v3",
+            _ => TranscriptionService.GetModelName(settings.WhisperModel),
+        };
 
         var userCancelCts = new CancellationTokenSource();
         var dialogCloseCts = CancellationTokenSource.CreateLinkedTokenSource(userCancelCts.Token);
@@ -201,9 +205,12 @@ public class VoiceInputService : IVoiceInputService
 
         try
         {
-            var downloadTask = settings.SttBackend == SttBackend.Parakeet
-                ? _transcriptionService.DownloadParakeetModelAsync(progress, userCancelCts.Token)
-                : _transcriptionService.DownloadModelAsync(settings.WhisperModel, progress, userCancelCts.Token);
+            var downloadTask = settings.SttBackend switch
+            {
+                SttBackend.Nemotron => _transcriptionService.DownloadNemotronModelAsync(progress, userCancelCts.Token),
+                SttBackend.Parakeet => _transcriptionService.DownloadParakeetModelAsync(progress, userCancelCts.Token),
+                _ => _transcriptionService.DownloadModelAsync(settings.WhisperModel, progress, userCancelCts.Token),
+            };
 
             var dialogTask = _dialogService.ShowModelDownloadDialogAsync(
                 modelDisplayName, progress, dialogCloseCts.Token);

@@ -920,6 +920,7 @@
   <data name="Enum_PasteToPreviousWindow" xml:space="preserve"><value>Coller dans la fenêtre précédente</value></data>
   <data name="Enum_SttWhisper" xml:space="preserve"><value>Whisper</value></data>
   <data name="Enum_SttParakeet" xml:space="preserve"><value>Parakeet TDT v3</value></data>
+  <data name="Enum_SttNemotron" xml:space="preserve"><value>Nemotron 3.5 Streaming</value></data>
   <data name="Enum_MeetingBrowser_Bundled" xml:space="preserve"><value>Chromium intégré (recommandé)</value></data>
   <data name="Enum_MeetingBrowser_Chrome" xml:space="preserve"><value>Chrome système</value></data>
   <data name="Enum_MeetingBrowser_Edge" xml:space="preserve"><value>Edge système</value></data>

@@ -19,7 +19,8 @@ public enum WhisperModelSize
 public enum SttBackend
 {
     Whisper,
-    Parakeet
+    Parakeet,
+    Nemotron
 }
 
 public enum AppTheme
