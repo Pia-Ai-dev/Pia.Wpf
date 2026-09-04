@@ -27,6 +27,13 @@ public static class TranscriptionEngineFactory
                     .ConfigureAwait(false);
                 return new ParakeetSherpaEngine(dir, logger);
             }
+            case SttBackend.Nemotron:
+            {
+                var dir = await LiveTranscriptionModels
+                    .EnsureNemotronOnnxAsync(downloader, downloadProgress, logger, cancellationToken)
+                    .ConfigureAwait(false);
+                return new NemotronStreamingEngine(dir, LanguageCode(settings.TargetSpeechLanguage), logger);
+            }
             case SttBackend.Whisper:
             default:
             {
@@ -48,9 +55,15 @@ public static class TranscriptionEngineFactory
         IProgress<ModelDownloadProgress>? downloadProgress,
         ILogger logger,
         CancellationToken cancellationToken)
-        => settings.SttBackend == SttBackend.Parakeet
-            ? LiveTranscriptionModels.EnsureParakeetOnnxAsync(downloader, downloadProgress, logger, cancellationToken)
-            : LiveTranscriptionModels.EnsureWhisperOnnxAsync(settings.WhisperModel, downloader, downloadProgress, logger, cancellationToken);
+        => settings.SttBackend switch
+        {
+            SttBackend.Parakeet => LiveTranscriptionModels
+                .EnsureParakeetOnnxAsync(downloader, downloadProgress, logger, cancellationToken),
+            SttBackend.Nemotron => LiveTranscriptionModels
+                .EnsureNemotronOnnxAsync(downloader, downloadProgress, logger, cancellationToken),
+            _ => LiveTranscriptionModels
+                .EnsureWhisperOnnxAsync(settings.WhisperModel, downloader, downloadProgress, logger, cancellationToken),
+        };
 
     private static string LanguageCode(TargetSpeechLanguage language) => language switch
     {
