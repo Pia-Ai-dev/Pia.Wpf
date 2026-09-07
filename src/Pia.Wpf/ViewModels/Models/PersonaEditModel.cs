@@ -60,6 +60,7 @@ public partial class PersonaEditModel : ObservableValidator
     private string _archetype = "custom";
 
     /// <summary>Free-form model-routing hint; blank falls back to <see cref="Persona.DefaultModelType"/>.</summary>
+    [NotifyPropertyChangedFor(nameof(IsPrivateModelType))]
     [ObservableProperty]
     private string _modelType = Persona.DefaultModelType;
 
@@ -94,8 +95,11 @@ public partial class PersonaEditModel : ObservableValidator
     public string[] ArchetypeOptions { get; } =
         ["assistant", "analyst", "creative", "visionary", "explainer", "custom"];
 
+    /// <summary>The routing hint that only lands if the cloud provider offers a private model.</summary>
+    public const string PrivateModelType = "private";
+
     /// <summary>Suggestions for the editable model-type combo — a routing hint, not a closed vocabulary.</summary>
-    public string[] ModelTypeOptions { get; } = ["general", "fast", "code"];
+    public string[] ModelTypeOptions { get; } = ["general", "fast", "code", PrivateModelType];
 
     public PersonaToolScope[] ToolScopeOptions { get; } = Enum.GetValues<PersonaToolScope>();
 
@@ -138,6 +142,10 @@ public partial class PersonaEditModel : ObservableValidator
     public IReadOnlyList<ReasoningEffortChoice> ReasoningEffortOptions => EffortChoices;
 
     public bool CanSave => !string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(SystemPrompt);
+
+    /// <summary>Drives the editor's "needs a private model on the provider side" hint.</summary>
+    public bool IsPrivateModelType =>
+        string.Equals(ModelType?.Trim(), PrivateModelType, StringComparison.OrdinalIgnoreCase);
 
     public PersonaEditModel()
     {

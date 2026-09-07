@@ -407,6 +407,11 @@
                         AutomationProperties.AutomationId="PersonaEdit_ModelType"
                         AutomationProperties.Name="{loc:Str Dialog_PersonaEdit_ModelType}"
                         Margin="0,2,0,8"/>
+              <TextBlock Text="{loc:Str Dialog_PersonaEdit_ModelTypePrivateHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding IsPrivateModelType, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         Margin="0,0,0,8"/>
 
               <TextBlock Text="{loc:Str Dialog_PersonaEdit_ToolScope}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>

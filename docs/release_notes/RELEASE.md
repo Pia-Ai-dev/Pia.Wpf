@@ -24,6 +24,15 @@
 - A chat also keeps the name it has. Every save used to write the first
   message back over it, so an automatic title lasted until the next reply.
 
+## Personas
+
+- The built-in personas now ask Pia Cloud for the model that suits them:
+  Pia · Personal and Explain It Simply for a fast one, Experienced Coder for a
+  coding one. Every other provider answers as before.
+- A persona's Model type offers "private" in its list, and says beneath the
+  field that it only takes effect if your cloud provider offers a private
+  model.
+
 ## Notifications
 
 - The ✕ on a message that slides in at the top left now closes it while the

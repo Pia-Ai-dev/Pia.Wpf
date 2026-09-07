@@ -566,7 +566,7 @@ public class PersonaService : IPersonaService
             Guardrails = p.Guardrails,
             OutputFormat = p.OutputFormat,
             Archetype = p.Archetype,
-            ModelType = Persona.DefaultModelType,
+            ModelType = NormalizeModelType(p.ModelType),
             Expertise = [.. p.Expertise],
             Emoji = p.Emoji,
             AccentColor = p.AccentColor,
