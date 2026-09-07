@@ -1143,6 +1143,12 @@ public sealed class TeamsMeetingSession : IMeetingSession
                 typed.Length, displayName.Length);
             await nameInput.ClearAsync().ConfigureAwait(false);
             await nameInput.PressSequentiallyAsync(displayName).ConfigureAwait(false);
+
+            // A truncated name can still validate, so joining on it would drop the AI disclosure
+            // silently — refuse instead.
+            typed = await nameInput.InputValueAsync().ConfigureAwait(false);
+            if (!string.Equals(typed, displayName, StringComparison.Ordinal))
+                throw new InvalidOperationException("The Teams prejoin box would not take the assistant's full display name.");
         }
 
         var deadline = Environment.TickCount64 + NameValidationTimeoutMs;

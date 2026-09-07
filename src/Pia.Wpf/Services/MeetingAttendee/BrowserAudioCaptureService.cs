@@ -6,7 +6,7 @@ using Pia.Services.LiveTranscription;
 namespace Pia.Services.MeetingAttendee;
 
 /// <summary>
-/// The <b>silent</b> audio source for the hidden meeting attendee: instead of capturing the system
+/// The <b>silent</b> audio source for the meeting attendee: instead of capturing the system
 /// render mix (audible <see cref="LoopbackAudioCaptureService"/>) or tapping the browser process with
 /// WASAPI process loopback (which still plays to the speakers), it drives the in-page Web Audio tap
 /// (<see cref="IMeetingSession.StartAudioCaptureAsync"/>). The page mutes the meeting from the

@@ -64,9 +64,9 @@ public interface IMeetingSession : IAsyncDisposable
     /// <summary>
     /// Starts the <b>silent in-browser audio capture</b>: taps the meeting's remote audio inside the
     /// page (Web Audio) and mutes it from the speakers, so the meeting is captured for transcription
-    /// without being audible on the device. This is the mechanism behind the "hidden ⇒ silent"
-    /// contract — the previous per-process WASAPI loopback only <i>captured</i> the browser audio (a
-    /// tap) and never silenced the speakers.
+    /// without being audible on the device — whether or not its window is on screen. The previous
+    /// per-process WASAPI loopback only <i>captured</i> the browser audio (a tap) and never silenced
+    /// the speakers.
     ///
     /// <para><paramref name="onFormat"/> is invoked once with the source PCM <c>(sampleRate, channels)</c>
     /// before any audio; <paramref name="onPcm"/> is then invoked repeatedly with little-endian

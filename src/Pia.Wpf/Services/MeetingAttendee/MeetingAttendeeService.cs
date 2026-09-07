@@ -762,7 +762,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     private static IAudioCaptureSource CreateDefaultAudioSource(
         IMeetingSession session, bool useSilentCapture, ILoggerFactory loggerFactory)
     {
-        // Silent capture (hidden window) taps the meeting audio inside the browser and mutes the
+        // Silent capture taps the meeting audio inside the browser and mutes the
         // speakers; otherwise the proven endpoint loopback (audible) is the default.
         if (useSilentCapture)
         {
