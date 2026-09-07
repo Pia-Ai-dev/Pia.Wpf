@@ -80,7 +80,7 @@ public sealed class MeetingAttendeeServiceStateTests
 
         await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
 
-        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Alex's assistant (AI notetaker)", Arg.Any<CancellationToken>());
+        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Alex's assistant - AI notetaker", Arg.Any<CancellationToken>());
 
         await fx.Service.DisposeAsync();
     }
@@ -99,7 +99,7 @@ public sealed class MeetingAttendeeServiceStateTests
 
         await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
 
-        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Conference bot (AI notetaker)", Arg.Any<CancellationToken>());
+        await fx.Session.Received(1).JoinAsync(MeetingUrl, "Conference bot - AI notetaker", Arg.Any<CancellationToken>());
 
         await fx.Service.DisposeAsync();
     }
@@ -298,15 +298,15 @@ public sealed class MeetingAttendeeServiceStateTests
         });
         fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<string>>(
-                new[] { "Alex's assistant (You)", "Marco, Organizer" }));
+                new[] { "Alex's assistant - AI notetaker (You)", "Marco, Organizer" }));
 
         await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
         await WaitForAttendeesAsync(fx.Service, 1);
 
         var attendees = fx.Service.ObservedAttendees;
         Assert.Contains("Marco", attendees);
-        Assert.DoesNotContain("Alex's assistant", attendees);
-        Assert.DoesNotContain("Alex's assistant (You)", attendees);
+        Assert.DoesNotContain("Alex's assistant - AI notetaker", attendees);
+        Assert.DoesNotContain("Alex's assistant - AI notetaker (You)", attendees);
 
         await fx.Service.DisposeAsync();
     }
@@ -478,15 +478,34 @@ public sealed class MeetingAttendeeServiceStateTests
     // ---- silent-capture decision (pure) ---------------------------------------------------------
 
     [Fact]
-    public void UseSilentBrowserCapture_TrueWhenHidden()
+    public async Task StartAsync_UsesSilentCapture_EvenWithTheBrowserWindowOnScreen()
     {
-        // Hidden (ShowBrowserWindow=false) ⇒ silent in-browser capture. Unlike the retired per-process
-        // loopback, this needs no browser PID.
-        Assert.True(MeetingAttendeeService.UseSilentBrowserCapture(
-            new AppSettings { MeetingAttendeeShowBrowserWindow = false }));
-        // Window shown ⇒ audible endpoint loopback.
-        Assert.False(MeetingAttendeeService.UseSilentBrowserCapture(
-            new AppSettings { MeetingAttendeeShowBrowserWindow = true }));
+        // A visible window used to mean the audible endpoint loopback, which echoed the meeting back at
+        // a user attending the same call on the same machine. The in-page tap is per-page, not per-window.
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings { MeetingAttendeeShowBrowserWindow = true });
+
+        var requested = new List<bool>();
+        var service = new MeetingAttendeeService(
+            settings,
+            NullLoggerFactory.Instance,
+            provisionChromium: (_, _) => Task.FromResult(@"C:\fake\chrome.exe"),
+            createTranscription: (_, _) => Task.FromResult<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>(
+                ("silero.onnx", Substitute.For<ITranscriptionEngine>(), null)),
+            sessionFactory: _ => CreateJoinableSession(),
+            audioSourceFactory: (_, useSilentCapture) =>
+            {
+                requested.Add(useSilentCapture);
+                return new FakeAudioSource(null);
+            },
+            engineServiceFactory: (_, _, _, _, _, _, _) =>
+                Task.FromResult<IAsyncDisposable>(new RecordingDisposable(null, "engine")));
+
+        await service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
+
+        Assert.Equal([true], requested);
+
+        await service.DisposeAsync();
     }
 
     // ---- launch-spec resolution (Phase 0) -------------------------------------------------------
@@ -679,10 +698,9 @@ public sealed class MeetingAttendeeServiceStateTests
     [Fact]
     public async Task StartAsync_WhenSilentCaptureFailsToStart_DisposesItAndDegradesToEndpoint()
     {
-        // Hidden window ⇒ silent in-browser capture is selected; when its StartAsync throws (e.g. the
-        // in-page hook captured no remote track within the no-audio timeout), the orchestrator must
-        // dispose that source FIRST (which unmutes the meeting), then start the audible endpoint
-        // loopback, and still reach Attending ("hidden but audible").
+        // When the silent source's StartAsync throws (e.g. the in-page hook captured no remote track
+        // within the no-audio timeout), the orchestrator must dispose that source FIRST (which unmutes
+        // the meeting), then start the audible endpoint loopback, and still reach Attending.
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings { MeetingAttendeeShowBrowserWindow = false });
 
@@ -747,11 +765,11 @@ public sealed class MeetingAttendeeServiceStateTests
     }
 
     [Theory]
-    [InlineData("Alex's assistant", "Alex's assistant (AI notetaker)")]
-    [InlineData("  Conference bot  ", "Conference bot (AI notetaker)")]
-    [InlineData("Conference bot (AI notetaker)", "Conference bot (AI notetaker)")]
-    [InlineData("Conference bot (ai NOTETAKER)", "Conference bot (ai NOTETAKER)")]
-    [InlineData("", "Pia's assistant (AI notetaker)")]
+    [InlineData("Alex's assistant", "Alex's assistant - AI notetaker")]
+    [InlineData("  Conference bot  ", "Conference bot - AI notetaker")]
+    [InlineData("Conference bot - AI notetaker", "Conference bot - AI notetaker")]
+    [InlineData("Conference bot - ai NOTETAKER", "Conference bot - ai NOTETAKER")]
+    [InlineData("", "Pia's assistant - AI notetaker")]
     public void WithAiSuffix_AppendsTheSuffixExactlyOnce(string input, string expected)
     {
         Assert.Equal(expected, MeetingAttendeeService.WithAiSuffix(input, MeetingAttendeeService.DefaultAiSuffix));
@@ -763,14 +781,47 @@ public sealed class MeetingAttendeeServiceStateTests
         var name = MeetingAttendeeService.WithAiSuffix(new string('x', 80), MeetingAttendeeService.DefaultAiSuffix);
 
         Assert.True(name.Length <= MeetingAttendeeService.TeamsDisplayNameMaxLength, name);
-        Assert.EndsWith("… (AI notetaker)", name, StringComparison.Ordinal);
+        Assert.EndsWith(" - AI notetaker", name, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    // Teams rejects the whole name on any of these, leaving "Join now" disabled.
+    [InlineData("Alex's assistant (AI notetaker)", "Alex's assistant AI notetaker")]
+    [InlineData("Marco Altmann [neo42]", "Marco Altmann neo42")]
+    [InlineData("Marco — AI", "Marco - AI")]
+    [InlineData("Marco’s Assistent", "Marco's Assistent")]
+    [InlineData("Marco...", "Marco")]
+    [InlineData("  Dr. Müller  ", "Dr. Müller")]
+    [InlineData("Marco  Altmann", "Marco Altmann")]
+    [InlineData(null, "")]
+    public void SanitizeForTeams_KeepsOnlyWhatThePrejoinBoxAccepts(string? input, string expected)
+    {
+        Assert.Equal(expected, MeetingAttendeeService.SanitizeForTeams(input));
+    }
+
+    [Fact]
+    public void WithAiSuffix_StripsCharactersTeamsRejects_FromBothParts()
+    {
+        var name = MeetingAttendeeService.WithAiSuffix("Marco (neo42)", "AI notetaker");
+
+        Assert.Equal("Marco neo42 - AI notetaker", name);
+    }
+
+    [Fact]
+    public void WithAiSuffix_LeavesNoTrailingPunctuation_WhenItShortens()
+    {
+        // The cut must not land on a dot (Teams rejects an edge dot) or a dangling separator.
+        var name = MeetingAttendeeService.WithAiSuffix(new string('x', 34) + ". tail", "AI notetaker");
+
+        Assert.EndsWith("x - AI notetaker", name, StringComparison.Ordinal);
+        Assert.True(name.Length <= MeetingAttendeeService.TeamsDisplayNameMaxLength, name);
     }
 
     [Fact]
     public async Task RosterSnapshots_ExcludeBot_WhenTeamsShowsTheSuffixedName()
     {
-        // Teams renders the bot's own row as "<name> (AI notetaker) (You)"; the cleaner keeps the inner
-        // parenthetical, and a row without "(You)" loses the suffix instead — both must still be the bot.
+        // Teams renders the bot's own row as "<name> - AI notetaker (You)"; the cleaner drops "(You)"
+        // and a row without it is already the plain name — both must still be recognized as the bot.
         var fx = new Fixture();
         fx.Settings.GetSettingsAsync().Returns(new AppSettings
         {
@@ -779,7 +830,7 @@ public sealed class MeetingAttendeeServiceStateTests
         });
         fx.Session.GetAttendeeNamesAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<string>>(
-                new[] { "Alex's assistant (AI notetaker) (You)", "Alex's assistant (AI notetaker)", "Jane Doe" }));
+                new[] { "Alex's assistant - AI notetaker (You)", "Alex's assistant - AI notetaker", "Jane Doe" }));
 
         await fx.Service.StartAsync(MeetingUrl, TestContext.Current.CancellationToken);
         await WaitForAttendeesAsync(fx.Service, 1);

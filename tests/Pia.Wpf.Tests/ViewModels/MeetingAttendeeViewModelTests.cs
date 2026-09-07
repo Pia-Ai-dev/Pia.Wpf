@@ -147,15 +147,15 @@ public class MeetingAttendeeViewModelTests
         var (vm, _, _) = CreateSutFull(new AppSettings { SyncUserDisplayName = "Alex" });
         await vm.PrepareForDisplayAsync();
 
-        Assert.Equal("Alex's assistant (AI notetaker)", vm.EffectiveDisplayName);
+        Assert.Equal("Alex's assistant - AI notetaker", vm.EffectiveDisplayName);
 
         vm.AssistantDisplayName = "Conference bot";
-        Assert.Equal("Conference bot (AI notetaker)", vm.EffectiveDisplayName);
+        Assert.Equal("Conference bot - AI notetaker", vm.EffectiveDisplayName);
         Assert.Contains("MeetingAttendee_DisplayName_Effective", vm.EffectiveDisplayNameHint, StringComparison.Ordinal);
-        Assert.Contains("Conference bot (AI notetaker)", vm.EffectiveDisplayNameHint, StringComparison.Ordinal);
+        Assert.Contains("Conference bot - AI notetaker", vm.EffectiveDisplayNameHint, StringComparison.Ordinal);
 
         vm.AssistantDisplayName = "";
-        Assert.Equal("Alex's assistant (AI notetaker)", vm.EffectiveDisplayName);
+        Assert.Equal("Alex's assistant - AI notetaker", vm.EffectiveDisplayName);
     }
 
     [Theory]

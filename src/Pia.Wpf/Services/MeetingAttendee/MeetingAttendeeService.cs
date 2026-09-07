@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Text;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
@@ -37,6 +38,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     internal const string DefaultAiSuffix = "AI notetaker";
     /// <summary>Teams caps the anonymous-join name; the suffix must survive, so the user's part gives way.</summary>
     internal const int TeamsDisplayNameMaxLength = 50;
+    /// <summary>Parentheses are not in the charset Teams accepts, so the suffix hangs off a plain hyphen.</summary>
+    private const string AiSuffixSeparator = " - ";
 
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService? _localization;
@@ -306,26 +309,25 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             // hand the now-disposed source/engine onward or clobber the Idle state Stop set.
             startToken.ThrowIfCancellationRequested();
 
-            // 4) Audio source + transcription engine. Default = endpoint loopback (audible); silent
-            //    in-browser capture when the window is hidden — with a dispose-then-degrade fallback to
-            //    the audible endpoint loopback if the silent path fails (disposing the silent source
-            //    unmutes the meeting, so the degrade is actually audible).
-            var useSilentCapture = SilentCaptureOnly || UseSilentBrowserCapture(settings);
-            var source = _audioSourceFactory(session, useSilentCapture);
+            // 4) Audio source + transcription engine. Always the silent in-browser tap: it is per-page
+            //    and independent of the window, so a VISIBLE window is silent too — otherwise the meeting
+            //    plays out of the speakers and echoes back through whatever else the user is listening
+            //    with. A dispose-then-degrade fallback to the audible endpoint loopback covers a failed
+            //    tap (disposing the silent source unmutes the meeting, so the degrade is actually audible).
+            var source = _audioSourceFactory(session, /* useSilentCapture: */ true);
             _audioSource = source;
             try
             {
                 await source.StartAsync(startToken).ConfigureAwait(false);
-                if (useSilentCapture)
-                    _logger.LogInformation("Meeting attendee using silent in-browser audio capture");
+                _logger.LogInformation("Meeting attendee using silent in-browser audio capture");
             }
-            catch (Exception ex) when (useSilentCapture && !SilentCaptureOnly && ex is not OperationCanceledException)
+            catch (Exception ex) when (!SilentCaptureOnly && ex is not OperationCanceledException)
             {
                 // Silent in-browser capture failed to produce audio (e.g. the in-page hook captured no
                 // remote track, or the tap could not be armed). Dispose it FIRST — that runs the source's
                 // teardown, which calls StopAudioCaptureAsync and UNMUTES the meeting — then degrade to the
                 // audible endpoint loopback so the meeting is never lost to a silent-capture failure (it
-                // becomes "hidden but audible" rather than "silent and untranscribed").
+                // becomes "audible" rather than "silent and untranscribed").
                 _logger.LogWarning(ex,
                     "Silent in-browser capture failed to start; degrading to audible endpoint loopback");
                 await source.DisposeAsync().ConfigureAwait(false);
@@ -608,10 +610,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
             {
                 var name = CleanAttendeeName(raw);
                 if (string.IsNullOrEmpty(name)) continue;
-                // The cleaner strips one trailing parenthetical, which on the bot's own row may be the AI
-                // suffix rather than "(You)" — so the suffix-less name is the bot too.
-                if (string.Equals(name, botDisplayName, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(name, CleanAttendeeName(botDisplayName), StringComparison.OrdinalIgnoreCase)) continue;
+                if (IsBotRow(name, botDisplayName)) continue;
                 if (_attendees.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase))) continue;
                 _attendees.Add(name);
             }
@@ -621,6 +620,15 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         // The union only grows, so the ceiling refines monotonically. Polling off or every snapshot
         // failing leaves it at 0 and the diarizer unconstrained.
         if (count > 0) _speakerId?.SetExpectedSpeakers(count);
+    }
+
+    /// <summary>The bot's row can render with or without its AI tail, so both spellings are itself.</summary>
+    private static bool IsBotRow(string name, string botDisplayName)
+    {
+        if (string.Equals(name, botDisplayName, StringComparison.OrdinalIgnoreCase)) return true;
+
+        var tail = botDisplayName.LastIndexOf(AiSuffixSeparator, StringComparison.Ordinal);
+        return tail > 0 && string.Equals(name, botDisplayName[..tail], StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -744,16 +752,6 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     }
 
     /// <summary>
-    /// Pure decision: use the silent in-browser audio capture when the browser window is hidden (so the
-    /// user wants the meeting inaudible on this device). A visible window keeps the audible endpoint
-    /// loopback. The user-facing contract is <i>hidden ⇒ silent</i>, so silence is derived from
-    /// <see cref="AppSettings.MeetingAttendeeShowBrowserWindow"/> rather than a separate toggle. Unlike
-    /// the retired per-process loopback path, the in-browser tap needs no browser PID.
-    /// </summary>
-    internal static bool UseSilentBrowserCapture(AppSettings settings)
-        => !settings.MeetingAttendeeShowBrowserWindow;
-
-    /// <summary>
     /// The production audio-source factory, exposed so a dev-only decorator can wrap it instead of
     /// replacing it — mirroring <see cref="CreateProductionTranscriptionFactory"/>.
     /// </summary>
@@ -850,19 +848,53 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         }
     }
 
-    /// <summary>"{name} ({suffix})", appended once; a long name is shortened so the suffix always fits.</summary>
+    private static bool IsTeamsNameChar(char c)
+        => char.IsLetter(c) || char.IsDigit(c) || c is '-' or '\'' or '.' or '_' or '@';
+
+    /// <summary>
+    /// Forces a name into the charset the Teams prejoin box accepts — letters, digits, single inner
+    /// spaces and <c>- ' . _ @</c>. Anything else (parentheses, an ellipsis, an en dash), a doubled
+    /// space or dot, or an edge space/dot leaves "Join now" disabled, so the join never happens.
+    /// </summary>
+    internal static string SanitizeForTeams(string? value)
+    {
+        var sb = new StringBuilder(value?.Length ?? 0);
+        foreach (var raw in value ?? string.Empty)
+        {
+            // Typography a user pastes in maps onto the ASCII equivalent rather than being blanked out.
+            var c = raw switch
+            {
+                '‘' or '’' => '\'',
+                '–' or '—' => '-',
+                _ => raw,
+            };
+            if (!IsTeamsNameChar(c)) c = ' ';
+            // A space or dot that would lead, or repeat the previous character, is dropped.
+            if (c is ' ' or '.' && (sb.Length == 0 || sb[^1] == c)) continue;
+            sb.Append(c);
+        }
+
+        return sb.ToString().TrimEnd(' ', '.');
+    }
+
+    /// <summary>"{name} - {suffix}", appended once; a long name is shortened so the suffix always fits.</summary>
     internal static string WithAiSuffix(string baseName, string suffix)
     {
-        var name = string.IsNullOrWhiteSpace(baseName) ? BuildDisplayName(null) : baseName.Trim();
-        var tag = $"({suffix.Trim()})";
-        if (name.EndsWith(tag, StringComparison.OrdinalIgnoreCase))
+        var name = SanitizeForTeams(baseName);
+        if (name.Length == 0) name = SanitizeForTeams(BuildDisplayName(null));
+
+        var tag = SanitizeForTeams(suffix);
+        if (tag.Length == 0) tag = DefaultAiSuffix;
+
+        var tail = AiSuffixSeparator + tag;
+        if (name.EndsWith(tail, StringComparison.OrdinalIgnoreCase))
             return name;
 
-        var room = TeamsDisplayNameMaxLength - tag.Length - 1;
+        var room = TeamsDisplayNameMaxLength - tail.Length;
         if (room >= 2 && name.Length > room)
-            name = name[..(room - 1)].TrimEnd() + "…";
+            name = name[..room].TrimEnd(' ', '.', '-', '_', '@', '\'');
 
-        return $"{name} {tag}";
+        return name + tail;
     }
 
     private void TransitionState(MeetingAttendeeState newState)

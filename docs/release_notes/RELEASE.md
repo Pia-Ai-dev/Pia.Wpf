@@ -100,6 +100,16 @@
   with a question about the schedule, which nobody was there to answer — and
   the run counted as finished.
 
+## Meetings
+
+- Pia can join a Teams meeting again. Teams stopped accepting the brackets
+  around the "AI notetaker" label, leaving the assistant on the join screen
+  until it gave up; the name it joins under now reads
+  "Alex's assistant - AI notetaker".
+- A meeting stays silent on your machine even with "Show the meeting browser
+  window" ticked. It used to play out of your speakers, which echoed if you
+  were in the same call from the Teams app on the same device.
+
 ## Transcription
 
 - Stopping a live or meeting transcription keeps what you just said. Audio the
