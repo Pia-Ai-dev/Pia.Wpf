@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Shared;
 
 namespace Pia.ViewModels.Models;
 
@@ -98,8 +99,8 @@ public partial class PersonaEditModel : ObservableValidator
     /// <summary>The routing hint that only lands if the cloud provider offers a private model.</summary>
     public const string PrivateModelType = "private";
 
-    /// <summary>Suggestions for the editable model-type combo — a routing hint, not a closed vocabulary.</summary>
-    public string[] ModelTypeOptions { get; } = ["general", "fast", "code", PrivateModelType];
+    /// <summary>Suggestions for the editable model-type combo, shared with the server's admin pages.</summary>
+    public IReadOnlyList<string> ModelTypeOptions { get; } = PersonaTypes.Suggested;
 
     public PersonaToolScope[] ToolScopeOptions { get; } = Enum.GetValues<PersonaToolScope>();
 

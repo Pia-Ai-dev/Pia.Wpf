@@ -265,6 +265,8 @@ public class SyncMapper
             // "map absent/blank → custom"). An admin who types spaces into the archetype field must not
             // publish a row whose Archetype matches no entry in the shared vocabulary.
             Archetype = string.IsNullOrWhiteSpace(sync.Archetype) ? "custom" : sync.Archetype,
+            // Verbatim, null included: PersonaService normalizes a blank type to "general" on read.
+            ModelType = sync.ModelType,
             Expertise = sync.Expertise ?? [],
             Emoji = sync.Emoji,
             AccentColor = sync.AccentColor,
