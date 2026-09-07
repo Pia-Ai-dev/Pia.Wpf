@@ -171,6 +171,7 @@ public class SyncMapperPersonaTests
         OutputFormat = "Return only the rewritten text, no preamble.",
         Expertise = ["copywriting", "brand", "editing"],
         Archetype = "creative",
+        ModelType = "fast",
         Emoji = "🎨",
         AccentColor = "#7A5AF8",
         ToolScope = (int)PersonaToolScope.Full,
@@ -197,6 +198,9 @@ public class SyncMapperPersonaTests
         Assert.Equal("Return only the rewritten text, no preamble.", persona.OutputFormat);
         Assert.Equal(new List<string> { "copywriting", "brand", "editing" }, persona.Expertise);
         Assert.Equal("creative", persona.Archetype);
+        // The admin-chosen persona-type routing key must survive the pull, or every managed persona would
+        // reach the proxy as "general".
+        Assert.Equal("fast", persona.ModelType);
         Assert.Equal("🎨", persona.Emoji);
         Assert.Equal("#7A5AF8", persona.AccentColor);
         // int → enum for the structural fields.
@@ -234,6 +238,9 @@ public class SyncMapperPersonaTests
         Assert.Equal("custom", persona.Archetype);
         // Absent reasoningEffort ⇒ null (inherit), not None.
         Assert.Null(persona.ReasoningEffort);
+        // Absent modelType stays null here; PersonaService normalizes it to "general" on read, exactly as
+        // it does for a user persona that declares none.
+        Assert.Null(persona.ModelType);
         Assert.Equal(PersonaToolScope.ReadOnly, persona.ToolScope);
         // Name/SystemPrompt are `required` locally but nullable on the wire: a malformed row degrades to
         // empty strings rather than throwing, so one bad row cannot abort the whole pull.
