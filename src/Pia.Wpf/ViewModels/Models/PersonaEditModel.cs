@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Shared;
 
 namespace Pia.ViewModels.Models;
 
@@ -94,8 +95,8 @@ public partial class PersonaEditModel : ObservableValidator
     public string[] ArchetypeOptions { get; } =
         ["assistant", "analyst", "creative", "visionary", "explainer", "custom"];
 
-    /// <summary>Suggestions for the editable model-type combo — a routing hint, not a closed vocabulary.</summary>
-    public string[] ModelTypeOptions { get; } = ["general", "fast", "code", "private"];
+    /// <summary>Suggestions for the editable model-type combo, shared with the server's admin pages.</summary>
+    public IReadOnlyList<string> ModelTypeOptions { get; } = PersonaTypes.Suggested;
 
     public PersonaToolScope[] ToolScopeOptions { get; } = Enum.GetValues<PersonaToolScope>();
 
