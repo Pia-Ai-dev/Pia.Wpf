@@ -744,7 +744,7 @@ public sealed class LiveTurnExecutorPlannedRunTests : IClassFixture<RedirectedPr
         foreach (var p in roster)
             _personaService.GetPersonaAsync(p.Id).Returns(p);
         _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(ci => new AssistantTurnSetup("system for " + ci.ArgAt<Persona>(0).Name, null, false, false));
         _providerService.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider());
         return new StepPersonaResolver(

@@ -127,9 +127,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var provider = RunPinResolver.ApplyEffort(
                 request.Provider, request.ReasoningEffort, persona.ReasoningEffort);
 
-            // Headless path — no user to click the chip, so never eligible.
+            // Headless path — no user to click the chip, so never eligible. Unattended too, and this leg has
+            // no park at all: a question here is booked as a completed run and the goal waits a whole period.
             var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled,
-                suggestAgentModeEligible: false);
+                suggestAgentModeEligible: false, unattended: true);
 
             _logger.LogInformation(
                 "Background turn {ChatId}: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, grantedWrites={GrantedWrites}",

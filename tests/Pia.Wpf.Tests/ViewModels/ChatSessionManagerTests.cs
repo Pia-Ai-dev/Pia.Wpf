@@ -204,7 +204,7 @@ public class ChatSessionManagerTests
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
 
         AgentRunCreateRequest? captured = null;
@@ -609,7 +609,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -638,7 +638,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -667,7 +667,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -708,7 +708,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -1326,7 +1326,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>());
+            Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1348,7 +1348,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>());
+            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1373,7 +1373,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>());
+            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1398,7 +1398,7 @@ public class ChatSessionManagerTests
         _files.Received().DescribeEffectiveRoot("notes");
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: root);
+            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: root, unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1425,7 +1425,7 @@ public class ChatSessionManagerTests
         _files.DidNotReceive().DescribeEffectiveRoot(Arg.Any<string?>());
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: null);
+            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: null, unattended: Arg.Any<bool>());
     }
 
     [Fact]

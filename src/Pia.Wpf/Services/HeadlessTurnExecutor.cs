@@ -266,9 +266,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                     ? SafeFolderPath.NormalizeWorkspaceRoot(settings.AssistantFilesFolder!)
                     : null;
 
-        // Headless path — no user to click the chip (R7) → never eligible.
+        // Headless path — no user to click the chip (R7) → never eligible, and unattended by definition.
         _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled,
-            suggestAgentModeEligible: false, environmentRoot: environmentRoot);
+            suggestAgentModeEligible: false, environmentRoot: environmentRoot, unattended: true);
 
         // Batch 07 G6: the resolution above is now the run DEFAULT rather than the only answer. Deliberately
         // still done here and still cached — see _runDefault's own comment for the three consumers that need a

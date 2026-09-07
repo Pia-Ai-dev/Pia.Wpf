@@ -130,8 +130,10 @@ public sealed class StepPersonaResolver
         {
             // The exact argument shape both run-turn call sites use. suggestAgentModeEligible is false and
             // must stay false: suggest_agent_mode offers to switch the USER into Agent mode, and there is no
-            // user inside a run to offer it to.
-            setup = _composer.PrepareTurn(persona, provider, [], tokenizationEnabled, suggestAgentModeEligible: false);
+            // user inside a run to offer it to. Unattendedness is read off the run default rather than passed
+            // in, so a step persona can never quietly drop the framing the run itself was composed with.
+            setup = _composer.PrepareTurn(persona, provider, [], tokenizationEnabled, suggestAgentModeEligible: false,
+                unattended: runDefault.TurnSetup.Unattended);
         }
         catch (Exception ex)
         {

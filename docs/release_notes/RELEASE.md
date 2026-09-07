@@ -95,6 +95,10 @@
   no answer." Its actual message reaches the routine's run, the agent run's
   failure card and an interactive chat alike, so a timeout or an upstream
   error reads as what it was.
+- A routine that fires now does the work instead of asking about itself. It
+  used to read its own instructions as a request to set a routine up and reply
+  with a question about the schedule, which nobody was there to answer — and
+  the run counted as finished.
 
 ## Transcription
 

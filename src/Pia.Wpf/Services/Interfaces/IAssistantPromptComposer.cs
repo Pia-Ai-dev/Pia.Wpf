@@ -26,7 +26,13 @@ public sealed record AssistantTurnSetup(
     /// The persona's model-routing hint, sent as <c>metadata.pia_persona_type</c> on Pia Cloud chat
     /// requests. Null ⇒ no persona-type routing. Same trailing-default rule as <see cref="PersonaId"/>.
     /// </summary>
-    string? ModelType = null);
+    string? ModelType = null,
+
+    /// <summary>
+    /// Whether a schedule (not a person) drove this turn. Carried so a per-step setup can mirror the run's
+    /// shape without the resolver being told twice.
+    /// </summary>
+    bool Unattended = false);
 
 /// <summary>
 /// Builds the persona-driven system prompt and resolves the tool set for an
@@ -48,11 +54,16 @@ public interface IAssistantPromptComposer
     /// Absolute folder the file tools resolve paths against, rendered as an <c>## Environment</c> block on
     /// the tools path. Null (the default) renders nothing and leaves the prompt unchanged.
     /// </param>
+    /// <param name="unattended">
+    /// True for a turn a schedule drove: renders the <c>## Unattended Run</c> block and withholds the
+    /// routine-management tools, so a routine's own run cannot be talked into configuring itself.
+    /// </param>
     AssistantTurnSetup PrepareTurn(
         Persona persona,
         AiProvider provider,
         IReadOnlyList<AtCommand> atCommands,
         bool tokenizationEnabled,
         bool suggestAgentModeEligible = false,
-        string? environmentRoot = null);
+        string? environmentRoot = null,
+        bool unattended = false);
 }

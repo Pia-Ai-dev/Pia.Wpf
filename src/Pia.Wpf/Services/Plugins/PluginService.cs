@@ -315,7 +315,7 @@ public class PluginService : IPluginService
         }
     }
 
-    public string GetCombinedSystemPromptAdditions()
+    public string GetCombinedSystemPromptAdditions(IReadOnlySet<string>? excludedToolNames = null)
     {
         lock (_handlers)
         {
@@ -324,6 +324,9 @@ public class PluginService : IPluginService
             {
                 var config = _pluginConfigs.GetValueOrDefault(handler.PluginId);
                 if (config is not null && !IsPluginEnabled(config))
+                    continue;
+                if (excludedToolNames is { Count: > 0 }
+                    && handler.GetTools().Any(t => excludedToolNames.Contains(t.Name)))
                     continue;
                 var prompt = handler.GetSystemPromptAddition();
                 if (!string.IsNullOrWhiteSpace(prompt))

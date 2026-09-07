@@ -29,7 +29,12 @@ public interface IPluginService
     /// this milestone. The gate fix for MCP writes is Phase 2.
     /// </summary>
     bool IsMcpTool(string toolName);
-    string GetCombinedSystemPromptAdditions();
+
+    /// <summary>
+    /// A handler owning any tool named in <paramref name="excludedToolNames"/> is skipped whole: a turn that
+    /// withholds a tool family must not carry prose telling the model to use it.
+    /// </summary>
+    string GetCombinedSystemPromptAdditions(IReadOnlySet<string>? excludedToolNames = null);
     Task<(object? Result, PluginToolCall? PendingAction)?> RouteToolCallAsync(
         FunctionCallContent toolCall, CancellationToken ct = default);
     Task InitializePersistedPluginsAsync();

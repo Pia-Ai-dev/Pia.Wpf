@@ -63,7 +63,7 @@ public sealed class HeadlessTurnExecutorTests
 
         var plugins = Substitute.For<IPluginService>();
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -118,7 +118,7 @@ public sealed class HeadlessTurnExecutorTests
         // The headless path never offers Agent mode — suggestAgentModeEligible is always false.
         composer.DidNotReceive().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>());
+            suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
 
         // Exactly one accumulated chat: goal + 3 assistant replies.
         var ids = await chats.GetAllIdsAsync(TestContext.Current.CancellationToken);
@@ -199,7 +199,7 @@ public sealed class HeadlessTurnExecutorTests
             })));
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool> { mcpTool, normalTool }, SupportsTools: true, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -288,7 +288,7 @@ public sealed class HeadlessTurnExecutorTests
             })));
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -367,7 +367,7 @@ public sealed class HeadlessTurnExecutorTests
                 () => Task.FromResult<object?>("ok"))));
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -588,7 +588,7 @@ public sealed class HeadlessTurnExecutorTests
             // A prompt that NAMES the persona it was composed from, so a fixture can tell whose system message a
             // given step actually sent; a single-persona fixture still sees a constant string.
             Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                    Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+                    Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
                 .Returns(ci => new AssistantTurnSetup(
                     "system for " + ci.ArgAt<Persona>(0).Name,
                     SupportsTools ? new List<AITool> { AIFunctionFactory.Create(() => string.Empty, "noop") } : null,
@@ -1005,7 +1005,7 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(workspaceRoot));
+            Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(workspaceRoot), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1026,7 +1026,7 @@ public sealed class HeadlessTurnExecutorTests
 
             h.Composer.Received().PrepareTurn(
                 Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-                Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(folder));
+                Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(folder), unattended: Arg.Any<bool>());
         }
         finally
         {
@@ -1047,7 +1047,7 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            Arg.Any<bool>(), environmentRoot: null);
+            Arg.Any<bool>(), environmentRoot: null, unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1066,7 +1066,25 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            Arg.Any<bool>(), environmentRoot: null);
+            Arg.Any<bool>(), environmentRoot: null, unattended: Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task BeginRunAsync_ComposesTheRunAsUnattended()
+    {
+        // A headless run has nobody watching, so the prompt must say so and the routine tools must stay out —
+        // asking in prose reaches no one, and a run must not be talked into rescheduling itself.
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+
+        await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
+        h.Composer.Received().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
+            Arg.Any<bool>(), Arg.Any<string?>(), unattended: true);
     }
 
     // ---- the run's chat write merges the persisted rows INSIDE the store's gate hold ----
@@ -1859,7 +1877,7 @@ public sealed class HeadlessTurnExecutorTests
         var ct = TestContext.Current.CancellationToken;
 
         h.Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(_ => new AssistantTurnSetup(
                 "system",
                 [.. toolNames.Select(n => (AITool)AIFunctionFactory.Create(() => string.Empty, n))],

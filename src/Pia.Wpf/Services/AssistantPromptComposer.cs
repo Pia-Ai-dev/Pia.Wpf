@@ -26,7 +26,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         _pluginService = pluginService;
     }
 
-    public AssistantTurnSetup PrepareTurn(Persona persona, AiProvider provider, IReadOnlyList<AtCommand> atCommands, bool tokenizationEnabled, bool suggestAgentModeEligible = false, string? environmentRoot = null)
+    public AssistantTurnSetup PrepareTurn(Persona persona, AiProvider provider, IReadOnlyList<AtCommand> atCommands, bool tokenizationEnabled, bool suggestAgentModeEligible = false, string? environmentRoot = null, bool unattended = false)
     {
         // Tool gating (contract §5) — see ShouldUseTools.
         var supportsTools = ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
@@ -38,10 +38,12 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         if (supportsTools)
         {
             var hasAtCommands = atCommands.Count > 0;
-            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive, environmentRoot: environmentRoot)
+            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive, environmentRoot: environmentRoot, unattended: unattended)
                 + BuildAtCommandHint(atCommands);
 
-            var allTools = _pluginService.GetAllTools();
+            var allTools = unattended
+                ? _pluginService.GetAllTools().Where(t => !RoutineToolNames.Contains(t.Name)).ToList()
+                : _pluginService.GetAllTools();
             if (hasAtCommands)
             {
                 // @-command turns narrow the toolset to the tagged domain — leave suggest_agent_mode out
@@ -61,14 +63,22 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         }
         else
         {
-            fullSystemPrompt = BuildSystemPromptNoTools(persona, webSearchActive: webSearchActive);
+            fullSystemPrompt = BuildSystemPromptNoTools(persona, webSearchActive: webSearchActive, unattended: unattended);
             tools = null;
         }
 
         // Carried on the setup rather than re-resolved downstream: RunExchangeAsync and the step path both
         // already receive the setup, so this is the one place the persona is known on every turn path.
-        return new AssistantTurnSetup(fullSystemPrompt, tools, supportsTools, webSearchActive, persona.Id, persona.ModelType);
+        return new AssistantTurnSetup(fullSystemPrompt, tools, supportsTools, webSearchActive, persona.Id, persona.ModelType, unattended);
     }
+
+    /// <summary>
+    /// Withheld from an unattended turn: <c>create_scheduled_research</c>'s own description tells the model
+    /// to ask for a missing schedule, which is how a fired routine asked when it should run.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> RoutineToolNames =
+        GetAtCommandToolMapping(Pia.Models.AtCommandDomain.Routine).ToolNames
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static string GetLanguageName(TargetLanguage language) => language switch
     {
@@ -129,12 +139,13 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             ? DefaultOutputFormat
             : activePersona.OutputFormat.Trim();
 
-    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false, string? environmentRoot = null)
+    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false, string? environmentRoot = null, bool unattended = false)
     {
-        var pluginPrompts = _pluginService.GetCombinedSystemPromptAdditions();
+        var pluginPrompts = ResolvePluginAdditions(unattended);
         var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
             ? string.Empty
             : $"## Plugins\n\n{pluginPrompts}\n\n";
+        var unattendedSection = BuildUnattendedSection(unattended);
         var tokenSection = tokenizationEnabled
             ? "\n## Privacy Tokens\n\nWhen memory or contact data is returned, personal details (names, emails, phones, addresses, dates) are replaced with privacy tokens like [Person_1], [Email_1], etc. Use these tokens naturally in your responses — they will be resolved back to real values before the user sees your message. Never explain or call attention to the tokens. Treat [Person_1] as if it were the person's actual name.\n"
             : string.Empty;
@@ -188,7 +199,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
 
             {BuildLanguageInstruction()}
 
-            {pluginSection}{toolSelectionSection}## Output Format
+            {unattendedSection}{pluginSection}{toolSelectionSection}## Output Format
 
             {ResolveOutputFormat(activePersona)}
             {DeclinedActionRule}
@@ -348,6 +359,19 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
     private static string EscapeAttr(string value) =>
         value.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;");
 
+    private string ResolvePluginAdditions(bool unattended) =>
+        _pluginService.GetCombinedSystemPromptAdditions(unattended ? RoutineToolNames : null);
+
+    /// <summary>
+    /// Forbids a question in the REPLY, not the mid-plan <c>request_user_input</c> tool — on a Planned run
+    /// that tool is the one channel that does reach a person. Worded for every headless trigger, not just
+    /// <c>Schedule</c>: a background assignment lands here too.
+    /// </summary>
+    private static string BuildUnattendedSection(bool unattended) =>
+        unattended
+            ? "## Unattended Run\n\nThis turn runs unattended — started by a schedule, or handed off as a background assignment. Whatever started it already exists and is fully configured; the message you are answering is its instruction text, not a request to set anything up. You have no routine-management tools here, so never offer to create, change or confirm a schedule.\n\nNobody is reading along and no answer will come back. A question written in your reply ends this run exactly as a result does and is never read, so do not ask one. Where the instruction leaves something open, take the reasonable reading, say in one line which reading you took, and carry out the work.\n\n"
+            : string.Empty;
+
     /// <summary>
     /// How web search reaches the model differs per provider — injected into this prompt (OpenRouter's
     /// plugin), a built-in tool the provider adds (OpenAI's web_search_preview), or server-side (Pia
@@ -363,9 +387,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             ? string.Empty
             : $"\n## Environment\n\nHere is useful information about the environment you are running in:\n<env>\nWorking folder: {environmentRoot}\nPlatform: Windows\n</env>\nPaths passed to file tools are resolved relative to this working folder; use forward slashes. Absolute paths are accepted only when they stay inside it.\n";
 
-    private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false)
+    private string BuildSystemPromptNoTools(Persona activePersona, bool webSearchActive = false, bool unattended = false)
     {
         var webSearchSection = BuildWebSearchSection(webSearchActive);
+        var unattendedSection = BuildUnattendedSection(unattended);
         return $"""
             ## Identity
 
@@ -375,7 +400,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
 
             {BuildLanguageInstruction()}
 
-            ## Output Format
+            {unattendedSection}## Output Format
 
             {ResolveOutputFormat(activePersona)}
             {webSearchSection}
