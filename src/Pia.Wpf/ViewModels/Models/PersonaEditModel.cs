@@ -95,7 +95,7 @@ public partial class PersonaEditModel : ObservableValidator
         ["assistant", "analyst", "creative", "visionary", "explainer", "custom"];
 
     /// <summary>Suggestions for the editable model-type combo — a routing hint, not a closed vocabulary.</summary>
-    public string[] ModelTypeOptions { get; } = ["general", "fast", "code"];
+    public string[] ModelTypeOptions { get; } = ["general", "fast", "code", "private"];
 
     public PersonaToolScope[] ToolScopeOptions { get; } = Enum.GetValues<PersonaToolScope>();
 
