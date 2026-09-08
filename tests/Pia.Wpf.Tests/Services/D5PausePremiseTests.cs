@@ -737,7 +737,8 @@ public sealed class D5PausePremiseTests : IDisposable
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -750,7 +751,8 @@ public sealed class D5PausePremiseTests : IDisposable
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
             bool clearReasoningEffort = false,
-            string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
         public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(true);

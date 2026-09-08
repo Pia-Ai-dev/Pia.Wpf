@@ -356,7 +356,10 @@ public class SqliteContext : IDisposable
                 -- Meeting-attendance jobs. Device-local, and for MeetingUrl also privacy-load-bearing: a
                 -- Teams join link is a bearer token for the meeting, so it never reaches the wire.
                 MeetingUrl TEXT NULL,
-                MeetingConsentAckAt TEXT NULL
+                MeetingConsentAckAt TEXT NULL,
+                -- Sandbox-relative folder the run works in; NULL = the sandbox root. Device-local like the
+                -- pins above: the folder tree belongs to this machine.
+                WorkingDirectory TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -768,6 +771,7 @@ public class SqliteContext : IDisposable
         var hasJobBlueprintKey = false;
         var hasJobMeetingUrl = false;
         var hasJobMeetingConsentAckAt = false;
+        var hasJobWorkingDirectory = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(ScheduledJobs)";
@@ -784,6 +788,7 @@ public class SqliteContext : IDisposable
                 else if (col == "BlueprintKey") hasJobBlueprintKey = true;
                 else if (col == "MeetingUrl") hasJobMeetingUrl = true;
                 else if (col == "MeetingConsentAckAt") hasJobMeetingConsentAckAt = true;
+                else if (col == "WorkingDirectory") hasJobWorkingDirectory = true;
             }
         }
         if (!hasJobUpdatedAt)
@@ -843,6 +848,12 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN MeetingConsentAckAt TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasJobWorkingDirectory)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN WorkingDirectory TEXT NULL";
             addCol.ExecuteNonQuery();
         }
 

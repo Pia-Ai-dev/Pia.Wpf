@@ -1765,7 +1765,8 @@ public class ScheduledJobBackgroundServiceTests
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -1781,7 +1782,8 @@ public class ScheduledJobBackgroundServiceTests
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
             bool clearReasoningEffort = false,
-            string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         /// <summary>Drives the run-now owner refusal. True by default, which is the ordinary case (a job this
         /// device owns, or a legacy row with a null owner).</summary>

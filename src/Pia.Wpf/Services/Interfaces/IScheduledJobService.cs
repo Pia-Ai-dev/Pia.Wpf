@@ -20,7 +20,10 @@ public interface IScheduledJobService
         string? blueprintKey = null,
         // Meeting-attendance jobs only. Device-local, and meetingUrl never crosses the wire at all — a Teams
         // join link admits whoever holds it.
-        string? meetingUrl = null, DateTime? meetingConsentAckAt = null);
+        string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+        // Sandbox-relative folder the run works in; null/empty = the sandbox root. Device-local, like the
+        // pins above.
+        string? workingDirectory = null);
 
     Task<IReadOnlyList<ScheduledJob>> GetAllAsync();
     Task<IReadOnlyList<ScheduledJob>> GetActiveAsync();
@@ -73,7 +76,10 @@ public interface IScheduledJobService
         // as it is", so a caller that does not know about the flag cannot clear it.
         bool? quietOnSuccess = null,
         Guid? personaId = null, ReasoningEffort? reasoningEffort = null, bool clearReasoningEffort = false,
-        string? meetingUrl = null, DateTime? meetingConsentAckAt = null);
+        string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+        // null leaves it unchanged; EMPTY clears it back to the sandbox root. It cannot borrow the Guid.Empty
+        // trick the pins use, and a path is never legitimately empty, so empty is free to be the sentinel.
+        string? workingDirectory = null);
 
     Task DeleteAsync(Guid id);
 

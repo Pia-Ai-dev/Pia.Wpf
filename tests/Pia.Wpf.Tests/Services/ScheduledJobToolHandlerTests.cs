@@ -347,7 +347,8 @@ public class ScheduledJobToolHandlerTests
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null)
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null)
         {
             var job = new ScheduledJob
             {
@@ -365,6 +366,7 @@ public class ScheduledJobToolHandlerTests
                 PersonaId = personaId,
                 ReasoningEffort = reasoningEffort,
                 BlueprintKey = blueprintKey,
+                WorkingDirectory = workingDirectory,
                 NextFireAt = DateTime.Now.AddHours(1)
             };
             Created.Add(job);
@@ -392,17 +394,21 @@ public class ScheduledJobToolHandlerTests
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
             bool clearReasoningEffort = false,
-            string? meetingUrl = null, DateTime? meetingConsentAckAt = null)
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null)
         {
             Updated.Add(id);
             LastUpdatedGrants = grantedTools;
             LastUpdatedPersonaId = personaId;
             LastUpdatedEffort = reasoningEffort;
             LastUpdatedClearedEffort = clearReasoningEffort;
+            LastUpdatedWorkingDirectory = workingDirectory;
             return Task.CompletedTask;
         }
 
         public Guid? LastUpdatedPersonaId { get; private set; }
+
+        public string? LastUpdatedWorkingDirectory { get; private set; }
 
         public ReasoningEffort? LastUpdatedEffort { get; private set; }
 

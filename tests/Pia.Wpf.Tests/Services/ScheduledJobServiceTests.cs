@@ -780,6 +780,76 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.True(rescheduled.NextFireAt > DateTime.Now);
     }
 
+    [Fact]
+    public async Task CreateAsync_RoundTripsTheWorkingDirectory()
+    {
+        var job = await _service.CreateAsync("TEST_Wd", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports/Weekly");
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("Reports/Weekly", fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task CreateAsync_NormalizesBackslashesAndEdgeSlashes()
+    {
+        var job = await _service.CreateAsync("TEST_WdNorm", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: @"\Reports\Weekly\");
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("Reports/Weekly", fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithNoWorkingDirectory_StoresNull()
+    {
+        var job = await _service.CreateAsync("TEST_WdNone", "q", RecurrenceType.Daily, new TimeOnly(8, 0));
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Null(fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NullLeavesTheWorkingDirectoryAlone()
+    {
+        var job = await _service.CreateAsync("TEST_WdKeep", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports");
+
+        await _service.UpdateAsync(job.Id, name: "TEST_WdKeep2");
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("Reports", fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_EmptyStringClearsToTheSandboxRoot()
+    {
+        var job = await _service.CreateAsync("TEST_WdClear", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports");
+
+        await _service.UpdateAsync(job.Id, workingDirectory: string.Empty);
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Null(fetched!.WorkingDirectory);
+    }
+
+    /// <summary>The folder is this machine's; a pull must not be able to null it, like the persona pin.</summary>
+    [Fact]
+    public async Task UpsertFromSyncAsync_LeavesTheWorkingDirectoryAlone()
+    {
+        var job = await _service.CreateAsync("TEST_WdSync", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports");
+
+        var fromPeer = await _service.GetAsync(job.Id);
+        fromPeer!.WorkingDirectory = null;
+        fromPeer.Name = "TEST_WdSyncRenamedByPeer";
+        await _service.UpsertFromSyncAsync(fromPeer);
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("TEST_WdSyncRenamedByPeer", fetched!.Name);
+        Assert.Equal("Reports", fetched.WorkingDirectory);
+    }
+
     private async Task ForceOwnerAsync(Guid id, Guid owner)
     {
         var conn = _ctx.GetConnection();
