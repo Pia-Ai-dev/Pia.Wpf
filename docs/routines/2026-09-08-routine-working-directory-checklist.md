@@ -36,7 +36,7 @@ standalone value, unblocks a High.
   `CloseRequested` event and a `FocusEntries()` method, and rehost the chip on it with
   `AutomationIdPrefix="ChatChip"` so every existing id survives byte-identical. Pure refactor.
   *Deps:* — · *Effort:* M · *Value:* Enabler
-- [ ] **5. Editor state in `RoutinesViewModel`.** `EditWorkingDirectory` plus its display string, the
+- [x] **5. Editor state in `RoutinesViewModel`.** `EditWorkingDirectory` plus its display string, the
   hosted picker view-model, the default cached in `RefreshAsync` and seeded into both create paths,
   the row's own copy, and the save wiring. Do **not** let the field trip `PickersTouched()`.
   *Deps:* 1 · *Effort:* S · *Value:* Enabler

@@ -872,7 +872,7 @@ View-model only; the XAML lands in Task 6.
   `WorkingDirectoryPickerViewModel WorkingDirectoryPicker`; on `RoutineRow`:
   `string? WorkingDirectory`, `bool HasWorkingDirectory`, `string WorkingDirectoryLabel`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `tests/Pia.Wpf.Tests/ViewModels/RoutinesViewModelTests.cs`. `CreateSut()` and its `Sut` record
 need the two new substitutes exposed (see Step 2); `JobWith(...)` is a small local helper returning a
@@ -988,7 +988,7 @@ NSubstitute matches optional arguments positionally, so the `CreateAsync` assert
 **every** parameter — count them against the interface before running — and the `UpdateAsync` one
 must use named arguments throughout.
 
-- [ ] **Step 2: Widen the constructor and the three call sites**
+- [x] **Step 2: Widen the constructor and the three call sites**
 
 In `RoutinesViewModel`, add two required parameters **before** `ILogger`, so the optional
 `textOptimization` stays last:
@@ -1018,7 +1018,7 @@ Update the three call sites: `RoutinesViewModelTests.cs:117` and `:1143`,
 settings substitute **must** return real settings —
 `settings.GetSettingsAsync().Returns(new AppSettings())` — or `RefreshAsync` throws on a null.
 
-- [ ] **Step 3: Add the editor state**
+- [x] **Step 3: Add the editor state**
 
 ```csharp
     /// <summary>Folder the routine's run works in, relative to the assistant-files sandbox; null = its root.</summary>
@@ -1057,7 +1057,7 @@ draft may still fill schedule fields the user has not chosen; the folder is not 
 spending the latch here would silently stop `GenerateDraftAsync` from setting recurrence, day, time
 and effort. The last test in Step 1 is what holds that line.
 
-- [ ] **Step 4: Cache and apply the default**
+- [x] **Step 4: Cache and apply the default**
 
 Add the field:
 
@@ -1080,7 +1080,7 @@ Then seed the two create paths and read the row in the edit path:
 - the blueprint path (`StartFromBlueprint`, around `:855`) → the same line.
 - `StartEdit` → `EditWorkingDirectory = row.WorkingDirectory;`
 
-- [ ] **Step 5: Carry the folder on the row**
+- [x] **Step 5: Carry the folder on the row**
 
 In `RoutineRow` (`RoutinesViewModel.cs:1558`), after the meeting members:
 
@@ -1101,7 +1101,7 @@ and in `BuildRow`, beside `MeetingConsentAckAt = job.MeetingConsentAckAt,`:
             WorkingDirectory = job.WorkingDirectory,
 ```
 
-- [ ] **Step 6: Send it on save**
+- [x] **Step 6: Send it on save**
 
 In `SaveAsync`, before `IsBusy = true;`:
 
@@ -1122,7 +1122,7 @@ content and must not reach `LogInformation`:
                     id, EditName, EditQuery, EditPersona?.Name, workingDirectory);
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 ```bash
 dotnet test --filter-class "Pia.Tests.ViewModels.RoutinesViewModelTests"
@@ -1130,7 +1130,7 @@ dotnet test --filter-class "Pia.Tests.ViewModels.RoutinesViewModelTests"
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels/RoutinesViewModel.cs \

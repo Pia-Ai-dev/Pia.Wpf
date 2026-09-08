@@ -31,6 +31,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly IWindowManagerService _windowManager;
     private readonly ILocalizationService _localization;
     private readonly IPluginService _plugins;
+    private readonly IWorkingDirectoryService _workingDirectories;
+    private readonly ISettingsService _settings;
     private readonly ITextOptimizationService? _textOptimization;
     private readonly ILogger<RoutinesViewModel> _logger;
 
@@ -456,6 +458,31 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         OnPropertyChanged(nameof(EditToolsSummary));
     }
 
+    /// <summary>Folder the routine's run works in, relative to the assistant-files sandbox; null = its root.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EditWorkingDirectoryDisplay))]
+    private string? _editWorkingDirectory;
+
+    /// <summary>Backslash form for the button, matching the chat chip's pill: <c>\</c> at root.</summary>
+    public string EditWorkingDirectoryDisplay =>
+        string.IsNullOrEmpty(EditWorkingDirectory) ? "\\" : "\\" + EditWorkingDirectory.Replace('/', '\\');
+
+    [ObservableProperty]
+    private bool _isWorkingDirPickerOpen;
+
+    public WorkingDirectoryPickerViewModel WorkingDirectoryPicker { get; }
+
+    // Re-opened at the current folder rather than wherever the last session left it, and enumerated only here:
+    // the picker deliberately lists nothing until its popup opens.
+    partial void OnIsWorkingDirPickerOpenChanged(bool value)
+    {
+        if (value) WorkingDirectoryPicker.InitializeFrom(EditWorkingDirectory);
+    }
+
+    /// <summary>The folder a NEW routine opens on, resolved once per load; one already on disk keeps what it
+    /// stored, including nothing.</summary>
+    private string? _defaultWorkingDirectory;
+
     private readonly Services.MeetingAttendee.IBrowserProvisioner _browserProvisioner;
 
     public RoutinesViewModel(
@@ -469,6 +496,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ILocalizationService localization,
         IPluginService plugins,
         Services.MeetingAttendee.IBrowserProvisioner browserProvisioner,
+        IWorkingDirectoryService workingDirectories,
+        ISettingsService settings,
         ILogger<RoutinesViewModel> logger,
         ITextOptimizationService? textOptimization = null)
     {
@@ -482,8 +511,14 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _localization = localization;
         _plugins = plugins;
         _browserProvisioner = browserProvisioner;
+        _workingDirectories = workingDirectories;
+        _settings = settings;
         _logger = logger;
         _textOptimization = textOptimization;
+
+        WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectories);
+        WorkingDirectoryPicker.WorkingDirectoryChosen += (_, path) =>
+            EditWorkingDirectory = string.IsNullOrEmpty(path) ? null : path;
 
         JobKinds = [.. Enum.GetValues<ScheduledJobKind>()
             .Select(k => new RoutineKindChoice(k, _localization[$"Settings_ScheduledJobs_Kind_{k}"]))];
@@ -536,6 +571,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             var providers = await _providers.GetProvidersAsync();
             var personas = await _personas.GetPersonasAsync();
             var assistantProvider = await ResolveAssistantProviderAsync();
+            var appSettings = await _settings.GetSettingsAsync();
+            _defaultWorkingDirectory = _workingDirectories.EnsureSubfolder(appSettings.AssistantDefaultWorkingDirectory);
 
             var rows = new List<RoutineRow>(jobs.Count);
             foreach (var job in jobs)
@@ -711,6 +748,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             QuietOnSuccess = job.QuietOnSuccess,
             MeetingUrl = job.MeetingUrl,
             MeetingConsentAckAt = job.MeetingConsentAckAt,
+            WorkingDirectory = job.WorkingDirectory,
             RecentRunsSummary = BuildRecentRunsSummary(recentFirings),
             RecentRuns = [.. recentFirings.Select(BuildRunRow)],
             OwnedByThisDevice = ownedHere,
@@ -743,6 +781,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditSpecificDate = null;
         EditMeetingUrl = string.Empty;
         EditMeetingConsent = false;
+        EditWorkingDirectory = _defaultWorkingDirectory;
         ResetEditTools([]);
         EditQuietOnSuccess = false;
         ApplyPinChoices(null, null, null);
@@ -859,6 +898,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditDayOfMonth = now.Day;
         EditMonth = now.Month;
         EditSpecificDate = null;
+        EditWorkingDirectory = _defaultWorkingDirectory;
         ResetEditTools(blueprint.GrantedTools);
         EditQuietOnSuccess = blueprint.QuietOnSuccess;
         ApplyPinChoices(null, null, blueprint.DefaultEffort);
@@ -897,6 +937,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditSpecificDate = row.SpecificDate;
         EditMeetingUrl = row.MeetingUrl ?? string.Empty;
         EditMeetingConsent = row.MeetingConsentAckAt is not null;
+        EditWorkingDirectory = row.WorkingDirectory;
         ResetEditTools(row.GrantedToolNames);
         EditQuietOnSuccess = row.QuietOnSuccess;
         ApplyPinChoices(row.ProviderId, row.PersonaId, row.ReasoningEffort);
@@ -1219,6 +1260,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         // stands now, not about whatever it was when first created.
         var meetingConsentAt = EditorIsMeeting && EditMeetingConsent ? DateTime.Now : (DateTime?)null;
 
+        // Empty CLEARS on update — null there means "leave unchanged", which would strand a folder the user
+        // has just cleared. Create takes the null as-is.
+        var workingDirectory = EditWorkingDirectory;
+
         IsBusy = true;
         try
         {
@@ -1241,11 +1286,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     reasoningEffort: effort,
                     clearReasoningEffort: effort is null,
                     meetingUrl: meetingUrl,
-                    meetingConsentAckAt: meetingConsentAt);
+                    meetingConsentAckAt: meetingConsentAt,
+                    workingDirectory: workingDirectory ?? string.Empty);
 
                 _logger.LogInformation("Updated scheduled job {Id} from the routines view", id);
-                _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona}",
-                    id, EditName, EditQuery, EditPersona?.Name);
+                _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona} folder: {Folder}",
+                    id, EditName, EditQuery, EditPersona?.Name, workingDirectory);
             }
             else
             {
@@ -1254,12 +1300,13 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     specificDate: specificDate, providerId: providerId,
                     grantedTools: grants, kind: EditKind, quietOnSuccess: EditQuietOnSuccess,
                     personaId: personaId, reasoningEffort: effort, blueprintKey: _editBlueprintKey,
-                    meetingUrl: meetingUrl, meetingConsentAckAt: meetingConsentAt);
+                    meetingUrl: meetingUrl, meetingConsentAckAt: meetingConsentAt,
+                    workingDirectory: workingDirectory);
 
                 _logger.LogInformation("Created scheduled job {Id} from the routines view ({Kind})",
                     created.Id, EditKind);
-                _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona}",
-                    created.Id, EditName, EditQuery, EditPersona?.Name);
+                _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona} folder: {Folder}",
+                    created.Id, EditName, EditQuery, EditPersona?.Name, workingDirectory);
                 EditingJobId = created.Id;
             }
 
@@ -1620,6 +1667,15 @@ public sealed class RoutineRow
     /// device-local; the link never leaves this machine.</summary>
     public string? MeetingUrl { get; init; }
     public DateTime? MeetingConsentAckAt { get; init; }
+
+    /// <summary>Sandbox-relative folder this routine works in; null = the sandbox root. USER CONTENT.</summary>
+    public string? WorkingDirectory { get; init; }
+
+    public bool HasWorkingDirectory => !string.IsNullOrEmpty(WorkingDirectory);
+
+    /// <summary>Backslash form for the detail pane, matching the chat chip's pill.</summary>
+    public string WorkingDirectoryLabel =>
+        HasWorkingDirectory ? "\\" + WorkingDirectory!.Replace('/', '\\') : "\\";
 
     /// <summary>"N runs: X ok, Y failed"; empty when none are recorded.</summary>
     public required string RecentRunsSummary { get; init; }
