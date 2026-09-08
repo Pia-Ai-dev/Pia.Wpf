@@ -5,7 +5,8 @@
 which is gate G2 — *"does a routine actually read and write inside its folder, on both kinds?"* The
 walkthrough it executes is §6 of [2026-09-08-routine-working-directory.md](2026-09-08-routine-working-directory.md).
 
-All five §6 steps pass. Three observations below, one of them user-visible.
+All five §6 steps pass. Three observations below, one of them user-visible; all three have since
+been acted on.
 
 `dotnet test` never launches the app and never fires a routine, so the runtime half of this feature had
 no coverage at all. This is the live pass that closes it, plus the two other things on
@@ -122,25 +123,52 @@ second *Run now* until the view is revisited.
 
 ## Observations
 
-**An agent routine's produced chat carries no working directory.** Run 2's chat row has
-`WorkingDirectory = null` while run 1's has `Playground/E2E`, and opening it shows the pill as `\` —
-next to a run whose files went to `\Playground\E2E`. `HeadlessRunLauncher` writes the stub chat with no
-`WorkingDirectory`, and `HeadlessTurnExecutor` only carries forward what the row already has. This is a
-scope cut, not a regression: plan task 3 promised chat stamping on the Research leg only, and step 4
-asks about promotion, which passed. But the pill now contradicts where the files are, so it is on the
-checklist's *not yet planned* list.
+All three were acted on the same day; each paragraph below records the observation and what closed it.
 
-**`list_files` emits native separators, `find_files` emits forward slashes.** Run 3's `list_files`
-result reads `Support\tickets\T-2001.txt` while `find_files` in the same round returns
-`Absence/Fehlzeitenübersicht-2026.csv`. `FilesToolHandler` says "native separators" for the former on
-purpose. Pre-existing and untouched by this branch — the forward-slash tool contract landed on a
-different line of work — but the two tools disagreeing inside one round is worth a decision.
+**An agent routine's produced chat carries no working directory — FIXED.** Run 2's chat row had
+`WorkingDirectory = null` while run 1's had `Playground/E2E`, and opening it showed the pill as `\` —
+next to a run whose files went to `\Playground\E2E`. `HeadlessRunLauncher` wrote the stub chat with no
+`WorkingDirectory`, and `HeadlessTurnExecutor` only carries forward what the row already has. It was a
+scope cut rather than a regression: plan task 3 promised chat stamping on the Research leg only, and
+step 4 asks about promotion, which passed. The launcher now stamps `req.WorkingSubpath` onto the stub,
+which is the only place it can be stamped — the executor pins `ctx.WorkingSubpath = null` and reads the
+row only to write it back.
 
-**The screenshot channel goes stale once the window is not foreground.** `ww_screenshot` kept returning
-the last composed frame while the UIA tree moved on: it showed the Routines view after navigation to
-the Assistant view had already happened (`InputTextBox` visible, `Routines_JobList` gone). Read state
-off the tree, not off a capture, and never read a stale screenshot as evidence that a navigation
-failed.
+The stamp is **display-only**, and that is a fact under test rather than an intention. Three readers
+were checked before choosing it. `HeadlessTurnExecutor` pins `ctx.WorkingSubpath = null` in
+`BeginRunAsync` regardless of what the row carries, which
+`HeadlessTurnExecutorTests.BeginRunAsync_DoesNotInheritTheChatsWorkingSubpath_ParityWithLive` locks by
+seeding a row with `projects/alpha` and asserting the context comes back null. A resume never consults
+the row either: `ResolveResumeWorkspaceRootAsync` calls `ProvisionAsync(run.Id, workingSubpath: null)`
+and relies on the persisted workspace metadata being idempotent. And the verifier's artifact probe
+resolves against `ctx.WorkspaceRoot` with `ctx.WorkingSubpath` — both set by the executor, neither from
+the chat. So where an agent run reads and writes is unchanged; only the pill moved.
+
+The sibling case is the composer's **Run in background**, not a background assignment —
+`HeadlessAssignmentLauncher` and `AssignmentRunOrchestrator` never touch `IHeadlessRunLauncher` and
+have no working-subpath input at all. *Run in background* does go through the same launcher
+(`AssistantViewModel` → `StartBackgroundRunAsync(userText, ActiveSession?.WorkingDirectory)`), had the
+identical symptom, and gets the identical fix from the one stamp. One edge is left deliberately: a
+delegated CHILD run's request carries no subpath, so a parked child's visible stub chat still shows
+`\`. Widening that would mean inventing a value the request does not carry.
+
+**`list_files` emits native separators, `find_files` emits forward slashes — FIXED.** Run 3's
+`list_files` result read `Support\tickets\T-2001.txt` while `find_files` in the same round returned
+`Absence/Fehlzeitenübersicht-2026.csv`. `list_files` now normalizes at its reporting site, with the same
+`NormalizeSeparators` helper `find_files` already applies as it collects and the `@Files` picker applies
+to the same collector's output. The shared `CollectRelativeFiles` is untouched and still documents
+native separators, which stays true — both of its callers normalize. Scoped to the in-round
+disagreement on purpose: the broader "forward slashes are the tool contract" change lives on another
+line of work, and no branch had settled `list_files` either way.
+
+**The screenshot channel goes stale once the window is not foreground — DOCUMENTED.** `ww_screenshot`
+kept returning the last composed frame while the UIA tree moved on: it showed the Routines view after
+navigation to the Assistant view had already happened (`InputTextBox` visible, `Routines_JobList`
+gone). Read state off the tree, not off a capture, and never read a stale screenshot as evidence that a
+navigation failed. Now a Known-gaps entry in
+[`../ui_automation/ui-automation-playbook.md`](../ui_automation/ui-automation-playbook.md), next to the
+GPU-stall bullet it is easy to confuse with — that one returns a blank or torn frame, this one a
+plausible stale one.
 
 ## Not covered, and why
 

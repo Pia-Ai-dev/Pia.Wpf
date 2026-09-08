@@ -212,6 +212,20 @@ public class FilesToolHandlerListTests : IDisposable
         Assert.DoesNotContain("skip.log", result);
     }
 
+    /// <summary><c>find_files</c> answers the same round in forward slashes, and a model that reads both gets
+    /// two spellings of one path.</summary>
+    [Fact]
+    public async Task ListFilesTool_ReportsNestedPathsInForwardSlashes_LikeFindFiles()
+    {
+        WriteFile(Path.Combine("sub", "nested.txt"));
+
+        var call = new FunctionCallContent("c1", "list_files", new Dictionary<string, object?>());
+        var (result, _) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
+
+        Assert.Contains("sub/nested.txt", (string)result!);
+        Assert.DoesNotContain("sub\\nested.txt", (string)result!);
+    }
+
     [Fact]
     public async Task ListFilesTool_RejectsPathBearingPattern()
     {

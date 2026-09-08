@@ -549,6 +549,13 @@ Committed recordings, the settings fixture they start from and the replay harnes
   return the same dead frame. Confirm with a control app (Notepad renders fine) and, if needed,
   `HKCU\Software\Microsoft\Avalon.Graphics\DisableHWAcceleration = 1` before relaunch. Remove the
   value afterwards.
+- **A screenshot goes stale once Pia is not the foreground window, and it does not look stale.** It is a
+  fully composed frame of the view you *used* to be on, so it reads as a navigation that never happened.
+  Measured on 2026-09-08: after opening a run's chat from the Routines view, `ww_screenshot` still showed
+  `Routines_JobList` while the tree already had `InputTextBox` and no `Routines_JobList` at all. Distinct
+  from the GPU stall above, which returns a blank or torn frame. **Read state off the UIA tree**
+  (`ww_query` / `ww_count` / `ww_get_value`) and never treat a capture as evidence that a navigation or a
+  click failed — a screenshot is for showing a human what a verified state looks like.
 
 ## Traps that read as product bugs
 

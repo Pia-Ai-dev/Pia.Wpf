@@ -410,6 +410,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             LastAccessedAt = now,
             WindowMode = WindowMode.Assistant.ToString(),
             ProviderId = provider.Id,
+            // Display only, and it has to be stamped here or nowhere: the executor pins ctx.WorkingSubpath to
+            // null for a headless run and only ever carries this value forward, so nothing derives scope from it.
+            WorkingDirectory = req.WorkingSubpath,
             Messages = [],
         }, ct).ConfigureAwait(false);
 

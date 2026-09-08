@@ -313,7 +313,9 @@ public class FilesToolHandler : IFilesToolHandler
 
         var sb = new StringBuilder();
         sb.AppendLine($"Found {rels.Count} file(s) (relative paths):");
-        foreach (var r in rels) sb.AppendLine($"  {r}");
+        // find_files normalizes as it collects, so a round that calls both would otherwise answer in two
+        // spellings of one path.
+        foreach (var r in rels) sb.AppendLine($"  {NormalizeSeparators(r)}");
         if (rels.Count == MaxListEntries) sb.AppendLine($"  ... (truncated at {MaxListEntries})");
         return sb.ToString();
     }

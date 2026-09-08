@@ -76,7 +76,3 @@ Candidates that came up while scoping and got no plan doc. Recorded so they are 
 - **Put the folder on the wire.** Needs server-side columns on `SyncScheduledJob` first, and an
   answer to what a path means on a device whose assistant-files folder is somewhere else entirely.
 - **Show the folder on the routines list row**, not only in the detail pane.
-- **Stamp the working directory on an agent routine's produced chat.** The AgentTask leg narrows
-  through the run workspace, so the chat row keeps the null `HeadlessRunLauncher` writes into its stub
-  and the produced chat shows `\` beside files that went to the routine's folder. Measured in
-  [`2026-09-08-routine-working-directory-e2e.md`](2026-09-08-routine-working-directory-e2e.md).

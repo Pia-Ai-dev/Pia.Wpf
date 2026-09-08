@@ -317,8 +317,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Carry the row's own metadata forward: every chat write here is a FULL replace, and with per-step
         // interim saves it now happens repeatedly mid-run. Re-using the persisted title keeps an interim
         // save from downgrading a good title (the launcher's derived one, or an LLM title an earlier segment
-        // produced) and re-using WorkingDirectory keeps an interactive chat's per-chat folder from being
-        // nulled by a resumed run's saves.
+        // produced) and re-using WorkingDirectory keeps the folder the row carries — the launcher's stamp, or an
+        // interactive chat's own — from being nulled by these saves.
         _existingTitle = chat?.Title;
         _existingWorkingDirectory = chat?.WorkingDirectory;
 

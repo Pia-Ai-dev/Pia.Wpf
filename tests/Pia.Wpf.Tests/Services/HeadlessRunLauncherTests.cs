@@ -527,6 +527,28 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(1, turns);
     }
 
+    /// <summary>The pill on the produced chat has to name the folder the run worked in. Only the launcher can
+    /// stamp it: the executor pins <c>ctx.WorkingSubpath</c> to null, so nothing downstream ever derives the row
+    /// from the run. Asserted after the run settles, since every save is a full chat replace.</summary>
+    [Fact]
+    public async Task Launch_WithAWorkingSubpath_StampsItOnTheProducedChat()
+    {
+        var (launcher, _) = BuildLauncher();
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("do the thing", AgentRunTrigger.Schedule, WorkingSubpath: "Playground/E2E"),
+            TestContext.Current.CancellationToken);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        var settled = await _runs.GetAsync(handle.RunId, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Completed, settled!.State);
+
+        var chat = await _chats.GetAsync(handle.ChatId, TestContext.Current.CancellationToken);
+        Assert.Equal("Playground/E2E", chat!.WorkingDirectory);
+
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
+    }
+
     [Fact]
     public async Task Launch_PersistsStubChat_CreatesPlannedUserRun_AndWorkspace()
     {

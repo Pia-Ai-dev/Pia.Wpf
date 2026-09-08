@@ -101,8 +101,9 @@
   the run counted as finished.
 - Routines now have their own working folder, picked with the same folder
   browser a chat uses. A routine reads and writes inside that folder instead of
-  the whole assistant files folder, and the folder is remembered on this device
-  only. Existing routines keep working across the whole folder.
+  the whole assistant files folder, the chat a run produces opens on that same
+  folder, and the folder is remembered on this device only. Existing routines
+  keep working across the whole folder.
 
 ## Meetings
 
