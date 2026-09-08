@@ -1011,13 +1011,10 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// Picks this session's browser root PID from the chrome.exe processes that appeared after
     /// launch.
     ///
-    /// TODO (UNVERIFIED): a single Chromium launch spawns many chrome.exe processes (browser root,
-    /// renderers, GPU, audio service). The per-process loopback source (Unit 3) keys off the ROOT
-    /// via INCLUDE_TARGET_PROCESS_TREE, so we want the root here. Without WMI/NtQueryInformationProcess
-    /// we cannot read the parent PID cheaply, so we use the documented heuristic "earliest StartTime
-    /// among the newly-spawned matching processes" (the parent spawns before its children). The
-    /// default audio path (endpoint loopback) does not use this value, so an approximate PID is
-    /// acceptable for the first shot; it must be validated before the per-process path ships.
+    /// A single Chromium launch spawns many chrome.exe processes (browser root, renderers, GPU, audio
+    /// service) and callers want the root. Without WMI/NtQueryInformationProcess we cannot read the
+    /// parent PID cheaply, so we use the heuristic "earliest StartTime among the newly-spawned matching
+    /// processes" (the parent spawns before its children).
     /// </summary>
     private int? ResolveBrowserProcessId(string[] preExistingPids)
     {

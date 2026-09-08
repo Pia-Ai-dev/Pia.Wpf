@@ -1046,10 +1046,10 @@ public sealed class MeetingAttendeeServiceStateTests
 
         public Task StartAsync(CancellationToken cancellationToken = default)
         {
-            // Models a per-process loopback activation failure (e.g. Windows < 20348) so the orchestrator's
-            // dispose-then-degrade fallback can be exercised.
+            // Models a silent-capture start failure so the orchestrator's dispose-then-degrade
+            // fallback can be exercised.
             if (_throwOnStart)
-                throw new PlatformNotSupportedException("per-process loopback unsupported");
+                throw new PlatformNotSupportedException("silent capture unsupported");
             Started = true;
             return Task.CompletedTask;
         }

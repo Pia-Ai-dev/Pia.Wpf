@@ -54,8 +54,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     // reports, and only when it actually downloads.
     private readonly Func<IProgress<ModelDownloadProgress>?, CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService? SpeakerId)>> _createTranscription;
     private readonly Func<BrowserLaunchSpec, IMeetingSession> _sessionFactory;
-    // (session, usePerProcessLoopback) → source. usePerProcess is already resolved against the
-    // settings flag + PID availability by the orchestrator, so the factory just builds the right one.
+    // (session, useSilentCapture) → source. The flag is already resolved by the orchestrator, so
+    // the factory just builds the right one.
     private readonly Func<IMeetingSession, bool, IAudioCaptureSource> _audioSourceFactory;
     // Builds AND starts the transcription engine service, returning it as IAsyncDisposable (the only
     // surface the orchestrator needs). Folding start into the factory keeps the engine service a clean
@@ -66,9 +66,8 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
     private readonly object _stateLock = new();
     // Serializes DisposeAllAsync only (NOT the whole start/stop body — gating the 120s join would just
     // move the hang to StopAsync). With teardown single-threaded, the read-then-null of each owned field
-    // is atomic between the two callers (StopAsync and StartAsync's catch), so a resource — including the
-    // per-process WASAPI RCWs whose Marshal.ReleaseComObject over-releases on a double dispose — is torn
-    // down exactly once even when Stop races an in-flight Start.
+    // is atomic between the two callers (StopAsync and StartAsync's catch), so a resource is torn down
+    // exactly once even when Stop races an in-flight Start.
     private readonly SemaphoreSlim _disposeGate = new(1, 1);
     private MeetingAttendeeState _state = MeetingAttendeeState.Idle;
 
@@ -230,7 +229,7 @@ public sealed class MeetingAttendeeService : IMeetingAttendeeService, IAsyncDisp
         _createTranscription = createTranscription;
         _sessionFactory = sessionFactory;
         _audioSourceFactory = audioSourceFactory
-            ?? ((session, usePerProcess) => CreateDefaultAudioSource(session, usePerProcess, loggerFactory));
+            ?? ((session, useSilentCapture) => CreateDefaultAudioSource(session, useSilentCapture, loggerFactory));
         _engineServiceFactory = engineServiceFactory;
         // Tests that don't exercise SystemDefault can omit the resolver; default to "always bundled".
         _defaultBrowserResolver = defaultBrowserResolver ?? new AlwaysBundledBrowserResolver();

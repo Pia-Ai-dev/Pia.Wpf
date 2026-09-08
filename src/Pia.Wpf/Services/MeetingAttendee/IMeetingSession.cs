@@ -14,9 +14,7 @@ public interface IMeetingSession : IAsyncDisposable
 {
     /// <summary>
     /// The OS process id of the launched browser's root process, or <c>null</c> if it could not be
-    /// determined. Used by the per-process loopback audio source (Unit 3) to target this browser's
-    /// audio render session via <c>INCLUDE_TARGET_PROCESS_TREE</c>. The default (endpoint loopback)
-    /// audio path does not need it.
+    /// determined. Used to find this browser's own windows and to kill the tree on teardown.
     /// </summary>
     int? BrowserProcessId { get; }
 
