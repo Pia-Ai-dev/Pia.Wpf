@@ -88,6 +88,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 LastAccessedAt = stubTime,
                 WindowMode = WindowMode.Assistant.ToString(),
                 ProviderId = request.Provider.Id,
+                WorkingDirectory = request.WorkingSubpath,
                 Messages = [],
             }, ct);
 
@@ -156,7 +157,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // The file tools key per-run state against this id; without it headless writes all shared
             // Guid.Empty. The run's id when bookkeeping created one, else the chat's.
             var previousTask = TaskAmbient.Current;
-            TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, WorkingSubpath: null, OnFileTouched: null, ChatId: chatId,
+            TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, request.WorkingSubpath, OnFileTouched: null, ChatId: chatId,
                 UnattendedGranter: AssignmentGranter.ForUnattendedRun(
                     request.Trigger, request.TriggerRef, run?.Id ?? chatId));
 
@@ -226,6 +227,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 LastAccessedAt = now,
                 WindowMode = WindowMode.Assistant.ToString(),
                 ProviderId = request.Provider.Id,
+                WorkingDirectory = request.WorkingSubpath,
                 Messages =
                 [
                     new SyncAssistantChatMessage
@@ -746,6 +748,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 LastAccessedAt = now,
                 WindowMode = WindowMode.Assistant.ToString(),
                 ProviderId = request.Provider.Id,
+                WorkingDirectory = request.WorkingSubpath,
                 Messages =
                 [
                     new SyncAssistantChatMessage

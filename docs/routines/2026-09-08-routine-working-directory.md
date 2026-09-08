@@ -493,7 +493,7 @@ regardless) and keeps `IFilesToolHandler` out of the runner's constructor. Do no
 - Consumes: `ScheduledJob.WorkingDirectory` (Task 1).
 - Produces: `BackgroundTurnRequest.WorkingSubpath` (`string?`, init-only, default `null`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `tests/Pia.Wpf.Tests/Services/ScheduledJobBackgroundServiceTests.cs` — `FakeRunner` already
 captures `LastRequest`:
@@ -556,7 +556,7 @@ and captures the `SyncAssistantChat` handed to `IAssistantChatService.SaveAsync`
 `BackgroundTurnRequest` is a `record` with `required`/`init` members, so `with { … }` works only if
 the harness has a factory returning one; if it builds the request inline, set the property there.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
 dotnet test --filter-class "Pia.Tests.Services.BackgroundAssistantTurnRunnerTests"
@@ -564,7 +564,7 @@ dotnet test --filter-class "Pia.Tests.Services.BackgroundAssistantTurnRunnerTest
 
 Expected: compile error — `BackgroundTurnRequest` has no `WorkingSubpath`.
 
-- [ ] **Step 3: Add the request field**
+- [x] **Step 3: Add the request field**
 
 In `src/Pia.Wpf/Services/Interfaces/IBackgroundAssistantTurnRunner.cs`, after `ReasoningEffort`:
 
@@ -576,7 +576,7 @@ In `src/Pia.Wpf/Services/Interfaces/IBackgroundAssistantTurnRunner.cs`, after `R
     public string? WorkingSubpath { get; init; }
 ```
 
-- [ ] **Step 4: Honour it in the runner**
+- [x] **Step 4: Honour it in the runner**
 
 In `src/Pia.Wpf/Services/BackgroundAssistantTurnRunner.cs`, replace the hard-coded null in the
 ambient (around `:159`):
@@ -597,7 +597,7 @@ chat (`:219`) and `PersistFailedTurnAsync`'s (`:739`) — right after `ProviderI
 All three matter: each `SaveAsync` here is a full replace, so a chat object missing the field would
 have it nulled by the next write.
 
-- [ ] **Step 5: Forward it from the scheduler**
+- [x] **Step 5: Forward it from the scheduler**
 
 In `src/Pia.Wpf/Services/ScheduledJobBackgroundService.cs`, in `RunResearchTurnAsync`'s
 `new BackgroundTurnRequest { … }`, after `ReasoningEffort = job.ReasoningEffort,`:
@@ -606,7 +606,7 @@ In `src/Pia.Wpf/Services/ScheduledJobBackgroundService.cs`, in `RunResearchTurnA
                     WorkingSubpath = job.WorkingDirectory,
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 ```bash
 dotnet test --filter-class "Pia.Tests.Services.BackgroundAssistantTurnRunnerTests"
@@ -615,7 +615,7 @@ dotnet test --filter-class "Pia.Tests.Services.ScheduledJobBackgroundServiceTest
 
 Expected: PASS on both.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/Interfaces/IBackgroundAssistantTurnRunner.cs \

@@ -27,7 +27,7 @@ standalone value, unblocks a High.
   argument on the `HeadlessRunRequest`; `RunWorkspaceService` already narrows the seed and promotes
   back to the narrowed root.
   *Deps:* 1 · *Effort:* XS · *Value:* High
-- [ ] **3. The Research leg runs in the folder.** `WorkingSubpath` on `BackgroundTurnRequest`, into
+- [x] **3. The Research leg runs in the folder.** `WorkingSubpath` on `BackgroundTurnRequest`, into
   the turn's `TaskContext`, and stamped on all three chats the runner writes. This is the kind the
   whole blueprint catalog produces, so without it the field looks broken.
   *Deps:* 1 · *Effort:* S · *Value:* High

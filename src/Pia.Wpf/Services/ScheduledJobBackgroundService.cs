@@ -869,6 +869,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
                     OwnerDeviceId = job.OwnerDeviceId,
                     PersonaId = job.PersonaId,
                     ReasoningEffort = job.ReasoningEffort,
+                    WorkingSubpath = job.WorkingDirectory,
                 }, ct);
             }
             catch (OperationCanceledException)

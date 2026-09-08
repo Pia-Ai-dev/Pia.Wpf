@@ -512,6 +512,28 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task ResearchLeg_ForwardsTheRoutinesWorkingDirectory()
+    {
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        job.Kind = ScheduledJobKind.Research;
+        job.WorkingDirectory = "Reports/Weekly";
+        jobs.SeedDue(job);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal("Reports/Weekly", runner.LastRequest!.WorkingSubpath);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_AgentTaskJob_GrantingNothing_LaunchesWithNullSoTheLauncherNarrowsIt()
     {
         // The agent leg is the OPPOSITE of the research leg here, and only null reaches the launcher's

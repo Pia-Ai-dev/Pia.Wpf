@@ -78,6 +78,9 @@ public class BackgroundAssistantTurnRunnerTests
         /// <summary>The provider handed to the model, i.e. the one the effort ladder stamped.</summary>
         public AiProvider? UsedProvider { get; private set; }
 
+        /// <summary>The ambient working subpath as the model call saw it, i.e. inside the turn's bracket.</summary>
+        public string? AmbientSubpath { get; private set; }
+
         public BackgroundAssistantTurnRunner Build(IReadOnlyList<FunctionCallContent> toolCalls, string answer = "ANSWER")
         {
             Settings.GetSettingsAsync().Returns(new AppSettings()); // TokenizationEnabled defaults off
@@ -109,6 +112,7 @@ public class BackgroundAssistantTurnRunnerTests
                 .Returns(ci =>
                 {
                     UsedProvider = ci.ArgAt<AiProvider>(1);
+                    AmbientSubpath = TaskAmbient.Current?.WorkingSubpath;
                     return Drive(ci.ArgAt<ToolCallHandler?>(3), toolCalls, answer);
                 });
 
@@ -707,6 +711,49 @@ public class BackgroundAssistantTurnRunnerTests
         await h.Runs.Received().FailAsync(
             Arg.Any<Guid>(), serverMessage, Arg.Any<bool>(), Arg.Any<CancellationToken>(),
             Arg.Is<PiaFailure?>(f => f != null && f.Layer == FailureLayer.Provider));
+    }
+
+    [Fact]
+    public async Task RunAsync_PutsTheRequestedSubpathOnTheTurnsAmbientContext()
+    {
+        var h = new Harness();
+        var runner = h.Build([]);
+
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), WorkingSubpath = "Reports" },
+            CancellationToken.None);
+
+        Assert.Equal("Reports", h.AmbientSubpath);
+    }
+
+    /// <summary>Each save here is a full replace, so the stub row and the answer chat must BOTH carry the
+    /// folder — one that missed it would null the column on the next write.</summary>
+    [Fact]
+    public async Task RunAsync_StampsTheSubpathOnEveryChatItSaves()
+    {
+        var h = new Harness();
+        var runner = h.Build([]);
+
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), WorkingSubpath = "Reports" },
+            CancellationToken.None);
+
+        Assert.Equal(2, h.AllSaved.Count);
+        Assert.All(h.AllSaved, c => Assert.Equal("Reports", c.WorkingDirectory));
+    }
+
+    [Fact]
+    public async Task AFailedTurn_StampsTheSubpathOnEveryChatItSaves()
+    {
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var runner = h.Build([], answer: "");
+
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), WorkingSubpath = "Reports" },
+            CancellationToken.None);
+
+        Assert.Equal(2, h.AllSaved.Count);
+        Assert.All(h.AllSaved, c => Assert.Equal("Reports", c.WorkingDirectory));
     }
 
     // ---- the unattended gate records its decisions ----
