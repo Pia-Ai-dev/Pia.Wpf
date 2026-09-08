@@ -31,7 +31,7 @@ standalone value, unblocks a High.
   the turn's `TaskContext`, and stamped on all three chats the runner writes. This is the kind the
   whole blueprint catalog produces, so without it the field looks broken.
   *Deps:* 1 · *Effort:* S · *Value:* High
-- [ ] **4. Extract `PiaWorkingDirectoryPicker`.** Move the chip's inline picker markup and
+- [x] **4. Extract `PiaWorkingDirectoryPicker`.** Move the chip's inline picker markup and
   code-behind into `Controls/Shared`, give it an `AutomationIdPrefix` dependency property, a
   `CloseRequested` event and a `FocusEntries()` method, and rehost the chip on it with
   `AutomationIdPrefix="ChatChip"` so every existing id survives byte-identical. Pure refactor.

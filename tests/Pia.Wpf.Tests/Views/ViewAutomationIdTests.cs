@@ -92,7 +92,8 @@ public class ViewAutomationIdTests
     // the four ids below are the set's own two plus that card's two.
     [InlineData(typeof(Pia.Controls.Cards.FileChangeSetCard), 4, 4, "")]
     [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
-    [InlineData(typeof(Pia.Controls.Assistant.PiaChatTitleChip), 11, 2, "PiaAssistantChatRowContent")]
+    [InlineData(typeof(Pia.Controls.Assistant.PiaChatTitleChip), 6, 1, "PiaAssistantChatRowContent,PiaWorkingDirectoryPicker")]
+    [InlineData(typeof(Pia.Controls.Shared.PiaWorkingDirectoryPicker), 5, 5, "")]
     [InlineData(typeof(Pia.Views.VoiceModeOverlay), 3, 0, "RecordingIndicator")]
     [InlineData(typeof(Pia.Views.DirectTranscriptionOverlay), 16, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSuggestionChips), 1, 1, "")]

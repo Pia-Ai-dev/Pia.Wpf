@@ -663,7 +663,7 @@ If an assertion has to move to make the suite green, the extraction is wrong.
   `public event EventHandler? CloseRequested;` (raised on Escape) and
   `public void FocusEntries();` (the host calls it from its `Popup.Opened`).
 
-- [ ] **Step 1: Create the control's XAML**
+- [x] **Step 1: Create the control's XAML**
 
 `src/Pia.Wpf/Controls/Shared/PiaWorkingDirectoryPicker.xaml` — move the **inner content** of the
 chip's popup `Border`, i.e. everything from the `<Grid>` with the three `RowDefinition`s down to its
@@ -717,7 +717,7 @@ form on the crumb `Button`:
 Keep the existing `loc:Str AssistantChat_WorkingDir_*` keys exactly as they are. They read fine in
 both hosts, and renaming them would churn three resx files for nothing.
 
-- [ ] **Step 2: Create the control's code-behind**
+- [x] **Step 2: Create the control's code-behind**
 
 `src/Pia.Wpf/Controls/Shared/PiaWorkingDirectoryPicker.xaml.cs` — move `NewFolderButton_Click`,
 `NewFolderTextBox_PreviewKeyDown`, `ConfirmCreateFolderButton_Click`, `CancelCreateFolderButton_Click`,
@@ -777,7 +777,7 @@ The Escape arm of `WorkingDirEntries_PreviewKeyDown` becomes:
                 break;
 ```
 
-- [ ] **Step 3: Rehost the chip on it**
+- [x] **Step 3: Rehost the chip on it**
 
 In `src/Pia.Wpf/Controls/Assistant/PiaChatTitleChip.xaml`, keep the `Popup` and its `Border`
 (including `DataContext="{Binding WorkingDirectoryPicker}"`) and replace the whole inner `Grid` with:
@@ -809,7 +809,7 @@ In `PiaChatTitleChip.xaml.cs`, delete the moved members and leave:
 
 `WorkingDirButton_Click` and `WorkingDirPopup_Closed` stay as they are.
 
-- [ ] **Step 4: Update the automation-id inventory**
+- [x] **Step 4: Update the automation-id inventory**
 
 `ViewAutomationIdTests` stops the walk at every nested `UserControl` and pins the nested set by name,
 so extracting one **must** be reflected in two rows and add a third.
@@ -826,7 +826,7 @@ count out of the failure message (`only N interactive controls were inspected �
 Note that a prefix-bound id is a `Binding`, so the test classifies it `IdKind.PerItem` even outside
 an `ItemTemplate` — this control's per-item floor will be higher than the crumb alone.
 
-- [ ] **Step 5: Run the affected tests**
+- [x] **Step 5: Run the affected tests**
 
 ```bash
 dotnet test --filter-class "Pia.Tests.Views.ViewAutomationIdTests"
@@ -841,7 +841,7 @@ If the child's `x:Name`d elements turn out to be unreachable from the tests proj
 `x:FieldModifier="internal"` to `WorkingDirEntries` in the new control's XAML rather than widening
 anything else.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/Pia.Wpf/Controls/Shared/PiaWorkingDirectoryPicker.xaml \
