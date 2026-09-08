@@ -1,6 +1,6 @@
 # Checklist — routine working directory
 
-**Status:** tasks 1-7 landed; manual verification (step 8) open.
+**Status:** done — tasks 1-8 landed.
 **Owner:** Marco Altmann. **Written:** 2026-09-08.
 **Origin:** [`2026-09-08-routine-working-directory.md`](2026-09-08-routine-working-directory.md),
 which is the plan this tracks. Tick a box in the commit that lands its step.
@@ -47,8 +47,9 @@ standalone value, unblocks a High.
 - [x] **7. Release notes and the gate.** The `RELEASE.md` bullet, a clean `-t:Rebuild` in Debug *and*
   Release at `0 Warning(s)`, and an unfiltered `dotnet test` at `failed: 0`.
   *Deps:* 2, 3, 6 · *Effort:* XS · *Value:* Enabler
-- [ ] **8. Manual verification.** Walk §6 of the plan: seed, drill, create-inline, save, reopen, run
-  now on both kinds, and confirm an old routine still reads `\`.
+- [x] **8. Manual verification.** Walk §6 of the plan: seed, drill, create-inline, save, reopen, run
+  now on both kinds, and confirm an old routine still reads `\`. All five steps pass — results in
+  [`2026-09-08-routine-working-directory-e2e.md`](2026-09-08-routine-working-directory-e2e.md).
   *Deps:* 7 · *Effort:* XS · *Value:* High
 
 ## Suggested order
@@ -75,3 +76,7 @@ Candidates that came up while scoping and got no plan doc. Recorded so they are 
 - **Put the folder on the wire.** Needs server-side columns on `SyncScheduledJob` first, and an
   answer to what a path means on a device whose assistant-files folder is somewhere else entirely.
 - **Show the folder on the routines list row**, not only in the detail pane.
+- **Stamp the working directory on an agent routine's produced chat.** The AgentTask leg narrows
+  through the run workspace, so the chat row keeps the null `HeadlessRunLauncher` writes into its stub
+  and the produced chat shows `\` beside files that went to the routine's folder. Measured in
+  [`2026-09-08-routine-working-directory-e2e.md`](2026-09-08-routine-working-directory-e2e.md).

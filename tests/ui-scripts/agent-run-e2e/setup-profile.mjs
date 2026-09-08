@@ -1,8 +1,10 @@
 // Seeds a throwaway Pia profile for the agent-run e2e walkthrough, and proves the real one was
 // never written. Usage:
-//   node setup-profile.mjs [root] [seed|park|verify] [provider]   root defaults to %TEMP%\pia-e2e
-// 'park' is 'seed' plus the approval-park preconditions: no auto-approved writes, no persisted Always
-// grant, and the named BYOK provider pinned as the Assistant default (Pia Cloud cannot run with sync off).
+//   node setup-profile.mjs [root] [seed|park|routines|verify] [provider]   root defaults to %TEMP%\pia-e2e
+// 'park' is 'seed' plus the approval-park preconditions: no auto-approved writes and no persisted
+// Always grant. 'routines' is 'seed' as-is, named so a walkthrough says which one it wants.
+// [provider] pins that BYOK provider in every mode, on any seeding mode: Pia Cloud cannot run with
+// sync off, so a run left on it fails with 'Authentication required'.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -70,11 +72,12 @@ if (MODE === 'verify') {
   process.exit(0);
 }
 
-if (MODE !== 'seed' && MODE !== 'park') {
-  console.error(`unknown mode '${MODE}' — expected seed, park or verify`);
+if (MODE !== 'seed' && MODE !== 'park' && MODE !== 'routines') {
+  console.error(`unknown mode '${MODE}' — expected seed, park, routines or verify`);
   process.exit(2);
 }
 const PARK = MODE === 'park';
+const ROUTINES = MODE === 'routines';
 const PROVIDER_NAME = process.argv[4] || null;
 
 const roaming = path.join(ROOT, 'roaming');
@@ -97,6 +100,9 @@ const s = JSON.parse(fs.readFileSync(sPath, 'utf8').replace(/^\uFEFF/, ''));
 Object.assign(s, {
   syncEnabled: false,
   autoIngestSources: false,
+  // Every name-based selector matches a localized string, so a profile copied from a German install
+  // would break them all. Same reason the PowerShell fixture pins it.
+  uiLanguage: 0,
   defaultWindowMode: 1,          // Assistant
   lastActiveView: null,
   startMinimized: false,
@@ -121,20 +127,20 @@ if (PARK) {
   // Every park scenario works the same folder, and the working-directory flyout is StaysOpen=False —
   // one stray query closes it, so the default is the reliable way to put a run in Absence.
   s.assistantDefaultWorkingDirectory = 'Absence';
-  if (PROVIDER_NAME) {
-    const providers = readJson(path.join(roaming, 'providers.json'));
-    const list = Array.isArray(providers) ? providers : (providers?.providers ?? []);
-    const hit = list.find((p) => String(p.name ?? p.Name ?? '').toLowerCase() === PROVIDER_NAME.toLowerCase());
-    if (!hit) {
-      console.error(`no provider named '${PROVIDER_NAME}' — have: ` + list.map((p) => p.name ?? p.Name).join(', '));
-      process.exit(2);
-    }
-    // BOTH modes: with useSameProviderForAllModes on (the real profile's value) the resolver reads the
-    // Optimize default for every mode, so pinning Assistant alone leaves the run on Pia Cloud.
-    const pid = hit.id ?? hit.Id;
-    s.modeProviderDefaults = { ...(s.modeProviderDefaults ?? {}), Assistant: pid, Optimize: pid };
-    console.log(`provider  ${hit.name ?? hit.Name} (${hit.modelName ?? hit.ModelName})`);
+}
+if (PROVIDER_NAME) {
+  const providers = readJson(path.join(roaming, 'providers.json'));
+  const list = Array.isArray(providers) ? providers : (providers?.providers ?? []);
+  const hit = list.find((p) => String(p.name ?? p.Name ?? '').toLowerCase() === PROVIDER_NAME.toLowerCase());
+  if (!hit) {
+    console.error(`no provider named '${PROVIDER_NAME}' — have: ` + list.map((p) => p.name ?? p.Name).join(', '));
+    process.exit(2);
   }
+  // BOTH modes: with useSameProviderForAllModes on (the real profile's value) the resolver reads the
+  // Optimize default for every mode, so pinning Assistant alone leaves the run on Pia Cloud.
+  const pid = hit.id ?? hit.Id;
+  s.modeProviderDefaults = { ...(s.modeProviderDefaults ?? {}), Assistant: pid, Optimize: pid };
+  console.log(`provider  ${hit.name ?? hit.Name} (${hit.modelName ?? hit.ModelName})`);
 }
 fs.writeFileSync(sPath, JSON.stringify(s, null, 2), 'utf8');
 
@@ -367,3 +373,4 @@ console.log('folders   ' + fs.readdirSync(files).join(', '));
 console.log('guard     ' + guardPath);
 console.log('realvault ' + (realVaultRoot() ?? '(none)') + '  ' + guard['vault']);
 if (PARK) console.log('park      auto-approve OFF, alwaysAllowedTools cleared');
+if (ROUTINES) console.log('routines  auto-approve ON, default folder Playground, UI language English');
