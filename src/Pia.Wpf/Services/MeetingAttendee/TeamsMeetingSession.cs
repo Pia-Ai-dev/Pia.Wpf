@@ -420,8 +420,6 @@ public sealed class TeamsMeetingSession : IMeetingSession
     // allocates no unmanaged handle, and skipping Dispose sidesteps a teardown race with an in-flight read.
     private readonly SemaphoreSlim _pageGate = new(1, 1);
 
-    public int? BrowserProcessId => _browserProcessId;
-
     public event EventHandler? EnteredLobby;
 
     public TeamsMeetingSession(

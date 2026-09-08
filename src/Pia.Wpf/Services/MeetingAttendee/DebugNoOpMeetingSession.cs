@@ -23,8 +23,6 @@ internal sealed class DebugNoOpMeetingSession : IMeetingSession
             ? []
             : value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    public int? BrowserProcessId => null;
-
     public event EventHandler? EnteredLobby { add { } remove { } }
 
     public Task JoinAsync(string meetingUrl, string displayName, CancellationToken cancellationToken = default)

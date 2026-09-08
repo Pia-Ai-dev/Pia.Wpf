@@ -7,17 +7,11 @@ namespace Pia.Services.MeetingAttendee;
 /// lobby, if any, until admitted); <see cref="WaitForEndAsync"/> blocks until the meeting ends
 /// (the in-call UI disappears) or the supplied token cancels; <see cref="LeaveAsync"/> performs an
 /// explicit hang-up; <see cref="IAsyncDisposable.DisposeAsync"/> tears the browser down. The
-/// orchestrator (Unit 4) owns one instance for the duration of one attended meeting and disposes it
+/// orchestrator owns one instance for the duration of one attended meeting and disposes it
 /// through its stop/dispose chain — mirroring how <c>LiveMeetingService</c> owns its audio sources.
 /// </summary>
 public interface IMeetingSession : IAsyncDisposable
 {
-    /// <summary>
-    /// The OS process id of the launched browser's root process, or <c>null</c> if it could not be
-    /// determined. Used to find this browser's own windows and to kill the tree on teardown.
-    /// </summary>
-    int? BrowserProcessId { get; }
-
     /// <summary>
     /// Raised when the session reaches the meeting lobby (waiting for a host to admit the bot). The
     /// orchestrator surfaces this as an <c>InLobby</c> state. May never fire if the bot is admitted
