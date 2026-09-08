@@ -23,7 +23,7 @@ standalone value, unblocks a High.
   column and its PRAGMA-guarded `ALTER`, `workingDirectory` on `CreateAsync`/`UpdateAsync` (empty
   clears on update), and the three `IScheduledJobService` test fakes. Stays off the sync SET list.
   *Deps:* — · *Effort:* S · *Value:* Enabler
-- [ ] **2. The AgentTask leg runs in the folder.** One `WorkingSubpath: job.WorkingDirectory`
+- [x] **2. The AgentTask leg runs in the folder.** One `WorkingSubpath: job.WorkingDirectory`
   argument on the `HeadlessRunRequest`; `RunWorkspaceService` already narrows the seed and promotes
   back to the narrowed root.
   *Deps:* 1 · *Effort:* XS · *Value:* High

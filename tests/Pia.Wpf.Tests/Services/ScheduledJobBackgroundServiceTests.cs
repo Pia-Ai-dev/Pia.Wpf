@@ -485,6 +485,33 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task AgentTaskLeg_ForwardsTheRoutinesWorkingDirectoryAsTheRunWorkspaceSubpath()
+    {
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        job.Kind = ScheduledJobKind.AgentTask;
+        job.WorkingDirectory = "Reports/Weekly";
+        jobs.SeedDue(job);
+
+        HeadlessRunRequest? captured = null;
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Do<HeadlessRunRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(), Task.CompletedTask));
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(new FakeRunner())),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal("Reports/Weekly", captured!.WorkingSubpath);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_AgentTaskJob_GrantingNothing_LaunchesWithNullSoTheLauncherNarrowsIt()
     {
         // The agent leg is the OPPOSITE of the research leg here, and only null reaches the launcher's

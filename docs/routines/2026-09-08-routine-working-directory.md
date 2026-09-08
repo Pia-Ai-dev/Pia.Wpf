@@ -388,7 +388,7 @@ git commit -m "feat(routines): store a per-routine working directory"
 - Consumes: `ScheduledJob.WorkingDirectory` (Task 1).
 - Produces: nothing new — it fills the existing `HeadlessRunRequest.WorkingSubpath`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/Pia.Wpf.Tests/Services/ScheduledJobBackgroundServiceTests.cs`. The launcher is an
 NSubstitute mock in this fixture, so assert on the request it received:
@@ -425,7 +425,7 @@ NSubstitute mock in this fixture, so assert on the request it received:
 Copy the constructor argument list from a neighbouring AgentTask test in the same file rather than
 trusting the one above verbatim — this service's constructor has grown before and will again.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 ```bash
 dotnet test --filter-method "*AgentTaskLeg_ForwardsTheRoutinesWorkingDirectory*"
@@ -433,7 +433,7 @@ dotnet test --filter-method "*AgentTaskLeg_ForwardsTheRoutinesWorkingDirectory*"
 
 Expected: FAIL — the received request has `WorkingSubpath == null`.
 
-- [ ] **Step 3: Forward the folder**
+- [x] **Step 3: Forward the folder**
 
 In `ExecuteAgentTaskAsync`, inside `new HeadlessRunRequest(...)`, insert one named argument between
 `Budget:` and `PersonaId:`:
@@ -447,7 +447,7 @@ In `ExecuteAgentTaskAsync`, inside `new HeadlessRunRequest(...)`, insert one nam
 No comment here — the parameter's own XML doc on `HeadlessRunRequest` already explains what a
 subpath does.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 ```bash
 dotnet test --filter-method "*AgentTaskLeg_ForwardsTheRoutinesWorkingDirectory*"
@@ -455,7 +455,7 @@ dotnet test --filter-method "*AgentTaskLeg_ForwardsTheRoutinesWorkingDirectory*"
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/ScheduledJobBackgroundService.cs \

@@ -651,6 +651,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
                 // grant list replaces it and may name delete_file if the user asked for that.
                 GrantedWrites: job.GrantedTools.Count > 0 ? job.GrantedTools : null,
                 Budget: budget,
+                WorkingSubpath: job.WorkingDirectory,
                 PersonaId: job.PersonaId,
                 ReasoningEffort: job.ReasoningEffort), ct);
         }
