@@ -1,6 +1,6 @@
 # Checklist — routine working directory
 
-**Status:** not started.
+**Status:** tasks 1-7 landed; manual verification (step 8) open.
 **Owner:** Marco Altmann. **Written:** 2026-09-08.
 **Origin:** [`2026-09-08-routine-working-directory.md`](2026-09-08-routine-working-directory.md),
 which is the plan this tracks. Tick a box in the commit that lands its step.

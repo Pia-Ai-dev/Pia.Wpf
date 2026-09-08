@@ -4,7 +4,7 @@
 > (recommended) or `superpowers:executing-plans` to work through this task by task. The steps are
 > `- [ ]` checkboxes; tick them in the commit that lands them.
 
-**Status:** not started. **Owner:** Marco Altmann. **Written:** 2026-09-08.
+**Status:** tasks 1-7 landed; manual verification (checklist step 8) open. **Owner:** Marco Altmann. **Written:** 2026-09-08.
 **Origin:** owner request of 2026-09-08 — *"for routines we need to add the option to setup the
 working directory like we offer it in new chats in assistant view"* — brainstormed the same day.
 Three decisions were taken in that conversation and are binding here (§1).
