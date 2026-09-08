@@ -1340,7 +1340,7 @@ git commit -m "feat(routines): pick a routine's working directory in the editor"
 - Modify: `docs/release_notes/RELEASE.md`
 - Modify: `docs/routines/2026-09-08-routine-working-directory-checklist.md` (tick the boxes)
 
-- [ ] **Step 1: Write the release-notes bullet**
+- [x] **Step 1: Write the release-notes bullet**
 
 Read `docs/release_notes/README.md` first — hard-wrap at 80, one bullet level, no tables, at most four
 lines per bullet. Add one bullet under the appropriate existing heading:
@@ -1352,7 +1352,7 @@ lines per bullet. Add one bullet under the appropriate existing heading:
   you already have keep working across the whole folder as before.
 ```
 
-- [ ] **Step 2: Rebuild clean, both configurations**
+- [x] **Step 2: Rebuild clean, both configurations**
 
 ```bash
 dotnet build -t:Rebuild -v:n
@@ -1363,7 +1363,7 @@ Expected: `0 Warning(s)` and `0 Error(s)` on the MSBuild summary line of **each*
 blocking. If one is genuinely wrong for the code, suppress it with a scoped
 `#pragma warning disable <ID>` / `restore` plus a one-line reason — never a project-wide `<NoWarn>`.
 
-- [ ] **Step 3: Run the whole gate**
+- [x] **Step 3: Run the whole gate**
 
 ```bash
 dotnet test
@@ -1372,7 +1372,7 @@ dotnet test
 Expected: `failed: 0`. The suite is ~5900 tests and takes about a minute; the live-provider tests
 reporting `Not Run` is correct.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/release_notes/RELEASE.md docs/routines/2026-09-08-routine-working-directory-checklist.md

@@ -44,7 +44,7 @@ standalone value, unblocks a High.
   not the flag, the way the chip does — the detail-pane line, the four resx keys in all three
   locales, the `ViewAutomationIdTests` rows and the playbook's id list.
   *Deps:* 4, 5 · *Effort:* S · *Value:* High
-- [ ] **7. Release notes and the gate.** The `RELEASE.md` bullet, a clean `-t:Rebuild` in Debug *and*
+- [x] **7. Release notes and the gate.** The `RELEASE.md` bullet, a clean `-t:Rebuild` in Debug *and*
   Release at `0 Warning(s)`, and an unfiltered `dotnet test` at `failed: 0`.
   *Deps:* 2, 3, 6 · *Effort:* XS · *Value:* Enabler
 - [ ] **8. Manual verification.** Walk §6 of the plan: seed, drill, create-inline, save, reopen, run
