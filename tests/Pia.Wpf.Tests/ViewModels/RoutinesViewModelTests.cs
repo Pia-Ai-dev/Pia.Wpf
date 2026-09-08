@@ -2375,6 +2375,55 @@ public class RoutinesViewModelTests
             meetingConsentAckAt: Arg.Any<DateTime?>());
     }
 
+    /// <summary>A meeting files a vault source, not chat files, so the seeded folder must not follow it.</summary>
+    [Fact]
+    public async Task SaveAsync_OnCreate_SendsNoFolderForAMeeting()
+    {
+        var sut = CreateSut();
+        sut.WorkingDirectories.EnsureSubfolder("Playground").Returns("Playground");
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Standup";
+        sut.Vm.EditKind = ScheduledJobKind.MeetingAttendance;
+        sut.Vm.EditMeetingUrl = "https://teams.microsoft.com/l/meetup-join/x";
+        sut.Vm.EditMeetingConsent = true;
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received().CreateAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+            Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(),
+            Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<ScheduledJobKind>(),
+            Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<DateTime?>(), null);
+    }
+
+    [Fact]
+    public async Task SaveAsync_OnUpdate_SwitchingToAMeetingClearsTheFolder()
+    {
+        var sut = CreateSut();
+        sut.Jobs.GetAllAsync().Returns([JobWith(workingDirectory: "Reports")]);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+        sut.Vm.EditKind = ScheduledJobKind.MeetingAttendance;
+        sut.Vm.EditMeetingUrl = "https://teams.microsoft.com/l/meetup-join/x";
+        sut.Vm.EditMeetingConsent = true;
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received().UpdateAsync(
+            Arg.Any<Guid>(), workingDirectory: string.Empty,
+            name: Arg.Any<string>(), query: Arg.Any<string>(), recurrence: Arg.Any<RecurrenceType?>(),
+            timeOfDay: Arg.Any<TimeOnly?>(), dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(),
+            month: Arg.Any<int?>(), providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Any<IReadOnlyCollection<string>?>(), specificDate: Arg.Any<DateTime?>(),
+            kind: Arg.Any<ScheduledJobKind?>(), quietOnSuccess: Arg.Any<bool?>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>(),
+            clearReasoningEffort: Arg.Any<bool>(), meetingUrl: Arg.Any<string?>(),
+            meetingConsentAckAt: Arg.Any<DateTime?>());
+    }
+
     /// <summary>The folder is not one of the fields the AI draft fills, so touching it must not spend the
     /// latch that lets a draft still set the schedule.</summary>
     [Fact]

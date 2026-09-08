@@ -1262,7 +1262,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
         // Empty CLEARS on update — null there means "leave unchanged", which would strand a folder the user
         // has just cleared. Create takes the null as-is.
-        var workingDirectory = EditWorkingDirectory;
+        var workingDirectory = EditorIsMeeting ? null : EditWorkingDirectory;
 
         IsBusy = true;
         try
