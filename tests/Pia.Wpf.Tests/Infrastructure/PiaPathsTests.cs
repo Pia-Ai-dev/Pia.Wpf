@@ -146,6 +146,7 @@ public sealed class PiaPathsTests : IDisposable
     [InlineData(LogsDirectoryMember)]
     [InlineData(DiagnosticsDirectoryMember)]
     [InlineData(DropCacheDirectoryMember)]
+    [InlineData(ScreenCaptureAuditDirectoryMember)]
     public void RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded(string member)
     {
         var read = ReaderFor(member);
@@ -177,6 +178,7 @@ public sealed class PiaPathsTests : IDisposable
     private const string LogsDirectoryMember = "PiaPaths.LogsDirectory";
     private const string DiagnosticsDirectoryMember = "PiaPaths.DiagnosticsDirectory";
     private const string DropCacheDirectoryMember = "PiaPaths.DropCacheDirectory";
+    private const string ScreenCaptureAuditDirectoryMember = "PiaPaths.ScreenCaptureAuditDirectory";
     private const string SettingsDirectoryMember = "JsonPersistenceService.SettingsDirectory";
     private const string LegacyWorkdirMember = "AssistantWorkspace.LegacyWorkdir";
     private const string RunsRootMember = "AssistantWorkspace.RunsRoot";
@@ -193,6 +195,7 @@ public sealed class PiaPathsTests : IDisposable
         LogsDirectoryMember => () => PiaPaths.LogsDirectory,
         DiagnosticsDirectoryMember => () => PiaPaths.DiagnosticsDirectory,
         DropCacheDirectoryMember => () => PiaPaths.DropCacheDirectory,
+        ScreenCaptureAuditDirectoryMember => () => PiaPaths.ScreenCaptureAuditDirectory,
         _ => throw new ArgumentOutOfRangeException(nameof(member), member, "no reader for this member"),
     };
 

@@ -21,8 +21,11 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
     private readonly IFastPathOptimizer _fastPathOptimizer;
     private readonly Dictionary<WindowMode, INativeHotkeyService> _hotkeyServices = new();
     private INativeHotkeyService? _fastPathHotkeyService;
+    private INativeHotkeyService? _screenCaptureHotkeyService;
+    private KeyboardShortcut? _screenCaptureHotkey;
     private DateTime _lastHotkeyOpenTime = DateTime.MinValue;
     private const int FastPathHotkeyId = 100;
+    internal const int ScreenCaptureHotkeyId = 101;
     private static readonly TimeSpan HotkeyDebounceInterval = TimeSpan.FromMilliseconds(500);
     private MenuItem? _optimizeMenuItem;
     private MenuItem? _assistantMenuItem;
@@ -141,6 +144,24 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
             RegisterFastPathHotkey(shortcut);
     }
 
+    public bool UpdateScreenCaptureHotkey(KeyboardShortcut? shortcut)
+    {
+        var previous = _screenCaptureHotkey;
+        UnregisterScreenCaptureHotkey();
+
+        if (shortcut is null)
+            return true;
+
+        if (RegisterScreenCaptureHotkey(shortcut))
+            return true;
+
+        // Keep what worked rather than ending with nothing registered.
+        if (previous is not null)
+            RegisterScreenCaptureHotkey(previous);
+
+        return false;
+    }
+
     public void Dispose()
     {
         _localizationService.LanguageChanged -= OnLanguageChanged;
@@ -149,6 +170,7 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
             service.Dispose();
         _hotkeyServices.Clear();
         UnregisterFastPathHotkey();
+        UnregisterScreenCaptureHotkey();
 
         Unregister();
 
@@ -169,6 +191,9 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
 
             if (settings.FastPathHotkey != null)
                 RegisterFastPathHotkey(settings.FastPathHotkey);
+
+            if (settings.ScreenCaptureHotkey != null)
+                RegisterScreenCaptureHotkey(settings.ScreenCaptureHotkey);
         }
         catch
         {
@@ -215,6 +240,34 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         _fastPathHotkeyService.HotKeyPressed -= OnFastPathHotkeyPressed;
         _fastPathHotkeyService.Dispose();
         _fastPathHotkeyService = null;
+    }
+
+    private bool RegisterScreenCaptureHotkey(KeyboardShortcut shortcut)
+    {
+        var service = _hotkeyServiceFactory.Create(ScreenCaptureHotkeyId, shortcut);
+        if (service is null)
+            return false;
+
+        service.HotKeyPressed += OnScreenCaptureHotkeyPressed;
+        _screenCaptureHotkeyService = service;
+        _screenCaptureHotkey = shortcut;
+        return true;
+    }
+
+    private void UnregisterScreenCaptureHotkey()
+    {
+        if (_screenCaptureHotkeyService is null)
+            return;
+
+        _screenCaptureHotkeyService.HotKeyPressed -= OnScreenCaptureHotkeyPressed;
+        _screenCaptureHotkeyService.Dispose();
+        _screenCaptureHotkeyService = null;
+        _screenCaptureHotkey = null;
+    }
+
+    private void OnScreenCaptureHotkeyPressed()
+    {
+        _windowManagerService.ShowAssistantScreenCapturePicker();
     }
 
     private void OnFastPathHotkeyPressed()

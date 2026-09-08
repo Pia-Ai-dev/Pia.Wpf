@@ -24,6 +24,24 @@
 - A chat also keeps the name it has. Every save used to write the first
   message back over it, so an automatic title lasted until the next reply.
 
+## Screen
+
+- A picture of your screen can go into a message. The Capture screen button
+  next to the paperclip opens a picker of your displays and open windows; the
+  shot lands in the message box as a thumbnail and is sent only when you send
+  the message. Pia’s own windows are never offered.
+- The picker also opens on a shortcut of your own, set under Settings →
+  General beside the other shortcuts.
+- Pia can ask to look by itself when a question needs the screen. It asks
+  first, on the same card any other tool is approved on, and the card names
+  the program it wants to see — never the window title.
+- All of this needs Pia Cloud. On any other provider the Capture screen button
+  is greyed out and says so, and Pia’s own request is turned down before
+  anything is captured.
+- A routine or a background run can only see windows you named in advance,
+  under Settings → Assistant → "Screen capture while you are away", and never a
+  whole display. Each of those captures leaves a notice in the flow rail.
+
 ## Personas
 
 - The built-in personas now ask Pia Cloud for the model that suits them:

@@ -127,9 +127,14 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private string _fastPathHotkeyDisplayText = "";
 
+    [ObservableProperty]
+    private string _screenCaptureHotkeyDisplayText = "";
+
     private KeyboardShortcut _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
     private KeyboardShortcut? _assistantHotkey = KeyboardShortcut.DefaultCtrlAltP();
     private KeyboardShortcut? _fastPathHotkey;
+    private KeyboardShortcut? _screenCaptureHotkey;
+    private const string ScreenCaptureHotkeyKey = "ScreenCapture";
 
     // Speech
     [ObservableProperty]
@@ -258,6 +263,9 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         AssistantHotkeyDisplayText = _assistantHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
         _fastPathHotkey = settings.FastPathHotkey;
         FastPathHotkeyDisplayText = _fastPathHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
+        _screenCaptureHotkey = settings.ScreenCaptureHotkey;
+        ScreenCaptureHotkeyDisplayText =
+            _screenCaptureHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
 
         SelectedVoiceKey = settings.TtsVoiceModelKey;
     }
@@ -303,6 +311,37 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     [RelayCommand]
+    private async Task CaptureScreenCaptureHotkeyAsync()
+    {
+        var shortcut = await _dialogService.ShowHotkeyCaptureDialogAsync();
+        if (shortcut is null || HasInternalConflict(shortcut, ScreenCaptureHotkeyKey))
+            return;
+
+        // Register before saving: a combination Windows refuses must not be persisted as if it worked.
+        if (!_trayIconService.UpdateScreenCaptureHotkey(shortcut))
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Settings_Conflict"],
+                _localizationService["Msg_Settings_HotkeyUnavailable"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        _screenCaptureHotkey = shortcut;
+        ScreenCaptureHotkeyDisplayText = shortcut.DisplayText;
+        await SaveSettingsAsync();
+    }
+
+    [RelayCommand]
+    private async Task ClearScreenCaptureHotkeyAsync()
+    {
+        _screenCaptureHotkey = null;
+        ScreenCaptureHotkeyDisplayText = _localizationService["Msg_Settings_HotkeyNotSet"];
+        await SaveSettingsAsync();
+        _trayIconService.UpdateScreenCaptureHotkey(null);
+    }
+
+    [RelayCommand]
     private async Task ClearOptimizeHotkeyAsync()
     {
         _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
@@ -341,7 +380,8 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         {
             { WindowMode.Optimize.ToString(), _optimizeHotkey },
             { WindowMode.Assistant.ToString(), _assistantHotkey },
-            { "FastPath", _fastPathHotkey }
+            { "FastPath", _fastPathHotkey },
+            { ScreenCaptureHotkeyKey, _screenCaptureHotkey }
         };
 
         foreach (var (name, existing) in allHotkeys)
@@ -638,6 +678,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
         settings.FastPathHotkey = _fastPathHotkey;
+        settings.ScreenCaptureHotkey = _screenCaptureHotkey;
         await _settingsService.SaveSettingsAsync(settings);
     }
 

@@ -657,6 +657,15 @@ public static class Bootstrapper
         services.AddSingleton<IMarkdownExportService, MarkdownExportService>();
         services.AddSingleton<IAiFeedbackService, AiFeedbackService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
+        services.AddSingleton<IScreenCaptureService, Services.Screen.GdiScreenCaptureService>();
+        // Same shape as the consent trail: nothing touches the disk until the first capture is recorded.
+        services.AddSingleton<IScreenCaptureAuditLog>(sp =>
+            Services.Screen.ScreenCaptureAuditLog.CreateForSession(
+                sp.GetRequiredService<ILogger<Services.Screen.ScreenCaptureAuditLog>>()));
+        services.AddSingleton<IScreenCaptureAllowlistStore, Services.Screen.ScreenCaptureAllowlistStore>();
+        services.AddSingleton<IScreenCaptureIndicator, Services.Screen.ScreenCaptureIndicator>();
+        services.AddSingleton<IScreenCaptureToolHandler, ScreenCaptureToolHandler>();
+        services.AddSingleton<IScreenTextSnapshotService, Services.Screen.UiaTextSnapshotService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
         services.AddSingleton<ISelectedTextService, SelectedTextService>();
         services.AddSingleton<IFastPathOptimizer, FastPathOptimizerService>();

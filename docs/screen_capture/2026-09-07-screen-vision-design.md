@@ -1,6 +1,8 @@
 # Giving Pia eyes on the Windows screen — a monitor, or a chosen window
 
-**Status.** Designed, approved, not started. No code written.
+**Status.** Phases 1 and 2 built; phase 3 has only its text seam, and the rest of it waits on G2.
+G1, G2 and G3 are all still open — see the checklist for what closes each. Implementation notes at
+the end record where this document did not survive contact with the code.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-07.
 **Origin.** Owner question, 2026-09-07 — "how could we give Pia the ability to *see* the Windows
@@ -317,3 +319,36 @@ diagnose a capture failure from a user's attached log, and nothing about what wa
   accessibility on? Gates phase 3's engine, not phases 1–2.
 - **Should watch mode survive a restart?** An armed watch that reattaches after an app restart is
   more useful and much harder to reason about consent-wise. Deferred to phase 3 planning.
+
+## Implementation notes
+
+Added while landing groups A–D and E1. None of this reopens D1–D4; it records where an anchor or a
+piece of reasoning above turned out to be wrong, so the next reader trusts the code over the prose.
+
+- **`HeadlessTurnExecutor.cs:622` is the wrong anchor.** That region is the replay path, not a tool
+  round loop. A headless run’s live rounds go through `BackgroundAssistantTurnRunner`, which calls
+  the same `IAiClientService` loop an interactive turn does, so they inherit the injection for free.
+  The replay append does run outside any loop, and there `screen_capture` refuses and tells the model
+  to re-issue the call on the resumed step, where the approval has become a named grant.
+- **Safeguard 1 needs more than omission.** Leaving `Screen` out of `PresetClasses` is necessary but
+  not sufficient: a restored grant envelope parses any `ToolClass` name, so a saved run could name
+  `Screen` as an auto-approve class. `ToolAutonomy.Resolve` excludes it explicitly as well.
+- **The capture audit directory is routed; the consent trail is not.** `ScreenCaptureAuditDirectory`
+  hangs off `LocalDataDirectory` rather than the real profile root, so a walkthrough on a throwaway
+  profile leaves nothing in the user’s own trail. `DataDirectoryRoutingTests` turned out to be a
+  source scanner with no per-path rows, so only `PiaPathsTests` gained one.
+- **The unattended notice is a persistent Flow item, not a toast.** An unattended capture happens
+  while the user is elsewhere, so a three-second toast is gone before they look.
+- **`screen_list_targets` is filtered for an unattended run.** Handing a run nobody is watching every
+  open window’s title contradicted safeguard 2, so for those runs the list drops every display and
+  keeps only allowlisted windows. The exactly-one-visible-window rule stays at capture time.
+- **`CaptureTarget` carries the process id.** Window handles are recycled, so an approved card or an
+  allowlist verdict could otherwise be spent on a different program’s window; the capture re-reads
+  the pid and refuses on a mismatch.
+- **Pia blacking itself out is its own failure reason.** Below Windows 10 2004 the fallback paints
+  Pia black rather than hiding it, which can trip the near-uniform check; that case says so instead
+  of blaming the captured app.
+- **Six of the nine `ToolClass` consumers needed no `Screen` arm.** They persist an int, parse a name
+  or emit a timeline row generically. Only `ToolClassifier`, `ToolAutonomy` and `ActionCardBuilder`
+  switch on the member.
+- **The screen plugin is GUID `…00B`**, following assignments at `…00A`.

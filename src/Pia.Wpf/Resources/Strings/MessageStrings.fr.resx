@@ -122,6 +122,12 @@
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Recherche dans les conversations passées...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Recherche dans la mémoire...</value></data>
   <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Démarrage d'une tâche en arrière-plan...</value></data>
+  <data name="Msg_Assistant_StatusCapturingScreen" xml:space="preserve"><value>Capture de l'écran...</value></data>
+  <data name="Msg_Assistant_StatusListingScreenTargets" xml:space="preserve"><value>Liste des fenêtres et écrans...</value></data>
+  <data name="Msg_Assistant_ScreenCaptured" xml:space="preserve"><value>Écran capturé</value></data>
+  <data name="Msg_ScreenCapture_UnattendedNotice" xml:space="preserve"><value>Pia a capturé {0} sans surveillance ({1} capture(s) dans cette exécution). Les détails sont dans le journal des captures.</value></data>
+  <data name="Msg_ScreenCapture_MonitorLabel" xml:space="preserve"><value>un écran</value></data>
+  <data name="Msg_ScreenCapture_UnnamedProgramLabel" xml:space="preserve"><value>un programme</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Réflexion...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Mise à jour de la mémoire...</value></data>
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Mise à jour du rappel...</value></data>
@@ -407,6 +413,14 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_Assignment_Detail_PromptLength" xml:space="preserve"><value>Instruction : {0} caractères</value></data>
   <data name="Tool_Assignment_Detail_Skill" xml:space="preserve"><value>Compétence</value></data>
   <data name="Tool_Assignment_Skill_Unset" xml:space="preserve"><value>non choisie — l’utilisateur décide</value></data>
+  <data name="Tool_Screen_Desc_CaptureWindow" xml:space="preserve"><value>Capturer une image de la fenêtre de {0}</value></data>
+  <data name="Tool_Screen_Desc_CaptureMonitor" xml:space="preserve"><value>Capturer une image de l'écran {0}</value></data>
+  <data name="Tool_Screen_Detail_Target" xml:space="preserve"><value>Cible</value></data>
+  <data name="Tool_Screen_Detail_Program" xml:space="preserve"><value>Programme</value></data>
+  <data name="Tool_Screen_Detail_Display" xml:space="preserve"><value>Écran</value></data>
+  <data name="Tool_Screen_Detail_Size" xml:space="preserve"><value>Taille</value></data>
+  <data name="Tool_Screen_Target_Window" xml:space="preserve"><value>Fenêtre</value></data>
+  <data name="Tool_Screen_Target_Monitor" xml:space="preserve"><value>Écran entier</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Nom</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Requête</value></data>
   <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Type</value></data>
@@ -475,4 +489,15 @@ Les modifications seront appliquées.</value></data>
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Merci</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Votre retour a été envoyé à l'équipe Pia Cloud.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>Le retour n'a pas pu être envoyé. Vérifiez la connexion à Pia Cloud et réessayez.</value></data>
+  <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>Cette fenêtre ou cet écran n'est plus disponible.</value></data>
+  <data name="Msg_Screen_Minimized" xml:space="preserve"><value>La fenêtre est réduite. Restaurez-la d'abord — Pia ne déplace pas les fenêtres elle-même.</value></data>
+  <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>La fenêtre est masquée par Windows (autre bureau virtuel ou application suspendue).</value></data>
+  <data name="Msg_Screen_EmptyBounds" xml:space="preserve"><value>La fenêtre n'a aucune zone visible à capturer.</value></data>
+  <data name="Msg_Screen_SelfTarget" xml:space="preserve"><value>Pia ne capture pas ses propres fenêtres.</value></data>
+  <data name="Msg_Screen_SelfExclusionFailed" xml:space="preserve"><value>Pia n'a pas pu masquer sa propre fenêtre de la capture ; rien n'a été capturé.</value></data>
+  <data name="Msg_Screen_UniformFrame" xml:space="preserve"><value>La capture est vide. L'application bloque peut-être la capture d'écran — ou la fenêtre de Pia couvre la plus grande partie de cet écran ; déplacez-la et réessayez.</value></data>
+  <data name="Msg_Screen_Timeout" xml:space="preserve"><value>La fenêtre n'a pas répondu à temps ; rien n'a été capturé.</value></data>
+  <data name="Msg_Screen_NativeError" xml:space="preserve"><value>Windows a refusé la capture. Consultez le journal pour les détails.</value></data>
+  <data name="Msg_Screen_SelfBlackout" xml:space="preserve"><value>Cette version de Windows ne peut masquer Pia qu'en la peignant en noir, et Pia couvre cet écran. Déplacez ou réduisez la fenêtre de Pia, puis réessayez.</value></data>
+  <data name="Msg_Settings_HotkeyUnavailable" xml:space="preserve"><value>Windows a refusé ce raccourci - un autre programme l'utilise probablement. Choisissez une autre combinaison.</value></data>
 </root>

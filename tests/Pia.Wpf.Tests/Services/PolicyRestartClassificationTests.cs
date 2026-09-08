@@ -80,6 +80,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.LaunchAtStartup),
         nameof(AppSettings.MeetingAttendeeEnabled),
         nameof(AppSettings.OptimizeHotkey),
+        nameof(AppSettings.ScreenCaptureHotkey),
         nameof(AppSettings.TargetLanguage),
         nameof(AppSettings.TtsEnabled),
         nameof(AppSettings.TtsVoiceModelKey),
@@ -178,7 +179,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 45 && LiveWithWork.Length == 23
+            LiveAlready.Length == 45 && LiveWithWork.Length == 24
                 && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

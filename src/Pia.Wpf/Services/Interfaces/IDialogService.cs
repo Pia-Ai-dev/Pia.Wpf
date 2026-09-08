@@ -34,6 +34,10 @@ public interface IDialogService
     /// <see cref="AssignmentConsentViewModel.SendAsync"/> and surfaces its <c>ResultMessage</c>.</summary>
     Task<bool> ShowAssignmentConsentDialogAsync(AssignmentConsentViewModel viewModel);
 
+    /// <summary>True when the user pressed Capture; the caller then awaits
+    /// <see cref="ScreenCapturePickerViewModel.CaptureSelectedAsync"/> for the frame.</summary>
+    Task<bool> ShowScreenCapturePickerDialogAsync(ScreenCapturePickerViewModel viewModel);
+
     /// <summary>
     /// Shows the Memory-vault help as a modal dialog overlay (rather than an inline card that reflows
     /// the page). <paramref name="vaultRoot"/> backs the dialog's "open memory vault" affordance.

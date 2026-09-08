@@ -16,6 +16,7 @@ using Pia.Services;
 using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
 using Pia.Services.Operators;
+using Pia.Services.Screen;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
 
@@ -79,6 +80,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ITimelineWatcher? _timelineWatcher;
     private readonly IAssignmentSurfaceCache? _assignmentSurfaceCache;
     private readonly Func<AssignmentConsentViewModel>? _assignmentConsentFactory;
+    private readonly IScreenCaptureService? _screenCapture;
+    private readonly IScreenCaptureAuditLog? _screenCaptureAudit;
+    private readonly IScreenCaptureIndicator? _screenCaptureIndicator;
     private AssignmentSurface _assignmentSurface = AssignmentSurface.Hidden;
     private bool _disposed;
     private bool _tokenizationEnabled;
@@ -266,6 +270,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand<AttachedFileRef> RevealAttachedFileCommand { get; }
     public IAsyncRelayCommand ToggleMeetingAttendeeCommand { get; }
     public IAsyncRelayCommand ToggleDirectTranscriptionCommand { get; }
+    public IAsyncRelayCommand CaptureScreenCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -340,7 +345,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAgentToolExchangeStore? toolCalls = null,
         // Trailing and defaulted, same discipline; null => the composer offers no save-to-working-directory
         // button and an attachment chip stays name-only.
-        IAttachedFileStore? attachedFileStore = null)
+        IAttachedFileStore? attachedFileStore = null,
+        // Trailing and defaulted, same discipline; null ⇒ the composer offers no screen-capture button and
+        // no provider read is made for one.
+        IScreenCaptureService? screenCapture = null,
+        IScreenCaptureAuditLog? screenCaptureAudit = null,
+        IScreenCaptureIndicator? screenCaptureIndicator = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -388,6 +398,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _volatileWork = volatileWork;
         _starterSuggestions = starterSuggestions;
         _aiFeedback = aiFeedback;
+        _screenCapture = screenCapture;
+        _screenCaptureAudit = screenCaptureAudit;
+        _screenCaptureIndicator = screenCaptureIndicator;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -422,6 +435,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             file => AttachedFileOpener.Reveal(file, _attachedFileStore));
         ToggleMeetingAttendeeCommand = new AsyncRelayCommand(ExecuteToggleMeetingAttendee);
         ToggleDirectTranscriptionCommand = new AsyncRelayCommand(ExecuteToggleDirectTranscription);
+        CaptureScreenCommand = new AsyncRelayCommand(ExecuteCaptureScreen, CanCaptureScreen);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         _personaService.PersonasChanged += OnPersonasChanged;
@@ -451,6 +465,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatSessionManager.ActiveChanged += OnActiveSessionChanged;
         _chatSessionManager.SessionTitleChanged += OnSessionTitleChanged;
         _chatSessionManager.SessionStateChanged += OnManagerSessionStateChanged;
+
+        _providerService.ProvidersChanged += OnProvidersChangedForScreenCapture;
+        _settingsService.SettingsChanged += OnSettingsChangedForScreenCapture;
+        StartScreenCaptureAvailabilityRefresh();
 
         // Always mirror a live session so send/cancel never null-ref on a fresh
         // window. GetOrCreateActiveForNewChat raises ActiveChanged → AttachToActiveSession.
@@ -938,6 +956,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             EnterVoiceModeCommand.NotifyCanExecuteChanged();
         }
 
+        if (e.PropertyName is nameof(IsStreaming) or nameof(IsScreenCaptureAvailable))
+        {
+            CaptureScreenCommand.NotifyCanExecuteChanged();
+        }
+
         // A turn is under way, so the explanation of what a send would do has been answered.
         if (e.PropertyName is nameof(IsStreaming) && IsStreaming)
         {
@@ -1136,6 +1159,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private async Task ExecuteSendMessage()
     {
+        // The provider is read again here because it can change between attaching a picture and sending it,
+        // and the picture may be a grab of the whole screen.
+        if (PendingAttachment is not null && !await AssistantProviderTakesImagesAsync())
+        {
+            WarnImageProviderUnsupported();
+            return;
+        }
+
         var userText = InputText.Trim();
         InputText = string.Empty;
         var attachment = PendingAttachment;
@@ -1762,6 +1793,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             _logger.LogError(ex, "Failed to load TTS settings");
         }
+
+        // Last, so a window the hotkey just created has settled before a dialog opens on top of it.
+        if (parameter is ScreenCapturePickerRequest)
+        {
+            await OpenScreenCapturePickerFromHotkeyAsync();
+        }
     }
 
     public void OnNavigatedFrom() { }
@@ -1914,15 +1951,32 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await PrepareImageAttachmentAsync(() => ImageAttachmentProcessor.TryPrepare(source, _logger));
     }
 
+    /// <summary>Refused rather than assumed on a failed read: the picture may be the user's whole desktop.</summary>
+    private async Task<bool> AssistantProviderTakesImagesAsync()
+    {
+        try
+        {
+            var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+            return provider?.ProviderType == AiProviderType.PiaCloud;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Could not resolve the Assistant provider for an image ({Type})", ex.GetType().Name);
+            return false;
+        }
+    }
+
+    private void WarnImageProviderUnsupported() =>
+        _snackbarService.Show(
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_File_ImageProviderUnsupported"],
+            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+
     private async Task<bool> PrepareImageAttachmentAsync(Func<ImageAttachment?> prepare)
     {
-        var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
-        if (provider?.ProviderType != AiProviderType.PiaCloud)
+        if (!await AssistantProviderTakesImagesAsync())
         {
-            _snackbarService.Show(
-                _localizationService["Msg_Warning"],
-                _localizationService["Msg_File_ImageProviderUnsupported"],
-                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            WarnImageProviderUnsupported();
             return false;
         }
 
@@ -1938,6 +1992,140 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         PendingAttachment = attachment;
         return true;
+    }
+
+    /// <summary>False when the default Assistant provider cannot read a picture, so the button says why
+    /// instead of refusing after the user has chosen a window.</summary>
+    [ObservableProperty]
+    private bool _isScreenCaptureAvailable;
+
+    /// <summary>Completes when the last provider check has landed; tests await it instead of racing the ctor.</summary>
+    internal Task PendingScreenCaptureAvailabilityRefresh { get; private set; } = Task.CompletedTask;
+
+    private bool CanCaptureScreen() => _screenCapture is not null && IsScreenCaptureAvailable && !IsStreaming;
+
+    private void OnProvidersChangedForScreenCapture(object? sender, EventArgs e) =>
+        StartScreenCaptureAvailabilityRefresh();
+
+    private void OnSettingsChangedForScreenCapture(object? sender, AppSettings settings) =>
+        StartScreenCaptureAvailabilityRefresh();
+
+    private void StartScreenCaptureAvailabilityRefresh()
+    {
+        PendingScreenCaptureAvailabilityRefresh = RefreshScreenCaptureAvailabilityAsync();
+        PendingScreenCaptureAvailabilityRefresh.SafeFireAndForget(_logger);
+    }
+
+    private async Task RefreshScreenCaptureAvailabilityAsync()
+    {
+        // Without a capture service there is no button to enable, and no provider read to account for.
+        if (_screenCapture is null) return;
+
+        var available = await AssistantProviderTakesImagesAsync();
+
+        await _uiDispatcher.PostAsync(() =>
+        {
+            if (_disposed) return;
+            IsScreenCaptureAvailable = available;
+            CaptureScreenCommand.NotifyCanExecuteChanged();
+        });
+    }
+
+    private async Task ExecuteCaptureScreen()
+    {
+        if (_screenCapture is null || IsStreaming) return;
+
+        var picker = new ScreenCapturePickerViewModel(
+            _screenCapture, _localizationService, _loggerFactory.CreateLogger<ScreenCapturePickerViewModel>());
+        try
+        {
+            picker.InitializeAsync().SafeFireAndForget(_logger);
+            if (!await _dialogService.ShowScreenCapturePickerDialogAsync(picker)) return;
+
+            var result = await picker.CaptureSelectedAsync();
+            if (result is null) return;
+
+            if (!result.IsSuccess)
+            {
+                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Process} {Reason}",
+                    result.Target.Kind, result.Target.ProcessName, result.Reason);
+                _snackbarService.Show(
+                    _localizationService["Msg_Warning"],
+                    _localizationService[ScreenCaptureFailureText.KeyFor(result.Reason)!],
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
+                return;
+            }
+
+            // A turn may have started while the picker was open.
+            if (IsStreaming) return;
+
+            var attached = await PrepareImageAttachmentAsync(
+                () => ImageAttachmentProcessor.TryPrepare(result.Bitmap!, _logger));
+            if (!attached || PendingAttachment is null) return;
+
+            RecordScreenCapture(result, PendingAttachment);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Screen capture from the picker failed ({Type})", ex.GetType().Name);
+            _logger.SensitiveDebug("Screen capture failure: {Error}", ex);
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService["Msg_Screen_NativeError"],
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(6));
+        }
+        finally
+        {
+            picker.Cancel();
+        }
+    }
+
+    /// <summary>The hotkey has to say why nothing opened; the availability check may still be in flight on a
+    /// window it just created.</summary>
+    internal async Task OpenScreenCapturePickerFromHotkeyAsync()
+    {
+        if (_screenCapture is null || IsStreaming || CaptureScreenCommand.IsRunning) return;
+
+        try
+        {
+            await PendingScreenCaptureAvailabilityRefresh;
+
+            if (!IsScreenCaptureAvailable)
+            {
+                _snackbarService.Show(
+                    _localizationService["Msg_Warning"],
+                    _localizationService["Msg_File_ImageProviderUnsupported"],
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                return;
+            }
+
+            // ExecuteAsync does not consult CanExecute, and two presses can both park on the await above.
+            if (CaptureScreenCommand.IsRunning) return;
+            await CaptureScreenCommand.ExecuteAsync(null);
+        }
+        catch (Exception ex)
+        {
+            // The navigation task is discarded upstream, so nothing else would ever observe this.
+            _logger.LogError("Screen capture from the hotkey failed ({Type})", ex.GetType().Name);
+        }
+    }
+
+    private void RecordScreenCapture(CaptureResult result, ImageAttachment attachment)
+    {
+        var target = result.Target;
+        var kind = target.Kind == CaptureTargetKind.Monitor
+            ? ScreenCaptureTargetKinds.Monitor
+            : ScreenCaptureTargetKinds.Window;
+
+        var evt = new ScreenCaptureAuditEvent(
+            ScreenCaptureSurfaces.Picker, _chatSessionManager.ActiveSession?.Id, null,
+            kind, target.ProcessName, target.Title, attachment.Width, attachment.Height);
+
+        _screenCaptureAudit?.Record(evt);
+        _screenCaptureIndicator?.NotifyCapture(evt);
+        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Process} {Width}x{Height}",
+            kind, target.ProcessName, attachment.Width, attachment.Height);
+        _logger.SensitiveDebug("Picker capture window title: {Title}", target.Title);
     }
 
     private void ExecuteToggleTts()
@@ -2445,6 +2633,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         _personaService.PersonasChanged -= OnPersonasChanged;
         _personaService.ManagedPersonaWithdrawn -= OnManagedPersonaWithdrawn;
+        _providerService.ProvidersChanged -= OnProvidersChangedForScreenCapture;
+        _settingsService.SettingsChanged -= OnSettingsChangedForScreenCapture;
         PropertyChanged -= OnPropertyChanged;
         _goalHintGeneration++;
         _agentHintGeneration++;

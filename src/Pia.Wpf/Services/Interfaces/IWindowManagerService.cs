@@ -16,6 +16,9 @@ public interface IWindowManagerService
     void ShowWindowWithSelection(WindowMode mode, string capturedText);
     void ShowAssistantChat(Guid chatId);
 
+    /// <summary>Shows the Assistant window and opens the screen-capture picker in it.</summary>
+    void ShowAssistantScreenCapturePicker();
+
     /// <summary>
     /// Opens the chat hosting the agent run <paramref name="runId"/>. A stale run (chat cascaded away)
     /// is retracted from Flow with a brief toast instead of dereferencing a missing chat (R17). Sync

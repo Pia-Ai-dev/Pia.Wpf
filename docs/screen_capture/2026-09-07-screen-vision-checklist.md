@@ -1,6 +1,8 @@
 # Screen vision — checklist
 
-**Status:** Not started.
+**Status:** Groups A–D landed, C4’s tray half excepted, plus E1’s service and probe; E2–E4 wait on
+G2. All three gates are still open — G1 (A5) and G2 (E1) need a human at a real desktop, G3 one
+live Pia Cloud round.
 **Owner:** Marco Altmann
 **Written:** 2026-09-07
 **Origin:** [2026-09-07-screen-vision-design.md](2026-09-07-screen-vision-design.md), which is the
@@ -23,7 +25,7 @@ Do not tick a dependant of an open gate without revisiting it.
 
 ## Group A — the capture seam (foundation, no UI)
 
-- [ ] **A1. Build `IScreenCaptureService` over GDI.** `BitBlt` from the screen DC for a monitor,
+- [x] **A1. Build `IScreenCaptureService` over GDI.** `BitBlt` from the screen DC for a monitor,
       `PrintWindow(…, PW_RENDERFULLCONTENT)` for a window, returning a frozen `BitmapSource`;
       interop as `[LibraryImport]` partials in `Native/ScreenCaptureInterop.cs`, matching
       `NativeHotkeyService`. Confirm first that the process really is PerMonitorV2 (nothing in the
@@ -31,17 +33,17 @@ Do not tick a dependant of an open gate without revisiting it.
       physical pixels.
       *Deps:* — · *Effort:* S · *Value:* Enabler
 
-- [ ] **A2. Refuse a black frame instead of sending one.** Detect near-uniform output and fail with a
+- [x] **A2. Refuse a black frame instead of sending one.** Detect near-uniform output and fail with a
       specific reason; unit-test it against a synthetic bitmap. A password manager or DRM video is
       the OS working as intended — never work around it.
       *Deps:* A1 · *Effort:* XS · *Value:* High
 
-- [ ] **A3. Enumerate targets with the four filters.** Monitors plus top-level windows, rejecting
+- [x] **A3. Enumerate targets with the four filters.** Monitors plus top-level windows, rejecting
       Pia's own windows, invisible windows, `WS_EX_TOOLWINDOW`, and `DWMWA_CLOAKED` ghosts. Keep the
       predicate pure so it tests against a fake window list.
       *Deps:* A1 · *Effort:* S · *Value:* Enabler
 
-- [ ] **A4. Exclude Pia from capture, transiently.** `SetWindowDisplayAffinity` over every Pia HWND
+- [x] **A4. Exclude Pia from capture, transiently.** `SetWindowDisplayAffinity` over every Pia HWND
       around a monitor capture and restored to `WDA_NONE` after — set permanently it would black Pia
       out of the user's own Teams screen-share. Fall back to `WDA_MONITOR` below Windows 10 2004
       (the TFM floor is 1809). Without this step a full-monitor capture ships the chat history back
@@ -52,33 +54,39 @@ Do not tick a dependant of an open gate without revisiting it.
       viewer and a remote-desktop window; record which give a usable frame, which give black, and how
       legible 10pt text is at the 1568px ceiling. Write the results into this folder.
       *Deps:* A1, A2 · *Effort:* XS · *Value:* High
+      **Not run — G1 is open.** The probe is built and excluded from the default gate. It needs an
+      unlocked, interactive desktop with Word or Excel, Teams, a browser, VS Code, a PDF, an mstsc
+      session and an elevated Task Manager open; a background or disconnected session gets no DWM
+      composition. Run `dotnet test tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --explicit only
+      --filter-class Pia.Tests.Services.Screen.ScreenCaptureDesktopProbe`. It writes
+      `<date>-capture-probe.md` into this folder with the legibility column and the verdict blank.
 
 ## Group B — phase 1, the user shows Pia something (gated on G1)
 
-- [ ] **B1. Build the picker dialog.** `ScreenCapturePickerView` plus its ViewModel over
+- [x] **B1. Build the picker dialog.** `ScreenCapturePickerView` plus its ViewModel over
       `EnumerateTargets`, one thumbnail per target, through the existing `IDialogService`. Needs
       `ScreenCapturePicker_` automation ids — the per-row id in the binding form, not a literal —
       plus the `ViewAutomationIdTests` row in the same commit.
       *Deps:* A3, A5 (G1) · *Effort:* S · *Value:* Enabler
 
-- [ ] **B2. Wire the composer button.** A capture button in the Assistant composer that opens the
+- [x] **B2. Wire the composer button.** A capture button in the Assistant composer that opens the
       picker and hands the result to the existing `PrepareImageAttachmentAsync`, so the shot lands as
       a thumbnail the user sees before sending. This is the step that makes the feature real.
       *Deps:* B1, A4 · *Effort:* XS · *Value:* High
 
-- [ ] **B3. Add the optional global hotkey.** A settings-configured hotkey through
+- [x] **B3. Add the optional global hotkey.** A settings-configured hotkey through
       `INativeHotkeyService`, registered the way the fast-path hotkey already is in
       `TrayIconService`.
       *Deps:* B2 · *Effort:* XS · *Value:* Med
 
-- [ ] **B4. Make the provider gate legible.** Disable the capture button with a tooltip when the
+- [x] **B4. Make the provider gate legible.** Disable the capture button with a tooltip when the
       default Assistant provider is not PiaCloud (D2), so the refusal happens before the capture
       rather than after it.
       *Deps:* B2 · *Effort:* XS · *Value:* Med
 
 ## Group C — gating, audit, allowlist (needed before any model-initiated capture)
 
-- [ ] **C1. Add `ToolClass.Screen = 10` and its gate rules.** Append the member last — the enum is
+- [x] **C1. Add `ToolClass.Screen = 10` and its gate rules.** Append the member last — the enum is
       persisted. Leave it **out** of `RunAutonomyPolicy.PresetClasses` so no preset can auto-approve
       a capture, and add the rule in `ToolAutonomy.Resolve` that a session grant minted inside the
       same run cannot satisfy an unattended capture. Extend `ToolAutonomyTests` with a `Screen` row
@@ -86,14 +94,17 @@ Do not tick a dependant of an open gate without revisiting it.
       refusing the way it does for `Assignment`.
       *Deps:* — · *Effort:* S · *Value:* Enabler
 
-- [ ] **C2. Build the capture audit trail.** A `ScreenCaptureAuditLog` on `JsonlConsentAuditLog`'s
+- [x] **C2. Build the capture audit trail.** A `ScreenCaptureAuditLog` on `JsonlConsentAuditLog`'s
       discipline — fire-and-forget, never throws, never blocks, drops loudly — writing timestamp,
       surface, run id, target kind, process name, dimensions and a *hash* of the title. New
       `PiaPaths.ScreenCaptureAuditDirectory` as a **property**, with its `DataDirectoryRoutingTests`
       and `PiaPathsTests` rows.
       *Deps:* — · *Effort:* S · *Value:* High
+      Landed. `DataDirectoryRoutingTests` turned out to be a source scanner with no per-path rows, so
+      only `PiaPathsTests` gained one. The directory hangs off `LocalDataDirectory` rather than the
+      real profile root, so a throwaway-profile walkthrough leaves nothing in the user’s own trail.
 
-- [ ] **C3. Build the allowlist and its settings UI.** `ScreenCaptureAllowlistStore` holding the
+- [x] **C3. Build the allowlist and its settings UI.** `ScreenCaptureAllowlistStore` holding the
       process-plus-title-pattern targets an unattended run or a watch session may see. Safeguard 2 of
       D3 — an unattended capture off the list refuses and says so.
       *Deps:* C1 · *Effort:* S · *Value:* High
@@ -102,10 +113,13 @@ Do not tick a dependant of an open gate without revisiting it.
       tray state change while watch mode runs. The point of D3 is that the capability exists without
       the user being asked, so it must not exist without them finding out.
       *Deps:* C2 · *Effort:* XS · *Value:* High
+      **Half landed.** An unattended capture publishes a persistent Flow item — a three-second toast
+      is gone before a user who was elsewhere looks. The tray state change is deliberately not built:
+      it has no caller until E3 arms a watch loop, so it would be dead surface with a live key.
 
 ## Group D — phase 2, Pia asks to look
 
-- [ ] **D1. Build `ScreenCaptureToolHandler`.** `screen_capture(target, match?)` and
+- [x] **D1. Build `ScreenCaptureToolHandler`.** `screen_capture(target, match?)` and
       `screen_list_targets()`, shaped like `ChatHistoryToolHandler`, parking the prepared
       `ImageAttachment` in a pending slot keyed by `CallId` and returning a short text marker.
       *Deps:* A3, C1 · *Effort:* S · *Value:* Enabler
@@ -116,25 +130,39 @@ Do not tick a dependant of an open gate without revisiting it.
       rejects. Verify against PiaCloud that the appended message is accepted *and* attended to before
       building anything on top of it.
       *Deps:* D1 · *Effort:* M · *Value:* High
+      **Code complete, G3 open.** The drain sits after the `foreach`, and the swap, the compactor pin
+      and eight loop tests are in and green. Nobody has run a live Pia Cloud turn proving the provider
+      accepts the interleaved user image message and that the model attends to it, so the box stays
+      unticked. To close it: a Debug build with Pia Cloud as the Assistant provider, Notepad open with
+      one known sentence, ask Pia to read it and approve the card, then confirm from the Debug log
+      that the drain appended an image message, that the round after it replied quoting the sentence,
+      and that the image count drops to zero on the round after that.
 
-- [ ] **D2a. Swap the consumed image for a placeholder.** Once the following response is back,
+- [x] **D2a. Swap the consumed image for a placeholder.** Once the following response is back,
       replace the `DataContent` with `[screen capture, WxH, consumed]`, the way
       `AgentToolCarryover` handles oversized results — it will not do it for you, it matches only
       `FunctionResultContent`. Without this the capture is re-sent at ~1.5k image tokens on every
       remaining round. Check in the same step that the agent-run history path does not serialize the
       bytes to SQLite.
       *Deps:* D2 · *Effort:* S · *Value:* High
+      Landed, and nothing persists the bytes: `AgentToolExchangeSerializer` keeps only
+      `Function*Content`, and `AgentToolCarryover.Capture` drops the tagged message outright. Built
+      against the mid-round shape, so a G3 "no" reopens it.
 
-- [ ] **D3. Decide `HeadlessTurnExecutor`'s answer.** It appends its own tool results, so it either
+- [x] **D3. Decide `HeadlessTurnExecutor`'s answer.** It appends its own tool results, so it either
       gets the same injection or an explicit refusal for `screen_capture`. Silence here means a
       headless run makes a capture nothing ever looks at.
       *Deps:* D2 · *Effort:* XS · *Value:* Med
+      Landed as an explicit refusal on one path and the shared injection on the other. A headless
+      run’s live rounds go through `BackgroundAssistantTurnRunner` into the same `AiClientService`
+      loop, so they get the injection; its own replay append runs outside any loop and refuses,
+      telling the model to re-issue the call on the resumed step. A G3 "no" reopens it.
 
-- [ ] **D4. Refuse in the handler on a non-PiaCloud provider.** D2 at the tool boundary: never
+- [x] **D4. Refuse in the handler on a non-PiaCloud provider.** D2 at the tool boundary: never
       capture pixels that cannot be sent.
       *Deps:* D1 · *Effort:* XS · *Value:* Med
 
-- [ ] **D5. Gate matrix test across every surface.** A capture from an unattended run with no
+- [x] **D5. Gate matrix test across every surface.** A capture from an unattended run with no
       standing grant refuses; with a standing grant and an allowlisted target it proceeds; with a
       standing grant and an off-list target refuses. This is where D3's safeguards are actually
       proven, not in the design doc.
@@ -146,6 +174,12 @@ Do not tick a dependant of an open gate without revisiting it.
       into compact text and measure it against Electron and Chromium windows with accessibility
       untouched. Answer the gate before building the loop around it.
       *Deps:* A3 · *Effort:* M · *Value:* Enabler
+      **Not run — G2 is open.** The service, the compactor, the gate tests and the probe are in and
+      green; the gate itself needs a human at a real desktop with Chromium and Electron windows open
+      and no accessibility setting turned on. Run `dotnet test
+      tests/Pia.Wpf.Tests/Pia.Wpf.Tests.csproj -- --explicit only --filter-class
+      Pia.Tests.Services.Screen.UiaTextSnapshotDesktopProbe`. It writes `<date>-uia-text-probe.md`
+      into this folder, and that file states the Yes / Mixed / No bar it has to be judged against.
 
 - [ ] **E2. Add the on-device OCR fallback.** `Windows.Media.Ocr` over the captured bitmap for
       windows whose UIA tree is useless — a canvas, a remote-desktop session, an image viewer. Local,

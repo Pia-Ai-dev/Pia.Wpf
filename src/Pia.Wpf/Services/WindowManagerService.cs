@@ -199,6 +199,17 @@ public partial class WindowManagerService : IWindowManagerService
         }
     }
 
+    public void ShowAssistantScreenCapturePicker()
+    {
+        ShowWindow(WindowMode.Assistant);
+
+        if (!_windows.TryGetValue(WindowMode.Assistant, out var managed))
+            return;
+
+        var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
+        navigationService.NavigateTo<AssistantViewModel, ScreenCapturePickerRequest>(new ScreenCapturePickerRequest());
+    }
+
     public void ShowAssistantChat(Guid chatId)
     {
         // Reuse the single assistant window (ShowWindow activates/focuses it), then

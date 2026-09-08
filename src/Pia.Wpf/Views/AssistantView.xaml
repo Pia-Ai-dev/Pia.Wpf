@@ -580,6 +580,28 @@
                 <ui:SymbolIcon Symbol="Attach24" FontSize="16" />
               </ui:Button>
 
+              <!-- Screen capture button -->
+              <ui:Button Command="{Binding CaptureScreenCommand}"
+                         Appearance="Transparent"
+                         Padding="6,4"
+                         Margin="2,0"
+                         ToolTipService.ShowOnDisabled="True"
+                         AutomationProperties.Name="{loc:Str Assistant_CaptureScreen_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_CaptureScreen">
+                <ui:Button.Style>
+                  <!-- Keyed on the provider gate, not on IsEnabled: the button is also disabled while a turn
+                       runs, and then the provider tooltip would lie. -->
+                  <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                    <Setter Property="ToolTip" Value="{loc:Str Assistant_CaptureScreen_Tooltip}" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsScreenCaptureAvailable}" Value="False">
+                        <Setter Property="ToolTip" Value="{loc:Str Assistant_CaptureScreen_Unavailable_Tooltip}" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:Button.Style>
+                <ui:SymbolIcon Symbol="Screenshot24" FontSize="16" />
+              </ui:Button>
               <!-- Join meeting (attendee) toggle -->
               <ui:Button Command="{Binding ToggleMeetingAttendeeCommand}"
                          Padding="6,4"

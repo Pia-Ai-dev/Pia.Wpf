@@ -193,9 +193,10 @@ public class ToolAutonomyTests
 
     // ------------------------------------------------- THE SESSION TIER, at the resolver
 
-    /// <summary>The tier covers these names too now. The only two exceptions are the arm's OWN surface pins —
-    /// voice (no card, no transcript) and an unattended EXTERNAL call (server-defined name, unseen arguments) —
-    /// so this is an equivalence, not a one-way check: a pin that stopped holding fails it as loudly.</summary>
+    /// <summary>The tier covers these names too now. The only exceptions are the arm's OWN surface pins —
+    /// voice (no card, no transcript), and an unattended EXTERNAL (server-defined name, unseen arguments) or
+    /// SCREEN call (the grant cannot say which run minted it) — so this is an equivalence, not a one-way check:
+    /// a pin that stopped holding fails it as loudly.</summary>
     [Fact]
     public void SessionGrant_CoversADeleteLikeOrWorkDiscardingTool_ExceptWhereTheArmPinsTheSurface()
     {
@@ -210,7 +211,8 @@ public class ToolAutonomyTests
                 surface, name, toolClass, policy: null, sessionGrant: true, canPark: canPark));
 
             var pinned = surface == ToolGateSurface.Voice
-                         || (surface == ToolGateSurface.Unattended && toolClass == ToolClass.External);
+                         || (surface == ToolGateSurface.Unattended
+                             && toolClass is ToolClass.External or ToolClass.Screen);
 
             if ((verdict.Decision == ToolGateDecision.AutoApprovedSessionGrant) == pinned)
                 violations.Add($"{surface}/{toolClass}/{name}/canPark={canPark} => {verdict.Outcome} {verdict.Decision}");
@@ -638,5 +640,163 @@ public class ToolAutonomyTests
             Assert.Equal(ToolGateOutcome.AutoRun, honoured.Outcome);
             Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, honoured.Decision);
         }
+    }
+
+    // ------------------------------------------------- SCREEN, one row per surface
+
+    /// <summary>A restored envelope may name any class, so leaving Screen out of the settings preset is not
+    /// enough — the policy arm itself has to refuse it.</summary>
+    [Fact]
+    public void Screen_NoPolicyEverCoversIt_OnAnySurface()
+    {
+        var violations = new List<string>();
+
+        foreach (var surface in AllSurfaces)
+        foreach (var policy in new[] { new RunAutonomyPolicy([ToolClass.Screen]), EveryClassPolicy })
+        foreach (var canPark in new[] { false, true })
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                surface, "screen_capture", ToolClass.Screen, policy, canPark: canPark));
+
+            if (verdict.Decision == ToolGateDecision.AutoApprovedPolicy
+                || verdict.Outcome == ToolGateOutcome.AutoRun)
+                violations.Add($"{surface}/canPark={canPark} => {verdict.Outcome} {verdict.Decision}");
+        }
+
+        Assert.Empty(violations);
+
+        // Non-vacuity control: the arm still authorizes a class the preset does name.
+        var covered = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files, new RunAutonomyPolicy([ToolClass.Files])));
+        Assert.Equal(ToolGateDecision.AutoApprovedPolicy, covered.Decision);
+    }
+
+    /// <summary>The session store keys a grant by tool alone, so a grant minted in this run is indistinguishable
+    /// from one minted an hour ago on another chat. Unattended, it therefore buys a capture nothing.</summary>
+    [Fact]
+    public void Screen_Unattended_ASessionGrantAuthorisesNothing()
+    {
+        var parked = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, sessionGrant: true, canPark: true));
+        Assert.Equal(ToolGateOutcome.Park, parked.Outcome);
+        Assert.Equal(ToolGateDecision.ParkedForApproval, parked.Decision);
+
+        var refused = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, sessionGrant: true));
+        var ungranted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen));
+        Assert.Equal(ToolGateOutcome.Refuse, refused.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, refused.Decision);
+        Assert.Equal(ungranted, refused);
+
+        // Interactively the same grant is honoured — the pin is on the unattended surface, not the class.
+        var interactive = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "screen_capture", ToolClass.Screen, sessionGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, interactive.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, interactive.Decision);
+    }
+
+    [Fact]
+    public void Screen_Unattended_StandingAndNamedGrantsStillRun()
+    {
+        foreach (var canPark in new[] { false, true })
+        {
+            var standing = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen,
+                standingGrant: true, canPark: canPark));
+            Assert.Equal(ToolGateOutcome.AutoRun, standing.Outcome);
+            Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+
+            var named = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen,
+                namedGrant: true, canPark: canPark));
+            Assert.Equal(ToolGateOutcome.AutoRun, named.Outcome);
+            Assert.Equal(ToolGateDecision.GrantedByName, named.Decision);
+        }
+    }
+
+    /// <summary>Parking is a question, not an approval: the answer arrives on resume as a named grant, which is
+    /// a pre-existing grant by the time the capture runs.</summary>
+    [Fact]
+    public void Screen_Unattended_Ungranted_ParksOnlyWhenItMay()
+    {
+        foreach (var topLevel in new[] { false, true })
+        {
+            var parked = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen,
+                canPark: true, topLevelUserRun: topLevel));
+            Assert.Equal(ToolGateOutcome.Park, parked.Outcome);
+            Assert.Equal(ToolGateDecision.ParkedForApproval, parked.Decision);
+
+            var refused = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, topLevelUserRun: topLevel));
+            Assert.Equal(ToolGateOutcome.Refuse, refused.Outcome);
+            Assert.Equal(ToolGateDecision.DeniedNotGranted, refused.Decision);
+        }
+    }
+
+    [Fact]
+    public void Screen_Interactive_PromptsWithoutAGrant_RunsOnAStandingOne()
+    {
+        var prompt = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "screen_capture", ToolClass.Screen));
+        Assert.Equal(ToolGateOutcome.Prompt, prompt.Outcome);
+
+        var standing = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "screen_capture", ToolClass.Screen, standingGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, standing.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+    }
+
+    /// <summary>"Pia, look at my screen" is an attended action, so voice takes the ordinary tiers rather than
+    /// Assignment's refuse-at-every-tier arm.</summary>
+    [Fact]
+    public void Screen_Voice_FollowsTheTiers_NotTheAssignmentRefusal()
+    {
+        var standing = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen, standingGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, standing.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+
+        // Contrast: the same tier on the class voice refuses outright.
+        var assignment = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "start_assignment", ToolClass.Assignment, standingGrant: true));
+        Assert.Equal(ToolGateOutcome.Refuse, assignment.Outcome);
+
+        var ungranted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen));
+        Assert.Equal(ToolGateOutcome.Refuse, ungranted.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, ungranted.Decision);
+
+        var session = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen, sessionGrant: true));
+        Assert.NotEqual(ToolGateDecision.AutoApprovedSessionGrant, session.Decision);
+
+        var byPolicy = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen, EveryClassPolicy));
+        Assert.Equal(ToolGateOutcome.Refuse, byPolicy.Outcome);
+    }
+
+    [Fact]
+    public void Screen_NamedDenial_OutranksEveryGrant()
+    {
+        var denied = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, EveryClassPolicy,
+            standingGrant: true, namedGrant: true, sessionGrant: true, namedDenial: true, canPark: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, denied.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedForRun, denied.Decision);
+    }
+
+    /// <summary>The enum's fourth member, so the row is not blank: an unrouted gate refuses like an unattended
+    /// one that cannot park.</summary>
+    [Fact]
+    public void Screen_UnknownSurface_RefusesWhenUngranted()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unknown, "screen_capture", ToolClass.Screen, canPark: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, verdict.Decision);
     }
 }

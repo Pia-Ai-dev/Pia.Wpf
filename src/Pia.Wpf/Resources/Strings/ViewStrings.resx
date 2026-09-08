@@ -839,6 +839,15 @@
   <data name="Settings_ToolPermissions_Autonomy_Covers" xml:space="preserve"><value>Covered classes: notes and memory, todos, reminders, scheduled jobs, files.</value></data>
   <data name="Settings_ToolPermissions_Session_Title" xml:space="preserve"><value>Allowed until Pia closes</value></data>
   <data name="Settings_ToolPermissions_Session_Description" xml:space="preserve"><value>Tools you allowed for this session. Nothing here is saved — all of it disappears when Pia restarts. Forget one to be asked again on the next call.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Title" xml:space="preserve"><value>Screen capture while you are away</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Description" xml:space="preserve"><value>Windows a routine or background run may capture. Name the program and, optionally, text the window title must contain. A run nobody is watching can only capture a window on this list, and only when exactly one open window matches the entry. It can never capture a whole monitor.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Empty" xml:space="preserve"><value>No windows are allowed yet. Runs you are not watching cannot capture the screen until you add one.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_ProcessPlaceholder" xml:space="preserve"><value>Program, e.g. outlook</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_TitlePlaceholder" xml:space="preserve"><value>Title contains (optional)</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Add" xml:space="preserve"><value>Add</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Remove" xml:space="preserve"><value>Remove</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_TitleContains" xml:space="preserve"><value>Title contains:</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_AnyTitle" xml:space="preserve"><value>any window title</value></data>
   <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Always-allowed tools</value></data>
   <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools you have granted standing approval to run without confirmation. Revoke a grant to be prompted again on the next call.</value></data>
   <data name="ToolPermissions_Empty" xml:space="preserve"><value>No tools are always allowed. When you choose "Always allow" on a tool, it appears here.</value></data>
@@ -881,6 +890,8 @@
   <data name="ActionCard_Action_Switch" xml:space="preserve"><value>Switch</value></data>
   <data name="ActionCard_Action_Restore" xml:space="preserve"><value>Restore</value></data>
   <data name="ActionCard_Action_Stash" xml:space="preserve"><value>Stash</value></data>
+  <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Screen</value></data>
+  <data name="ActionCard_Action_Capture" xml:space="preserve"><value>Capture</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copy to Clipboard</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Type</value></data>
@@ -1560,4 +1571,17 @@
   <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>The text is sent as shown; PII tokenization is off in your privacy settings.</value></data>
   <data name="About_AiFeedback_Title" xml:space="preserve"><value>AI feedback and complaints</value></data>
   <data name="About_AiFeedback_Text" xml:space="preserve"><value>Concerns about Pia's AI behaviour go to the address below. Answers from Pia Cloud can also be reported right beneath the answer.</value></data>
+  <data name="ScreenCapturePicker_Title" xml:space="preserve"><value>Capture screen</value></data>
+  <data name="ScreenCapturePicker_Capture" xml:space="preserve"><value>Capture</value></data>
+  <data name="ScreenCapturePicker_Hint" xml:space="preserve"><value>Pick a display or a window. The picture is attached to your message and only sent when you send it. Pia's own windows are never listed.</value></data>
+  <data name="ScreenCapturePicker_Monitors" xml:space="preserve"><value>Displays</value></data>
+  <data name="ScreenCapturePicker_Windows" xml:space="preserve"><value>Windows</value></data>
+  <data name="ScreenCapturePicker_Loading" xml:space="preserve"><value>Looking for displays and windows...</value></data>
+  <data name="ScreenCapturePicker_Empty" xml:space="preserve"><value>Nothing to capture - no display or window is available.</value></data>
+  <data name="ScreenCapturePicker_MonitorLabel" xml:space="preserve"><value>Display {0}</value></data>
+  <data name="ScreenCapturePicker_PrimaryDisplay" xml:space="preserve"><value>Primary</value></data>
+  <data name="Assistant_CaptureScreen_Tooltip" xml:space="preserve"><value>Capture screen</value></data>
+  <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>Screen capture is only available with the PiaCloud provider</value></data>
+  <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Capture screen</value></data>
+  <data name="Settings_Hotkey_ScreenCapture_Description" xml:space="preserve"><value>Opens the Assistant and offers a display or window to attach as an image</value></data>
 </root>

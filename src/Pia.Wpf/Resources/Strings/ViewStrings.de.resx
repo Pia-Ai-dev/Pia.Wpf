@@ -873,6 +873,15 @@
   <data name="Settings_ToolPermissions_Autonomy_Covers" xml:space="preserve"><value>Abgedeckte Klassen: Notizen und Gedächtnis, Aufgaben, Erinnerungen, geplante Aufträge, Dateien.</value></data>
   <data name="Settings_ToolPermissions_Session_Title" xml:space="preserve"><value>Erlaubt, bis Pia geschlossen wird</value></data>
   <data name="Settings_ToolPermissions_Session_Description" xml:space="preserve"><value>Tools, die Sie für diese Sitzung zugelassen haben. Nichts davon wird gespeichert – alles verschwindet beim Neustart von Pia. Vergessen Sie eine Erlaubnis, um beim nächsten Aufruf erneut gefragt zu werden.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Title" xml:space="preserve"><value>Bildschirmaufnahme in Ihrer Abwesenheit</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Description" xml:space="preserve"><value>Fenster, die eine Routine oder ein Hintergrundlauf aufnehmen darf. Geben Sie das Programm an und optional einen Text, den der Fenstertitel enthalten muss. Ein unbeaufsichtigter Lauf kann nur ein Fenster aus dieser Liste aufnehmen, und nur wenn genau ein offenes Fenster zum Eintrag passt. Ein ganzer Bildschirm wird niemals aufgenommen.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Empty" xml:space="preserve"><value>Noch keine Fenster erlaubt. Läufe ohne Ihre Aufsicht können den Bildschirm erst aufnehmen, wenn Sie eines hinzufügen.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_ProcessPlaceholder" xml:space="preserve"><value>Programm, z. B. outlook</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_TitlePlaceholder" xml:space="preserve"><value>Titel enthält (optional)</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Add" xml:space="preserve"><value>Hinzufügen</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Remove" xml:space="preserve"><value>Entfernen</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_TitleContains" xml:space="preserve"><value>Titel enthält:</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_AnyTitle" xml:space="preserve"><value>beliebiger Fenstertitel</value></data>
   <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Immer erlaubte Tools</value></data>
   <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools, denen Sie die dauerhafte Erlaubnis erteilt haben, ohne Bestätigung ausgeführt zu werden. Widerrufen Sie eine Erlaubnis, um beim nächsten Aufruf erneut gefragt zu werden.</value></data>
   <data name="ToolPermissions_Empty" xml:space="preserve"><value>Keine Tools sind immer erlaubt. Wenn Sie bei einem Tool „Immer zulassen“ wählen, erscheint es hier.</value></data>
@@ -915,6 +924,8 @@
   <data name="ActionCard_Action_Switch" xml:space="preserve"><value>Wechseln</value></data>
   <data name="ActionCard_Action_Restore" xml:space="preserve"><value>Wiederherstellen</value></data>
   <data name="ActionCard_Action_Stash" xml:space="preserve"><value>Stash</value></data>
+  <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Bildschirm</value></data>
+  <data name="ActionCard_Action_Capture" xml:space="preserve"><value>Aufnehmen</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>In Zwischenablage kopieren</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Tippen</value></data>
@@ -1550,4 +1561,17 @@
   <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>Der Text wird so gesendet, wie er angezeigt wird; die PII-Tokenisierung ist in Ihren Datenschutzeinstellungen aus.</value></data>
   <data name="About_AiFeedback_Title" xml:space="preserve"><value>KI-Feedback und Beschwerden</value></data>
   <data name="About_AiFeedback_Text" xml:space="preserve"><value>Anliegen zum KI-Verhalten von Pia gehen an die Adresse unten. Antworten aus Pia Cloud lassen sich außerdem direkt unter der Antwort melden.</value></data>
+  <data name="ScreenCapturePicker_Title" xml:space="preserve"><value>Bildschirm aufnehmen</value></data>
+  <data name="ScreenCapturePicker_Capture" xml:space="preserve"><value>Aufnehmen</value></data>
+  <data name="ScreenCapturePicker_Hint" xml:space="preserve"><value>Wählen Sie einen Bildschirm oder ein Fenster. Das Bild wird an Ihre Nachricht angehängt und erst beim Senden übertragen. Pias eigene Fenster werden nie aufgeführt.</value></data>
+  <data name="ScreenCapturePicker_Monitors" xml:space="preserve"><value>Bildschirme</value></data>
+  <data name="ScreenCapturePicker_Windows" xml:space="preserve"><value>Fenster</value></data>
+  <data name="ScreenCapturePicker_Loading" xml:space="preserve"><value>Bildschirme und Fenster werden gesucht...</value></data>
+  <data name="ScreenCapturePicker_Empty" xml:space="preserve"><value>Nichts aufzunehmen - kein Bildschirm und kein Fenster verfügbar.</value></data>
+  <data name="ScreenCapturePicker_MonitorLabel" xml:space="preserve"><value>Bildschirm {0}</value></data>
+  <data name="ScreenCapturePicker_PrimaryDisplay" xml:space="preserve"><value>Hauptbildschirm</value></data>
+  <data name="Assistant_CaptureScreen_Tooltip" xml:space="preserve"><value>Bildschirm aufnehmen</value></data>
+  <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>Bildschirmaufnahme ist nur mit dem PiaCloud-Anbieter verfügbar</value></data>
+  <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Bildschirm aufnehmen</value></data>
+  <data name="Settings_Hotkey_ScreenCapture_Description" xml:space="preserve"><value>Öffnet den Assistenten und bietet einen Bildschirm oder ein Fenster als Bildanhang an</value></data>
 </root>
