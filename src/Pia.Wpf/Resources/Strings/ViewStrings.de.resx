@@ -1225,6 +1225,10 @@
   <data name="Routines_Field_Persona_Default" xml:space="preserve"><value>Aktive Persona verwenden</value></data>
   <data name="Routines_Field_Persona_Missing" xml:space="preserve"><value>Nicht mehr verfügbar</value></data>
   <data name="Routines_Field_Persona_Hint" xml:space="preserve"><value>Wird nur auf diesem Gerät gespeichert, deine anderen Geräte bleiben unberührt.</value></data>
+  <data name="Routines_Field_WorkingDir" xml:space="preserve"><value>Arbeitsordner</value></data>
+  <data name="Routines_Field_WorkingDir_Hint" xml:space="preserve"><value>Dateien, die diese Routine liest und schreibt, bleiben in diesem Ordner. Wird nur auf diesem Gerät gespeichert.</value></data>
+  <data name="Routines_Field_WorkingDir_Tooltip" xml:space="preserve"><value>Arbeitsordner wählen</value></data>
+  <data name="Routines_Detail_WorkingDir" xml:space="preserve"><value>Arbeitsordner</value></data>
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Denkaufwand</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Einstellung der Persona verwenden</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Überschreibt für die Läufe dieser Routine den Denkaufwand der Persona.</value></data>

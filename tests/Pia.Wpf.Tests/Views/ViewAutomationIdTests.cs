@@ -52,7 +52,8 @@ public class ViewAutomationIdTests
         "TodoPanelControl,VoiceModeOverlay")]
     [InlineData(typeof(Pia.Views.AssistantHistoryView), 10, 1,
         "PiaAssistantChatInspector,PiaAssistantChatRowContent,PiaEmptyState,PiaHelpHint")]
-    [InlineData(typeof(Pia.Views.RoutinesView), 21, 1, "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar")]
+    [InlineData(typeof(Pia.Views.RoutinesView), 35, 1,
+        "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar,PiaWorkingDirectoryPicker")]
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 25, 2, "PersonaGlyph,PiaEmptyState")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]

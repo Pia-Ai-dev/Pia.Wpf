@@ -1225,6 +1225,10 @@
   <data name="Routines_Field_Persona_Default" xml:space="preserve"><value>Utiliser la persona active</value></data>
   <data name="Routines_Field_Persona_Missing" xml:space="preserve"><value>Plus disponible</value></data>
   <data name="Routines_Field_Persona_Hint" xml:space="preserve"><value>Conservé uniquement sur cet appareil ; vos autres appareils ne sont pas concernés.</value></data>
+  <data name="Routines_Field_WorkingDir" xml:space="preserve"><value>Dossier de travail</value></data>
+  <data name="Routines_Field_WorkingDir_Hint" xml:space="preserve"><value>Les fichiers que cette routine lit et écrit restent dans ce dossier. Enregistré uniquement sur cet appareil.</value></data>
+  <data name="Routines_Field_WorkingDir_Tooltip" xml:space="preserve"><value>Choisir le dossier de travail</value></data>
+  <data name="Routines_Detail_WorkingDir" xml:space="preserve"><value>Dossier de travail</value></data>
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Effort de raisonnement</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Utiliser le réglage de la persona</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Remplace l'effort de raisonnement de la persona pour les exécutions de cette routine.</value></data>

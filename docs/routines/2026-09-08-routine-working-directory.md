@@ -1157,7 +1157,7 @@ git commit -m "feat(routines): editor state for a routine's working directory"
 - Produces: the automation ids `Routines_Field_WorkingDir` (the button),
   `Routines_Detail_WorkingDir` (the detail line) and the picker's `Routines_WorkingDir_*` family.
 
-- [ ] **Step 1: Add the four strings, in all three locales**
+- [x] **Step 1: Add the four strings, in all three locales**
 
 `Routines_Field_WorkingDir` · `Routines_Field_WorkingDir_Hint` · `Routines_Field_WorkingDir_Tooltip`
 · `Routines_Detail_WorkingDir`. Put them next to the existing `Routines_Field_Persona*` block in each
@@ -1170,7 +1170,7 @@ file so the three stay diffable side by side.
 | `Routines_Field_WorkingDir_Tooltip` | `Choose the working folder` | `Arbeitsordner wählen` | `Choisir le dossier de travail` |
 | `Routines_Detail_WorkingDir` | `Working folder` | `Arbeitsordner` | `Dossier de travail` |
 
-- [ ] **Step 2: Add the editor control**
+- [x] **Step 2: Add the editor control**
 
 The `RoutinesView` header already declares `xmlns:shared="clr-namespace:Pia.Controls.Shared"` —
 confirm it rather than adding a duplicate.
@@ -1239,7 +1239,7 @@ owning a row of its own:
 The `Border`'s `DataContext` hop is what hands the control its `WorkingDirectoryPickerViewModel`;
 without it every binding inside resolves against `RoutinesViewModel` and the picker renders empty.
 
-- [ ] **Step 3: Add the four code-behind handlers**
+- [x] **Step 3: Add the four code-behind handlers**
 
 In `src/Pia.Wpf/Views/RoutinesView.xaml.cs`. Copy the chip's toggle discipline exactly — the press
 reads the **popup**, and the `Closed` handler pulls the flag down behind every dismissal path,
@@ -1275,7 +1275,7 @@ including the outside click that `StaysOpen="False"` handles without telling the
 
 Add `using System.Windows.Threading;` and `using Pia.ViewModels;` if the file lacks them.
 
-- [ ] **Step 4: Show it on the detail pane**
+- [x] **Step 4: Show it on the detail pane**
 
 After the Effort block in the detail `ScrollViewer` (around `:495`), matching the pin blocks'
 show-only-when-set shape:
@@ -1294,7 +1294,7 @@ show-only-when-set shape:
 A `TextBlock` is not one of the control types `ViewAutomationIdTests` inspects, so this id is for UI
 scripts only and moves no floor.
 
-- [ ] **Step 5: Update the automation-id inventory**
+- [x] **Step 5: Update the automation-id inventory**
 
 `Pia.Views.RoutinesView`'s row gains one inspected control (the button) and one nested view. Nested
 names are compared **sorted ordinal**:
@@ -1309,7 +1309,7 @@ discovered if the `Popup`'s content is realised during the logical-tree walk —
 nested set unchanged, the walk did not reach inside the `Popup`; leave the nested list as it was and
 say so in the commit message rather than forcing it.
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 ```bash
 dotnet test --filter-class "Pia.Tests.Views.ViewAutomationIdTests"
@@ -1320,7 +1320,7 @@ dotnet test --filter-class "Pia.Tests.Views.RoutinesViewCursorTests"
 Expected: PASS on all three. `LocalizationTests` is what catches a key added to one resx and not the
 other two.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/Pia.Wpf/Views/RoutinesView.xaml src/Pia.Wpf/Views/RoutinesView.xaml.cs \

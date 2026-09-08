@@ -501,6 +501,15 @@
                          Style="{StaticResource PiaDetailValueStyle}"
                          Visibility="{Binding SelectedJob.HasEffortPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
+              <TextBlock Text="{loc:Str Routines_Detail_WorkingDir}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedJob.HasWorkingDirectory, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedJob.WorkingDirectoryLabel}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedJob.HasWorkingDirectory, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         AutomationProperties.AutomationId="Routines_Detail_WorkingDir"/>
+
               <TextBlock Text="{loc:Str Routines_Detail_RecentRuns}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
                          Margin="0,18,0,6"/>
@@ -858,6 +867,61 @@
                                Style="{StaticResource PiaSettingsDescriptionStyle}"
                                TextWrapping="Wrap"
                                Margin="0,0,0,4"/>
+                  </StackPanel>
+
+                  <StackPanel Grid.Column="2">
+                    <TextBlock Text="{loc:Str Routines_Field_WorkingDir}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ui:Button x:Name="RoutineWorkingDirButton"
+                               Appearance="Secondary"
+                               HorizontalAlignment="Stretch"
+                               HorizontalContentAlignment="Left"
+                               Margin="0,2,0,4"
+                               Cursor="Hand"
+                               IsEnabled="{Binding EditorPinsEnabled}"
+                               Click="RoutineWorkingDirButton_Click"
+                               AutomationProperties.AutomationId="Routines_Field_WorkingDir"
+                               ToolTip="{loc:Str Routines_Field_WorkingDir_Tooltip}">
+                      <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Folder24" FontSize="15" Margin="0,0,8,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock Text="{Binding EditWorkingDirectoryDisplay}"
+                                   FontSize="13"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </ui:Button>
+                    <TextBlock Text="{loc:Str Routines_Field_WorkingDir_Hint}"
+                               Style="{StaticResource PiaSettingsDescriptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
+
+                    <Popup x:Name="RoutineWorkingDirPopup"
+                           IsOpen="{Binding IsWorkingDirPickerOpen, Mode=TwoWay}"
+                           PlacementTarget="{Binding ElementName=RoutineWorkingDirButton}"
+                           Placement="Bottom"
+                           StaysOpen="False"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade"
+                           Opened="RoutineWorkingDirPopup_Opened"
+                           Closed="RoutineWorkingDirPopup_Closed">
+                      <Border Background="{DynamicResource SurfaceBrush}"
+                              BorderBrush="{DynamicResource BorderBrush_}"
+                              BorderThickness="1"
+                              CornerRadius="{StaticResource LargeRadius}"
+                              Padding="6"
+                              MinWidth="320"
+                              MaxWidth="380"
+                              MaxHeight="360"
+                              DataContext="{Binding WorkingDirectoryPicker}">
+                        <Border.Effect>
+                          <DropShadowEffect Color="#0F1729" BlurRadius="18" Opacity="0.16" ShadowDepth="4"/>
+                        </Border.Effect>
+                        <shared:PiaWorkingDirectoryPicker x:Name="RoutineWorkingDirPicker"
+                                                          AutomationIdPrefix="Routines_WorkingDir"
+                                                          CloseRequested="RoutineWorkingDirPicker_CloseRequested"/>
+                      </Border>
+                    </Popup>
                   </StackPanel>
                 </Grid>
 

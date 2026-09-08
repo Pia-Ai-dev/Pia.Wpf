@@ -1235,6 +1235,10 @@
   <data name="Routines_Field_Persona_Default" xml:space="preserve"><value>Use the active persona</value></data>
   <data name="Routines_Field_Persona_Missing" xml:space="preserve"><value>No longer available</value></data>
   <data name="Routines_Field_Persona_Hint" xml:space="preserve"><value>Kept on this device only, so your other devices are unaffected.</value></data>
+  <data name="Routines_Field_WorkingDir" xml:space="preserve"><value>Working folder</value></data>
+  <data name="Routines_Field_WorkingDir_Hint" xml:space="preserve"><value>Files this routine reads and writes stay in this folder. Stored on this device only.</value></data>
+  <data name="Routines_Field_WorkingDir_Tooltip" xml:space="preserve"><value>Choose the working folder</value></data>
+  <data name="Routines_Detail_WorkingDir" xml:space="preserve"><value>Working folder</value></data>
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Reasoning effort</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Use the persona's setting</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Overrides the persona's own reasoning effort for this routine's runs.</value></data>

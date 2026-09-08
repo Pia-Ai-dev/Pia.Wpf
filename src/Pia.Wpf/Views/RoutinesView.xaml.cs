@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Pia.Helpers;
+using Pia.ViewModels;
 
 namespace Pia.Views;
 
@@ -72,5 +73,31 @@ public partial class RoutinesView : UserControl
                 RoutedEvent = MouseWheelEvent,
                 Source = inner,
             });
+    }
+
+    // Read the POPUP, not the flag (and see the Closed handler): a dismissal the flag misses leaves the
+    // next press toggling a stale value and opening nothing.
+    private void RoutineWorkingDirButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is RoutinesViewModel vm)
+            vm.IsWorkingDirPickerOpen = !RoutineWorkingDirPopup.IsOpen;
+    }
+
+    private void RoutineWorkingDirPopup_Opened(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(RoutineWorkingDirPicker.FocusEntries));
+
+    private void RoutineWorkingDirPopup_Closed(object? sender, EventArgs e)
+    {
+        if (DataContext is RoutinesViewModel vm)
+            vm.IsWorkingDirPickerOpen = false;
+    }
+
+    private void RoutineWorkingDirPicker_CloseRequested(object? sender, EventArgs e)
+    {
+        if (DataContext is RoutinesViewModel vm)
+        {
+            vm.IsWorkingDirPickerOpen = false;
+            RoutineWorkingDirButton.Focus();
+        }
     }
 }

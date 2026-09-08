@@ -40,7 +40,7 @@ standalone value, unblocks a High.
   hosted picker view-model, the default cached in `RefreshAsync` and seeded into both create paths,
   the row's own copy, and the save wiring. Do **not** let the field trip `PickersTouched()`.
   *Deps:* 1 · *Effort:* S · *Value:* Enabler
-- [ ] **6. The editor shows the picker.** Button + popup beside Effort — toggled by reading the popup,
+- [x] **6. The editor shows the picker.** Button + popup beside Effort — toggled by reading the popup,
   not the flag, the way the chip does — the detail-pane line, the four resx keys in all three
   locales, the `ViewAutomationIdTests` rows and the playbook's id list.
   *Deps:* 4, 5 · *Effort:* S · *Value:* High
