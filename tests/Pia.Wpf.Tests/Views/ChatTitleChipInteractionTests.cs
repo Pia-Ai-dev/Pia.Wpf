@@ -149,9 +149,8 @@ public class ChatTitleChipInteractionTests
             () => { },
             _ => ChatState.Idle,
             folders,
-            _ => true,
-            () => null,
-            () => false);
+            _ => { },
+            () => null);
 
         _chip = new PiaChatTitleChip { DataContext = _vm };
 

@@ -22,7 +22,6 @@ public class ChatTitleChipFlyoutGroupingTests
     private string? _capturedNewChatDir = "<unset>";
     private string? _capturedSetActiveDir = "<unset>";
     private string? _activeWorkingDir;
-    private bool _activeChatStarted;
 
     public ChatTitleChipFlyoutGroupingTests()
     {
@@ -51,9 +50,8 @@ public class ChatTitleChipFlyoutGroupingTests
             () => { },
             id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle,
             _workingDir,
-            dir => { _capturedSetActiveDir = dir; return !_activeChatStarted; },
-            () => _activeWorkingDir,
-            () => _activeChatStarted);
+            dir => _capturedSetActiveDir = dir,
+            () => _activeWorkingDir);
     }
 
     private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null)
@@ -133,7 +131,7 @@ public class ChatTitleChipFlyoutGroupingTests
     }
 
     [Fact]
-    public void Picking_Folder_UpdatesPill_AndOffersRepointToActiveChat()
+    public void Picking_Folder_UpdatesThePill()
     {
         var sut = CreateSut([]);
         sut.IsFlyoutOpen = true;   // seeds the pending folder from the active chat (root here)
@@ -141,59 +139,42 @@ public class ChatTitleChipFlyoutGroupingTests
 
         sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
 
-        // The chip offers the re-point to its owner (which applies it only to an un-started
-        // chat) and reflects the pick on the pill.
-        Assert.Equal("projects", _capturedSetActiveDir);
         Assert.Equal("\\projects", sut.WorkingDirectoryDisplay);
         Assert.False(sut.IsWorkingDirectoryRoot);
     }
 
     [Fact]
-    public void StartedChat_KeepsThePillOnItsOwnFolder_ButStillAimsTheNextNewChat()
+    public void ChipPicker_AimsTheNextNewChat_AndNeverRepointsTheOpenOne()
     {
-        // The owner refuses the re-point once a chat has a turn. Reflecting the pick anyway claimed a
-        // move that never happened: the pill read the new folder while the chat still worked in the old.
+        // The chip picker is the next-new-chat folder. The empty state owns the open chat, and is
+        // gone by its first message - so a pick here must not reach the active session at all.
         _activeWorkingDir = "src/app";
-        _activeChatStarted = true;
         var sut = CreateSut([]);
         sut.IsFlyoutOpen = true;
         sut.IsPickerOpen = true;
 
-        // The picker opens at the chat's own folder, so drilling one level lands below it.
         sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
 
-        Assert.Equal("src/app/projects", _capturedSetActiveDir);
-        Assert.Equal("\\src\\app", sut.WorkingDirectoryDisplay);
+        Assert.Equal("<unset>", _capturedSetActiveDir);
 
-        // The pick is not discarded - it is where "+ New Chat" opens.
+        // The pill is that next chat's folder, and NewChat opens there.
+        Assert.Equal("\\src\\app\\projects", sut.WorkingDirectoryDisplay);
         sut.NewChatCommand.Execute(null);
         Assert.Equal("src/app/projects", _capturedNewChatDir);
     }
 
     [Fact]
-    public void UnstartedChat_StillMovesThePillWithThePick()
+    public void InlinePicker_RepointsTheOpenChat()
     {
+        // The other half of the same drill-down: the empty state edits the chat you are in.
         _activeWorkingDir = "src/app";
-        _activeChatStarted = false;
         var sut = CreateSut([]);
-        sut.IsFlyoutOpen = true;
-        sut.IsPickerOpen = true;
+        sut.IsInlinePickerOpen = true;
 
         sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
 
+        Assert.Equal("src/app/projects", _capturedSetActiveDir);
         Assert.Equal("\\src\\app\\projects", sut.WorkingDirectoryDisplay);
-    }
-
-    [Fact]
-    public void StartedChat_SaysTheTooltipAimsTheNextChat()
-    {
-        _activeChatStarted = true;
-        var sut = CreateSut([]);
-
-        sut.IsFlyoutOpen = true;
-
-        Assert.True(sut.IsWorkingDirectoryPinned);
-        Assert.Equal("AssistantChat_WorkingDir_Tooltip_NextChat", sut.WorkingDirectoryTooltip);
     }
 
     [Fact]

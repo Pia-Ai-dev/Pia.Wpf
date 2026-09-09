@@ -28,9 +28,8 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     private readonly Action<string?> _newChat;
     private readonly Action _showAllChats;
     private readonly Func<Guid, ChatState> _resolveState;
-    private readonly Func<string?, bool> _setActiveWorkingDirectory;
+    private readonly Action<string?> _setActiveWorkingDirectory;
     private readonly Func<string?> _getActiveWorkingDirectory;
-    private readonly Func<bool> _isActiveChatStarted;
     private readonly IWorkingDirectoryService _workingDirectoryService;
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _quickSwitcherCts;
@@ -74,17 +73,6 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private bool _isWorkingDirectoryRoot = true;
 
-    /// <summary>True once the active chat has a turn, when a pick can only aim the next new chat.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(WorkingDirectoryTooltip))]
-    private bool _isWorkingDirectoryPinned;
-
-    /// <summary>Says which chat a pick will land on, because on a started chat it is not this one.</summary>
-    public string WorkingDirectoryTooltip => _localizationService[
-        IsWorkingDirectoryPinned
-            ? "AssistantChat_WorkingDir_Tooltip_NextChat"
-            : "AssistantChat_WorkingDir_Tooltip"];
-
     /// <summary>Drives the nested drill-down folder picker popup.</summary>
     [ObservableProperty]
     private bool _isPickerOpen;
@@ -122,9 +110,8 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         Action showAllChats,
         Func<Guid, ChatState> resolveState,
         IWorkingDirectoryService workingDirectoryService,
-        Func<string?, bool> setActiveWorkingDirectory,
-        Func<string?> getActiveWorkingDirectory,
-        Func<bool> isActiveChatStarted)
+        Action<string?> setActiveWorkingDirectory,
+        Func<string?> getActiveWorkingDirectory)
         : base(requireUiThread: true)
     {
         _chatService = chatService;
@@ -138,7 +125,6 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         _resolveState = resolveState;
         _setActiveWorkingDirectory = setActiveWorkingDirectory;
         _getActiveWorkingDirectory = getActiveWorkingDirectory;
-        _isActiveChatStarted = isActiveChatStarted;
         _workingDirectoryService = workingDirectoryService;
 
         WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectoryService);
@@ -191,7 +177,6 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
                 // Re-seed the "+ New Chat" folder target to the active chat's folder each time
                 // the flyout opens, so an abandoned pick from a previous open doesn't linger.
                 SetWorkingDirectory(_getActiveWorkingDirectory());
-                IsWorkingDirectoryPinned = _isActiveChatStarted();
                 LoadRecentChatsAsync().SafeFireAndForget(_logger);
             }
             else
@@ -213,38 +198,30 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
             // No flyout open to have re-seeded, so read the active chat here: a folder left over
             // from a "+ New Chat" pick must not show as this chat's.
             SetWorkingDirectory(_getActiveWorkingDirectory());
-            IsWorkingDirectoryPinned = _isActiveChatStarted();
             WorkingDirectoryPicker.InitializeFrom(_pendingNewChatDirectory);
         }
     }
 
     private void OnWorkingDirectoryChosen(object? sender, string relativePath)
     {
-        // The owner applies the re-point ONLY while the chat is un-started. When it refuses, the pill
-        // must keep showing the folder that chat is still working in — moving it there claimed a
-        // re-point that never happened, and the tooltip says "this chat".
-        if (_setActiveWorkingDirectory(relativePath))
-            SetWorkingDirectory(relativePath);
-        else
-            RecordPendingNewChatDirectory(relativePath);
+        // Two pickers share this one drill-down. The empty state's sets the folder of the chat you are
+        // in, and only exists before its first message. The chip's aims the NEXT new chat, so it must
+        // not re-point the open one — whose turns have already run somewhere else.
+        if (IsInlinePickerOpen)
+            _setActiveWorkingDirectory(relativePath);
+
+        SetWorkingDirectory(relativePath);
     }
 
     /// <summary>Reflect the chosen working dir on the pill (backslash display; <c>\</c> at root)
     /// and record it as the folder the next "+ New Chat" opens in.</summary>
     public void SetWorkingDirectory(string? relativePath)
     {
-        var normalized = RecordPendingNewChatDirectory(relativePath);
-        IsWorkingDirectoryRoot = normalized.Length == 0;
-        WorkingDirectoryDisplay = normalized.Length == 0
-            ? "\\"
-            : "\\" + normalized.Replace('/', '\\');
-    }
-
-    /// <summary>Aim the next "+ New Chat" without touching the pill; returns the normalized path.</summary>
-    private string RecordPendingNewChatDirectory(string? relativePath)
-    {
         _pendingNewChatDirectory = relativePath?.Trim().Replace('\\', '/').Trim('/') ?? string.Empty;
-        return _pendingNewChatDirectory;
+        IsWorkingDirectoryRoot = _pendingNewChatDirectory.Length == 0;
+        WorkingDirectoryDisplay = _pendingNewChatDirectory.Length == 0
+            ? "\\"
+            : "\\" + _pendingNewChatDirectory.Replace('/', '\\');
     }
 
     private void OnChatsChanged(object? sender, AssistantChatChangedEventArgs e)
