@@ -228,7 +228,10 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             _ => "ActionCard_Action_Create"
         };
 
-        return $"{_localizationService[actionKey]} {_localizationService[categoryKey]}";
+        // Order is per-language: German puts the verb last, so the two halves go through a format string
+        // rather than being concatenated verb-first.
+        return _localizationService.Format(
+            "ActionCard_Title_Format", _localizationService[actionKey], _localizationService[categoryKey]);
     }
 
     private string Detokenize(string text, bool detokenize) =>

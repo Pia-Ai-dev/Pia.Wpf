@@ -925,6 +925,7 @@
   <data name="ActionCard_Action_Restore" xml:space="preserve"><value>Restaurer</value></data>
   <data name="ActionCard_Action_Stash" xml:space="preserve"><value>Remiser</value></data>
   <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Écran</value></data>
+  <data name="ActionCard_Title_Format" xml:space="preserve"><value>{0} {1}</value></data>
   <data name="ActionCard_Action_Capture" xml:space="preserve"><value>Capturer</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copier dans le presse-papiers</value></data>

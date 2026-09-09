@@ -18,6 +18,11 @@ public class ActionCardBuilderScreenCategoryTests
             .Returns(ci => $"{ci.ArgAt<string>(0)}({string.Join(",", ci.ArgAt<object[]>(1))})");
 
         var tokenMap = Substitute.For<ITokenMapService>();
+        // The title is composed through a format string so the verb/noun order can differ by language;
+        // compose it here or every card title in these tests collapses to the bare key.
+        localization.Format("ActionCard_Title_Format", Arg.Any<object[]>())
+            .Returns(ci => string.Join(" ", ci.ArgAt<object[]>(1)));
+
         return new ActionCardBuilder(localization, tokenMap);
     }
 

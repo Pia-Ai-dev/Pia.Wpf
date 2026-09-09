@@ -891,6 +891,7 @@
   <data name="ActionCard_Action_Restore" xml:space="preserve"><value>Restore</value></data>
   <data name="ActionCard_Action_Stash" xml:space="preserve"><value>Stash</value></data>
   <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Screen</value></data>
+  <data name="ActionCard_Title_Format" xml:space="preserve"><value>{0} {1}</value></data>
   <data name="ActionCard_Action_Capture" xml:space="preserve"><value>Capture</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copy to Clipboard</value></data>
