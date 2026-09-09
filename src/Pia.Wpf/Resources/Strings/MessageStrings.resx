@@ -144,6 +144,7 @@
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Show all chats…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>No chats yet.</value></data>
   <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Working folder for this chat</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip_NextChat" xml:space="preserve"><value>Working folder for the next new chat</value></data>
   <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>All files</value></data>
   <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>No subfolders here.</value></data>
   <data name="AssistantChat_WorkingDir_NewFolder_Tooltip" xml:space="preserve"><value>New folder</value></data>

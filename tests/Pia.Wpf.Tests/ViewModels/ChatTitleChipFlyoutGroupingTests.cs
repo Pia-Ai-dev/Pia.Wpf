@@ -22,6 +22,7 @@ public class ChatTitleChipFlyoutGroupingTests
     private string? _capturedNewChatDir = "<unset>";
     private string? _capturedSetActiveDir = "<unset>";
     private string? _activeWorkingDir;
+    private bool _activeChatStarted;
 
     public ChatTitleChipFlyoutGroupingTests()
     {
@@ -50,8 +51,9 @@ public class ChatTitleChipFlyoutGroupingTests
             () => { },
             id => _states.TryGetValue(id, out var s) ? s : ChatState.Idle,
             _workingDir,
-            dir => _capturedSetActiveDir = dir,
-            () => _activeWorkingDir);
+            dir => { _capturedSetActiveDir = dir; return !_activeChatStarted; },
+            () => _activeWorkingDir,
+            () => _activeChatStarted);
     }
 
     private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null)
@@ -144,6 +146,54 @@ public class ChatTitleChipFlyoutGroupingTests
         Assert.Equal("projects", _capturedSetActiveDir);
         Assert.Equal("\\projects", sut.WorkingDirectoryDisplay);
         Assert.False(sut.IsWorkingDirectoryRoot);
+    }
+
+    [Fact]
+    public void StartedChat_KeepsThePillOnItsOwnFolder_ButStillAimsTheNextNewChat()
+    {
+        // The owner refuses the re-point once a chat has a turn. Reflecting the pick anyway claimed a
+        // move that never happened: the pill read the new folder while the chat still worked in the old.
+        _activeWorkingDir = "src/app";
+        _activeChatStarted = true;
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+        sut.IsPickerOpen = true;
+
+        // The picker opens at the chat's own folder, so drilling one level lands below it.
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
+
+        Assert.Equal("src/app/projects", _capturedSetActiveDir);
+        Assert.Equal("\\src\\app", sut.WorkingDirectoryDisplay);
+
+        // The pick is not discarded - it is where "+ New Chat" opens.
+        sut.NewChatCommand.Execute(null);
+        Assert.Equal("src/app/projects", _capturedNewChatDir);
+    }
+
+    [Fact]
+    public void UnstartedChat_StillMovesThePillWithThePick()
+    {
+        _activeWorkingDir = "src/app";
+        _activeChatStarted = false;
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+        sut.IsPickerOpen = true;
+
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
+
+        Assert.Equal("\\src\\app\\projects", sut.WorkingDirectoryDisplay);
+    }
+
+    [Fact]
+    public void StartedChat_SaysTheTooltipAimsTheNextChat()
+    {
+        _activeChatStarted = true;
+        var sut = CreateSut([]);
+
+        sut.IsFlyoutOpen = true;
+
+        Assert.True(sut.IsWorkingDirectoryPinned);
+        Assert.Equal("AssistantChat_WorkingDir_Tooltip_NextChat", sut.WorkingDirectoryTooltip);
     }
 
     [Fact]

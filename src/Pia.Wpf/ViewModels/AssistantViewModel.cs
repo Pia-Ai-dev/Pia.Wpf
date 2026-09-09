@@ -460,7 +460,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _chatSessionManager.GetState,
             _workingDirectoryService,
             SetActiveWorkingDirectory,
-            GetActiveWorkingDirectory);
+            GetActiveWorkingDirectory,
+            IsActiveChatStarted);
 
         _chatSessionManager.ActiveChanged += OnActiveSessionChanged;
         _chatSessionManager.SessionTitleChanged += OnSessionTitleChanged;
@@ -1445,21 +1446,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>Reads the active chat's working dir (relative, forward slashes; null = root) for the chip.</summary>
     private string? GetActiveWorkingDirectory() => _chatSessionManager.ActiveSession?.WorkingDirectory;
 
+    /// <summary>True once the active chat has a turn, so its folder can no longer be re-pointed.</summary>
+    private bool IsActiveChatStarted() => _chatSessionManager.ActiveSession?.Messages.Count > 0;
+
     /// <summary>
     /// Re-points the active chat's working dir from the picker — but ONLY while that chat is
     /// un-started (no messages yet). Once a chat has begun a turn its folder is fixed; the
     /// picker then only chooses where the next "+ New Chat" opens. Unlike
     /// <see cref="ChatSession.ProviderId"/> (which persists only as a turn side-effect), a
     /// working-dir change can happen with no turn, so this triggers an explicit persist.
+    /// Returns whether the re-point landed, so the caller knows not to show it as this chat's.
     /// </summary>
-    private void SetActiveWorkingDirectory(string? relativePath)
+    private bool SetActiveWorkingDirectory(string? relativePath)
     {
         var session = _chatSessionManager.ActiveSession;
-        if (session is null) return;
+        if (session is null) return false;
 
-        // A started chat (turn in progress or with history) keeps its folder. The pill still
-        // reflects the pick for the next new chat; we just don't re-point this one.
-        if (session.Messages.Count > 0) return;
+        if (session.Messages.Count > 0) return false;
 
         session.SetWorkingDirectory(relativePath);
         // Keep the @Files autocomplete scoped to the re-pointed dir immediately.
@@ -1467,6 +1470,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // PersistAsync is a no-op for a brand-new empty chat (no row yet); the first turn
         // will persist with the current dir. For an existing chat this saves the re-point.
         _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
+        return true;
     }
 
     private static void CancelPendingActionCards(AssistantMessage? message)
