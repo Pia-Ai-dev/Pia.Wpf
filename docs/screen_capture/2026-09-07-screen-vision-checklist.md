@@ -223,6 +223,17 @@ Candidates with no plan doc, kept here so they are not lost:
   `app.manifest`, so physical-pixel `GetWindowRect` values and WPF DIPs cannot be mixed blind. Sits
   on top of the same seam whenever it is wanted.
 - **A `Windows.Graphics.Capture` backend.** The upgrade path if G1 says black frames are common.
+- **Refuse a capture before taking it when the routed endpoint cannot accept an image.** Found by
+  the G3 attempt on 2026-09-09: the provider was Pia Cloud and the server still answered
+  `No endpoints found that support image input`, because image support is a property of the
+  **routed endpoint**, not of the provider type. So the pixels are taken and the send fails after
+  the fact, which is the one sequence D2 says must not happen. The composer button and the tool
+  handler both check the provider and both inherit the hole; the pre-existing paste and drop paths
+  have it too, so this is not a regression from the screen work. A fix needs a capability the client
+  can ask the server for before capturing, which is most of the per-provider vision model below —
+  they are probably one piece of work. Until then the failure is a legible error, not a leak.
+  See [2026-09-09-g3-live-round.md](2026-09-09-g3-live-round.md).
+
 - **A real per-provider vision-capability model**, lifting the PiaCloud-only image gate. Would fix
   pasted and dropped images on other providers too. Explicitly excluded by D2.
 - **More than one image per message.** The composer holds one attachment today

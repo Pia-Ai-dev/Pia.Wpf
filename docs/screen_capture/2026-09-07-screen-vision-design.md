@@ -320,6 +320,13 @@ diagnose a capture failure from a user's attached log, and nothing about what wa
   base actually runs? Answered by G1, cheaply, before any UI is built.
 - **Is a UIA text snapshot usable** in Electron and Chromium windows without the user switching
   accessibility on? Gates phase 3's engine, not phases 1–2.
+- **Is the provider type the right gate for "can an image be sent"?** No, as of the G3 attempt on
+  2026-09-09 — it is necessary but not sufficient. Pia Cloud accepted the request and its router
+  then found none of 29 candidate endpoints able to take an image. D2's promise that the refusal
+  happens *before* the capture therefore does not hold on a text-only endpoint. Answering this
+  properly is the per-provider vision-capability model D2 excluded from this workstream, so the gap
+  is logged in the checklist rather than patched here.
+
 - **Should watch mode survive a restart?** An armed watch that reattaches after an app restart is
   more useful and much harder to reason about consent-wise. Deferred to phase 3 planning.
 
