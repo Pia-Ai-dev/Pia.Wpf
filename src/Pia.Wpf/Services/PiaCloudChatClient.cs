@@ -662,14 +662,11 @@ public sealed class PiaCloudChatClient : IChatClient
         return new ChatMessage(ChatRole.Assistant, contents);
     }
 
-    // Two wire shapes: ChatStreamService's {"error":"Bad Gateway","message":…}, and an OpenAI-style upstream
-    // {"error":{"message":…,"type":…}} the proxy forwards unchanged.
-    private static PiaCloudStreamException StreamError(JsonNode error, JsonNode chunk) =>
-        error is JsonObject upstream
-            ? new PiaCloudStreamException(
-                ReadString(upstream["type"]) ?? ReadString(upstream["code"]) ?? "Upstream Error",
-                ReadString(upstream["message"]))
-            : new PiaCloudStreamException(ReadString(error) ?? "Upstream Error", ReadString(chunk["message"]));
+    private static PiaCloudStreamException StreamError(JsonNode error, JsonNode chunk)
+    {
+        var (title, message) = PiaCloudErrorEnvelope.Describe(error, chunk);
+        return new PiaCloudStreamException(title, message);
+    }
 
     private static async Task HandleErrorResponse(HttpResponseMessage response, string responseJson)
     {

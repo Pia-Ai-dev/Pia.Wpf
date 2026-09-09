@@ -505,7 +505,8 @@ public sealed class ChatSession : IDisposable
         {
             _logger.LogError(ex, "Failed to get AI response");
             if (string.IsNullOrEmpty(assistantMessage.Content))
-                assistantMessage.Content = $"Error: {ex.Message}";
+                assistantMessage.Content =
+                    _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message);
             SetState(ChatState.Error);
             RunFailed?.Invoke(this, new RunFailedEventArgs
             {
@@ -868,7 +869,8 @@ public sealed class ChatSession : IDisposable
             _logger.LogError(ex, "Agent step failed to get AI response");
             error = ex.Message;
             if (string.IsNullOrEmpty(assistantMessage.Content))
-                assistantMessage.Content = $"Error: {ex.Message}";
+                assistantMessage.Content =
+                    _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message);
         }
         finally
         {
