@@ -261,6 +261,10 @@ public partial class App : Application
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StartAsync(CancellationToken.None);
 
+        var consentRetentionService = Bootstrapper.ServiceProvider
+            .GetRequiredService<Services.Consent.ConsentRetentionBackgroundService>();
+        await consentRetentionService.StartAsync(CancellationToken.None);
+
         var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
         await todoDeadlineService.StartAsync(CancellationToken.None);
 
@@ -429,6 +433,10 @@ public partial class App : Application
 
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StopAsync(CancellationToken.None);
+
+        var consentRetentionService = Bootstrapper.ServiceProvider
+            .GetRequiredService<Services.Consent.ConsentRetentionBackgroundService>();
+        await consentRetentionService.StopAsync(CancellationToken.None);
 
         var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
         await todoDeadlineService.StopAsync(CancellationToken.None);
