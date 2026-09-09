@@ -67,6 +67,15 @@
   message can be sent again. It used to land in the chat as an English socket
   error that stayed in the transcript.
 
+## Cloud sync
+
+- Chats no longer leave this device before you sign in to Pia Cloud. They were
+  offered to the server and refused, so none of them was ever stored — but they
+  should not have been sent at all.
+- The chat history you built up before signing in now reaches your other
+  devices. That first upload could be marked as done while the server was still
+  refusing it, and nothing retried it afterwards.
+
 ## Optimize
 
 - Text too long for Pia Cloud's optimizer is turned down with a sentence that

@@ -35,9 +35,11 @@ public sealed class AssistantChatSyncService : BackgroundService
     private readonly ILogger<AssistantChatSyncService> _logger;
 
     // Channel is a wakeup signal only; the actual per-chat coalescing lives in
-    // _desired so a stale Upsert is overwritten by a later Delete for the same ID.
-    private readonly Channel<byte> _signal = Channel.CreateUnbounded<byte>(
-        new UnboundedChannelOptions { SingleReader = true });
+    // _desired so a stale Upsert is overwritten by a later Delete for the same ID. One pending
+    // wakeup is therefore enough, and dropping the rest keeps a session that never signs in — where
+    // nothing reads this — from buffering a token per chat change.
+    private readonly Channel<byte> _signal = Channel.CreateBounded<byte>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
     private readonly object _stateLock = new();
     private readonly Dictionary<Guid, OpKind> _desired = new();
@@ -107,24 +109,9 @@ public sealed class AssistantChatSyncService : BackgroundService
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
 
-        var supported = await _capabilities.ChatsSupportedAsync(stoppingToken);
-        if (!supported)
-        {
-            _logger.LogInformation("Assistant chat cloud sync disabled (capability off)");
-            return;
-        }
+            if (!await RunStartupCycleAsync(stoppingToken)) return;
 
-        await RunStartupPullAsync(stoppingToken);
-        await RunStartupPushAsync(stoppingToken);
-
-        try
-        {
             await foreach (var _ in _signal.Reader.ReadAllAsync(stoppingToken))
             {
                 await DrainAsync(stoppingToken);
@@ -133,6 +120,55 @@ public sealed class AssistantChatSyncService : BackgroundService
         catch (OperationCanceledException)
         {
             // Normal shutdown.
+        }
+    }
+
+    /// <summary>False when the capability is off, i.e. there is nothing to drain this session.</summary>
+    private async Task<bool> RunStartupCycleAsync(CancellationToken ct)
+    {
+        // Probing before sign-in would beacon /api/capabilities from every signed-out install, and
+        // nothing can be pushed without a token anyway.
+        if (!await SyncPermittedAsync())
+        {
+            _logger.LogInformation("Assistant chat cloud sync idle until sign-in");
+            await WaitForSignInAsync(ct);
+        }
+
+        if (!await _capabilities.ChatsSupportedAsync(ct))
+        {
+            _logger.LogInformation("Assistant chat cloud sync disabled (capability off)");
+            return false;
+        }
+
+        await RunStartupPullAsync(ct);
+        await RunStartupPushAsync(ct);
+        return true;
+    }
+
+    private async Task<bool> SyncPermittedAsync() =>
+        _authService.IsLoggedIn && (await _settingsService.GetSettingsAsync()).SyncEnabled;
+
+    private async Task WaitForSignInAsync(CancellationToken ct)
+    {
+        var signedIn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnLoginStateChanged(object? sender, bool loggedIn)
+        {
+            if (loggedIn) signedIn.TrySetResult();
+        }
+
+        _authService.LoginStateChanged += OnLoginStateChanged;
+        try
+        {
+            // Re-check after subscribing, or a sign-in racing the check above parks the worker
+            // until the next launch.
+            if (await SyncPermittedAsync()) return;
+
+            using var cancellation = ct.Register(() => signedIn.TrySetCanceled(ct));
+            await signedIn.Task;
+        }
+        finally
+        {
+            _authService.LoginStateChanged -= OnLoginStateChanged;
         }
     }
 
@@ -165,29 +201,26 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
     }
 
-    private async Task ProcessOpAsync(SyncOp op, CancellationToken ct)
+    /// <summary>False when the op did not reach the server, which is what holds the backfill gate open.</summary>
+    private async Task<bool> ProcessOpAsync(SyncOp op, CancellationToken ct)
     {
         if (op.Kind == OpKind.Delete)
-        {
-            await SendDeleteAsync(op.ChatId, ct);
-            return;
-        }
+            return await SendDeleteAsync(op.ChatId, ct);
 
         var chat = await _chatService.GetAsync(op.ChatId, ct);
         if (chat is null)
         {
             // Was deleted locally between enqueue and processing; treat as delete.
-            await SendDeleteAsync(op.ChatId, ct);
-            return;
+            return await SendDeleteAsync(op.ChatId, ct);
         }
 
-        await SendUpsertAsync(chat, retried: false, ct);
+        return await SendUpsertAsync(chat, retried: false, ct);
     }
 
-    private async Task SendUpsertAsync(SyncAssistantChat chat, bool retried, CancellationToken ct)
+    private async Task<bool> SendUpsertAsync(SyncAssistantChat chat, bool retried, CancellationToken ct)
     {
         var (client, baseUrl, userId) = await BuildClientAsync(ct);
-        if (client is null || baseUrl is null) return;
+        if (client is null || baseUrl is null) return false;
 
         var url = $"{baseUrl}/api/v1/chats/{chat.Id}";
         using (client)
@@ -201,7 +234,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                 _logger.LogInformation(
                     "Pushed chat {ChatId} to cloud (status {Status})",
                     chat.Id, (int)response.StatusCode);
-                return;
+                return true;
             }
 
             if (response.StatusCode == HttpStatusCode.Conflict && !retried)
@@ -215,8 +248,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                     var merged = MergeForConflict(serverChat, chat);
                     _logger.LogInformation(
                         "Cloud upsert 409 for chat {ChatId}; merging and retrying", chat.Id);
-                    await SendUpsertAsync(merged, retried: true, ct);
-                    return;
+                    return await SendUpsertAsync(merged, retried: true, ct);
                 }
             }
 
@@ -239,20 +271,21 @@ public sealed class AssistantChatSyncService : BackgroundService
                         "Server requires E2EE for this account; chat {ChatId} not pushed, onboarding required",
                         chat.Id);
                     _syncClient.NotifyE2EEOnboardingRequired();
-                    return;
+                    return false;
                 }
             }
 
             _logger.LogInformation(
                 "Cloud upsert for chat {ChatId} returned status {Status}",
                 chat.Id, (int)response.StatusCode);
+            return false;
         }
     }
 
-    private async Task SendDeleteAsync(Guid chatId, CancellationToken ct)
+    private async Task<bool> SendDeleteAsync(Guid chatId, CancellationToken ct)
     {
         var (client, baseUrl, _) = await BuildClientAsync(ct);
-        if (client is null || baseUrl is null) return;
+        if (client is null || baseUrl is null) return false;
 
         var url = $"{baseUrl}/api/v1/chats/{chatId}";
         using (client)
@@ -263,6 +296,8 @@ public sealed class AssistantChatSyncService : BackgroundService
             _logger.LogInformation(
                 "Cloud delete for chat {ChatId} returned status {Status}",
                 chatId, (int)response.StatusCode);
+            // Already gone server-side is the desired end state, so it does not hold the gate open.
+            return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound;
         }
     }
 
@@ -282,12 +317,13 @@ public sealed class AssistantChatSyncService : BackgroundService
             if (settings.AssistantChatsBackfilledAt is not null) return;
 
             var ids = await _chatService.GetAllIdsAsync(ct);
+            var allPushed = true;
             foreach (var id in ids)
             {
                 ct.ThrowIfCancellationRequested();
                 // Reuses the normal op path: fetches the full chat (with messages)
                 // and handles 409 conflicts via merge-and-retry.
-                await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct);
+                allPushed &= await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct);
             }
 
             // If any push hit 403 e2ee_required, the account is E2EE-enabled server-side but
@@ -299,6 +335,16 @@ public sealed class AssistantChatSyncService : BackgroundService
             {
                 _logger.LogWarning(
                     "Startup backfill deferred: E2EE onboarding required; {Count} chat(s) not yet uploaded, will retry on next launch after onboarding",
+                    ids.Count);
+                return;
+            }
+
+            // Same reasoning for every other failure: marking a backfill done that the server never
+            // accepted strands those chats local-only for good, because only a logout reopens the gate.
+            if (!allPushed)
+            {
+                _logger.LogWarning(
+                    "Startup backfill incomplete; leaving the gate unset so the next launch retries all {Count} chat(s)",
                     ids.Count);
                 return;
             }
@@ -524,14 +570,14 @@ public sealed class AssistantChatSyncService : BackgroundService
         var serverUrl = settings.ServerUrl?.TrimEnd('/');
         if (string.IsNullOrEmpty(serverUrl)) return (null, null, null);
 
+        // Release writes a ServerUrl on every launch, so this is the only thing keeping a signed-out
+        // client off the network — and with no SyncUserId the mapper cannot even encrypt the payload.
         var token = await _authService.GetAccessTokenAsync();
+        if (!settings.SyncEnabled || string.IsNullOrEmpty(token)) return (null, null, null);
 
         var client = _httpClientFactory.CreateClient();
-        if (!string.IsNullOrEmpty(token))
-        {
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", token);
-        }
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
         client.Timeout = TimeSpan.FromSeconds(60);
         return (client, serverUrl, settings.SyncUserId);
     }

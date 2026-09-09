@@ -35,8 +35,10 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
         });
         _auth.GetAccessTokenAsync().Returns("test-token");
+        _auth.IsLoggedIn.Returns(true);
     }
 
     [Fact]
@@ -75,6 +77,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             LastChatPullETag = "\"v1\"",
         });
         _handler.SetGetSequence("/api/v1/chats", (HttpStatusCode.NotModified, "", null));
@@ -95,6 +98,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             LastChatPullETag = "\"v1\"",
         });
         _handler.SetGetSequence("/api/v1/chats",
@@ -122,6 +126,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
         });
         _handler.SetGetSequence("/api/v1/chats",
             (HttpStatusCode.OK, @"{""chats"":[],""deleted"":[],""hasMore"":true,""nextCursor"":""abc""}", "\"v3\""),
@@ -140,6 +145,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             LastChatPullETag = "W/\"v4\"",
         });
         _handler.SetGetSequence("/api/v1/chats",
@@ -229,6 +235,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             AssistantChatsBackfilledAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
         });
 
@@ -239,7 +246,164 @@ public class AssistantChatSyncServiceTests
         await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
+    // Everything below the sign-in line: Release writes a ServerUrl on every launch, so without these
+    // guards a signed-out install pushes chat content unauthenticated — and unencrypted, since the
+    // mapper only enciphers when there is a SyncUserId.
+    [Fact]
+    public async Task SendUpsert_WhenSignedOut_SendsNothing()
+    {
+        SignOut();
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
+    public async Task StartupPull_WhenSignedOut_SendsNothing()
+    {
+        SignOut();
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPullAsync(sut);
+
+        Assert.Empty(_handler.RequestsByUri);
+    }
+
+    // Marking a backfill done that the server never accepted strands those chats local-only for good:
+    // only a logout reopens the gate, and nobody logs out to fix a sync they cannot see.
+    [Fact]
+    public async Task StartupPush_WhenSignedOut_SendsNothingAndLeavesTheGateUnset()
+    {
+        SignOut();
+        var chat = SampleChat();
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        Assert.Empty(_handler.RequestsByUri);
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    [Fact]
+    public async Task StartupPush_WhenAPushIsRejected_LeavesTheGateUnset()
+    {
+        var chat = SampleChat();
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Unauthorized, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    // A chat deleted locally between the id sweep and its push is already in its desired end state,
+    // so the server answering 404 must not hold the gate open forever.
+    [Fact]
+    public async Task StartupPush_WhenAChatVanishedLocally_StillClosesTheGate()
+    {
+        var id = Guid.NewGuid();
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { id }.AsReadOnly());
+        _chatService.GetAsync(id, Arg.Any<CancellationToken>()).Returns((SyncAssistantChat?)null);
+        _handler.SetDelete("/api/v1/chats/" + id, HttpStatusCode.NotFound, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        await _settings.Received(1).SaveSettingsAsync(
+            Arg.Is<AppSettings>(s => s.AssistantChatsBackfilledAt != null));
+    }
+
+    // The capability probe is unauthenticated, so probing before sign-in beacons the server from
+    // every signed-out install.
+    [Fact]
+    public async Task StartupCycle_WhenSignedOut_WaitsInsteadOfProbingTheServer()
+    {
+        SignOut();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var sut = CreateSut(NewPlainMapper());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeRunStartupCycleAsync(sut, cts.Token));
+
+        await _capabilities.DidNotReceive().ChatsSupportedAsync(Arg.Any<CancellationToken>());
+        Assert.Empty(_handler.RequestsByUri);
+    }
+
+    [Fact]
+    public async Task StartupCycle_WhenSignedIn_ProbesAndRunsThePullAndPush()
+    {
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>().AsReadOnly());
+
+        var sut = CreateSut(NewPlainMapper());
+        var proceeded = await InvokeRunStartupCycleAsync(sut, CancellationToken.None);
+
+        Assert.True(proceeded);
+        await _capabilities.Received(1).ChatsSupportedAsync(Arg.Any<CancellationToken>());
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.Contains("/api/v1/chats"));
+        await _settings.Received(1).SaveSettingsAsync(
+            Arg.Is<AppSettings>(s => s.AssistantChatsBackfilledAt != null));
+    }
+
+    // Signing in mid-session has to start the worker; otherwise the first sync waits for a relaunch.
+    [Fact]
+    public async Task WaitForSignIn_ReturnsOnceTheUserSignsIn()
+    {
+        var settings = new AppSettings { ServerUrl = ServerUrl };
+        _settings.GetSettingsAsync().Returns(settings);
+        _auth.IsLoggedIn.Returns(false);
+
+        var sut = CreateSut(NewPlainMapper());
+        var waiting = InvokeWaitForSignInAsync(sut, CancellationToken.None);
+        Assert.False(waiting.IsCompleted);
+
+        settings.SyncEnabled = true;
+        settings.SyncUserId = UserId;
+        _auth.IsLoggedIn.Returns(true);
+        _auth.LoginStateChanged += Raise.Event<EventHandler<bool>>(_auth, true);
+
+        await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
     // ===== Helpers =====
+
+    private void SignOut()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings { ServerUrl = ServerUrl });
+        _auth.GetAccessTokenAsync().Returns((string?)null);
+        _auth.IsLoggedIn.Returns(false);
+    }
+
+    private static Task<bool> InvokeRunStartupCycleAsync(AssistantChatSyncService sut, CancellationToken ct)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("RunStartupCycleAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (Task<bool>)m.Invoke(sut, [ct])!;
+    }
+
+    private static Task InvokeWaitForSignInAsync(AssistantChatSyncService sut, CancellationToken ct)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("WaitForSignInAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (Task)m.Invoke(sut, [ct])!;
+    }
 
     private AssistantChatSyncService CreateSut(SyncMapper mapper) =>
         new(_chatService, _capabilities, _auth, _settings, _clientFactory, mapper,
