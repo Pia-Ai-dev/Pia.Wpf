@@ -205,9 +205,11 @@
             <StackPanel Margin="0,0,0,20">
               <!-- The ScrollViewer re-roots at ToolPermissionsVm, but this switch lives on the parent VM and
                    must stay ONE property with ONE save path, so it binds up past the re-root. -->
-              <CheckBox Content="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
-                        IsChecked="{Binding DataContext.AgentRunAutoApproveBuiltInWrites, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
-                        AutomationProperties.AutomationId="Settings_Assistant_ToolPermissions_AutoApproveBuiltInWrites"/>
+              <CheckBox IsChecked="{Binding DataContext.AgentRunAutoApproveBuiltInWrites, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                        AutomationProperties.Name="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
+                        AutomationProperties.AutomationId="Settings_Assistant_ToolPermissions_AutoApproveBuiltInWrites">
+                <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}" TextWrapping="Wrap"/>
+              </CheckBox>
               <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          Margin="22,4,0,0"/>
