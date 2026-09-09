@@ -73,6 +73,16 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private bool _isWorkingDirectoryRoot = true;
 
+    /// <summary>The folder the OPEN chat works in, for the empty state's own pill. Its own property
+    /// because the chip picker moves the one above without moving the chat — sharing it made the
+    /// empty state announce a folder that @Files, and the chat itself, were not using.</summary>
+    [ObservableProperty]
+    private string _activeWorkingDirectoryDisplay = "\\";
+
+    /// <summary>True when the open chat's folder is the sandbox root.</summary>
+    [ObservableProperty]
+    private bool _isActiveWorkingDirectoryRoot = true;
+
     /// <summary>Drives the nested drill-down folder picker popup.</summary>
     [ObservableProperty]
     private bool _isPickerOpen;
@@ -206,16 +216,26 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     {
         // Two pickers share this one drill-down. The empty state's sets the folder of the chat you are
         // in, and only exists before its first message. The chip's aims the NEXT new chat, so it must
-        // not re-point the open one — whose turns have already run somewhere else.
+        // move neither the open chat nor the pill that reports it.
         if (IsInlinePickerOpen)
+        {
             _setActiveWorkingDirectory(relativePath);
-
-        SetWorkingDirectory(relativePath);
+            SetWorkingDirectory(relativePath);
+        }
+        else
+            SetPendingNewChatDirectory(relativePath);
     }
 
-    /// <summary>Reflect the chosen working dir on the pill (backslash display; <c>\</c> at root)
-    /// and record it as the folder the next "+ New Chat" opens in.</summary>
+    /// <summary>The open chat works here: both pills follow, and the next "+ New Chat" inherits it.</summary>
     public void SetWorkingDirectory(string? relativePath)
+    {
+        SetPendingNewChatDirectory(relativePath);
+        ActiveWorkingDirectoryDisplay = WorkingDirectoryDisplay;
+        IsActiveWorkingDirectoryRoot = IsWorkingDirectoryRoot;
+    }
+
+    /// <summary>Aim the next "+ New Chat" and move only the chip's pill; the open chat is untouched.</summary>
+    private void SetPendingNewChatDirectory(string? relativePath)
     {
         _pendingNewChatDirectory = relativePath?.Trim().Replace('\\', '/').Trim('/') ?? string.Empty;
         IsWorkingDirectoryRoot = _pendingNewChatDirectory.Length == 0;

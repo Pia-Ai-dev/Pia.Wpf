@@ -134,12 +134,12 @@
             </ControlTemplate>
           </Button.Template>
           <!-- Full path in the tooltip: CharacterEllipsis trims the trailing leaf folder. -->
-          <TextBlock Text="{Binding ChatTitleChip.WorkingDirectoryDisplay}"
+          <TextBlock Text="{Binding ChatTitleChip.ActiveWorkingDirectoryDisplay}"
                      FontSize="12"
                      MaxWidth="360"
                      TextTrimming="CharacterEllipsis"
                      VerticalAlignment="Center"
-                     ToolTip="{Binding ChatTitleChip.WorkingDirectoryDisplay}" />
+                     ToolTip="{Binding ChatTitleChip.ActiveWorkingDirectoryDisplay}" />
         </Button>
 
         <Popup x:Name="EmptyWorkingDirPopup"

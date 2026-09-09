@@ -159,6 +159,11 @@ public class ChatTitleChipFlyoutGroupingTests
 
         // The pill is that next chat's folder, and NewChat opens there.
         Assert.Equal("\\src\\app\\projects", sut.WorkingDirectoryDisplay);
+
+        // The empty state has its own pill and must stay on the folder the chat is really in:
+        // one shared property had it announce a folder @Files was not using.
+        Assert.Equal("\\src\\app", sut.ActiveWorkingDirectoryDisplay);
+
         sut.NewChatCommand.Execute(null);
         Assert.Equal("src/app/projects", _capturedNewChatDir);
     }
@@ -175,6 +180,7 @@ public class ChatTitleChipFlyoutGroupingTests
 
         Assert.Equal("src/app/projects", _capturedSetActiveDir);
         Assert.Equal("\\src\\app\\projects", sut.WorkingDirectoryDisplay);
+        Assert.Equal("\\src\\app\\projects", sut.ActiveWorkingDirectoryDisplay);
     }
 
     [Fact]
