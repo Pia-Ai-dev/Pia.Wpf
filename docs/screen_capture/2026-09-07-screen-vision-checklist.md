@@ -1,10 +1,17 @@
 # Screen vision — checklist
 
-**Status:** Groups A–D landed, C4’s tray half excepted, plus E1’s service and probe. **G1 answered
-2026-09-09: GDI holds** (0 black frames). **G2 answered 2026-09-09: Mixed** — Chromium yields page
-text, the one Electron app probed yields only its title, so E2 is now REQUIRED rather than
-conditional and E3 must treat an empty snapshot as "fall back", not "no text". **G3 is still open**
-and needs one live Pia Cloud round; D2 stays unticked until it says yes.
+**Status:** Groups A–D landed, C4's tray half excepted, plus E1's service and probe.
+**G1 answered 2026-09-09: GDI holds** — 0 black frames across Chromium, Electron, a WPF/Win32 mix
+and a DirectX terminal, and no leak of Pia's own window into a display grab.
+**G2 answered 2026-09-09: Mixed** — Chromium yields the page body, the one Electron app probed
+yields only its own title. So E2's OCR fallback is now REQUIRED rather than conditional, and E3
+must read an empty snapshot as "fall back", not "this window has no text".
+**G3 ran 2026-09-09 and is still UNANSWERED** — the whole client chain worked and the request died
+at the server's model router ("no endpoints found that support image input": 29 candidates, none
+image-capable), so the message *shape* was never judged. It needs one run against a deployment
+that has a vision endpoint; nothing in the client has to change first. D2 stays unticked, and D2a
+is unproven live because no response ever came back. See
+[2026-09-09-g3-live-round.md](2026-09-09-g3-live-round.md).
 **Owner:** Marco Altmann
 **Written:** 2026-09-07
 **Origin:** [2026-09-07-screen-vision-design.md](2026-09-07-screen-vision-design.md), which is the
@@ -21,7 +28,7 @@ closed · `Med` worthwhile, not headline · `Enabler` little standalone value, u
 |---|---|---|
 | **G1 — ANSWERED, GDI holds** ([results](2026-09-09-capture-probe.md)) | Does `PrintWindow(PW_RENDERFULLCONTENT)` and a screen `BitBlt` return usable frames across the apps this user base actually runs — Office, Teams, Chrome/Edge, VS Code, a PDF viewer, a remote-desktop window? | The GDI backend. A high black-frame rate sends step A1 back for a `Windows.Graphics.Capture` implementation (a D3D11 device plus a staging-texture copy — `M`, not `XS`) before any UI is worth building. Answered by A5, deliberately the cheapest step in the plan. |
 | **G2 — ANSWERED, Mixed** ([results](2026-09-09-uia-text-probe.md)) | Is a UIA text snapshot of a target window usable without the user switching accessibility on, specifically in Electron and Chromium windows? | Phase 3's engine, i.e. group E. A "no" means watch mode is OCR-only (slower, lossier) or does not ship — it does **not** touch groups A–D. |
-| **G3 — OPEN** | Does PiaCloud accept a `ChatRole.User` message carrying a `DataContent` interleaved between a tool result and the next round, and does the model actually attend to it? | The shape of phase 2. A "no" forces the capture to be delivered on the *next user turn* instead of mid-round, which changes D1's second layer from "Pia asks and sees immediately" to "Pia asks and sees on the next exchange". Answered inside D2. |
+| **G3 — RAN, still unanswered** ([results](2026-09-09-g3-live-round.md)) | Does PiaCloud accept a `ChatRole.User` message carrying a `DataContent` interleaved between a tool result and the next round, and does the model actually attend to it? | The shape of phase 2. A "no" forces the capture to be delivered on the *next user turn* instead of mid-round, which changes D1's second layer from "Pia asks and sees immediately" to "Pia asks and sees on the next exchange". Answered inside D2. |
 
 Do not tick a dependant of an open gate without revisiting it.
 

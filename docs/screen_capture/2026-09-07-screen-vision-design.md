@@ -1,8 +1,11 @@
 # Giving Pia eyes on the Windows screen — a monitor, or a chosen window
 
-**Status.** Phases 1 and 2 built; phase 3 has only its text seam, and the rest of it waits on G2.
-G1, G2 and G3 are all still open — see the checklist for what closes each. Implementation notes at
-the end record where this document did not survive contact with the code.
+**Status.** Phases 1 and 2 built; phase 3 has only its text seam. G1 and G2 were answered on
+2026-09-09 — GDI holds, and UIA text is Chromium-only, which promotes the OCR fallback from
+optional to required. G3 was attempted and is still open: the client chain works end to end and the
+request died at the server's model router for want of an image-capable endpoint, so the interleaved
+shape has still never been judged. Implementation notes at the end record where this document did
+not survive contact with the code.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-07.
 **Origin.** Owner question, 2026-09-07 — "how could we give Pia the ability to *see* the Windows
