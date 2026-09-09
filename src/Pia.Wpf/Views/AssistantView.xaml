@@ -10,6 +10,7 @@
              xmlns:controls="clr-namespace:Pia.Controls"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
              xmlns:assistant="clr-namespace:Pia.Controls.Assistant"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
@@ -87,13 +88,86 @@
                          FontSize="12"
                          Foreground="{DynamicResource TextPlaceholderColorBrush}" />
         </ui:Button>
-        <TextBlock Text="{Binding ChatTitleChip.WorkingDirectoryDisplay}"
-                   FontSize="12"
-                   MaxWidth="360"
-                   TextTrimming="CharacterEllipsis"
-                   VerticalAlignment="Center"
-                   ToolTip="{Binding ChatTitleChip.WorkingDirectoryDisplay}"
-                   Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+        <!-- In-place re-point: an un-started chat is the only one whose folder can still change, so
+             the edit lives on the empty state. Fill, outline and chevron surface on hover only. -->
+        <Button x:Name="EmptyWorkingDirButton"
+                Cursor="Hand"
+                VerticalAlignment="Center"
+                Click="EmptyWorkingDirButton_Click"
+                AutomationProperties.AutomationId="Assistant_EditWorkingDirectory"
+                ToolTip="{loc:Str AssistantChat_WorkingDir_Tooltip}">
+          <Button.Template>
+            <ControlTemplate TargetType="Button">
+              <Border x:Name="Bd"
+                      CornerRadius="{StaticResource SmallRadius}"
+                      Padding="6,2"
+                      Background="Transparent"
+                      BorderThickness="1"
+                      BorderBrush="Transparent"
+                      TextBlock.Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <ContentPresenter VerticalAlignment="Center" />
+                  <ui:SymbolIcon x:Name="Chevron"
+                                 Symbol="ChevronDown20"
+                                 FontSize="11"
+                                 Margin="4,0,0,0"
+                                 Opacity="0"
+                                 VerticalAlignment="Center" />
+                </StackPanel>
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                  <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                  <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush_}" />
+                  <Setter TargetName="Bd" Property="TextBlock.Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                  <Setter TargetName="Chevron" Property="Opacity" Value="1" />
+                </Trigger>
+                <!-- Latch the hover look while the picker is open: the mouse is over the popup by
+                     then, and a row that snapped back to bare text read as dismissed. -->
+                <DataTrigger Binding="{Binding ChatTitleChip.IsInlinePickerOpen}" Value="True">
+                  <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
+                  <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush_}" />
+                  <Setter TargetName="Bd" Property="TextBlock.Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                  <Setter TargetName="Chevron" Property="Opacity" Value="1" />
+                </DataTrigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Button.Template>
+          <!-- Full path in the tooltip: CharacterEllipsis trims the trailing leaf folder. -->
+          <TextBlock Text="{Binding ChatTitleChip.WorkingDirectoryDisplay}"
+                     FontSize="12"
+                     MaxWidth="360"
+                     TextTrimming="CharacterEllipsis"
+                     VerticalAlignment="Center"
+                     ToolTip="{Binding ChatTitleChip.WorkingDirectoryDisplay}" />
+        </Button>
+
+        <Popup x:Name="EmptyWorkingDirPopup"
+               IsOpen="{Binding ChatTitleChip.IsInlinePickerOpen, Mode=TwoWay}"
+               PlacementTarget="{Binding ElementName=EmptyWorkingDirButton}"
+               Placement="Bottom"
+               StaysOpen="False"
+               AllowsTransparency="True"
+               PopupAnimation="Fade"
+               Opened="EmptyWorkingDirPopup_Opened"
+               Closed="EmptyWorkingDirPopup_Closed">
+          <Border Background="{DynamicResource SurfaceBrush}"
+                  BorderBrush="{DynamicResource BorderBrush_}"
+                  BorderThickness="1"
+                  CornerRadius="{StaticResource LargeRadius}"
+                  Padding="6"
+                  MinWidth="320"
+                  MaxWidth="380"
+                  MaxHeight="360"
+                  DataContext="{Binding ChatTitleChip.WorkingDirectoryPicker}">
+            <Border.Effect>
+              <DropShadowEffect Color="#0F1729" BlurRadius="18" Opacity="0.16" ShadowDepth="4" />
+            </Border.Effect>
+            <shared:PiaWorkingDirectoryPicker x:Name="EmptyWorkingDirPicker"
+                                              AutomationIdPrefix="Assistant_WorkingDir"
+                                              CloseRequested="EmptyWorkingDirPicker_CloseRequested" />
+          </Border>
+        </Popup>
       </StackPanel>
 
       <!-- Drawn per visit from the capability groups the profile actually has data for, so the id is

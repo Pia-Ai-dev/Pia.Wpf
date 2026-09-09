@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Pia.Behaviors;
 using Pia.Helpers;
 using Pia.Models;
@@ -306,6 +307,33 @@ public partial class AssistantView : UserControl
     private void OnAddToPiiRequested(object? sender, PiiKeywordRequest request)
     {
         ViewModel?.AddPiiKeywordCommand.Execute(request);
+    }
+
+    // Read the POPUP, not the flag: a dismissal the flag misses leaves the next press toggling a
+    // stale value and opening nothing.
+    private void EmptyWorkingDirButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+            vm.ChatTitleChip.IsInlinePickerOpen = !EmptyWorkingDirPopup.IsOpen;
+    }
+
+    // Posted: the popup's content is still being connected when Opened fires.
+    private void EmptyWorkingDirPopup_Opened(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(EmptyWorkingDirPicker.FocusEntries));
+
+    private void EmptyWorkingDirPopup_Closed(object? sender, EventArgs e)
+    {
+        if (ViewModel is { } vm)
+            vm.ChatTitleChip.IsInlinePickerOpen = false;
+    }
+
+    private void EmptyWorkingDirPicker_CloseRequested(object? sender, EventArgs e)
+    {
+        if (ViewModel is { } vm)
+        {
+            vm.ChatTitleChip.IsInlinePickerOpen = false;
+            EmptyWorkingDirButton.Focus();
+        }
     }
 
     private void AttachFileButton_Click(object sender, RoutedEventArgs e)

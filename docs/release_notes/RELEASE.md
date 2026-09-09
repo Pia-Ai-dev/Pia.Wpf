@@ -23,6 +23,9 @@
   row, click the pencil, type and press Enter. The list stays open around you.
 - A chat also keeps the name it has. Every save used to write the first
   message back over it, so an automatic title lasted until the next reply.
+- A new chat's working folder can be changed from the chat itself. Hover the
+  folder shown under "Start a conversation with Pia" and click it to pick
+  another; a chat keeps its folder once the first message is sent.
 
 ## Screen
 

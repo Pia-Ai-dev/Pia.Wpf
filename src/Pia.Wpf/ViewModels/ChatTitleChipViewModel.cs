@@ -77,6 +77,11 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private bool _isPickerOpen;
 
+    /// <summary>Drives the same picker where the empty chat shows its folder. Its own flag because it
+    /// opens without the flyout, whose close would otherwise force it shut.</summary>
+    [ObservableProperty]
+    private bool _isInlinePickerOpen;
+
     /// <summary>The embedded drill-down folder picker.</summary>
     public WorkingDirectoryPickerViewModel WorkingDirectoryPicker { get; }
 
@@ -188,6 +193,13 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
             // Open the drill-down at the current pending folder (seeded from the active chat
             // on flyout open, or wherever the user last drilled in this flyout session).
             WorkingDirectoryPicker.InitializeFrom(_pendingNewChatDirectory);
+        else if (e.PropertyName == nameof(IsInlinePickerOpen) && IsInlinePickerOpen)
+        {
+            // No flyout open to have re-seeded, so read the active chat here: a folder left over
+            // from a "+ New Chat" pick must not show as this chat's.
+            SetWorkingDirectory(_getActiveWorkingDirectory());
+            WorkingDirectoryPicker.InitializeFrom(_pendingNewChatDirectory);
+        }
     }
 
     private void OnWorkingDirectoryChosen(object? sender, string relativePath)

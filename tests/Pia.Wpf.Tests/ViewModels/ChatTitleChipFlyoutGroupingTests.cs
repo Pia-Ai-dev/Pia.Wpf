@@ -147,6 +147,36 @@ public class ChatTitleChipFlyoutGroupingTests
     }
 
     [Fact]
+    public void InlinePickerOpen_SeedsFromActiveChat_NotTheLastNewChatPick()
+    {
+        // A "+ New Chat" pick in the flyout leaves the pending folder elsewhere; the empty state's
+        // in-place edit must still open on the folder the active chat is actually in.
+        _activeWorkingDir = "src/app";
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+        sut.IsPickerOpen = true;
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
+        sut.IsFlyoutOpen = false;
+
+        sut.IsInlinePickerOpen = true;
+
+        Assert.Equal("src/app", sut.WorkingDirectoryPicker.CurrentRelativePath);
+        Assert.Equal("\\src\\app", sut.WorkingDirectoryDisplay);
+    }
+
+    [Fact]
+    public void FlyoutClose_LeavesTheInlinePickerOpen()
+    {
+        var sut = CreateSut([]);
+        sut.IsInlinePickerOpen = true;
+
+        sut.IsFlyoutOpen = true;
+        sut.IsFlyoutOpen = false;
+
+        Assert.True(sut.IsInlinePickerOpen);
+    }
+
+    [Fact]
     public void NewChat_PinsToPickedFolder_NotActiveChatDir()
     {
         // Active chat is at the root; the user picks a different folder for the new chat.
