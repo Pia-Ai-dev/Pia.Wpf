@@ -5,6 +5,12 @@
 - A new chat's working folder can be changed from the chat itself. Hover the
   folder shown under "Start a conversation with Pia" and click it to pick
   another; a chat keeps its folder once the first message is sent.
+- A failed answer reads as a sentence again. Some upstream failures reached the
+  chat as the raw JSON the server sent, error braces and all, in the bubble
+  where the answer belongs.
+- The cards that ask to run a tool read as German again. Their titles were built
+  verb first, so every one of them said "Erstellen Aufgabe" rather than "Aufgabe
+  erstellen". English and French are unchanged.
 
 ## Screen
 
@@ -21,8 +27,9 @@
   is greyed out and says so, and Pia's own request is turned down before
   anything is captured.
 - A routine or a background run can only see windows you named in advance,
-  under Settings → Assistant → "Screen capture while you are away", and never a
-  whole display. Each of those captures leaves a notice in the flow rail.
+  under Settings → Assistant → Tool access → "Screen capture while you are
+  away", and never a whole display. Each of those captures leaves a notice in
+  the flow rail.
 
 ## Personas
 
@@ -38,9 +45,10 @@
 - Chats no longer leave this device before you sign in to Pia Cloud. They were
   offered to the server and refused, so none of them was ever stored — but they
   should not have been sent at all.
-- The chat history you built up before signing in now reaches your other
-  devices. That first upload could be marked as done while the server was still
-  refusing it, and nothing retried it afterwards.
+- Signing in now uploads the chat history you built up before it. That first
+  upload could be marked as done while the server was still refusing it, and
+  nothing retried it afterwards. An install that already signed in under an
+  earlier version keeps those chats on this device only.
 
 ## Routines
 
