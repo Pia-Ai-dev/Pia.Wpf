@@ -558,23 +558,24 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+              <!-- Wraps: four localized labels overflow the detail card at the default window width. -->
+              <WrapPanel Orientation="Horizontal" Margin="0,20,0,0">
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_Edit}"
                            Icon="{ui:SymbolIcon Edit24}"
                            Appearance="Secondary"
-                           Margin="0,0,8,0"
+                           Margin="0,0,8,8"
                            AutomationProperties.AutomationId="Routines_Edit"
                            Command="{Binding StartEditCommand}"/>
                 <ui:Button Content="{Binding SelectedJob.ToggleLabel}"
                            Icon="{ui:SymbolIcon Power24}"
                            Appearance="Secondary"
-                           Margin="0,0,8,0"
+                           Margin="0,0,8,8"
                            AutomationProperties.AutomationId="Routines_Toggle"
                            Command="{Binding ToggleEnabledCommand}"/>
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_RunNow}"
                            Icon="{ui:SymbolIcon Play24}"
                            Appearance="Secondary"
-                           Margin="0,0,8,0"
+                           Margin="0,0,8,8"
                            IsEnabled="{Binding SelectedJob.CanRunNow}"
                            AutomationProperties.AutomationId="Routines_RunNow"
                            Command="{Binding RunNowCommand}"/>
@@ -582,9 +583,10 @@
                            Icon="{ui:SymbolIcon Delete24}"
                            Appearance="Secondary"
                            Foreground="{DynamicResource PiaDangerBrush}"
+                           Margin="0,0,8,8"
                            AutomationProperties.AutomationId="Routines_Delete"
                            Command="{Binding DeleteCommand}"/>
-              </StackPanel>
+              </WrapPanel>
             </StackPanel>
           </ScrollViewer>
 
