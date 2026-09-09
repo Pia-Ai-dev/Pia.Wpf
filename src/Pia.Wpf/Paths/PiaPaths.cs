@@ -50,7 +50,10 @@ public static class PiaPaths
     // and silently lose its override.
     public static string ModelsDirectory => Path.Combine(RealLocalRoot, "Models");
 
-    public static string PiperDirectory => Path.Combine(RealLocalRoot, "Piper");
+    public static string TtsDirectory => Path.Combine(RealLocalRoot, "Tts");
+
+    /// <summary>The pre-sherpa tree: piper.exe plus rhasspy voices the current engine cannot load.</summary>
+    public static string LegacyPiperDirectory => Path.Combine(RealLocalRoot, "Piper");
 
     public static string BrowsersDirectory => Path.Combine(RealLocalRoot, "Browsers");
 

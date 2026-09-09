@@ -19,9 +19,9 @@ that raised a Windows Firewall prompt, see
 **Scope.** Runtime egress from the shipped client. Build-time feeds (`api.nuget.org`) and the
 live-provider endpoints under `tests/` are excluded; a user's machine never dials those.
 
-**How it was built.** A grep over `src/` finds only the URLs we wrote; three of the hosts below live
-inside NuGet packages instead (Velopack → `api.github.com`, Playwright → `cdn.playwright.dev`,
-PiperSharp → Hugging Face and rhasspy). So the shipped assemblies were also string-swept — every
+**How it was built.** A grep over `src/` finds only the URLs we wrote; two of the hosts below live
+inside NuGet packages instead (Velopack → `api.github.com`, Playwright → `cdn.playwright.dev`).
+So the shipped assemblies were also string-swept — every
 non-`Pia`/non-BCL `.dll` in the Release output, scanned for UTF-16 and UTF-8 URL literals. That sweep
 turns up nothing beyond what is listed here: the rest is repository and documentation metadata that
 is never fetched, certificate-chain URLs, and XML namespaces.
@@ -58,9 +58,11 @@ that runs no mirror of its own. The keys live in `Services/Assets/RuntimeAsset.c
 `scripts/Publish-RuntimeAssets.ps1`; `RuntimeAssetCatalogTests` pins those two lists against each other.
 
 Because the fallback is silent, **every row here stays a live dependency** — the mirror is a control
-and latency path, not a replacement. Verified against the real host on 2026-08-30: all 11 mirror keys
-answer `200` and every `Content-Length` matches its upstream byte for byte, so the mirror is now the
-path that actually serves (§5.1 closed the TLS failure that had made it unreachable).
+and latency path, not a replacement. Verified against the real host on 2026-08-30: all 11 mirror
+keys then in the catalogue answer `200` and every `Content-Length` matches its upstream byte for
+byte, so the mirror is now the path that actually serves (§5.1 closed the TLS failure that had made
+it unreachable). The nine `tts/` voice keys were added afterwards and still 404 on the mirror, so
+every voice download falls back upstream until `Publish-RuntimeAssets.ps1 -Include TtsVoices` runs.
 
 | Endpoint | Trigger | Override | Cached in |
 |---|---|---|---|
@@ -68,8 +70,7 @@ path that actually serves (§5.1 closed the TLS failure that had made it unreach
 | `github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/…` | First speaker attribution | none | `Models\` |
 | `github.com/snakers4/silero-vad/raw/v6.2.1/…` | First VAD use | none | `Models\` |
 | `huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/…` ×3 | First embedding — vault recall | none | `Models\` |
-| `github.com/rhasspy/piper` releases | First use of text-to-speech — the Piper engine | none — **no mirror key**, PiperSharp holds the URL | `Piper\piper\` |
-| `huggingface.co/rhasspy/piper-voices` | Downloading a TTS voice | none — **no mirror key**, same reason | `Piper\models\<voice-key>\` |
+| `github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/…` | Downloading a TTS voice, per voice | none | `Tts\voices\vits-piper-<voice-key>\` |
 | `cdn.playwright.dev` | First meeting-attendee join, then again whenever the pinned `Microsoft.Playwright` version changes; not reached at all when the release bundles the browser (`docs/meeting_browser_lifecycle/2026-08-29-chromium-lifecycle.md`) | `ChromiumProvisioner.DownloadHostOverride` → `PLAYWRIGHT_DOWNLOAD_HOST`; currently null, i.e. Playwright's own version-matched default | `Browsers\` |
 
 **Every one of these redirects off the source host,** which is what an egress allowlist actually
@@ -81,12 +82,7 @@ needs:
 | `github.com/…/raw/<tag>/…` | `raw.githubusercontent.com` |
 | `huggingface.co/…/resolve/main/…` | `us.aws.cdn.hf.co` (xet bridge) |
 
-The two Piper rows are the one place the repo does **not** own the URL. `TtsService` calls into the
-PiperSharp package, which holds `huggingface.co/rhasspy/piper-voices/raw/main/voices.json` and
-`github.com/rhasspy/piper` as its own constants — both hosts read out of the shipped assembly, so
-they are certain, but the exact release asset PiperSharp composes is not visible from our source.
-Treat those two rows as host-level, not URL-level. `cdn.playwright.dev` is the same shape for a
-different reason: it is Playwright's own default, deliberately not hard-coded here so the browser
+`cdn.playwright.dev` is the one row that is host-level rather than URL-level: it is
 revision stays matched to the pinned package. Measured during a real install it serves
 `/builds/cft/<version>/win64/chrome-win64.zip` plus a headless shell, ffmpeg and winldd.
 
@@ -235,10 +231,10 @@ leaves a cache the app will never re-fetch and never succeed with. Every file is
 checked against the server's `Content-Length`, and only then moved; an existing file of the wrong
 size is re-fetched, which repairs a cache poisoned by an earlier Ctrl-C.
 
-**TTS voices are not covered.** `TtsService` gates on "the voice directory holds an `.onnx`" while
-loading also needs PiperSharp's `model.json` beside it, so hand-placing the model would satisfy the
-gate and then fail to load, permanently, with no self-heal. Download voices from the app's own TTS
-settings instead.
+**TTS voices are covered too.** They are sherpa bundles like the transcription models, so they take
+the same mirror-first path and the same `.tmp`-then-move repair. Loading additionally gates on the
+`tokens.txt` and `espeak-ng-data` the bundle carries, so a hand-placed `.onnx` reads as not
+installed rather than loading and failing.
 
 ## 10. Filling the mirror
 
@@ -267,6 +263,6 @@ Three things about it are decisions, not defaults:
 - **Writes are spaced.** `PUT /upload` and `/manage` share one 30-per-60-s window per IP and nothing
   retries a `429`.
 
-Piper and Chromium are absent by design: PiperSharp holds its URLs internally with no override hook,
-and Playwright's browser revision is pinned to the package, so mirroring it means reproducing its CDN
-layout per revision. `ChromiumProvisioner.DownloadHostOverride` is the hook if that is ever wanted.
+Chromium is absent by design: Playwright's browser revision is pinned to the package, so mirroring it
+means reproducing its CDN layout per revision. `ChromiumProvisioner.DownloadHostOverride` is the
+hook if that is ever wanted.

@@ -73,7 +73,8 @@ public sealed class PiaPathsTests : IDisposable
     private static void AssertSharedArtifactsOnRealProfile()
     {
         Assert.Equal(Path.Combine(RealLocal, "Models"), PiaPaths.ModelsDirectory);
-        Assert.Equal(Path.Combine(RealLocal, "Piper"), PiaPaths.PiperDirectory);
+        Assert.Equal(Path.Combine(RealLocal, "Tts"), PiaPaths.TtsDirectory);
+        Assert.Equal(Path.Combine(RealLocal, "Piper"), PiaPaths.LegacyPiperDirectory);
         Assert.Equal(Path.Combine(RealLocal, "Browsers"), PiaPaths.BrowsersDirectory);
         Assert.Equal(Path.Combine(RealLocal, "plugins"), PiaPaths.PluginsDirectory);
         Assert.Equal(Path.Combine(RealLocal, "ConsentAudit"), PiaPaths.ConsentAuditDirectory);

@@ -155,6 +155,18 @@
   with the date — 2026-09-03_meeting.md. Saving a second transcript on the same
   day asks before it overwrites.
 
+## Spoken replies
+
+- Pia's voices now come from Pia's own servers instead of a third-party model
+  host, and there is no separate speech engine to download any more. Networks
+  that blocked the old host can install a voice again.
+- Your voice has to be picked once more: the voices downloaded by earlier
+  versions cannot be used by the new speech engine and are removed on first
+  start, which gives back the space they took. Choose one again under
+  Settings → General → Speech.
+- Spoken answers begin sooner, and the short phrases Pia says while it thinks
+  are ready as soon as a voice is installed.
+
 ## Performance
 
 - Leaving a screen and coming back no longer leaves the old copy behind in

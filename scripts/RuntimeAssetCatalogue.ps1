@@ -16,6 +16,7 @@
 # The "recongition" misspelling is the real release tag; the corrected spelling 404s.
 $script:SherpaAsr = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models'
 $script:SherpaSpk = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models'
+$script:SherpaTts = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models'
 $script:HuggingFace = 'https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main'
 
 function Get-RuntimeAssetCatalogue {
@@ -29,6 +30,7 @@ function Get-RuntimeAssetCatalogue {
     $modelsDir = Join-Path $DestinationRoot 'Models'
     $embeddingsDir = Join-Path $modelsDir 'Embeddings'
     $browsersDir = Join-Path $DestinationRoot 'Browsers'
+    $voicesDir = Join-Path (Join-Path $DestinationRoot 'Tts') 'voices'
 
     # SizeHint is the Content-Length measured 2026-08-29, used only for the up-front total. A download
     # verifies against whatever the server reports now, so a republished asset is not a failure.
@@ -93,6 +95,48 @@ function Get-RuntimeAssetCatalogue {
                Url = "$script:SherpaAsr/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2"
                MirrorKey = 'models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2'
                Target = Join-Path $modelsDir 'sherpa-parakeet-tdt-v3'; SizeHint = 487170055 }
+        )
+        # The TTS voices, one group so a staging run can take all nine at once. sherpa republishes the
+        # rhasspy Piper voices with the tokens.txt and espeak-ng-data its phonemizer needs, which the
+        # rhasspy download does not carry — so the bundle is the unit, not the .onnx. SizeHints measured
+        # 2026-09-09 and pinned a second time in src/Pia.Wpf/Services/Tts/TtsVoiceCatalog.cs.
+        TtsVoices = @(
+            @{ Kind = 'Bundle'; Name = 'Voice: Lessac (English US)'
+               Url = "$script:SherpaTts/vits-piper-en_US-lessac-medium.tar.bz2"
+               MirrorKey = 'tts/vits-piper-en_US-lessac-medium.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-en_US-lessac-medium'; SizeHint = 67230653 }
+            @{ Kind = 'Bundle'; Name = 'Voice: Amy (English US)'
+               Url = "$script:SherpaTts/vits-piper-en_US-amy-medium.tar.bz2"
+               MirrorKey = 'tts/vits-piper-en_US-amy-medium.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-en_US-amy-medium'; SizeHint = 67223746 }
+            @{ Kind = 'Bundle'; Name = 'Voice: Ryan (English US)'
+               Url = "$script:SherpaTts/vits-piper-en_US-ryan-medium.tar.bz2"
+               MirrorKey = 'tts/vits-piper-en_US-ryan-medium.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-en_US-ryan-medium'; SizeHint = 67213100 }
+            @{ Kind = 'Bundle'; Name = 'Voice: Alba (English GB)'
+               Url = "$script:SherpaTts/vits-piper-en_GB-alba-medium.tar.bz2"
+               MirrorKey = 'tts/vits-piper-en_GB-alba-medium.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-en_GB-alba-medium'; SizeHint = 67212349 }
+            @{ Kind = 'Bundle'; Name = 'Voice: Thorsten (German)'
+               Url = "$script:SherpaTts/vits-piper-de_DE-thorsten-medium.tar.bz2"
+               MirrorKey = 'tts/vits-piper-de_DE-thorsten-medium.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-de_DE-thorsten-medium'; SizeHint = 67214254 }
+            @{ Kind = 'Bundle'; Name = 'Voice: Eva (German)'
+               Url = "$script:SherpaTts/vits-piper-de_DE-eva_k-x_low.tar.bz2"
+               MirrorKey = 'tts/vits-piper-de_DE-eva_k-x_low.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-de_DE-eva_k-x_low'; SizeHint = 26521242 }
+            @{ Kind = 'Bundle'; Name = 'Voice: Ramona (German)'
+               Url = "$script:SherpaTts/vits-piper-de_DE-ramona-low.tar.bz2"
+               MirrorKey = 'tts/vits-piper-de_DE-ramona-low.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-de_DE-ramona-low'; SizeHint = 67084795 }
+            @{ Kind = 'Bundle'; Name = 'Voice: Siwis (French)'
+               Url = "$script:SherpaTts/vits-piper-fr_FR-siwis-medium.tar.bz2"
+               MirrorKey = 'tts/vits-piper-fr_FR-siwis-medium.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-fr_FR-siwis-medium'; SizeHint = 67207459 }
+            @{ Kind = 'Bundle'; Name = 'Voice: UPMC (French)'
+               Url = "$script:SherpaTts/vits-piper-fr_FR-upmc-medium.tar.bz2"
+               MirrorKey = 'tts/vits-piper-fr_FR-upmc-medium.tar.bz2'
+               Target = Join-Path $voicesDir 'vits-piper-fr_FR-upmc-medium'; SizeHint = 80422639 }
         )
         # No MirrorKey, and it is not an oversight: Playwright picks the browser revision to match the
         # pinned package, and mirroring it means reproducing its CDN layout per revision. The app has a

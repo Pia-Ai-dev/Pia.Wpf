@@ -4,28 +4,17 @@ using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using Pia.Models;
 using Pia.Paths;
+using Pia.Services.Assets;
 using Pia.Services.Interfaces;
-using PiperSharp;
-using PiperSharp.Models;
+using Pia.Services.Tts;
+using SherpaOnnx;
 
 namespace Pia.Services;
 
 public class TtsService : ITtsService, IDisposable
 {
-    private static readonly List<TtsVoice> CuratedVoices =
-    [
-        new() { Key = "en_US-lessac-medium", DisplayName = "Lessac", Language = "English (US)", Quality = "Medium", Gender = "Male", SizeBytes = 63_000_000 },
-        new() { Key = "en_US-amy-medium", DisplayName = "Amy", Language = "English (US)", Quality = "Medium", Gender = "Female", SizeBytes = 63_000_000 },
-        new() { Key = "en_US-ryan-medium", DisplayName = "Ryan", Language = "English (US)", Quality = "Medium", Gender = "Male", SizeBytes = 63_000_000 },
-        new() { Key = "en_GB-alba-medium", DisplayName = "Alba", Language = "English (GB)", Quality = "Medium", Gender = "Female", SizeBytes = 63_000_000 },
-        new() { Key = "de_DE-thorsten-medium", DisplayName = "Thorsten", Language = "German", Quality = "Medium", Gender = "Male", SizeBytes = 63_000_000 },
-        new() { Key = "de_DE-eva_k-x_low", DisplayName = "Eva", Language = "German", Quality = "Low", Gender = "Female", SizeBytes = 16_000_000 },
-        new() { Key = "de_DE-ramona-low", DisplayName = "Ramona", Language = "German", Quality = "Low", Gender = "Female", SizeBytes = 16_000_000 },
-        new() { Key = "fr_FR-siwis-medium", DisplayName = "Siwis", Language = "French", Quality = "Medium", Gender = "Female", SizeBytes = 63_000_000 },
-        new() { Key = "fr_FR-upmc-medium", DisplayName = "UPMC", Language = "French", Quality = "Medium", Gender = "Male", SizeBytes = 63_000_000 },
-    ];
-
-    private const int FillerVersion = 2;
+    // Bumped when the synthesizer changes: the cached WAVs on disk were produced by the old engine.
+    private const int FillerVersion = 3;
 
     private static readonly Dictionary<string, FillerPhraseSet> FillerPhrasesByLanguage = new()
     {
@@ -119,13 +108,15 @@ public class TtsService : ITtsService, IDisposable
 
     private readonly ILogger<TtsService> _logger;
     private readonly ISettingsService _settingsService;
-    private readonly string _baseDirectory;
-    private readonly string _piperDirectory;
-    private readonly string _modelsDirectory;
+    private readonly IAssetDownloader _downloader;
     private readonly SemaphoreSlim _initLock = new(1, 1);
+
+    // One engine is shared by playback, chunked playback and filler pre-generation. Serialised because
+    // the swap in SetVoiceAsync would otherwise dispose native state out from under a running Generate.
+    private readonly SemaphoreSlim _synthGate = new(1, 1);
     private readonly Random _random = new();
 
-    private PiperProvider? _piperProvider;
+    private OfflineTts? _tts;
     private CancellationTokenSource? _playbackCts;
     private string? _currentVoiceKey;
     private bool _isReady;
@@ -138,7 +129,7 @@ public class TtsService : ITtsService, IDisposable
     private int _lastFillerIndex = -1;
 
     public bool IsReady => _isReady;
-    public bool HasVoiceLoaded => _piperProvider is not null;
+    public bool HasVoiceLoaded => _tts is not null;
     public bool HasFillers => _currentVoiceKey is not null && _fillerCache.ContainsKey(_currentVoiceKey)
                               && _fillerCache[_currentVoiceKey].Count > 0;
 
@@ -157,16 +148,13 @@ public class TtsService : ITtsService, IDisposable
 
     public event EventHandler<bool>? IsPlayingChanged;
 
-    public TtsService(ILogger<TtsService> logger, ISettingsService settingsService)
+    public TtsService(ILogger<TtsService> logger, ISettingsService settingsService, IAssetDownloader downloader)
     {
         _logger = logger;
         _settingsService = settingsService;
-        _baseDirectory = PiaPaths.PiperDirectory;
-        _piperDirectory = Path.Combine(_baseDirectory, "piper");
-        _modelsDirectory = Path.Combine(_baseDirectory, "models");
+        _downloader = downloader;
 
-        Directory.CreateDirectory(_baseDirectory);
-        Directory.CreateDirectory(_modelsDirectory);
+        Directory.CreateDirectory(TtsVoiceCatalog.VoicesDirectory);
     }
 
     public async Task InitializeAsync(IProgress<TtsDownloadProgress>? progress = null,
@@ -181,16 +169,7 @@ public class TtsService : ITtsService, IDisposable
             if (_isReady)
                 return;
 
-            var piperExePath = GetPiperExePath();
-            if (!File.Exists(piperExePath))
-            {
-                _logger.LogInformation("Downloading Piper executable...");
-                progress?.Report(new TtsDownloadProgress("Downloading Piper engine...", 0));
-
-                (await PiperDownloader.DownloadPiper()).ExtractPiper(_baseDirectory);
-
-                progress?.Report(new TtsDownloadProgress("Piper engine ready", 100));
-            }
+            TryRemoveLegacyPiperTree(PiaPaths.LegacyPiperDirectory, _logger);
 
             var settings = await _settingsService.GetSettingsAsync();
             var voiceKey = settings.TtsVoiceModelKey;
@@ -218,7 +197,7 @@ public class TtsService : ITtsService, IDisposable
         if (!_isReady)
             await InitializeAsync(cancellationToken: cancellationToken);
 
-        if (_piperProvider is null)
+        if (_tts is null)
         {
             _logger.LogWarning("No voice model loaded, cannot speak");
             return;
@@ -233,7 +212,7 @@ public class TtsService : ITtsService, IDisposable
         {
             IsPlaying = true;
 
-            var audioBytes = await _piperProvider.InferAsync(text, AudioOutputType.Wav, token);
+            var audioBytes = await SynthesizeAsync(text, token);
 
             if (token.IsCancellationRequested)
                 return;
@@ -258,7 +237,7 @@ public class TtsService : ITtsService, IDisposable
 
     public async Task SpeakChunkedAsync(IAsyncEnumerable<string> sentences, CancellationToken cancellationToken = default)
     {
-        if (_piperProvider is null)
+        if (_tts is null)
         {
             _logger.LogWarning("No voice model loaded, cannot speak");
             return;
@@ -291,7 +270,7 @@ public class TtsService : ITtsService, IDisposable
                         if (string.IsNullOrWhiteSpace(sentence))
                             continue;
 
-                        var audioBytes = await _piperProvider.InferAsync(sentence, AudioOutputType.Wav, token);
+                        var audioBytes = await SynthesizeAsync(sentence, token);
                         await channel.Writer.WriteAsync(audioBytes, token);
                     }
                 }
@@ -340,7 +319,7 @@ public class TtsService : ITtsService, IDisposable
 
     public async Task PreGenerateFillersAsync(CancellationToken cancellationToken = default)
     {
-        if (_piperProvider is null || _currentVoiceKey is null)
+        if (_tts is null || _currentVoiceKey is null)
             return;
 
         if (_fillerCache.ContainsKey(_currentVoiceKey))
@@ -383,7 +362,7 @@ public class TtsService : ITtsService, IDisposable
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var audioBytes = await _piperProvider.InferAsync(phrases[i], AudioOutputType.Wav, cancellationToken);
+                var audioBytes = await SynthesizeAsync(phrases[i], cancellationToken);
                 cache.Add(audioBytes);
                 await File.WriteAllBytesAsync(Path.Combine(fillerDir, $"filler_{i}.wav"), audioBytes, cancellationToken);
             }
@@ -432,8 +411,8 @@ public class TtsService : ITtsService, IDisposable
         return result;
     }
 
-    private string GetFillerDirectory(string voiceKey)
-        => Path.Combine(GetModelDirectory(voiceKey), "fillers");
+    private static string GetFillerDirectory(string voiceKey)
+        => Path.Combine(TtsVoiceCatalog.VoiceDirectory(voiceKey), "fillers");
 
     public async Task PlayFillerAsync(CancellationToken cancellationToken = default)
     {
@@ -535,14 +514,14 @@ public class TtsService : ITtsService, IDisposable
 
     public Task<IReadOnlyList<TtsVoice>> GetAvailableVoicesAsync(CancellationToken cancellationToken = default)
     {
-        var voices = CuratedVoices.Select(v => new TtsVoice
+        var voices = TtsVoiceCatalog.Curated.Select(v => new TtsVoice
         {
             Key = v.Key,
             DisplayName = v.DisplayName,
             Language = v.Language,
             Quality = v.Quality,
             Gender = v.Gender,
-            SizeBytes = v.SizeBytes,
+            SizeBytes = v.BundleBytes,
             IsDownloaded = IsVoiceDownloaded(v.Key)
         }).ToList();
 
@@ -556,25 +535,26 @@ public class TtsService : ITtsService, IDisposable
             return;
 
         _logger.LogInformation("Downloading voice model: {VoiceKey}", voiceKey);
-        progress?.Report(new TtsDownloadProgress("Downloading voice model...", 0));
 
-        var previousDir = Directory.GetCurrentDirectory();
-        try
-        {
-            // PiperSharp downloads models relative to CWD
-            Directory.SetCurrentDirectory(_baseDirectory);
+        await SherpaBundle.EnsureAsync(
+            RuntimeAssetCatalog.PiperVoice(voiceKey),
+            TtsVoiceCatalog.VoiceDirectory(voiceKey),
+            _downloader,
+            progress is null ? null : new Progress<ModelDownloadProgress>(p => progress.Report(Describe(p))),
+            _logger,
+            cancellationToken);
 
-            progress?.Report(new TtsDownloadProgress("Downloading voice model...", 10));
-            await PiperDownloader.DownloadModelByKey(voiceKey);
-            progress?.Report(new TtsDownloadProgress("Voice model ready", 100));
+        // Nothing on the download path emits a terminal phase, and a voice already extracted reports
+        // nothing at all, so the picker's last tick has to come from here.
+        progress?.Report(new TtsDownloadProgress("Voice model ready", 100));
 
-            _logger.LogInformation("Voice model downloaded: {VoiceKey}", voiceKey);
-        }
-        finally
-        {
-            Directory.SetCurrentDirectory(previousDir);
-        }
+        _logger.LogInformation("Voice model downloaded: {VoiceKey}", voiceKey);
     }
+
+    private static TtsDownloadProgress Describe(ModelDownloadProgress progress) =>
+        progress.Phase == ModelDownloadPhase.Extracting
+            ? new TtsDownloadProgress("Extracting voice model...", 100)
+            : new TtsDownloadProgress("Downloading voice model...", progress.PercentComplete);
 
     public async Task SetVoiceAsync(string voiceKey, CancellationToken cancellationToken = default)
     {
@@ -617,37 +597,79 @@ public class TtsService : ITtsService, IDisposable
         }
     }
 
+    private async Task<byte[]> SynthesizeAsync(string text, CancellationToken cancellationToken)
+    {
+        await _synthGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var engine = _tts ?? throw new InvalidOperationException("No voice model loaded.");
+
+            return await Task.Run(() =>
+            {
+                var audio = engine.Generate(text, speed: 1.0f, speakerId: 0);
+                return WavWriter.FromSamples(audio.Samples, audio.SampleRate);
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _synthGate.Release();
+        }
+    }
+
     private async Task LoadVoiceAsync(string voiceKey, CancellationToken cancellationToken)
     {
-        var modelDir = GetModelDirectory(voiceKey);
-        var model = await VoiceModel.LoadModel(modelDir);
+        var files = TtsVoiceCatalog.TryResolve(voiceKey)
+            ?? throw new FileNotFoundException(
+                $"Voice '{voiceKey}' is incomplete in '{TtsVoiceCatalog.VoiceDirectory(voiceKey)}'. Re-download it.");
 
-        _piperProvider = new PiperProvider(new PiperConfiguration
+        var config = new OfflineTtsConfig();
+        config.Model.Vits.Model = files.ModelPath;
+        config.Model.Vits.Tokens = files.TokensPath;
+        config.Model.Vits.DataDir = files.DataDirectory;
+        config.Model.NumThreads = 2;
+        config.Model.Provider = "cpu";
+        config.Model.Debug = 0;
+
+        await _synthGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            ExecutableLocation = GetPiperExePath(),
-            WorkingDirectory = _piperDirectory,
-            Model = model
-        });
+            var replacement = await Task.Run(() => new OfflineTts(config), cancellationToken).ConfigureAwait(false);
+            _tts?.Dispose();
+            _tts = replacement;
+        }
+        finally
+        {
+            _synthGate.Release();
+        }
 
         _currentVoiceKey = voiceKey;
         _logger.LogInformation("Voice model loaded: {VoiceKey}", voiceKey);
     }
 
-    private bool IsVoiceDownloaded(string voiceKey)
+    private static bool IsVoiceDownloaded(string voiceKey) => TtsVoiceCatalog.IsVoiceInstalled(voiceKey);
+
+    /// <summary>
+    /// One-time reclaim of the pre-sherpa tree — piper.exe plus rhasspy voices that the current engine
+    /// cannot load, so they are dead weight rather than a cache anything still reads. Keyed on the
+    /// executable so a folder that is not that layout is left alone.
+    /// </summary>
+    internal static bool TryRemoveLegacyPiperTree(string directory, ILogger logger)
     {
-        var modelDir = GetModelDirectory(voiceKey);
-        if (!Directory.Exists(modelDir))
+        if (!File.Exists(Path.Combine(directory, "piper", "piper.exe")))
             return false;
 
-        // Check for .onnx file in the model directory
-        return Directory.GetFiles(modelDir, "*.onnx").Length > 0;
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+            logger.LogInformation("Removed the superseded Piper engine tree at {Directory}", directory);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not remove the superseded Piper engine tree at {Directory}", directory);
+            return false;
+        }
     }
-
-    private string GetModelDirectory(string voiceKey)
-        => Path.Combine(_modelsDirectory, voiceKey);
-
-    private string GetPiperExePath()
-        => Path.Combine(_piperDirectory, "piper.exe");
 
     public void Dispose()
     {
@@ -657,7 +679,10 @@ public class TtsService : ITtsService, IDisposable
 
         Stop();
         _fillerCache.Clear();
+        _tts?.Dispose();
+        _tts = null;
         _initLock.Dispose();
+        _synthGate.Dispose();
 
         GC.SuppressFinalize(this);
     }
