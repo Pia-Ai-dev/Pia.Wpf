@@ -17,6 +17,7 @@ persona model-type picker.
 
 ```powershell
 dotnet build
+Remove-Item -Recurse -Force $env:TEMP\pia-routines   # the seed leaves local\history.db alone
 node tests/ui-scripts/agent-run-e2e/setup-profile.mjs $env:TEMP\pia-routines routines DeepSeek
 # ww_launch src/Pia.Wpf/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.exe with env
 #   PIA_DATA_DIR       = $env:TEMP\pia-routines\roaming
@@ -151,6 +152,16 @@ have no working-subpath input at all. *Run in background* does go through the sa
 identical symptom, and gets the identical fix from the one stamp. One edge is left deliberately: a
 delegated CHILD run's request carries no subpath, so a parked child's visible stub chat still shows
 `\`. Widening that would mean inventing a value the request does not carry.
+
+**Both re-checked live on 2026-09-09**, because the fix itself was only ever under unit test and the
+symptom is a pill. A fresh throwaway profile, an agent routine pinned to `\Playground\E2E` and fired
+with *Run now*: `Routines_OpenRunChat_<chatId>` resumed the produced chat with `ChatChip_WorkingDir`
+reading `\Playground\E2E` — folder glyph, not the root home glyph — the row still read
+`WorkingDirectory = Playground/E2E` after the run had finished and rewritten it, and the one promoted
+file landed in the narrowed folder rather than at the sandbox root. *Run in background* from that chat
+produced a second chat reading the same pill, with its file in the same place. Read off the UIA tree,
+both times after the run reached `Completed` — the launcher test asserts the stamp at launch, and the
+finished chat is where the symptom was seen.
 
 **`list_files` emits native separators, `find_files` emits forward slashes — FIXED.** Run 3's
 `list_files` result read `Support\tickets\T-2001.txt` while `find_files` in the same round returned
