@@ -1,8 +1,10 @@
 # Screen vision — checklist
 
-**Status:** Groups A–D landed, C4’s tray half excepted, plus E1’s service and probe; E2–E4 wait on
-G2. All three gates are still open — G1 (A5) and G2 (E1) need a human at a real desktop, G3 one
-live Pia Cloud round.
+**Status:** Groups A–D landed, C4’s tray half excepted, plus E1’s service and probe. **G1 answered
+2026-09-09: GDI holds** (0 black frames). **G2 answered 2026-09-09: Mixed** — Chromium yields page
+text, the one Electron app probed yields only its title, so E2 is now REQUIRED rather than
+conditional and E3 must treat an empty snapshot as "fall back", not "no text". **G3 is still open**
+and needs one live Pia Cloud round; D2 stays unticked until it says yes.
 **Owner:** Marco Altmann
 **Written:** 2026-09-07
 **Origin:** [2026-09-07-screen-vision-design.md](2026-09-07-screen-vision-design.md), which is the
@@ -17,9 +19,9 @@ closed · `Med` worthwhile, not headline · `Enabler` little standalone value, u
 
 | Gate | Question it answers | What it can cancel |
 |---|---|---|
-| **G1** | Does `PrintWindow(PW_RENDERFULLCONTENT)` and a screen `BitBlt` return usable frames across the apps this user base actually runs — Office, Teams, Chrome/Edge, VS Code, a PDF viewer, a remote-desktop window? | The GDI backend. A high black-frame rate sends step A1 back for a `Windows.Graphics.Capture` implementation (a D3D11 device plus a staging-texture copy — `M`, not `XS`) before any UI is worth building. Answered by A5, deliberately the cheapest step in the plan. |
-| **G2** | Is a UIA text snapshot of a target window usable without the user switching accessibility on, specifically in Electron and Chromium windows? | Phase 3's engine, i.e. group E. A "no" means watch mode is OCR-only (slower, lossier) or does not ship — it does **not** touch groups A–D. |
-| **G3** | Does PiaCloud accept a `ChatRole.User` message carrying a `DataContent` interleaved between a tool result and the next round, and does the model actually attend to it? | The shape of phase 2. A "no" forces the capture to be delivered on the *next user turn* instead of mid-round, which changes D1's second layer from "Pia asks and sees immediately" to "Pia asks and sees on the next exchange". Answered inside D2. |
+| **G1 — ANSWERED, GDI holds** ([results](2026-09-09-capture-probe.md)) | Does `PrintWindow(PW_RENDERFULLCONTENT)` and a screen `BitBlt` return usable frames across the apps this user base actually runs — Office, Teams, Chrome/Edge, VS Code, a PDF viewer, a remote-desktop window? | The GDI backend. A high black-frame rate sends step A1 back for a `Windows.Graphics.Capture` implementation (a D3D11 device plus a staging-texture copy — `M`, not `XS`) before any UI is worth building. Answered by A5, deliberately the cheapest step in the plan. |
+| **G2 — ANSWERED, Mixed** ([results](2026-09-09-uia-text-probe.md)) | Is a UIA text snapshot of a target window usable without the user switching accessibility on, specifically in Electron and Chromium windows? | Phase 3's engine, i.e. group E. A "no" means watch mode is OCR-only (slower, lossier) or does not ship — it does **not** touch groups A–D. |
+| **G3 — OPEN** | Does PiaCloud accept a `ChatRole.User` message carrying a `DataContent` interleaved between a tool result and the next round, and does the model actually attend to it? | The shape of phase 2. A "no" forces the capture to be delivered on the *next user turn* instead of mid-round, which changes D1's second layer from "Pia asks and sees immediately" to "Pia asks and sees on the next exchange". Answered inside D2. |
 
 Do not tick a dependant of an open gate without revisiting it.
 
@@ -50,10 +52,15 @@ Do not tick a dependant of an open gate without revisiting it.
       to the model.
       *Deps:* A1 · *Effort:* XS · *Value:* High
 
-- [ ] **A5. Probe the real desktop. This is G1.** Capture Office, Teams, Chrome/Edge, VS Code, a PDF
+- [x] **A5. Probe the real desktop. This is G1.** Capture Office, Teams, Chrome/Edge, VS Code, a PDF
       viewer and a remote-desktop window; record which give a usable frame, which give black, and how
       legible 10pt text is at the 1568px ceiling. Write the results into this folder.
       *Deps:* A1, A2 · *Effort:* XS · *Value:* High
+      Run 2026-09-09 → [2026-09-09-capture-probe.md](2026-09-09-capture-probe.md). 6 of 6 windows
+      and 1 of 1 display usable, 0 black; ~10pt stayed readable at the 1568px ceiling; the Pia
+      region came back excluded and the affinity was restored. Office, Teams, a PDF viewer and
+      `mstsc` were not open, so a re-run with those would widen the sample — it cannot overturn
+      the backend decision.
       **Not run — G1 is open.** The probe is built and excluded from the default gate. It needs an
       unlocked, interactive desktop with Word or Excel, Teams, a browser, VS Code, a PDF, an mstsc
       session and an elevated Task Manager open; a background or disconnected session gets no DWM
@@ -170,10 +177,14 @@ Do not tick a dependant of an open gate without revisiting it.
 
 ## Group E — phase 3, Pia watches (gated on G2)
 
-- [ ] **E1. Extract text from a window via UIA. This is G2.** Snapshot the target's automation tree
+- [x] **E1. Extract text from a window via UIA. This is G2.** Snapshot the target's automation tree
       into compact text and measure it against Electron and Chromium windows with accessibility
       untouched. Answer the gate before building the loop around it.
       *Deps:* A3 · *Effort:* M · *Value:* Enabler
+      Run 2026-09-09 → [2026-09-09-uia-text-probe.md](2026-09-09-uia-text-probe.md). Chromium
+      returned the whole visible document in 13ms warm; the one Electron window returned 27 chars,
+      its title and nothing else. Verdict Mixed. The Electron half rests on a single app (Teams and
+      VS Code were not running), so a re-run would firm it up.
       **Not run — G2 is open.** The service, the compactor, the gate tests and the probe are in and
       green; the gate itself needs a human at a real desktop with Chromium and Electron windows open
       and no accessibility setting turned on. Run `dotnet test
@@ -181,12 +192,13 @@ Do not tick a dependant of an open gate without revisiting it.
       Pia.Tests.Services.Screen.UiaTextSnapshotDesktopProbe`. It writes `<date>-uia-text-probe.md`
       into this folder, and that file states the Yes / Mixed / No bar it has to be judged against.
 
-- [ ] **E2. Add the on-device OCR fallback.** `Windows.Media.Ocr` over the captured bitmap for
+- [ ] **E2. Add the on-device OCR fallback. REQUIRED, not conditional — G2 came back Mixed.**
+      `Windows.Media.Ocr` over the captured bitmap for
       windows whose UIA tree is useless — a canvas, a remote-desktop session, an image viewer. Local,
       so it does not weaken D2. Detect a missing language pack once
       (`OcrEngine.TryCreateFromUserProfileLanguages()` returns null) and disable with a reason rather
       than failing per tick.
-      *Deps:* E1, A1 · *Effort:* S · *Value:* Med
+      *Deps:* E1, A1 · *Effort:* S · *Value:* High — an Electron target is blind without it
 
 - [ ] **E3. Build `ScreenWatchService`.** One allowlisted target, one interval, a hash-compare per
       tick and a rolling delta buffer, so an idle screen costs nothing.
