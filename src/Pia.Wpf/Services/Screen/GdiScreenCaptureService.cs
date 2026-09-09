@@ -461,19 +461,20 @@ public sealed class GdiScreenCaptureService : IScreenCaptureService
     private static List<nint> ReadOwnWindows()
     {
         var ownProcessId = (uint)Environment.ProcessId;
-        var own = new List<nint>();
+        var own = new List<(nint Hwnd, bool IsVisible)>();
 
-        // Hidden HWNDs are kept: popups and tray flyouts never appear in the application's window list.
+        // Enumerated rather than read off the application's window list, which holds neither popups nor
+        // tray flyouts; OwnWindowExclusion then drops the ones that cannot paint into a capture anyway.
         foreach (var hwnd in ScreenCaptureInterop.EnumerateTopLevelWindows())
         {
             if (ScreenCaptureInterop.GetWindowThreadProcessId(hwnd, out var processId) != 0
                 && processId == ownProcessId)
             {
-                own.Add(hwnd);
+                own.Add((hwnd, ScreenCaptureInterop.IsWindowVisible(hwnd)));
             }
         }
 
-        return own;
+        return OwnWindowExclusion.Needed(own);
     }
 
     private static WindowDescriptor? Describe(nint hwnd, uint processId)

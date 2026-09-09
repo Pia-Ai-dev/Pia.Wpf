@@ -362,3 +362,17 @@ piece of reasoning above turned out to be wrong, so the next reader trusts the c
   or emit a timeline row generically. Only `ToolClassifier`, `ToolAutonomy` and `ActionCardBuilder`
   switch on the member.
 - **The screen plugin is GUID `…00B`**, following assignments at `…00A`.
+- **The process is NOT PerMonitorV2 — it is system-DPI-aware.** The Architecture section above
+  reasons the opposite from WPF's default and from `EmojiPresenter.OnDpiChanged` firing; a live
+  Debug run disproves it. Every capture logs `Capture thread DPI awareness 1 -> 2`, i.e. the calling
+  thread arrives at awareness 1 (system) and `DpiAwarenessScope` raises it to 2 for the duration. So
+  the scope is load-bearing rather than the no-op the design expected, and it is what makes a display
+  come back at its true pixel size instead of a virtualized one. Do not remove it, and do not assume
+  a `GetWindowRect` value is already per-monitor-correct without it.
+- **Only VISIBLE own windows get a capture exclusion.** `ReadOwnWindows` first handed every top-level
+  HWND the process owns — around nineteen, including WPF's own hidden `HwndWrapper` windows and the
+  IME, Cicero, DDE and GDI+ helpers — to the affinity lease. An invisible window paints nothing into a
+  capture, so excluding it bought no privacy while mutating window state nobody asked us to touch; a
+  user reported two of those hidden windows appearing on screen, unclosable, after using the feature.
+  `OwnWindowExclusion.Needed` now keeps the visible ones only. Note this is not a narrowing of the
+  guarantee: anything that can render is still excluded, and a minimized window keeps `WS_VISIBLE`.
