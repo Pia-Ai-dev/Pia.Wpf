@@ -10,7 +10,7 @@ namespace Pia.Services.Consent;
 /// <summary>
 /// DPAPI-protected, write-only persistence of consent evidence (Art. 7 GDPR Nachweispflicht). One file
 /// per speaker per session for the grant, plus a separate revocation file appended beside it — the
-/// grant file itself is never modified or deleted.
+/// grant file itself is never modified, and only <see cref="ConsentRetention"/> removes it.
 ///
 /// <para>This is the D7 fix: the old branch's equivalent write path always passed an empty evidence
 /// path and never persisted anything. Both public methods THROW on any encryption or I/O failure —

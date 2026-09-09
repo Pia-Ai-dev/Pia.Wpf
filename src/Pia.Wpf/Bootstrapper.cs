@@ -89,6 +89,13 @@ public static class Bootstrapper
         // reflect-invoke ConfigureServices against the real, un-redirected profile.
         var logRetention = LogFileRetention.Sweep(PiaPaths.LogsDirectory, LogFileRetention.DefaultRetainedDays);
 
+        // The load-bearing consent sweep: an install that only runs an hour a day never reaches the daily
+        // timer in ConsentRetentionBackgroundService, and its data would age out on nobody's clock.
+        var consentRetention = Services.Consent.ConsentRetention.Sweep(
+            PiaPaths.ConsentEvidenceDirectory,
+            PiaPaths.ConsentAuditDirectory,
+            Services.Consent.ConsentRetention.DefaultRetainedDays);
+
         var services = new ServiceCollection();
         ConfigureServices(services);
 
@@ -111,6 +118,8 @@ public static class Bootstrapper
         bootstrapLogger.LogInformation(
             "Log retention: kept {Kept}, deleted {Deleted}, skipped {Skipped}, cutoff {Cutoff:yyyy-MM-dd}",
             logRetention.Kept, logRetention.Deleted, logRetention.Skipped, logRetention.Cutoff);
+
+        Services.Consent.ConsentRetention.LogOutcome(bootstrapLogger, consentRetention);
 
         var envServerUrl = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
 #if DEBUG
@@ -896,6 +905,7 @@ public static class Bootstrapper
         // separately-constructed service would not share.
         services.AddSingleton<IScheduledJobRunner>(sp => sp.GetRequiredService<ScheduledJobBackgroundService>());
         services.AddSingleton<AssistantChatRetentionService>();
+        services.AddSingleton<Services.Consent.ConsentRetentionBackgroundService>();
         services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
 
         // Background assignments — the one plane where content leaves the encrypted side. The consent log is a

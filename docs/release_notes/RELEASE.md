@@ -154,6 +154,9 @@
   are in, rather than Pia's own meetings folder, and the suggested name leads
   with the date — 2026-09-03_meeting.md. Saving a second transcript on the same
   day asks before it overwrites.
+- The record of who consented to being transcribed is kept for 14 days and then
+  deleted, folder and all. Pia clears what is due every time it starts, and once
+  a day while it runs.
 
 ## Spoken replies
 
