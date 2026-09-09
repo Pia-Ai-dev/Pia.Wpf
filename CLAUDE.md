@@ -8,27 +8,53 @@ Pia.Wpf is the desktop client for Pia (Personal Intelligent Assistant), a WPF ap
 dotnet build                                           # Build all projects
 dotnet build -c Release                                # Release build
 dotnet run --project src/Pia.Wpf/Pia.Wpf.csproj       # Run WPF client
-dotnet test                                            # Run all tests
 ```
+
+Tests run from the built exe, not `dotnet test` — see **Test Gate** below.
 
 ## Test Gate
 
-`dotnet test` with **no filter** is the gate. The bar is `failed: 0`.
+The **built exe** with no filter is the gate. The bar is `Failed: 0`.
+
+```bash
+tests/Pia.Wpf.Tests/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.Tests.exe > test.log 2>&1
+grep -E "TEST EXECUTION SUMMARY" -A 2 test.log
+```
+
+That is a redirect, not a pipe — never pipe a test run (see below). The exe takes xunit's **native**
+single-dash options (`-namespace`, `-namespace-`, `-class`, `-method`, `-trait-`, `-explicit`) and
+rejects the `--filter-*` forms:
+
+```bash
+Pia.Wpf.Tests.exe -explicit only -namespace "Pia.Tests.Integration.Providers"   # opt into live APIs
+```
 
 Live-provider tests are marked `[LiveApiFact]` / `[LiveApiTheory]` (xunit v3 `Explicit`), so the
 runner excludes them by default and reports them as `Not Run` — no caller-side flag is involved.
 Older docs quote `--filter-not-namespace "Pia.Wpf.Tests.Integration.Providers"`; that namespace no
 longer exists, and the flag is now a no-op you should drop rather than carry forward.
 
-```bash
-dotnet test                                                        # the gate
-dotnet test -- --explicit only --filter-namespace "Pia.Tests.Integration.Providers"   # opt into live APIs
-dotnet test -- --coverage --coverage-output-format cobertura       # coverage
-```
+### Why not `dotnet test`
 
-Run the built exe directly for a faster loop, but note it takes xunit's **native** single-dash
-options (`-namespace-`, `-trait-`, `-explicit`, `-class`) and rejects the `--filter-*` forms:
-`tests/Pia.Wpf.Tests/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.Tests.exe`
+Measured 2026-09-08 over the same 6699 tests: the exe finishes in **62 s** and exits `rc=0`, while
+`dotnet test` took **90 s** once, **11 m 37 s** the next time, and **4 h 19 m** when its output was
+piped (`dotnet test | tail`) — and two of those three runs never terminated at all, reporting every
+result and then sitting there until the process was killed. `failed: 0` every time, so nothing is
+wrong with the tests. `dotnet test` drives the host in xunit's **automated mode**, whose synchronous
+reporting "wait[s] for a carriage return after each" message (`Pia.Wpf.Tests.exe --help`,
+`-automated`); one stalled acknowledgement per test is what turns 62 s into hours, a final one that
+never arrives is the hang, and a slow pipe consumer makes it far worse.
+
+If it recurs, `dotnet-stack report --process-id <pid>` shows `Main` parked in
+`TaskAwaiter<int>.GetResult()` with **no** thread running a test — everything else idle. A killed
+`dotnet test` also orphans a `Pia.Wpf.Tests.exe` that keeps the build outputs locked; `taskkill /IM
+Pia.Wpf.Tests.exe /F` clears it, and a stale one is worth ruling out before believing a build error.
+
+### Coverage
+
+```bash
+dotnet test -- --coverage --coverage-output-format cobertura
+```
 
 `Microsoft.Testing.Extensions.CodeCoverage` is pinned to **18.0.6** on purpose. 18.1.0+ needs
 `Microsoft.Testing.Platform` 2.x while xunit.v3 3.2.2 is on the 1.9.x line, and the resulting
