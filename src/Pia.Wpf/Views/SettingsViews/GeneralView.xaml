@@ -483,7 +483,7 @@
                                   Margin="8,0,0,0"
                                   CornerRadius="8"
                                   Background="{DynamicResource PiaAccentBrush}"
-                                  Visibility="{Binding IsSelected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                  Visibility="{Binding IsActive, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <TextBlock Text="{loc:Str Tts_Active}"
                                        FontSize="10"
                                        Foreground="White"/>
