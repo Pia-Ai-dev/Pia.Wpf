@@ -544,15 +544,17 @@ public class TtsService : ITtsService, IDisposable
             _logger,
             cancellationToken);
 
+        // Nothing on the download path emits a terminal phase, and a voice already extracted reports
+        // nothing at all, so the picker's last tick has to come from here.
+        progress?.Report(new TtsDownloadProgress("Voice model ready", 100));
+
         _logger.LogInformation("Voice model downloaded: {VoiceKey}", voiceKey);
     }
 
-    private static TtsDownloadProgress Describe(ModelDownloadProgress progress) => progress.Phase switch
-    {
-        ModelDownloadPhase.Extracting => new TtsDownloadProgress("Extracting voice model...", 100),
-        ModelDownloadPhase.Completed => new TtsDownloadProgress("Voice model ready", 100),
-        _ => new TtsDownloadProgress("Downloading voice model...", progress.PercentComplete),
-    };
+    private static TtsDownloadProgress Describe(ModelDownloadProgress progress) =>
+        progress.Phase == ModelDownloadPhase.Extracting
+            ? new TtsDownloadProgress("Extracting voice model...", 100)
+            : new TtsDownloadProgress("Downloading voice model...", progress.PercentComplete);
 
     public async Task SetVoiceAsync(string voiceKey, CancellationToken cancellationToken = default)
     {

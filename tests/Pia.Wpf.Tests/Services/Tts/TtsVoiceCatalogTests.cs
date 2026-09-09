@@ -98,15 +98,20 @@ public sealed class TtsVoiceCatalogTests : IDisposable
 
     /// <summary>
     /// A "*.onnx" pattern also matches the sidecar "<c>.onnx.json</c>" through its 8.3 short name, and
-    /// handing that to the engine is an access violation rather than an error.
+    /// handing that to the engine is an access violation rather than an error. The model is under a
+    /// name that does not match the key, so resolution has to go through the glob to find it.
     /// </summary>
     [Fact]
     public void TryResolveIn_never_picks_the_json_sidecar_as_the_model()
     {
         WriteVoice(model: false, tokens: true, phontab: true);
         File.WriteAllText(Path.Combine(_voiceDir, Key + ".onnx.json"), "{}");
+        File.WriteAllText(Path.Combine(_voiceDir, "model.onnx"), "onnx");
 
-        Assert.Null(TtsVoiceCatalog.TryResolveIn(_voiceDir, Key));
+        var files = TtsVoiceCatalog.TryResolveIn(_voiceDir, Key);
+
+        Assert.NotNull(files);
+        Assert.Equal(Path.Combine(_voiceDir, "model.onnx"), files.ModelPath);
     }
 
     [Fact]
