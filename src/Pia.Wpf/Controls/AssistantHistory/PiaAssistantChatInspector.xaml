@@ -124,9 +124,12 @@
                       </Style.Triggers>
                     </Style>
                   </StackPanel.Style>
+                  <!-- Same fold as the live chat: a 20-line message otherwise fills the pane and
+                       pushes the answer to it out of view. Own id prefix, not the chat's. -->
                   <Border Style="{StaticResource UserBubbleStyle}">
-                    <TextBlock behaviors:AtCommandHighlightBehavior.Text="{Binding Content}"
-                               Style="{StaticResource UserBubbleTextStyle}"/>
+                    <chat:PiaCollapsibleMessageText
+                        Text="{Binding Content}"
+                        ToggleAutomationId="{Binding Id, StringFormat='AssistantHistory_ExpandMessage_{0}'}" />
                   </Border>
                   <!-- What the user attached. Saved files reopen; the rest kept only their name. -->
                   <ItemsControl ItemsSource="{Binding AttachedFiles}"
