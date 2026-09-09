@@ -179,6 +179,14 @@ public class TtsService : ITtsService, IDisposable
                 await LoadVoiceAsync(voiceKey, cancellationToken);
                 _ = Task.Run(() => PreGenerateFillersAsync(CancellationToken.None));
             }
+            else if (!string.IsNullOrEmpty(voiceKey))
+            {
+                // The Piper tree removed above takes the saved voice's files with it. Left set, the key
+                // names a voice that can never load, and the settings list shows it as the active one.
+                settings.TtsVoiceModelKey = string.Empty;
+                await _settingsService.SaveSettingsAsync(settings);
+                _logger.LogInformation("Cleared the saved TTS voice: its model is not on disk");
+            }
 
             _isReady = true;
             _logger.LogInformation("TTS service initialized");
