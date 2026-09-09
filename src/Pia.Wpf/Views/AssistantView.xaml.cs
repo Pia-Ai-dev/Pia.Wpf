@@ -2,12 +2,14 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Pia.Behaviors;
 using Pia.Helpers;
+using Pia.Localization;
 using Pia.Models;
 using Pia.ViewModels;
 
@@ -118,6 +120,14 @@ public partial class AssistantView : UserControl
         ComposerExpandIcon.Symbol = _composerExpanded
             ? Wpf.Ui.Controls.SymbolRegular.ChevronDown24
             : Wpf.Ui.Controls.SymbolRegular.ChevronUp24;
+
+        // The one button does both jobs, so the label has to turn round with the icon — a screen
+        // reader hears only this, and the XAML's literal would keep saying "expand" while it shrinks.
+        var label = LocalizationSource.Instance[_composerExpanded
+            ? "Assistant_CollapseComposer_Tooltip"
+            : "Assistant_ExpandComposer_Tooltip"];
+        AutomationProperties.SetName(ComposerExpandButton, label);
+        ComposerExpandButton.ToolTip = new ToolTip { Content = label };
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
