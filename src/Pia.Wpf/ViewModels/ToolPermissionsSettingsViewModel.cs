@@ -6,6 +6,7 @@ using Pia.Helpers;
 using Pia.Localization;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Screen;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
 
@@ -15,14 +16,18 @@ namespace Pia.ViewModels;
 /// The mandatory revocation surface, plus the pre-approval catalogue: lists the standing "always allow"
 /// grants (Revoke) and the process-scoped session grants (Forget), and offers every other tool through the
 /// same grant calls a card would make. Ctor takes only interfaces (DI guardrail); injected fields are
-/// readonly (MVVM guardrail). All three collections are built synchronously, so no async initialization is
-/// needed.
+/// readonly (MVVM guardrail). The three grant collections are built synchronously; only the screen-capture
+/// allowlist, which reads a file, needs <see cref="Initialization"/>.
 /// </summary>
 public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
 {
     private readonly IToolPermissionService _permissions;
     private readonly IPluginService _pluginService;
     private readonly ILogger<SettingsViewModel> _logger;
+    private readonly IScreenCaptureAllowlistStore? _screenCaptureAllowlist;
+
+    /// <summary>Kept so a language change can re-project the "any window title" label without a reload.</summary>
+    private readonly List<ScreenCaptureAllowlistEntry> _allowlistEntries = [];
 
     public ObservableCollection<ToolGrantRow> Grants { get; } = [];
 
@@ -41,21 +46,52 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
     [ObservableProperty]
     private bool _hasCatalog;
 
+    /// <summary>The windows a run nobody is watching may capture.</summary>
+    public ObservableCollection<ScreenCaptureAllowlistRow> ScreenCaptureAllowlist { get; } = [];
+
+    [ObservableProperty]
+    private bool _hasScreenCaptureAllowlistStore;
+
+    [ObservableProperty]
+    private bool _hasScreenCaptureAllowlistEntries;
+
+    [ObservableProperty]
+    private string _newAllowlistProcessName = string.Empty;
+
+    [ObservableProperty]
+    private string _newAllowlistTitleContains = string.Empty;
+
+    /// <summary>Completes after the first allowlist load, so a test awaits it instead of racing the ctor.</summary>
+    public Task Initialization { get; }
+
     public ToolPermissionsSettingsViewModel(
         IToolPermissionService permissions,
         IPluginService pluginService,
-        ILogger<SettingsViewModel> logger)
+        ILogger<SettingsViewModel> logger,
+        IScreenCaptureAllowlistStore? screenCaptureAllowlist = null)
     {
         _permissions = permissions;
         _pluginService = pluginService;
         _logger = logger;
+        _screenCaptureAllowlist = screenCaptureAllowlist;
 
         _permissions.Changed += OnPermissionsChanged;
         _pluginService.PluginsChanged += OnPluginsChanged;
-        // The reason line is the one string on this page resolved in C#, so no loc:Str binding re-reads it.
-        LocalizationSource.Instance.PropertyChanged += (_, _) => PostOrRun(NotifyCatalogLanguageChanged);
+        // The catalogue's reason line and the allowlist's "any window title" label are resolved in C#, so no
+        // loc:Str binding re-reads them on a language change.
+        LocalizationSource.Instance.PropertyChanged += (_, _) => PostOrRun(() =>
+        {
+            NotifyCatalogLanguageChanged();
+            RebuildAllowlistRows();
+        });
         RefreshGrants();
         RebuildCatalog();
+
+        HasScreenCaptureAllowlistStore = _screenCaptureAllowlist is not null;
+        if (_screenCaptureAllowlist is not null)
+            _screenCaptureAllowlist.Changed += (_, _) => PostOrRun(() => LoadAllowlistAsync().SafeFireAndForget(_logger));
+
+        Initialization = _screenCaptureAllowlist is null ? Task.CompletedTask : LoadAllowlistAsync();
     }
 
     // The grant store's Changed may fire off-thread (an external SettingsChanged from a
@@ -186,5 +222,66 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
             ? _permissions.GrantAsync(row.PluginId, row.ToolName)
             : _permissions.RevokeAsync(row.PluginId, row.ToolName))
             .SafeFireAndForget(_logger);
+    }
+
+    private async Task LoadAllowlistAsync()
+    {
+        if (_screenCaptureAllowlist is null) return;
+
+        try
+        {
+            // Nothing awaits Initialization in production, so a read failure would otherwise be an unobserved
+            // fault behind an empty-state message that says the list is empty.
+            var entries = await _screenCaptureAllowlist.ListAsync();
+            await PostAsync(() =>
+            {
+                _allowlistEntries.Clear();
+                _allowlistEntries.AddRange(entries);
+                RebuildAllowlistRows();
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load the screen capture allowlist");
+        }
+    }
+
+    private void RebuildAllowlistRows()
+    {
+        ScreenCaptureAllowlist.Clear();
+        foreach (var entry in _allowlistEntries)
+        {
+            var titleDisplay = string.IsNullOrWhiteSpace(entry.TitleContains)
+                ? LocalizationSource.Instance["Settings_ToolPermissions_ScreenAllowlist_AnyTitle"]
+                : entry.TitleContains;
+            ScreenCaptureAllowlist.Add(
+                new ScreenCaptureAllowlistRow(entry.Id, entry.ProcessName, titleDisplay));
+        }
+
+        HasScreenCaptureAllowlistEntries = ScreenCaptureAllowlist.Count > 0;
+    }
+
+    [RelayCommand]
+    private async Task AddScreenCaptureAllowlistEntryAsync()
+    {
+        if (_screenCaptureAllowlist is null) return;
+
+        // Privacy: the program name and the title fragment are user-named items, so only the id is logged.
+        // The list itself is refreshed by the store's Changed event, so there is one reload path, not two.
+        var added = await _screenCaptureAllowlist.AddAsync(NewAllowlistProcessName, NewAllowlistTitleContains);
+        if (added is null) return;
+
+        _logger.LogInformation("Added screen capture allowlist entry {EntryId}", added.Id);
+        NewAllowlistProcessName = string.Empty;
+        NewAllowlistTitleContains = string.Empty;
+    }
+
+    [RelayCommand]
+    private async Task RemoveScreenCaptureAllowlistEntryAsync(ScreenCaptureAllowlistRow? row)
+    {
+        if (row is null || _screenCaptureAllowlist is null) return;
+
+        _logger.LogInformation("Removing screen capture allowlist entry {EntryId}", row.Id);
+        await _screenCaptureAllowlist.RemoveAsync(row.Id);
     }
 }

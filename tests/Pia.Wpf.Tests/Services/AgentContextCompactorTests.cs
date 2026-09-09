@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Interfaces;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -586,5 +587,74 @@ public class AgentContextCompactorTests
         var system = Assert.Single(result, m => m.Role == ChatRole.System);
         Assert.Same(messages[0], system);
         Assert.Same(messages[0], result[0]);
+    }
+
+    private static ChatMessage ToolImageTurn(string callId = "call-1") =>
+        ToolLoopImageMessages.Build(new ToolLoopImage(callId, Jpeg(), "image/jpeg", 4, 4, "a tool's screen capture"));
+
+    [Fact]
+    public async Task AToolImageMessage_IsNotTakenForTheStepInstruction()
+    {
+        var messages = AgentStepShapedMessages(priorSteps: 12);
+        var instruction = messages[^1];
+        var image = ToolImageTurn();
+        messages.Add(image);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            result.Count < messages.Count,
+            $"this fixture must be over budget or it proves nothing, but {messages.Count} messages came back as {result.Count}");
+
+        Assert.Same(instruction, result[^1]);
+        Assert.Same(image, result[^2]);
+    }
+
+    [Fact]
+    public async Task AConsumedPlaceholder_IsNotTakenForTheStepInstruction()
+    {
+        var messages = AgentStepShapedMessages(priorSteps: 12);
+        var instruction = messages[^1];
+        messages.Add(ToolImageTurn());
+        ToolLoopImageMessages.Consume(messages);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.Same(instruction, result[^1]);
+    }
+
+    /// <summary>Compaction is the second path that could wedge a user message between two tool results — the
+    /// shape a provider rejects outright.</summary>
+    [Fact]
+    public async Task NoUserMessage_EverLandsBetweenTwoToolResults()
+    {
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "You are Pia, an agent."),
+            new(ChatRole.User, "THE GOAL: read the screen."),
+        };
+        for (var i = 1; i <= 10; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+        messages.Add(new ChatMessage(ChatRole.User, "Execute step 11"));
+        messages.Add(new ChatMessage(ChatRole.Assistant, [
+            new FunctionCallContent("call-1", "screen_capture", null),
+            new FunctionCallContent("call-2", "read_file", null)]));
+        messages.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call-1", "captured")]));
+        messages.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call-2", "read")]));
+        messages.Add(ToolImageTurn());
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        var roles = result.Select(m => m.Role).ToList();
+        var firstTool = roles.IndexOf(ChatRole.Tool);
+        var lastTool = roles.LastIndexOf(ChatRole.Tool);
+        Assert.True(lastTool > firstTool && firstTool >= 0,
+            "the fixture must keep two tool results or the span below proves nothing");
+
+        for (var i = firstTool; i <= lastTool; i++)
+            Assert.NotEqual(ChatRole.User, roles[i]);
     }
 }

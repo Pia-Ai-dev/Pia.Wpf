@@ -43,6 +43,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ToolClass.Git => ActionCardCategory.Git,
             ToolClass.Scheduling => ActionCardCategory.Scheduled,
             ToolClass.Assignment => ActionCardCategory.Assignment,
+            ToolClass.Screen => ActionCardCategory.Screen,
             // External, Unknown (a plugin name this build does not recognise, e.g. a renamed built-in) and
             // Ingest (which returns no pending action, so it never reaches a card) all render as the generic
             // external-tool card — today's shape for anything the builder cannot name.
@@ -171,6 +172,8 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "read_chat" => _localizationService["Msg_Assistant_StatusReadingChat"],
         "query_assignments" or "get_assignment" => _localizationService["Msg_Assistant_StatusCheckingAssignments"],
         "start_assignment" => _localizationService["Msg_Assistant_StatusStartingAssignment"],
+        "screen_capture" => _localizationService["Msg_Assistant_StatusCapturingScreen"],
+        "screen_list_targets" => _localizationService["Msg_Assistant_StatusListingScreenTargets"],
         var t when t.StartsWith("git_", StringComparison.Ordinal) => _localizationService["Msg_Assistant_StatusRunningGit"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
@@ -181,6 +184,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "todo" => _localizationService["Msg_Assistant_TodoUpdated"],
         "reminder" => _localizationService["Msg_Assistant_ReminderUpdated"],
         "git" => _localizationService["Msg_Assistant_GitUpdated"],
+        "screen" => _localizationService["Msg_Assistant_ScreenCaptured"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
 
@@ -200,6 +204,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ActionCardCategory.Git => "ActionCard_Category_Git",
             ActionCardCategory.Scheduled => "ActionCard_Category_Scheduled",
             ActionCardCategory.Assignment => "ActionCard_Category_Assignment",
+            ActionCardCategory.Screen => "ActionCard_Category_Screen",
             _ => "ActionCard_Category_Memory"
         };
 
@@ -219,6 +224,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             "git_switch" => "ActionCard_Action_Switch",
             "git_restore" => "ActionCard_Action_Restore",
             "git_stash" => "ActionCard_Action_Stash",
+            "screen_capture" => "ActionCard_Action_Capture",
             _ => "ActionCard_Action_Create"
         };
 

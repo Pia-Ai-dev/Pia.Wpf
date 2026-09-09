@@ -34,6 +34,10 @@ public enum ToolClass
     /// <summary>The built-in background-assignment tools (plugin <c>assignments</c>). No autonomy preset covers
     /// it, so only an explicit grant starts one unattended; voice refuses it at every tier.</summary>
     Assignment = 9,
+
+    /// <summary>The built-in screen tools (plugin <c>screen</c>). No preset covers it, and with nobody watching
+    /// it runs only on a standing or named grant — never on a policy or a session grant.</summary>
+    Screen = 10,
 }
 
 /// <summary>Which gate asked. PERSISTED, so the ordinals are APPEND-ONLY.</summary>

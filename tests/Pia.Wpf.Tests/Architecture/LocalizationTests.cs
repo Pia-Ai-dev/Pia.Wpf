@@ -10,6 +10,7 @@ using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Operators;
+using Pia.Services.Screen;
 using Pia.Shared.Operators;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
@@ -477,6 +478,48 @@ public class LocalizationTests
             $"every assignment start-result key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
+    /// <summary>The refusal message comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryCaptureFailureKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<CaptureFailureReason>()
+            .Select(ScreenCaptureFailureText.KeyFor)
+            .Where(key => key is not null)
+            .Select(key => key!)
+            .Distinct()
+            .ToList();
+
+        // One message per refusal, less the None arm — a capture that worked shows no line at all.
+        Assert.Equal(Enum.GetValues<CaptureFailureReason>().Length - 1, keys.Count);
+
+        // Pinned literally as well, so deleting an arm shrinks coverage loudly instead of silently.
+        string[] expected =
+        [
+            "Msg_Screen_TargetGone",
+            "Msg_Screen_Minimized",
+            "Msg_Screen_Cloaked",
+            "Msg_Screen_EmptyBounds",
+            "Msg_Screen_SelfTarget",
+            "Msg_Screen_SelfExclusionFailed",
+            "Msg_Screen_UniformFrame",
+            "Msg_Screen_Timeout",
+            "Msg_Screen_NativeError",
+            "Msg_Screen_SelfBlackout",
+        ];
+        Assert.Equal(expected.Order(), keys.Order());
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(MessageStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every capture-refusal key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
     [Fact]
     public void EnumConverterKeys_MustExistInResources()
     {
@@ -560,12 +603,16 @@ public class LocalizationTests
     }
 
     /// <summary>Optimize's length refusal is formatted with the text length and, when the server reports
-    /// one, the cap. A locale that drops or invents a placeholder throws at render time.</summary>
+    /// one, the cap, and the unattended-capture notice with the target and a count. A locale that drops or
+    /// invents a placeholder throws at render time.</summary>
     [Theory]
     [InlineData("Msg_Optimize_TextTooLong", 2)]
     [InlineData("Msg_Optimize_TextTooLongNoLimit", 1)]
     [InlineData("Msg_Assistant_Offline", 0)]
     [InlineData("Msg_Assistant_OfflineTitle", 0)]
+    [InlineData("Msg_ScreenCapture_UnattendedNotice", 2)]
+    [InlineData("Tool_Screen_Desc_CaptureWindow", 1)]
+    [InlineData("Tool_Screen_Desc_CaptureMonitor", 1)]
     public void AFailureMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
     {
         var placeholder = new Regex(@"\{(\d+)");

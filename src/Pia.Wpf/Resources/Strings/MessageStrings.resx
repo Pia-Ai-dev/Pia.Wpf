@@ -123,6 +123,12 @@
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Searching past chats...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Searching memory...</value></data>
   <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Starting a background assignment...</value></data>
+  <data name="Msg_Assistant_StatusCapturingScreen" xml:space="preserve"><value>Capturing the screen...</value></data>
+  <data name="Msg_Assistant_StatusListingScreenTargets" xml:space="preserve"><value>Listing windows and monitors...</value></data>
+  <data name="Msg_Assistant_ScreenCaptured" xml:space="preserve"><value>Screen captured</value></data>
+  <data name="Msg_ScreenCapture_UnattendedNotice" xml:space="preserve"><value>Pia captured {0} while nobody was watching ({1} capture(s) in this run). Details are in the capture audit log.</value></data>
+  <data name="Msg_ScreenCapture_MonitorLabel" xml:space="preserve"><value>a monitor</value></data>
+  <data name="Msg_ScreenCapture_UnnamedProgramLabel" xml:space="preserve"><value>a program</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Thinking...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Updating memory...</value></data>
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Updating reminder...</value></data>
@@ -416,6 +422,14 @@ Changes will be applied.</value></data>
   <data name="Tool_Assignment_Detail_PromptLength" xml:space="preserve"><value>Prompt: {0} characters</value></data>
   <data name="Tool_Assignment_Detail_Skill" xml:space="preserve"><value>Skill</value></data>
   <data name="Tool_Assignment_Skill_Unset" xml:space="preserve"><value>not chosen — the user picks</value></data>
+  <data name="Tool_Screen_Desc_CaptureWindow" xml:space="preserve"><value>Capture a picture of the {0} window</value></data>
+  <data name="Tool_Screen_Desc_CaptureMonitor" xml:space="preserve"><value>Capture a picture of display {0}</value></data>
+  <data name="Tool_Screen_Detail_Target" xml:space="preserve"><value>Target</value></data>
+  <data name="Tool_Screen_Detail_Program" xml:space="preserve"><value>Program</value></data>
+  <data name="Tool_Screen_Detail_Display" xml:space="preserve"><value>Display</value></data>
+  <data name="Tool_Screen_Detail_Size" xml:space="preserve"><value>Size</value></data>
+  <data name="Tool_Screen_Target_Window" xml:space="preserve"><value>Window</value></data>
+  <data name="Tool_Screen_Target_Monitor" xml:space="preserve"><value>Whole display</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Query</value></data>
   <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Type</value></data>
@@ -484,4 +498,15 @@ Changes will be applied.</value></data>
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Thank you</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Your feedback was sent to the Pia Cloud team.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>The feedback could not be sent. Check your Pia Cloud connection and try again.</value></data>
+  <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>That window or display is no longer available.</value></data>
+  <data name="Msg_Screen_Minimized" xml:space="preserve"><value>The window is minimized. Restore it first — Pia will not move windows on its own.</value></data>
+  <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>The window is hidden by Windows (another virtual desktop or a suspended app).</value></data>
+  <data name="Msg_Screen_EmptyBounds" xml:space="preserve"><value>The window has no visible area to capture.</value></data>
+  <data name="Msg_Screen_SelfTarget" xml:space="preserve"><value>Pia does not capture its own windows.</value></data>
+  <data name="Msg_Screen_SelfExclusionFailed" xml:space="preserve"><value>Pia could not hide its own window from the capture, so nothing was captured.</value></data>
+  <data name="Msg_Screen_UniformFrame" xml:space="preserve"><value>The capture came back blank. The app may block screen capture — or Pia's own window covers most of that display; move it aside and try again.</value></data>
+  <data name="Msg_Screen_Timeout" xml:space="preserve"><value>The window did not respond in time, so nothing was captured.</value></data>
+  <data name="Msg_Screen_NativeError" xml:space="preserve"><value>Windows refused the capture. Check the log for details.</value></data>
+  <data name="Msg_Screen_SelfBlackout" xml:space="preserve"><value>This version of Windows can only hide Pia from a capture by painting it black, and Pia covers that display. Move or minimize the Pia window and try again.</value></data>
+  <data name="Msg_Settings_HotkeyUnavailable" xml:space="preserve"><value>Windows refused this shortcut - another program probably uses it. Choose a different combination.</value></data>
 </root>

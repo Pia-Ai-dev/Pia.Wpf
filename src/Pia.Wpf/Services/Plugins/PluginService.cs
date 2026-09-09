@@ -24,6 +24,7 @@ public class PluginService : IPluginService
     private readonly IGitToolHandler _gitToolHandler;
     private readonly IChatHistoryToolHandler _chatHistoryToolHandler;
     private readonly IAssignmentToolHandler _assignmentToolHandler;
+    private readonly IScreenCaptureToolHandler _screenCaptureToolHandler;
     private readonly IAssignmentSurfaceCache _assignmentSurfaceCache;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
@@ -54,6 +55,7 @@ public class PluginService : IPluginService
         IGitToolHandler gitToolHandler,
         IChatHistoryToolHandler chatHistoryToolHandler,
         IAssignmentToolHandler assignmentToolHandler,
+        IScreenCaptureToolHandler screenCaptureToolHandler,
         IAssignmentSurfaceCache assignmentSurfaceCache,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
@@ -69,6 +71,7 @@ public class PluginService : IPluginService
         _gitToolHandler = gitToolHandler;
         _chatHistoryToolHandler = chatHistoryToolHandler;
         _assignmentToolHandler = assignmentToolHandler;
+        _screenCaptureToolHandler = screenCaptureToolHandler;
         _assignmentSurfaceCache = assignmentSurfaceCache;
         _settingsService = settingsService;
         _logger = logger;
@@ -107,6 +110,7 @@ public class PluginService : IPluginService
                 "git" => BuiltInPluginHandler.FromGitHandler(_gitToolHandler, config),
                 "chat-history" => BuiltInPluginHandler.FromChatHistoryHandler(_chatHistoryToolHandler, config),
                 "assignments" => BuiltInPluginHandler.FromAssignmentHandler(_assignmentToolHandler, config),
+                "screen" => BuiltInPluginHandler.FromScreenCaptureHandler(_screenCaptureToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

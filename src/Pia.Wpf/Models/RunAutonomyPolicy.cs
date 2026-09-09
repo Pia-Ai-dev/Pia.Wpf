@@ -13,7 +13,8 @@ public sealed record RunAutonomyPolicy(IReadOnlyCollection<ToolClass> AutoApprov
     /// The classes the settings preset grants. <c>Git</c> is excluded because the git trio sheds uncommitted
     /// work while not being delete-like by name, so the never-covers-a-delete rule would not stop it;
     /// <c>External</c> because a class grant would make an MCP server's NEXT tool auto-approved retroactively;
-    /// <c>Ingest</c> because it is never gated (it returns no pending action).
+    /// <c>Ingest</c> because it is never gated (it returns no pending action); <c>Screen</c> because no class
+    /// switch may authorize reading the user's screen.
     /// </summary>
     public static readonly IReadOnlyList<ToolClass> PresetClasses =
     [

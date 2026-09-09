@@ -70,6 +70,7 @@ public class AppSettings
     public KeyboardShortcut OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
     public KeyboardShortcut? AssistantHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltP();
     public KeyboardShortcut? FastPathHotkey { get; set; }
+    public KeyboardShortcut? ScreenCaptureHotkey { get; set; }
     public bool AutoCaptureSelectedText { get; set; } = true;
     public TargetLanguage? TargetLanguage { get; set; }
     public TargetSpeechLanguage TargetSpeechLanguage { get; set; } = TargetSpeechLanguage.Auto;

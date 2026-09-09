@@ -12,6 +12,59 @@ public sealed class ToolLoopStopSignal
     public void RequestStop() => IsStopRequested = true;
 }
 
+/// <summary>One picture a tool produced for the model, parked until every result of its round is appended.</summary>
+public sealed record ToolLoopImage(
+    string CallId, byte[] Bytes, string MediaType, int Width, int Height, string Caption);
+
+/// <summary>Marks an injected image message so the swap and the compactor find it without reading its text.</summary>
+public sealed record ToolLoopImageTag(string CallId, int Width, int Height);
+
+/// <summary>Where a handler parks a picture a tool result cannot carry — a result has no image slot and any
+/// non-string one is JSON-serialized — for the loop to append after the round's last result.</summary>
+public sealed class ToolLoopImageChannel
+{
+    public const string MessageTagKey = "pia.toolImage";
+
+    private static readonly AsyncLocal<ToolLoopImageChannel?> _current = new();
+
+    private readonly List<ToolLoopImage> _parked = [];
+
+    public ToolLoopImageChannel(AiProviderType providerType) => ProviderType = providerType;
+
+    /// <summary>The channel of the dispatch on this logical flow; null means no loop, so no way to hand a
+    /// picture over, so the handler must refuse before it captures anything.</summary>
+    public static ToolLoopImageChannel? Current
+    {
+        get => _current.Value;
+        set => _current.Value = value;
+    }
+
+    /// <summary>Where this round's frame would go — the fact only the loop holds.</summary>
+    public AiProviderType ProviderType { get; }
+
+    public int Count
+    {
+        get { lock (_parked) return _parked.Count; }
+    }
+
+    public void Park(ToolLoopImage image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        lock (_parked) _parked.Add(image);
+    }
+
+    public IReadOnlyList<ToolLoopImage> Drain()
+    {
+        lock (_parked)
+        {
+            if (_parked.Count == 0) return [];
+            var drained = _parked.ToArray();
+            _parked.Clear();
+            return drained;
+        }
+    }
+}
+
 /// <summary>
 /// What the tool LOOP knows about a dispatch that the handler cannot work out for itself. Today: the round.
 /// <para>

@@ -52,6 +52,7 @@ public sealed class PluginServiceEnabledPersistenceTests : IDisposable
             Substitute.For<IGitToolHandler>(),
             Substitute.For<IChatHistoryToolHandler>(),
             Substitute.For<IAssignmentToolHandler>(),
+            Substitute.For<IScreenCaptureToolHandler>(),
             Substitute.For<IAssignmentSurfaceCache>(),
             Substitute.For<ISettingsService>(),
             NullLogger<PluginService>.Instance,

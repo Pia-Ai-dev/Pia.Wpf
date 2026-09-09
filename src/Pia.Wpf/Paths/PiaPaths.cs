@@ -37,6 +37,10 @@ public static class PiaPaths
     /// <summary>Where a virtual-file drop (a mail dragged out of Outlook) writes the file it had to materialise.</summary>
     public static string DropCacheDirectory => Path.Combine(LocalDataDirectory, "DropCache");
 
+    /// <summary>One JSONL line per screen capture. Routed, so a walkthrough against a throwaway profile does not
+    /// leave rows in the user's real trail.</summary>
+    public static string ScreenCaptureAuditDirectory => Path.Combine(LocalDataDirectory, "ScreenCaptureAudit");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);

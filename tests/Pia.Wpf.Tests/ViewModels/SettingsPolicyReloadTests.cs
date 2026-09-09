@@ -7,6 +7,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Screen;
 using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
@@ -425,7 +426,8 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<IToolPermissionService>(),
             Substitute.For<IAssistantFolderRelocationService>(),
             Substitute.For<Pia.Services.IWorkingDirectoryService>(),
-            Substitute.For<IDiagnosticsExportService>());
+            Substitute.For<IDiagnosticsExportService>(),
+            EmptyScreenCaptureAllowlist());
 
         return new Page(root, settings, policy);
     }
@@ -487,6 +489,14 @@ public class SettingsPolicyReloadTests : IDisposable
         Assert.False(root.PersonasVm.CanManagePersonas);
         Assert.False(root.ProvidersVm.UseSameProviderForAllModes);
         Assert.False(root.ProvidersVm.CanManageProviders);
+    }
+
+    /// <summary>An unstubbed <c>ListAsync</c> hands back a null Task, which the allowlist load would await.</summary>
+    private static IScreenCaptureAllowlistStore EmptyScreenCaptureAllowlist()
+    {
+        var store = Substitute.For<IScreenCaptureAllowlistStore>();
+        store.ListAsync().Returns(Task.FromResult<IReadOnlyList<ScreenCaptureAllowlistEntry>>([]));
+        return store;
     }
 
     /// <summary>What the reload's safety rests on: with the read warm, a ViewModel's save writes

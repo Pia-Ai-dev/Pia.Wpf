@@ -121,10 +121,12 @@ internal static class AgentContextCompactor
         // ExpectedArtifact check). The newest user message IS that instruction on both executor
         // paths, and on an ordinary chat request it is the user's latest turn — pinnable in either
         // reading. -1 when the newest user message is the already-pinned goal (or there is none).
+        // A picture a tool handed over rides in a User message too, so the instruction is the newest user
+        // message that is NOT one — else the first capture in an over-budget step evicts what this pin keeps.
         var instructionIndex = -1;
         for (var i = messages.Count - 1; i >= headCount; i--)
         {
-            if (messages[i].Role == ChatRole.User)
+            if (messages[i].Role == ChatRole.User && !ToolLoopImageMessages.IsTagged(messages[i]))
             {
                 instructionIndex = i;
                 break;

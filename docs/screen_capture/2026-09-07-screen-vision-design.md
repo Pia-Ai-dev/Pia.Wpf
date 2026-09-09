@@ -1,6 +1,11 @@
 # Giving Pia eyes on the Windows screen — a monitor, or a chosen window
 
-**Status.** Designed, approved, not started. No code written.
+**Status.** Phases 1 and 2 built; phase 3 has only its text seam. G1 and G2 were answered on
+2026-09-09 — GDI holds, and UIA text is Chromium-only, which promotes the OCR fallback from
+optional to required. G3 was attempted and is still open: the client chain works end to end and the
+request died at the server's model router for want of an image-capable endpoint, so the interleaved
+shape has still never been judged. Implementation notes at the end record where this document did
+not survive contact with the code.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-07.
 **Origin.** Owner question, 2026-09-07 — "how could we give Pia the ability to *see* the Windows
@@ -315,5 +320,45 @@ diagnose a capture failure from a user's attached log, and nothing about what wa
   base actually runs? Answered by G1, cheaply, before any UI is built.
 - **Is a UIA text snapshot usable** in Electron and Chromium windows without the user switching
   accessibility on? Gates phase 3's engine, not phases 1–2.
+- **Is the provider type the right gate for "can an image be sent"?** No, as of the G3 attempt on
+  2026-09-09 — it is necessary but not sufficient. Pia Cloud accepted the request and its router
+  then found none of 29 candidate endpoints able to take an image. D2's promise that the refusal
+  happens *before* the capture therefore does not hold on a text-only endpoint. Answering this
+  properly is the per-provider vision-capability model D2 excluded from this workstream, so the gap
+  is logged in the checklist rather than patched here.
+
 - **Should watch mode survive a restart?** An armed watch that reattaches after an app restart is
   more useful and much harder to reason about consent-wise. Deferred to phase 3 planning.
+
+## Implementation notes
+
+Added while landing groups A–D and E1. None of this reopens D1–D4; it records where an anchor or a
+piece of reasoning above turned out to be wrong, so the next reader trusts the code over the prose.
+
+- **`HeadlessTurnExecutor.cs:622` is the wrong anchor.** That region is the replay path, not a tool
+  round loop. A headless run’s live rounds go through `BackgroundAssistantTurnRunner`, which calls
+  the same `IAiClientService` loop an interactive turn does, so they inherit the injection for free.
+  The replay append does run outside any loop, and there `screen_capture` refuses and tells the model
+  to re-issue the call on the resumed step, where the approval has become a named grant.
+- **Safeguard 1 needs more than omission.** Leaving `Screen` out of `PresetClasses` is necessary but
+  not sufficient: a restored grant envelope parses any `ToolClass` name, so a saved run could name
+  `Screen` as an auto-approve class. `ToolAutonomy.Resolve` excludes it explicitly as well.
+- **The capture audit directory is routed; the consent trail is not.** `ScreenCaptureAuditDirectory`
+  hangs off `LocalDataDirectory` rather than the real profile root, so a walkthrough on a throwaway
+  profile leaves nothing in the user’s own trail. `DataDirectoryRoutingTests` turned out to be a
+  source scanner with no per-path rows, so only `PiaPathsTests` gained one.
+- **The unattended notice is a persistent Flow item, not a toast.** An unattended capture happens
+  while the user is elsewhere, so a three-second toast is gone before they look.
+- **`screen_list_targets` is filtered for an unattended run.** Handing a run nobody is watching every
+  open window’s title contradicted safeguard 2, so for those runs the list drops every display and
+  keeps only allowlisted windows. The exactly-one-visible-window rule stays at capture time.
+- **`CaptureTarget` carries the process id.** Window handles are recycled, so an approved card or an
+  allowlist verdict could otherwise be spent on a different program’s window; the capture re-reads
+  the pid and refuses on a mismatch.
+- **Pia blacking itself out is its own failure reason.** Below Windows 10 2004 the fallback paints
+  Pia black rather than hiding it, which can trip the near-uniform check; that case says so instead
+  of blaming the captured app.
+- **Six of the nine `ToolClass` consumers needed no `Screen` arm.** They persist an int, parse a name
+  or emit a timeline row generically. Only `ToolClassifier`, `ToolAutonomy` and `ActionCardBuilder`
+  switch on the member.
+- **The screen plugin is GUID `…00B`**, following assignments at `…00A`.

@@ -250,6 +250,9 @@ public class AiClientService : IAiClientService
                     .ConfigureAwait(false);
             }
 
+            _logger.LogDebug("Round {Round}: request carries {ImageCount} image message(s)",
+                round + 1, ToolLoopImageMessages.CountImageMessages(workingMessages));
+
             ChatResponse response;
 
             if (provider.SupportsStreaming)
@@ -355,6 +358,15 @@ public class AiClientService : IAiClientService
             if (response.AdditionalProperties is { } respProps && respProps.ContainsKey(GuardrailMarker.AdditionalPropertyKey))
                 protectedRoute = true;
 
+            // Seen once, now that it rode in this round's request. Nothing else drops it — the carryover
+            // filters match tool content only — so an unswapped picture is re-sent on every remaining round.
+            var consumedImages = ToolLoopImageMessages.Consume(workingMessages);
+            if (consumedImages > 0)
+            {
+                _logger.LogDebug("Round {Round}: {Count} tool image(s) consumed and replaced by placeholders",
+                    round + 1, consumedImages);
+            }
+
             if (!string.IsNullOrWhiteSpace(response.ModelId))
                 lastModelId = response.ModelId;
 
@@ -396,7 +408,7 @@ public class AiClientService : IAiClientService
                 yield return new ToolRoundCompleted();
                 var appendedFrom = workingMessages.Count;
                 var stopRequested = await DispatchToolCallsAsync(
-                    toolCalls, response, workingMessages, toolHandler, round);
+                    toolCalls, response, workingMessages, toolHandler, round, provider.ProviderType);
                 // Materialized, not deferred: the next iteration's compaction REASSIGNS workingMessages, so
                 // a lazy Skip() would enumerate a list this round never appended to. Capped here because a
                 // step executor carries this slice into the NEXT step and pays for it for the rest of the run.
@@ -583,7 +595,8 @@ public class AiClientService : IAiClientService
         ChatResponse response,
         List<Microsoft.Extensions.AI.ChatMessage> workingMessages,
         ToolCallHandler toolHandler,
-        int round)
+        int round,
+        AiProviderType providerType)
     {
         _logger.LogInformation("Round {Round}: {ToolCallCount} tool call(s) detected: {ToolNames}",
             round + 1, toolCalls.Count, string.Join(", ", toolCalls.Select(t => t.Name)));
@@ -611,39 +624,62 @@ public class AiClientService : IAiClientService
         var stop = new ToolLoopStopSignal();
         var dispatch = new ToolDispatchContext(round + 1, stop);
 
-        foreach (var toolCall in toolCalls)
+        // Set here and not in the calling iterator: an AsyncLocal write does not survive the `yield return`
+        // sitting immediately before this call.
+        var images = new ToolLoopImageChannel(providerType);
+        var previousImages = ToolLoopImageChannel.Current;
+        ToolLoopImageChannel.Current = images;
+        try
         {
-            // Arguments that didn't parse leave every parameter missing, so dispatching makes the tool
-            // reject its own empty input — a verdict the model rereads as being about the arguments it
-            // believes it sent, and reissues the identical call until the rounds run out.
-            if (toolCall.Exception is not null)
+            foreach (var toolCall in toolCalls)
             {
-                _logger.LogWarning("Tool {ToolName} arguments could not be parsed; skipping dispatch", toolCall.Name);
-                _logger.SensitiveDebug("Tool {ToolName} argument parse error: {Error}",
-                    toolCall.Name, toolCall.Exception.Message);
-                workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(
-                    ChatRole.Tool,
-                    [new FunctionResultContent(toolCall.CallId, MalformedToolArgumentsResult)]));
-                continue;
-            }
+                // Arguments that didn't parse leave every parameter missing, so dispatching makes the tool
+                // reject its own empty input — a verdict the model rereads as being about the arguments it
+                // believes it sent, and reissues the identical call until the rounds run out.
+                if (toolCall.Exception is not null)
+                {
+                    _logger.LogWarning("Tool {ToolName} arguments could not be parsed; skipping dispatch", toolCall.Name);
+                    _logger.SensitiveDebug("Tool {ToolName} argument parse error: {Error}",
+                        toolCall.Name, toolCall.Exception.Message);
+                    workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(
+                        ChatRole.Tool,
+                        [new FunctionResultContent(toolCall.CallId, MalformedToolArgumentsResult)]));
+                    continue;
+                }
 
-            // No CallId on this line. It is copied verbatim out of provider JSON and nothing in this
-            // process validates it — the premise AgentTimelineScope.SanitizeCallId is built on — so a
-            // provider or proxy that echoes model text into it would put free text in a release support
-            // log through a plain LogDebug (level is runtime-configurable, so it is not a gate). The id
-            // is still available in DEBUG on the SensitiveDebug line a few lines up, which logs it
-            // alongside the args for the same call.
-            _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
-            // Never broken out of on a stop: the round's remaining calls must still be answered, or the
-            // captured slice carries a FunctionCallContent with no matching result.
-            var result = await toolHandler(toolCall, dispatch);
-            var resultPreview = result?.ToString() ?? "<null>";
-            _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
-                toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
-            var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
-                ChatRole.Tool,
-                [new FunctionResultContent(toolCall.CallId, result)]);
-            workingMessages.Add(resultMessage);
+                // No CallId on this line. It is copied verbatim out of provider JSON and nothing in this
+                // process validates it — the premise AgentTimelineScope.SanitizeCallId is built on — so a
+                // provider or proxy that echoes model text into it would put free text in a release support
+                // log through a plain LogDebug (level is runtime-configurable, so it is not a gate). The id
+                // is still available in DEBUG on the SensitiveDebug line a few lines up, which logs it
+                // alongside the args for the same call.
+                _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
+                // Never broken out of on a stop: the round's remaining calls must still be answered, or the
+                // captured slice carries a FunctionCallContent with no matching result.
+                var result = await toolHandler(toolCall, dispatch);
+                var resultPreview = result?.ToString() ?? "<null>";
+                _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
+                    toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
+                var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
+                    ChatRole.Tool,
+                    [new FunctionResultContent(toolCall.CallId, result)]);
+                workingMessages.Add(resultMessage);
+            }
+        }
+        finally
+        {
+            ToolLoopImageChannel.Current = previousImages;
+        }
+
+        // After the round's LAST result, never between two: a provider requires a round's tool results to
+        // follow the assistant message contiguously and rejects a user message wedged between them.
+        var delivered = images.Drain();
+        foreach (var image in delivered)
+            workingMessages.Add(ToolLoopImageMessages.Build(image));
+        if (delivered.Count > 0)
+        {
+            _logger.LogInformation("Round {Round}: {Count} tool image(s) appended for the next request",
+                round + 1, delivered.Count);
         }
 
         _logger.LogDebug("Round {Round} complete, continuing with {MessageCount} working messages",

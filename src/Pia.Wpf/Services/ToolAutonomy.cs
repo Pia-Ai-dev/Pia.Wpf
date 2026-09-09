@@ -85,8 +85,14 @@ public static class ToolAutonomy
         // ToolClass.Files holds both write_file and delete_file, so without the exclusion a "let the agent
         // write files" preset would hand an unattended run card-free delete_file. A NAMED grant for a delete
         // still runs below — that is the user's own auditable decision and not this policy's doing.
-        if (input.Policy is { } policy && policy.Covers(input.ToolClass) && !isDeleteLike)
+        //
+        // Screen is excluded HERE, not by omission from the settings preset: a restored envelope may name any
+        // class. Reading the screen rests on a grant or a human's answer, never on a switch.
+        if (input.Policy is { } policy && policy.Covers(input.ToolClass) && !isDeleteLike
+            && input.ToolClass != ToolClass.Screen)
+        {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedPolicy);
+        }
 
         // THE SESSION TIER, ABOVE the standing grant, the named grant, the interactive Prompt and the Park.
         // Above the first two so a call authorized by several tiers is audited as the one that is actually
@@ -102,9 +108,12 @@ public static class ToolAutonomy
         //
         // AND UNATTENDED, NOT FOR ToolClass.External, for the same reason the PARK below refuses to ask about
         // one: an MCP tool's name and effect are server-defined, and every later call's arguments are unseen.
+        // Nor for ToolClass.Screen: the session store keys a grant by tool alone, so "minted inside this run"
+        // is indistinguishable from "minted an hour ago on another chat, and forgotten".
         if (input.HasSessionGrant
             && input.Surface != ToolGateSurface.Voice
-            && (input.Surface != ToolGateSurface.Unattended || input.ToolClass != ToolClass.External))
+            && (input.Surface != ToolGateSurface.Unattended
+                || input.ToolClass is not (ToolClass.External or ToolClass.Screen)))
         {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedSessionGrant);
         }
