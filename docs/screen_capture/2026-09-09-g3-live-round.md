@@ -1,7 +1,8 @@
 # G3 — the live Pia Cloud round
 
-**Status.** Run 2026-09-09. **G3 is still UNANSWERED** — the question was never reached. Everything
-on the client side is proven; the request died at the server's model router.
+**Status.** **G3 is ANSWERED: yes.** Closed 2026-09-09 on the second run, once the local Pia Cloud
+deployment gained an image-capable endpoint. The first run, below, never reached the question — its
+request died at the server's model router — and is kept because the distinction is the finding.
 **Owner.** Marco Altmann
 **Written.** 2026-09-09
 **Origin.** The G3 gate of [2026-09-07-screen-vision-checklist.md](2026-09-07-screen-vision-checklist.md).
@@ -107,3 +108,41 @@ and confirm from the Debug log — not from the reply on screen — that:
   the log alone cannot tell you),
 - `consumed and replaced by placeholders` logs afterwards, and
 - the next round reports `request carries 0 image message(s)`.
+
+## The run that closed it
+
+Second run, 2026-09-09, same procedure, after the owner enabled image support on the local Pia Cloud
+deployment. Nonce: *The copper walrus rehearses quiet arithmetic before dawn.* — different from the
+first run's, and chosen again to survive the PII tokenizer.
+
+The model drove it the same way unprompted: `screen_list_targets()`, then
+`screen_capture(target: "window", match: "notepad")`, resolved to one target out of the open windows,
+proposed rather than captured, and the interactive card was approved with "Allow once".
+
+**Both halves of the gate now hold.**
+
+*Accepted* — the transport chain, from the Debug log:
+
+| step | line |
+|---|---|
+| the drain, after the round's last tool result | `Round 2: 1 tool image(s) appended for the next request` |
+| the next request carried it | `Round 3: request carries 1 image message(s)` |
+| the provider took it | `POST /api/ai/chat -> 200` in 8557 ms, **no error frame** |
+| D2a swapped it once consumed | `Round 3: 1 tool image(s) consumed and replaced by placeholders` |
+| the swap survives the turn | the next turn reports `carries 0` on rounds 1 and 2 |
+
+*Attended to* — the only part no log can show. The reply quoted the sentence word for word:
+
+> Der Notepad-Inhalt lautet, Wort für Wort:
+> „The copper walrus rehearses quiet arithmetic before dawn."
+
+Nothing but the injected picture carried that sentence, so the model read it.
+
+Two things re-confirmed in the same run: `history.db` and its WAL still hold **zero** occurrences of
+the base64 JPEG prefix `/9j/` after a *successful* round, not just a failed one; and the audit line
+landed with the title hashed (`titleHash: 0f2eafba92f2a112`, `surface: interactive`).
+
+**What this does not close.** The endpoint-capability gap stands: image support is a property of the
+routed endpoint, so on a text-only endpoint the capture is still taken before the send is refused.
+That is why the first run failed, and it remains in the checklist's not-yet-planned list. The refusal
+is at least legible now — the server's sentence rather than its JSON envelope.

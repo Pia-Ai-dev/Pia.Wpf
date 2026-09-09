@@ -2,9 +2,10 @@
 
 **Status.** Phases 1 and 2 built; phase 3 has only its text seam. G1 and G2 were answered on
 2026-09-09 — GDI holds, and UIA text is Chromium-only, which promotes the OCR fallback from
-optional to required. G3 was attempted and is still open: the client chain works end to end and the
-request died at the server's model router for want of an image-capable endpoint, so the interleaved
-shape has still never been judged. Implementation notes at the end record where this document did
+optional to required. G3 was closed on 2026-09-09: on an image-capable endpoint the provider accepts the
+interleaved user image message and the model reads it. An earlier attempt failed at the server's
+model router for want of a vision endpoint — a different question, logged as the
+endpoint-capability gap. Implementation notes at the end record where this document did
 not survive contact with the code.
 **Owner.** Marco Altmann.
 **Written.** 2026-09-07.
