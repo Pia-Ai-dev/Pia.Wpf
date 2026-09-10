@@ -517,6 +517,8 @@
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>L'application démarrera masquée dans la zone de notification</value></data>
   <data name="Settings_AutoCaptureSelectedText" xml:space="preserve"><value>Coller automatiquement le texte sélectionné lors d'un raccourci</value></data>
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>Lorsque vous appuyez sur un raccourci Pia, le texte sélectionné dans l'application active est automatiquement copié et collé dans le champ de saisie. Le presse-papiers est ensuite restauré.</value></data>
+  <data name="Settings_AutoUpdateEnabled" xml:space="preserve"><value>Rechercher les mises à jour automatiquement</value></data>
+  <data name="Settings_AutoUpdateEnabled_Description" xml:space="preserve"><value>Pia recherche une nouvelle version en arrière-plan, la télécharge, puis propose de redémarrer pour l'installer. Désactivez cette option pour rester sur la version installée.</value></data>
   <data name="Settings_Diarization_Section" xml:space="preserve"><value>Séparation des intervenants (réunions)</value></data>
   <data name="Settings_Diarization_Enable" xml:space="preserve"><value>Identifier chaque intervenant dans les réunions</value></data>
   <data name="Settings_Diarization_Enable_Description" xml:space="preserve"><value>Lorsque Pia participe à une réunion, le transcript est regroupé en bulles distinctes par intervenant. Nécessite le téléchargement unique d'un petit modèle de reconnaissance vocale. Les modifications s'appliquent à la prochaine réunion que vous rejoignez.</value></data>

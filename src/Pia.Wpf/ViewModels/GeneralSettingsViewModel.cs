@@ -115,6 +115,9 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     private bool _autoCaptureSelectedText;
 
     [ObservableProperty]
+    private bool _autoUpdateEnabled = true;
+
+    [ObservableProperty]
     private WindowMode _defaultWindowMode;
 
     // Hotkeys
@@ -201,6 +204,11 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    partial void OnAutoUpdateEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     partial void OnSttBackendChanged(SttBackend value)
     {
         OnPropertyChanged(nameof(IsWhisperSelected));
@@ -252,6 +260,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         StartMinimized = settings.StartMinimized;
         LaunchAtStartup = settings.LaunchAtStartup;
         AutoCaptureSelectedText = settings.AutoCaptureSelectedText;
+        AutoUpdateEnabled = settings.AutoUpdateEnabled;
         DefaultWindowMode = settings.DefaultWindowMode;
         SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
@@ -717,6 +726,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         settings.StartMinimized = StartMinimized;
         settings.LaunchAtStartup = LaunchAtStartup;
         settings.AutoCaptureSelectedText = AutoCaptureSelectedText;
+        settings.AutoUpdateEnabled = AutoUpdateEnabled;
         settings.DefaultWindowMode = DefaultWindowMode;
         settings.SttBackend = SttBackend;
         settings.WhisperModel = WhisperModel;

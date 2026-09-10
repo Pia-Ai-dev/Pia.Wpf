@@ -483,6 +483,8 @@
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Application will start hidden in system tray on launch</value></data>
   <data name="Settings_AutoCaptureSelectedText" xml:space="preserve"><value>Auto-paste selected text on hotkey</value></data>
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>When you press a Pia hotkey, automatically copy the text selected in the active app and paste it into the input. The clipboard is restored afterwards.</value></data>
+  <data name="Settings_AutoUpdateEnabled" xml:space="preserve"><value>Check for updates automatically</value></data>
+  <data name="Settings_AutoUpdateEnabled_Description" xml:space="preserve"><value>Pia looks for a new version in the background, downloads it, and then offers to restart and update. Turn this off to stay on the installed version.</value></data>
   <data name="Settings_Diarization_Section" xml:space="preserve"><value>Speaker separation (meetings)</value></data>
   <data name="Settings_Diarization_Enable" xml:space="preserve"><value>Identify individual speakers in meetings</value></data>
   <data name="Settings_Diarization_Enable_Description" xml:space="preserve"><value>When Pia attends a meeting, group the transcript into separate bubbles per speaker. Requires a one-time download of a small speaker-recognition model. Changes apply to the next meeting you join.</value></data>

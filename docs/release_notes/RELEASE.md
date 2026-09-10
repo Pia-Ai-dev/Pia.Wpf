@@ -127,3 +127,10 @@
   "Pia.Wpf". Windows binds that name the first time it sees an app and never
   re-reads it, so Pia registers under a new identity: its entry in Settings →
   Notifications is recreated, and notifications already sent keep the old name.
+
+## Updates
+
+- "Check for updates automatically" under Settings → General can be unticked
+  to stay on the version you have. Left on, which is the default, Pia looks for
+  a new version in the background, downloads it, and then offers to restart and
+  update.
