@@ -93,11 +93,13 @@ A feature is not commit-ready until the build reports **`0 Warning(s)` and `0 Er
 
 ## Comment Discipline
 
-Default to no comment. A surviving comment or XML-doc `<summary>` gets **one short line** — never a multi-paragraph essay, never a `<para>` block. Only write one when the WHY is genuinely non-obvious from the code (a hidden constraint, an invariant, a workaround, a surprising side effect); never to restate WHAT the code does. Then cut it as short as it will go: drop every clause the adjacent code already shows, and treat two wrapped lines as the ceiling.
+Default to no comment: the code is the explanation. A surviving comment or XML-doc `<summary>` gets **one short line** — never a multi-paragraph essay, never a `<para>` block. Only write one when the WHY is genuinely non-obvious from the code (a hidden constraint, an invariant, a workaround, a surprising side effect); never to restate WHAT the code does. Then cut it as short as it will go: drop every clause the adjacent code already shows, and treat two wrapped lines as the ceiling. If a WHAT comment feels necessary, rename the thing or extract a well-named method instead — that fix survives a refactor, the comment does not.
 
-Never cite the originating task in code — no batch/decision/spec IDs (`18 D1`, `G3`, `§4.1`, `owner Q4`, `Batch 08 F19`, `(I1)`, ticket numbers). That belongs in the commit message, not the source, and rots the moment the plan doc is renumbered. If you catch yourself writing "per spec §…" or "18 Gx", delete the comment and state only the underlying fact in plain language.
+A comment describes the code as it is **now**. No history: no "previously", "used to", "no longer", "changed from", "legacy", "fixed in", no dates, no "since vX" / "as of vY" markers, no `<remarks>` change log. Git holds the history and holds it better. Same for the originating task — no batch/decision/spec IDs (`18 D1`, `G3`, `§4.1`, `owner Q4`, `Batch 08 F19`, `(I1)`, ticket numbers); that belongs in the commit message, and it rots the moment the plan doc is renumbered. If you catch yourself writing "per spec §…" or "18 Gx", delete the comment and state only the underlying fact in plain language. A version number naming a live constraint (`18.1.0+ pulls MTP 2.x`) is not history — that one stays.
 
-This applies to XML-doc as much as to `//` — a `<summary>` is not exempt from the brevity rules above just because it's Intellisense-facing.
+This applies to XML-doc as much as to `//` — a `<summary>` is not exempt from the brevity rules above just because it's Intellisense-facing. On a private or internal member the default is **no `<summary>` at all**; write one only when the signature genuinely cannot carry the meaning. Nothing in the build requires doc comments, so an unearned one is pure noise.
+
+The rules are a ratchet, not a one-time cleanup: when you touch a member, bring **its** existing comments and summaries into compliance in the same change — delete the WHAT-restaters, strip the history, cut the survivors to one line. Scope that to the code you are already editing; do not open a repo-wide comment sweep.
 
 ## Git Workflow
 
