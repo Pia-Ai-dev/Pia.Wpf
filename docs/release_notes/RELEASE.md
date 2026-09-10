@@ -14,6 +14,8 @@
 - The cards that ask to run a tool read as German again. Their titles were built
   verb first, so every one of them said "Erstellen Aufgabe" rather than "Aufgabe
   erstellen". English and French are unchanged.
+- A maximized window stays maximized. Opening a routine's chat from the flow
+  rail, or bringing Pia back from the tray, shrank it to a smaller window first.
 
 ## Screen
 
@@ -63,6 +65,19 @@
   browser a chat uses. A routine reads and writes inside that folder, and the
   chat a run produces opens on it. The folder is remembered on this device
   only, and existing routines keep working across the whole folder.
+- "Draft with AI" no longer reads as a dead button. An answer that comes back
+  empty is tried once more and then reported, and a draft that had nothing to
+  fill in — because the name and the instruction were already written — says so.
+- The editor and a routine's details keep a readable line length on a wide
+  window instead of stretching across it, and the list beside them now grows
+  and shrinks with the window.
+
+## Todo
+
+- A task opens for reading rather than straight into a form. Double-click a
+  card, or use the pencil on it, to see the notes, the priority and the due
+  date; the Edit button in that panel turns it into the fields, which now have
+  room for a long note.
 
 ## Meetings
 
@@ -91,3 +106,14 @@
   Settings → General → Speech.
 - Spoken answers begin sooner, and the short phrases Pia says while it thinks
   are ready as soon as a voice is installed.
+- A voice is selected as soon as its download finishes, so speech works without
+  a second step. If the saved voice is no longer on this device, Pia takes up
+  one that is instead of staying silent.
+- A voice can be removed again from its row under Settings → General → Speech,
+  which gives back the space it took. Pia asks first, and if it was the voice
+  in use it moves to another installed one.
+
+## Notifications
+
+- Windows notifications from Pia are headed "Pia AI Assistant" rather than
+  "Pia.Wpf".

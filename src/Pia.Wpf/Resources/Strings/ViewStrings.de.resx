@@ -624,6 +624,7 @@
   <data name="Tts_Download" xml:space="preserve"><value>Herunterladen</value></data>
   <data name="Tts_Select" xml:space="preserve"><value>Auswählen</value></data>
   <data name="Tts_Selected" xml:space="preserve"><value>Ausgewählt</value></data>
+  <data name="Tts_Delete" xml:space="preserve"><value>Von diesem Gerät entfernen</value></data>
   <!-- Sync Settings -->
   <data name="Sync_Title" xml:space="preserve"><value>Cloud-Synchronisierung</value></data>
   <data name="Sync_Description" xml:space="preserve"><value>Synchronisiere deine Vorlagen, Anbieter, Einstellungen und den Verlauf zwischen Geräten</value></data>
@@ -1409,6 +1410,7 @@
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Mit KI entwerfen</value></data>
   <data name="Routines_Draft_Working" xml:space="preserve"><value>Entwurf läuft …</value></data>
   <data name="Routines_Draft_Failed" xml:space="preserve"><value>Der Entwurf ist fehlgeschlagen. Prüfe, ob ein KI-Anbieter eingerichtet ist, und versuche es erneut.</value></data>
+  <data name="Routines_Draft_NothingToFill" xml:space="preserve"><value>Es gibt nichts zu ergänzen — Name und Anweisung sind bereits gesetzt. Leere ein Feld, damit der Entwurf es schreibt.</value></data>
   <data name="Routines_Field_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Routines_Field_Goal" xml:space="preserve"><value>Ziel *</value></data>
   <data name="Routines_Field_Goal_SlotHint" xml:space="preserve"><value>Die hervorgehobenen Wörter stammen aus dem Feld darüber — ändere sie dort, oder schreib die ganze Anweisung hier neu.</value></data>

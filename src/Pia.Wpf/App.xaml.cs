@@ -83,7 +83,10 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        SetCurrentProcessExplicitAppUserModelID("Pia.App");
+        SetCurrentProcessExplicitAppUserModelID(Helpers.ToastAppIdentity.Aumid);
+
+        // Before the first toast: the toolkit derives the notification header from the process name.
+        Helpers.ToastAppIdentity.Ensure();
 
         // A class handler, not a style: the resource lookup for an implicit ScrollBar style would have to
         // beat WPF-UI's, and ThemeService already swaps entries in Application.Resources.MergedDictionaries.

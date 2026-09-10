@@ -179,10 +179,21 @@ public class TtsService : ITtsService, IDisposable
                 await LoadVoiceAsync(voiceKey, cancellationToken);
                 _ = Task.Run(() => PreGenerateFillersAsync(CancellationToken.None));
             }
+            else if (FirstInstalledVoice() is { } installed)
+            {
+                // The Piper tree removed above takes the saved voice's files with it, and a cleared key left
+                // Read aloud silently mute even with a usable voice sitting on disk.
+                settings.TtsVoiceModelKey = installed;
+                await _settingsService.SaveSettingsAsync(settings);
+                await LoadVoiceAsync(installed, cancellationToken);
+                _ = Task.Run(() => PreGenerateFillersAsync(CancellationToken.None));
+                _logger.LogInformation(
+                    "Adopted the installed TTS voice {VoiceKey}: the saved one is not on disk", installed);
+            }
             else if (!string.IsNullOrEmpty(voiceKey))
             {
-                // The Piper tree removed above takes the saved voice's files with it. Left set, the key
-                // names a voice that can never load, and the settings list shows it as the active one.
+                // Left set, the key names a voice that can never load, and the settings list shows it as
+                // the active one.
                 settings.TtsVoiceModelKey = string.Empty;
                 await _settingsService.SaveSettingsAsync(settings);
                 _logger.LogInformation("Cleared the saved TTS voice: its model is not on disk");
@@ -579,6 +590,46 @@ public class TtsService : ITtsService, IDisposable
         // Fire-and-forget filler generation for the new voice
         _ = Task.Run(() => PreGenerateFillersAsync(CancellationToken.None));
     }
+
+    public async Task DeleteVoiceAsync(string voiceKey, CancellationToken cancellationToken = default)
+    {
+        Stop();
+
+        // sherpa keeps the model file open, so the engine has to go before the directory does.
+        if (_currentVoiceKey == voiceKey)
+        {
+            await _synthGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                _tts?.Dispose();
+                _tts = null;
+                _currentVoiceKey = null;
+            }
+            finally
+            {
+                _synthGate.Release();
+            }
+        }
+
+        _fillerCache.Remove(voiceKey);
+
+        // The filler cache lives inside the voice directory, so it goes with it.
+        var directory = TtsVoiceCatalog.VoiceDirectory(voiceKey);
+        if (Directory.Exists(directory))
+            Directory.Delete(directory, recursive: true);
+
+        var settings = await _settingsService.GetSettingsAsync();
+        if (settings.TtsVoiceModelKey == voiceKey)
+        {
+            settings.TtsVoiceModelKey = string.Empty;
+            await _settingsService.SaveSettingsAsync(settings);
+        }
+
+        _logger.LogInformation("Deleted voice model: {VoiceKey}", voiceKey);
+    }
+
+    private static string? FirstInstalledVoice() =>
+        TtsVoiceCatalog.Curated.Select(v => v.Key).FirstOrDefault(IsVoiceDownloaded);
 
     private static async Task PlayWavBytesAsync(byte[] audioBytes, CancellationToken cancellationToken)
     {

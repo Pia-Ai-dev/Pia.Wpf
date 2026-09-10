@@ -555,6 +555,18 @@
                             </TextBlock>
                           </StackPanel>
                         </ui:Button>
+
+                        <ui:Button Command="{Binding DataContext.DeleteVoiceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   CommandParameter="{Binding}"
+                                   IsEnabled="{Binding DataContext.Policy[TtsVoiceModelKey], RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_General_DeleteVoice_{0}'}"
+                                   AutomationProperties.Name="{loc:Str Tts_Delete}"
+                                   ToolTip="{loc:Str Tts_Delete}"
+                                   Appearance="Secondary"
+                                   Margin="8,0,0,0"
+                                   Visibility="{Binding IsDownloaded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                          <ui:SymbolIcon Symbol="Delete24" FontSize="14"/>
+                        </ui:Button>
                       </StackPanel>
                     </Grid>
                   </Border>

@@ -4,5 +4,6 @@
   "uiLanguage": 0,
   "launchAtStartup": false,
   "startMinimized": false,
-  "autoCaptureSelectedText": true
+  "autoCaptureSelectedText": true,
+  "ingestSchemaVersion": 2
 }

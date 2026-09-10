@@ -65,7 +65,12 @@ public partial class WindowManagerService : IWindowManagerService
 
             existing.Window.Show();
             existing.Window.Visibility = Visibility.Visible;
-            existing.Window.WindowState = WindowState.Normal;
+
+            // Only a minimized window needs its state changed. Forcing Normal unconditionally un-maximized
+            // a window that was already up — every in-window navigation (a Flow card's "open chat") calls here.
+            if (existing.Window.WindowState == WindowState.Minimized)
+                existing.Window.WindowState = existing.RestoreState;
+
             existing.Window.Topmost = true;
             existing.Window.Activate();
             existing.Window.Focus();
@@ -100,6 +105,9 @@ public partial class WindowManagerService : IWindowManagerService
                 return;
 
             _logger.LogTrace("Window {Mode} StateChanged to {State}", mode, window.WindowState);
+
+            if (window.WindowState != WindowState.Minimized)
+                managed.RestoreState = window.WindowState;
 
             if (window.WindowState == WindowState.Minimized)
             {
@@ -295,13 +303,15 @@ public partial class WindowManagerService : IWindowManagerService
 
         window.Visibility = Visibility.Hidden;
 
-        if (window.WindowState != WindowState.Normal)
+        // Clear the minimize so the next show does not restore-into-minimized, but come back to the state
+        // the user left: coercing Normal here is what made a maximized window return from the tray shrunk.
+        if (window.WindowState == WindowState.Minimized)
         {
             window.Dispatcher.BeginInvoke(
                 () =>
                 {
                     if (window.Visibility == Visibility.Hidden)
-                        window.WindowState = WindowState.Normal;
+                        window.WindowState = managed.RestoreState;
                 },
                 DispatcherPriority.ContextIdle);
         }

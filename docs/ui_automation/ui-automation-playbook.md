@@ -45,7 +45,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Settings → About | `About_Version` (TextBlock), `About_AiNotice` (TextBlock), the AI-feedback mailto `About_Link_AiFeedback`, and the legal links `About_Link_Imprint` / `_Privacy` / `_Docs` / `_Website` |
 | Answer rating (Pia Cloud answers only) | `Answer_RateUp_<messageId>` / `Answer_RateDown_<messageId>` on `PiaAnswerToolbar`, collapsed for BYOK answers; thumbs-down opens `AiFeedbackContentDialog` with `AiFeedback_Comment` and `AiFeedback_IncludeAnswer` |
 | Settings inner tabs | `Settings_General_Tab_Application` / `_Hotkeys` / `_Speech` / `_Privacy`, `Settings_Assistant_Tab_General` / `_Personas` / `_ToolPermissions` / `_Meeting` / `_Agent` |
-| Settings → General | Application: `Settings_General_UiLanguage`, `_DefaultWindowMode`, `_LaunchAtStartup`, `_StartMinimized`, `_AutoCaptureSelectedText`, `_ExportDiagnostics`, `_ResetAppData`. Hotkeys: `_CaptureOptimizeHotkey` / `_ClearOptimizeHotkey`, `_CaptureFastPathHotkey` / `_ClearFastPathHotkey`, `_CaptureAssistantHotkey` / `_ClearAssistantHotkey`, `_CaptureScreenCaptureHotkey` / `_ClearScreenCaptureHotkey`. Speech: `_SttEngine`, `_WhisperModel`, `_DownloadWhisperModel`, `_DownloadParakeetModel`, `_SttLanguage`, per-voice `_DownloadVoice_<voiceKey>` / `_SelectVoice_<voiceKey>`. Privacy: `_TokenizationEnabled`, `_NewKeywordInput`, `_NewKeywordCategory`, `_AddPiiKeyword`, per-row `_KeywordCategory_<keyword>` / `_RemoveKeyword_<keyword>` |
+| Settings → General | Application: `Settings_General_UiLanguage`, `_DefaultWindowMode`, `_LaunchAtStartup`, `_StartMinimized`, `_AutoCaptureSelectedText`, `_ExportDiagnostics`, `_ResetAppData`. Hotkeys: `_CaptureOptimizeHotkey` / `_ClearOptimizeHotkey`, `_CaptureFastPathHotkey` / `_ClearFastPathHotkey`, `_CaptureAssistantHotkey` / `_ClearAssistantHotkey`, `_CaptureScreenCaptureHotkey` / `_ClearScreenCaptureHotkey`. Speech: `_SttEngine`, `_WhisperModel`, `_DownloadWhisperModel`, `_DownloadParakeetModel`, `_SttLanguage`, per-voice `_DownloadVoice_<voiceKey>` / `_SelectVoice_<voiceKey>` / `_DeleteVoice_<voiceKey>` (the last two render only for an installed voice; **do not click Delete** — see Traps, it hits the real profile). Privacy: `_TokenizationEnabled`, `_NewKeywordInput`, `_NewKeywordCategory`, `_AddPiiKeyword`, per-row `_KeywordCategory_<keyword>` / `_RemoveKeyword_<keyword>` |
 | Settings → Assistant | General: `Settings_Assistant_GoToProvidersTab`, `_SuggestionsEnabled`, `_FilesFolder`, `_ChangeFilesFolder`, `_FileToolsEnabled`, `_GitToolsEnabled`, `_DefaultWorkingDirectory`, `_ChatHistoryToolsEnabled`, `_ChatHistoryRetentionDays`, `_ChatAutoTitleEnabled`, `_DeleteAllChatHistory` — `Settings_Assistant_ChatHistory` is an ambiguous prefix across those two, so match the full id. Tool access: `_ToolPermissions_AutoApproveBuiltInWrites`, `_ToolCatalog`, per-tool `_ForgetSession_<toolName>` / `_Revoke_<toolName>` / `_AllowedForSession_<toolName>` / `_AllowedAlways_<toolName>`. Meeting: `_EnableMeetingDiarization`, `_MeetingSmartSpeakerDetection`, `_MeetingSuppressSpeakerLabels`, `_SpeakerEmbeddingThreshold`, `_MeetingMaxSpeakers`, `_MeetingMinSpeechSeconds`, `_MeetingBrowser`, `_MeetingAttendeeShowBrowserWindow`. Agent runs: `_AgentMaxSteps`, `_MaxToolRoundsPerStep`, `_AgentWallClockMinutes`, `_AgentMaxReplans`, `_AgentPlanReasoningTurnEnabled`, `_Agent_AutoApproveBuiltInWrites`, per-persona `_AgentRoster_<guid>`, `_ScheduledMaxSteps`, `_ScheduledWallClockMinutes`, `_ScheduledMaxReplans`, `_MaxParallelBackgroundRuns` |
 | Settings → Providers | `Settings_Providers_ManagedNotice` (the policy banner, org-managed only), `Settings_Providers_UseSameProviderForAllModes`, `_OptimizeProvider`, `_AssistantProvider`, `_AddProvider`, `_GoToCloudSync`, per-row `Provider_Test_<guid>` / `Provider_Edit_<guid>` / `Provider_Delete_<guid>`. The two default-provider pickers name their rows after the provider (so `optionText` works) and id them per item — `Settings_Providers_OptimizeItem_<guid>` / `_AssistantItem_<guid>`, two prefixes because both pickers list the same providers side by side once "same for all modes" is off. Expand the picker before reaching a row: a closed `ComboBox` has no popup items in the tree |
 | Settings → Account | `Settings_Account_ServerUrl`, `_TrustSelfSignedCertificates`, `_LoginEmail`, `_LoginPassword`, `_LoginWithPassword`, `_OpenRegistrationPage`, `_OpenForgotPassword`, `_LoginWithGoogle`, `_LoginWithMicrosoft`, `_LoginWithEntraId`, `_SyncNow`, `_SyncLogout`, `_IsE2EEEnabled`, `_CheckForPendingDevices` |
@@ -96,7 +96,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | File diff card (`FileDiffCard`) | `ActionCard_DiffToggle_<filePath>`, keyed on `ActionCardInfo.FilePath` rather than the `Id` above — already shown in the card header, so it stays human-readable, and a same-path collision is a rare accepted corner case. |
 | File change set (`FileChangeSetCard`) | The roll-up a run step's accepted diffs fold into, keyed on `FileChangeSet.Id` (a `Guid`, same lifetime caveat as `ActionCardInfo.Id`): `ChangeSet_Toggle_<id>` (the fold), `ChangeSet_Manage_<id>`. Own prefix, deliberately NOT `ActionCard_` — the rows nested inside it are `ActionCard_*`, so a shared prefix would make an `automationId*=` match ambiguous between the set and its own rows. The rows keep their `ActionCard_DiffToggle_<filePath>` ids, and a set holding two edits to one path surfaces that collision as adjacent rows. |
 | Flow notification rail (`FlowView`) | Per-item, keyed on `FlowItemViewModel.Item.Id`: `Flow_Card_<id>` (the `DataItem` container, set through the rail list's `ItemContainerStyle`; its UIA name is the card title), `Flow_Title_<id>`, `Flow_Body_<id>`, `Flow_ActionLink_<id>`, `Flow_Dismiss_<id>`, `Flow_Decisions_<id>` (same formula covers both the real rail and the transient single-item arrival-peek clone, which reuses the identical template — except `Flow_Card_<id>`, which only the real rail sets, so the two can never collide during a peek). Header (`FlowHeaderTemplate`, `DataContext` is the one `FlowViewModel`): `Flow_ClearAll_<host>`, `Flow_PinToggle_<host>`, `Flow_Collapse_<host>`, keyed on a `Tag` ("Real"/"Peek") set on each of the two `ContentControl` hosts and read back via `RelativeSource AncestorType=ContentControl` — needed because the peek clone's `Visibility="Hidden"` does NOT remove it from the UIA tree or block `InvokePattern` (only the hit-test path), so a literal id here would have been a genuine, invokable ambiguity, not a cosmetic one. |
-| Todo edit dialog (`TodoEditContentDialog`) | `TodoEdit_Title`, `_Notes`, `_Priority`, `_DueDate`. No test lock — see Known gaps. |
+| Todo edit dialog (`TodoEditContentDialog`) | Opens **reading**: `TodoRead_BeginEdit` is the pencil that switches it to the fields, and only then do `TodoEdit_Title`, `_Notes`, `_Priority`, `_DueDate` exist. Reading shows Close alone; editing shows Save/Cancel. No test lock — see Known gaps. |
 | Recovery code dialog (`RecoveryCodeContentDialog`) | `RecoveryCode_Copy`, `_Confirm`. No test lock. |
 | Meeting save dialog (`MeetingSaveContentDialog`) | `MeetingSave_Title`, `_Attendees`, `_Tags`, `_Project`, `_Notes`. No test lock. |
 | Assignment consent dialog (`AssignmentConsentContentDialog`) | `AssignmentConsent_Skill`, `_Prompt`, `_Affirm`; per-record (keyed on `AssignmentScopeItemViewModel.Item.EntityId`): `AssignmentConsent_Record_<id>`. No test lock. |
@@ -560,8 +560,41 @@ Committed recordings, the settings fixture they start from and the replay harnes
 
 ## Traps that read as product bugs
 
-Two found the hard way, neither of them WinWright's fault. They are here because each costs a
+Four found the hard way, none of them WinWright's fault. They are here because each costs a
 session before it is recognised for what it is.
+
+### The throwaway profile does not cover downloaded models — deleting one destroys real user data
+
+- **What looks safe.** `PIA_DATA_DIR` / `PIA_LOCAL_DATA_DIR` are set, so every path the walkthrough
+  touches is assumed to be disposable.
+- **What is actually shared.** `PiaPaths` routes the two *data* roots and deliberately does **not**
+  route the downloaded-artifact leaves off `RealLocalRoot`: `TtsDirectory`, `ModelsDirectory`,
+  `BrowsersDirectory`, `PluginsDirectory`, `LegacyPiperDirectory`. Re-fetching gigabytes per run
+  would cost more than sharing them, so a throwaway run reads and writes the developer's real
+  models. Staging a fixture under `<throwaway>/local/Tts` does nothing — the app never looks there.
+- **Why it bites.** Any *destructive* control over those paths acts on real data. Measured
+  2026-09-10: clicking the new per-voice Remove button in a hermetic run deleted the real
+  `%LOCALAPPDATA%PiaTtsoices` bundle; only a re-download restored it.
+- **So.** Read those surfaces, never actuate the delete. Confirm the button's presence and id with
+  `ww_query` / `ww_count` and stop there, or back the directory up first.
+
+### The same run wipes the real vault, and that one costs an LLM re-synthesis
+
+- **Mechanism.** A seed without `assistantFilesFolder` makes `InitializeAssistantFoldersAsync` fall back
+  to `AssistantWorkspace.DefaultRoot` = `%USERPROFILE%\Documents\Pia Assistant`, the real vault. A seed
+  without `ingestSchemaVersion` starts at 0, so the Bootstrapper ingest migration (`< 2`) deletes every
+  `memory/topics/*.md` **there** and resets `memory/index.md`. It then stamps version 2 into the
+  *throwaway* settings.json, so the real profile still reads 2 and its `IngestState` rows survive — the
+  hash gate alone would therefore never rebuild them.
+- **Measured 2026-09-10:** 19 topic pages, gone on the first launch of a hermetic run. **It repaired
+  itself** — `sources/` is never touched, and `AutoIngestService` re-ingests on "Ingest record names a
+  topic page that is gone", which re-synthesised 14 pages on the next real launch without being asked.
+  So the damage costs the LLM spend of a re-synthesis, not the pages; do not reach for the manual route
+  (real `ingestSchemaVersion` to 0 and relaunch) before checking whether the app has already done it.
+  The topic set comes back *different* — same sources, fresh synthesis — so a diff is not evidence of loss.
+- **So the fixture now pins `ingestSchemaVersion: 2`**, which is what actually stops the deletion; a seed
+  you write by hand needs it too, plus `assistantFilesFolder` on a scratch folder to keep vault *writes*
+  out. `autoIngestSources: false` does not help — the wipe is the migration, not auto-ingest.
 
 ### A `Focus()` inside `IsVisibleChanged` silently does nothing
 

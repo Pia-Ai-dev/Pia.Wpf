@@ -487,7 +487,13 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
 
             await _ttsService.DownloadVoiceAsync(voice.Key, progress);
             voice.IsDownloaded = true;
-            _snackbarService.Show(_localizationService["Msg_Success"], _localizationService.Format("Msg_Settings_VoiceDownloaded", voice.DisplayName), Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+
+            // A voice you just waited out a 67 MB download for is the one you meant to use, and its own
+            // "Now using…" snackbar says so — so the download-finished one would only be noise.
+            if (Policy[nameof(AppSettings.TtsVoiceModelKey)])
+                await SelectVoiceAsync(voice);
+            else
+                _snackbarService.Show(_localizationService["Msg_Success"], _localizationService.Format("Msg_Settings_VoiceDownloaded", voice.DisplayName), Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
         }
         catch (Exception ex)
         {
@@ -521,6 +527,46 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         {
             _logger.LogError(ex, "Failed to set voice {VoiceKey}", voice.Key);
             _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Settings_VoiceSetFailed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteVoiceAsync(TtsVoice? voice)
+    {
+        if (voice is null || !voice.IsDownloaded || voice.IsDownloading)
+            return;
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Msg_Settings_VoiceDelete_Title"],
+            _localizationService.Format("Msg_Settings_VoiceDelete_Message", voice.DisplayName));
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            await _ttsService.DeleteVoiceAsync(voice.Key);
+            var wasSelected = voice.IsSelected;
+            voice.IsDownloaded = false;
+            voice.IsSelected = false;
+
+            _snackbarService.Show(_localizationService["Msg_Success"], _localizationService.Format("Msg_Settings_VoiceDeleted", voice.DisplayName), Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+
+            // Deleting the voice in use would otherwise leave Read aloud mute with another voice on disk.
+            if (wasSelected && Policy[nameof(AppSettings.TtsVoiceModelKey)]
+                && TtsVoices.FirstOrDefault(v => v.IsDownloaded) is { } replacement)
+            {
+                await SelectVoiceAsync(replacement);
+            }
+            else if (wasSelected)
+            {
+                SelectedVoiceKey = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete voice {VoiceKey}", voice.Key);
+            _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Settings_VoiceDeleteFailed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
         }
     }
 

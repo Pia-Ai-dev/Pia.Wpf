@@ -590,6 +590,7 @@
   <data name="Tts_Download" xml:space="preserve"><value>Download</value></data>
   <data name="Tts_Select" xml:space="preserve"><value>Select</value></data>
   <data name="Tts_Selected" xml:space="preserve"><value>Selected</value></data>
+  <data name="Tts_Delete" xml:space="preserve"><value>Remove from this device</value></data>
   <!-- Sync Settings -->
   <data name="Sync_Title" xml:space="preserve"><value>Cloud Sync</value></data>
   <data name="Sync_Description" xml:space="preserve"><value>Sync your templates, providers, settings, and history across devices</value></data>
@@ -1419,6 +1420,7 @@
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Draft with AI</value></data>
   <data name="Routines_Draft_Working" xml:space="preserve"><value>Drafting…</value></data>
   <data name="Routines_Draft_Failed" xml:space="preserve"><value>Drafting failed. Check that an AI provider is set up, then try again.</value></data>
+  <data name="Routines_Draft_NothingToFill" xml:space="preserve"><value>Nothing to fill in — the name and the instruction are already set. Clear a field to let the draft write it.</value></data>
   <data name="Routines_Field_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Routines_Field_Goal" xml:space="preserve"><value>Goal *</value></data>
   <data name="Routines_Field_Goal_SlotHint" xml:space="preserve"><value>The highlighted words above come from the field you filled in — edit the field to change them, or write over the whole instruction here.</value></data>

@@ -172,9 +172,11 @@
 
     <Grid Grid.Row="2" Margin="24,0,24,20">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="420"/>
+        <!-- Both star-sized: a fixed list column left the detail pane with almost nothing on a narrow
+             window and the whole surplus of a wide one. -->
+        <ColumnDefinition Width="*" MinWidth="300" MaxWidth="440"/>
         <ColumnDefinition Width="14"/>
-        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="2*"/>
       </Grid.ColumnDefinitions>
 
       <Grid Grid.Column="0">
@@ -288,34 +290,26 @@
                         HorizontalScrollBarVisibility="Disabled"
                         Visibility="{Binding ShowsCatalog, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel Margin="0,0,10,0">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
-                  <TextBlock Text="{loc:Str Routines_Blueprints_Header}"
-                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                  <TextBlock Text="{loc:Str Routines_Blueprints_Hint}"
-                             Style="{StaticResource PiaSettingsDescriptionStyle}"
-                             TextWrapping="Wrap"/>
-                </StackPanel>
-                <ui:Button Grid.Column="1"
-                           Appearance="Transparent"
-                           VerticalAlignment="Top"
-                           Content="{loc:Str Routines_Catalog_StartBlank}"
-                           Margin="8,0,0,0"
-                           AutomationProperties.AutomationId="Routines_StartBlank"
-                           Command="{Binding StartCreateCommand}"/>
-                <ui:Button Grid.Column="2"
-                           Appearance="Transparent"
-                           VerticalAlignment="Top"
-                           Content="{loc:Str Routines_Catalog_Close}"
-                           Margin="8,0,0,0"
-                           AutomationProperties.AutomationId="Routines_CatalogClose"
-                           Command="{Binding CloseCatalogCommand}"/>
-              </Grid>
+              <!-- Buttons on their own row: as Auto columns beside the text, the two German labels took the
+                   whole width and left the hint wrapping one word per line. -->
+              <StackPanel>
+                <TextBlock Text="{loc:Str Routines_Blueprints_Header}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <TextBlock Text="{loc:Str Routines_Blueprints_Hint}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"
+                           TextWrapping="Wrap"/>
+                <WrapPanel HorizontalAlignment="Right" Margin="0,6,0,0">
+                  <ui:Button Appearance="Transparent"
+                             Content="{loc:Str Routines_Catalog_StartBlank}"
+                             Margin="0,0,8,0"
+                             AutomationProperties.AutomationId="Routines_StartBlank"
+                             Command="{Binding StartCreateCommand}"/>
+                  <ui:Button Appearance="Transparent"
+                             Content="{loc:Str Routines_Catalog_Close}"
+                             AutomationProperties.AutomationId="Routines_CatalogClose"
+                             Command="{Binding CloseCatalogCommand}"/>
+                </WrapPanel>
+              </StackPanel>
 
               <routines:PiaRoutinesSearchBar Query="{Binding SearchQuery, Mode=TwoWay}"
                                              Margin="0,12,0,0"/>
@@ -430,7 +424,9 @@
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <StackPanel Margin="0,0,10,0">
+            <!-- Capped: a goal or a failure reason stretched the full width of a maximized window reads as
+                 one endless line. -->
+            <StackPanel Margin="0,0,10,0" MaxWidth="760" HorizontalAlignment="Left">
               <Border Style="{StaticResource RoutineStatusPillStyle}"
                       DataContext="{Binding SelectedJob}"
                       HorizontalAlignment="Left">
@@ -593,7 +589,7 @@
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         IsVisibleChanged="EditorPane_IsVisibleChanged"
                         Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <StackPanel Margin="0,0,10,0">
+            <StackPanel Margin="0,0,10,0" MaxWidth="760" HorizontalAlignment="Left">
 
               <!-- Save is bound to CanSave rather than gated by CanExecute, so the reason has to be visible
                    here. A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->

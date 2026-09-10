@@ -1082,8 +1082,17 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                 EditDescription, offered, EditProvider?.Id);
 
             // Text fills only what is still blank, so re-drafting cannot clobber what the user typed.
-            if (string.IsNullOrWhiteSpace(EditName) && draft.Name is { } name) EditName = name;
-            if (string.IsNullOrWhiteSpace(EditQuery) && draft.Goal is { } goal) EditQuery = ApplyWebSearchGuard(goal, draft);
+            var applied = false;
+            if (string.IsNullOrWhiteSpace(EditName) && draft.Name is { } name)
+            {
+                EditName = name;
+                applied = true;
+            }
+            if (string.IsNullOrWhiteSpace(EditQuery) && draft.Goal is { } goal)
+            {
+                EditQuery = ApplyWebSearchGuard(goal, draft);
+                applied = true;
+            }
 
             // The schedule fills only while it still holds what StartCreate set: a draft must not move a time
             // the user has already chosen, and there is no "blank" for a typed field to test.
@@ -1114,10 +1123,17 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
 
                 // The draft has now chosen them, so a second draft must not move them again.
                 _pickersUntouched = false;
+                applied = true;
             }
 
-            _logger.LogInformation("Drafted a routine from a description (web search needed: {Needed})",
-                draft.NeedsWebSearch);
+            // Otherwise the button reads as broken: the draft arrived and every field it may write was
+            // already filled, so nothing on screen moved.
+            if (!applied)
+                StatusMessage = _localization["Routines_Draft_NothingToFill"];
+
+            _logger.LogInformation(
+                "Drafted a routine from a description (web search needed: {Needed}, applied: {Applied})",
+                draft.NeedsWebSearch, applied);
             _logger.SensitiveDebug("Routine draft from {Description} produced name: {Name} goal: {Goal}",
                 EditDescription, EditName, EditQuery);
         }

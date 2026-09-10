@@ -230,6 +230,22 @@ Description:
             new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
         };
 
+        // Retried once because the stream comes back empty often enough to look like a dead button: an
+        // upstream error frame is dropped rather than thrown, so a failed turn is indistinguishable from
+        // a silent one here.
+        var raw = await CollectTextAsync(messages, provider);
+        if (string.IsNullOrWhiteSpace(raw))
+            raw = await CollectTextAsync(messages, provider);
+
+        if (string.IsNullOrWhiteSpace(raw))
+            throw new InvalidOperationException("The model returned no routine draft.");
+
+        return ParseRoutineDraft(raw);
+    }
+
+    private async Task<string> CollectTextAsync(
+        List<Microsoft.Extensions.AI.ChatMessage> messages, AiProvider provider)
+    {
         var buffer = new StringBuilder();
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             messages, provider, tools: null, toolHandler: null, mode: nameof(WindowMode.Assistant)))
@@ -238,7 +254,7 @@ Description:
                 buffer.Append(delta.Text);
         }
 
-        return ParseRoutineDraft(buffer.ToString());
+        return buffer.ToString();
     }
 
     private static RoutineDraft ParseRoutineDraft(string raw)

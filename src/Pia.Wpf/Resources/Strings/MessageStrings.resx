@@ -274,6 +274,10 @@
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Voice download failed: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Voice {0} downloaded successfully.</value></data>
   <data name="Msg_Settings_VoiceSetFailed" xml:space="preserve"><value>Failed to set voice: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleteFailed" xml:space="preserve"><value>Failed to remove voice: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleted" xml:space="preserve"><value>Voice {0} removed from this device.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Message" xml:space="preserve"><value>Remove the voice {0} from this device? You can download it again at any time.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Title" xml:space="preserve"><value>Remove voice</value></data>
 
   <!-- Todo messages -->
   <data name="Msg_Todo_AddFailed" xml:space="preserve"><value>Failed to add todo: {0}</value></data>

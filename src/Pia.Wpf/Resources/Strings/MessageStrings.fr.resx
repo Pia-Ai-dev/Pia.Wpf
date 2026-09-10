@@ -269,6 +269,10 @@
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Échec du téléchargement de la voix : {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Voix {0} téléchargée avec succès.</value></data>
   <data name="Msg_Settings_VoiceSetFailed" xml:space="preserve"><value>Échec de la définition de la voix : {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleteFailed" xml:space="preserve"><value>Échec du retrait de la voix : {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleted" xml:space="preserve"><value>La voix {0} a été retirée de cet appareil.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Message" xml:space="preserve"><value>Retirer la voix {0} de cet appareil ? Vous pouvez la télécharger à nouveau à tout moment.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Title" xml:space="preserve"><value>Retirer la voix</value></data>
   <!-- Todo messages -->
   <data name="Msg_Todo_AddFailed" xml:space="preserve"><value>Échec de l'ajout de la tâche : {0}</value></data>
   <data name="Msg_Todo_Added" xml:space="preserve"><value>Ajouté</value></data>

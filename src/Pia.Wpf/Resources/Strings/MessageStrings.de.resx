@@ -270,6 +270,10 @@
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Stimmen-Download fehlgeschlagen: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Stimme {0} erfolgreich heruntergeladen.</value></data>
   <data name="Msg_Settings_VoiceSetFailed" xml:space="preserve"><value>Stimme konnte nicht festgelegt werden: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleteFailed" xml:space="preserve"><value>Stimme konnte nicht entfernt werden: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleted" xml:space="preserve"><value>Stimme {0} wurde von diesem Gerät entfernt.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Message" xml:space="preserve"><value>Die Stimme {0} von diesem Gerät entfernen? Du kannst sie jederzeit erneut herunterladen.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Title" xml:space="preserve"><value>Stimme entfernen</value></data>
   <!-- Todo messages -->
   <data name="Msg_Todo_AddFailed" xml:space="preserve"><value>Hinzufügen der Aufgabe fehlgeschlagen: {0}</value></data>
   <data name="Msg_Todo_Added" xml:space="preserve"><value>Hinzugefügt</value></data>
