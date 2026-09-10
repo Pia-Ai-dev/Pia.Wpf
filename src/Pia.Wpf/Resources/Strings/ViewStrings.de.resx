@@ -63,6 +63,7 @@
   <data name="Optimize_Optimize" xml:space="preserve"><value>Optimieren</value></data>
   <data name="Optimize_Original" xml:space="preserve"><value>Original</value></data>
   <data name="Optimize_Optimized" xml:space="preserve"><value>Optimiert</value></data>
+  <data name="Optimize_AiGeneratedHint" xml:space="preserve"><value>KI-generierter Text — bitte prüfe ihn, bevor du ihn verwendest.</value></data>
   <data name="Optimize_Clear_Tooltip" xml:space="preserve"><value>Leeren</value></data>
   <data name="Optimize_Template_Tooltip" xml:space="preserve"><value>Vorlage</value></data>
   <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Ausgabesprache</value></data>

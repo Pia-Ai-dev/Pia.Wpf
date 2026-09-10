@@ -25,6 +25,11 @@
 - A long question no longer fills the pane. Chat history folds it the way the
   chat itself does, so the answer to it stays in view.
 
+## Text optimization
+
+- The optimized text is marked as AI-generated. A line under it asks you to
+  check it before you use it.
+
 ## Screen
 
 - A picture of your screen can go into a message. The Capture screen button
