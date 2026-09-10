@@ -116,4 +116,6 @@
 ## Notifications
 
 - Windows notifications from Pia are headed "Pia AI Assistant" rather than
-  "Pia.Wpf".
+  "Pia.Wpf". Windows binds that name the first time it sees an app and never
+  re-reads it, so Pia registers under a new identity: its entry in Settings →
+  Notifications is recreated, and notifications already sent keep the old name.
