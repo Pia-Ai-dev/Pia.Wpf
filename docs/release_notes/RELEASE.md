@@ -5,6 +5,9 @@
 - A new chat's working folder can be changed from the chat itself. Hover the
   folder shown under "Start a conversation with Pia" and click it to pick
   another; a chat keeps its folder once the first message is sent.
+- Typing @ in the message box offers Files at the top of the list and picks it
+  by default, so Enter goes straight to your files. It is missing only if you
+  turned the file tools off under Settings → Assistant.
 - A failed answer reads as a sentence again. Some upstream failures reached the
   chat as the raw JSON the server sent, error braces and all, in the bubble
   where the answer belongs.

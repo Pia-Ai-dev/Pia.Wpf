@@ -150,6 +150,30 @@ public class AutocompleteServiceTests
         Assert.Contains(results, s => s.Domain == AtCommandDomain.Files && s.DisplayText == "Files" && s.IsTier1);
     }
 
+    /// <summary>The popup preselects index 0, so leading the list is what makes Enter on a bare @ pick Files.</summary>
+    [Fact]
+    public async Task Tier1_FilesAvailable_LeadsTheList()
+    {
+        _files.IsAvailable.Returns(true);
+        await SurfaceIsAvailableAsync();
+
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(domain: null, filter: null);
+
+        Assert.Equal(AtCommandDomain.Files, results[0].Domain);
+    }
+
+    [Fact]
+    public async Task Tier1_FilesUnavailable_LeadsWithMemory()
+    {
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(domain: null, filter: null);
+
+        Assert.Equal(AtCommandDomain.Memory, results[0].Domain);
+    }
+
     [Fact]
     public async Task Tier1_FilterFil_ReturnsFilesOnly_WhenAvailable()
     {

@@ -7,7 +7,7 @@ namespace Pia.Services;
 
 public class AutocompleteService : IAutocompleteService
 {
-    // Always-available domains. Files and Assignment are appended dynamically (see
+    // Always-available domains. Files and Assignment are spliced in dynamically (see
     // GetTier1Suggestions), because tagging either restricts the turn's toolset to that
     // domain's tools — which the plugin host doesn't register with no sandbox folder set,
     // or with no server-offered assignment surface, leaving an empty toolset.
@@ -68,9 +68,10 @@ public class AutocompleteService : IAutocompleteService
 
     private IReadOnlyList<AutocompleteSuggestion> GetTier1Suggestions(string? filter)
     {
+        // Files leads so the popup's index-0 default preselects it on a bare @.
         IEnumerable<AutocompleteSuggestion> tier1 = BaseTier1Suggestions;
         if (_filesToolHandler.IsAvailable)
-            tier1 = tier1.Append(FilesTier1Suggestion);
+            tier1 = tier1.Prepend(FilesTier1Suggestion);
         if (_assignmentSurface.Surface.Available)
             tier1 = tier1.Append(AssignmentTier1Suggestion);
 
