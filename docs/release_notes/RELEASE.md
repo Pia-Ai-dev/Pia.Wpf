@@ -11,11 +11,19 @@
 - A failed answer reads as a sentence again. Some upstream failures reached the
   chat as the raw JSON the server sent, error braces and all, in the bubble
   where the answer belongs.
+- Running out of credit is reported in your own language, and a reset more
+  than a day away is counted in days. The notice was English whatever the app
+  language was, and named the wrong number of hours that far out.
 - The cards that ask to run a tool read as German again. Their titles were built
   verb first, so every one of them said "Erstellen Aufgabe" rather than "Aufgabe
   erstellen". English and French are unchanged.
 - A maximized window stays maximized. Opening a routine's chat from the flow
   rail, or bringing Pia back from the tray, shrank it to a smaller window first.
+
+## Chat history
+
+- A long question no longer fills the pane. Chat history folds it the way the
+  chat itself does, so the answer to it stays in view.
 
 ## Screen
 
