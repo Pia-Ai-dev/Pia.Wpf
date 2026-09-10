@@ -502,4 +502,9 @@
   <data name="Msg_Screen_NativeError" xml:space="preserve"><value>Windows hat die Aufnahme verweigert. Details stehen im Protokoll.</value></data>
   <data name="Msg_Screen_SelfBlackout" xml:space="preserve"><value>Diese Windows-Version kann Pia nur verbergen, indem sie es schwarz übermalt, und Pia verdeckt diesen Bildschirm. Bitte das Pia-Fenster verschieben oder minimieren und erneut versuchen.</value></data>
   <data name="Msg_Settings_HotkeyUnavailable" xml:space="preserve"><value>Windows hat dieses Tastenkürzel abgelehnt - wahrscheinlich verwendet es ein anderes Programm. Bitte eine andere Kombination wählen.</value></data>
+  <data name="Msg_CreditLimit_Reached" xml:space="preserve"><value>Credit-Limit erreicht.</value></data>
+  <data name="Msg_CreditLimit_ResetsInDays" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} T {1} Std. zurückgesetzt.</value></data>
+  <data name="Msg_CreditLimit_ResetsInHours" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} Std. {1} Min. zurückgesetzt.</value></data>
+  <data name="Msg_CreditLimit_ResetsInMinutes" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} Minuten zurückgesetzt.</value></data>
+  <data name="Msg_CreditLimit_ResetsShortly" xml:space="preserve"><value>Credit-Limit erreicht. Wird in Kürze zurückgesetzt.</value></data>
 </root>

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Localization;
 using Pia.Logging;
 using Pia.Services.Exceptions;
 
@@ -674,7 +675,7 @@ public sealed class PiaCloudChatClient : IChatClient
 
         if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
-            var friendlyMessage = "Token limit reached.";
+            var friendlyMessage = LocalizationSource.Instance["Msg_CreditLimit_Reached"];
             try
             {
                 using var errDoc = JsonDocument.Parse(responseJson);
@@ -683,12 +684,14 @@ public sealed class PiaCloudChatClient : IChatClient
                 {
                     var resetsAt = resetsAtProp.GetDateTime();
                     var remaining = resetsAt - DateTime.UtcNow;
-                    if (remaining.TotalMinutes > 60)
-                        friendlyMessage = $"Token limit reached. Resets in {remaining.Hours}h {remaining.Minutes}m.";
+                    if (remaining.TotalHours >= 24)
+                        friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInDays"], remaining.Days, remaining.Hours);
+                    else if (remaining.TotalMinutes > 60)
+                        friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInHours"], (int)remaining.TotalHours, remaining.Minutes);
                     else if (remaining.TotalMinutes > 1)
-                        friendlyMessage = $"Token limit reached. Resets in {(int)remaining.TotalMinutes} minutes.";
+                        friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInMinutes"], (int)remaining.TotalMinutes);
                     else
-                        friendlyMessage = "Token limit reached. Resets shortly.";
+                        friendlyMessage = LocalizationSource.Instance["Msg_CreditLimit_ResetsShortly"];
                 }
             }
             catch { }

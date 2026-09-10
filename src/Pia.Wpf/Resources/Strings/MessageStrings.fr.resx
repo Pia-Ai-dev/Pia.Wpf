@@ -501,4 +501,9 @@ Les modifications seront appliquées.</value></data>
   <data name="Msg_Screen_NativeError" xml:space="preserve"><value>Windows a refusé la capture. Consultez le journal pour les détails.</value></data>
   <data name="Msg_Screen_SelfBlackout" xml:space="preserve"><value>Cette version de Windows ne peut masquer Pia qu'en la peignant en noir, et Pia couvre cet écran. Déplacez ou réduisez la fenêtre de Pia, puis réessayez.</value></data>
   <data name="Msg_Settings_HotkeyUnavailable" xml:space="preserve"><value>Windows a refusé ce raccourci - un autre programme l'utilise probablement. Choisissez une autre combinaison.</value></data>
+  <data name="Msg_CreditLimit_Reached" xml:space="preserve"><value>Limite de crédits atteinte.</value></data>
+  <data name="Msg_CreditLimit_ResetsInDays" xml:space="preserve"><value>Limite de crédits atteinte. Réinitialisation dans {0} j {1} h.</value></data>
+  <data name="Msg_CreditLimit_ResetsInHours" xml:space="preserve"><value>Limite de crédits atteinte. Réinitialisation dans {0} h {1} min.</value></data>
+  <data name="Msg_CreditLimit_ResetsInMinutes" xml:space="preserve"><value>Limite de crédits atteinte. Réinitialisation dans {0} minutes.</value></data>
+  <data name="Msg_CreditLimit_ResetsShortly" xml:space="preserve"><value>Limite de crédits atteinte. Réinitialisation prochaine.</value></data>
 </root>
