@@ -54,7 +54,7 @@ container-recycling hazards the window bound avoids entirely.
       skipping the detail reload in `LoadChatsAsync` when the resolved selection has not changed. Half
       the reported cost: the switch renders the transcript on the history side too. *Deps:* A4 ·
       *Effort:* `S` · *Value:* `High`
-- [ ] **A6 · Trim `MarkdownMessageControl`.** Drop the constructor's `RenderMarkdown(string.Empty)` and
+- [x] **A6 · Trim `MarkdownMessageControl`.** Drop the constructor's `RenderMarkdown(string.Empty)` and
       move the 8-item `ContextMenu` to a shared resource resolved through `PlacementTarget`.
       *Deps:* — · *Effort:* `XS` · *Value:* `Med`
 - [ ] **A7 · Lock the budget with a test.** Assert that opening a 1 573-message chat realizes exactly
