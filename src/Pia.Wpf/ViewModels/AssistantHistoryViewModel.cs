@@ -38,6 +38,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
     private bool _initialized;
+    private (Guid Id, DateTime UpdatedAt)? _loadedChat;
     private bool _suppressReload;
 
     [ObservableProperty]
@@ -102,6 +103,26 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     private SyncAssistantChat? _selectedChatDetail;
 
     public ObservableCollection<AssistantMessage> SelectedChatMessages { get; } = new();
+
+    /// <summary>The tail of <see cref="SelectedChatMessages"/> the inspector renders; the whole transcript
+    /// stays behind it for export.</summary>
+    public ObservableCollection<AssistantMessage> VisibleChatMessages { get; } = new();
+
+    private bool _hasOlderChatMessages;
+
+    public bool HasOlderChatMessages
+    {
+        get => _hasOlderChatMessages;
+        private set => SetProperty(ref _hasOlderChatMessages, value);
+    }
+
+    private int _olderChatMessageCount;
+
+    public int OlderChatMessageCount
+    {
+        get => _olderChatMessageCount;
+        private set => SetProperty(ref _olderChatMessageCount, value);
+    }
 
     public ObservableCollection<AiProvider> Providers { get; } = new();
 
@@ -923,7 +944,8 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         if (e.PropertyName == nameof(SelectedChat))
         {
             UpdateCommandStates();
-            LoadSelectedChatDetailAsync().SafeFireAndForget(_logger);
+            if (!IsDetailLoadedFor(SelectedChat))
+                LoadSelectedChatDetailAsync().SafeFireAndForget(_logger);
         }
 
         if (e.PropertyName is nameof(SearchQuery)
@@ -945,13 +967,39 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
             UpdateCommandStates();
     }
 
+    [RelayCommand]
+    private void LoadOlderChatMessages()
+    {
+        MessageWindow.PrependOlder(VisibleChatMessages, SelectedChatMessages);
+        UpdateOlderChatMessageCount();
+    }
+
+    private void ResetChatMessageWindow()
+    {
+        MessageWindow.Reset(VisibleChatMessages, SelectedChatMessages);
+        UpdateOlderChatMessageCount();
+    }
+
+    private void UpdateOlderChatMessageCount()
+    {
+        OlderChatMessageCount = SelectedChatMessages.Count - VisibleChatMessages.Count;
+        HasOlderChatMessages = OlderChatMessageCount > 0;
+    }
+
+    // A list reload re-wraps every row, so reference identity cannot say whether the pane already holds
+    // this chat; every store write to a chat moves its UpdatedAt, so the pair is what "already loaded" means.
+    private bool IsDetailLoadedFor(AssistantChatRowViewModel? row) =>
+        row is not null && _loadedChat == (row.Id, row.UpdatedAt);
+
     private async Task LoadSelectedChatDetailAsync()
     {
         var current = SelectedChat;
         if (current is null)
         {
+            _loadedChat = null;
             SelectedChatDetail = null;
             SelectedChatMessages.Clear();
+            ResetChatMessageWindow();
             return;
         }
 
@@ -967,6 +1015,8 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
                 foreach (var msg in detail.Messages)
                     SelectedChatMessages.Add(AssistantMessageMapper.FromDto(msg));
             }
+            ResetChatMessageWindow();
+            _loadedChat = detail is null ? null : (current.Id, current.UpdatedAt);
 
             _logger.LogInformation(
                 "Loaded chat detail {ChatId} ({MessageCount} messages)",
@@ -975,8 +1025,10 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to load chat detail {ChatId}", current.Id);
+            _loadedChat = null;
             SelectedChatDetail = null;
             SelectedChatMessages.Clear();
+            ResetChatMessageWindow();
         }
     }
 

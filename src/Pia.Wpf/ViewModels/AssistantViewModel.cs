@@ -236,10 +236,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private ObservableCollection<AssistantMessage> _messages = new();
 
-    /// <summary>Building a WPF tree over a whole transcript costs ~24 ms per message, so the list is given
-    /// the newest slice and the reader asks for more.</summary>
-    private const int MessageWindowSize = 50;
-
     /// <summary>What the transcript list is bound to — the tail of <see cref="Messages"/>, which stays whole
     /// because it is also the model's context, the export and in-chat search.</summary>
     public ObservableCollection<AssistantMessage> VisibleMessages { get; } = [];
@@ -685,9 +681,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void RebuildMessageWindow()
     {
-        VisibleMessages.Clear();
-        for (var i = Math.Max(0, Messages.Count - MessageWindowSize); i < Messages.Count; i++)
-            VisibleMessages.Add(Messages[i]);
+        MessageWindow.Reset(VisibleMessages, Messages);
         UpdateOlderMessageCount();
     }
 
@@ -700,14 +694,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [RelayCommand]
     private void LoadOlderMessages()
     {
-        var older = Messages.Count - VisibleMessages.Count;
-        if (older <= 0)
-            return;
-
-        var batch = Math.Min(MessageWindowSize, older);
-        for (var i = 0; i < batch; i++)
-            VisibleMessages.Insert(i, Messages[older - batch + i]);
-
+        MessageWindow.PrependOlder(VisibleMessages, Messages);
         UpdateOlderMessageCount();
     }
 

@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1, A2, A3, A4, A6, A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
+**Status:** A1, A2, A3, A4, A5, A6, A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
 by measurement against the real archive shape (148 chats / 195 MB, ten of them holding ~90 %): rendering is the cause,
 the store is not. Rest open.
 **Owner:** Marco Altmann
@@ -52,10 +52,11 @@ container-recycling hazards the window bound avoids entirely.
       plus a "load older" button that prepends another N and restores the scroll offset. `Messages`
       stays whole. This is the fix for the report: 1 573 messages cost 43–50 s and 3.2 GB per
       navigation today, a 50-message window 1.7 s. *Deps:* A3 · *Effort:* `S` · *Value:* `High`
-- [ ] **A5 · Window the history inspector.** The same projection for `PiaAssistantChatInspector`, plus
-      skipping the detail reload in `LoadChatsAsync` when the resolved selection has not changed. Half
-      the reported cost: the switch renders the transcript on the history side too. *Deps:* A4 ·
-      *Effort:* `S` · *Value:* `High`
+- [x] **A5 · Window the history inspector.** The same projection for `PiaAssistantChatInspector`, plus
+      skipping the detail reload in `LoadChatsAsync` when the resolved selection has not changed — keyed
+      on the row's `UpdatedAt` as well as its id, so a rename, a new turn or a sync pull still reloads.
+      No scroll anchoring: the affordance is reachable only from the top of the pane, where nothing sits
+      above the viewport to displace. *Deps:* A4 · *Effort:* `S` · *Value:* `High`
 - [x] **A6 · Trim `MarkdownMessageControl`.** Drop the constructor's `RenderMarkdown(string.Empty)` and
       move the 8-item `ContextMenu` to a shared resource resolved through `PlacementTarget`.
       *Deps:* — · *Effort:* `XS` · *Value:* `Med`

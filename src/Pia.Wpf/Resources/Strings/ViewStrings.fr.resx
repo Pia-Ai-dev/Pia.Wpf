@@ -1509,6 +1509,8 @@
   <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>archive Pia</value></data>
   <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>export Open WebUI</value></data>
   <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Charger plus</value></data>
+  <data name="AssistantHistory_LoadOlderMessages" xml:space="preserve"><value>Afficher les messages plus anciens ({0})</value></data>
+  <data name="AssistantHistory_LoadOlderMessages_Tooltip" xml:space="preserve"><value>Ajoute d'autres messages antérieurs à l'aperçu</value></data>
   <data name="Settings_ExportDiagnostics" xml:space="preserve">
     <value>Diagnostic</value>
   </data>

@@ -108,84 +108,100 @@
                     Padding="14,12,14,14"
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled">
-        <ItemsControl ItemsSource="{Binding DataContext.SelectedChatMessages, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Grid Margin="0,0,0,12">
-                <StackPanel HorizontalAlignment="Right"
-                            MaxWidth="540">
-                  <StackPanel.Style>
-                    <Style TargetType="StackPanel">
-                      <Setter Property="Visibility" Value="Collapsed"/>
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsUser}" Value="True">
-                          <Setter Property="Visibility" Value="Visible"/>
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </StackPanel.Style>
-                  <!-- Same fold as the live chat: a 20-line message otherwise fills the pane and
-                       pushes the answer to it out of view. Own id prefix, not the chat's. -->
-                  <Border Style="{StaticResource UserBubbleStyle}">
-                    <chat:PiaCollapsibleMessageText
-                        Text="{Binding Content}"
-                        TextAutomationId="{Binding Id, StringFormat='AssistantHistory_MessageText_{0}'}"
-                        ToggleAutomationId="{Binding Id, StringFormat='AssistantHistory_ExpandMessage_{0}'}" />
-                  </Border>
-                  <!-- What the user attached. Saved files reopen; the rest kept only their name. -->
-                  <ItemsControl ItemsSource="{Binding AttachedFiles}"
-                                Margin="0,6,0,0"
-                                HorizontalAlignment="Left"
-                                Visibility="{Binding HasAttachedFiles, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <ItemsControl.ItemsPanel>
-                      <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal"/>
-                      </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate>
-                        <chat:PiaAttachedFileChip FileName="{Binding FileName}"
-                                                  SavedRelativePath="{Binding SavedRelativePath}"
-                                                  CommandParameter="{Binding}"
-                                                  Margin="0,0,6,4"
-                                                  OpenCommand="{Binding DataContext.OpenAttachedFileCommand,
-                                                                        RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"
-                                                  RevealCommand="{Binding DataContext.RevealAttachedFileCommand,
-                                                                          RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </StackPanel>
+        <StackPanel>
+          <!-- Scrolls with the transcript, so it reads as the start of the conversation and takes no
+               layout when there is nothing older. -->
+          <Button HorizontalAlignment="Center"
+                  Margin="0,0,0,12"
+                  Padding="12,6"
+                  Cursor="Hand"
+                  Command="{Binding DataContext.LoadOlderChatMessagesCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"
+                  Content="{Binding DataContext.OlderChatMessageCount, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView},
+                                    Converter={StaticResource OlderMessagesLabelConverter},
+                                    ConverterParameter=AssistantHistory_LoadOlderMessages}"
+                  Visibility="{Binding DataContext.HasOlderChatMessages, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView},
+                                       Converter={StaticResource BooleanToVisibilityConverter}}"
+                  AutomationProperties.AutomationId="AssistantHistory_LoadOlderMessages"
+                  ToolTip="{loc:Str AssistantHistory_LoadOlderMessages_Tooltip}" />
+          <ItemsControl ItemsSource="{Binding DataContext.VisibleChatMessages, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="0,0,0,12">
+                  <StackPanel HorizontalAlignment="Right"
+                              MaxWidth="540">
+                    <StackPanel.Style>
+                      <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsUser}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </StackPanel.Style>
+                    <!-- Same fold as the live chat: a 20-line message otherwise fills the pane and
+                         pushes the answer to it out of view. Own id prefix, not the chat's. -->
+                    <Border Style="{StaticResource UserBubbleStyle}">
+                      <chat:PiaCollapsibleMessageText
+                          Text="{Binding Content}"
+                          TextAutomationId="{Binding Id, StringFormat='AssistantHistory_MessageText_{0}'}"
+                          ToggleAutomationId="{Binding Id, StringFormat='AssistantHistory_ExpandMessage_{0}'}" />
+                    </Border>
+                    <!-- What the user attached. Saved files reopen; the rest kept only their name. -->
+                    <ItemsControl ItemsSource="{Binding AttachedFiles}"
+                                  Margin="0,6,0,0"
+                                  HorizontalAlignment="Left"
+                                  Visibility="{Binding HasAttachedFiles, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <chat:PiaAttachedFileChip FileName="{Binding FileName}"
+                                                    SavedRelativePath="{Binding SavedRelativePath}"
+                                                    CommandParameter="{Binding}"
+                                                    Margin="0,0,6,4"
+                                                    OpenCommand="{Binding DataContext.OpenAttachedFileCommand,
+                                                                          RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"
+                                                    RevealCommand="{Binding DataContext.RevealAttachedFileCommand,
+                                                                            RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
 
-                <Grid HorizontalAlignment="Stretch">
-                  <Grid.Style>
-                    <Style TargetType="Grid">
-                      <Setter Property="Visibility" Value="Collapsed"/>
-                      <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsUser}" Value="False">
-                          <Setter Property="Visibility" Value="Visible"/>
-                        </DataTrigger>
-                      </Style.Triggers>
-                    </Style>
-                  </Grid.Style>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                  </Grid.ColumnDefinitions>
-                  <chat:PiaPersonaAvatar Grid.Column="0"
-                                         PersonaId="{Binding PersonaGlyphId}"
-                                         Emoji="{Binding PersonaGlyphEmoji}"
-                                         Margin="0,2,12,0"
-                                         VerticalAlignment="Top"/>
-                  <chat:PiaAssistantMessage Grid.Column="1"
-                                            HorizontalAlignment="Left"
-                                            MaxWidth="880"
-                                            ExportCommand="{Binding DataContext.ExportMessageHtmlCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+                  <Grid HorizontalAlignment="Stretch">
+                    <Grid.Style>
+                      <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsUser}" Value="False">
+                            <Setter Property="Visibility" Value="Visible"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Grid.Style>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <chat:PiaPersonaAvatar Grid.Column="0"
+                                           PersonaId="{Binding PersonaGlyphId}"
+                                           Emoji="{Binding PersonaGlyphEmoji}"
+                                           Margin="0,2,12,0"
+                                           VerticalAlignment="Top"/>
+                    <chat:PiaAssistantMessage Grid.Column="1"
+                                              HorizontalAlignment="Left"
+                                              MaxWidth="880"
+                                              ExportCommand="{Binding DataContext.ExportMessageHtmlCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
+                  </Grid>
                 </Grid>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
       </ScrollViewer>
     </Grid>
   </Border>

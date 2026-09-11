@@ -1519,6 +1519,8 @@
   <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Pia archive</value></data>
   <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Open WebUI export</value></data>
   <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Load more</value></data>
+  <data name="AssistantHistory_LoadOlderMessages" xml:space="preserve"><value>Show older messages ({0})</value></data>
+  <data name="AssistantHistory_LoadOlderMessages_Tooltip" xml:space="preserve"><value>Adds more of the earlier conversation to the preview</value></data>
   <data name="Settings_ExportDiagnostics" xml:space="preserve">
     <value>Diagnostics</value>
   </data>
