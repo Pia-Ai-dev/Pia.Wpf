@@ -189,6 +189,10 @@ public sealed class ChatArchiveService : IChatArchiveService
 
                 Normalize(chat, seenMessageIds);
 
+                // Importing is an access. Keeping the file's own value hands a years-old archive to
+                // retention, which evicts it — locally and, through sync, everywhere else.
+                chat.LastAccessedAt = DateTime.UtcNow;
+
                 var existing = await _chatService.GetAsync(chat.Id, ct).ConfigureAwait(false);
                 if (existing is not null && existing.UpdatedAt >= chat.UpdatedAt)
                 {
@@ -240,8 +244,6 @@ public sealed class ChatArchiveService : IChatArchiveService
             chat.UpdatedAt = chat.CreatedAt == default ? DateTime.UtcNow : chat.CreatedAt;
         if (chat.CreatedAt == default)
             chat.CreatedAt = chat.UpdatedAt;
-        if (chat.LastAccessedAt == default)
-            chat.LastAccessedAt = chat.UpdatedAt;
 
         foreach (var message in chat.Messages)
         {

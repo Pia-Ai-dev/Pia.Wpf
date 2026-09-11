@@ -1,7 +1,9 @@
 using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Infrastructure;
+using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
@@ -86,6 +88,7 @@ public sealed class ChatArchiveServiceTests : IDisposable
         await _chats.DeleteAsync(original.Id, Ct);
         Assert.Null(await _chats.GetAsync(original.Id, Ct));
 
+        var importStarted = DateTime.UtcNow;
         var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(ChatArchiveFormat.Pia, result.Format);
@@ -97,7 +100,9 @@ public sealed class ChatArchiveServiceTests : IDisposable
         Assert.Equal(original.Title, restored.Title);
         Assert.Equal(original.CreatedAt, restored.CreatedAt);
         Assert.Equal(original.UpdatedAt, restored.UpdatedAt);
-        Assert.Equal(original.LastAccessedAt, restored.LastAccessedAt);
+        // The one field an import does not restore: it is stamped, so the file's own value cannot
+        // hand a years-old archive straight to retention.
+        Assert.True(restored.LastAccessedAt >= importStarted);
         Assert.Equal(original.WindowMode, restored.WindowMode);
         Assert.Equal(original.ProviderId, restored.ProviderId);
         Assert.Equal(original.WorkingDirectory, restored.WorkingDirectory);
@@ -189,6 +194,43 @@ public sealed class ChatArchiveServiceTests : IDisposable
         var result = await _sut.ImportAsync(file, ct: Ct);
 
         Assert.Equal(old.UpdatedAt, result.OldestUpdatedAt);
+    }
+
+    [Fact]
+    public async Task Import_KeepsTheArchivesOwnDates_ButStampsLastAccessed()
+    {
+        var file = PathFor("ancient.json");
+        await File.WriteAllTextAsync(file, OpenWebUiExport(1, AncientEpoch), Ct);
+        var importStarted = DateTime.UtcNow;
+
+        Assert.Equal(1, (await _sut.ImportAsync(file, ct: Ct)).Imported);
+
+        var stored = await _chats.GetAsync(Assert.Single(await _chats.GetAllIdsAsync(Ct)), Ct);
+        Assert.NotNull(stored);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(AncientEpoch).UtcDateTime, stored.CreatedAt);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(AncientEpoch + 100).UtcDateTime, stored.UpdatedAt);
+        Assert.True(stored.LastAccessedAt >= importStarted,
+            $"import must count as an access, got {stored.LastAccessedAt:O}");
+    }
+
+    [Fact]
+    public async Task AnImportedArchive_SurvivesTheNextRetentionPass()
+    {
+        var stale = ChatWithMessageId(Guid.NewGuid(), "not opened in years");
+        stale.LastAccessedAt = DateTime.UtcNow.AddYears(-3);
+        await _chats.SaveAsync(stale, Ct);
+
+        var file = PathFor("retention.json");
+        await File.WriteAllTextAsync(file, OpenWebUiExport(1, AncientEpoch), Ct);
+        Assert.Equal(1, (await _sut.ImportAsync(file, ct: Ct)).Imported);
+
+        await RetentionSut().RunCleanupAsync(Ct);
+
+        var surviving = await _chats.GetAllIdsAsync(Ct);
+        // The stale chat proves the pass really evicted: without it the assertion below holds
+        // whether retention ran or silently faulted.
+        Assert.DoesNotContain(stale.Id, surviving);
+        Assert.Single(surviving);
     }
 
     [Fact]
@@ -329,22 +371,48 @@ public sealed class ChatArchiveServiceTests : IDisposable
         public void Report(ChatImportProgress value) => onReport(value);
     }
 
-    private static string OpenWebUiExport(int chatCount)
+    /// <summary>2019-03-04T05:06:07Z — far enough back that any retention window evicts it.</summary>
+    private const long AncientEpoch = 1551675967;
+
+    private const long DefaultExportEpoch = 1779274800;
+
+    private AssistantChatRetentionService RetentionSut()
+    {
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        return new AssistantChatRetentionService(
+            _chats,
+            settings,
+            new AssistantChatSyncService(
+                _chats,
+                Substitute.For<ICloudCapabilityService>(),
+                Substitute.For<IAuthService>(),
+                settings,
+                Substitute.For<System.Net.Http.IHttpClientFactory>(),
+                new SyncMapper(Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance)),
+                Substitute.For<ISyncClientService>(),
+                NullLogger<AssistantChatSyncService>.Instance),
+            Substitute.For<IAgentTimelineService>(),
+            Substitute.For<IAgentToolExchangeStore>(),
+            NullLogger<AssistantChatRetentionService>.Instance);
+    }
+
+    private static string OpenWebUiExport(int chatCount, long createdAtEpoch = DefaultExportEpoch)
     {
         var records = Enumerable.Range(0, chatCount).Select(i => $$"""
             {
               "id": "{{Guid.NewGuid()}}",
               "title": "chat {{i}}",
-              "created_at": 1779274800,
-              "updated_at": {{1779274900 + i}},
+              "created_at": {{createdAtEpoch}},
+              "updated_at": {{createdAtEpoch + 100 + i}},
               "chat": {
                 "history": {
                   "currentId": "{{AnswerId(i)}}",
                   "messages": {
                     "{{PromptId(i)}}": { "id": "{{PromptId(i)}}", "parentId": null,
-                                         "role": "user", "content": "prompt {{i}}", "timestamp": 1779274801 },
+                                         "role": "user", "content": "prompt {{i}}", "timestamp": {{createdAtEpoch + 1}} },
                     "{{AnswerId(i)}}": { "id": "{{AnswerId(i)}}", "parentId": "{{PromptId(i)}}",
-                                         "role": "assistant", "content": "answer {{i}}", "timestamp": 1779274802 }
+                                         "role": "assistant", "content": "answer {{i}}", "timestamp": {{createdAtEpoch + 2}} }
                   }
                 },
                 "messages": [ { "role": "user", "content": "prompt {{i}}" } ]

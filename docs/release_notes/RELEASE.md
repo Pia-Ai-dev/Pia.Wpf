@@ -39,6 +39,10 @@
 
 - A long question no longer fills the pane. Chat history folds it the way the
   chat itself does, so the answer to it stays in view.
+- Imported chats stay. An archive of older conversations counted as untouched
+  for as long as its own dates said, so most of it was cleared shortly after
+  the next start; Import now counts as opening them. What an earlier version
+  cleared is gone from Pia Cloud and your other devices too — import it again.
 
 ## Text optimization
 

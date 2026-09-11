@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1 done. G3 closed by measurement against the real archive shape (148 chats / 195 MB,
+**Status:** A1 and B1 done. G3 closed by measurement against the real archive shape (148 chats / 195 MB,
 ten of them holding ~90 %): rendering is the cause, the store is not. Rest open.
 **Owner:** Marco Altmann
 **Written:** 2026-09-11
@@ -68,9 +68,11 @@ container-recycling hazards the window bound avoids entirely.
 
 ## B — the store after a bulk import
 
-- [ ] **B1 · Stop retention deleting an imported archive.** An imported chat keeps its original
-      `LastAccessedAt`, so the 180-day default evicts most of a years-old export 5 s after the next
-      launch — measured, 123 of 148. *Deps:* — · *Effort:* `S` · *Value:* `High`
+- [x] **B1 · Stop retention deleting an imported archive.** An imported chat kept its original
+      `LastAccessedAt`, so the 180-day default evicted most of a years-old export 5 s after the next
+      launch — measured, 123 of 148. The import now stamps `LastAccessedAt` on every chat it stores;
+      `CreatedAt` and `UpdatedAt` keep the archive's own dates. *Deps:* — · *Effort:* `S` ·
+      *Value:* `High`
 - [ ] **B2 · Take the store gate off the eviction batch.** `EvictUnderGateAsync` holds the gate every UI
       query needs for the whole delete loop; chunk it, or yield between batches. Measured: a navigation
       query blocked 4.5 s behind it at 148 chats (28 s at 2 865 — it scales with chat count, unbounded). *Deps:* — · *Effort:* `S` · *Value:* `High`
