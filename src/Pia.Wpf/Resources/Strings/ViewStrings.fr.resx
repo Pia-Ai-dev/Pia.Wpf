@@ -915,6 +915,7 @@
   <data name="ActionCard_Action_Update" xml:space="preserve"><value>Mettre à jour</value></data>
   <data name="ActionCard_Action_Delete" xml:space="preserve"><value>Supprimer</value></data>
   <data name="ActionCard_Action_Complete" xml:space="preserve"><value>Terminer</value></data>
+  <data name="ActionCard_Action_Start" xml:space="preserve"><value>Démarrer</value></data>
   <data name="ActionCard_Action_Write" xml:space="preserve"><value>Écrire</value></data>
   <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Fait</value></data>
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Refusé</value></data>

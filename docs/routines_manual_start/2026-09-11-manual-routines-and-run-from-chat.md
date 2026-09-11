@@ -277,3 +277,36 @@ Manual smoke, after the gate is green:
 - **A "Start" affordance on the `@Routine` picker row.** The Routines view already has Run now for the
   mouse path; revisit only if the tool proves unreliable in practice.
 - Promoting a chat or an agent run into a routine template. Separate feature.
+
+---
+
+## 7. Live validation, 2026-09-11
+
+Driven with WinWright against the real profile on this machine, Debug build, Pia Cloud pointed at the
+local docker server (`https://localhost:8081/api/ai/chat`). UI language German, which also exercised the
+new resx entries.
+
+Confirmed:
+
+- `Nur manuell` is offered and selectable; picking it hides `Routines_Field_Time` and leaves
+  `Routines_Save` enabled. The saved row reads `Aktiv · Agenten-Ausführung · Nur manuell`, and
+  `Routines_Detail_NextRun` renders `—`.
+- `@Routine:"<name>" start it` made the model call `run_routine` with `{"routine":"ZZ Manual template
+  test"}` — the chip's name, resolved by name, no `query_scheduled_research` round-trip needed on the
+  first attempt. The turn's toolset was the 7 routine tools, `run_routine` among them.
+- Approving dispatched the real thing: `Run-now dispatching scheduled job … (AgentTask)` →
+  `Created run … shape=Planned state=Planning trigger=Schedule`. An agent run, not a chat turn.
+- The tool result came back localized and the model reported the start rather than the answer.
+- After a completed run the routine stayed `Aktiv` at `—`, with `Letzte 1 Ausführungen: 1 ok`, and the
+  dispatch log reads `schedule moved on to 01/01/9999 00:00`. The template survives its own run.
+- The run's own step was sent **no** routine tools at all, so a fired routine cannot start others.
+- Declining leaves the routine unstarted; only one dispatch was recorded across two attempts.
+
+One defect found, fixed and re-verified live: the approval card was headed *Geplanter Auftrag
+erstellen* ("create") over a body that said start, because `ActionCardBuilder.FormatToolTitle` has no
+arm for `run_routine` and falls through to `ActionCard_Action_Create`. Added `ActionCard_Action_Start`
+(en/de/fr) and the mapping; the card now reads *Geplanter Auftrag starten*. Pinned by
+`ActionCardBuilderScheduledCategoryTests.RunRoutineCard_SaysStart_NotCreate`.
+
+`start_assignment` falls through the same default arm and is titled "create" too — pre-existing, not
+touched here.

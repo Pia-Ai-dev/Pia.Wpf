@@ -1,6 +1,6 @@
 # Manual routines + run-from-chat — checklist
 
-**Status:** A and B landed 2026-09-11, gate green (7159 tests, Failed: 0), 0 warnings Debug + Release; C2 smoke and C3 release notes open · **Owner:** Marco Altmann · **Written:** 2026-09-11
+**Status:** complete — A, B and C landed 2026-09-11; gate green (7170 tests, Failed: 0), 0 warnings Debug + Release, and validated live against the real profile · **Owner:** Marco Altmann · **Written:** 2026-09-11
 **Origin:** [2026-09-11-manual-routines-and-run-from-chat.md](2026-09-11-manual-routines-and-run-from-chat.md),
 which holds the grounding, the seven settled decisions and the file-by-file edits. This file is the tracking
 surface only — tick each box in the commit that lands it. Step ids mirror that plan’s edit-table rows; the
@@ -98,7 +98,7 @@ standalone value, unblocks a High.
 - [x] **C1 — Clear the gate and the warning bar.** Built exe with no filter at `Failed: 0`, plus
   `dotnet build -t:Rebuild -v:n` at `0 Warning(s)` in Debug and Release.
   *Deps:* A13, B6 · *Effort:* `XS` · *Value:* `High`
-- [ ] **C2 — Smoke it in the real app.** A manual routine survives a restart without firing, and "start it"
+- [x] **C2 — Smoke it in the real app.** A manual routine survives a restart without firing, and "start it"
   on an `@Routine` chip produces a detached run in the routine's own working directory.
   *Deps:* C1 · *Effort:* `XS` · *Value:* `High`
 - [x] **C3 — Curate the release notes.** Rewrite `docs/release_notes/RELEASE.md` in place for both halves,

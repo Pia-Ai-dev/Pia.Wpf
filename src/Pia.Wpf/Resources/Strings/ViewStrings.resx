@@ -881,6 +881,7 @@
   <data name="ActionCard_Action_Update" xml:space="preserve"><value>Update</value></data>
   <data name="ActionCard_Action_Delete" xml:space="preserve"><value>Delete</value></data>
   <data name="ActionCard_Action_Complete" xml:space="preserve"><value>Complete</value></data>
+  <data name="ActionCard_Action_Start" xml:space="preserve"><value>Start</value></data>
   <data name="ActionCard_Action_Write" xml:space="preserve"><value>Write</value></data>
   <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Done</value></data>
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Declined</value></data>
