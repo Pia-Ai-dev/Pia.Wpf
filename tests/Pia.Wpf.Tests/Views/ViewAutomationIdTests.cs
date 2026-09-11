@@ -19,11 +19,17 @@ public class ViewAutomationIdTests
 
     // DataTemplates only, and only ones the markup sets locally: expanding ControlTemplates too would drag in
     // Wpf.Ui's ScrollBar arrows and ComboBox toggles and bury the signal.
-    private static readonly DependencyProperty[] DeclaredTemplates =
+    private static readonly DependencyProperty[] TemplateProperties =
     [
         ItemsControl.ItemTemplateProperty,
         ContentControl.ContentTemplateProperty,
         HeaderedContentControl.HeaderTemplateProperty,
+    ];
+
+    private static readonly DependencyProperty[] TemplateSelectorProperties =
+    [
+        ItemsControl.ItemTemplateSelectorProperty,
+        ContentControl.ContentTemplateSelectorProperty,
     ];
 
     /// <summary>Most-specific first: the property a script would drive is the one that names the control.</summary>
@@ -193,19 +199,35 @@ public class ViewAutomationIdTests
         if (element is ButtonBase or ComboBox or TextBoxBase or PasswordBox or Slider or Expander or TabItem)
             controls.Add(new Inspected(element.GetType().FullName!, Identity(element), Id(element), inItemTemplate));
 
-        // ReadLocalValue, so a template inherited from a default Wpf.Ui style is not expanded.
-        foreach (var property in DeclaredTemplates)
+        foreach (var (template, isItemTemplate) in DeclaredTemplates(element))
         {
-            if (element.ReadLocalValue(property) is not DataTemplate template) continue;
             if (!open.Add(template)) continue;
             if (template.LoadContent() is DependencyObject content)
-                Collect(content, content, controls, nested, open, depth + 1,
-                    inItemTemplate || property == ItemsControl.ItemTemplateProperty);
+                Collect(content, content, controls, nested, open, depth + 1, inItemTemplate || isItemTemplate);
             open.Remove(template);
         }
 
         foreach (var child in LogicalTreeHelper.GetChildren(element).OfType<DependencyObject>())
             Collect(child, root, controls, nested, open, depth, inItemTemplate);
+    }
+
+    // ReadLocalValue, so a template inherited from a default Wpf.Ui style is not expanded. A selector is expanded
+    // through every DataTemplate property it exposes: SelectTemplate needs a real item and walks one branch.
+    private static IEnumerable<(DataTemplate Template, bool IsItemTemplate)> DeclaredTemplates(DependencyObject element)
+    {
+        foreach (var property in TemplateProperties)
+            if (element.ReadLocalValue(property) is DataTemplate template)
+                yield return (template, property == ItemsControl.ItemTemplateProperty);
+
+        foreach (var property in TemplateSelectorProperties)
+        {
+            if (element.ReadLocalValue(property) is not DataTemplateSelector selector) continue;
+            foreach (var template in selector.GetType().GetProperties()
+                         .Where(p => p.PropertyType == typeof(DataTemplate))
+                         .Select(p => p.GetValue(selector))
+                         .OfType<DataTemplate>())
+                yield return (template, property == ItemsControl.ItemTemplateSelectorProperty);
+        }
     }
 
     /// <summary>A per-item id is a Binding that evaluates to "" without an item, so the LOCAL VALUE is read -

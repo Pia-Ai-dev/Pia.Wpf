@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1, A8 and B1 done. G3 closed by measurement against the real archive shape (148 chats / 195 MB,
+**Status:** A1, A2, A8 and B1 done. G3 closed by measurement against the real archive shape (148 chats / 195 MB,
 ten of them holding ~90 %): rendering is the cause, the store is not. Rest open.
 **Owner:** Marco Altmann
 **Written:** 2026-09-11
@@ -38,7 +38,7 @@ container-recycling hazards the window bound avoids entirely.
 - [x] **A1 · Release the chip-panel subscription.** `PiaChipOverflowPanel` held its `ItemsSource`'s
       `CollectionChanged` forever, rooting every discarded message tree; the subscription now lives
       between `Loaded` and `Unloaded`. *Deps:* — · *Effort:* `XS` · *Value:* `High`
-- [ ] **A2 · Split the item template by role.** One `DataTemplate` per `IsUser` behind a selector, so a
+- [x] **A2 · Split the item template by role.** One `DataTemplate` per `IsUser` behind a selector, so a
       message stops constructing both the user and the assistant bubble. *Deps:* — · *Effort:* `S` ·
       *Value:* `High`
 - [ ] **A3 · Settle the automation contract.** Decide G1, then update
