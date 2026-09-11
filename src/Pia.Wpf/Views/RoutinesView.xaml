@@ -442,15 +442,17 @@
                 <TextBlock Text="{Binding SelectedJob.KindLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
                 <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
                 <TextBlock Text="{Binding SelectedJob.RecurrenceLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
-                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"
+                           Visibility="{Binding SelectedJob.FiresOnSchedule, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 <TextBlock Text="{Binding SelectedJob.TimeOfDay, StringFormat=HH\\:mm}"
-                           Style="{StaticResource PiaMetaTextStyle}"/>
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           Visibility="{Binding SelectedJob.FiresOnSchedule, Converter={StaticResource BooleanToVisibilityConverter}}"/>
               </StackPanel>
 
               <TextBlock Text="{loc:Str Routines_Detail_NextRun}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
                          Margin="0,18,0,6"/>
-              <TextBlock Text="{Binding SelectedJob.NextFireAt, StringFormat=g}"
+              <TextBlock Text="{Binding SelectedJob.NextRunLabel}"
                          Style="{StaticResource PiaDetailValueStyle}"
                          AutomationProperties.AutomationId="Routines_Detail_NextRun"/>
 
@@ -742,10 +744,9 @@
                           Margin="0,0,0,8"/>
               </StackPanel>
 
-              <!-- Time on the left because it is the only one of the pair that always shows; the recurrence
-                   detail sits on the right, under the Repeats picker it belongs to. Each detail field is shown
-                   only for the recurrences that read it — without them the calculator substitutes today's day
-                   on every recompute and the job walks. Only Yearly shows two, which is why they stack. -->
+              <!-- Each field is shown only for the recurrences that read it — without that the calculator
+                   substitutes today's day on every recompute and the job walks. Only Yearly shows two, which
+                   is why they stack. -->
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>
@@ -753,7 +754,8 @@
                   <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                <StackPanel Grid.Column="0" VerticalAlignment="Top"
+                            Visibility="{Binding EditorWantsTimeOfDay, Converter={StaticResource BooleanToVisibilityConverter}}">
                   <TextBlock Text="{loc:Str Routines_Field_Time}"
                              Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
                   <ui:TextBox Text="{Binding EditTimeOfDay, UpdateSourceTrigger=PropertyChanged}"

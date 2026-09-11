@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+using Pia.Services.Scheduling;
 
 namespace Pia.Converters;
 
@@ -9,6 +10,9 @@ public class NextFireAtToShortStringConverter : IValueConverter
     public object Convert(object? value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value is not DateTime fireAt) return DependencyProperty.UnsetValue;
+
+        // A manual routine parks at the never-sentinel; a year-9999 date would read as a real appointment.
+        if (fireAt >= RecurrenceCalculator.Never) return "—";
 
         var now = DateTime.Now;
         var today = now.Date;

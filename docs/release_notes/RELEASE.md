@@ -99,6 +99,15 @@
 - The editor and a routine's details keep a readable line length on a wide
   window instead of stretching across it, and the list beside them now grows
   and shrinks with the window.
+- A routine can repeat "Manual only", which never runs on its own. Use it for a
+  routine you start by hand — a long task you want set up once, with its own
+  folder, persona and tool grants — and it keeps its next run empty rather than
+  waiting for a time.
+- Asking Pia in a chat to start a routine now starts the routine itself. Tag it
+  with @Routine and say to run it: Pia asks to confirm, then the routine runs
+  with its own working folder, persona and tool grants, and its answer arrives
+  as a new chat. It used to re-read the instructions in the chat you were in,
+  which ran them in the wrong folder and without the agent steps.
 
 ## Todo
 

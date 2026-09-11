@@ -172,6 +172,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "read_chat" => _localizationService["Msg_Assistant_StatusReadingChat"],
         "query_assignments" or "get_assignment" => _localizationService["Msg_Assistant_StatusCheckingAssignments"],
         "start_assignment" => _localizationService["Msg_Assistant_StatusStartingAssignment"],
+        "run_routine" => _localizationService["Msg_Assistant_StatusStartingRoutine"],
         "screen_capture" => _localizationService["Msg_Assistant_StatusCapturingScreen"],
         "screen_list_targets" => _localizationService["Msg_Assistant_StatusListingScreenTargets"],
         var t when t.StartsWith("git_", StringComparison.Ordinal) => _localizationService["Msg_Assistant_StatusRunningGit"],

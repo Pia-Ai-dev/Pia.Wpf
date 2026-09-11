@@ -102,13 +102,15 @@ public class ToolPermissionService : IToolPermissionService
     /// changes. <c>create_routine_from_blueprint</c> is here despite taking no grant argument: the blueprint
     /// owns the grants, but the job it creates still exercises them unattended, which is what the caution is
     /// about. <c>start_assignment</c> too: granted, it lets a later background run send a model-authored
-    /// prompt to the server with nobody there to confirm it.</remarks>
+    /// prompt to the server with nobody there to confirm it. <c>run_routine</c> authors no grant either, but
+    /// it fires a routine that already holds one.</remarks>
     private static readonly HashSet<string> AuthorityAuthoringTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "create_scheduled_research",
         "update_scheduled_research",
         "create_routine_from_blueprint",
-        "start_assignment"
+        "start_assignment",
+        "run_routine"
     };
 
     /// <summary>True for a tool that commits a later unattended run to act — see

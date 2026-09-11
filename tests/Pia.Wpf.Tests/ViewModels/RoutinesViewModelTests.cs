@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Scheduling;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
@@ -940,6 +941,49 @@ public class RoutinesViewModelTests
 
         Assert.Equal(job.NextFireAt.DayOfWeek, sut.Vm.EditDayOfWeek);
         Assert.NotEqual(DateTime.Now.DayOfWeek, sut.Vm.EditDayOfWeek);
+    }
+
+    /// <summary>A manual routine has no time field to type into, so requiring one would make it unsaveable.</summary>
+    [Fact]
+    public async Task AManualRoutine_SavesWithNoTimeOfDay()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Template";
+        sut.Vm.EditQuery = "Do the quarterly write-up.";
+        sut.Vm.EditRecurrence = RecurrenceType.Manual;
+        sut.Vm.EditTimeOfDay = string.Empty;
+
+        Assert.False(sut.Vm.EditorWantsTimeOfDay);
+        Assert.True(sut.Vm.CanSave);
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).CreateAsync("Template", "Do the quarterly write-up.", RecurrenceType.Manual,
+            Arg.Any<TimeOnly>(), dayOfWeek: null, dayOfMonth: null, month: null,
+            specificDate: null, providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
+            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
+    }
+
+    /// <summary>A manual routine parks at the year-9999 sentinel, which is nobody's intended default for the
+    /// recurrence they may switch to next.</summary>
+    [Fact]
+    public async Task EditingAManualRoutine_SeedsTheDayPickersFromToday()
+    {
+        var job = NewJob();
+        job.Recurrence = RecurrenceType.Manual;
+        job.DayOfWeek = null;
+        job.NextFireAt = RecurrenceCalculator.Never;
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.Equal(DateTime.Now.DayOfWeek, sut.Vm.EditDayOfWeek);
+        Assert.Equal(DateTime.Now.Day, sut.Vm.EditDayOfMonth);
     }
 
     /// <summary>The editor is ONE panel for create and edit, so the quiet checkbox has to reach BOTH service

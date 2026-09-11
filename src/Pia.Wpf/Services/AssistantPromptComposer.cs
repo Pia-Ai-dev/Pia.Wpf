@@ -74,7 +74,8 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
 
     /// <summary>
     /// Withheld from an unattended turn: <c>create_scheduled_research</c>'s own description tells the model
-    /// to ask for a missing schedule, which is how a fired routine asked when it should run.
+    /// to ask for a missing schedule, which is how a fired routine asked when it should run — and
+    /// <c>run_routine</c> would let a fired routine start further routines with nobody watching.
     /// </summary>
     internal static readonly IReadOnlySet<string> RoutineToolNames =
         GetAtCommandToolMapping(Pia.Models.AtCommandDomain.Routine).ToolNames
@@ -225,7 +226,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         Pia.Models.AtCommandDomain.Routine => (
             "scheduled research job",
             "query_scheduled_research",
-            (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research", "list_routine_blueprints", "create_routine_from_blueprint"]),
+            (IReadOnlyList<string>)["query_scheduled_research", "create_scheduled_research", "update_scheduled_research", "delete_scheduled_research", "list_routine_blueprints", "create_routine_from_blueprint", "run_routine"]),
         Pia.Models.AtCommandDomain.Files => (
             "file",
             "read_file",

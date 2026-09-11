@@ -1,6 +1,8 @@
 namespace Pia.Models;
 
-public enum RecurrenceType { Once, Daily, Weekly, Monthly, Yearly }
+// Crosses the sync wire as an int and is cast back without validation, so this enum is APPEND-ONLY.
+// Manual is a routine that never fires on its own; a reminder may not use it.
+public enum RecurrenceType { Once, Daily, Weekly, Monthly, Yearly, Manual }
 public enum ReminderStatus { Active, Snoozed, Completed, Disabled }
 
 public class Reminder

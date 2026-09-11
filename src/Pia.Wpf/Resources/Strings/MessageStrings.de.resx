@@ -122,6 +122,7 @@
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Frühere Chats werden durchsucht...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Gedächtnis wird durchsucht...</value></data>
   <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Hintergrundauftrag wird gestartet...</value></data>
+  <data name="Msg_Assistant_StatusStartingRoutine" xml:space="preserve"><value>Routine wird gestartet...</value></data>
   <data name="Msg_Assistant_StatusCapturingScreen" xml:space="preserve"><value>Bildschirm wird aufgenommen...</value></data>
   <data name="Msg_Assistant_StatusListingScreenTargets" xml:space="preserve"><value>Fenster und Bildschirme werden aufgelistet...</value></data>
   <data name="Msg_Assistant_ScreenCaptured" xml:space="preserve"><value>Bildschirm aufgenommen</value></data>
@@ -446,6 +447,12 @@
   <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Geplante Recherche {0} erstellt, nächste Ausführung {1}</value></data>
   <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Geplante Recherche {0} aktualisiert</value></data>
   <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Geplante Recherche {0} gelöscht</value></data>
+  <data name="Tool_Routine_Desc_Run" xml:space="preserve"><value>Routine {0} jetzt starten</value></data>
+  <data name="Tool_Routine_Detail_Run" xml:space="preserve"><value>Sie läuft als eigener {0}-Lauf in {1} und antwortet in einem neuen Chat.</value></data>
+  <data name="Tool_Routine_Exec_Started" xml:space="preserve"><value>Routine {0} gestartet. Sie läuft eigenständig; die Antwort erscheint als neuer Chat.</value></data>
+  <data name="Tool_Routine_Exec_NotOwner" xml:space="preserve"><value>Routine {0} wird von einem anderen Gerät geplant; nur dieses Gerät darf sie ausführen.</value></data>
+  <data name="Tool_Routine_Exec_AlreadyRunning" xml:space="preserve"><value>Ein Lauf der Routine {0} läuft bereits.</value></data>
+  <data name="Tool_Routine_Exec_NotFound" xml:space="preserve"><value>Routine {0} existiert nicht mehr.</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Frühere Rechercheergebnisse durchsuchen</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Rechercheeintrag per ID abrufen</value></data>

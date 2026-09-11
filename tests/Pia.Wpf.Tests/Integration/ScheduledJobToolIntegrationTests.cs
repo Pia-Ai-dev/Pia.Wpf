@@ -75,7 +75,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         var providerSvc = new StubProviderService();
         var l10n = new StubLocalization();
         var toolHandler = new ScheduledJobToolHandler(
-            jobs, providerSvc, l10n, NullLogger<ScheduledJobToolHandler>.Instance);
+            jobs, providerSvc, bg, l10n, NullLogger<ScheduledJobToolHandler>.Instance);
 
         var createCall = new FunctionCallContent("call1", "create_scheduled_research",
             new Dictionary<string, object?>

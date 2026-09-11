@@ -125,7 +125,9 @@ public class ScheduledJobService : IScheduledJobService
         var localDeviceId = await ResolveLocalDeviceIdAsync();
         var localDeviceParam = localDeviceId.HasValue ? localDeviceId.Value.ToString() : (object)DBNull.Value;
         return await ReadAsync(
-            "WHERE NextFireAt <= @Now AND Status = 'Active' AND (OwnerDeviceId IS NULL OR OwnerDeviceId = @LocalDevice) ORDER BY NextFireAt ASC",
+            // The Recurrence test is belt-and-braces over the never-sentinel ComputeNextFireAt writes for a
+            // Manual row: a hand-edited NextFireAt must not be able to arm a template.
+            "WHERE NextFireAt <= @Now AND Status = 'Active' AND Recurrence <> 'Manual' AND (OwnerDeviceId IS NULL OR OwnerDeviceId = @LocalDevice) ORDER BY NextFireAt ASC",
             cmd =>
             {
                 cmd.Parameters.AddWithValue("@Now", DateTime.Now.ToString("O"));
@@ -452,13 +454,17 @@ public class ScheduledJobService : IScheduledJobService
                 SET LastFiredAt = @Now,
                     ConsecutiveFailures = ConsecutiveFailures + 1,
                     Status = CASE
-                        WHEN ConsecutiveFailures + 1 >= @MaxFailures THEN 'Failed'
+                        WHEN @ExemptFromRetirement = 0 AND ConsecutiveFailures + 1 >= @MaxFailures THEN 'Failed'
                         ELSE Status
                     END,
                     NextFireAt = @NextFireAt,
                     UpdatedAt = @UpdatedAt
                 WHERE Id = @Id
                 """;
+            // A Manual routine keeps the counter but never retires: 'Failed' would drop it out of
+            // GetActiveAsync, which is the picker and the run_routine name lookup it is started from.
+            command.Parameters.AddWithValue("@ExemptFromRetirement",
+                existing.Recurrence == RecurrenceType.Manual ? 1 : 0);
             command.Parameters.AddWithValue("@MaxFailures", MaxConsecutiveFailures);
             command.Parameters.AddWithValue("@NextFireAt", nextFire.ToString("O"));
         }

@@ -10,6 +10,7 @@ using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Scheduling;
 using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
@@ -344,7 +345,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// "that is not HH:mm".</summary>
     public bool CanSave =>
         !string.IsNullOrWhiteSpace(EditName)
-        && !string.IsNullOrWhiteSpace(EditTimeOfDay)
+        && (!EditorWantsTimeOfDay || !string.IsNullOrWhiteSpace(EditTimeOfDay))
         && (EditorIsMeeting
             ? !string.IsNullOrWhiteSpace(EditMeetingUrl) && EditMeetingConsent
             : !string.IsNullOrWhiteSpace(EditQuery));
@@ -438,6 +439,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     public bool EditorWantsDayOfWeek => EditRecurrence == RecurrenceType.Weekly;
     public bool EditorWantsDayOfMonth => EditRecurrence is RecurrenceType.Monthly or RecurrenceType.Yearly;
     public bool EditorWantsMonth => EditRecurrence == RecurrenceType.Yearly;
+    public bool EditorWantsTimeOfDay => EditRecurrence != RecurrenceType.Manual;
 
     partial void OnEditRecurrenceChanged(RecurrenceType value)
     {
@@ -446,6 +448,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         OnPropertyChanged(nameof(EditorWantsDayOfWeek));
         OnPropertyChanged(nameof(EditorWantsDayOfMonth));
         OnPropertyChanged(nameof(EditorWantsMonth));
+        OnPropertyChanged(nameof(EditorWantsTimeOfDay));
+        OnPropertyChanged(nameof(CanSave));
     }
 
     // The kind decides what an EMPTY grant list means, so switching it rewrites both lines the picker shows.
@@ -930,10 +934,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditRecurrence = row.Recurrence;
         EditTimeOfDay = row.TimeOfDay.ToString("HH\\:mm");
         // A job predating the day pickers has no stored day; NextFireAt is the day it actually fires on, which
-        // is the honest thing to show rather than today.
-        EditDayOfWeek = row.DayOfWeek ?? row.NextFireAt.DayOfWeek;
-        EditDayOfMonth = row.DayOfMonth ?? row.NextFireAt.Day;
-        EditMonth = row.Month ?? row.NextFireAt.Month;
+        // is the honest thing to show rather than today. A manual routine's is the never-sentinel, and the
+        // year 9999 is no one's intended default for the recurrence they may switch to next.
+        var dayFallback = row.NextFireAt >= RecurrenceCalculator.Never ? DateTime.Now : row.NextFireAt;
+        EditDayOfWeek = row.DayOfWeek ?? dayFallback.DayOfWeek;
+        EditDayOfMonth = row.DayOfMonth ?? dayFallback.Day;
+        EditMonth = row.Month ?? dayFallback.Month;
         EditSpecificDate = row.SpecificDate;
         EditMeetingUrl = row.MeetingUrl ?? string.Empty;
         EditMeetingConsent = row.MeetingConsentAckAt is not null;
@@ -1245,7 +1251,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             }
         }
 
-        if (!TimeOnly.TryParseExact(EditTimeOfDay.Trim(), "HH\\:mm", out var timeOfDay))
+        // A manual routine has no time field to type into, so its stored time is inert and never parsed.
+        var timeOfDay = default(TimeOnly);
+        if (EditorWantsTimeOfDay && !TimeOnly.TryParseExact(EditTimeOfDay.Trim(), "HH\\:mm", out timeOfDay))
         {
             StatusMessage = _localization["Settings_ScheduledJobs_Validation_Time"];
             return;
@@ -1636,6 +1644,11 @@ public sealed class RoutineRow
     public int? Month { get; init; }
     public DateTime? SpecificDate { get; init; }
     public required DateTime NextFireAt { get; init; }
+
+    /// <summary>False for a manual routine, whose time of day and next run are both meaningless.</summary>
+    public bool FiresOnSchedule => Recurrence != RecurrenceType.Manual;
+
+    public string NextRunLabel => FiresOnSchedule ? NextFireAt.ToString("g", CultureInfo.CurrentCulture) : "—";
 
     public required ScheduledJobStatus Status { get; init; }
     public required string StatusLabel { get; init; }

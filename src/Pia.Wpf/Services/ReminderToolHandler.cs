@@ -132,7 +132,11 @@ public class ReminderToolHandler : IReminderToolHandler
         var monthStr = GetStringArg(args, "month");
         var specificDateStr = GetStringArg(args, "specificDate");
 
-        var recurrence = Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) ? r : RecurrenceType.Once;
+        // Manual is a routine-only recurrence; treated as unparseable here so it cannot fall through the
+        // calculator's default arm and become a daily reminder.
+        var recurrence = Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) && r != RecurrenceType.Manual
+            ? r
+            : RecurrenceType.Once;
         var timeOfDay = TimeOnly.TryParse(timeOfDayStr, out var t) ? t : new TimeOnly(9, 0);
         DayOfWeek? dayOfWeek = Enum.TryParse<DayOfWeek>(dayOfWeekStr, true, out var dow) ? dow : null;
         int? dayOfMonth = int.TryParse(dayOfMonthStr, out var dom) ? dom : null;
@@ -183,7 +187,8 @@ public class ReminderToolHandler : IReminderToolHandler
         var dayOfMonthStr = GetOptionalStringArg(args, "dayOfMonth");
         var monthStr = GetOptionalStringArg(args, "month");
 
-        RecurrenceType? recurrence = recurrenceStr is not null && Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) ? r : null;
+        RecurrenceType? recurrence = recurrenceStr is not null
+            && Enum.TryParse<RecurrenceType>(recurrenceStr, true, out var r) && r != RecurrenceType.Manual ? r : null;
         TimeOnly? timeOfDay = timeOfDayStr is not null && TimeOnly.TryParse(timeOfDayStr, out var t) ? t : null;
         DayOfWeek? dayOfWeek = dayOfWeekStr is not null && Enum.TryParse<DayOfWeek>(dayOfWeekStr, true, out var dow) ? dow : null;
         int? dayOfMonth = dayOfMonthStr is not null && int.TryParse(dayOfMonthStr, out var dom) ? dom : null;

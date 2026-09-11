@@ -79,7 +79,7 @@ public static class BuiltInPluginDefaults
             IsPreloaded = true,
             IsActive = true,
             Version = "1.0.0",
-            ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones. For a routine of a familiar kind, check list_routine_blueprints first and create it with create_routine_from_blueprint rather than writing the prompt freehand."}""",
+            ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones. For a routine of a familiar kind, check list_routine_blueprints first and create it with create_routine_from_blueprint rather than writing the prompt freehand. A routine may also be created with recurrence Manual: it never fires by itself and is a saved template the user starts on request. When the user asks to run or start a routine, call run_routine — it fires the routine with its own working folder, persona and tool grants, which a chat turn does not have, so never carry out a routine's instructions yourself instead. It runs detached: say that it started and that its answer arrives as a new chat."}""",
             UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
         },
         [FilesPluginId] = new SyncPlugin

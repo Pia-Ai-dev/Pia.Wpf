@@ -209,7 +209,7 @@ Description:
         var draftPrompt = $@"You are designing a scheduled routine: one instruction an assistant will carry out on its own, on a schedule, with nobody there to answer a follow-up question. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
 - ""name"": a short display name for the routine (max 40 characters)
 - ""goal"": the instruction the assistant will be given every time it runs, written in the second person as a command. Two to three sentences, at most 300 characters. Say what to look at, what shape the answer takes, and how long it may be. Do not tell it to remember anything from a previous run — each run is a fresh conversation with no memory of the last one.
-- ""recurrence"": exactly one of ""once"", ""daily"", ""weekly"", ""monthly"", ""yearly""
+- ""recurrence"": exactly one of ""once"", ""daily"", ""weekly"", ""monthly"", ""yearly"", ""manual"" — ""manual"" when the description asks for a template the user starts by hand rather than anything on a schedule
 - ""dayOfWeek"": the English weekday name when the recurrence is weekly, otherwise an empty string
 - ""timeOfDay"": the time of day to run, as ""HH:mm"" on a 24-hour clock
 - ""effort"": how much reasoning it needs — exactly one of ""minimal"", ""low"", ""medium"", ""high""

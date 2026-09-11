@@ -1436,6 +1436,7 @@
   <data name="Settings_ScheduledJobs_Recurrence_Weekly" xml:space="preserve"><value>Weekly</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Monthly" xml:space="preserve"><value>Monthly</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Yearly" xml:space="preserve"><value>Yearly</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Manual" xml:space="preserve"><value>Manual only</value></data>
   <data name="AssignmentConsent_Title" xml:space="preserve"><value>Send to your Pia server</value></data>
   <data name="AssignmentConsent_Skill_Label" xml:space="preserve"><value>Skill</value></data>
   <data name="AssignmentConsent_Mode_Label" xml:space="preserve"><value>Mode:</value></data>

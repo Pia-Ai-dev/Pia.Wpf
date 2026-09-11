@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -12,11 +13,13 @@ public class ScheduledJobToolHandlerTests
 {
     private static ScheduledJobToolHandler CreateHandler(
         FakeJobService? jobs = null,
-        FakeProviderService? providers = null)
+        FakeProviderService? providers = null,
+        IScheduledJobRunner? runner = null)
     {
         return new ScheduledJobToolHandler(
             jobs ?? new FakeJobService(),
             providers ?? new FakeProviderService(),
+            runner ?? Substitute.For<IScheduledJobRunner>(),
             new FakeLocalizationService(),
             NullLogger<ScheduledJobToolHandler>.Instance);
     }
@@ -319,6 +322,138 @@ public class ScheduledJobToolHandlerTests
         Assert.Contains(job.Id.ToString(), rendered);
         Assert.Contains("Tesla briefing", rendered);
         Assert.Contains("Daily", rendered);
+    }
+
+    // === run_routine ===
+
+    private static ScheduledJob Routine(string name, ScheduledJobKind kind = ScheduledJobKind.AgentTask) => new()
+    {
+        Name = name,
+        Query = "do the thing",
+        Kind = kind,
+        Recurrence = RecurrenceType.Manual,
+        TimeOfDay = new TimeOnly(8, 0),
+    };
+
+    /// <summary>The @Routine chip inserts the NAME, so an id-only lookup would send the model back through
+    /// query_scheduled_research — the round-trip that lets it improvise the routine instead of running it.</summary>
+    [Fact]
+    public async Task RunRoutine_ResolvesByName_AndDispatches()
+    {
+        var jobs = new FakeJobService();
+        var job = Routine("Quarterly write-up");
+        jobs.SeedActive(job);
+        var runner = Substitute.For<IScheduledJobRunner>();
+        runner.RunNowAsync(job.Id, Arg.Any<CancellationToken>()).Returns(ScheduledJobRunNowResult.Dispatched);
+        var handler = CreateHandler(jobs, runner: runner);
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            MakeCall("run_routine", new Dictionary<string, object?> { ["routine"] = "quarterly write-up" }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        Assert.NotNull(pending);
+        Assert.Equal(job.Id, pending!.TargetJobId);
+
+        var exec = await handler.ExecutePendingActionAsync(pending);
+
+        await runner.Received(1).RunNowAsync(job.Id, Arg.Any<CancellationToken>());
+        Assert.Equal("Tool_Routine_Exec_Started", exec);
+    }
+
+    [Fact]
+    public async Task RunRoutine_ResolvesById()
+    {
+        var jobs = new FakeJobService();
+        var job = Routine("By id");
+        jobs.SeedActive(job);
+        var runner = Substitute.For<IScheduledJobRunner>();
+        runner.RunNowAsync(job.Id, Arg.Any<CancellationToken>()).Returns(ScheduledJobRunNowResult.Dispatched);
+        var handler = CreateHandler(jobs, runner: runner);
+
+        var (_, pending) = await handler.HandleToolCallAsync(
+            MakeCall("run_routine", new Dictionary<string, object?> { ["routine"] = job.Id.ToString() }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(job.Id, pending!.TargetJobId);
+    }
+
+    /// <summary>Two routines sharing a name is the one case where guessing would run the wrong one.</summary>
+    [Fact]
+    public async Task RunRoutine_AmbiguousName_RefusesWithTheIds()
+    {
+        var jobs = new FakeJobService();
+        var first = Routine("Review");
+        var second = Routine("Review");
+        jobs.SeedActive(first);
+        jobs.SeedActive(second);
+        var runner = Substitute.For<IScheduledJobRunner>();
+        var handler = CreateHandler(jobs, runner: runner);
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            MakeCall("run_routine", new Dictionary<string, object?> { ["routine"] = "Review" }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        var rendered = Assert.IsType<string>(result);
+        Assert.Contains(first.Id.ToString(), rendered);
+        Assert.Contains(second.Id.ToString(), rendered);
+        await runner.DidNotReceive().RunNowAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunRoutine_UnknownName_NamesWhatIsAvailable()
+    {
+        var jobs = new FakeJobService();
+        jobs.SeedActive(Routine("Quarterly write-up"));
+        var handler = CreateHandler(jobs);
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            MakeCall("run_routine", new Dictionary<string, object?> { ["routine"] = "nothing like it" }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("Quarterly write-up", Assert.IsType<string>(result));
+    }
+
+    /// <summary>Dispatching a meeting routine joins the call immediately, which is never what a chat asked for.</summary>
+    [Fact]
+    public async Task RunRoutine_MeetingRoutine_IsRefusedBeforeDispatch()
+    {
+        var jobs = new FakeJobService();
+        var job = Routine("Standup", ScheduledJobKind.MeetingAttendance);
+        jobs.SeedActive(job);
+        var runner = Substitute.For<IScheduledJobRunner>();
+        var handler = CreateHandler(jobs, runner: runner);
+
+        var (result, pending) = await handler.HandleToolCallAsync(
+            MakeCall("run_routine", new Dictionary<string, object?> { ["routine"] = "Standup" }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.Contains("meeting", Assert.IsType<string>(result), StringComparison.OrdinalIgnoreCase);
+        await runner.DidNotReceive().RunNowAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Each refusal gets its own sentence, or the model reports a start that never happened.</summary>
+    [Theory]
+    [InlineData(ScheduledJobRunNowResult.NotOwner, "Tool_Routine_Exec_NotOwner")]
+    [InlineData(ScheduledJobRunNowResult.AlreadyRunning, "Tool_Routine_Exec_AlreadyRunning")]
+    [InlineData(ScheduledJobRunNowResult.NotFound, "Tool_Routine_Exec_NotFound")]
+    public async Task RunRoutine_MapsEveryOutcomeToItsOwnResult(ScheduledJobRunNowResult outcome, string expected)
+    {
+        var jobs = new FakeJobService();
+        var job = Routine("Outcome");
+        jobs.SeedActive(job);
+        var runner = Substitute.For<IScheduledJobRunner>();
+        runner.RunNowAsync(job.Id, Arg.Any<CancellationToken>()).Returns(outcome);
+        var handler = CreateHandler(jobs, runner: runner);
+
+        var (_, pending) = await handler.HandleToolCallAsync(
+            MakeCall("run_routine", new Dictionary<string, object?> { ["routine"] = "Outcome" }),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, await handler.ExecutePendingActionAsync(pending!));
     }
 
     // === Fakes ===

@@ -123,6 +123,16 @@ public class AssistantPromptComposerUnattendedTests
         Assert.Contains(MemoryPluginAddition, prompt, StringComparison.Ordinal);
     }
 
+    /// <summary>The tool @Routine turns exist for: without it "start it" has no door and the model re-enacts
+    /// the routine's text in the chat, losing its working folder, persona and grants.</summary>
+    [Fact]
+    public void TheRoutineFamily_CarriesRunRoutine()
+    {
+        Assert.Contains("run_routine",
+            AssistantPromptComposer.GetAtCommandToolMapping(AtCommandDomain.Routine).ToolNames,
+            StringComparer.Ordinal);
+    }
+
     [Fact]
     public void TheRoutineFamily_IsTheSameSetTheAtCommandDomainNames()
     {
