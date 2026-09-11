@@ -98,6 +98,9 @@ public class ChipOverflowPanelTests
         var (hasOverflowBefore, visibilityBefore, thirdSlotFilled) = WpfStaHost.Run(() =>
         {
             panel = PanelFor(view!, nameof(AssistantMessage.FileRefs));
+            // The panel only follows its collection while it is loaded — off-tree it would hold a
+            // subscription nothing releases. Nothing parents this view, so say so explicitly.
+            panel.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, panel));
             return (panel.HasOverflow, DropdownHost(panel).Visibility, panel.Slot3 is not null);
         });
 

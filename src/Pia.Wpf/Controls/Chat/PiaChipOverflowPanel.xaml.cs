@@ -111,18 +111,49 @@ public partial class PiaChipOverflowPanel : UserControl
         set => SetValue(GroupNameProperty, value);
     }
 
-    public PiaChipOverflowPanel() => InitializeComponent();
+    public PiaChipOverflowPanel()
+    {
+        InitializeComponent();
+
+        // The collection belongs to the message, which outlives every view built over it: a subscription
+        // left behind on discard roots this panel, its container and the whole message list with it.
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        Observe(ItemsSource);
+        // The collection may have changed while unloaded, which would leave the slots stale.
+        Rebuild();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e) => Unobserve(ItemsSource);
+
+    private void Observe(IEnumerable? source)
+    {
+        if (source is INotifyCollectionChanged incc)
+        {
+            incc.CollectionChanged -= OnItemsCollectionChanged;
+            incc.CollectionChanged += OnItemsCollectionChanged;
+        }
+    }
+
+    private void Unobserve(IEnumerable? source)
+    {
+        if (source is INotifyCollectionChanged incc)
+            incc.CollectionChanged -= OnItemsCollectionChanged;
+    }
 
     private static void OnItemsSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var panel = (PiaChipOverflowPanel)d;
 
-        // The message this panel is bound to outlives the panel when its container is re-hosted onto
-        // another message, so the old collection must be released before the new one is observed.
-        if (e.OldValue is INotifyCollectionChanged previous)
-            previous.CollectionChanged -= panel.OnItemsCollectionChanged;
-        if (e.NewValue is INotifyCollectionChanged current)
-            current.CollectionChanged += panel.OnItemsCollectionChanged;
+        panel.Unobserve(e.OldValue as IEnumerable);
+        // Only while loaded: Loaded takes the subscription otherwise, and one taken before it would
+        // survive a panel that is never loaded at all.
+        if (panel.IsLoaded)
+            panel.Observe(e.NewValue as IEnumerable);
 
         panel.Rebuild();
     }
