@@ -58,6 +58,8 @@ public partial class AssistantView : UserControl
 
     private AssistantViewModel? ViewModel => DataContext as AssistantViewModel;
     private ObservableCollection<AssistantMessage>? _subscribedMessages;
+    private readonly HashSet<AssistantMessage> _hookedMessages = [];
+    private double? _prependExtent;
     private bool _composerExpanded;
 
     private readonly Stopwatch _activation = Stopwatch.StartNew();
@@ -85,7 +87,7 @@ public partial class AssistantView : UserControl
         if (_subscribedViewModel is not null)
         {
             _subscribedViewModel.PropertyChanged += OnViewModelPropertyChanged;
-            SubscribeMessages(_subscribedViewModel.Messages);
+            SubscribeMessages(_subscribedViewModel.VisibleMessages);
             ReportActivation(_subscribedViewModel);
         }
 
@@ -161,14 +163,14 @@ public partial class AssistantView : UserControl
         SubscribeMessages(null);
     }
 
-    // The VM re-points Messages when the manager's async activation completes after this view loaded;
-    // tracking the instance here keeps auto-scroll and the per-message streaming hooks on the live one.
+    // The VM re-points Messages when the manager's async activation completes after this view loaded; the
+    // window it rebuilds from that is what the list shows, so auto-scroll follows the window, not Messages.
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(AssistantViewModel.Messages))
             return;
 
-        SubscribeMessages(ViewModel?.Messages);
+        SubscribeMessages(ViewModel?.VisibleMessages);
         PinToEnd();
     }
 
@@ -185,39 +187,98 @@ public partial class AssistantView : UserControl
             return;
 
         if (_subscribedMessages is not null)
-        {
             _subscribedMessages.CollectionChanged -= OnMessagesCollectionChanged;
-            foreach (var message in _subscribedMessages)
-                message.PropertyChanged -= OnMessagePropertyChanged;
-        }
+        UnhookMessages();
 
         _subscribedMessages = messages;
         if (messages is not null)
         {
             messages.CollectionChanged += OnMessagesCollectionChanged;
             foreach (var message in messages)
-                message.PropertyChanged += OnMessagePropertyChanged;
+                HookMessage(message);
         }
+    }
+
+    private void HookMessage(AssistantMessage message)
+    {
+        if (_hookedMessages.Add(message))
+            message.PropertyChanged += OnMessagePropertyChanged;
+    }
+
+    private void UnhookMessages()
+    {
+        foreach (var message in _hookedMessages)
+            message.PropertyChanged -= OnMessagePropertyChanged;
+        _hookedMessages.Clear();
     }
 
     private void OnMessagesCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems is not null)
+        switch (e.Action)
         {
-            foreach (AssistantMessage message in e.NewItems)
-            {
-                message.PropertyChanged += OnMessagePropertyChanged;
-            }
-            // A new turn means the user wants to see it: resume auto-scroll regardless of
-            // whether they had paused mid-stream of the previous answer.
-            IsAutoScrollEnabled = true;
-            ScrollToBottom();
+            case NotifyCollectionChangedAction.Add when e.NewItems is not null:
+                foreach (AssistantMessage message in e.NewItems)
+                    HookMessage(message);
+
+                if (IsTailAdd(e))
+                {
+                    // A new turn means the user wants to see it: resume auto-scroll regardless of
+                    // whether they had paused mid-stream of the previous answer.
+                    IsAutoScrollEnabled = true;
+                    ScrollToBottom();
+                }
+                else
+                {
+                    AnchorBeforePrepend();
+                }
+                break;
+
+            case NotifyCollectionChangedAction.Remove when e.OldItems is not null:
+                foreach (AssistantMessage message in e.OldItems)
+                    UnhookMessage(message);
+                break;
+
+            case NotifyCollectionChangedAction.Reset:
+                // The window is rebuilt out of a transcript that outlives it, so these messages are still
+                // alive and would keep this view reachable through their PropertyChanged.
+                UnhookMessages();
+                IsAutoScrollEnabled = true;
+                break;
         }
-        else if (e.Action == NotifyCollectionChangedAction.Reset)
-        {
-            // All items removed — unsubscribe handled implicitly since objects are gone
-            IsAutoScrollEnabled = true;
-        }
+    }
+
+    private void UnhookMessage(AssistantMessage message)
+    {
+        if (_hookedMessages.Remove(message))
+            message.PropertyChanged -= OnMessagePropertyChanged;
+    }
+
+    private bool IsTailAdd(NotifyCollectionChangedEventArgs e) =>
+        _subscribedMessages is null
+        || e.NewStartingIndex < 0
+        || e.NewStartingIndex + e.NewItems!.Count == _subscribedMessages.Count;
+
+    // Older messages arriving above the viewport push everything below them down by their own height, and
+    // that height is unknown until they are measured.
+    private void AnchorBeforePrepend()
+    {
+        IsAutoScrollEnabled = false;
+        if (_prependExtent is not null)
+            return;
+
+        _prependExtent = MessageScrollViewer.ExtentHeight;
+        Dispatcher.BeginInvoke(RestoreOffsetAfterPrepend, DispatcherPriority.Loaded);
+    }
+
+    private void RestoreOffsetAfterPrepend()
+    {
+        if (_prependExtent is not { } before)
+            return;
+        _prependExtent = null;
+
+        MessageScrollViewer.UpdateLayout();
+        MessageScrollViewer.ScrollToVerticalOffset(
+            MessageScrollViewer.VerticalOffset + (MessageScrollViewer.ExtentHeight - before));
     }
 
     private void OnMessagePropertyChanged(object? sender, PropertyChangedEventArgs e)

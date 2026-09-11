@@ -32,8 +32,11 @@
   instead of cutting the first line off.
 - Moving between the chat and Chat history no longer leaves memory behind. Each
   switch through a long conversation held on to everything it had drawn, so the
-  window grew slower the more often you went back and forth. Long chats still
-  take a moment to draw; that part is being worked on separately.
+  window grew slower the more often you went back and forth.
+- A long chat opens at once rather than after most of a minute. It shows its
+  most recent messages, with "Show older messages" above them to bring the rest
+  back a block at a time, and it keeps your place when it does. Chat history's
+  preview pane is still slow on the same conversations.
 
 ## Chat history
 

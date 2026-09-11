@@ -236,6 +236,30 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private ObservableCollection<AssistantMessage> _messages = new();
 
+    /// <summary>Building a WPF tree over a whole transcript costs ~24 ms per message, so the list is given
+    /// the newest slice and the reader asks for more.</summary>
+    private const int MessageWindowSize = 50;
+
+    /// <summary>What the transcript list is bound to — the tail of <see cref="Messages"/>, which stays whole
+    /// because it is also the model's context, the export and in-chat search.</summary>
+    public ObservableCollection<AssistantMessage> VisibleMessages { get; } = [];
+
+    private bool _hasOlderMessages;
+
+    public bool HasOlderMessages
+    {
+        get => _hasOlderMessages;
+        private set => SetProperty(ref _hasOlderMessages, value);
+    }
+
+    private int _olderMessageCount;
+
+    public int OlderMessageCount
+    {
+        get => _olderMessageCount;
+        private set => SetProperty(ref _olderMessageCount, value);
+    }
+
     /// <summary>Proxied from the active session's <see cref="ChatState"/> (drives the chip badge).</summary>
     [ObservableProperty]
     private ChatState _activeState = ChatState.Idle;
@@ -441,6 +465,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _personaService.PersonasChanged += OnPersonasChanged;
         _personaService.ManagedPersonaWithdrawn += OnManagedPersonaWithdrawn;
         PropertyChanged += OnPropertyChanged;
+        // The field initializer's collection never goes through OnMessagesChanged, so an un-started chat
+        // would mutate outside the window until the first session attach re-points it.
+        Messages.CollectionChanged += OnMessagesCollectionChanged;
         PendingFiles.CollectionChanged += OnPendingFilesChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
         MeetingAttendee.SummarizeRequested += OnMeetingAttendeeSummarizeRequested;
@@ -561,7 +588,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             PendingFiles.Clear();
         }
 
-        Messages = session.Messages;            // re-points the ItemsControl (OnMessagesChanged swaps CollectionChanged)
+        Messages = session.Messages;            // OnMessagesChanged swaps CollectionChanged and rebuilds the window
         HasMessages = session.Messages.Count > 0;
         IsStreaming = session.IsStreaming;
         ActiveState = session.State;
@@ -624,11 +651,64 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (oldValue is not null)
             oldValue.CollectionChanged -= OnMessagesCollectionChanged;
         newValue.CollectionChanged += OnMessagesCollectionChanged;
+        RebuildMessageWindow();
     }
 
     private void OnMessagesCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
         HasMessages = Messages.Count > 0;
+
+        switch (e.Action)
+        {
+            // The tail is always in the window, so an append needs no index arithmetic; anything else
+            // landing mid-transcript is rare enough to be worth a rebuild rather than a second code path.
+            case System.Collections.Specialized.NotifyCollectionChangedAction.Add
+                when e.NewItems is not null && e.NewStartingIndex + e.NewItems.Count == Messages.Count:
+                foreach (AssistantMessage message in e.NewItems)
+                    VisibleMessages.Add(message);
+                break;
+
+            // A removal can target a message below the window, which leaves the window alone and the older
+            // count one shorter.
+            case System.Collections.Specialized.NotifyCollectionChangedAction.Remove when e.OldItems is not null:
+                foreach (AssistantMessage message in e.OldItems)
+                    VisibleMessages.Remove(message);
+                break;
+
+            default:
+                RebuildMessageWindow();
+                return;
+        }
+
+        UpdateOlderMessageCount();
+    }
+
+    private void RebuildMessageWindow()
+    {
+        VisibleMessages.Clear();
+        for (var i = Math.Max(0, Messages.Count - MessageWindowSize); i < Messages.Count; i++)
+            VisibleMessages.Add(Messages[i]);
+        UpdateOlderMessageCount();
+    }
+
+    private void UpdateOlderMessageCount()
+    {
+        OlderMessageCount = Messages.Count - VisibleMessages.Count;
+        HasOlderMessages = OlderMessageCount > 0;
+    }
+
+    [RelayCommand]
+    private void LoadOlderMessages()
+    {
+        var older = Messages.Count - VisibleMessages.Count;
+        if (older <= 0)
+            return;
+
+        var batch = Math.Min(MessageWindowSize, older);
+        for (var i = 0; i < batch; i++)
+            VisibleMessages.Insert(i, Messages[older - batch + i]);
+
+        UpdateOlderMessageCount();
     }
 
     private void OnActiveSessionStateChanged(object? sender, ChatStateChangedEventArgs e)

@@ -115,6 +115,8 @@
   <data name="Assistant_ToolCallCount" xml:space="preserve"><value>Tool-Aufrufe: {0}</value></data>
   <data name="Assistant_NewChat_Tooltip" xml:space="preserve"><value>Neuer Chat</value></data>
   <data name="Assistant_ExpandComposer_Tooltip" xml:space="preserve"><value>Eingabe vergrößern</value></data>
+  <data name="Assistant_LoadOlderMessages" xml:space="preserve"><value>Ältere Nachrichten anzeigen ({0})</value></data>
+  <data name="Assistant_LoadOlderMessages_Tooltip" xml:space="preserve"><value>Fügt weitere frühere Nachrichten zur Ansicht hinzu</value></data>
   <data name="Assistant_CollapseComposer_Tooltip" xml:space="preserve"><value>Eingabe verkleinern</value></data>
   <data name="Assistant_ExpandMessage" xml:space="preserve"><value>Mehr anzeigen</value></data>
   <data name="Assistant_CollapseMessage" xml:space="preserve"><value>Weniger anzeigen</value></data>

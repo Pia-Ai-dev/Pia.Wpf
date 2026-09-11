@@ -113,6 +113,9 @@ public class MessageListPeerRefreshTests
     {
         public ObservableCollection<AssistantMessage> Messages { get; } = [];
 
+        /// <summary>Two messages sit inside the real window, so the list can be given the whole transcript.</summary>
+        public ObservableCollection<AssistantMessage> VisibleMessages => Messages;
+
         public bool HasMessages { get; private set; }
 
         public void Reveal()

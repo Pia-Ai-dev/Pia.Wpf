@@ -336,15 +336,29 @@
           </Style.Triggers>
         </Style>
       </ScrollViewer.Style>
-      <ItemsControl x:Name="MessageItemsControl"
-                    ItemsSource="{Binding Messages}"
-                    behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True"
-                    RequestBringIntoView="MessageItemsControl_RequestBringIntoView">
-        <ItemsControl.ItemTemplateSelector>
-          <local:MessageRoleTemplateSelector UserTemplate="{StaticResource UserMessageTemplate}"
-                                             AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
-        </ItemsControl.ItemTemplateSelector>
-      </ItemsControl>
+      <StackPanel>
+        <!-- Scrolls with the transcript rather than floating over it, so it reads as the start of the
+             conversation and takes no layout when there is nothing older. -->
+        <Button x:Name="LoadOlderMessagesButton"
+                HorizontalAlignment="Center"
+                Margin="0,0,0,12"
+                Padding="12,6"
+                Cursor="Hand"
+                Command="{Binding LoadOlderMessagesCommand}"
+                Content="{Binding OlderMessageCount, Converter={StaticResource OlderMessagesLabelConverter}}"
+                Visibility="{Binding HasOlderMessages, Converter={StaticResource BooleanToVisibilityConverter}}"
+                AutomationProperties.AutomationId="Assistant_LoadOlderMessages"
+                ToolTip="{loc:Str Assistant_LoadOlderMessages_Tooltip}" />
+        <ItemsControl x:Name="MessageItemsControl"
+                      ItemsSource="{Binding VisibleMessages}"
+                      behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True"
+                      RequestBringIntoView="MessageItemsControl_RequestBringIntoView">
+          <ItemsControl.ItemTemplateSelector>
+            <local:MessageRoleTemplateSelector UserTemplate="{StaticResource UserMessageTemplate}"
+                                               AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
+          </ItemsControl.ItemTemplateSelector>
+        </ItemsControl>
+      </StackPanel>
     </ScrollViewer>
 
     <!-- Input area -->

@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1, A2, A3, A6, A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
+**Status:** A1, A2, A3, A4, A6, A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
 by measurement against the real archive shape (148 chats / 195 MB, ten of them holding ~90 %): rendering is the cause,
 the store is not. Rest open.
 **Owner:** Marco Altmann
@@ -48,7 +48,7 @@ container-recycling hazards the window bound avoids entirely.
       flow in `tests/ui-scripts/` addresses a message id. `MessageListPeerRefreshTests` uses 2 messages, but
       `AssistantOpensAtTheLatestTurnTests` builds 60 — above a 50 window, so A4 must load older rather than
       shrink it. *Deps:* — · *Effort:* `XS` · *Value:* `Enabler`
-- [ ] **A4 · Window the Assistant transcript.** A `VisibleMessages` projection holding the newest N,
+- [x] **A4 · Window the Assistant transcript.** A `VisibleMessages` projection holding the newest N,
       plus a "load older" button that prepends another N and restores the scroll offset. `Messages`
       stays whole. This is the fix for the report: 1 573 messages cost 43–50 s and 3.2 GB per
       navigation today, a 50-message window 1.7 s. *Deps:* A3 · *Effort:* `S` · *Value:* `High`
