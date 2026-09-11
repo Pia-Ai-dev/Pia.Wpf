@@ -1,7 +1,8 @@
 # Checklist: chat history performance
 
-**Status:** A1, A2, A8 and B1 done. G3 closed by measurement against the real archive shape (148 chats / 195 MB,
-ten of them holding ~90 %): rendering is the cause, the store is not. Rest open.
+**Status:** A1, A2, A3, A6, A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
+by measurement against the real archive shape (148 chats / 195 MB, ten of them holding ~90 %): rendering is the cause,
+the store is not. Rest open.
 **Owner:** Marco Altmann
 **Written:** 2026-09-11
 **Origin:** [2026-09-11-large-import-slowdown.md](2026-09-11-large-import-slowdown.md)
@@ -23,7 +24,7 @@ Do not tick a dependant of an open gate without revisiting it.
 
 | Gate | Question it answers | Blocks |
 |---|---|---|
-| G1 | Must every message in a chat stay addressable by UIA, or may scripts load it into the window first? | A3, A4 |
+| ~~G1~~ | **Closed.** A script loads an older message into the window first; a message outside it need not stay addressable. The technique is in `docs/ui_automation/ui-automation-playbook.md`. | — |
 | ~~G2~~ | **Moot.** Asked whether container recycling was safe while a reply streams. The windowing design recycles nothing, so it cannot arise. | — |
 | ~~G3~~ | **Closed.** An empty chat is ~0.2 s, but that is not the reported state: one of the ten heavy chats costs 43–50 s per navigation and 3.2 GB of heap. A leads. | — |
 | G4 | Should `ChatSession.Messages` ever be bounded, given it also builds the model's context? | not-yet-planned item |
@@ -41,11 +42,12 @@ container-recycling hazards the window bound avoids entirely.
 - [x] **A2 · Split the item template by role.** One `DataTemplate` per `IsUser` behind a selector, so a
       message stops constructing both the user and the assistant bubble. *Deps:* — · *Effort:* `S` ·
       *Value:* `High`
-- [ ] **A3 · Settle the automation contract.** Decide G1, then update
-      `docs/ui_automation/ui-automation-playbook.md` with how a script reaches a message outside the
-      window — "click `Assistant_LoadOlderMessages` until it appears", which is deterministic — and
-      re-read `MessageListPeerRefreshTests` against a window-bounded tree. *Deps:* — · *Effort:* `XS` ·
-      *Value:* `Enabler`
+- [x] **A3 · Settle the automation contract.** G1 is closed, and the playbook now names the id families a
+      window drops plus the deterministic way back to one: invoke `Assistant_LoadOlderMessages` /
+      `AssistantHistory_LoadOlderMessages` until the id resolves, never scroll-until-realized. No recorded
+      flow in `tests/ui-scripts/` addresses a message id. `MessageListPeerRefreshTests` uses 2 messages, but
+      `AssistantOpensAtTheLatestTurnTests` builds 60 — above a 50 window, so A4 must load older rather than
+      shrink it. *Deps:* — · *Effort:* `XS` · *Value:* `Enabler`
 - [ ] **A4 · Window the Assistant transcript.** A `VisibleMessages` projection holding the newest N,
       plus a "load older" button that prepends another N and restores the scroll offset. `Messages`
       stays whole. This is the fix for the report: 1 573 messages cost 43–50 s and 3.2 GB per

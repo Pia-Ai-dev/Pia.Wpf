@@ -36,8 +36,9 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 |---|---|
 | Sidebar items | `NavItem_AssistantChat`, `NavItem_AssistantHistory`, `NavItem_Memory`, `NavItem_Reminders`, `NavItem_Routines`, `NavItem_Todo`, `NavItem_Settings`, `NavItem_NewWindow`, `NavItem_Help`, `NavItem_ThemeToggle` |
 | Sidebar items, conditional | `NavItem_Optimize` / `NavItem_History` (Optimize-mode windows only), `NavItem_Assignments` (only when the server offers the surface) |
-| Chat input / scroller | `InputTextBox`, `MessageScrollViewer`, `MarkdownViewer_<messageId>` (assistant bubble text, via `PiaAssistantMessage` → `MarkdownMessageControl`) — per-message since 2026-08-28; match the `MarkdownViewer_` prefix, then narrow by the reply's `Answer_*_<messageId>` toolbar |
-| Chat composer toolbar | per-group `Assistant_Suggestion_<Group>` (empty-state chips; 3 of `Memory`, `Recall`, `Todo`, `Reminder`, `Routine`, `Plan`, `Chats` are drawn per visit, so match on the prefix rather than one id), `Assistant_NewChat`, `Assistant_DeleteChat`, `Assistant_CancelStreaming`, `Assistant_ToggleRecording`, `Assistant_AttachFile`, `Assistant_CaptureScreen`, `Assistant_RemoveAttachment` (the image preview), per-file `Assistant_RemovePendingFile_<fileName>` (the attachment chips — match that full prefix, not a bare `Assistant_Remove`), `Assistant_ToggleMeetingAttendee`, `Assistant_ToggleDirectTranscription`, `Assistant_RunAssignment`, `Assistant_PersonaPicker`, `Assistant_Mode_Chat` / `_Agent`, `Assistant_RunInBackground`, `Assistant_Send`, `Assistant_WeakProvider_Continue` / `_ChooseProvider` / `_StayInChat`, per-message `Assistant_CopyMessage_<guid>` (user bubble, keyed by message `Id`) and `Assistant_MessageText_<guid>` (the sent text itself — a read-only `RichTextBox` since the bubble became selectable, so `ww_get_value` reads it back; `AssistantHistory_MessageText_<guid>` is the same control in the history inspector) |
+| Chat input / scroller | `InputTextBox`, `MessageScrollViewer`, `MarkdownViewer_<messageId>` (assistant bubble text, via `PiaAssistantMessage` → `MarkdownMessageControl`) — per-message since 2026-08-28; match the `MarkdownViewer_` prefix, then narrow by the reply's `Answer_*_<messageId>` toolbar. Present for the newest N messages only — see "Reaching a message outside the transcript window" |
+| Chat composer toolbar | per-group `Assistant_Suggestion_<Group>` (empty-state chips; 3 of `Memory`, `Recall`, `Todo`, `Reminder`, `Routine`, `Plan`, `Chats` are drawn per visit, so match on the prefix rather than one id), `Assistant_NewChat`, `Assistant_DeleteChat`, `Assistant_CancelStreaming`, `Assistant_ToggleRecording`, `Assistant_AttachFile`, `Assistant_CaptureScreen`, `Assistant_RemoveAttachment` (the image preview), per-file `Assistant_RemovePendingFile_<fileName>` (the attachment chips — match that full prefix, not a bare `Assistant_Remove`), `Assistant_ToggleMeetingAttendee`, `Assistant_ToggleDirectTranscription`, `Assistant_RunAssignment`, `Assistant_PersonaPicker`, `Assistant_Mode_Chat` / `_Agent`, `Assistant_RunInBackground`, `Assistant_Send`, `Assistant_WeakProvider_Continue` / `_ChooseProvider` / `_StayInChat`, per-message `Assistant_CopyMessage_<guid>` (user bubble, keyed by message `Id`), `Assistant_MessageText_<guid>` (the sent text itself — a read-only `RichTextBox` since the bubble became selectable, so `ww_get_value` reads it back) and `Assistant_ExpandMessage_<guid>` (the show-more toggle on a long bubble); `AssistantHistory_MessageText_<guid>` / `AssistantHistory_ExpandMessage_<guid>` are the same pair in the history inspector. All of them are keyed on a message, so they exist for the newest N only — see "Reaching a message outside the transcript window" |
+| Transcript window | `Assistant_LoadOlderMessages` (chat) and `AssistantHistory_LoadOlderMessages` (history inspector) each prepend the next N older messages. Both sit inside the scroller above the first message, and both are absent while the whole chat fits the window. Deliberately not `AssistantHistory_LoadMore`, which pages the chat *list*: the two share only the `AssistantHistory_Load` stem, neither full id prefixes the other, and `Assistant_LoadOlderMessages` does not prefix-match the `AssistantHistory_` one either, so an `automationId*=` on any full id stays unambiguous |
 | Tool-approval decisions | `ToolApproval_Decline`, `ToolApproval_AllowOnce`, `ToolApproval_AllowSession`, `ToolApproval_AlwaysAllow` |
 | Personas list / actions | `Personas_AddButton`, `Personas_ManagedNotice` (the policy banner, present only when the org manages personas), `Personas_List`, `Personas_Row_<guid>` (the row container, whose UIA name is the persona name). The row itself carries no buttons any more — select it, then act on the detail pane: `Personas_Detail_Edit` / `_Duplicate` / `_Delete`, of which only Duplicate is present for a built-in or managed persona. `Personas_Detail_SystemPrompt` reads the prompt back without opening the editor, `Personas_Detail_ManagedNotice` is the admin-published banner |
 | Templates grid | `Templates_AddButton`, per-item `Template_Edit_<guid>` / `Template_Delete_<guid>` / `Template_ViewPrompt_<guid>` / `Template_SetDefault_<guid>` |
@@ -84,7 +85,7 @@ Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the
 | Todo header / search | `Todo_AddColumn`, `_Refresh`, `_SearchQuery` |
 | Todo kanban board (`TodoView`) | Add-todo bar: `Todo_NewTitle`, `_NewPriority`, `_NewDueDate` (no test lock, same `DatePicker` caveat as History), `_Record`, `_AddTodo`. Per-column (keyed on `KanbanColumnViewModel.Id`): `Todo_ColumnMenu_<id>` (the "..." button) plus its 3 context-menu items `Todo_ColumnMenu_SetDefault_<id>` / `_Rename_<id>` / `_Delete_<id>` (no test lock, same `MenuItem` caveat as `PiaAnswerToolbar`), and `Todo_ExpandColumn_<id>` (the closed-column chevron). Per-todo (keyed on `TodoItem.Id`): `Todo_Complete_<id>`, `Todo_Edit_<id>`, `Todo_Delete_<id>`. |
 | Todo panel (`TodoPanelControl`, embedded in `AssistantView`) | `TodoPanel_Close`, `_NewTitle`, `_Record`, `_Add`, `_OpenFullView`; per-todo (keyed on `TodoItem.Id`): `TodoPanel_Complete_<id>`. Prefixed `TodoPanel_`, not `Todo_`, so a script targeting one surface's fields never prefix-matches the other's. |
-| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`, plus the synthetic-speech marker `_AiVoiceBadge_<id>` — a `Text` peer, in the tree only while that answer is being read aloud, so it needs a loaded TTS voice and is gone again within a second of a short answer. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. |
+| Assistant reply toolbar (`PiaAnswerToolbar`) | Per-reply, keyed by `AssistantMessage.Id`: `Answer_Copy_<id>`, `_Speak_<id>`, `_Regenerate_<id>`, `_RegenerateOptions_<id>`, `_Export_<id>`, `_RateUp_<id>`, `_RateDown_<id>`, plus the synthetic-speech marker `_AiVoiceBadge_<id>` — a `Text` peer, in the tree only while that answer is being read aloud, so it needs a loaded TTS voice and is gone again within a second of a short answer. Deliberately not prefixed `Assistant_` — that already means the user-bubble copy button (`Assistant_CopyMessage_<guid>`). The regenerate-style context menu's 3 items are literal and deliberately a *different* prefix, `Answer_RegenerateStyle_Shorten` / `_Detailed` / `_Exportable` — reusing `Answer_RegenerateOptions_` here would make `automationId*=Answer_RegenerateOptions_` match the chevron button plus all three menu items once opened, the same collision the `Assistant_`/`Answer_` split above exists to avoid. No test lock on the menu items. Keyed on a message, so the whole toolbar leaves the tree once its message falls outside the transcript window. |
 | Markdown code block (`CodeBlockControl`) | `CodeBlock_Copy`, `CodeBlock_Content` — literal; a message with two+ code fences repeats these ids (see Known gaps) |
 | Reasoning trace toggle (`PiaReasoningView`) | Per-reply, keyed by `AssistantMessage.Id`: `Reasoning_Toggle_<id>`. Own prefix, not `Answer_` — a different affordance from the reply toolbar it sits beside. No `Expander` involved despite appearances; the collapse is hand-rolled. |
 | Chat quick switcher (`PiaChatQuickSwitcher`) | `QuickSwitcher_Query` (the search box). Its match list is a `ListBox`, not a walker-recognized type — no id needed or possible on individual matches. |
@@ -219,13 +220,37 @@ correctly.
   **The id is per message since 2026-08-28** — `MarkdownViewer_<AssistantMessage.Id>` in chat,
   `MarkdownViewer_<Reference>` in the vault inspector — so a bare `automationId=MarkdownViewer`
   now resolves nothing; get the message id from that reply's `Answer_*_<messageId>` toolbar rather
-  than enumerating and guessing the last one.
+  than enumerating and guessing the last one. For a reply older than the transcript window that
+  toolbar is gone too — load the message in first, below.
 - The tool-approval card exposes all four decisions as invokable buttons with the
   `ToolApproval_*` ids above, each with a matching accessible `Name`. A full write-tool flow
   (send → approve/decline → resolved card) is automatable end-to-end; the message subtree stays
   fully exposed before, during and after the decision.
 - Send is name-addressable (`type=Button[name*='Send']`); setting `InputTextBox` via
   ValuePattern and then invoking Send is the reliable path.
+
+## Reaching a message outside the transcript window
+
+The transcript renders a window over the chat — the newest N messages — rather than all of it, so an
+older message has no automation peers at all. Everything keyed on a message id goes with it:
+`MarkdownViewer_<messageId>`, `Assistant_MessageText_<guid>`, `Assistant_CopyMessage_<guid>`,
+`Assistant_ExpandMessage_<guid>`, the inspector's `AssistantHistory_MessageText_<guid>` /
+`AssistantHistory_ExpandMessage_<guid>` pair, and the per-message subtrees beside them —
+`Answer_*_<id>`, `Reasoning_Toggle_<id>`, `ChipOverflow_More_*`, `ActionCard_*_<id>`,
+`SourceChip_Open_<n>`, `FileChip_*`, `CodeBlock_*`.
+
+- **Load the message in; do not scroll for it.** `Assistant_LoadOlderMessages` prepends the next N
+  older messages, `AssistantHistory_LoadOlderMessages` the same in the history inspector. Invoke it,
+  re-check `ww_count("automationId=<the id you want>")`, and repeat until it resolves. Scrolling
+  realizes nothing — an item outside the window is not in the tree to realize.
+- **Invoke it rather than clicking it.** The button lives inside `MessageScrollViewer` above the first
+  message, so it leaves the viewport as soon as older messages land on top of it; InvokePattern does
+  not care where it is.
+- **Its absence is the normal state.** A chat that fits the window has no button, so
+  `ww_count("automationId=Assistant_LoadOlderMessages") == 0` means "nothing older", not a broken
+  selector — bound the loop on that count, not on a fixed number of rounds.
+- **Address the newest message when any reply will do.** The tail of the transcript is always in the
+  window; save the loop for a script that must reach one specific older turn.
 
 ## Dialogs
 
@@ -284,7 +309,9 @@ Committed recordings, the settings fixture they start from and the replay harnes
   `MessageItemsControl`) resets the subtree at `Loaded` priority after the containers appear; resetting it in
   `StatusChanged` itself is too early, the containers exist there but their templates do not. Note this was
   never automation-only: a screen reader read the same empty conversation. Locked by
-  `MessageListPeerRefreshTests`, whose second arm fails if WPF ever starts doing this itself.
+  `MessageListPeerRefreshTests`, whose second arm fails if WPF ever starts doing this itself. Before suspecting
+  a recurrence, check whether `Assistant_LoadOlderMessages` is present: ids resolving 0 for an older message is
+  the transcript window doing its job, not this.
 
 - **A full re-derivation of the id surface on 2026-08-28 found 19 gaps that were still open — all but
   one closed the same day.**
