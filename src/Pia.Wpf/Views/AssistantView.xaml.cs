@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -59,6 +60,9 @@ public partial class AssistantView : UserControl
     private ObservableCollection<AssistantMessage>? _subscribedMessages;
     private bool _composerExpanded;
 
+    private readonly Stopwatch _activation = Stopwatch.StartNew();
+    private bool _activationReported;
+
     // The host clears DataContext before Unloaded, so resolving the VM again there finds nothing and the
     // subscription would outlive the view — a production dump held 18 of them that way.
     private AssistantViewModel? _subscribedViewModel;
@@ -82,11 +86,23 @@ public partial class AssistantView : UserControl
         {
             _subscribedViewModel.PropertyChanged += OnViewModelPropertyChanged;
             SubscribeMessages(_subscribedViewModel.Messages);
+            ReportActivation(_subscribedViewModel);
         }
 
         // Deliberately NOT re-arming auto-scroll here: Loaded repeats on a re-parent, and a reader who
         // scrolled up mid-answer would be yanked back to the newest turn.
         InputTextBox.Focus();
+    }
+
+    private void ReportActivation(AssistantViewModel viewModel)
+    {
+        if (_activationReported) return;
+        _activationReported = true;
+
+        // ContextIdle, so the elapsed covers the layout pass that builds the transcript.
+        Dispatcher.BeginInvoke(
+            new Action(() => viewModel.ReportActivated(_activation.Elapsed)),
+            DispatcherPriority.ContextIdle);
     }
 
     private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)

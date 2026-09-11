@@ -1720,6 +1720,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
+    internal void ReportActivated(TimeSpan elapsed) =>
+        _logger.LogInformation(
+            "Assistant view activated in {ElapsedMs} ms with {MessageCount} messages",
+            (long)elapsed.TotalMilliseconds, Messages.Count);
+
     public void OnNavigatedTo(object? parameter)
     {
         // Non-Guid synchronous setup (string / selection params). Guid-activation

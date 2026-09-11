@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1 and B1 done. G3 closed by measurement against the real archive shape (148 chats / 195 MB,
+**Status:** A1, A8 and B1 done. G3 closed by measurement against the real archive shape (148 chats / 195 MB,
 ten of them holding ~90 %): rendering is the cause, the store is not. Rest open.
 **Owner:** Marco Altmann
 **Written:** 2026-09-11
@@ -61,10 +61,12 @@ container-recycling hazards the window bound avoids entirely.
       the window's worth of item containers, that the full transcript still exports, that a chat shorter
       than the window shows no affordance, and that a discarded `AssistantView` over a live ViewModel is
       collected. *Deps:* A4 · *Effort:* `S` · *Value:* `High`
-- [ ] **A8 · Log what a navigation cost.** One `LogInformation` per view activation with the elapsed
+- [x] **A8 · Log what a navigation cost.** One `LogInformation` per view activation with the elapsed
       build time and the open chat's message count, so a "switching is slow" report arrives with its
       own cause attached. This investigation needed three corpora and two wrong conclusions because no
-      such line exists. *Deps:* — · *Effort:* `XS` · *Value:* `High`
+      such line exists. Covers the first activation of each view instance; a chat opened from history
+      re-points `Messages` after that line, so its second render is not timed. *Deps:* — ·
+      *Effort:* `XS` · *Value:* `High`
 
 ## B — the store after a bulk import
 
