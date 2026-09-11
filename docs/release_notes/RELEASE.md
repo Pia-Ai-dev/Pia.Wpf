@@ -30,6 +30,10 @@
   unchanged.
 - The plan panel at the top of a chat fades into the conversation below it
   instead of cutting the first line off.
+- Moving between the chat and Chat history no longer leaves memory behind. Each
+  switch through a long conversation held on to everything it had drawn, so the
+  window grew slower the more often you went back and forth. Long chats still
+  take a moment to draw; that part is being worked on separately.
 
 ## Chat history
 
