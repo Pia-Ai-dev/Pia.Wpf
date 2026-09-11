@@ -303,18 +303,8 @@ public partial class WindowManagerService : IWindowManagerService
 
         window.Visibility = Visibility.Hidden;
 
-        // Clear the minimize so the next show does not restore-into-minimized, but come back to the state
-        // the user left: coercing Normal here is what made a maximized window return from the tray shrunk.
-        if (window.WindowState == WindowState.Minimized)
-        {
-            window.Dispatcher.BeginInvoke(
-                () =>
-                {
-                    if (window.Visibility == Visibility.Hidden)
-                        window.WindowState = managed.RestoreState;
-                },
-                DispatcherPriority.ContextIdle);
-        }
+        // Leave Minimized alone — WPF forwards a WindowState change to Win32 only while the window is visible,
+        // so clearing it here would move the property but not WS_MINIMIZE and the next show comes back iconic.
 
         WindowVisibilityChanged?.Invoke(this, EventArgs.Empty);
 

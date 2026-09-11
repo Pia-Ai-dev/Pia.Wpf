@@ -19,6 +19,9 @@
   erstellen". English and French are unchanged.
 - A maximized window stays maximized. Opening a routine's chat from the flow
   rail, or bringing Pia back from the tray, shrank it to a smaller window first.
+- Minimizing Pia no longer strands the window. Ctrl+Alt+P and a double-click on
+  the tray icon bring it back up, instead of returning it to the taskbar still
+  minimized and leaving the taskbar button as the only way in.
 - Part of a message you sent can be selected and copied, the way Pia's answers
   already could be. The copy button beside the bubble still takes the whole
   message.
