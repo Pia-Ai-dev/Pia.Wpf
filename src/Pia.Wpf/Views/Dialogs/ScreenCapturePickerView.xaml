@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
-             xmlns:vm="clr-namespace:Pia.ViewModels.Models">
+             xmlns:vm="clr-namespace:Pia.ViewModels.Models"
+             PreviewKeyDown="Picker_PreviewKeyDown">
   <UserControl.Resources>
     <Style x:Key="ScreenCaptureTargetCardStyle" TargetType="RadioButton">
       <Setter Property="Cursor" Value="Hand" />
@@ -35,10 +36,12 @@
     </Style>
 
     <DataTemplate x:Key="ScreenCaptureTargetTemplate" DataType="{x:Type vm:ScreenCaptureTargetViewModel}">
-      <RadioButton GroupName="ScreenCapturePickerTarget"
+      <RadioButton x:Name="TargetCard"
+                   GroupName="ScreenCapturePickerTarget"
                    Style="{StaticResource ScreenCaptureTargetCardStyle}"
                    Width="232"
                    Margin="0,0,8,8"
+                   GotKeyboardFocus="TargetCard_GotKeyboardFocus"
                    IsChecked="{Binding IsSelected, Mode=TwoWay}"
                    IsEnabled="{Binding IsMinimized, Converter={StaticResource InverseBooleanConverter}}"
                    AutomationProperties.Name="{Binding Label}"
@@ -83,7 +86,7 @@
     </Grid.RowDefinitions>
 
     <Grid Grid.Row="0" Margin="0,0,0,10">
-      <TextBlock Text="{loc:Str ScreenCapturePicker_Hint}"
+      <TextBlock Text="{Binding Hint}"
                  TextWrapping="Wrap"
                  FontSize="12"
                  Foreground="{DynamicResource TextMutedBrush}"
@@ -113,7 +116,8 @@
         <TextBlock Text="{loc:Str ScreenCapturePicker_Monitors}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"
                    Visibility="{Binding HasMonitors, Converter={StaticResource BooleanToVisibilityConverter}}" />
-        <ItemsControl ItemsSource="{Binding MonitorTargets}"
+        <ItemsControl x:Name="MonitorList"
+                      ItemsSource="{Binding MonitorTargets}"
                       ItemTemplate="{StaticResource ScreenCaptureTargetTemplate}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
@@ -126,7 +130,8 @@
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"
                    Margin="0,8,0,6"
                    Visibility="{Binding HasWindows, Converter={StaticResource BooleanToVisibilityConverter}}" />
-        <ItemsControl ItemsSource="{Binding WindowTargets}"
+        <ItemsControl x:Name="WindowList"
+                      ItemsSource="{Binding WindowTargets}"
                       ItemTemplate="{StaticResource ScreenCaptureTargetTemplate}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>

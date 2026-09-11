@@ -25,6 +25,7 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
     private readonly IPluginService _pluginService;
     private readonly ILogger<SettingsViewModel> _logger;
     private readonly IScreenCaptureAllowlistStore? _screenCaptureAllowlist;
+    private readonly IDialogService? _dialogService;
 
     /// <summary>Kept so a language change can re-project the "any window title" label without a reload.</summary>
     private readonly List<ScreenCaptureAllowlistEntry> _allowlistEntries = [];
@@ -56,6 +57,9 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
     private bool _hasScreenCaptureAllowlistEntries;
 
     [ObservableProperty]
+    private bool _canPickAllowlistWindow;
+
+    [ObservableProperty]
     private string _newAllowlistProcessName = string.Empty;
 
     [ObservableProperty]
@@ -68,12 +72,14 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
         IToolPermissionService permissions,
         IPluginService pluginService,
         ILogger<SettingsViewModel> logger,
-        IScreenCaptureAllowlistStore? screenCaptureAllowlist = null)
+        IScreenCaptureAllowlistStore? screenCaptureAllowlist = null,
+        IDialogService? dialogService = null)
     {
         _permissions = permissions;
         _pluginService = pluginService;
         _logger = logger;
         _screenCaptureAllowlist = screenCaptureAllowlist;
+        _dialogService = dialogService;
 
         _permissions.Changed += OnPermissionsChanged;
         _pluginService.PluginsChanged += OnPluginsChanged;
@@ -88,6 +94,7 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
         RebuildCatalog();
 
         HasScreenCaptureAllowlistStore = _screenCaptureAllowlist is not null;
+        CanPickAllowlistWindow = _dialogService is not null;
         if (_screenCaptureAllowlist is not null)
             _screenCaptureAllowlist.Changed += (_, _) => PostOrRun(() => LoadAllowlistAsync().SafeFireAndForget(_logger));
 
@@ -259,6 +266,20 @@ public partial class ToolPermissionsSettingsViewModel : UiThreadViewModel
         }
 
         HasScreenCaptureAllowlistEntries = ScreenCaptureAllowlist.Count > 0;
+    }
+
+    /// <summary>Fills the two fields from an open window instead of having them typed. The title goes in whole
+    /// and stays editable: a full title is often the volatile part, and the entry must keep matching tomorrow.</summary>
+    [RelayCommand]
+    private async Task PickScreenCaptureAllowlistWindowAsync()
+    {
+        if (_dialogService is null) return;
+
+        var target = await _dialogService.ShowScreenCaptureWindowPickerAsync();
+        if (target is null) return;
+
+        NewAllowlistProcessName = target.ProcessName;
+        NewAllowlistTitleContains = target.Title;
     }
 
     [RelayCommand]

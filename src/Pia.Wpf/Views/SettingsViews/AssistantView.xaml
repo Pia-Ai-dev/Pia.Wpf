@@ -321,6 +321,18 @@
                                     AutomationProperties.AutomationId="Settings_ToolPermissions_ScreenAllowlist_Help"/>
               </StackPanel>
 
+              <ui:Button Margin="0,0,0,8"
+                         Appearance="Secondary"
+                         HorizontalAlignment="Left"
+                         Command="{Binding PickScreenCaptureAllowlistWindowCommand}"
+                         Visibility="{Binding CanPickAllowlistWindow, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         AutomationProperties.AutomationId="Settings_ToolPermissions_ScreenAllowlist_Pick">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="WindowApps24" FontSize="14" Margin="0,0,6,0"/>
+                  <TextBlock Text="{loc:Str Settings_ToolPermissions_ScreenAllowlist_Pick}"/>
+                </StackPanel>
+              </ui:Button>
+
               <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>

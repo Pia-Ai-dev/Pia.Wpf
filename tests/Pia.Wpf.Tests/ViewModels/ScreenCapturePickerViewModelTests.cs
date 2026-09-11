@@ -224,6 +224,68 @@ public sealed class ScreenCapturePickerViewModelTests
         Assert.False(vm.CanCapture);
     }
 
+    /// <summary>The arrow keys move a selection but cannot start one, so the list opens with one on.</summary>
+    [Fact]
+    public async Task InitializeAsync_SelectsTheFirstWindowThatCanBeCaptured()
+    {
+        var vm = Sut(
+            Monitor(@"\\.\DISPLAY1", primary: true, 2560, 1440),
+            Window(11, "notepad", "a", minimized: true),
+            Window(22, "code", "b"),
+            Window(33, "explorer", "c"));
+
+        await vm.InitializeAsync();
+
+        Assert.Same(vm.WindowTargets[1], vm.SelectedTarget);
+        Assert.True(vm.CanCapture);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_WithNothingCapturable_SelectsNothing()
+    {
+        var vm = Sut(
+            Monitor(@"\\.\DISPLAY1", primary: true, 2560, 1440),
+            Window(11, "notepad", "a", minimized: true));
+
+        await vm.InitializeAsync();
+
+        Assert.Null(vm.SelectedTarget);
+        Assert.False(vm.CanCapture);
+    }
+
+    // ---- naming a window for the allowlist ------------------------------------------------------
+
+    [Fact]
+    public async Task NamesAWindow_ListsNoDisplays_AndSaysSoInEveryLabel()
+    {
+        _screenCapture.EnumerateTargetsAsync(Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<CaptureTarget>>(
+                [Monitor(@"\\.\DISPLAY1", primary: true, 2560, 1440), Window(11, "notepad", "a")]);
+        var vm = new ScreenCapturePickerViewModel(
+            _screenCapture, _localization, NullLogger<ScreenCapturePickerViewModel>.Instance)
+        {
+            NamesAWindow = true,
+        };
+
+        await vm.InitializeAsync();
+
+        Assert.Empty(vm.MonitorTargets);
+        Assert.Single(vm.WindowTargets);
+        Assert.Equal("ScreenCapturePicker_PickTitle", vm.DialogTitle);
+        Assert.Equal("ScreenCapturePicker_Use", vm.ConfirmText);
+        Assert.Equal("ScreenCapturePicker_PickHint", vm.Hint);
+    }
+
+    [Fact]
+    public void Capturing_UsesTheCaptureLabels()
+    {
+        var vm = NewVm();
+
+        Assert.Equal("ScreenCapturePicker_Title", vm.DialogTitle);
+        Assert.Equal("ScreenCapturePicker_Capture", vm.ConfirmText);
+        Assert.Equal("ScreenCapturePicker_Hint", vm.Hint);
+    }
+
     // ---- the confirm capture -------------------------------------------------------------------
 
     [Fact]
@@ -265,6 +327,7 @@ public sealed class ScreenCapturePickerViewModelTests
         var vm = Sut(w1);
         await vm.InitializeAsync();
         await vm.PendingPreviews;
+        vm.WindowTargets[0].IsSelected = false;
         _screenCapture.ClearReceivedCalls();
 
         Assert.Null(await vm.CaptureSelectedAsync(TestContext.Current.CancellationToken));

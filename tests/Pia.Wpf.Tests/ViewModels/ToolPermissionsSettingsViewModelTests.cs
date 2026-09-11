@@ -553,6 +553,60 @@ public class ToolPermissionsSettingsViewModelTests
         Assert.Equal(RealisticCatalog().Count, sut.ToolCatalog.SelectMany(g => g.Tools).Count());
     }
 
+    // ---- naming an allowlist window from the picker ---------------------------------------------
+
+    [Fact]
+    public async Task PickingAWindow_FillsBothFields()
+    {
+        var dialogs = Substitute.For<IDialogService>();
+        dialogs.ShowScreenCaptureWindowPickerAsync().Returns(Window("outlook", "Inbox - Ada - Outlook"));
+        var sut = CreateWithDialogs(dialogs);
+
+        await sut.PickScreenCaptureAllowlistWindowCommand.ExecuteAsync(null);
+
+        Assert.True(sut.CanPickAllowlistWindow);
+        Assert.Equal("outlook", sut.NewAllowlistProcessName);
+        Assert.Equal("Inbox - Ada - Outlook", sut.NewAllowlistTitleContains);
+    }
+
+    [Fact]
+    public async Task BackingOutOfThePicker_LeavesWhatWasTyped()
+    {
+        var dialogs = Substitute.For<IDialogService>();
+        dialogs.ShowScreenCaptureWindowPickerAsync().Returns((CaptureTarget?)null);
+        var sut = CreateWithDialogs(dialogs);
+        sut.NewAllowlistProcessName = "outlook";
+        sut.NewAllowlistTitleContains = "Inbox";
+
+        await sut.PickScreenCaptureAllowlistWindowCommand.ExecuteAsync(null);
+
+        Assert.Equal("outlook", sut.NewAllowlistProcessName);
+        Assert.Equal("Inbox", sut.NewAllowlistTitleContains);
+    }
+
+    [Fact]
+    public void WithoutADialogService_ThePickerIsNotOffered()
+    {
+        var (sut, _, _) = Create(allowlist: AllowlistWith());
+
+        Assert.False(sut.CanPickAllowlistWindow);
+    }
+
+    private static ToolPermissionsSettingsViewModel CreateWithDialogs(IDialogService dialogs)
+    {
+        var permissions = Substitute.For<IToolPermissionService>();
+        permissions.List().Returns([]);
+        var plugins = Substitute.For<IPluginService>();
+        plugins.GetAllPluginConfigs().Returns([]);
+
+        return new ToolPermissionsSettingsViewModel(
+            permissions, plugins, NullLogger<SettingsViewModel>.Instance, AllowlistWith(), dialogs);
+    }
+
+    private static CaptureTarget Window(string processName, string title) => new(
+        CaptureTargetKind.Window, 11, string.Empty, new PixelRect(0, 0, 800, 600),
+        processName, title, false, false);
+
     /// <summary>Queues posted work for the test thread to drain, standing in for the WPF dispatcher.</summary>
     private sealed class QueueingSynchronizationContext : SynchronizationContext
     {

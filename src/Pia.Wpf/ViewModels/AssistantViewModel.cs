@@ -956,7 +956,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             EnterVoiceModeCommand.NotifyCanExecuteChanged();
         }
 
-        if (e.PropertyName is nameof(IsStreaming) or nameof(IsScreenCaptureAvailable))
+        if (e.PropertyName is nameof(IsScreenCaptureAvailable))
         {
             CaptureScreenCommand.NotifyCanExecuteChanged();
         }
@@ -2000,7 +2000,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>Completes when the last provider check has landed; tests await it instead of racing the ctor.</summary>
     internal Task PendingScreenCaptureAvailabilityRefresh { get; private set; } = Task.CompletedTask;
 
-    private bool CanCaptureScreen() => _screenCapture is not null && IsScreenCaptureAvailable && !IsStreaming;
+    // Deliberately not gated on IsStreaming: the grab lands in the composer for the next turn, which is
+    // typed ahead the same way, and the send gate still holds it back.
+    private bool CanCaptureScreen() => _screenCapture is not null && IsScreenCaptureAvailable;
 
     private void OnProvidersChangedForScreenCapture(object? sender, EventArgs e) =>
         StartScreenCaptureAvailabilityRefresh();
@@ -2031,7 +2033,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private async Task ExecuteCaptureScreen()
     {
-        if (_screenCapture is null || IsStreaming) return;
+        if (_screenCapture is null) return;
 
         var picker = new ScreenCapturePickerViewModel(
             _screenCapture, _localizationService, _loggerFactory.CreateLogger<ScreenCapturePickerViewModel>());
@@ -2053,9 +2055,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
                 return;
             }
-
-            // A turn may have started while the picker was open.
-            if (IsStreaming) return;
 
             var attached = await PrepareImageAttachmentAsync(
                 () => ImageAttachmentProcessor.TryPrepare(result.Bitmap!, _logger));
@@ -2082,7 +2081,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// window it just created.</summary>
     internal async Task OpenScreenCapturePickerFromHotkeyAsync()
     {
-        if (_screenCapture is null || IsStreaming || CaptureScreenCommand.IsRunning) return;
+        if (_screenCapture is null || CaptureScreenCommand.IsRunning) return;
 
         try
         {

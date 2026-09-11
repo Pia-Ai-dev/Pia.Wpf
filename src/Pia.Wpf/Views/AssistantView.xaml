@@ -209,6 +209,14 @@
                   HorizontalScrollBarVisibility="Disabled"
                   Padding="20,12,20,0"
                   ScrollChanged="MessageScrollViewer_ScrollChanged">
+      <!-- Absolute mapping, so the fade stays a fixed band under the run-progress panel instead of scaling
+           with the viewport. -->
+      <ScrollViewer.OpacityMask>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,24" MappingMode="Absolute">
+          <GradientStop Offset="0" Color="#00000000" />
+          <GradientStop Offset="1" Color="#FF000000" />
+        </LinearGradientBrush>
+      </ScrollViewer.OpacityMask>
       <ScrollViewer.Style>
         <Style TargetType="ScrollViewer">
           <Setter Property="Visibility" Value="Visible" />
@@ -260,6 +268,7 @@
                     </Image>
                     <chat:PiaCollapsibleMessageText
                         Text="{Binding Content}"
+                        TextAutomationId="{Binding Id, StringFormat='Assistant_MessageText_{0}'}"
                         ToggleAutomationId="{Binding Id, StringFormat='Assistant_ExpandMessage_{0}'}" />
                   </StackPanel>
                 </Border>

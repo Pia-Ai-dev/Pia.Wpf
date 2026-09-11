@@ -186,21 +186,21 @@ public sealed class AssistantViewModelScreenCaptureTests
     }
 
     [Fact]
-    public async Task CaptureScreen_WhileStreaming_CannotExecute()
+    public async Task CaptureScreen_WhileStreaming_StillAttaches()
     {
         var vm = CreateSut();
         await vm.PendingScreenCaptureAvailabilityRefresh;
-        Assert.True(vm.CaptureScreenCommand.CanExecute(null));
-
         vm.IsStreaming = true;
 
-        Assert.False(vm.CaptureScreenCommand.CanExecute(null));
+        Assert.True(vm.CaptureScreenCommand.CanExecute(null));
         await vm.CaptureScreenCommand.ExecuteAsync(null);
-        await _dialogs.DidNotReceive().ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
+
+        await _dialogs.Received(1).ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
+        Assert.NotNull(vm.PendingAttachment);
     }
 
     [Fact]
-    public async Task CaptureScreen_ATurnThatStartedWhileThePickerWasOpen_DropsTheFrame()
+    public async Task CaptureScreen_ATurnThatStartedWhileThePickerWasOpen_KeepsTheFrame()
     {
         AssistantViewModel? vm = null;
         _dialogs.ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>())
@@ -217,8 +217,21 @@ public sealed class AssistantViewModelScreenCaptureTests
 
         await vm.CaptureScreenCommand.ExecuteAsync(null);
 
-        Assert.Null(vm.PendingAttachment);
-        _audit.DidNotReceive().Record(Arg.Any<ScreenCaptureAuditEvent>());
+        Assert.NotNull(vm.PendingAttachment);
+        _audit.Received(1).Record(Arg.Any<ScreenCaptureAuditEvent>());
+    }
+
+    [Fact]
+    public async Task CaptureScreen_WhileStreaming_TheAttachmentSurvivesTheTurnEnding()
+    {
+        var vm = CreateSut();
+        await vm.PendingScreenCaptureAvailabilityRefresh;
+        vm.IsStreaming = true;
+
+        await vm.CaptureScreenCommand.ExecuteAsync(null);
+        vm.IsStreaming = false;
+
+        Assert.NotNull(vm.PendingAttachment);
     }
 
     [Fact]
@@ -371,7 +384,7 @@ public sealed class AssistantViewModelScreenCaptureTests
     }
 
     [Fact]
-    public async Task HotkeyRequest_WhileStreaming_IsIgnored()
+    public async Task HotkeyRequest_WhileStreaming_StillOpensThePicker()
     {
         var vm = CreateSut();
         await vm.PendingScreenCaptureAvailabilityRefresh;
@@ -379,7 +392,8 @@ public sealed class AssistantViewModelScreenCaptureTests
 
         await vm.OpenScreenCapturePickerFromHotkeyAsync();
 
-        await _dialogs.DidNotReceive().ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
+        await _dialogs.Received(1).ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
+        Assert.NotNull(vm.PendingAttachment);
     }
 
     [Fact]

@@ -884,6 +884,7 @@
   <data name="Settings_ToolPermissions_ScreenAllowlist_ProcessPlaceholder" xml:space="preserve"><value>Programm, z. B. outlook</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_TitlePlaceholder" xml:space="preserve"><value>Titel enthält (optional)</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_Add" xml:space="preserve"><value>Hinzufügen</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Pick" xml:space="preserve"><value>Aus offenen Fenstern wählen...</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_Remove" xml:space="preserve"><value>Entfernen</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_TitleContains" xml:space="preserve"><value>Titel enthält:</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_AnyTitle" xml:space="preserve"><value>beliebiger Fenstertitel</value></data>
@@ -1577,6 +1578,9 @@
   <data name="ScreenCapturePicker_Empty" xml:space="preserve"><value>Nichts aufzunehmen - kein Bildschirm und kein Fenster verfügbar.</value></data>
   <data name="ScreenCapturePicker_MonitorLabel" xml:space="preserve"><value>Bildschirm {0}</value></data>
   <data name="ScreenCapturePicker_PrimaryDisplay" xml:space="preserve"><value>Hauptbildschirm</value></data>
+  <data name="ScreenCapturePicker_PickTitle" xml:space="preserve"><value>Fenster wählen</value></data>
+  <data name="ScreenCapturePicker_Use" xml:space="preserve"><value>Übernehmen</value></data>
+  <data name="ScreenCapturePicker_PickHint" xml:space="preserve"><value>Wählen Sie ein offenes Fenster. Es wird nichts aufgenommen - Pia trägt nur Programmname und Fenstertitel unten ein, und Sie können den Titel danach kürzen. Pias eigene Fenster werden nie aufgeführt.</value></data>
   <data name="Assistant_CaptureScreen_Tooltip" xml:space="preserve"><value>Bildschirm aufnehmen</value></data>
   <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>Bildschirmaufnahme ist nur mit dem PiaCloud-Anbieter verfügbar</value></data>
   <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Bildschirm aufnehmen</value></data>

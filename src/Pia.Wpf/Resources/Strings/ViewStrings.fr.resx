@@ -884,6 +884,7 @@
   <data name="Settings_ToolPermissions_ScreenAllowlist_ProcessPlaceholder" xml:space="preserve"><value>Programme, p. ex. outlook</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_TitlePlaceholder" xml:space="preserve"><value>Le titre contient (facultatif)</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_Add" xml:space="preserve"><value>Ajouter</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Pick" xml:space="preserve"><value>Choisir parmi les fenêtres ouvertes...</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_Remove" xml:space="preserve"><value>Supprimer</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_TitleContains" xml:space="preserve"><value>Le titre contient :</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_AnyTitle" xml:space="preserve"><value>tout titre de fenêtre</value></data>
@@ -1577,6 +1578,9 @@
   <data name="ScreenCapturePicker_Empty" xml:space="preserve"><value>Rien à capturer - aucun écran ni aucune fenêtre disponible.</value></data>
   <data name="ScreenCapturePicker_MonitorLabel" xml:space="preserve"><value>Écran {0}</value></data>
   <data name="ScreenCapturePicker_PrimaryDisplay" xml:space="preserve"><value>Principal</value></data>
+  <data name="ScreenCapturePicker_PickTitle" xml:space="preserve"><value>Choisir une fenêtre</value></data>
+  <data name="ScreenCapturePicker_Use" xml:space="preserve"><value>Utiliser</value></data>
+  <data name="ScreenCapturePicker_PickHint" xml:space="preserve"><value>Choisissez une fenêtre ouverte. Rien n'est capturé - Pia remplit seulement le nom du programme et le titre de la fenêtre ci-dessous, et vous pouvez raccourcir le titre ensuite. Les fenêtres de Pia ne sont jamais listées.</value></data>
   <data name="Assistant_CaptureScreen_Tooltip" xml:space="preserve"><value>Capturer l'écran</value></data>
   <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>La capture d'écran n'est disponible qu'avec le fournisseur PiaCloud</value></data>
   <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Capturer l'écran</value></data>

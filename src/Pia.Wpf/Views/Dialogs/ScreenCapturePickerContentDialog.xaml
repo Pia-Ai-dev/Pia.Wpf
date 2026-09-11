@@ -4,10 +4,10 @@
                   xmlns:local="clr-namespace:Pia.Views.Dialogs"
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   xmlns:loc="clr-namespace:Pia.Localization"
-                  Title="{loc:Str ScreenCapturePicker_Title}"
-                  PrimaryButtonText="{loc:Str ScreenCapturePicker_Capture}"
+                  Title="{Binding DialogTitle}"
+                  PrimaryButtonText="{Binding ConfirmText}"
                   CloseButtonText="{loc:Str Common_Cancel}"
-                  DefaultButton="Close"
+                  DefaultButton="Primary"
                   IsPrimaryButtonEnabled="{Binding CanCapture}"
                   DialogMaxWidth="820"
                   DialogMaxHeight="700">

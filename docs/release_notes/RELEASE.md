@@ -19,6 +19,14 @@
   erstellen". English and French are unchanged.
 - A maximized window stays maximized. Opening a routine's chat from the flow
   rail, or bringing Pia back from the tray, shrank it to a smaller window first.
+- Part of a message you sent can be selected and copied, the way Pia's answers
+  already could be. The copy button beside the bubble still takes the whole
+  message.
+- Your own messages are a lighter blue in the light theme, so the conversation
+  sits with the rest of the window rather than over it. The dark theme is
+  unchanged.
+- The plan panel at the top of a chat fades into the conversation below it
+  instead of cutting the first line off.
 
 ## Chat history
 
@@ -37,7 +45,10 @@
   shot lands in the message box as a thumbnail and is sent only when you send
   the message. Pia's own windows are never offered.
 - The picker also opens on a shortcut of your own, set under Settings →
-  General beside the other shortcuts.
+  General beside the other shortcuts. It works while Pia is still answering:
+  the picture waits in the message box for your next message.
+- The picker opens with the first window it can capture already picked, so the
+  arrow keys go straight to the one you want.
 - Pia can ask to look by itself when a question needs the screen. It asks
   first, on the same card any other tool is approved on, and the card names
   the program it wants to see — never the window title.
@@ -48,6 +59,10 @@
   under Settings → Assistant → Tool access → "Screen capture while you are
   away", and never a whole display. Each of those captures leaves a notice in
   the flow rail.
+- Those windows can be picked from a list rather than typed. "Choose from open
+  windows..." beside the fields fills in the program and the window title for
+  you, and both stay editable — a title you can shorten is one that still
+  matches tomorrow.
 
 ## Personas
 
@@ -122,6 +137,8 @@
 - A voice is selected as soon as its download finishes, so speech works without
   a second step. If the saved voice is no longer on this device, Pia takes up
   one that is instead of staying silent.
+- A voice's download bar runs the full width of its row instead of stopping
+  short of the buttons beside it.
 - A voice can be removed again from its row under Settings → General → Speech,
   which gives back the space it took. Pia asks first, and if it was the voice
   in use it moves to another installed one.
@@ -132,6 +149,13 @@
   "Pia.Wpf". Windows binds that name the first time it sees an app and never
   re-reads it, so Pia registers under a new identity: its entry in Settings →
   Notifications is recreated, and notifications already sent keep the old name.
+
+## Flow rail
+
+- Cards clear themselves after a while instead of piling up. How long depends
+  on the card: a failed routine or a fired reminder stays a month, a finished
+  background chat two weeks, a completed routine a week, an app error a day. A
+  run waiting on you, or an overdue task, never goes on its own.
 
 ## Updates
 

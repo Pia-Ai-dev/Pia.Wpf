@@ -36,6 +36,19 @@ public sealed partial class ScreenCapturePickerViewModel : ObservableObject
 
     public ObservableCollection<ScreenCaptureTargetViewModel> WindowTargets { get; } = [];
 
+    /// <summary>Names a window for the allowlist instead of grabbing a frame: displays are left out, because
+    /// a run nobody is watching may never be handed one.</summary>
+    public bool NamesAWindow { get; init; }
+
+    public string DialogTitle =>
+        _localization[NamesAWindow ? "ScreenCapturePicker_PickTitle" : "ScreenCapturePicker_Title"];
+
+    public string ConfirmText =>
+        _localization[NamesAWindow ? "ScreenCapturePicker_Use" : "ScreenCapturePicker_Capture"];
+
+    public string Hint =>
+        _localization[NamesAWindow ? "ScreenCapturePicker_PickHint" : "ScreenCapturePicker_Hint"];
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
     [NotifyPropertyChangedFor(nameof(CanCapture))]
@@ -149,6 +162,7 @@ public sealed partial class ScreenCapturePickerViewModel : ObservableObject
         {
             if (target.Kind == CaptureTargetKind.Monitor)
             {
+                if (NamesAWindow) continue;
                 display++;
                 AddRow(MonitorTargets, new ScreenCaptureTargetViewModel(
                     target,
@@ -167,6 +181,7 @@ public sealed partial class ScreenCapturePickerViewModel : ObservableObject
         }
 
         IsLoading = false;
+        SelectFirstCapturableWindow();
         RaiseListProperties();
         _logger.LogDebug("Screen picker listed {Monitors} monitors and {Windows} windows",
             MonitorTargets.Count, WindowTargets.Count);
@@ -248,6 +263,17 @@ public sealed partial class ScreenCapturePickerViewModel : ObservableObject
         return string.IsNullOrWhiteSpace(trimmed)
             ? "MONITOR" + ordinal.ToString(CultureInfo.InvariantCulture)
             : trimmed;
+    }
+
+    // Arrow keys move a selection but cannot start one, so the list opens with one already on.
+    private void SelectFirstCapturableWindow()
+    {
+        foreach (var row in WindowTargets)
+        {
+            if (row.IsMinimized) continue;
+            row.IsSelected = true;
+            return;
+        }
     }
 
     private void AddRow(ObservableCollection<ScreenCaptureTargetViewModel> rows, ScreenCaptureTargetViewModel row)

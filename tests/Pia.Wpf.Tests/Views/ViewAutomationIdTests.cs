@@ -41,7 +41,7 @@ public class ViewAutomationIdTests
     // The playbook's "Known gaps" section is the single source of truth for what still has no row here.
     [Theory]
     [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 34, 5, "")]
-    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 46, 6, "PersonaGlyph,PersonasView,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 47, 6, "PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
@@ -83,7 +83,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 23, 10, "PiaPersonaAvatar")]
     [InlineData(typeof(Pia.Controls.Chat.PiaFileChip), 3, 3, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaAttachedFileChip), 2, 2, "")]
-    [InlineData(typeof(Pia.Controls.Chat.PiaCollapsibleMessageText), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaCollapsibleMessageText), 2, 2, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
     [InlineData(typeof(Pia.Views.AssignmentsView), 4, 2, "PiaEmptyState,PiaHelpHint")]

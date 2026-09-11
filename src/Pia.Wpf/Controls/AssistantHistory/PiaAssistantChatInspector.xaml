@@ -129,6 +129,7 @@
                   <Border Style="{StaticResource UserBubbleStyle}">
                     <chat:PiaCollapsibleMessageText
                         Text="{Binding Content}"
+                        TextAutomationId="{Binding Id, StringFormat='AssistantHistory_MessageText_{0}'}"
                         ToggleAutomationId="{Binding Id, StringFormat='AssistantHistory_ExpandMessage_{0}'}" />
                   </Border>
                   <!-- What the user attached. Saved files reopen; the rest kept only their name. -->

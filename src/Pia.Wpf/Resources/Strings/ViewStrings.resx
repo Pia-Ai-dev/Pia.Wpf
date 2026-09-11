@@ -850,6 +850,7 @@
   <data name="Settings_ToolPermissions_ScreenAllowlist_ProcessPlaceholder" xml:space="preserve"><value>Program, e.g. outlook</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_TitlePlaceholder" xml:space="preserve"><value>Title contains (optional)</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_Add" xml:space="preserve"><value>Add</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Pick" xml:space="preserve"><value>Choose from open windows...</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_Remove" xml:space="preserve"><value>Remove</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_TitleContains" xml:space="preserve"><value>Title contains:</value></data>
   <data name="Settings_ToolPermissions_ScreenAllowlist_AnyTitle" xml:space="preserve"><value>any window title</value></data>
@@ -1587,6 +1588,9 @@
   <data name="ScreenCapturePicker_Empty" xml:space="preserve"><value>Nothing to capture - no display or window is available.</value></data>
   <data name="ScreenCapturePicker_MonitorLabel" xml:space="preserve"><value>Display {0}</value></data>
   <data name="ScreenCapturePicker_PrimaryDisplay" xml:space="preserve"><value>Primary</value></data>
+  <data name="ScreenCapturePicker_PickTitle" xml:space="preserve"><value>Choose a window</value></data>
+  <data name="ScreenCapturePicker_Use" xml:space="preserve"><value>Use</value></data>
+  <data name="ScreenCapturePicker_PickHint" xml:space="preserve"><value>Pick an open window. Nothing is captured now - Pia only fills in the program name and the window title below, and you can shorten the title afterwards. Pia's own windows are never listed.</value></data>
   <data name="Assistant_CaptureScreen_Tooltip" xml:space="preserve"><value>Capture screen</value></data>
   <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>Screen capture is only available with the PiaCloud provider</value></data>
   <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Capture screen</value></data>
