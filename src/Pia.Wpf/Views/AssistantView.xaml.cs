@@ -223,7 +223,9 @@ public partial class AssistantView : UserControl
                 if (IsTailAdd(e))
                 {
                     // A new turn means the user wants to see it: resume auto-scroll regardless of
-                    // whether they had paused mid-stream of the previous answer.
+                    // whether they had paused mid-stream of the previous answer. An anchor restore
+                    // queued by a refill above would otherwise scroll straight back off the answer.
+                    _prependExtent = null;
                     IsAutoScrollEnabled = true;
                     ScrollToBottom();
                 }

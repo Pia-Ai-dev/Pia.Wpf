@@ -196,6 +196,9 @@ public sealed class ChatArchiveService : IChatArchiveService
                 var existing = await _chatService.GetAsync(chat.Id, ct).ConfigureAwait(false);
                 if (existing is not null && existing.UpdatedAt >= chat.UpdatedAt)
                 {
+                    // The stored row can still carry the archive's own years-old date, and re-importing is
+                    // the only repair the user has for it.
+                    await _chatService.TouchLastAccessedAsync(chat.Id, ct).ConfigureAwait(false);
                     upToDate++;
                     continue;
                 }

@@ -1,8 +1,9 @@
 # Plan: bound what the chat transcript renders
 
-**Status:** Planned, not started. This is the critical path — the archive is skewed, ten chats holding
-~90 % of 195 MB, and one navigation over one of those (1 573 messages) costs **43–50 s and 3.2 GB of
-heap** in Release.
+**Status:** Implemented. Every acceptance criterion below has a test; tracked step by step in
+[2026-09-11-chat-history-performance-checklist.md](2026-09-11-chat-history-performance-checklist.md).
+It was the critical path — the archive is skewed, ten chats holding ~90 % of 195 MB, and one navigation
+over one of those (1 573 messages) cost **43–50 s and 3.2 GB of heap** in Release.
 **Owner:** Marco Altmann
 **Written:** 2026-09-11
 **Origin:** [2026-09-11-large-import-slowdown.md](2026-09-11-large-import-slowdown.md), which measured

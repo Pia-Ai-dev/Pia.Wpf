@@ -42,8 +42,9 @@
 - A long question no longer fills the pane. Chat history folds it the way the
   chat itself does, so the answer to it stays in view.
 - The preview pane opens a long conversation at once as well. It shows the most
-  recent messages with "Show older messages" above them, and it stays put when
-  the list refreshes behind it instead of drawing the whole chat again.
+  recent messages with "Show older messages" above them, keeps your place when
+  you bring more back, and stays put when the list refreshes behind it instead
+  of drawing the whole chat again.
 - Imported chats stay. An archive of older conversations counted as untouched
   for as long as its own dates said, so most of it was cleared shortly after
   the next start; Import now counts as opening them. What an earlier version

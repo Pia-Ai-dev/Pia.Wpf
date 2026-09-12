@@ -17,6 +17,18 @@ internal static class MessageWindow
             window.Add(transcript[i]);
     }
 
+    internal static void TopUp(
+        ObservableCollection<AssistantMessage> window, IList<AssistantMessage> transcript)
+    {
+        var missing = Math.Min(Size, transcript.Count) - window.Count;
+        if (missing <= 0)
+            return;
+
+        var first = transcript.Count - window.Count - missing;
+        for (var i = 0; i < missing; i++)
+            window.Insert(i, transcript[first + i]);
+    }
+
     internal static void PrependOlder(
         ObservableCollection<AssistantMessage> window, IList<AssistantMessage> transcript)
     {

@@ -9,11 +9,8 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// Building the WPF tree over a whole transcript costs ~24 ms per message, so the list is bound to a
-/// bounded window over <c>Messages</c> and the reader asks for the rest. <c>Messages</c> itself stays
-/// whole: it is the model's context, the export and in-chat search.
-/// </summary>
+/// <summary>The list is bound to a bounded window over <c>Messages</c>, which itself stays whole because it
+/// is the model's context, the export and in-chat search.</summary>
 [Collection("WpfApplicationStatic")]
 public class MessageWindowingTests : IDisposable
 {
@@ -92,11 +89,8 @@ public class MessageWindowingTests : IDisposable
         Assert.Equal(120, whole);
     }
 
-    /// <summary>
-    /// Inserting above the viewport moves everything below it down, so without an offset correction the
-    /// reader is thrown by the height of what arrived. The anchor is a real measured container position,
-    /// not the offset the code just wrote.
-    /// </summary>
+    /// <summary>The anchor is a real measured container position, not the offset the code just wrote, so a
+    /// correction that only looks right cannot pass this.</summary>
     [Fact]
     public void PrependingOlderMessages_LeavesTheReaderWhereTheyWere()
     {
@@ -144,21 +138,61 @@ public class MessageWindowingTests : IDisposable
     }
 
     [Fact]
-    public void RemovingTheTail_MirrorsIntoTheWindow()
+    public void RemovingTheTail_RefillsTheWindowFromOlderMessages()
     {
         WpfStaHost.Run(() => OpenChatInViewModel(120));
 
-        var (visible, older, lastIndex) = WpfStaHost.Run(() =>
+        var (visible, older, lastIndex, firstIndex) = WpfStaHost.Run(() =>
         {
             for (var i = _vm.Messages.Count - 1; i >= 118; i--)
                 _vm.Messages.RemoveAt(i);
             return (_vm.VisibleMessages.Count, _vm.OlderMessageCount,
-                _vm.Messages.IndexOf(_vm.VisibleMessages[^1]));
+                _vm.Messages.IndexOf(_vm.VisibleMessages[^1]),
+                _vm.Messages.IndexOf(_vm.VisibleMessages[0]));
         });
 
-        Assert.Equal(48, visible);
-        Assert.Equal(70, older);
+        Assert.Equal(Window, visible);
+        Assert.Equal(68, older);
         Assert.Equal(117, lastIndex);
+        Assert.Equal(68, firstIndex);
+    }
+
+    /// <summary>Regenerating truncates the transcript back to the prompt, which can take the whole window
+    /// with it.</summary>
+    [Fact]
+    public void TruncatingIntoTheWindow_RefillsItRatherThanEmptyingThePane()
+    {
+        WpfStaHost.Run(() => OpenChatInViewModel(120));
+
+        var (visible, older, firstIndex, whole) = WpfStaHost.Run(() =>
+        {
+            for (var i = _vm.Messages.Count - 1; i >= 69; i--)
+                _vm.Messages.RemoveAt(i);
+            return (_vm.VisibleMessages.Count, _vm.OlderMessageCount,
+                _vm.Messages.IndexOf(_vm.VisibleMessages[0]), _vm.Messages.Count);
+        });
+
+        Assert.Equal(69, whole);
+        Assert.Equal(Window, visible);
+        Assert.Equal(19, older);
+        Assert.Equal(19, firstIndex);
+    }
+
+    [Fact]
+    public void AWindowTheReaderExpanded_IsNotShrunkBackByARemoval()
+    {
+        WpfStaHost.Run(() => OpenChatInViewModel(120));
+
+        var (visible, older) = WpfStaHost.Run(() =>
+        {
+            _vm.LoadOlderMessagesCommand.Execute(null);
+            for (var i = _vm.Messages.Count - 1; i >= 118; i--)
+                _vm.Messages.RemoveAt(i);
+            return (_vm.VisibleMessages.Count, _vm.OlderMessageCount);
+        });
+
+        Assert.Equal(98, visible);
+        Assert.Equal(20, older);
     }
 
     [Fact]
@@ -175,6 +209,36 @@ public class MessageWindowingTests : IDisposable
         Assert.Equal(Window, visible);
         Assert.Equal(69, older);
         Assert.True(hasOlder);
+    }
+
+    /// <summary>The refill holds the scroll where the reader was, which the turn that follows a regenerate
+    /// has to override. The tail is the long half, so the refilled window is SHORTER than what it replaced
+    /// and the correction it anchors on runs backwards.</summary>
+    [Fact]
+    public void TheTurnThatFollowsATruncation_StillLandsAtTheBottom()
+    {
+        WpfStaHost.Run(() => OpenChatInView(120, longFrom: 70));
+        WpfStaHost.Pump();
+
+        WpfStaHost.Run(() =>
+        {
+            for (var i = _vm.Messages.Count - 1; i >= 69; i--)
+                _vm.Messages.RemoveAt(i);
+            _vm.Messages.Add(new AssistantMessage(ChatRole.User, "ask it again"));
+            _vm.Messages.Add(new AssistantMessage(ChatRole.Assistant, "the regenerated answer"));
+            return 0;
+        });
+        WpfStaHost.Pump();
+
+        var (offset, scrollable, following) = WpfStaHost.Run(() =>
+        {
+            Lay();
+            return (_scroller.VerticalOffset, _scroller.ScrollableHeight, _view.IsAutoScrollEnabled);
+        });
+
+        Assert.True(scrollable > 0, "the transcript did not overflow the viewport, so nothing was scrolled");
+        Assert.True(offset >= scrollable - 1, $"the new turn is off screen: {offset} of {scrollable}");
+        Assert.True(following, "the answer would stream below a viewport that stopped following it");
     }
 
     [Fact]
@@ -219,7 +283,7 @@ public class MessageWindowingTests : IDisposable
         return 0;
     }
 
-    private int OpenChatInView(int messages)
+    private int OpenChatInView(int messages, int longFrom = int.MaxValue)
     {
         _vm = AssistantViewModelBuilder.Create();
         _view = new AssistantView { DataContext = _vm };
@@ -231,7 +295,7 @@ public class MessageWindowingTests : IDisposable
         _items = (ItemsControl)_view.FindName("MessageItemsControl");
         _loadOlder = (FrameworkElement)_view.FindName("LoadOlderMessagesButton");
 
-        _vm.Messages = Transcript(messages);
+        _vm.Messages = Transcript(messages, longFrom);
         _vm.HasMessages = messages > 0;
         Lay();
         return 0;
@@ -252,10 +316,12 @@ public class MessageWindowingTests : IDisposable
         _view.UpdateLayout();
     }
 
-    private static ObservableCollection<AssistantMessage> Transcript(int count) =>
+    private static ObservableCollection<AssistantMessage> Transcript(int count, int longFrom = int.MaxValue) =>
         [.. Enumerable.Range(1, count).Select(i => new AssistantMessage(
             i % 2 == 0 ? ChatRole.Assistant : ChatRole.User,
-            $"turn {i} — long enough to take a line of its own in the transcript"))];
+            i > longFrom
+                ? string.Join(" ", Enumerable.Repeat($"turn {i} ran to several lines of its own.", 30))
+                : $"turn {i} — long enough to take a line of its own in the transcript"))];
 
     public void Dispose()
     {

@@ -13,11 +13,8 @@ using Xunit;
 
 namespace Pia.Tests.ViewModels;
 
-/// <summary>
-/// The inspector renders the selected chat's whole transcript, which costs ~24 ms per message, so it is
-/// bound to the newest slice and the reader asks for the rest. A list reload re-wraps every row, so the
-/// selection changes reference even when the chat did not — re-rendering it then buys nothing.
-/// </summary>
+/// <summary>The inspector is bound to the newest slice of the selected chat, and a list reload re-wraps
+/// every row, so the selection changes reference even when the chat did not.</summary>
 public class AssistantHistoryMessageWindowingTests
 {
     private const int Window = 50;

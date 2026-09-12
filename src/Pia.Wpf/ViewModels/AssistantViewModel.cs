@@ -664,11 +664,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     VisibleMessages.Add(message);
                 break;
 
-            // A removal can target a message below the window, which leaves the window alone and the older
-            // count one shorter.
+            // A removal below the window leaves it alone; one inside it — regenerating truncates back to the
+            // prompt — would otherwise leave a near-empty transcript with the rest hidden behind the button.
             case System.Collections.Specialized.NotifyCollectionChangedAction.Remove when e.OldItems is not null:
                 foreach (AssistantMessage message in e.OldItems)
                     VisibleMessages.Remove(message);
+                MessageWindow.TopUp(VisibleMessages, Messages);
                 break;
 
             default:

@@ -55,8 +55,8 @@ container-recycling hazards the window bound avoids entirely.
 - [x] **A5 · Window the history inspector.** The same projection for `PiaAssistantChatInspector`, plus
       skipping the detail reload in `LoadChatsAsync` when the resolved selection has not changed — keyed
       on the row's `UpdatedAt` as well as its id, so a rename, a new turn or a sync pull still reloads.
-      No scroll anchoring: the affordance is reachable only from the top of the pane, where nothing sits
-      above the viewport to displace. *Deps:* A4 · *Effort:* `S` · *Value:* `High`
+      Scroll anchoring too: the affordance is reachable only from the top of the pane, which is exactly
+      where the insert displaces what the reader is on. *Deps:* A4 · *Effort:* `S` · *Value:* `High`
 - [x] **A6 · Trim `MarkdownMessageControl`.** Drop the constructor's `RenderMarkdown(string.Empty)` and
       move the 8-item `ContextMenu` to a shared resource resolved through `PlacementTarget`.
       *Deps:* — · *Effort:* `XS` · *Value:* `Med`

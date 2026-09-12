@@ -104,14 +104,17 @@
         </Grid>
       </Border>
 
-      <ScrollViewer Grid.Row="1"
+      <ScrollViewer x:Name="TranscriptScrollViewer"
+                    Grid.Row="1"
                     Padding="14,12,14,14"
                     VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
           <!-- Scrolls with the transcript, so it reads as the start of the conversation and takes no
                layout when there is nothing older. -->
-          <Button HorizontalAlignment="Center"
+          <Button x:Name="LoadOlderMessagesButton"
+                  Click="LoadOlderMessagesButton_Click"
+                  HorizontalAlignment="Center"
                   Margin="0,0,0,12"
                   Padding="12,6"
                   Cursor="Hand"
@@ -123,7 +126,8 @@
                                        Converter={StaticResource BooleanToVisibilityConverter}}"
                   AutomationProperties.AutomationId="AssistantHistory_LoadOlderMessages"
                   ToolTip="{loc:Str AssistantHistory_LoadOlderMessages_Tooltip}" />
-          <ItemsControl ItemsSource="{Binding DataContext.VisibleChatMessages, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}">
+          <ItemsControl x:Name="TranscriptItemsControl"
+                        ItemsSource="{Binding DataContext.VisibleChatMessages, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
                 <Grid Margin="0,0,0,12">

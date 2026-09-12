@@ -12,11 +12,8 @@ using Xunit;
 
 namespace Pia.Tests.Views;
 
-/// <summary>
-/// The budget the windowed transcript exists to hold: one navigation over the archive's heaviest chat cost
-/// 43–50 s and 3.2 GB because the list built a container per message. Every assertion here counts elements,
-/// never wall clock — a time budget is flaky on CI and a count is not.
-/// </summary>
+/// <summary>One navigation over the archive's heaviest chat cost 43–50 s and 3.2 GB, so every assertion
+/// here counts elements — a time budget is flaky on CI and a count is not.</summary>
 [Collection("WpfApplicationStatic")]
 public class TranscriptRenderBudgetTests : IDisposable
 {
@@ -238,9 +235,8 @@ public class TranscriptRenderBudgetTests : IDisposable
     private static int CountTurns(string markdown) =>
         markdown.Split('\n').Count(line => line.StartsWith("## ", StringComparison.Ordinal));
 
-    /// <summary>Roles run back from the newest turn and bodies are fixed width, so two chats of different
-    /// lengths produce windows that are identical but for the text — otherwise a size comparison measures
-    /// the fixture.</summary>
+    // Roles run back from the newest turn, so two chats of different lengths give windows that differ only
+    // in their text and a size comparison cannot be measuring the fixture.
     private static ObservableCollection<AssistantMessage> Transcript(int count) =>
         [.. Enumerable.Range(0, count).Select(i => new AssistantMessage(
             (count - 1 - i) % 2 == 0 ? ChatRole.Assistant : ChatRole.User,

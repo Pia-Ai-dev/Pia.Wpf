@@ -103,8 +103,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     public ObservableCollection<AssistantMessage> SelectedChatMessages { get; } = new();
 
-    /// <summary>The tail of <see cref="SelectedChatMessages"/> the inspector renders; the whole transcript
-    /// stays behind it for export.</summary>
+    /// <summary>The tail of <see cref="SelectedChatMessages"/> the inspector renders.</summary>
     public ObservableCollection<AssistantMessage> VisibleChatMessages { get; } = new();
 
     private bool _hasOlderChatMessages;

@@ -141,6 +141,26 @@ public sealed class ChatArchiveServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReImporting_RepairsAnAccessDateRetentionWouldEvictOn()
+    {
+        var chat = FullyPopulatedChat();
+        chat.LastAccessedAt = DateTime.UtcNow.AddYears(-3);
+        await _chats.SaveAsync(chat, Ct);
+        var file = PathFor("repair.json");
+        await _sut.ExportAsync([chat.Id], file, Ct);
+        var importStarted = DateTime.UtcNow;
+
+        var result = await _sut.ImportAsync(file, ct: Ct);
+
+        Assert.Equal(0, result.Imported);
+        Assert.Equal(1, result.SkippedUpToDate);
+        var stored = await _chats.GetAsync(chat.Id, Ct);
+        Assert.NotNull(stored);
+        Assert.True(stored.LastAccessedAt >= importStarted,
+            $"a skipped chat keeps the date retention evicts on, got {stored.LastAccessedAt:O}");
+    }
+
+    [Fact]
     public async Task Import_DoesNotOverwriteALocallyNewerChat()
     {
         var chat = FullyPopulatedChat();
