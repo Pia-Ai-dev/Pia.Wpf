@@ -1079,6 +1079,7 @@
   <data name="Run_State_WaitingForChildren" xml:space="preserve"><value>Verteilt Arbeit</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Plan wird erstellt…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Arbeitet…</value></data>
+  <data name="Run_Activity_SingleTurnFallback" xml:space="preserve"><value>Es konnte kein Plan erstellt werden — das Ziel wird in einem Durchgang bearbeitet</value></data>
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Ergebnis wird geprüft…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Bei Budget gestoppt – fortsetzen?</value></data>
   <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>Warten auf die Unteragenten…</value></data>

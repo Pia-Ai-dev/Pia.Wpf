@@ -1079,6 +1079,7 @@
   <data name="Run_State_WaitingForChildren" xml:space="preserve"><value>Délégation</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Élaboration d'un plan…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Travail en cours…</value></data>
+  <data name="Run_Activity_SingleTurnFallback" xml:space="preserve"><value>Aucun plan n’a pu être établi — l’objectif est traité en une seule étape</value></data>
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Vérification du travail…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Arrêtée au budget — continuer ?</value></data>
   <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>En attente des sous-agents…</value></data>

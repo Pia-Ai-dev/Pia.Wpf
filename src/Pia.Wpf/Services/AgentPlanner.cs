@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
@@ -156,7 +157,8 @@ public sealed class AgentPlanner : IAgentPlanner
     public sealed record PlanStepArg(
         [property: Description("Short imperative title")] string Title,
         [property: Description("What this step should accomplish")] string Intent,
-        [property: Description("The file(s) this step will produce, named relative to the working folder — never a rooted path like \"/Project/README.md\". Every name listed must exist when the step finishes, so name several only when it writes all of them. Never offer alternatives (\"A or B\", \"e.g. A\"). Omit when the step produces nothing checkable.")] string? ExpectedArtifact = null,
+        [property: Description("The file(s) this step will produce, named relative to the working folder — never a rooted path like \"/Project/README.md\". Every name listed must exist when the step finishes, so name several only when it writes all of them. Never offer alternatives (\"A or B\", \"e.g. A\"). Omit when the step produces nothing checkable.")]
+        [property: JsonConverter(typeof(ArtifactListConverter))] string? ExpectedArtifact = null,
         // Matched by NAME against the roster the system message listed (07 D2). A name, not a Guid: models do
         // not reproduce GUIDs reliably and one mistyped nibble is an unresolvable id for a step the model DID
         // mean to assign. Not an index either: an off-by-one silently assigns the WRONG persona, whereas a
@@ -167,6 +169,73 @@ public sealed class AgentPlanner : IAgentPlanner
         // more still-pending steps is delegated to sibling child runs and awaited (07 D11), so this number is
         // load-bearing, not a record of intent. A group of ONE is not a fan-out and runs in-process.
         [property: Description("Optional: steps that can run at the same time, independently, share one number")] int? ParallelGroup = null);
+
+    /// <summary>
+    /// Reads <c>expectedArtifact</c> whether the model sent a string or an array of them. The schema says
+    /// string, but the instruction beside it asks a multi-file step to name every file, so an array is what a
+    /// compliant model sends — and one of those used to throw away the entire plan. Joined with ", ", which is
+    /// already a separator <c>AgentVerifier.FileCandidates</c> splits a declaration on.
+    /// </summary>
+    private sealed class ArtifactListConverter : JsonConverter<string?>
+    {
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+                return reader.TokenType == JsonTokenType.Null ? null : reader.GetString();
+
+            var names = new List<string>();
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                if (reader.TokenType == JsonTokenType.String && reader.GetString() is { Length: > 0 } name)
+                    names.Add(name);
+                else
+                    reader.Skip();
+            }
+            return names.Count == 0 ? null : string.Join(", ", names);
+        }
+
+        public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
+    }
+
+    /// <summary>
+    /// Per-step re-read after the whole-object parse threw: keeps the steps that ARE readable instead of
+    /// losing the plan to one malformed sibling. Null when nothing survives, which lands on the same degrade
+    /// as before. Counts only — a step's text is the user's goal restated, so it never reaches a log line.
+    /// </summary>
+    private PlanStepArg[]? SalvageSteps(IDictionary<string, object?>? arguments)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(arguments ?? new Dictionary<string, object?>());
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("steps", out var steps) || steps.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var kept = new List<PlanStepArg>();
+            var dropped = 0;
+            foreach (var element in steps.EnumerateArray())
+            {
+                try
+                {
+                    if (element.Deserialize<PlanStepArg>(PlanJson) is { } step) kept.Add(step);
+                    else dropped++;
+                }
+                catch (JsonException) { dropped++; }
+            }
+
+            if (kept.Count == 0) return null;
+            _logger.LogInformation(
+                "Salvaged {Kept} readable step(s) from emit_plan, dropped {Dropped} unreadable one(s)",
+                kept.Count, dropped);
+            return [.. kept];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Salvaging the readable steps of emit_plan failed");
+            return null;
+        }
+    }
 
     /// <summary>The captured <c>emit_plan</c> arguments; unrecognized members are skipped rather than throwing.</summary>
     private sealed record EmitPlanArgs(PlanStepArg[]? Steps, bool CannotGround = false, string? Question = null);
@@ -616,6 +685,9 @@ public sealed class AgentPlanner : IAgentPlanner
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to parse emit_plan arguments");
+                    // One unreadable member used to discard every step beside it, and the run degraded to a
+                    // single turn over a plan the model had actually produced.
+                    captured = SalvageSteps(call.Arguments);
                 }
                 // Short ack — the tool loop appends this as a FunctionResult and does one more round (R6).
                 return Task.FromResult<object?>("Plan received.");

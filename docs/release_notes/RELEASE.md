@@ -49,6 +49,13 @@
   anything to say still left Pia's mark in the conversation with nothing
   beside it, and it stayed there. Those are no longer written, and the ones
   already in your chats no longer show.
+- A plan with a step that writes two files no longer comes back empty. The plan
+  box showed no steps at all and the run quietly became a single turn, because
+  one step naming both its files was enough to discard the whole plan. A step
+  that cannot be read is now dropped on its own, and the rest of the plan stands.
+- A run that still ends up without a plan says so, instead of showing an empty
+  plan box beside a spinner. It reads "could not build a plan — working through
+  the goal in one turn", which is what it is doing.
 - Tool activity counts what happened rather than how often it was asked. Two
   requests you approved were listed as four decisions, two of them "not run"
   for calls that did run, because approving one is recorded twice. They now

@@ -1449,6 +1449,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private string? ComputeActivity(AgentRun run) => run.State switch
     {
         AgentRunState.Planning => _localization["Run_Activity_Planning"],
+        // A run with NO plan at all is the degrade: planning produced nothing usable and the goal is being
+        // worked as one turn. Said plainly, because the step list below is empty and silence there reads as
+        // a stuck run rather than as a decision.
+        AgentRunState.Running when run.Plan.Count == 0 => _localization["Run_Activity_SingleTurnFallback"],
         AgentRunState.Running =>
             run.Plan.FirstOrDefault(s => s.Status == AgentStepStatus.Running)?.Title
             ?? _localization["Run_Activity_Working"],

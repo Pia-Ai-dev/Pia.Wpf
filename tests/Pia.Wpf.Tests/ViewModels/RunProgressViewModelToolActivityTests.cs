@@ -120,6 +120,34 @@ public sealed class RunProgressViewModelToolActivityTests
 
         Assert.Equal("Run_ToolActivity_Waiting", vm.ToolActivity);
     }
+    /// <summary>
+    /// The R10 degrade keeps the run Planned with no steps, so the plan box renders empty. The lead line is
+    /// what tells the user the planner failed rather than that the run is stuck.
+    /// </summary>
+    [Fact]
+    public async Task ARunningRunWithNoPlan_SaysItIsWorkingTheGoalInOneTurn()
+    {
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            State = AgentRunState.Running,
+            Plan = [],
+        });
+
+        var vm = await LoadedVm();
+
+        Assert.True(vm.HasCurrentActivity);
+        Assert.Equal("Run_Activity_SingleTurnFallback", vm.CurrentActivity);
+    }
+
+    /// <summary>The note is for a plan-less run only — a planned run still leads with its running step.</summary>
+    [Fact]
+    public async Task ARunningRunWithAPlan_StillLeadsWithTheStepTitle()
+    {
+        var vm = await LoadedVm();
+
+        Assert.Equal("Research", vm.CurrentActivity);
+    }
     private void Run(AgentRunState state, AgentStepStatus stepStatus = AgentStepStatus.Running) =>
         _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
         {

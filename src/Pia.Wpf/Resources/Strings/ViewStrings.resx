@@ -1045,6 +1045,7 @@
   <data name="Run_State_WaitingForChildren" xml:space="preserve"><value>Delegating</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Building a plan…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Working…</value></data>
+  <data name="Run_Activity_SingleTurnFallback" xml:space="preserve"><value>Could not build a plan — working through the goal in one turn</value></data>
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Checking the work…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Stopped at budget — continue?</value></data>
   <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>Waiting for the sub-agents to finish…</value></data>
