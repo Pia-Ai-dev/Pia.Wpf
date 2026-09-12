@@ -34,6 +34,21 @@ public sealed class ConversationDigestBuilderTests
         Messages = [.. rows.Select(r => new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = r.Role, Content = r.Content })],
     };
 
+    /// <summary>Long enough to clear <see cref="ConversationDigestBuilder.MinSummarizeChars"/>, so Summary
+    /// actually spends its round.</summary>
+    private static SyncAssistantChat LongConversationThenGoal()
+    {
+        var rows = new List<(string, string)>();
+        for (var i = 0; i < 20; i++)
+        {
+            rows.Add(("user", $"Frage {i}: " + new string('a', 120)));
+            rows.Add(("assistant", $"Antwort {i}: " + new string('b', 120)));
+        }
+        rows.Add(("user", "rename quarterly.md to q3.md"));
+        rows.Add(("user", Goal));
+        return Chat([.. rows]);
+    }
+
     private static SyncAssistantChat ConversationThenGoal() => Chat(
         ("user", "rename quarterly.md to q3.md"),
         ("assistant", "Done — it is now q3.md in Reports."),
@@ -153,7 +168,7 @@ public sealed class ConversationDigestBuilderTests
         SummaryReturns("They renamed quarterly.md to q3.md under Reports.",
             new UsageDetails { InputTokenCount = 900, OutputTokenCount = 40 });
 
-        var result = await BuildAsync(ConversationThenGoal(), AgentContextMode.Summary);
+        var result = await BuildAsync(LongConversationThenGoal(), AgentContextMode.Summary);
 
         Assert.Contains("They renamed quarterly.md to q3.md under Reports.", result.Text);
         Assert.DoesNotContain("Assistant: Done —", result.Text);
@@ -168,7 +183,7 @@ public sealed class ConversationDigestBuilderTests
                 Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("upstream is down"));
 
-        var result = await BuildAsync(ConversationThenGoal(), AgentContextMode.Summary);
+        var result = await BuildAsync(LongConversationThenGoal(), AgentContextMode.Summary);
 
         Assert.Contains("rename quarterly.md to q3.md", result.Text);
     }
@@ -179,7 +194,7 @@ public sealed class ConversationDigestBuilderTests
     {
         SummaryReturns(string.Empty, new UsageDetails { InputTokenCount = 900, OutputTokenCount = 0 });
 
-        var result = await BuildAsync(ConversationThenGoal(), AgentContextMode.Summary);
+        var result = await BuildAsync(LongConversationThenGoal(), AgentContextMode.Summary);
 
         Assert.Contains("rename quarterly.md to q3.md", result.Text);
         Assert.Equal(900, result.Usage?.InputTokenCount);
@@ -189,11 +204,44 @@ public sealed class ConversationDigestBuilderTests
     public async Task Summary_WithNoAiClient_FallsBackToVerbatim()
     {
         var result = await ConversationDigestBuilder.BuildAsync(
-            ConversationThenGoal(), Goal, AgentContextMode.Summary, Provider(), ai: null,
+            LongConversationThenGoal(), Goal, AgentContextMode.Summary, Provider(), ai: null,
             NullLogger.Instance, Ct);
 
         Assert.Contains("rename quarterly.md to q3.md", result.Text);
         Assert.Null(result.Usage);
+    }
+
+    /// <summary>Measured live: a short chat summarised to MORE characters than the excerpt it replaced,
+    /// and charged a round for it.</summary>
+    [Fact]
+    public async Task AShortConversation_SkipsTheSummaryRoundEntirely()
+    {
+        SummaryReturns("a summary nobody asked to pay for");
+
+        var result = await BuildAsync(ConversationThenGoal(), AgentContextMode.Summary);
+
+        Assert.Contains("rename quarterly.md to q3.md", result.Text);
+        Assert.Null(result.Usage);
+        await _ai.DidNotReceive().GetChatResponseAsync(
+            Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+            Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Pia Cloud returns the summary wrapped in &lt;summary&gt; despite being told not to.</summary>
+    [Theory]
+    [InlineData("<summary>\nThe team renamed a report.\n</summary>", "The team renamed a report.")]
+    [InlineData("<answer>Plain text.</answer>", "Plain text.")]
+    [InlineData("No tag at all.", "No tag at all.")]
+    [InlineData("<not closed> still text", "<not closed> still text")]
+    [InlineData("5 < 7 and 8 > 2", "5 < 7 and 8 > 2")]
+    public async Task AWrappingTag_IsStripped(string modelText, string expected)
+    {
+        SummaryReturns(modelText);
+
+        var result = await BuildAsync(LongConversationThenGoal(), AgentContextMode.Summary);
+
+        Assert.Contains(expected, result.Text);
+        Assert.DoesNotContain("</summary>", result.Text);
     }
 
     /// <summary>The fast model never sees the raw chat — only the already-capped excerpt.</summary>
@@ -207,7 +255,7 @@ public sealed class ConversationDigestBuilderTests
                 Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(_ => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, "a summary"))));
 
-        await BuildAsync(ConversationThenGoal(), AgentContextMode.Summary);
+        await BuildAsync(LongConversationThenGoal(), AgentContextMode.Summary);
 
         Assert.NotNull(sent);
         Assert.Equal(2, sent.Count);

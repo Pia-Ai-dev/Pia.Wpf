@@ -1,6 +1,6 @@
 # Conversation context for agent runs — checklist
 
-**Status:** implemented except F3 (live verification) · **Owner:** Marco Altmann · **Written:** 2026-09-12
+**Status:** implemented and live-verified · **Owner:** Marco Altmann · **Written:** 2026-09-12
 **Origin:** [2026-09-12-agent-run-conversation-context-design.md](2026-09-12-agent-run-conversation-context-design.md),
 which root-causes a follow-up agent run that could not see the conversation it was sent from.
 
@@ -96,7 +96,7 @@ needs revisiting before it is built.
   is enforced by test). Do not hand-edit `Designer.cs`.
   *Deps:* B1 · *Effort:* XS · *Value:* Enabler
 
-- [ ] **F3 — Live verification.** One agent run on Pia Cloud in the conversation that produced the design
+- [x] **F3 — Live verification.** One agent run on Pia Cloud in the conversation that produced the design
   document: verbatim once, summary once, and a confirmed block on an unanswered banner.
   *Deps:* C3, E1, F2 · *Effort:* XS · *Value:* High
 

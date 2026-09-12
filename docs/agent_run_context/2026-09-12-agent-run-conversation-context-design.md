@@ -1,6 +1,6 @@
 # Agent runs started inside a conversation — design
 
-**Status:** implemented; live verification outstanding · **Owner:** Marco Altmann · **Written:** 2026-09-12
+**Status:** implemented and live-verified · **Owner:** Marco Altmann · **Written:** 2026-09-12
 **Origin:** a reported dead end — an agent run finished, the user typed a follow-up in the same chat,
 and the new run had no idea what the conversation had been about. Root-caused in this document.
 
@@ -199,6 +199,57 @@ alone here: starting to sync a folder path is a privacy decision, not a bug fix.
 
 The digest is produced by `ConversationDigestBuilder` (`src/Pia.Wpf/Services/`) rather than inline in the
 orchestrator, which is what makes the summary-turn degrade paths testable without a dozen mocks.
+
+## Live verification (F3)
+
+Four runs on 2026-09-12 against Pia Cloud through the local server at `https://localhost:8081/`, on the
+owner's real profile with E2EE on and the UI in German. The Debug build's `SensitiveDebug` lines are the
+evidence; the UI alone cannot show what the planner was handed.
+
+The fixture was deliberately ambiguous: `Playground/f3probe/` held `notizen_alpha.md` and
+`notizen_beta.md`, and the working-folder listing is top level only — so it showed `f3probe/` and never
+either filename. A goal saying "die Datei" is therefore groundable **only** from the conversation.
+
+- **Verbatim.** Chat turn named `f3probe/notizen_alpha.md` and said Beta was irrelevant. Goal: "Ergaenze
+  die Datei um einen Abschnitt Risiken". Digest: 2 rows, 367 chars. `emit_plan` came back with
+  `expectedArtifact: f3probe/notizen_alpha.md` — the right file, not the decoy — and the run wrote two
+  risks derived from Alpha's own content.
+- **Summary.** Goal: "Erstelle zusaetzlich eine englische Fassung davon". Digest: 4 rows, 887 chars,
+  summarised to 1557. The plan resolved "davon" to the report written earlier in that chat and carried
+  every constraint the conversation had set (audience, one page, no technical detail, Beta excluded).
+  The summary round's usage reached the run ledger: `usage accrued (step=(null), in=641, out=391)`.
+- **Off.** Same shape of goal, with the banner answered "Nichts senden". No digest line at all, and the
+  planner declined: "Welche Datei genau soll ich zusammenfassen?" — the original dead end, reproduced on
+  purpose. Off means off, and the A/B against the first run is what shows the digest is the difference.
+- **Persistence.** The app was restarted and the first chat reopened from history: no banner, the settled
+  line read "Agentenläufe in diesem Chat erhalten das Gespräch." A follow-up saying only "Ergaenze dort
+  noch einen dritten Stichpunkt" planned against `f3probe/notizen_alpha.md`, section Risiken — a fact
+  that exists only in the FIRST run's own exchange, so the digest had grown from 2 rows to 4.
+
+Also confirmed live: the composer gate refuses Send, Run-in-background **and** the Enter key while the
+banner is unanswered; the three German labels render from `ViewStrings.de.resx`; every chat PUT to the
+server returned 200/201, so the added wire field is accepted; and the lever stayed on Chat across
+several sync cycles, which is the A0 fix holding.
+
+### What the live pass changed
+
+Two defects in this feature's own code, both found only because the run was real:
+
+- A **short** conversation summarised to MORE characters than the excerpt it replaced (1557 from 887) and
+  was charged a provider round for it. Below `MinSummarizeChars` the excerpt is now sent as it is.
+- Pia Cloud wrapped the whole summary in `<summary>…</summary>` despite the prompt saying to answer with
+  only the text, so the tags were shipped into the plan prompt. A single wrapping tag is now stripped.
+
+### Known, not fixed
+
+- The banner arms **mid-run** on the first send in a fresh agent-mode chat: `HasMessages` flips true
+  during the turn, so the offer appears while a run that (correctly) got no digest is already executing.
+  It is the trigger's literal condition; whether to suppress it while a run is in flight is an owner call.
+- Enter with the banner up inserts a newline instead of being swallowed. The message is not sent, which is
+  the point, but it leaves a stray line in the composer.
+- "+ New chat" re-arms Agent from `AssistantAgentModeDefault`, so the settle fall-back to Chat does not
+  survive creating a chat. Pre-existing lever behaviour, unchanged by this work.
+- Defect 2 below is still live and visible in every sync cycle as `Pull merge: … 3 deleted`.
 
 ## Out of scope
 

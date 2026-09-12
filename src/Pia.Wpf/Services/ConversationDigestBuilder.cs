@@ -25,6 +25,12 @@ internal static class ConversationDigestBuilder
     /// <summary>Same cap the planner puts on its own reasoning analysis — this text lands in the same message.</summary>
     private const int MaxSummaryChars = 4000;
 
+    /// <summary>
+    /// Below this the excerpt is sent as it is and the summary round is not spent. Measured: a two-exchange
+    /// chat summarised to 1557 chars from an 887-char excerpt, so the paid round bought a LONGER digest.
+    /// </summary>
+    internal const int MinSummarizeChars = 2000;
+
     private const string FenceOpen =
         "--- Earlier in this conversation, before the goal above (context only — plan the goal, not this) ---";
 
@@ -64,6 +70,14 @@ internal static class ConversationDigestBuilder
 
         if (mode != AgentContextMode.Summary || ai is null)
             return new ConversationDigestResult(Fence(verbatim), null);
+
+        if (verbatim.Length < MinSummarizeChars)
+        {
+            logger.LogInformation(
+                "Conversation digest is {Chars} chars; sending it as it is rather than paying a summary round.",
+                verbatim.Length);
+            return new ConversationDigestResult(Fence(verbatim), null);
+        }
 
         return await SummarizeAsync(verbatim, provider, ai, logger, ct).ConfigureAwait(false);
     }
@@ -160,6 +174,7 @@ internal static class ConversationDigestBuilder
                 return new ConversationDigestResult(Fence(verbatim), usage);
             }
 
+            text = StripWrappingTag(text);
             if (text.Length > MaxSummaryChars)
                 text = text[..MaxSummaryChars] + "\n… (summary truncated)";
 
@@ -177,6 +192,27 @@ internal static class ConversationDigestBuilder
                 "Conversation summary turn failed ({Error}); using the verbatim excerpt.", ex.GetType().Name);
             return new ConversationDigestResult(Fence(verbatim), null);
         }
+    }
+
+    /// <summary>Unwraps a single XML-ish envelope the model added anyway — measured on Pia Cloud, which
+    /// returned the whole summary inside &lt;summary&gt; despite being told to answer with only the text.</summary>
+    private static string StripWrappingTag(string text)
+    {
+        if (text.Length < 3 || text[0] != '<')
+            return text;
+
+        var open = text.IndexOf('>');
+        if (open < 2)
+            return text;
+
+        var name = text[1..open];
+        if (name.Length == 0 || !name.All(c => char.IsLetterOrDigit(c) || c is '_' or '-'))
+            return text;
+
+        var close = $"</{name}>";
+        return text.EndsWith(close, StringComparison.OrdinalIgnoreCase)
+            ? text[(open + 1)..^close.Length].Trim()
+            : text;
     }
 
     private static string Fence(string body) => $"{FenceOpen}\n{body}\n{FenceClose}";

@@ -105,10 +105,11 @@ public sealed class AgentRunConversationDigestTests : IDisposable
             LastAccessedAt = now,
             WindowMode = WindowMode.Assistant.ToString(),
             AgentContextMode = mode,
+            // Long enough to clear MinSummarizeChars, so the Summary case really spends its round.
             Messages =
             [
                 new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "user", Content = "rename quarterly.md to q3.md", Timestamp = now },
-                new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "Done — it is now q3.md in Reports.", Timestamp = now },
+                new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "Done — it is now q3.md in Reports. " + new string('x', 2200), Timestamp = now },
                 new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "user", Content = Goal, Timestamp = now },
             ],
         }, Ct);
