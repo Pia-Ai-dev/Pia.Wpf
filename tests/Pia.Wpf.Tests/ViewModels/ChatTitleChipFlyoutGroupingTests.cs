@@ -184,6 +184,24 @@ public class ChatTitleChipFlyoutGroupingTests
     }
 
     [Fact]
+    public void InlinePicker_CreatingAFolder_RepointsTheOpenChat()
+    {
+        // The reported shape: a folder made from the empty state's picker for the chat you are in. It was
+        // only highlighted, so the run that followed wrote into the folder the chat started in.
+        _activeWorkingDir = "src/app";
+        _workingDir.EnsureSubfolder("src/app/Shopping").Returns("src/app/Shopping");
+        var sut = CreateSut([]);
+        sut.IsInlinePickerOpen = true;
+
+        sut.WorkingDirectoryPicker.BeginCreateFolderCommand.Execute(null);
+        sut.WorkingDirectoryPicker.NewFolderName = "Shopping";
+        sut.WorkingDirectoryPicker.ConfirmCreateFolderCommand.Execute(null);
+
+        Assert.Equal("src/app/Shopping", _capturedSetActiveDir);
+        Assert.Equal("\\src\\app\\Shopping", sut.ActiveWorkingDirectoryDisplay);
+    }
+
+    [Fact]
     public void InlinePickerOpen_SeedsFromActiveChat_NotTheLastNewChatPick()
     {
         // A "+ New Chat" pick in the flyout leaves the pending folder elsewhere; the empty state's

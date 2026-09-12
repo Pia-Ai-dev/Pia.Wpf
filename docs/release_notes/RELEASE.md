@@ -5,6 +5,9 @@
 - A new chat's working folder can be changed from the chat itself. Hover the
   folder shown under "Start a conversation with Pia" and click it to pick
   another; a chat keeps its folder once the first message is sent.
+- Making a folder in that picker moves the chat into it. The new folder was only
+  highlighted, so a chat you created one for went on writing into the folder it
+  started in.
 - Typing @ in the message box offers Files at the top of the list and picks it
   by default, so Enter goes straight to your files. It is missing only if you
   turned the file tools off under Settings → Assistant.

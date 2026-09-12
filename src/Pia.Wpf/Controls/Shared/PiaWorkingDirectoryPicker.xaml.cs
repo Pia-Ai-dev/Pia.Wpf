@@ -59,12 +59,12 @@ public partial class PiaWorkingDirectoryPicker : UserControl
         {
             case Key.Enter:
                 if (picker.ConfirmCreateFolderCommand.CanExecute(null))
-                    ParkFocusThenSettle(() => picker.ConfirmCreateFolderCommand.Execute(null), selectCreated: true);
+                    ParkFocusThenSettle(() => picker.ConfirmCreateFolderCommand.Execute(null));
                 e.Handled = true;
                 break;
 
             case Key.Escape:
-                ParkFocusThenSettle(() => picker.CancelCreateFolderCommand.Execute(null), selectCreated: false);
+                ParkFocusThenSettle(() => picker.CancelCreateFolderCommand.Execute(null));
                 e.Handled = true;
                 break;
         }
@@ -72,33 +72,33 @@ public partial class PiaWorkingDirectoryPicker : UserControl
 
     // Click fires BEFORE the bound command runs (WPF raises Click, then executes the command), so
     // parking focus on the header button here moves it off the ✓/✕ button before the command
-    // collapses the row. Then settle focus (failure → back to the textbox; success → highlight).
+    // collapses the row. Then settle focus (failure → back to the textbox).
     private void ConfirmCreateFolderButton_Click(object sender, RoutedEventArgs e)
     {
         NewFolderButton.Focus();
-        SettleFocusAfterCreate(selectCreated: true);
+        SettleFocusAfterCreate();
     }
 
     private void CancelCreateFolderButton_Click(object sender, RoutedEventArgs e)
     {
         NewFolderButton.Focus();
-        SettleFocusAfterCreate(selectCreated: false);
+        SettleFocusAfterCreate();
     }
 
     // Park focus on the always-visible header button, THEN run the state change, THEN settle. Doing
     // the focus move synchronously before the command means the input row (textbox/✓/✕) never holds
     // focus while it collapses — the collapse-time focus gap is what would dismiss the popup.
-    private void ParkFocusThenSettle(Action stateChange, bool selectCreated)
+    private void ParkFocusThenSettle(Action stateChange)
     {
         NewFolderButton.Focus();
         stateChange();
-        SettleFocusAfterCreate(selectCreated);
+        SettleFocusAfterCreate();
     }
 
     // Runs after the command has applied. On a rejected create the VM keeps the row open, so return
     // focus to the textbox for amending; otherwise the row collapsed and focus stays on the header
-    // button (already parked), and a created folder is selected/scrolled into view.
-    private void SettleFocusAfterCreate(bool selectCreated)
+    // button (already parked).
+    private void SettleFocusAfterCreate()
     {
         Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
         {
@@ -110,14 +110,6 @@ public partial class PiaWorkingDirectoryPicker : UserControl
                 NewFolderTextBox.Focus();
                 Keyboard.Focus(NewFolderTextBox);
                 return;
-            }
-
-            if (selectCreated && picker.LastCreatedFolder is { } leaf)
-            {
-                WorkingDirEntries.UpdateLayout();
-                WorkingDirEntries.SelectedItem = leaf;
-                if (WorkingDirEntries.SelectedItem is not null)
-                    WorkingDirEntries.ScrollIntoView(WorkingDirEntries.SelectedItem);
             }
 
             // Belt-and-suspenders: focus was parked here synchronously before the collapse; re-assert

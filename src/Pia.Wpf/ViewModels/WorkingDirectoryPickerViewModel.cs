@@ -41,11 +41,6 @@ public sealed partial class WorkingDirectoryPickerViewModel : ObservableObject
     [ObservableProperty]
     private string _newFolderName = string.Empty;
 
-    /// <summary>Leaf name of the folder created by the last successful
-    /// <see cref="ConfirmCreateFolderCommand"/> — the view reads it once to select/scroll the new
-    /// row into view. Not observable; navigation does not clear it.</summary>
-    public string? LastCreatedFolder { get; private set; }
-
     public IRelayCommand<string> EnterCommand { get; }
     public IRelayCommand<int> JumpToCrumbCommand { get; }
     public IRelayCommand BeginCreateFolderCommand { get; }
@@ -131,7 +126,6 @@ public sealed partial class WorkingDirectoryPickerViewModel : ObservableObject
 
     private void ExecuteBeginCreateFolder()
     {
-        LastCreatedFolder = null;
         NewFolderName = string.Empty;
         IsCreatingFolder = true;
     }
@@ -155,20 +149,14 @@ public sealed partial class WorkingDirectoryPickerViewModel : ObservableObject
 
         // EnsureSubfolder validates sandbox containment / sensitive paths, is idempotent, and
         // returns null on a blocked or failed create. Keep the input open on failure so the user
-        // can amend the name; creating never re-points the active chat (no WorkingDirectoryChosen).
+        // can amend the name.
         var created = _service.EnsureSubfolder(relative);
         if (created is null) return;
 
-        IsCreatingFolder = false;
-        NewFolderName = string.Empty;
-        Refresh();
-        // Highlight the new row. Match the actual on-disk entry — its casing can differ from what
-        // was typed on a case-insensitive volume (an idempotent re-create doesn't rename), and the
-        // view selects by ordinal string equality, so mismatched casing would silently no-op the
-        // highlight. Fall back to the typed leaf. Set after Refresh so a navigation-triggered reset
-        // can't clear it.
-        var leaf = SplitSegments(created) is { Length: > 0 } parts ? parts[^1] : name;
-        LastCreatedFolder = Entries.FirstOrDefault(e => string.Equals(e, leaf, StringComparison.OrdinalIgnoreCase)) ?? leaf;
+        // Entering it is the point of having made it: a folder that only got highlighted read as chosen,
+        // and the chat kept working in the old one. Enter the service's answer rather than the path
+        // composed above — it is the containment-checked, normalized form.
+        Choose(Normalize(created));
     }
 
     partial void OnNewFolderNameChanged(string value) =>
