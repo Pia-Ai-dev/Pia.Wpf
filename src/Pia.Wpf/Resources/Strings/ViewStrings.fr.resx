@@ -1129,6 +1129,8 @@
   <data name="Run_Plan_Error_TooLong" xml:space="preserve"><value>Le plan comporte trop d'étapes.</value></data>
   <data name="Run_Plan_Error_WriteFailed" xml:space="preserve"><value>La modification du plan n'a pas pu être enregistrée.</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Activité des outils</value></data>
+  <data name="Run_ToolActivity_Waiting" xml:space="preserve"><value>En attente du modèle…</value></data>
+  <data name="Run_ToolActivity_AfterTool" xml:space="preserve"><value>{0} appels d’outils · dernier : {1}</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Aucune décision d'outil n'a été enregistrée pour cette exécution.</value></data>
   <data name="Run_Children_Header" xml:space="preserve"><value>Sous-agents</value></data>
   <data name="Run_Children_Count" xml:space="preserve"><value>{0} sur {1} terminés</value></data>

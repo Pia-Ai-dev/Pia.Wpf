@@ -689,6 +689,30 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal($"routine:{jobId}", granter);
     }
 
+    /// <summary>
+    /// A step can finish without prose — an emit_step_result claim needs none — and the row that used to be
+    /// written for it rendered in the transcript as an avatar with nothing beside it, permanently.
+    /// </summary>
+    [Fact]
+    public async Task AStepThatProducesNoVisibleText_WritesNoChatRow()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(_ => DriveText(++h.Turns == 2 ? "   " : "reply " + h.Turns));
+
+        await h.Orchestrator(new FakePlanner(Steps(2))).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
+            new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20)),
+            TestContext.Current.CancellationToken);
+
+        var chat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(chat!.Messages, m => string.IsNullOrWhiteSpace(m.Content));
+        // The step that DID speak still lands, so the guard skips a row rather than the persist.
+        Assert.Contains(chat.Messages, m => m.Content == "reply 1");
+    }
     private static List<AgentStep> Steps(int count)
     {
         var steps = new List<AgentStep>();

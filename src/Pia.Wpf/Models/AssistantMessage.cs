@@ -18,8 +18,9 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private string _thinkingContent = string.Empty;
 
+    /// <summary>Set by whoever creates a streaming message, which is where the localizer is reachable.</summary>
     [ObservableProperty]
-    private string _statusText = "Thinking...";
+    private string _statusText = string.Empty;
 
     [ObservableProperty]
     private bool _isStreaming;
@@ -138,6 +139,14 @@ public partial class AssistantMessage : ObservableObject
     /// collapsed toggle shown above the answer.</summary>
     public bool ShowReasoningSummary => (HasThinkingContent || HasReasoningDuration) && !ShowLiveReasoning;
 
+    /// <summary>Nothing left to render: every section of the bubble hides itself on its own condition, so
+    /// without this the avatar stays behind alone. Covers rows already persisted before headless runs stopped
+    /// writing contentless replies, and a turn cancelled mid-stream, which keeps its empty message by design.</summary>
+    public bool IsEmptyShell =>
+        !HasContent && !IsStreaming && !HasThinkingContent && !HasReasoningDuration
+        && !HasActionCards && !HasSources && !HasFileRefs && !HasAttachedFiles
+        && !HasAttachment && !HasSuggestions && !HasAgentModeSuggestion;
+
     public bool HasToolCalls => ToolCallCount > 0;
 
     public bool HasAttachment => Attachment is not null;
@@ -156,18 +165,23 @@ public partial class AssistantMessage : ObservableObject
         OnPropertyChanged(nameof(HasContent));
         OnPropertyChanged(nameof(ShowLiveReasoning));
         OnPropertyChanged(nameof(ShowReasoningSummary));
+        OnPropertyChanged(nameof(IsEmptyShell));
     }
 
     partial void OnThinkingContentChanged(string value)
     {
         OnPropertyChanged(nameof(HasThinkingContent));
         OnPropertyChanged(nameof(ShowReasoningSummary));
+        OnPropertyChanged(nameof(IsEmptyShell));
     }
 
+    // The end of streaming is the moment a message's sections are all final, so it is where an empty one
+    // is settled: anything added mid-turn arrived while IsEmptyShell was already false.
     partial void OnIsStreamingChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowLiveReasoning));
         OnPropertyChanged(nameof(ShowReasoningSummary));
+        OnPropertyChanged(nameof(IsEmptyShell));
     }
 
     partial void OnReasoningDurationLabelChanged(string value)

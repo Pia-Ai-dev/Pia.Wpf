@@ -1105,6 +1105,8 @@
   <!-- Batch 03: the per-run tool-decision trace. Eleven persisted decision ordinals collapse to five
        user-facing categories; anything a build does not recognise renders as Unknown. -->
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Tool activity</value></data>
+  <data name="Run_ToolActivity_Waiting" xml:space="preserve"><value>Waiting for the model…</value></data>
+  <data name="Run_ToolActivity_AfterTool" xml:space="preserve"><value>{0} tool calls · last: {1}</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>No tool decisions were recorded for this run.</value></data>
   <data name="Run_Children_Header" xml:space="preserve"><value>Sub-agents</value></data>
   <data name="Run_Children_Count" xml:space="preserve"><value>{0} of {1} finished</value></data>

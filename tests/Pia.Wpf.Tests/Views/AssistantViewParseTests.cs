@@ -589,6 +589,57 @@ public class AssistantViewParseTests
 
     // Store-less: the trailing-optional IAgentTimelineService is omitted so nothing reads a database. Must be
     // called ON the STA thread — the VM captures SynchronizationContext.Current for its collection mutations.
+    /// <summary>
+    /// A headless step writes its reply only when it ends, so the transcript sits still for the whole step.
+    /// The live line fills that gap, and it must appear only while a FOREIGN run is writing this chat — a
+    /// session driving its own live run streams its step message and would show two spinners.
+    /// </summary>
+    [Fact]
+    public void LiveRunActivity_Parses_AndNeedsBothAForeignRunAndSomethingToSay()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        RunProgressViewModel? runVm = null;
+        UIElement? line = null;
+        bool found;
+        Visibility? idle, runOnly, both;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = AssistantViewModelBuilder.Create();
+                runVm = CreateRunProgressViewModel();
+                vm.ActiveRunProgress = runVm;
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (found, idle) = WpfStaHost.Run(() =>
+            {
+                line = view!.FindName("LiveRunActivity") as UIElement;
+                return (line is not null, line?.Visibility);
+            });
+
+            WpfStaHost.Run(() => { vm!.ForeignRunActive = true; return 0; });
+            WpfStaHost.Pump();
+            runOnly = WpfStaHost.Run(() => line?.Visibility);
+
+            WpfStaHost.Run(() => { runVm!.ToolActivity = "3 tool calls · last: web_search"; return 0; });
+            WpfStaHost.Pump();
+            both = WpfStaHost.Run(() => line?.Visibility);
+        }
+        finally
+        {
+            WpfStaHost.Run(() => { vm?.Dispose(); runVm?.Dispose(); return 0; });
+        }
+
+        Assert.True(found, "AssistantView no longer contains the LiveRunActivity line.");
+        Assert.Equal(Visibility.Collapsed, idle);
+        // A foreign run with no tool line yet says nothing, so an empty strip must not take layout.
+        Assert.Equal(Visibility.Collapsed, runOnly);
+        Assert.Equal(Visibility.Visible, both);
+    }
     private static RunProgressViewModel CreateRunProgressViewModel()
     {
         var loc = Substitute.For<ILocalizationService>();

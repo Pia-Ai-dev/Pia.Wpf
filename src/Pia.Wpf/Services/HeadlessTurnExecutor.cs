@@ -917,21 +917,30 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // here, so the chat and a resume's re-seed are unchanged.
         _messages.AddRange(exchange.ToolExchanges);
 
-        // The visible reply IS persisted and IS carried forward as context for later steps.
+        // Carried forward as context either way, so a later step still sees that this one ran.
         _messages.Add(new ChatMessage(ChatRole.Assistant, exchange.Visible));
-        _persisted.Add(new SyncAssistantChatMessage
+
+        // A step may finish without prose — an emit_step_result{true} claim needs none — and a chat row with
+        // no content renders as a bare avatar forever. Skipped rather than filled with "didn't respond" text,
+        // which would misreport a step that succeeded. The tool-exchange rows still seal against
+        // assistantMsgId; the re-seed reads an anchor with no chat row as stale and carries it as trailing.
+        var hasVisibleReply = !string.IsNullOrWhiteSpace(exchange.Visible);
+        if (hasVisibleReply)
         {
-            Id = assistantMsgId,
-            Role = "assistant",
-            Content = exchange.Visible,
-            ThinkingContent = exchange.Thinking,
-            Timestamp = DateTime.UtcNow,
-            Tokens = exchange.Tokens,
-            ModelName = exchange.Model,
-            ProviderName = exchange.Provider,
-            IsProtectedRoute = exchange.Protected,
-            Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
-        });
+            _persisted.Add(new SyncAssistantChatMessage
+            {
+                Id = assistantMsgId,
+                Role = "assistant",
+                Content = exchange.Visible,
+                ThinkingContent = exchange.Thinking,
+                Timestamp = DateTime.UtcNow,
+                Tokens = exchange.Tokens,
+                ModelName = exchange.Model,
+                ProviderName = exchange.Provider,
+                IsProtectedRoute = exchange.Protected,
+                Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
+            });
+        }
 
         // Unconditional even when this attempt recorded nothing: a previous, PARKED attempt's rows for the
         // same step are still unanchored, and this is the write that finally anchors them. CancellationToken.None
@@ -954,8 +963,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Error: succeeded ? null : DescribeFailure(claim),
             VisibleText: exchange.Visible,
             Usage: exchange.Usage,
-            FirstMessageId: assistantMsgId,
-            LastMessageId: assistantMsgId,
+            // Guid.Empty when no row was written, the same signal the park arm returns — the orchestrator's
+            // range bookkeeping already skips it rather than pointing a step at a message that does not exist.
+            FirstMessageId: hasVisibleReply ? assistantMsgId : Guid.Empty,
+            LastMessageId: hasVisibleReply ? assistantMsgId : Guid.Empty,
             Outcome: claim);
     }
 

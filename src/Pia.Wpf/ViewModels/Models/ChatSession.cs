@@ -755,6 +755,7 @@ public sealed class ChatSession : IDisposable
         {
             IsStreaming = true,
             Persona = spec.Persona,
+            StatusText = _localizationService["Msg_Assistant_StatusThinking"],
         };
         Messages.Add(assistantMessage);
 

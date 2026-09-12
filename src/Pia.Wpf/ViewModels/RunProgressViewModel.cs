@@ -130,6 +130,18 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             or RunProgressState.Failed;
         if (terminal && _wasLive) RunSettled?.Invoke();
         _wasLive = !terminal;
+
+        if (!_autoExpandedTimeline && value is RunProgressState.Planning or RunProgressState.Running)
+        {
+            _autoExpandedTimeline = true;
+            // The FIELD, so this does not become a second store read: a live run is primed once and the
+            // watcher keeps it current from there, which is the invariant that keeps ~500 appends off the
+            // projection path. Notified by hand because the setter is what the generator wires to the view.
+            _isTimelineExpanded = true;
+            OnPropertyChanged(nameof(IsTimelineExpanded));
+        }
+
+        RefreshToolActivity();
     }
 
     /// <summary>True while a resume is being launched — gates the Continue button against a double-click
@@ -375,9 +387,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// The current-activity line (design D1): the running step's title while Running, or a "building a
-    /// plan" note while Planning; null (line hidden) otherwise. The live per-tool micro-status
-    /// (<c>StatusText</c>) stays on the adjacent streaming transcript by design — this panel is
-    /// plan-level, the transcript is token-level. Step title is SENSITIVE — bound to UI only, never logged.
+    /// plan" note while Planning; null (line hidden) otherwise. Tool-level progress lives beside it in
+    /// <see cref="ToolActivity"/> — a headless step streams nothing, so the transcript cannot carry it.
+    /// Step title is SENSITIVE — bound to UI only, never logged.
     /// </summary>
     [ObservableProperty]
     private string? _currentActivity;
@@ -479,6 +491,19 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isTimelineExpanded;
+
+    /// <summary>The tool-level counterpart to <see cref="CurrentActivity"/>'s step title, for the stretch where
+    /// a headless step writes nothing to the chat. Shared with the transcript's live bubble so the two surfaces
+    /// cannot disagree. Tool NAMES only — never an argument (the timeline's metadata-only rule).</summary>
+    [NotifyPropertyChangedFor(nameof(HasToolActivity))]
+    [ObservableProperty]
+    private string? _toolActivity;
+
+    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity);
+
+    /// <summary>The band opens itself once, when the run starts executing; re-opening it later would overrule
+    /// a user who closed it mid-run.</summary>
+    private bool _autoExpandedTimeline;
 
     [ObservableProperty]
     private bool _isTimelineTruncated;
@@ -646,6 +671,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     // inside a _uiContext.Post body or inside Project, which is only ever called from one.
     private readonly List<AgentTimelineEvent> _timelineEvents = [];
     private Guid? _liveParkRowId;
+
+    // The two halves of one approval, under the same UI-thread contract as _timelineEvents: the park row that
+    // has since been answered, and the replay row that answers it.
+    private readonly HashSet<Guid> _answeredParkRowIds = [];
+    private readonly HashSet<Guid> _userApprovedRowIds = [];
 
     private void OnTimelineAppended(Guid runId)
     {
@@ -1828,8 +1858,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                     .Where(r => r.Kind != AgentTimelineEventKind.TraceTruncated)
                     .Reverse());
                 _liveParkRowId = LiveParkRowId(_timelineEvents, IsToolApprovalPause ? ApprovalToolName : null);
+                PairApprovals();
                 RenderTimelineRows();
-                ApplyDecisionSummary(_timelineEvents);
+                ApplyDecisionSummary(VisibleTimelineEvents().ToList());
+                RefreshToolActivity();
                 HasNoTimeline = !readFailed && Timeline.Count == 0;
             }
             finally
@@ -1848,8 +1880,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private void RenderTimelineRows()
     {
         Timeline.Clear();
-        var exceptions = _timelineEvents.Where(e => SeverityForKey(RowLabelKey(e)) != RunDecisionSeverity.Routine).ToList();
-        var routine = _timelineEvents.Where(e => SeverityForKey(RowLabelKey(e)) == RunDecisionSeverity.Routine).ToList();
+        var visible = VisibleTimelineEvents().ToList();
+        var exceptions = visible.Where(e => SeverityForKey(RowLabelKey(e)) != RunDecisionSeverity.Routine).ToList();
+        var routine = visible.Where(e => SeverityForKey(RowLabelKey(e)) == RunDecisionSeverity.Routine).ToList();
 
         for (var i = 0; i < exceptions.Count; i++)
             Timeline.Add(Project(exceptions[i], showGroupSeparator: false));
@@ -1899,8 +1932,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (parkRowId == _liveParkRowId) return;
 
         _liveParkRowId = parkRowId;
+        // Re-paired, not just re-rendered: which park row is live decides which one may be folded away.
+        PairApprovals();
         RenderTimelineRows();
-        ApplyDecisionSummary(_timelineEvents);
+        ApplyDecisionSummary(VisibleTimelineEvents().ToList());
     }
 
     /// <summary>
@@ -1983,9 +2018,83 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>A wrapper over <see cref="DecisionLabelKey"/>, never a second switch: a park row the run is no
     /// longer stopped on is history, not a pending question.</summary>
     private string RowLabelKey(AgentTimelineEvent row) =>
-        row.Decision == ToolGateDecision.ParkedForApproval && row.Id != _liveParkRowId
-            ? "Run_Timeline_Decision_NotExecuted"
-            : DecisionLabelKey(row.Decision);
+        _userApprovedRowIds.Contains(row.Id)
+            ? "Run_Timeline_Decision_Approved"
+            : row.Decision == ToolGateDecision.ParkedForApproval && row.Id != _liveParkRowId
+                ? "Run_Timeline_Decision_NotExecuted"
+                : DecisionLabelKey(row.Decision);
+
+    /// <summary>
+    /// One line naming what the run is doing, for the stretch where a headless step writes nothing to the
+    /// chat. A timeline row is written only once a call has RETURNED, so the tool it names is the one that
+    /// just finished — the wording says "last", never "running".
+    /// </summary>
+    private void RefreshToolActivity()
+    {
+        var ordinal = State == RunProgressState.Running ? CurrentStepOrdinal : 0;
+        if (ordinal <= 0 || ordinal > Steps.Count)
+        {
+            ToolActivity = null;
+            return;
+        }
+
+        var stepId = Steps[ordinal - 1].StepId;
+        var calls = _timelineEvents
+            .Where(e => e.StepId == stepId && e.Kind == AgentTimelineEventKind.ToolCall)
+            .ToList();
+
+        // _timelineEvents is newest-first, so the head is the latest call of the step the run is on.
+        ToolActivity = calls.Count == 0
+            ? _localization["Run_ToolActivity_Waiting"]
+            : _localization.Format("Run_ToolActivity_AfterTool", calls.Count, calls[0].ToolName);
+    }
+
+    /// <summary>
+    /// The rows a reader should see: an answered park is folded into the replay that answers it, so one
+    /// approval counts once. The DB keeps both — this is a projection, not a delete.
+    /// </summary>
+    private IEnumerable<AgentTimelineEvent> VisibleTimelineEvents() =>
+        _timelineEvents.Where(e => !_answeredParkRowIds.Contains(e.Id));
+
+    /// <summary>
+    /// An approval spans two rows, because the park and the answer are separate executions: the park writes
+    /// <see cref="ToolGateDecision.ParkedForApproval"/>, and the resumed step's replay writes a fresh
+    /// <see cref="ToolGateDecision.GrantedByName"/> — the approval reaches it as a grant. Pairing them is also
+    /// the only honest way to tell that grant apart from a scheduled job's configured envelope, which resolves
+    /// to the very same decision with nobody asked.
+    /// <para>
+    /// Matched per (step, tool) rather than per call id: a second parked call of the same tool deliberately
+    /// writes no second park row, so a one-to-one pairing would leave every replay after the first reported as
+    /// auto-approved. Every replay of a tool a person answered for that step is that person's answer.
+    /// </para>
+    /// </summary>
+    private void PairApprovals()
+    {
+        _answeredParkRowIds.Clear();
+        _userApprovedRowIds.Clear();
+
+        // _timelineEvents is newest-first; a park can only be answered by a replay that came AFTER it.
+        var parks = new Dictionary<(Guid? StepId, string Tool), AgentTimelineEvent>();
+        for (var i = _timelineEvents.Count - 1; i >= 0; i--)
+        {
+            var row = _timelineEvents[i];
+            var key = (row.StepId, row.ToolName ?? string.Empty);
+            if (row.Decision == ToolGateDecision.ParkedForApproval)
+            {
+                parks[key] = row;
+            }
+            else if (row.Decision == ToolGateDecision.GrantedByName && parks.TryGetValue(key, out var park))
+            {
+                _answeredParkRowIds.Add(park.Id);
+                _userApprovedRowIds.Add(row.Id);
+            }
+        }
+
+        // The row the run is stopped on is unanswered by definition; folding it away would erase the one
+        // question the user is being asked.
+        if (_liveParkRowId is { } live)
+            _answeredParkRowIds.Remove(live);
+    }
 
     /// <summary>
     /// THE park row a parked run is stopped on: the highest-Seq park row whose tool matches the pause envelope.

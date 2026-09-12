@@ -1129,6 +1129,8 @@
   <data name="Run_Plan_Error_TooLong" xml:space="preserve"><value>Der Plan hat zu viele Schritte.</value></data>
   <data name="Run_Plan_Error_WriteFailed" xml:space="preserve"><value>Die Planänderung konnte nicht gespeichert werden.</value></data>
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Werkzeug-Aktivität</value></data>
+  <data name="Run_ToolActivity_Waiting" xml:space="preserve"><value>Wartet auf das Modell…</value></data>
+  <data name="Run_ToolActivity_AfterTool" xml:space="preserve"><value>{0} Werkzeugaufrufe · zuletzt: {1}</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>Für diese Ausführung wurden keine Werkzeug-Entscheidungen aufgezeichnet.</value></data>
   <data name="Run_Children_Header" xml:space="preserve"><value>Unteragenten</value></data>
   <data name="Run_Children_Count" xml:space="preserve"><value>{0} von {1} abgeschlossen</value></data>

@@ -37,6 +37,21 @@
   most recent messages, with "Show older messages" above them to bring the rest
   back a block at a time, and it keeps your place when it does.
 
+## Agent runs
+
+- A running plan now says what it is doing. While a step works, the panel and
+  the conversation below it show how many tools it has used and which one was
+  last. The chat used to stay still for minutes, because a step writes its
+  answer only when it finishes.
+- The blank bubble between two steps is gone. A step that finished without
+  anything to say still left Pia's mark in the conversation with nothing
+  beside it, and it stayed there. Those are no longer written, and the ones
+  already in your chats no longer show.
+- Tool activity counts what happened rather than how often it was asked. Two
+  requests you approved were listed as four decisions, two of them "not run"
+  for calls that did run, because approving one is recorded twice. They now
+  read as one approval each, and as yours rather than automatic.
+
 ## Chat history
 
 - A long question no longer fills the pane. Chat history folds it the way the

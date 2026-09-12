@@ -99,6 +99,17 @@
       <!-- Grid rather than a horizontal StackPanel, so the width constraint propagates into the markdown
            body instead of letting long content and code blocks render at their natural width. -->
       <Grid HorizontalAlignment="Stretch" Margin="0,0,0,12">
+        <Grid.Style>
+          <Style TargetType="Grid">
+            <Style.Triggers>
+              <!-- The avatar is the one part with no condition of its own, so a message whose every section
+                   hid itself would otherwise render as a lone glyph. -->
+              <DataTrigger Binding="{Binding IsEmptyShell}" Value="True">
+                <Setter Property="Visibility" Value="Collapsed" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Grid.Style>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
@@ -358,6 +369,48 @@
                                                AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
           </ItemsControl.ItemTemplateSelector>
         </ItemsControl>
+        <!-- A headless step writes its reply only when it ENDS, so the transcript would otherwise sit still
+             for the whole step. Rendered here rather than as a message: anything inside Messages would be
+             persisted, replayed into the model's context and windowed with the transcript. Its text is the
+             run panel's, so the two surfaces cannot drift apart. -->
+        <Grid x:Name="LiveRunActivity"
+              AutomationProperties.AutomationId="Assistant_LiveRunActivity"
+              Margin="0,0,0,12">
+          <Grid.Style>
+            <Style TargetType="Grid">
+              <Setter Property="Visibility" Value="Collapsed" />
+              <Style.Triggers>
+                <MultiDataTrigger>
+                  <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding ForeignRunActive}" Value="True" />
+                    <Condition Binding="{Binding ActiveRunProgress.HasToolActivity}" Value="True" />
+                  </MultiDataTrigger.Conditions>
+                  <Setter Property="Visibility" Value="Visible" />
+                </MultiDataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Grid.Style>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <ui:ProgressRing Grid.Column="0"
+                           Width="14" Height="14"
+                           IsIndeterminate="True"
+                           Margin="9,3,13,0"
+                           VerticalAlignment="Top" />
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="{Binding ActiveRunProgress.CurrentActivity}"
+                       FontSize="12"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextSubtleBrush}" />
+            <TextBlock Text="{Binding ActiveRunProgress.ToolActivity}"
+                       FontSize="12"
+                       FontStyle="Italic"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource TextMutedBrush}" />
+          </StackPanel>
+        </Grid>
       </StackPanel>
     </ScrollViewer>
 

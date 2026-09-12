@@ -747,7 +747,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             foreach (var file in attachedFiles) userMessage.AttachedFiles.Add(file);
         session.Messages.Add(userMessage);
 
-        var assistantMessage = new AssistantMessage(ChatRole.Assistant) { IsStreaming = true };
+        var assistantMessage = new AssistantMessage(ChatRole.Assistant)
+        {
+            IsStreaming = true,
+            StatusText = _localizationService["Msg_Assistant_StatusThinking"],
+        };
         session.Messages.Add(assistantMessage);
 
         // Assign the Id synchronously at first-turn start (before any state change is
