@@ -1227,7 +1227,10 @@ public sealed class AgentRunOrchestrator
                         OwnerDeviceId: run.OwnerDeviceId,
                         ProviderId: null,
                         GrantedWrites: null,
-                        Budget: childProfile),
+                        Budget: childProfile,
+                        // A child that did not inherit this wrote at the base root while its unisolated
+                        // parent wrote in the chat's folder — one fan-out, two destinations.
+                        WorkingSubpath: ctx.WorkingSubpath),
                     parentRunId: run.Id,
                     parentPolicyJson: run.PolicyJson,
                     // 06 G1's RunContext member: the child runs INSIDE the parent's workspace and provisions

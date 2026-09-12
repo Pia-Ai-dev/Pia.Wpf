@@ -527,9 +527,9 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Equal(1, turns);
     }
 
-    /// <summary>The pill on the produced chat has to name the folder the run worked in. Only the launcher can
-    /// stamp it: the executor pins <c>ctx.WorkingSubpath</c> to null, so nothing downstream ever derives the row
-    /// from the run. Asserted after the run settles, since every save is a full chat replace.</summary>
+    /// <summary>Only the launcher can stamp it — the run row carries no folder — and the row is what names the
+    /// pill AND confines an unisolated run's steps. Asserted after the run settles, since every save is a full
+    /// chat replace.</summary>
     [Fact]
     public async Task Launch_WithAWorkingSubpath_StampsItOnTheProducedChat()
     {

@@ -59,6 +59,9 @@
 - A run that still ends up without a plan says so, instead of showing an empty
   plan box beside a spinner. It reads "could not build a plan — working through
   the goal in one turn", which is what it is doing.
+- A plan you approved writes into the chat's folder, and a routine into its own,
+  even when that folder is too large to set aside for the run. Those runs put
+  their files at the top of your assistant files folder instead.
 - Tool activity counts what happened rather than how often it was asked. Two
   requests you approved were listed as four decisions, two of them "not run"
   for calls that did run, because approving one is recorded twice. They now

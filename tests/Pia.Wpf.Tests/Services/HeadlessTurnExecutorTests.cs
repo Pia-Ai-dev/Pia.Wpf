@@ -689,6 +689,41 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal($"routine:{jobId}", granter);
     }
 
+    [Fact]
+    public async Task AStepExchange_CarriesTheChatsWorkingSubpathOnTheAmbient()
+    {
+        // The context member alone only reaches the planner and the verifier. THIS is what the file tools
+        // read, and it is what decided the folder a run's write_file landed in.
+        using var h = new DurabilityHarness();
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await h.Chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "t",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), WorkingDirectory = "projects/alpha",
+            Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await h.Runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "the goal"),
+            TestContext.Current.CancellationToken);
+
+        string? subpath = null;
+        h.OnTurn = _ => subpath = TaskAmbient.Current?.WorkingSubpath;
+
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(
+            run,
+            new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s", Intent = "i", Status = AgentStepStatus.Pending },
+            ctx, ct);
+
+        Assert.Equal("projects/alpha", subpath);
+    }
+
     /// <summary>
     /// A step can finish without prose — an emit_step_result claim needs none — and the row that used to be
     /// written for it rendered in the transcript as an avatar with nothing beside it, permanently.
@@ -973,10 +1008,11 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     [Fact]
-    public async Task BeginRunAsync_DoesNotInheritTheChatsWorkingSubpath_ParityWithLive()
+    public async Task BeginRunAsync_UnisolatedRun_InheritsTheChatsWorkingSubpath()
     {
-        // Unlike LiveTurnExecutor, a headless run must NOT inherit the chat's working subpath: every step runs with
-        // WorkingSubpath null, so its writes land at the base root even when the chat row carries one.
+        // Same rule as LiveTurnExecutor: an unisolated run's steps are confined to the folder the chat row
+        // names — a scheduled job's, or the one an approved plan's chat was pointed at. Writing at the base
+        // root instead put the deliverable in a folder nobody chose.
         using var h = new DurabilityHarness();
         var chatId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -991,13 +1027,13 @@ public sealed class HeadlessTurnExecutorTests
             new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "the goal"),
             TestContext.Current.CancellationToken);
 
-        var ctx = new RunContext("the goal", RunProfile.Interactive) { WorkingSubpath = "projects/alpha" };
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
         var executor = h.NewExecutor();
         executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
 
         await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
 
-        Assert.Null(ctx.WorkingSubpath);
+        Assert.Equal("projects/alpha", ctx.WorkingSubpath);
     }
 
     // The value Initialize was given must reach RunContext, because the verifier runs on the orchestrator thread —
@@ -1015,6 +1051,36 @@ public sealed class HeadlessTurnExecutorTests
         await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
 
         Assert.Equal(workspaceRoot, ctx.WorkspaceRoot);
+        Assert.Null(ctx.WorkingSubpath);
+    }
+
+    [Fact]
+    public async Task BeginRunAsync_IsolatedRun_DoesNotNarrowASecondTime()
+    {
+        // The workspace root IS the already-narrowed root (provisioned FROM <folder>\<subpath>), so carrying
+        // the subpath too would send the file tools at <runRoot>\<subpath>, which does not exist.
+        using var h = new DurabilityHarness();
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await h.Chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "t",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), WorkingDirectory = "projects/alpha",
+            Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await h.Runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "the goal"),
+            TestContext.Current.CancellationToken);
+
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(
+            Path.Combine(Path.GetTempPath(), "PiaTests_workspace_" + Guid.NewGuid().ToString("N")),
+            ["write_file"], h.Provider);
+
+        await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
         Assert.Null(ctx.WorkingSubpath);
     }
 
