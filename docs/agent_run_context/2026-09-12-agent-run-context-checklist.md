@@ -29,6 +29,12 @@ needs revisiting before it is built.
 
 ## Steps
 
+- [ ] **A0 — Stop the persona sync from re-arming the lever.** Move `SeedAgentModeFromSettings` off
+  `LoadPersonasAsync` so it runs on init and chat load only, not on every `PersonasChanged`. A
+  precondition, not a nicety: with the re-seed in place the gate in B2 can arm itself in a chat the
+  user left in Chat mode, turning a nuisance into a blocked composer.
+  *Deps:* — · *Effort:* XS · *Value:* High
+
 - [ ] **A1 — The mode, end to end.** Add `AgentContextMode` (`Off` | `Verbatim` | `Summary`, nullable) as
   a PRAGMA-detected nullable column on the chat row, an additive field on `SyncAssistantChat`, and a
   mirrored property on `ChatSession`. `null` must survive a round trip distinct from `Off`.
@@ -41,8 +47,9 @@ needs revisiting before it is built.
 
 - [ ] **C2 — The verbatim renderer.** Map the chat rows to `ChatMessage`, drop the run's own goal row and
   its own clarification questions, compact through `AgentContextCompactor.CompactAsync` against
-  `AgentContextBudget.From(provider)`, render the survivors to one text block. Character cap when the
-  provider has no configured window.
+  `AgentContextBudget.From(provider)`, render the survivors to one text block. Prose only — no anchored
+  tool exchanges; the working-folder listing already in the plan message answers "which files exist".
+  Character cap when the provider has no configured window.
   *Deps:* C1 · *Effort:* S · *Value:* High
 
 - [ ] **D1 — Feed the planner.** Fold the digest into the user message of `BuildPlanMessages` and
@@ -95,7 +102,9 @@ needs revisiting before it is built.
 
 ## Suggested order
 
-A1 → C1 → C2 → D1 → F1. That slice is decisive and needs no UI: at F1 the planner demonstrably sees the
+A0 first — it is the precondition for the gate, and it is an afternoon.
+
+Then A1 → C1 → C2 → D1 → F1. That slice is decisive and needs no UI: at F1 the planner demonstrably sees the
 conversation, and the whole design is either validated or dead before a pixel is drawn.
 
 Then the UI slice B1 → B2 → B3 → B4 → B5, which is what makes the feature reachable at all.
@@ -110,4 +119,4 @@ F2 alongside B1 (the banner cannot ship without strings), F3 at the end.
 The four defects found during the same investigation, listed in the design document's closing section: the
 lever's fall-back undone by the persona re-seed, the never-converging persona deletion in the sync loop,
 orchestrator-posted messages carrying no token count or model, and Continue on a `needs-goal` park
-re-planning with nothing new. None has a plan doc yet.
+re-planning with nothing new. The first is now step A0 above; the other three have no plan doc yet.

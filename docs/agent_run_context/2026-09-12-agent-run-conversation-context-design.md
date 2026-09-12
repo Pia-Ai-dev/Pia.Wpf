@@ -47,7 +47,7 @@ It is not repurposed here.
 | D1 | What is the context for? | Full continuity — which files exist, what was decided, what was already tried. Not just resolving "the file". |
 | D2 | How is it produced? | Offered, not decided silently. Two modes: a deterministic verbatim excerpt, or an LLM summary. Scope is strictly this chat. |
 | D3 | Where is the offer? | A banner above the composer, in the shape of the weak-provider banner (`AssistantView.xaml:426`). |
-| D4 | What happens if it is ignored? | Nothing — the banner **blocks** sending. `Off` is a deliberate click, and the default only for paths with no human at the composer. |
+| D4 | Can the offer be ignored? | No — the banner **blocks** sending and run-in-background until a choice is made. `Off` is a deliberate click, never something you get by looking away. |
 | D5 | How long does a choice hold? | Per chat, persisted and synced. |
 | D6 | Which turns get it? | Plan and re-plan. Verify stays on goal + executed steps so it checks artifacts, not conversation. |
 | D7 | When does the banner appear? | Whenever agent mode is on, the chat is non-empty and no choice is recorded — on lever toggle **and** on chat load. |
@@ -96,6 +96,11 @@ covered by one condition.
 The pending flag includes `AgentModeEnabled`, so switching the lever back to **Chat** clears it and frees
 sending immediately. That is why the banner needs no "stay in chat" button — the lever is one.
 
+Defect 1 in the closing section is a **precondition** for this gate, not a neighbour. While the persona
+re-seed keeps flipping `AgentModeEnabled` true mid-session, the pending flag flips with it and blocks
+the composer in a chat the user believes is in Chat mode — a nuisance turned into a hard block. Fix the
+re-seed first, or guard the trigger so a programmatic seed cannot arm it.
+
 ### Producing the digest
 
 In `AgentRunOrchestrator`, immediately before the `PlanAsync` call (`AgentRunOrchestrator.cs:230`). That
@@ -107,6 +112,11 @@ Read the chat with `_chats.GetAsync(run.ChatId)`, read the mode off the row, the
 - **Verbatim** — map the rows to `ChatMessage`, drop the run's own goal row and its own clarification
   questions, compact through `AgentContextCompactor.CompactAsync` against
   `AgentContextBudget.From(provider)`, render the survivors into one text block. No extra provider round.
+  Prose only: a row carries `SyncAssistantChatMessage.Content` and nothing else, and the anchored tool
+  exchanges the headless seeder splices in (`HeadlessTurnExecutor.cs:334`) stay out — "which files
+  exist" is already answered by the working-folder listing the plan message carries, and splicing the
+  exchanges in would dwarf the prose. Summary receives the same prose-only input, so it cannot invent
+  file names either.
 - **Summary** — one `GetChatResponseAsync` shaped like `ChatTitleService.GenerateAsync`
   (`ChatTitleService.cs:32`): `tools: null`, `mode: AgentTurnRouting.Mode`, `personaModelType:
   AgentTurnRouting.ModelType` (`"fast"`), transcript in the user message. Output capped like
@@ -131,7 +141,7 @@ Verify and the reasoning turn are untouched.
 ### Paths with no human at the composer
 
 Routines, scheduled jobs and background assignments never block. A run whose chat carries no recorded
-mode takes `Off`. This is a rule in the orchestrator, not a setting.
+mode takes `Off`. A design rule in the orchestrator, not a setting and not an owner decision.
 
 `SwitchToAgent` (`AssistantViewModel.cs:2320`) is the documented exception: it records `Summary` on the
 chat and starts, per D8.
