@@ -517,4 +517,5 @@ Les modifications seront appliquées.</value></data>
   <data name="Msg_CreditLimit_ResetsInHours" xml:space="preserve"><value>Limite de crédits atteinte. Réinitialisation dans {0} h {1} min.</value></data>
   <data name="Msg_CreditLimit_ResetsInMinutes" xml:space="preserve"><value>Limite de crédits atteinte. Réinitialisation dans {0} minutes.</value></data>
   <data name="Msg_CreditLimit_ResetsShortly" xml:space="preserve"><value>Limite de crédits atteinte. Réinitialisation prochaine.</value></data>
+  <data name="Msg_PiaCloud_AuthRequired" xml:space="preserve"><value>Authentification requise. Connectez-vous à Pia Cloud.</value></data>
 </root>

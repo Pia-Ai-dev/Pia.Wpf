@@ -526,4 +526,5 @@ Changes will be applied.</value></data>
   <data name="Msg_CreditLimit_ResetsInHours" xml:space="preserve"><value>Credit limit reached. Resets in {0}h {1}m.</value></data>
   <data name="Msg_CreditLimit_ResetsInMinutes" xml:space="preserve"><value>Credit limit reached. Resets in {0} minutes.</value></data>
   <data name="Msg_CreditLimit_ResetsShortly" xml:space="preserve"><value>Credit limit reached. Resets shortly.</value></data>
+  <data name="Msg_PiaCloud_AuthRequired" xml:space="preserve"><value>Authentication required. Please log in to Pia Cloud.</value></data>
 </root>

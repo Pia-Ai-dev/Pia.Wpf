@@ -518,4 +518,5 @@
   <data name="Msg_CreditLimit_ResetsInHours" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} Std. {1} Min. zurückgesetzt.</value></data>
   <data name="Msg_CreditLimit_ResetsInMinutes" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} Minuten zurückgesetzt.</value></data>
   <data name="Msg_CreditLimit_ResetsShortly" xml:space="preserve"><value>Credit-Limit erreicht. Wird in Kürze zurückgesetzt.</value></data>
+  <data name="Msg_PiaCloud_AuthRequired" xml:space="preserve"><value>Anmeldung erforderlich. Bitte bei Pia Cloud anmelden.</value></data>
 </root>

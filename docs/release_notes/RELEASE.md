@@ -14,6 +14,8 @@
 - Running out of credit is reported in your own language, and a reset more
   than a day away is counted in days. The notice was English whatever the app
   language was, and named the wrong number of hours that far out.
+- Being signed out of Pia Cloud is reported in your own language. Sending a
+  message while signed out answered in English whatever the app language was.
 - The cards that ask to run a tool read as German again. Their titles were built
   verb first, so every one of them said "Erstellen Aufgabe" rather than "Aufgabe
   erstellen". English and French are unchanged.

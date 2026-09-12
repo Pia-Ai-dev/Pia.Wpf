@@ -700,7 +700,7 @@ public sealed class PiaCloudChatClient : IChatClient
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            throw new InvalidOperationException("Authentication required. Please log in to Pia Cloud.");
+            throw new InvalidOperationException(LocalizationSource.Instance["Msg_PiaCloud_AuthRequired"]);
         }
 
         throw new HttpRequestException(
