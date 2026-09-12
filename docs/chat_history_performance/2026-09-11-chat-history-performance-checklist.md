@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1, A2, A3, A4, A5, A6, A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
+**Status:** A1–A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
 by measurement against the real archive shape (148 chats / 195 MB, ten of them holding ~90 %): rendering is the cause,
 the store is not. Rest open.
 **Owner:** Marco Altmann
@@ -60,10 +60,11 @@ container-recycling hazards the window bound avoids entirely.
 - [x] **A6 · Trim `MarkdownMessageControl`.** Drop the constructor's `RenderMarkdown(string.Empty)` and
       move the 8-item `ContextMenu` to a shared resource resolved through `PlacementTarget`.
       *Deps:* — · *Effort:* `XS` · *Value:* `Med`
-- [ ] **A7 · Lock the budget with a test.** Assert that opening a 1 573-message chat realizes exactly
+- [x] **A7 · Lock the budget with a test.** Assert that opening a 1 573-message chat realizes exactly
       the window's worth of item containers, that the full transcript still exports, that a chat shorter
       than the window shows no affordance, and that a discarded `AssistantView` over a live ViewModel is
-      collected. *Deps:* A4 · *Effort:* `S` · *Value:* `High`
+      collected. Removing the bound turns that class from 6.7 s into 50 s, which is the reported
+      symptom reproduced inside the gate. *Deps:* A4 · *Effort:* `S` · *Value:* `High`
 - [x] **A8 · Log what a navigation cost.** One `LogInformation` per view activation with the elapsed
       build time and the open chat's message count, so a "switching is slow" report arrives with its
       own cause attached. This investigation needed three corpora and two wrong conclusions because no
