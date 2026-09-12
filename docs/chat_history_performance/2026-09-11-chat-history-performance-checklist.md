@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1–A8 and B1 done. G1 closed: a script may load an older message into the window. G3 closed
+**Status:** A1–A8, B1 and B4 done. G1 closed: a script may load an older message into the window. G3 closed
 by measurement against the real archive shape (148 chats / 195 MB, ten of them holding ~90 %): rendering is the cause,
 the store is not. Rest open.
 **Owner:** Marco Altmann
@@ -88,9 +88,12 @@ container-recycling hazards the window bound avoids entirely.
       superlinear. It scales with the index, so it grows with the archive. An
       external-content FTS table, or a ChatId→rowid side table so deletes go by rowid. *Deps:* — ·
       *Effort:* `M` · *Value:* `High`
-- [ ] **B4 · Reconsider the 30-day history filter.** `AssistantHistoryViewModel` seeds
-      `FilterStartDate` to today minus 30 days, so a freshly imported archive looks empty until the
-      filter is cleared — measured, 5 of 148 visible. *Deps:* — · *Effort:* `XS` · *Value:* `Med`
+- [x] **B4 · Drop the 30-day history filter default.** `AssistantHistoryViewModel` seeded
+      `FilterStartDate` to today minus 30 days, so a freshly imported archive looked empty until the
+      filter was cleared — measured, 5 of 148 visible. The list now opens unbounded; a start date is
+      the user's to set, and `RevealImportedChatsAsync` widens one only when it is set rather than
+      narrowing an unbounded list to the archive's oldest date. *Deps:* — · *Effort:* `XS` ·
+      *Value:* `Med`
 
 ## Suggested order
 

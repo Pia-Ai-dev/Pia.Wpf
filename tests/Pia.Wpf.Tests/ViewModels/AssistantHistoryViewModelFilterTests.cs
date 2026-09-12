@@ -63,11 +63,10 @@ public class AssistantHistoryViewModelFilterTests
     }
 
     [Fact]
-    public async Task OnNavigatedToAsync_SeedsNoEndDate_SoLaterChatsAreNotFilteredOut()
+    public async Task OnNavigatedToAsync_SeedsNoDateBounds_SoNoChatIsFilteredOut()
     {
-        // The end date used to be seeded from DateTime.Today once per app run. Because this VM is
-        // cached for the process lifetime, that bound went stale at the next midnight and the SQL
-        // filter dropped every newer chat — refresh could not help, only a restart.
+        // This VM is cached for the process lifetime, so a bound seeded from DateTime.Today freezes
+        // at the day history was first opened and no refresh can move it.
         var sut = CreateSut(new List<SyncAssistantChat>());
 
         await sut.OnNavigatedToAsync(null);
@@ -75,13 +74,44 @@ public class AssistantHistoryViewModelFilterTests
         // The argument is what reaches SQL; asserting the property alone would not prove the query.
         await _chatService.Received().SearchAsync(
             searchText: Arg.Any<string?>(),
-            fromDate: Arg.Any<DateTime?>(),
+            fromDate: null,
             toDate: null,
             providerId: Arg.Any<Guid?>(),
             offset: Arg.Any<int>(),
             limit: Arg.Any<int>(),
             ct: Arg.Any<CancellationToken>());
+        Assert.Null(sut.FilterStartDate);
         Assert.Null(sut.FilterEndDate);
+    }
+
+    /// <summary>
+    /// A start date nobody set hides an imported archive entirely: its chats are older than any
+    /// window measured from today, so the list reads as empty.
+    /// </summary>
+    [Fact]
+    public async Task OnNavigatedToAsync_ListsAChatOlderThanThirtyDays()
+    {
+        var old = new SyncAssistantChat
+        {
+            Id = Guid.NewGuid(),
+            Title = "imported",
+            UpdatedAt = DateTime.UtcNow.AddDays(-400),
+        };
+        var sut = CreateSut(new List<SyncAssistantChat> { old });
+        // Apply the date bound the way SQL does, so this measures the filter and not the stub.
+        _chatService.SearchAsync(
+            Arg.Any<string?>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(), Arg.Any<Guid?>(),
+            Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            var from = (DateTime?)call[1];
+            IReadOnlyList<SyncAssistantChat> hits =
+                from is null || old.UpdatedAt.ToLocalTime() >= from ? [old] : [];
+            return Task.FromResult(hits);
+        });
+
+        await sut.OnNavigatedToAsync(null);
+
+        Assert.Equal(old.Id, Assert.Single(sut.Chats).Id);
     }
 
     [Fact]

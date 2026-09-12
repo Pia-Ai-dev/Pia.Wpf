@@ -48,6 +48,9 @@
   for as long as its own dates said, so most of it was cleared shortly after
   the next start; Import now counts as opening them. What an earlier version
   cleared is gone from Pia Cloud and your other devices too — import it again.
+- Chat history lists every conversation from the moment you open it. It started
+  on the last 30 days, so an imported archive of older chats read as empty until
+  you cleared the dates. Pick a start date yourself to narrow it again.
 
 ## Text optimization
 

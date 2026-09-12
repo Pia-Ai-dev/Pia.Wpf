@@ -37,7 +37,6 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     private readonly IAttachedFileStore? _attachedFileStore;
     private CancellationTokenSource? _debounceCts;
     private bool _disposed;
-    private bool _initialized;
     private (Guid Id, DateTime UpdatedAt)? _loadedChat;
     private bool _suppressReload;
 
@@ -212,17 +211,6 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
                 var providers = await _providerService.GetProvidersAsync();
                 foreach (var p in providers)
                     Providers.Add(p);
-            }
-
-            if (!_initialized)
-            {
-                // No default end date: an upper bound seeded once from DateTime.Today freezes for
-                // the process lifetime (this VM is cached) and silently filters out every chat
-                // created after that day. Null means unbounded, which is also the cleared state.
-                _suppressReload = true;
-                FilterStartDate = DateTime.Today.AddDays(-30);
-                _suppressReload = false;
-                _initialized = true;
             }
 
             await LoadChatsAsync();
@@ -798,11 +786,8 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         };
     }
 
-    /// <summary>
-    /// Widens the filters far enough to show what just landed. Imported chats are typically older than
-    /// the default 30-day window and carry no provider, so an unchanged filter would hide every one of
-    /// them and the import would read as a silent failure.
-    /// </summary>
+    /// <summary>Widens the filters far enough to show what just landed, so an import the user
+    /// narrowed the list away from does not read as a silent failure.</summary>
     internal async Task RevealImportedChatsAsync(ChatImportResult result)
     {
         _suppressReload = true;
@@ -815,7 +800,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
             if (result.OldestUpdatedAt is { } oldest)
             {
                 var oldestLocalDate = oldest.ToLocalTime().Date;
-                if (FilterStartDate is null || FilterStartDate > oldestLocalDate)
+                if (FilterStartDate > oldestLocalDate)
                     FilterStartDate = oldestLocalDate;
                 if (FilterEndDate is not null && FilterEndDate < DateTime.Today)
                     FilterEndDate = DateTime.Today;

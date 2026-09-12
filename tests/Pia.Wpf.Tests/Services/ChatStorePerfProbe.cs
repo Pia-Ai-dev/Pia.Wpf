@@ -84,8 +84,8 @@ public sealed class ChatStorePerfProbe
 
         // What AssistantHistoryViewModel.LoadChatsAsync actually issues on a navigation.
         var thirtyDays = DateTime.Today.AddDays(-30);
-        await TimeNavigationQuery("filter=today-30 (the seeded default)", chats, thirtyDays);
-        await TimeNavigationQuery("filter=none (user cleared it)", chats, null);
+        await TimeNavigationQuery("filter=today-30 (a user-set start date)", chats, thirtyDays);
+        await TimeNavigationQuery("filter=none (the default)", chats, null);
 
         // The gate hypothesis: retention holds _gate for the whole delete batch, and every UI query
         // queues behind it.
