@@ -131,7 +131,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (terminal && _wasLive) RunSettled?.Invoke();
         _wasLive = !terminal;
 
-        if (!_autoExpandedTimeline && value is RunProgressState.Planning or RunProgressState.Running)
+        // Running, not Planning too: a planning turn records nothing under a step, so opening there would
+        // flash "nothing was recorded" before the first step starts.
+        if (!_autoExpandedTimeline && value == RunProgressState.Running)
         {
             _autoExpandedTimeline = true;
             // The FIELD, so this does not become a second store read: a live run is primed once and the
@@ -140,8 +142,6 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             _isTimelineExpanded = true;
             OnPropertyChanged(nameof(IsTimelineExpanded));
         }
-
-        RefreshToolActivity();
     }
 
     /// <summary>True while a resume is being launched — gates the Continue button against a double-click
@@ -1117,6 +1117,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             && State is RunProgressState.Running or RunProgressState.WaitingForChildren;
         ApplyStepWindow();
         SubLine = ComposeSubLine();
+        // Here and not on the state change: a step advance leaves State on Running, and the next timeline row
+        // only lands once step N+1's first call RETURNS — so the line would carry step N's tally until then.
+        RefreshToolActivity();
     }
 
     /// <summary>
@@ -2057,16 +2060,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         _timelineEvents.Where(e => !_answeredParkRowIds.Contains(e.Id));
 
     /// <summary>
-    /// An approval spans two rows, because the park and the answer are separate executions: the park writes
-    /// <see cref="ToolGateDecision.ParkedForApproval"/>, and the resumed step's replay writes a fresh
-    /// <see cref="ToolGateDecision.GrantedByName"/> — the approval reaches it as a grant. Pairing them is also
-    /// the only honest way to tell that grant apart from a scheduled job's configured envelope, which resolves
-    /// to the very same decision with nobody asked.
-    /// <para>
-    /// Matched per (step, tool) rather than per call id: a second parked call of the same tool deliberately
-    /// writes no second park row, so a one-to-one pairing would leave every replay after the first reported as
-    /// auto-approved. Every replay of a tool a person answered for that step is that person's answer.
-    /// </para>
+    /// An approval spans two rows — the park, and the replay that answers it as a grant — and pairing them is
+    /// the only way to tell that grant apart from a scheduled job's envelope, which resolves the same with
+    /// nobody asked. Matched per (step, tool), not per call id: one park row covers every same-tool call.
     /// </summary>
     private void PairApprovals()
     {

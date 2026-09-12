@@ -7,8 +7,8 @@ namespace Pia.Tests.Models;
 
 /// <summary>
 /// Every section of an assistant bubble hides itself on its own condition, so a message with nothing in it
-/// renders as a lone avatar. Rows like that are already on disk from before headless runs stopped writing
-/// contentless replies, and a cancelled turn still leaves one behind.
+/// renders as a lone avatar. Rows like that sit in chats already on disk, and a cancelled turn still
+/// leaves one behind.
 /// </summary>
 public class AssistantMessageEmptyShellTests
 {

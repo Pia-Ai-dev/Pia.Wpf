@@ -91,6 +91,35 @@ public sealed class RunProgressViewModelToolActivityTests
         Assert.False(vm.IsTimelineExpanded);
     }
 
+    /// <summary>
+    /// A step advance leaves the run on Running, and step N+1 writes no timeline row until its first call
+    /// RETURNS — so nothing but the projection itself can clear step N's tally off the line.
+    /// </summary>
+    [Fact]
+    public async Task AStepAdvance_ClearsThePreviousStepsTally()
+    {
+        var second = Guid.NewGuid();
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentTimelineEvent> { Row(1, "web_search") });
+        var vm = await LoadedVm();
+        Assert.Equal("Run_ToolActivity_AfterTool", vm.ToolActivity);
+
+        // Step 1 settles and step 2 starts. No timeline event rides along: the trace is already primed, so
+        // nothing re-reads it, which is exactly the window the stale line lived in.
+        _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = _runId,
+            State = AgentRunState.Running,
+            Plan =
+            [
+                new AgentStep { Id = _stepId, Ordinal = 1, Title = "Research", Status = AgentStepStatus.Done },
+                new AgentStep { Id = second, Ordinal = 2, Title = "Compare", Status = AgentStepStatus.Running },
+            ],
+        });
+        await vm.RefreshAsync();
+
+        Assert.Equal("Run_ToolActivity_Waiting", vm.ToolActivity);
+    }
     private void Run(AgentRunState state, AgentStepStatus stepStatus = AgentStepStatus.Running) =>
         _runs.GetAsync(_runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
         {

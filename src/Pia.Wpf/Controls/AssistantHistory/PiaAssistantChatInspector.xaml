@@ -184,6 +184,11 @@
                           <DataTrigger Binding="{Binding IsUser}" Value="False">
                             <Setter Property="Visibility" Value="Visible"/>
                           </DataTrigger>
+                          <!-- Ordered after the row above so it wins: the avatar has no condition of its own,
+                               and a message with nothing left to render would show as a lone glyph. -->
+                          <DataTrigger Binding="{Binding IsEmptyShell}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                          </DataTrigger>
                         </Style.Triggers>
                       </Style>
                     </Grid.Style>

@@ -140,8 +140,8 @@ public partial class AssistantMessage : ObservableObject
     public bool ShowReasoningSummary => (HasThinkingContent || HasReasoningDuration) && !ShowLiveReasoning;
 
     /// <summary>Nothing left to render: every section of the bubble hides itself on its own condition, so
-    /// without this the avatar stays behind alone. Covers rows already persisted before headless runs stopped
-    /// writing contentless replies, and a turn cancelled mid-stream, which keeps its empty message by design.</summary>
+    /// without this the avatar stays behind alone. Covers a row persisted with no content, and a turn
+    /// cancelled mid-stream, which keeps its empty message by design.</summary>
     public bool IsEmptyShell =>
         !HasContent && !IsStreaming && !HasThinkingContent && !HasReasoningDuration
         && !HasActionCards && !HasSources && !HasFileRefs && !HasAttachedFiles
