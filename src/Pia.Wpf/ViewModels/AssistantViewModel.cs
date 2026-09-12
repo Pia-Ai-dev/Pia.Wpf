@@ -213,6 +213,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
     private bool _isLoadingAgentMode;
 
+    /// <summary>The active chat's recorded agent-context choice; null means never asked.</summary>
+    [ObservableProperty]
+    private AgentContextMode? _activeAgentContextMode;
+
+    /// <summary>The context banner is up and unanswered, which blocks Send and Run-in-background — <c>Off</c>
+    /// has to be a click. Flipping the lever to Chat clears it, so the banner needs no button for that.</summary>
+    [ObservableProperty]
+    private bool _agentContextChoicePending;
+
+    /// <summary>The one-line statement of what a settled choice is doing, so the state never acts invisibly.</summary>
+    [ObservableProperty]
+    private bool _agentContextSettledVisible;
+
+    [ObservableProperty]
+    private string _agentContextSettledLabel = string.Empty;
+
     /// <summary>
     /// Guards the run-settled fall-back to Chat so it changes the composer without rewriting the user's saved
     /// default. A flag of its own rather than <see cref="_isLoadingAgentMode"/>: that one returns over the
@@ -582,8 +598,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             PendingAttachment = null;
             PendingFiles.Clear();
+            SeedAgentModeOnChatLoadAsync().SafeFireAndForget(_logger);
         }
 
+        ActiveAgentContextMode = session.AgentContextMode;
         Messages = session.Messages;            // OnMessagesChanged swaps CollectionChanged and rebuilds the window
         HasMessages = session.Messages.Count > 0;
         IsStreaming = session.IsStreaming;
@@ -592,6 +610,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
         // Scope the @Files autocomplete to this chat's dir (it runs outside any turn).
         _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
+        // After HasMessages, which is half of what the trigger reads.
+        RefreshAgentContextBanner();
     }
 
     // The session raises ActiveRunChanged on the UI thread (its Planned branch runs there), but marshal
@@ -709,7 +729,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // path and live transitions set ActiveState, so this stays in sync).
     partial void OnActiveStateChanged(ChatState value) => ChatTitleChip.SetState(value);
 
-    partial void OnHasMessagesChanged(bool value) => DeleteCurrentChatCommand.NotifyCanExecuteChanged();
+    partial void OnHasMessagesChanged(bool value)
+    {
+        DeleteCurrentChatCommand.NotifyCanExecuteChanged();
+        RefreshAgentContextBanner();
+    }
 
     // Sync-void fire-and-forget: followups + TTS for the active session only.
     private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
@@ -797,6 +821,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             await SpeakMessageAsync(assistantMessage);
     }
 
+    // Deliberately does NOT re-seed the lever: the sync pull loop raises this on every cycle, and a re-seed
+    // there undoes the run-settled fall-back to Chat minutes after it happened.
     private void OnPersonasChanged(object? sender, EventArgs e) =>
         LoadPersonasAsync().SafeFireAndForget(_logger);
 
@@ -813,7 +839,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnManagedPersonaWithdrawn(object? sender, ManagedPersonaWithdrawnEventArgs e) =>
         _pendingWithdrawnPersona = e;
 
-    private async Task LoadPersonasAsync()
+    private async Task LoadPersonasAsync(bool seedAgentMode = false)
     {
         try
         {
@@ -835,7 +861,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
 
                 // Seed the Chat/Agent lever from the persisted global default (R15).
-                SeedAgentModeFromSettings(settings);
+                if (seedAgentMode)
+                    SeedAgentModeFromSettings(settings);
 
                 // Inside the posted lambda so the snackbar is raised on the UI thread, and after
                 // ActivePersona so the notice names the fallback the user is actually now on.
@@ -898,6 +925,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         finally { _isLoadingAgentMode = false; }
     }
 
+    private async Task SeedAgentModeOnChatLoadAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        await _uiDispatcher.PostAsync(() => SeedAgentModeFromSettings(settings));
+    }
+
     partial void OnActivePersonaChanged(Persona? value)
     {
         if (_isLoadingPersonas || value is null)
@@ -915,6 +948,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     partial void OnAgentModeEnabledChanged(bool value)
     {
+        // ABOVE the seed guard: a regular agent user never toggles the lever — the seed is what turns the
+        // mode on for them — so a trigger that only fired on a toggle would never fire at all.
+        RefreshAgentContextBanner();
         if (_isLoadingAgentMode)
             return;
         // Everything BELOW still runs on a settle: the fall-back has to clear the hint and the adorner, it
@@ -1007,7 +1043,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (e.PropertyName is nameof(InputText)) DropFailureMessage = null;
 
         if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
-            or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive))
+            or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive) or nameof(AgentContextChoicePending))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
             RunInBackgroundCommand.NotifyCanExecuteChanged();
@@ -1163,7 +1199,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // headless executor that is mid-run — the live full replace deletes the run's step rows, and the run's
     // own model context never sees the typed message, so the transcript would be garbled even without loss.
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive
+        !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive && !AgentContextChoicePending
         && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null || PendingFiles.Count > 0);
 
     /// <summary>Nothing typed, attached or in flight — the hotkey may tuck the window away.</summary>
@@ -1827,7 +1863,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         try
         {
-            await LoadPersonasAsync();
+            await LoadPersonasAsync(seedAgentMode: true);
 
             var settings = await _settingsService.GetSettingsAsync();
             IsTtsEnabled = settings.TtsEnabled;
@@ -2328,9 +2364,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (IsStreaming || ForeignRunActive || PlanApprovalParkActive)
             return;
 
-        AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
+
+        // The documented exception to the banner: the chip is offered BECAUSE of the conversation, so the
+        // conversation is its context by construction. Recorded BEFORE the lever flips, or the trigger arms
+        // and the banner flashes behind a run that is already starting. StartTurnAsync awaits its own persist
+        // before creating the run, so this rides that write.
+        session.AgentContextMode = AgentContextMode.Summary;
+        ActiveAgentContextMode = AgentContextMode.Summary;
+
+        AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
         await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachment: null, planned: true);
     }
 
@@ -2376,6 +2420,58 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     [RelayCommand]
     private void StayInChat() => AgentModeEnabled = false;
+
+    /// <summary>Persisted before any run can be created, so the orchestrator reads the choice off the chat
+    /// row rather than from this view model.</summary>
+    [RelayCommand]
+    private void SetAgentContext(string? mode)
+    {
+        if (AgentContextModes.Parse(mode) is not { } parsed)
+            return;
+
+        var session = _chatSessionManager.ActiveSession;
+        if (session is null)
+            return;
+
+        session.AgentContextMode = parsed;
+        ActiveAgentContextMode = parsed;
+        RefreshAgentContextBanner();
+        _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
+        _logger.LogInformation("Chat {ChatId} agent context set to {Mode}", session.Id, parsed);
+    }
+
+    /// <summary>Re-opens the offer. Blocks sending again by design — changing the answer means choosing one.</summary>
+    [RelayCommand]
+    private void ChangeAgentContext()
+    {
+        var session = _chatSessionManager.ActiveSession;
+        if (session is null)
+            return;
+
+        session.AgentContextMode = null;
+        ActiveAgentContextMode = null;
+        RefreshAgentContextBanner();
+        _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
+    }
+
+    /// <summary>Evaluated on the lever toggle AND on chat load: agent mode is frequently already on without
+    /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>
+    private void RefreshAgentContextBanner()
+    {
+        var applicable = AgentModeEnabled && HasMessages;
+        AgentContextChoicePending = applicable && ActiveAgentContextMode is null;
+        AgentContextSettledVisible = applicable && ActiveAgentContextMode is not null;
+
+        if (ActiveAgentContextMode is { } settled)
+        {
+            AgentContextSettledLabel = _localizationService[settled switch
+            {
+                AgentContextMode.Summary => "Agent_Context_Settled_Summary",
+                AgentContextMode.Verbatim => "Agent_Context_Settled_Verbatim",
+                _ => "Agent_Context_Settled_Off",
+            }];
+        }
+    }
 
     private async Task SpeakMessageAsync(AssistantMessage message)
     {

@@ -1062,6 +1062,14 @@
   <data name="Agent_Warn_Continue" xml:space="preserve"><value>Continuer</value></data>
   <data name="Agent_Warn_ChooseProvider" xml:space="preserve"><value>Choisir un fournisseur…</value></data>
   <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Rester dans le chat</value></data>
+  <data name="Agent_Context_Body" xml:space="preserve"><value>Cette exécution d'agent part de cette conversation. Quelle part la planification doit-elle voir ?</value></data>
+  <data name="Agent_Context_Summary" xml:space="preserve"><value>Envoyer un résumé</value></data>
+  <data name="Agent_Context_Verbatim" xml:space="preserve"><value>Envoyer la conversation</value></data>
+  <data name="Agent_Context_Off" xml:space="preserve"><value>Ne rien envoyer</value></data>
+  <data name="Agent_Context_Settled_Summary" xml:space="preserve"><value>Les exécutions d'agent de ce chat reçoivent un résumé de la conversation.</value></data>
+  <data name="Agent_Context_Settled_Verbatim" xml:space="preserve"><value>Les exécutions d'agent de ce chat reçoivent la conversation.</value></data>
+  <data name="Agent_Context_Settled_Off" xml:space="preserve"><value>Les exécutions d'agent de ce chat ne reçoivent que l'objectif saisi.</value></data>
+  <data name="Agent_Context_Change" xml:space="preserve"><value>Modifier</value></data>
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Arrêtée au budget</value></data>
   <data name="Run_Unverified" xml:space="preserve"><value>Résultat non vérifié</value></data>
   <data name="Run_EndedEarly" xml:space="preserve"><value>Terminée prématurément</value></data>

@@ -55,6 +55,10 @@ public sealed class ChatSession : IDisposable
     /// </summary>
     public string? WorkingDirectory { get; internal set; }
 
+    /// <summary>Mirrors the chat row; null means the user was never asked, which raises the composer's
+    /// context banner.</summary>
+    public AgentContextMode? AgentContextMode { get; internal set; }
+
     public string? Title { get; internal set; }
     public ObservableCollection<AssistantMessage> Messages { get; } = new();
     public ChatState State { get; private set; } = ChatState.Idle;

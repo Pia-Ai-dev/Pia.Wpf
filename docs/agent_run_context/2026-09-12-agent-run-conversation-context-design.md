@@ -1,6 +1,6 @@
 # Agent runs started inside a conversation — design
 
-**Status:** designed, not implemented · **Owner:** Marco Altmann · **Written:** 2026-09-12
+**Status:** implemented; live verification outstanding · **Owner:** Marco Altmann · **Written:** 2026-09-12
 **Origin:** a reported dead end — an agent run finished, the user typed a follow-up in the same chat,
 and the new run had no idea what the conversation had been about. Root-caused in this document.
 
@@ -169,6 +169,37 @@ the text goes through `SensitiveDebug`.
 - One `ViewAutomationIdTests` row for the three buttons.
 - One live run on Pia Cloud in the conversation that produced this document.
 
+## As built — where the code differs from the above
+
+Four things this document did not settle, decided during implementation:
+
+- **The compaction budget is HALF the window, not all of it.** `AgentContextBudget.From(provider)`
+  reports the whole context window, but the same plan request also carries the system prompt, the goal,
+  the working-folder listing and the `emit_plan` schema — compacting the digest against the full window
+  can still overflow it. `ConversationDigestBuilder` halves it and reserves zero output tokens, since
+  this pass emits nothing.
+
+- **The character cap applies always, not only when the provider has no window.** On a 200k-window
+  provider, halving still compacts nothing, so `MaxDigestChars` (12000) is what bounds the plan turn's
+  cost. It truncates from the FRONT — in a conversation the recent turns are what a follow-up refers to.
+
+- **Summary is given the already-rendered excerpt**, not the raw chat, so a long conversation cannot
+  make the summarisation round the one that overflows the fast model.
+
+- **The mode travels through `SyncMapper` in both directions**, so D5's "persisted and synced" actually
+  holds. Plaintext on the wire for an unencrypted chat, which the server stores and returns verbatim
+  (`assistant-chat-history.md` §1); inside the ciphertext for an encrypted one, because the same
+  section says the server **strips** top-level keys it does not know from an encrypted document — a
+  plaintext field there would come back null on every pull and re-raise the banner in a chat that had
+  already answered it.
+
+`WorkingDirectory` — named above as the precedent for the DTO field — is NOT carried by `SyncMapper`
+in either direction, so it is nulled by any pull that returns its chat. A pre-existing defect, left
+alone here: starting to sync a folder path is a privacy decision, not a bug fix.
+
+The digest is produced by `ConversationDigestBuilder` (`src/Pia.Wpf/Services/`) rather than inline in the
+orchestrator, which is what makes the summary-turn degrade paths testable without a dozen mocks.
+
 ## Out of scope
 
 No vault or cross-chat context. No global setting. No per-message selection. Verify stays blind.
@@ -177,7 +208,7 @@ No vault or cross-chat context. No global setting. No per-message selection. Ver
 
 The same investigation turned up four unrelated defects, recorded here so they are not lost:
 
-1. **The lever's fall-back to Chat is undone every few minutes.** `OnRunProgressSettled`
+1. **The lever's fall-back to Chat is undone every few minutes.** FIXED — the seed now runs on init and chat load only. `OnRunProgressSettled`
    (`AssistantViewModel.cs:633`) flips the lever to Chat when a run settles, deliberately without
    persisting. But `PersonasChanged` → `LoadPersonasAsync` → `SeedAgentModeFromSettings`
    (`AssistantViewModel.cs:800, 838`) re-reads the still-true setting, and the sync pull loop raises

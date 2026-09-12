@@ -31,6 +31,9 @@ public class AssistantViewModelLeverTests
             System.Threading.SynchronizationContext.SetSynchronizationContext(new System.Threading.SynchronizationContext());
 
         _settings.GetSettingsAsync().Returns(new AppSettings());
+        // The real manager never hands back null here, and a command that writes to the session it gets would
+        // null-ref against a bare substitute.
+        _manager.GetOrCreateActiveForNewChat().Returns(SessionWithTranscript());
 
         var meeting = new MeetingAttendeeViewModel(
             Substitute.For<IMeetingAttendeeService>(),

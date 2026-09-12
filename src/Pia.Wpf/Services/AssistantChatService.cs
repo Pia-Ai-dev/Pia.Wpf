@@ -212,9 +212,9 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 : "excluded.LastAccessedAt";
             upsertChat.CommandText = $"""
                 INSERT INTO AssistantChats
-                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson)
+                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, ExtraJson)
                 VALUES
-                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @ExtraJson)
+                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @AgentContextMode, @ExtraJson)
                 ON CONFLICT(Id) DO UPDATE SET
                     SchemaVersion = excluded.SchemaVersion,
                     Title = excluded.Title,
@@ -223,6 +223,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                     WindowMode = excluded.WindowMode,
                     ProviderId = excluded.ProviderId,
                     WorkingDirectory = excluded.WorkingDirectory,
+                    AgentContextMode = excluded.AgentContextMode,
                     ExtraJson = excluded.ExtraJson
                 """;
             upsertChat.Parameters.AddWithValue("@Id", chat.Id.ToString());
@@ -234,6 +235,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             upsertChat.Parameters.AddWithValue("@WindowMode", chat.WindowMode);
             upsertChat.Parameters.AddWithValue("@ProviderId", (object?)chat.ProviderId?.ToString() ?? DBNull.Value);
             upsertChat.Parameters.AddWithValue("@WorkingDirectory", (object?)chat.WorkingDirectory ?? DBNull.Value);
+            upsertChat.Parameters.AddWithValue("@AgentContextMode", (object?)chat.AgentContextMode ?? DBNull.Value);
             upsertChat.Parameters.AddWithValue("@ExtraJson", (object?)SerializeExtensionData(chat.ExtensionData) ?? DBNull.Value);
             await upsertChat.ExecuteNonQueryAsync(ct);
         }
@@ -345,7 +347,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             using (var getChat = connection.CreateCommand())
             {
                 getChat.CommandText = """
-                    SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson
+                    SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, ExtraJson
                     FROM AssistantChats WHERE Id = @Id
                     """;
                 getChat.Parameters.AddWithValue("@Id", id.ToString());
@@ -581,7 +583,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         var whereClause = BuildSearchWhere(command, searchText, fromDate, toDate, providerId);
 
         command.CommandText = $"""
-            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson
+            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, ExtraJson
             FROM AssistantChats
             {whereClause}
             ORDER BY UpdatedAt DESC
@@ -1069,7 +1071,8 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             WindowMode = reader.GetString(6),
             ProviderId = reader.IsDBNull(7) ? null : Guid.Parse(reader.GetString(7)),
             WorkingDirectory = reader.IsDBNull(8) ? null : reader.GetString(8),
-            ExtensionData = reader.IsDBNull(9) ? null : DeserializeExtensionData(reader.GetString(9)),
+            AgentContextMode = reader.IsDBNull(9) ? null : reader.GetString(9),
+            ExtensionData = reader.IsDBNull(10) ? null : DeserializeExtensionData(reader.GetString(10)),
         };
     }
 

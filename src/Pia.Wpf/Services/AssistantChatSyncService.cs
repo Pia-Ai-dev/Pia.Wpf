@@ -733,6 +733,9 @@ public sealed class AssistantChatSyncService : BackgroundService
                 ? local.LastAccessedAt : server.LastAccessedAt,
             WindowMode = local.WindowMode,
             ProviderId = local.ProviderId ?? server.ProviderId,
+            // Local wins outright, like WindowMode above: null here means the user re-opened the offer, so
+            // coalescing to the server's value would answer it behind their back.
+            AgentContextMode = local.AgentContextMode,
             Messages = [.. server.Messages, .. appended],
             ExtensionData = server.ExtensionData,
         };

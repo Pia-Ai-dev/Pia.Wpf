@@ -75,6 +75,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private string _goal = string.Empty;
     private string? _existingTitle;
     private string? _existingWorkingDirectory;
+    private string? _existingAgentContextMode;
 
     /// <summary>The chat folder this run's steps narrow to; null when an isolated workspace already is it.</summary>
     private string? _workingSubpath;
@@ -228,6 +229,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // interactive chat's own — from being nulled by these saves.
         _existingTitle = chat?.Title;
         _existingWorkingDirectory = chat?.WorkingDirectory;
+        _existingAgentContextMode = chat?.AgentContextMode;
 
         // The folder a scheduled job names, or the one an approved plan's chat was pointed at, is where the
         // work belongs — writing at the base root instead put a run's deliverable somewhere nobody asked for.
@@ -1145,6 +1147,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // multi-persona run may have used several.
             ProviderId = _provider.Id,
             WorkingDirectory = _existingWorkingDirectory,
+            AgentContextMode = _existingAgentContextMode,
             Messages = [.. _persisted],
         };
     }

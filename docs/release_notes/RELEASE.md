@@ -44,6 +44,13 @@
 
 ## Agent runs
 
+- An agent run started in a chat can take the conversation with it, so a
+  follow-up like "the file isn't in the working folder" is planned against what
+  was said. A bar above the message box asks once per chat — "Send a summary",
+  "Send the conversation" or "Send nothing" — and holds sending until you pick.
+- The Chat/Agent lever stays where a finished run left it. It fell back to Chat
+  when a run settled, then flipped itself back to Agent a few minutes later
+  whenever Pia synced.
 - A running plan now says what it is doing. While a step works, the panel and
   the conversation below it show how many tools it has used and which one was
   last. The chat used to stay still for minutes, because a step writes its

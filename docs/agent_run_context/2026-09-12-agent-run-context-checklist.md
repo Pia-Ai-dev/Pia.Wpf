@@ -1,6 +1,6 @@
 # Conversation context for agent runs — checklist
 
-**Status:** not started · **Owner:** Marco Altmann · **Written:** 2026-09-12
+**Status:** implemented except F3 (live verification) · **Owner:** Marco Altmann · **Written:** 2026-09-12
 **Origin:** [2026-09-12-agent-run-conversation-context-design.md](2026-09-12-agent-run-conversation-context-design.md),
 which root-causes a follow-up agent run that could not see the conversation it was sent from.
 
@@ -29,70 +29,70 @@ needs revisiting before it is built.
 
 ## Steps
 
-- [ ] **A0 — Stop the persona sync from re-arming the lever.** Move `SeedAgentModeFromSettings` off
+- [x] **A0 — Stop the persona sync from re-arming the lever.** Move `SeedAgentModeFromSettings` off
   `LoadPersonasAsync` so it runs on init and chat load only, not on every `PersonasChanged`. A
   precondition, not a nicety: with the re-seed in place the gate in B2 can arm itself in a chat the
   user left in Chat mode, turning a nuisance into a blocked composer.
   *Deps:* — · *Effort:* XS · *Value:* High
 
-- [ ] **A1 — The mode, end to end.** Add `AgentContextMode` (`Off` | `Verbatim` | `Summary`, nullable) as
+- [x] **A1 — The mode, end to end.** Add `AgentContextMode` (`Off` | `Verbatim` | `Summary`, nullable) as
   a PRAGMA-detected nullable column on the chat row, an additive field on `SyncAssistantChat`, and a
   mirrored property on `ChatSession`. `null` must survive a round trip distinct from `Off`.
   *Deps:* — · *Effort:* S · *Value:* Enabler
 
-- [ ] **C1 — Carry it into the run.** Add `ConversationDigest` to `RunContext` beside `Clarifications`,
+- [x] **C1 — Carry it into the run.** Add `ConversationDigest` to `RunContext` beside `Clarifications`,
   and read the chat's mode in `AgentRunOrchestrator` immediately before `PlanAsync`. A run whose chat has
   no recorded mode takes `Off` — that is the rule that keeps routines and scheduled jobs from blocking.
   *Deps:* A1 · *Effort:* S · *Value:* Enabler
 
-- [ ] **C2 — The verbatim renderer.** Map the chat rows to `ChatMessage`, drop the run's own goal row and
+- [x] **C2 — The verbatim renderer.** Map the chat rows to `ChatMessage`, drop the run's own goal row and
   its own clarification questions, compact through `AgentContextCompactor.CompactAsync` against
   `AgentContextBudget.From(provider)`, render the survivors to one text block. Prose only — no anchored
   tool exchanges; the working-folder listing already in the plan message answers "which files exist".
   Character cap when the provider has no configured window.
   *Deps:* C1 · *Effort:* S · *Value:* High
 
-- [ ] **D1 — Feed the planner.** Fold the digest into the user message of `BuildPlanMessages` and
+- [x] **D1 — Feed the planner.** Fold the digest into the user message of `BuildPlanMessages` and
   `BuildReplanMessages`, after the goal and before the grounding listing, in a delimited block. The
   request shape stays `[System, User]`; the digest never touches the system prompt.
   *Deps:* C2 · *Effort:* XS · *Value:* High
 
-- [ ] **F1 — Planner and orchestrator tests.** Digest in the user message and not the system prompt ·
+- [x] **F1 — Planner and orchestrator tests.** Digest in the user message and not the system prompt ·
   absent at `null` and `Off` · present on a re-plan · a headless run with no recorded mode takes `Off`.
   *Deps:* D1 · *Effort:* S · *Value:* High
 
-- [ ] **B1 — The banner.** A `Border` below the weak-provider banner with three buttons and the
+- [x] **B1 — The banner.** A `Border` below the weak-provider banner with three buttons and the
   AutomationIds `Assistant_AgentContext_Summary` / `_Verbatim` / `_Off`, plus the `ViewAutomationIdTests`
   row in the same change. Writes the choice through the manager's existing `PersistAsync` path.
   *Deps:* A1 · *Effort:* S · *Value:* High
 
-- [ ] **B2 — The gate.** `CanExecuteSendMessage` gains `&& !AgentContextChoicePending`; wire the notify
+- [x] **B2 — The gate.** `CanExecuteSendMessage` gains `&& !AgentContextChoicePending`; wire the notify
   sites so the buttons re-evaluate. `CanExecuteRunInBackground` inherits it. Switching the lever to Chat
   must free sending immediately.
   *Deps:* B1 · *Effort:* XS · *Value:* High
 
-- [ ] **B3 — The trigger.** Evaluate `AgentModeEnabled && Messages.Count > 0 && AgentContextMode is null`
+- [x] **B3 — The trigger.** Evaluate `AgentModeEnabled && Messages.Count > 0 && AgentContextMode is null`
   on the lever toggle *and* on chat load, so an agent user who never toggles still sees the offer.
   *Deps:* B1 · *Effort:* XS · *Value:* High
 
-- [ ] **B4 — The settled state.** After a choice, collapse the banner to one line naming what is active,
+- [x] **B4 — The settled state.** After a choice, collapse the banner to one line naming what is active,
   with an affordance to change it.
   *Deps:* B3 · *Effort:* XS · *Value:* Med
 
-- [ ] **B5 — View-model tests.** The trigger matrix (toggled vs. already on, empty vs. non-empty chat,
+- [x] **B5 — View-model tests.** The trigger matrix (toggled vs. already on, empty vs. non-empty chat,
   choice recorded vs. not) and that a pending choice blocks send and run-in-background.
   *Deps:* B3 · *Effort:* S · *Value:* High
 
-- [ ] **C3 — The summary turn.** One `GetChatResponseAsync` shaped like `ChatTitleService.GenerateAsync`
+- [x] **C3 — The summary turn.** One `GetChatResponseAsync` shaped like `ChatTitleService.GenerateAsync`
   on the fast model, transcript in the user message, output capped. Usage accrues run-level. A throw or
   empty text falls back to verbatim and logs — never fails the run.
   *Deps:* C2 · *Effort:* S · *Value:* High
 
-- [ ] **E1 — The agent chip exception.** `SwitchToAgent` records `Summary` on the chat and starts without
+- [x] **E1 — The agent chip exception.** `SwitchToAgent` records `Summary` on the chat and starts without
   asking, so the banner does not appear behind it.
   *Deps:* C3, B3 · *Effort:* XS · *Value:* Med
 
-- [ ] **F2 — Strings.** The banner body and three button labels in all three resx files (en/de/fr parity
+- [x] **F2 — Strings.** The banner body and three button labels in all three resx files (en/de/fr parity
   is enforced by test). Do not hand-edit `Designer.cs`.
   *Deps:* B1 · *Effort:* XS · *Value:* Enabler
 

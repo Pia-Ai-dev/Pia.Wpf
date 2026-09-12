@@ -579,6 +579,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         session.SetIdentity(chat.Id, chat.CreatedAt, chat.ProviderId, chat.Title, autoTitleApplied: true);
         session.SetWorkingDirectory(chat.WorkingDirectory);
+        session.AgentContextMode = AgentContextModes.Parse(chat.AgentContextMode);
         _sessions[chat.Id] = session;
 
         // A2 (closes W2c): seed the composer gate SYNCHRONOUSLY from the launch-bracket index, BEFORE
@@ -1198,6 +1199,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 WindowMode = chat.WindowMode,
                 ProviderId = chat.ProviderId,
                 WorkingDirectory = chat.WorkingDirectory,
+                AgentContextMode = chat.AgentContextMode,
                 // Same message instance as session.Messages, so a later full-replace persist updates this row
                 // instead of duplicating it.
                 Messages = [AssistantMessageMapper.ToDto(answer)],
@@ -1325,6 +1327,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             WindowMode = WindowMode.Assistant.ToString(),
             ProviderId = session.ProviderId,
             WorkingDirectory = session.WorkingDirectory,
+            AgentContextMode = session.AgentContextMode?.ToString(),
             Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto)],
         };
 

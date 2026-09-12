@@ -29,6 +29,7 @@ public sealed class AgentRunOrchestrator
     private readonly IAssistantChatService? _chats;
     private readonly IRunSteeringStore? _steering;
     private readonly ILocalizationService? _localization;
+    private readonly IAiClientService? _ai;
 
     /// <summary>
     /// Cap on a delegated run's answer text as it is folded into the parent's context. Same number as
@@ -108,6 +109,9 @@ public sealed class AgentRunOrchestrator
     /// pause from a stop: without it every cancel is a stop, exactly as before.</param>
     /// <param name="localization">TRAILING and DEFAULTED, like every dependency this loop has gained: null ⇒
     /// <see cref="PostPlanRejectedNoticeAsync"/> posts nothing.</param>
+    /// <param name="ai">TRAILING and DEFAULTED, like every dependency this loop has gained: null ⇒ a chat that
+    /// asked for <see cref="AgentContextMode.Summary"/> gets the verbatim excerpt instead, which is the same
+    /// degrade a failed summary turn takes.</param>
     public AgentRunOrchestrator(
         IAgentRunService runService,
         IAgentPlanner planner,
@@ -117,7 +121,8 @@ public sealed class AgentRunOrchestrator
         IHeadlessRunLauncher? childLauncher = null,
         IAssistantChatService? chats = null,
         IRunSteeringStore? steering = null,
-        ILocalizationService? localization = null)
+        ILocalizationService? localization = null,
+        IAiClientService? ai = null)
     {
         _runService = runService;
         _planner = planner;
@@ -128,6 +133,7 @@ public sealed class AgentRunOrchestrator
         _chats = chats;
         _steering = steering;
         _localization = localization;
+        _ai = ai;
     }
 
     /// <param name="nudge">TRAILING and DEFAULTED, like every dependency this loop has gained:
@@ -227,7 +233,12 @@ public sealed class AgentRunOrchestrator
                 // Stated before the plan turn, not inside it: the planner has no run row, and this is the one fact
             // that decides whether its emit_plan may decline.
             ctx.IsDelegated = run.ParentRunId is not null;
-            var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
+
+                // The one site every path reaches — a live send, a headless dispatch and a needs-goal resume —
+                // so the re-plan below inherits the digest without any plumbing of its own.
+                await SafeBuildConversationDigest(run, ctx, provider, cts.Token).ConfigureAwait(false);
+
+                var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
                 // I1: the plan turn's rounds (≥2, doubled by the firm retry) are real spend — accrue
                 // them run-level BEFORE branching, so neither the degrade path nor the decline path below
                 // can drop them.
@@ -1070,6 +1081,38 @@ public sealed class AgentRunOrchestrator
     /// <summary>Bound on the T2-18 grace turn — see <see cref="SafeGraceTurn"/> for why it is not the run's.</summary>
     private static readonly TimeSpan GraceTurnBudget = TimeSpan.FromSeconds(90);
 
+    /// <summary>A run whose chat records NO mode takes <see cref="AgentContextMode.Off"/>: that is what keeps
+    /// routines and scheduled jobs, with nobody at a composer to ask, out of a conversation.</summary>
+    private async Task SafeBuildConversationDigest(
+        AgentRun run, RunContext ctx, AiProvider provider, CancellationToken ct)
+    {
+        if (_chats is null)
+            return;
+
+        try
+        {
+            var chat = await _chats.GetAsync(run.ChatId, ct).ConfigureAwait(false);
+            var mode = AgentContextModes.Parse(chat?.AgentContextMode);
+            if (mode is not { } recorded || recorded == AgentContextMode.Off)
+                return;
+
+            var digest = await ConversationDigestBuilder
+                .BuildAsync(chat, ctx.Goal, recorded, provider, _ai, _logger, ct)
+                .ConfigureAwait(false);
+
+            ctx.ConversationDigest = digest.Text;
+            await SafeAddUsage(run.Id, digest.Usage, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId}: building the conversation digest failed; planning without it", run.Id);
+        }
+    }
+
     private async Task SafeAddUsage(Guid runId, UsageDetails? usage, CancellationToken ct)
     {
         if (usage is null) return;
@@ -1722,6 +1765,7 @@ public sealed class AgentRunOrchestrator
                 WindowMode = chat.WindowMode,
                 ProviderId = chat.ProviderId,
                 WorkingDirectory = chat.WorkingDirectory,
+                AgentContextMode = chat.AgentContextMode,
                 Messages =
                 [
                     new SyncAssistantChatMessage

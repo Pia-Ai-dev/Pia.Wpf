@@ -1062,6 +1062,14 @@
   <data name="Agent_Warn_Continue" xml:space="preserve"><value>Fortsetzen</value></data>
   <data name="Agent_Warn_ChooseProvider" xml:space="preserve"><value>Anbieter wählen…</value></data>
   <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Im Chat bleiben</value></data>
+  <data name="Agent_Context_Body" xml:space="preserve"><value>Dieser Agentenlauf startet aus diesem Gespräch. Wie viel davon soll die Planung sehen?</value></data>
+  <data name="Agent_Context_Summary" xml:space="preserve"><value>Zusammenfassung senden</value></data>
+  <data name="Agent_Context_Verbatim" xml:space="preserve"><value>Gespräch senden</value></data>
+  <data name="Agent_Context_Off" xml:space="preserve"><value>Nichts senden</value></data>
+  <data name="Agent_Context_Settled_Summary" xml:space="preserve"><value>Agentenläufe in diesem Chat erhalten eine Zusammenfassung des Gesprächs.</value></data>
+  <data name="Agent_Context_Settled_Verbatim" xml:space="preserve"><value>Agentenläufe in diesem Chat erhalten das Gespräch.</value></data>
+  <data name="Agent_Context_Settled_Off" xml:space="preserve"><value>Agentenläufe in diesem Chat erhalten nur das eingegebene Ziel.</value></data>
+  <data name="Agent_Context_Change" xml:space="preserve"><value>Ändern</value></data>
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Bei Budget gestoppt</value></data>
   <data name="Run_Unverified" xml:space="preserve"><value>Ergebnis nicht geprüft</value></data>
   <data name="Run_EndedEarly" xml:space="preserve"><value>Vorzeitig beendet</value></data>

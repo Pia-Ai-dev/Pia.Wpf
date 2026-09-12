@@ -1116,6 +1116,10 @@ public class SyncMapper
             {
                 Title = chat.Title,
                 ProviderId = chat.ProviderId,
+                // Inside the ciphertext, not beside it: the server strips top-level keys it does not know
+                // from an encrypted document (assistant-chat-history.md §1), so a plaintext field here comes
+                // back null on every pull and the context banner re-appears in a chat that answered it.
+                AgentContextMode = chat.AgentContextMode,
                 Messages = chat.Messages,
                 ExtensionData = chat.ExtensionData
             };
@@ -1130,6 +1134,7 @@ public class SyncMapper
         {
             wire.Title = chat.Title;
             wire.ProviderId = chat.ProviderId;
+            wire.AgentContextMode = chat.AgentContextMode;
             wire.Messages = chat.Messages;
             wire.ExtensionData = chat.ExtensionData;
         }
@@ -1172,6 +1177,7 @@ public class SyncMapper
                 UpdatedAt = wire.UpdatedAt,
                 LastAccessedAt = wire.LastAccessedAt,
                 WindowMode = wire.WindowMode,
+                AgentContextMode = decrypted.AgentContextMode,
                 // Forward-compat fields travel inside the ciphertext for encrypted chats;
                 // plaintext wire extension keys are dropped so they can't re-enter the
                 // local store and echo back out on the next push.
@@ -1191,6 +1197,7 @@ public class SyncMapper
             UpdatedAt = wire.UpdatedAt,
             LastAccessedAt = wire.LastAccessedAt,
             WindowMode = wire.WindowMode,
+            AgentContextMode = wire.AgentContextMode,
             ExtensionData = wire.ExtensionData
         };
     }
@@ -1220,6 +1227,7 @@ public class SyncMapper
     {
         public string? Title { get; set; }
         public Guid? ProviderId { get; set; }
+        public string? AgentContextMode { get; set; }
         public List<SyncAssistantChatMessage> Messages { get; set; } = [];
 
         [JsonExtensionData]

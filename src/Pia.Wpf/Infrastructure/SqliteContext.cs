@@ -428,6 +428,7 @@ public class SqliteContext : IDisposable
                 WindowMode      TEXT NOT NULL,
                 ProviderId      TEXT,
                 WorkingDirectory TEXT,
+                AgentContextMode TEXT,
                 ExtraJson       TEXT
             );
 
@@ -1063,23 +1064,32 @@ public class SqliteContext : IDisposable
             }
         }
 
-        // Per-chat working directory (relative to the assistant-files sandbox root), added after
-        // AssistantChats shipped. Fresh tables already include the column via CREATE TABLE above,
-        // so the PRAGMA check short-circuits and no ALTER is issued.
+        // Per-chat working directory (relative to the assistant-files sandbox root) and the per-chat
+        // agent-context choice, both added after AssistantChats shipped. Fresh tables already include them
+        // via CREATE TABLE above, so the PRAGMA check short-circuits and no ALTER is issued.
         var hasWorkingDirectory = false;
+        var hasAgentContextMode = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(AssistantChats)";
             using var r = p.ExecuteReader();
             while (r.Read())
             {
-                if (r.GetString(1) == "WorkingDirectory") { hasWorkingDirectory = true; break; }
+                var col = r.GetString(1);
+                if (col == "WorkingDirectory") hasWorkingDirectory = true;
+                else if (col == "AgentContextMode") hasAgentContextMode = true;
             }
         }
         if (!hasWorkingDirectory)
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN WorkingDirectory TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasAgentContextMode)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN AgentContextMode TEXT";
             addCol.ExecuteNonQuery();
         }
 

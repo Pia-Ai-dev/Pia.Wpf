@@ -1028,6 +1028,14 @@
   <data name="Agent_Warn_Continue" xml:space="preserve"><value>Continue</value></data>
   <data name="Agent_Warn_ChooseProvider" xml:space="preserve"><value>Choose provider…</value></data>
   <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Stay in Chat</value></data>
+  <data name="Agent_Context_Body" xml:space="preserve"><value>This agent run starts from this conversation. How much of it should the planner see?</value></data>
+  <data name="Agent_Context_Summary" xml:space="preserve"><value>Send a summary</value></data>
+  <data name="Agent_Context_Verbatim" xml:space="preserve"><value>Send the conversation</value></data>
+  <data name="Agent_Context_Off" xml:space="preserve"><value>Send nothing</value></data>
+  <data name="Agent_Context_Settled_Summary" xml:space="preserve"><value>Agent runs in this chat get a summary of the conversation.</value></data>
+  <data name="Agent_Context_Settled_Verbatim" xml:space="preserve"><value>Agent runs in this chat get the conversation.</value></data>
+  <data name="Agent_Context_Settled_Off" xml:space="preserve"><value>Agent runs in this chat get only the goal you type.</value></data>
+  <data name="Agent_Context_Change" xml:space="preserve"><value>Change</value></data>
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Stopped at budget</value></data>
   <data name="Run_Unverified" xml:space="preserve"><value>Result not verified</value></data>
   <data name="Run_EndedEarly" xml:space="preserve"><value>Ended early</value></data>

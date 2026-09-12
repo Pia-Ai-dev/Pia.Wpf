@@ -268,7 +268,7 @@ public sealed class AgentPlanner : IAgentPlanner
         // Nothing would surface a child's question, so the shape it cannot call is better than the prompt line
         // asking it not to — which it is also given, below.
         var planTool = ctx.IsDelegated ? EmitRevisedPlanTool : EmitPlanTool;
-        var turn = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: false, analysis, roster, grounding, ctx.IsDelegated), provider, planTool, ct).ConfigureAwait(false);
+        var turn = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: false, analysis, roster, grounding, ctx.IsDelegated, ctx.ConversationDigest), provider, planTool, ct).ConfigureAwait(false);
         usage = AgentTurnUsage.Sum(usage, turn.Usage);
 
         // Checked before both `Steps is null` and ValidatePlan: a decline is not silence (the model did call
@@ -280,7 +280,7 @@ public sealed class AgentPlanner : IAgentPlanner
         {
             // The firm retry REUSES the one analysis: the retry exists because the model wrote prose
             // instead of calling emit_plan, which a second reasoning turn would not fix and would pay for.
-            var retried = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: true, analysis, roster, grounding, ctx.IsDelegated), provider, planTool, ct).ConfigureAwait(false); // R10 retry once
+            var retried = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: true, analysis, roster, grounding, ctx.IsDelegated, ctx.ConversationDigest), provider, planTool, ct).ConfigureAwait(false); // R10 retry once
             usage = AgentTurnUsage.Sum(usage, retried.Usage); // I1: the retry's rounds were paid for too
             // A decline on the retry still counts as declined, not as a plan to fabricate.
             if (retried.CannotGround)
@@ -851,7 +851,7 @@ public sealed class AgentPlanner : IAgentPlanner
 
     private static List<ChatMessage> BuildPlanMessages(
         string goal, Persona persona, bool firm, string? analysis, IReadOnlyList<Persona> roster,
-        string? grounding = null, bool delegated = false)
+        string? grounding = null, bool delegated = false, string? conversation = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(persona.SystemPrompt);
@@ -885,6 +885,13 @@ public sealed class AgentPlanner : IAgentPlanner
         var user = analysis is null
             ? goal
             : $"{goal}\n\n--- Your analysis of this goal (use it; do not restate it) ---\n{analysis}\n--- end of analysis ---";
+
+        // The conversation digest rides the USER message for the same reason, and it is the strongest case of
+        // the three: it IS the user's own transcript, so in the System prompt it would ship past
+        // TokenizeMessages verbatim with tokenization ON. Before the grounding listing, so the goal and the
+        // conversation that produced it read together.
+        if (conversation is not null)
+            user = $"{user}\n\n{conversation}";
 
         // T2-17a: the grounding digest goes on the USER message for the SAME reason, and it is the stronger
         // case of the two — these are FILE NAMES out of the user's own assistant folder, so in the System
@@ -925,9 +932,15 @@ public sealed class AgentPlanner : IAgentPlanner
             // and intents come off the PERSISTED step row, which since D3 can hold raw user keystrokes typed
             // into the run panel, and TokenizeMessages rewrites ChatRole.User text ONLY — so in the System
             // prompt they shipped past the tokenizer with tokenization ON.
-            new(ChatRole.User, ctx.AppendNudge(ctx.Goal + BuildCompletedSteps(ctx))),
+            // The conversation digest sits between the goal and the completed-step listing for the same
+            // tokenizer reason the listing itself is here rather than in the System prompt.
+            new(ChatRole.User, ctx.AppendNudge(ctx.Goal + BuildConversation(ctx) + BuildCompletedSteps(ctx))),
         };
     }
+
+    /// <summary>The digest as a block to concatenate, or <c>""</c> when the chat recorded no context mode.</summary>
+    private static string BuildConversation(RunContext ctx) =>
+        ctx.ConversationDigest is { } digest ? $"\n\n{digest}" : string.Empty;
 
     /// <summary>
     /// The "Completed so far" listing as a USER-message block — see the F11 note at the call site for why it
