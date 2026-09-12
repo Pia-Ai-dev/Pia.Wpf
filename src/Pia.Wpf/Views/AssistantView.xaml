@@ -399,12 +399,16 @@
                            IsIndeterminate="True"
                            Margin="9,3,13,0"
                            VerticalAlignment="Top" />
+          <!-- The ids live on the TextBlocks, not on the Grid above: a layout panel is outside UIA's control
+               view, so an id there is unreachable to a script even while the line is on screen. -->
           <StackPanel Grid.Column="1">
             <TextBlock Text="{Binding ActiveRunProgress.CurrentActivity}"
+                       AutomationProperties.AutomationId="Assistant_LiveRunActivity_Step"
                        FontSize="12"
                        TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource TextSubtleBrush}" />
             <TextBlock Text="{Binding ActiveRunProgress.ToolActivity}"
+                       AutomationProperties.AutomationId="Assistant_LiveRunActivity_Tools"
                        FontSize="12"
                        FontStyle="Italic"
                        TextTrimming="CharacterEllipsis"
