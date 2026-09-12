@@ -160,6 +160,24 @@ public sealed class ChatArchiveServiceTests : IDisposable
             $"a skipped chat keeps the date retention evicts on, got {stored.LastAccessedAt:O}");
     }
 
+    // A repair only this device knows about leaves the server's copy ageing, and the first device to evict
+    // it deletes it for everyone.
+    [Fact]
+    public async Task ReImporting_PublishesTheRepairedAccessDate()
+    {
+        var chat = FullyPopulatedChat();
+        chat.LastAccessedAt = DateTime.UtcNow.AddYears(-3);
+        await _chats.SaveAsync(chat, Ct);
+        var file = PathFor("repair-sync.json");
+        await _sut.ExportAsync([chat.Id], file, Ct);
+
+        var accessed = new List<Guid>();
+        _chats.ChatAccessed += (_, id) => accessed.Add(id);
+        await _sut.ImportAsync(file, ct: Ct);
+
+        Assert.Equal([chat.Id], accessed);
+    }
+
     [Fact]
     public async Task Import_DoesNotOverwriteALocallyNewerChat()
     {

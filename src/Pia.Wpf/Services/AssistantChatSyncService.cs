@@ -67,12 +67,14 @@ public sealed class AssistantChatSyncService : BackgroundService
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _chatService.ChatsChanged += OnChatsChanged;
+        _chatService.ChatAccessed += OnChatAccessed;
         return base.StartAsync(cancellationToken);
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
         _chatService.ChatsChanged -= OnChatsChanged;
+        _chatService.ChatAccessed -= OnChatAccessed;
         return base.StopAsync(cancellationToken);
     }
 
@@ -91,6 +93,12 @@ public sealed class AssistantChatSyncService : BackgroundService
         var kind = e.Kind == AssistantChatChangeKind.Deleted ? OpKind.Delete : OpKind.Upsert;
         EnqueueOp(e.Id, kind);
     }
+
+    // Retention deletes globally (an evicted chat is deleted from the server, and that tombstone reaches
+    // every device), so a chat someone still reads here must keep the server's access date alive or another
+    // device evicts it out from under them. The store only raises this on a day change, and PUT is the only
+    // write the API has.
+    private void OnChatAccessed(object? sender, Guid chatId) => EnqueueOp(chatId, OpKind.Upsert);
 
     private void EnqueueOp(Guid id, OpKind kind)
     {

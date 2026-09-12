@@ -171,6 +171,47 @@ public class AssistantChatSyncServiceTests
         _capabilities.Received(1).Invalidate();
     }
 
+    // Retention on ANY device deletes the chat from the server, and the tombstone comes back down to the
+    // rest — so reading a chat here has to refresh the server's access date or a second device evicts it.
+    [Fact]
+    public async Task ChatAccessed_PushesTheChatSoTheServerCopyStopsAgeing()
+    {
+        var chat = SampleChat();
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            _chatService.ChatAccessed += Raise.Event<EventHandler<Guid>>(_chatService, chat.Id);
+            await InvokeDrainAsync(sut);
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+    }
+
+    [Fact]
+    public async Task ChatAccessed_AfterStop_IsNoLongerPushed()
+    {
+        var chat = SampleChat();
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        await sut.StopAsync(TestContext.Current.CancellationToken);
+
+        _chatService.ChatAccessed += Raise.Event<EventHandler<Guid>>(_chatService, chat.Id);
+        await InvokeDrainAsync(sut);
+
+        Assert.DoesNotContain(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+    }
+
     [Fact]
     public async Task SendDelete_Returns404_InvalidatesCapability()
     {
@@ -480,6 +521,13 @@ public class AssistantChatSyncServiceTests
     {
         var m = typeof(AssistantChatSyncService)
             .GetMethod("RunStartupPushAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (Task)m.Invoke(sut, [CancellationToken.None])!;
+    }
+
+    private static Task InvokeDrainAsync(AssistantChatSyncService sut)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("DrainAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
         return (Task)m.Invoke(sut, [CancellationToken.None])!;
     }
 

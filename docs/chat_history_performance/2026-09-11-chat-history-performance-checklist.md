@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1–A8, B1 and B4 done. G1 closed: a script may load an older message into the window. G3 closed
+**Status:** A1–A9, B1, B4 and B5 done. G1 closed: a script may load an older message into the window. G3 closed
 by measurement against the real archive shape (148 chats / 195 MB, ten of them holding ~90 %): rendering is the cause,
 the store is not. Rest open.
 **Owner:** Marco Altmann
@@ -68,9 +68,13 @@ container-recycling hazards the window bound avoids entirely.
 - [x] **A8 · Log what a navigation cost.** One `LogInformation` per view activation with the elapsed
       build time and the open chat's message count, so a "switching is slow" report arrives with its
       own cause attached. This investigation needed three corpora and two wrong conclusions because no
-      such line exists. Covers the first activation of each view instance; a chat opened from history
-      re-points `Messages` after that line, so its second render is not timed. *Deps:* — ·
-      *Effort:* `XS` · *Value:* `High`
+      such line exists. *Deps:* — · *Effort:* `XS` · *Value:* `High`
+- [x] **A9 · Time the render, not just the activation.** The activation line fires at the first
+      `Loaded`, which on the deferred path is before the session has a transcript — it reported
+      `0 messages` and timed nothing. Each `Messages` re-point now times its own build, and the
+      inspector does the same off its `DataContext`, so a round trip names the cost of both sides.
+      The stopwatch is per report: a shared one hands the first of two quick switches the second's
+      elapsed. *Deps:* A8 · *Effort:* `XS` · *Value:* `High`
 
 ## B — the store after a bulk import
 
@@ -79,6 +83,21 @@ container-recycling hazards the window bound avoids entirely.
       launch — measured, 123 of 148. The import now stamps `LastAccessedAt` on every chat it stores;
       `CreatedAt` and `UpdatedAt` keep the archive's own dates. *Deps:* — · *Effort:* `S` ·
       *Value:* `High`
+- [x] **B5 · Let reading a chat reach the server.** `TouchLastAccessedAsync` was a bare local `UPDATE`,
+      so opening a chat — and B1's re-import repair — refreshed the access date on this device only.
+      Retention deletes globally (`EnqueueDelete` plus the `Deleted` event, and the server's tombstone
+      comes back down through `deleted[]`), so a chat one device still reads ages out on the server and
+      the next device to run retention deletes it for everyone. The store now raises `ChatAccessed` when
+      a touch crosses a UTC day — the granularity the wire carries — and the sync worker pushes it. A
+      separate event, not an `AssistantChatChangeKind`: every `ChatsChanged` subscriber reads an event as
+      a content change, and the history list reloads on one. *Deps:* — · *Effort:* `S` · *Value:* `High`
+- [ ] **B6 · Stop local retention deleting the cloud copy.** B5 narrows the window; it does not close it.
+      A device returning from a long offline stretch still evicts on stale local dates before the pull
+      that would have refreshed them — both wait ~5 s at launch — and a chat nobody opens anywhere still
+      dies everywhere. Decide whether a retention window is a local cache trim or a global delete; only
+      the first is safe with more than one device. Note the asymmetry either way: once the server holds
+      a tombstone, no touch can resurrect the chat (`dto.UpdatedAt <= existing.DeletedAt`). *Deps:* B5 ·
+      *Effort:* `M` · *Value:* `High`
 - [ ] **B2 · Take the store gate off the eviction batch.** `EvictUnderGateAsync` holds the gate every UI
       query needs for the whole delete loop; chunk it, or yield between batches. Measured: a navigation
       query blocked 4.5 s behind it at 148 chats (28 s at 2 865 — it scales with chat count, unbounded). *Deps:* — · *Effort:* `S` · *Value:* `High`
@@ -114,6 +133,7 @@ one long chat among small ones. G5 no longer gates it — see the gates table.
 6. **B4** — `XS`, and a restored archive looks empty without it.
 7. **B2**, **B3** — real, but at 148 chats eviction is 0.4–6.7 s. Worth doing on their own merits
    (B3 is also the superlinear import and the doubled database), not for this report.
+8. **B6** — the one item here that can still lose data, but it needs a product answer before code.
 
 ## Not yet planned
 

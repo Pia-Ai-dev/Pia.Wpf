@@ -951,6 +951,11 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
             UpdateCommandStates();
     }
 
+    internal void ReportTranscriptRendered(TimeSpan elapsed) =>
+        _logger.LogInformation(
+            "Chat inspector transcript rendered in {ElapsedMs} ms showing {VisibleCount} of {MessageCount} messages",
+            (long)elapsed.TotalMilliseconds, VisibleChatMessages.Count, SelectedChatMessages.Count);
+
     [RelayCommand]
     private void LoadOlderChatMessages()
     {

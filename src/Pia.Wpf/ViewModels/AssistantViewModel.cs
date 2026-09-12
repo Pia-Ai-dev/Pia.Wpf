@@ -1793,6 +1793,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             "Assistant view activated in {ElapsedMs} ms with {MessageCount} messages",
             (long)elapsed.TotalMilliseconds, Messages.Count);
 
+    internal void ReportTranscriptBuilt(TimeSpan elapsed) =>
+        _logger.LogInformation(
+            "Assistant transcript built in {ElapsedMs} ms showing {VisibleCount} of {MessageCount} messages",
+            (long)elapsed.TotalMilliseconds, VisibleMessages.Count, Messages.Count);
+
     public void OnNavigatedTo(object? parameter)
     {
         // Non-Guid synchronous setup (string / selection params). Guid-activation

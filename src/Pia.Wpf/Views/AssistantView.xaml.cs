@@ -172,6 +172,22 @@ public partial class AssistantView : UserControl
 
         SubscribeMessages(ViewModel?.VisibleMessages);
         PinToEnd();
+        ReportTranscriptBuilt();
+    }
+
+    // The activation line above fires at the first Loaded, which on the deferred path is before the session
+    // has a transcript — it reports 0 and times nothing. This is the render that actually costs.
+    private void ReportTranscriptBuilt()
+    {
+        if (_subscribedViewModel is not { } viewModel)
+            return;
+
+        // Per-report stopwatch: two quick chat switches leave two callbacks pending, and a shared one
+        // would hand the first the second's elapsed.
+        var build = Stopwatch.StartNew();
+        Dispatcher.BeginInvoke(
+            new Action(() => viewModel.ReportTranscriptBuilt(build.Elapsed)),
+            DispatcherPriority.ContextIdle);
     }
 
     /// <summary>Opening a chat shows its latest turn, whatever the reader had scrolled to before.</summary>

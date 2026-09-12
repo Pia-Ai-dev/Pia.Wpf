@@ -68,6 +68,8 @@ public class AssistantChatService : IAssistantChatService, IDisposable
 
     public event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
+    public event EventHandler<Guid>? ChatAccessed;
+
     public AssistantChatService(SqliteContext context, IAgentRunService runService)
     {
         _connectionString = context.ConnectionString;
@@ -647,15 +649,20 @@ public class AssistantChatService : IAssistantChatService, IDisposable
 
     public async Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
+        DateTime? previous;
+
         await _gate.WaitAsync(ct);
         try
         {
             if (_disposed) return;
 
             var connection = Connection();
+            previous = await ReadLastAccessedUnderGateAsync(connection, id, ct);
+
             using var command = connection.CreateCommand();
             command.CommandText = "UPDATE AssistantChats SET LastAccessedAt = @Now WHERE Id = @Id";
-            command.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("@Now", now.ToString("O"));
             command.Parameters.AddWithValue("@Id", id.ToString());
             await command.ExecuteNonQueryAsync(ct);
         }
@@ -663,6 +670,22 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         {
             _gate.Release();
         }
+
+        // Outside the gate, same as ChatsChanged: the sync worker re-enters this service to read the chat.
+        // Day granularity because that is what the wire carries (SyncMapper truncates to .Date), so a second
+        // open on the same day would push a byte-identical value.
+        if (previous is { } stamp && stamp.Date < now.Date)
+            ChatAccessed?.Invoke(this, id);
+    }
+
+    private static async Task<DateTime?> ReadLastAccessedUnderGateAsync(
+        SqliteConnection connection, Guid id, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT LastAccessedAt FROM AssistantChats WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", id.ToString());
+        var value = await command.ExecuteScalarAsync(ct);
+        return value is string text ? DateTime.Parse(text).ToUniversalTime() : null;
     }
 
     public async Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default)

@@ -27,6 +27,13 @@ public interface IAssistantChatService
 {
     event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
+    /// <summary>
+    /// Raised when <see cref="TouchLastAccessedAsync"/> moves a chat's access date to a new UTC day.
+    /// Deliberately not an <see cref="AssistantChatChangedEventArgs"/> kind: every ChatsChanged
+    /// subscriber treats an event as a content change, and the history list reloads on one.
+    /// </summary>
+    event EventHandler<Guid>? ChatAccessed;
+
     Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default);
 
     /// <summary>
@@ -118,6 +125,11 @@ public interface IAssistantChatService
     /// </summary>
     Task DeleteFromRemoteAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Stamps the chat as accessed now, and raises <see cref="ChatAccessed"/> when that crosses into a
+    /// new UTC day — the granularity sync carries, and the only case where the server's copy would
+    /// otherwise keep ageing toward eviction on a chat someone is still reading.
+    /// </summary>
     Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default);
 
     Task<IReadOnlyList<Guid>> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default);

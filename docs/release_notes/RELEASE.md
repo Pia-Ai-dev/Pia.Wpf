@@ -102,6 +102,10 @@
   upload could be marked as done while the server was still refusing it, and
   nothing retried it afterwards. An install that already signed in under an
   earlier version keeps those chats on this device only.
+- Opening a chat tells Pia Cloud you still want it. Reading a conversation
+  counted as using it on that device alone, so an old chat you kept coming back
+  to still looked untouched to your other devices — and the first one to clear
+  out old chats cleared it everywhere.
 
 ## Routines
 

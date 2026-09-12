@@ -453,9 +453,12 @@ public sealed class HeadlessTurnExecutorTests
         {
             _inner = inner;
             _inner.ChatsChanged += (s, e) => ChatsChanged?.Invoke(s, e);
+            _inner.ChatAccessed += (s, id) => ChatAccessed?.Invoke(s, id);
         }
 
         public event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
+
+        public event EventHandler<Guid>? ChatAccessed;
 
         /// <summary>Every full-chat replace, whichever save seam issued it — the per-step write cost.</summary>
         public int SaveCalls { get; private set; }
