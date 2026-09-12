@@ -132,6 +132,18 @@ public interface IAssistantChatService
     /// </summary>
     Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// What <see cref="EvictOlderThanAsync"/> would delete, so a caller can confirm the dates against the
+    /// server first — eviction deletes account-wide, and this device's dates may be behind another's.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetChatIdsAccessedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Raises a chat's access date to one the server reported, never lowers it. Raises no event: this is a
+    /// remote-origin write, like <see cref="SaveFromRemoteAsync"/>.
+    /// </summary>
+    Task ApplyRemoteAccessDateAsync(Guid id, DateTime lastAccessedUtc, CancellationToken ct = default);
+
     Task<IReadOnlyList<Guid>> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default);
 
     Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default);

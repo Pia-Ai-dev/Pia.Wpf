@@ -1,6 +1,6 @@
 # Checklist: chat history performance
 
-**Status:** A1–A9, B1, B4 and B5 done. G1 closed: a script may load an older message into the window. G3 closed
+**Status:** A1–A9, B1, B4, B5 and B6 done. G1 closed: a script may load an older message into the window. G3 closed
 by measurement against the real archive shape (148 chats / 195 MB, ten of them holding ~90 %): rendering is the cause,
 the store is not. Rest open.
 **Owner:** Marco Altmann
@@ -91,13 +91,31 @@ container-recycling hazards the window bound avoids entirely.
       a touch crosses a UTC day — the granularity the wire carries — and the sync worker pushes it. A
       separate event, not an `AssistantChatChangeKind`: every `ChatsChanged` subscriber reads an event as
       a content change, and the history list reloads on one. *Deps:* — · *Effort:* `S` · *Value:* `High`
-- [ ] **B6 · Stop local retention deleting the cloud copy.** B5 narrows the window; it does not close it.
-      A device returning from a long offline stretch still evicts on stale local dates before the pull
-      that would have refreshed them — both wait ~5 s at launch — and a chat nobody opens anywhere still
-      dies everywhere. Decide whether a retention window is a local cache trim or a global delete; only
-      the first is safe with more than one device. Note the asymmetry either way: once the server holds
-      a tombstone, no touch can resurrect the chat (`dto.UpdatedAt <= existing.DeletedAt`). *Deps:* B5 ·
-      *Effort:* `M` · *Value:* `High`
+- [x] **B6 · Confirm an access date before deleting on it.** The gate this opened with — local trim or
+      global delete? — was already answered by the setting's own label, "Delete chats not opened for N
+      days": deleting is real and account-wide, and "not opened" is a fact about the conversation, not
+      about the machine. What was wrong is that the deciding device could be looking at a picture it
+      had no way to refresh — the pull's `since` is the local max `UpdatedAt`, and a touch-driven push
+      does not move `UpdatedAt`, so an old chat's new access date never comes down an incremental pull.
+      Retention now raises each candidate's local date to the server's before the existing eviction runs,
+      so only chats the server also calls stale fall through — no `EvictTheseIdsAsync`, and the window
+      where a concurrent pull could change a date in between is theoretical. One candidate it cannot
+      reach — unreachable, non-200, or a 200 carrying no date — skips the whole pass, since deleting the
+      rest would use exactly the unconfirmed dates the check exists to distrust. Costs one full-document
+      GET per candidate (the server has no metadata-only read), but it is self-limiting: a confirmed
+      chat stops being a candidate, and a failed pass keeps the dates it already applied. *Deps:* B5 ·
+      *Effort:* `S` · *Value:* `High`
+- [ ] **B7 · Make the retention window mean one thing per account.** `ChatHistoryRetentionDays` is not
+      in `BuildSettingsPlainPayload`, so it is per-device while its effect is account-wide: a laptop on
+      the 180-day default deletes what the desktop set to 730. A user expects the number in Settings to
+      be the number. Either sync it (group policy already reaches every install) or show the divergence.
+      *Deps:* — · *Effort:* `S` · *Value:* `Med`
+- [ ] **B8 · Decide whether the server should own retention.** One authority and one timer, instead of
+      whichever device launches first: the server already holds the merged `LastAccessedAt` and the
+      tombstone logic. Not needed to close the data-loss path — B6 did that — and it needs B7 first.
+      Note the asymmetry that stays either way: once the server holds a tombstone, no touch can
+      resurrect the chat (`dto.UpdatedAt <= existing.DeletedAt`). *Deps:* B7 · *Effort:* `L` ·
+      *Value:* `Med`
 - [ ] **B2 · Take the store gate off the eviction batch.** `EvictUnderGateAsync` holds the gate every UI
       query needs for the whole delete loop; chunk it, or yield between batches. Measured: a navigation
       query blocked 4.5 s behind it at 148 chats (28 s at 2 865 — it scales with chat count, unbounded). *Deps:* — · *Effort:* `S` · *Value:* `High`
@@ -133,7 +151,7 @@ one long chat among small ones. G5 no longer gates it — see the gates table.
 6. **B4** — `XS`, and a restored archive looks empty without it.
 7. **B2**, **B3** — real, but at 148 chats eviction is 0.4–6.7 s. Worth doing on their own merits
    (B3 is also the superlinear import and the doubled database), not for this report.
-8. **B6** — the one item here that can still lose data, but it needs a product answer before code.
+8. **B7**, **B8** — what a retention window means across devices, once nothing can lose data on it.
 
 ## Not yet planned
 

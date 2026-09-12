@@ -93,6 +93,50 @@ public class AssistantChatAccessPropagationTests : IDisposable
         Assert.Equal(0, changed);
     }
 
+    // The other half: a date another device set has to come back and spare the chat here, because this
+    // device's eviction deletes it for the whole account.
+    [Fact]
+    public async Task ApplyRemoteAccessDate_SparesAChatTheLocalDateWouldEvict()
+    {
+        var chat = await StoreChatAsync(lastAccessed: DateTime.UtcNow.AddDays(-400));
+        var cutoff = DateTime.UtcNow.AddDays(-180);
+        Assert.Equal([chat.Id], await _service.GetChatIdsAccessedBeforeAsync(cutoff, TestContext.Current.CancellationToken));
+
+        await _service.ApplyRemoteAccessDateAsync(
+            chat.Id, DateTime.UtcNow.AddDays(-1), TestContext.Current.CancellationToken);
+
+        Assert.Empty(await _service.EvictOlderThanAsync(cutoff, TestContext.Current.CancellationToken));
+        Assert.NotNull(await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ApplyRemoteAccessDate_NeverLowersALocalDate()
+    {
+        // The wire value is day-truncated, so a chat opened here at noon must not drop to this morning and
+        // then evict a day early.
+        var localNoon = DateTime.UtcNow;
+        var chat = await StoreChatAsync(lastAccessed: localNoon);
+
+        await _service.ApplyRemoteAccessDateAsync(
+            chat.Id, localNoon.Date.AddDays(-3), TestContext.Current.CancellationToken);
+
+        Assert.Equal(localNoon, await ReadLastAccessedAsync(chat.Id), TimeSpan.FromMilliseconds(1));
+    }
+
+    [Fact]
+    public async Task ApplyRemoteAccessDate_RaisesNoChatsChanged()
+    {
+        var chat = await StoreChatAsync(lastAccessed: DateTime.UtcNow.AddDays(-400));
+        var changed = 0;
+        _service.ChatsChanged += (_, _) => changed++;
+
+        await _service.ApplyRemoteAccessDateAsync(
+            chat.Id, DateTime.UtcNow, TestContext.Current.CancellationToken);
+
+        // Remote-origin, like SaveFromRemoteAsync: an event here would push the date straight back.
+        Assert.Equal(0, changed);
+    }
+
     private async Task<SyncAssistantChat> StoreChatAsync(DateTime lastAccessed)
     {
         var chat = new SyncAssistantChat

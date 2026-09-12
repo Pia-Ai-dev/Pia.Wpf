@@ -523,6 +523,8 @@ public sealed class HeadlessTurnExecutorTests
         public Task DeleteAsync(Guid id, CancellationToken ct = default) => _inner.DeleteAsync(id, ct);
         public Task DeleteFromRemoteAsync(Guid id, CancellationToken ct = default) => _inner.DeleteFromRemoteAsync(id, ct);
         public Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default) => _inner.TouchLastAccessedAsync(id, ct);
+        public Task<IReadOnlyList<Guid>> GetChatIdsAccessedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default) => _inner.GetChatIdsAccessedBeforeAsync(cutoffUtc, ct);
+        public Task ApplyRemoteAccessDateAsync(Guid id, DateTime lastAccessedUtc, CancellationToken ct = default) => _inner.ApplyRemoteAccessDateAsync(id, lastAccessedUtc, ct);
         public Task<IReadOnlyList<Guid>> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default) => _inner.EvictOlderThanAsync(cutoffUtc, ct);
         public Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default) => _inner.DeleteAllAsync(ct);
         public Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default) => _inner.GetMaxUpdatedAtAsync(ct);

@@ -290,6 +290,94 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Confirms each chat retention is about to delete against the server's access date, raising the local
+    /// one where the server is ahead. Returns false when a candidate could not be checked — eviction deletes
+    /// account-wide, so a device that cannot reach the server has no standing to delete for the account.
+    /// Call only when the account syncs; with sync off the local dates are already authoritative.
+    /// </summary>
+    public async Task<bool> RefreshAccessDatesAsync(IReadOnlyList<Guid> chatIds, CancellationToken ct)
+    {
+        if (chatIds.Count == 0) return true;
+
+        var (client, baseUrl, _) = await BuildClientAsync(ct);
+        if (client is null || baseUrl is null)
+        {
+            // Sync is on but there is no token yet — at five seconds after launch that is the normal state.
+            _logger.LogInformation("Cannot confirm chat access dates: no signed-in client yet");
+            return false;
+        }
+
+        using (client)
+        {
+            foreach (var chatId in chatIds)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                string body;
+                try
+                {
+                    using var response = await client.GetAsync($"{baseUrl}/api/v1/chats/{chatId}", ct);
+
+                    // Never pushed, or already a tombstone — either way the server holds nothing that should
+                    // keep this chat, so the local date stands.
+                    if (response.StatusCode == HttpStatusCode.NotFound) continue;
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation(
+                            "Cannot confirm chat {ChatId} before eviction: status {Status}",
+                            chatId, (int)response.StatusCode);
+                        return false;
+                    }
+
+                    body = await response.Content.ReadAsStringAsync(ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // One unreachable candidate aborts the pass: continuing would evict the rest on exactly
+                    // the unconfirmed local dates this check exists to distrust.
+                    _logger.LogWarning(ex, "Cannot confirm chat {ChatId} before eviction", chatId);
+                    return false;
+                }
+
+                // A 200 whose date is missing or unparseable is not a confirmation: proceeding would evict on
+                // the local date this whole check exists to distrust.
+                if (!TryReadLastAccessed(body, out var remote))
+                {
+                    _logger.LogInformation(
+                        "Cannot confirm chat {ChatId} before eviction: the server's answer carried no access date",
+                        chatId);
+                    return false;
+                }
+
+                await _chatService.ApplyRemoteAccessDateAsync(chatId, remote, ct);
+            }
+        }
+
+        _logger.LogInformation(
+            "Confirmed {Count} chat(s) against the server before eviction", chatIds.Count);
+        return true;
+    }
+
+    /// <summary>`lastAccessedAt` is top-level plaintext even under E2EE, so this never needs the payload.</summary>
+    private static bool TryReadLastAccessed(string body, out DateTime lastAccessedUtc)
+    {
+        lastAccessedUtc = default;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("lastAccessedAt", out var value)) return false;
+            if (!value.TryGetDateTime(out var parsed)) return false;
+            lastAccessedUtc = parsed.ToUniversalTime();
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     private async Task<bool> SendDeleteAsync(Guid chatId, CancellationToken ct)
     {
         var (client, baseUrl, _) = await BuildClientAsync(ct);

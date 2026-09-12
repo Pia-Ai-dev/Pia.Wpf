@@ -678,6 +678,60 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             ChatAccessed?.Invoke(this, id);
     }
 
+    public async Task<IReadOnlyList<Guid>> GetChatIdsAccessedBeforeAsync(
+        DateTime cutoffUtc, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return Array.Empty<Guid>();
+            return await SelectAccessedBeforeUnderGateAsync(cutoffUtc, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<Guid>> SelectAccessedBeforeUnderGateAsync(
+        DateTime cutoffUtc, CancellationToken ct)
+    {
+        var connection = Connection();
+        using var select = connection.CreateCommand();
+        select.CommandText = "SELECT Id FROM AssistantChats WHERE LastAccessedAt < @Cutoff";
+        select.Parameters.AddWithValue("@Cutoff", cutoffUtc.ToString("O"));
+
+        var ids = new List<Guid>();
+        using var reader = await select.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            ids.Add(Guid.Parse(reader.GetString(0)));
+        return ids;
+    }
+
+    public async Task ApplyRemoteAccessDateAsync(
+        Guid id, DateTime lastAccessedUtc, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return;
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE AssistantChats SET LastAccessedAt = @Remote
+                WHERE Id = @Id AND LastAccessedAt < @Remote
+                """;
+            command.Parameters.AddWithValue("@Remote", lastAccessedUtc.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("@Id", id.ToString());
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static async Task<DateTime?> ReadLastAccessedUnderGateAsync(
         SqliteConnection connection, Guid id, CancellationToken ct)
     {
@@ -780,15 +834,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         {
             if (_disposed) return Array.Empty<Guid>();
 
-            var connection = Connection();
-            using var select = connection.CreateCommand();
-            select.CommandText = "SELECT Id FROM AssistantChats WHERE LastAccessedAt < @Cutoff";
-            select.Parameters.AddWithValue("@Cutoff", cutoffUtc.ToString("O"));
-
-            evictedIds = [];
-            using var reader = await select.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-                evictedIds.Add(Guid.Parse(reader.GetString(0)));
+            evictedIds = [.. await SelectAccessedBeforeUnderGateAsync(cutoffUtc, ct)];
         }
         finally
         {
