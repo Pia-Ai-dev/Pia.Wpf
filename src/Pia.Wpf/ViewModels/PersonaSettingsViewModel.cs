@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 
@@ -20,6 +21,7 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
     private readonly IPersonaService _personaService;
     private readonly IProviderService _providerService;
     private readonly ITextOptimizationService _textOptimizationService;
+    private readonly IAdvancedCreationLauncher? _advancedCreation;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IAuthService _authService;
@@ -114,7 +116,8 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
         ILocalizationService localizationService,
         IAuthService authService,
         ISettingsService settingsService,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IAdvancedCreationLauncher? advancedCreation = null)
     {
         Policy = new PolicyLock(policyService);
         _logger = logger;
@@ -125,6 +128,7 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
         _localizationService = localizationService;
         _authService = authService;
         _settingsService = settingsService;
+        _advancedCreation = advancedCreation;
         Personas = new ObservableCollection<Persona>();
 
         _personaService.PersonasChanged += OnPersonasChanged;
@@ -278,6 +282,33 @@ public partial class PersonaSettingsViewModel : UiThreadViewModel, IDisposable
     private bool CanDuplicateSelected() => CanManagePersonas && SelectedPersona is not null;
 
     private bool CanDeleteSelected() => CanDeletePersona(SelectedPersona);
+
+    /// <summary>Brainstorms the persona with the model instead of drafting it in one shot; the result
+    /// lands through <see cref="PersonaEditModel.ApplyDraft"/>, exactly as the one-shot assist does.</summary>
+    [RelayCommand]
+    private async Task AdvancedDraftAsync()
+    {
+        if (_advancedCreation is null || Editor is not { } editor)
+            return;
+
+        editor.IsGenerating = true;
+        try
+        {
+            var json = await _advancedCreation.LaunchAsync(
+                AdvancedCreationModes.Persona(), editor.SelectedProvider?.Id, editor.Description);
+
+            if (json is not null)
+                editor.ApplyDraft(Services.DraftParsing.ParsePersonaDraft(json));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Designing a persona failed");
+        }
+        finally
+        {
+            editor.IsGenerating = false;
+        }
+    }
 
     [RelayCommand]
     private void CancelEdit()

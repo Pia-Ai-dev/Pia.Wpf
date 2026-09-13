@@ -52,17 +52,18 @@ public class ViewAutomationIdTests
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 2, 0, "TemplatesView")]
-    [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 12, 0, "PiaEmptyState")]
+    [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 13, 0, "PiaEmptyState")]
     [InlineData(typeof(Pia.Views.AssistantView), 33, 6,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
         "PiaChatQuickSwitcher,PiaChatTitleChip,PiaCollapsibleMessageText,PiaPersonaAvatar," +
         "PiaWorkingDirectoryPicker,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
     [InlineData(typeof(Pia.Views.AssistantHistoryView), 10, 1,
         "PiaAssistantChatInspector,PiaAssistantChatRowContent,PiaEmptyState,PiaHelpHint")]
-    [InlineData(typeof(Pia.Views.RoutinesView), 35, 1,
+    [InlineData(typeof(Pia.Views.RoutinesView), 36, 1,
         "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar,PiaWorkingDirectoryPicker")]
-    [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 25, 2, "PersonaGlyph,PiaEmptyState")]
+    [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 26, 2, "PersonaGlyph,PiaEmptyState")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
+    [InlineData(typeof(Pia.Views.Dialogs.Overlay.AdvancedCreationOverlayPanel), 13, 5, "")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultHeader), 5, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultSearchBar), 1, 0, "")]

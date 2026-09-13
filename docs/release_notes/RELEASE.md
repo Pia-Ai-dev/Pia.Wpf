@@ -94,6 +94,11 @@
 
 - The optimized text is marked as AI-generated. A line under it asks you to
   check it before you use it.
+- Templates under Settings → Optimize are a list with a panel beside it, the
+  way Routines and Personas already are. Pick a template to read its prompt,
+  and edit it in place instead of in a pop-up window.
+- A template can be duplicated, which is the way to start from a built-in one,
+  and now carries a description of its own.
 
 ## Screen
 
@@ -120,6 +125,17 @@
   windows..." beside the fields fills in the program and the window title for
   you, and both stay editable — a title you can shorten is one that still
   matches tomorrow.
+
+## Designing with Pia
+
+- Templates, routines and personas each have an "Advanced…" button beside
+  "Draft with AI". It starts from the same single sentence, then Pia asks you
+  the few things it cannot work out on its own — the tone to hit, a sample of
+  the text you want rewritten, which day a routine should run — and fills the
+  editor in from your answers.
+- Everything it produces lands in the editor as an ordinary draft, so you can
+  change any of it before saving. The one-sentence "Draft with AI" button is
+  unchanged and still there.
 
 ## Personas
 

@@ -316,24 +316,34 @@
                           IsReadOnly="{Binding IsGenerating}"
                           AutomationProperties.AutomationId="PersonaEdit_Description"
                           Margin="0,0,0,8"/>
-              <ui:Button Command="{Binding GenerateDraftCommand}"
-                         IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBooleanConverter}}"
-                         AutomationProperties.AutomationId="PersonaEdit_GenerateDraft"
-                         HorizontalAlignment="Left"
-                         Margin="0,0,0,16">
-                <Grid>
-                  <StackPanel Orientation="Horizontal"
-                              Visibility="{Binding IsGenerating, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
-                    <TextBlock Text="{loc:Str Dialog_PersonaEdit_Draft}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <ui:Button Command="{Binding GenerateDraftCommand}"
+                           IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBooleanConverter}}"
+                           AutomationProperties.AutomationId="PersonaEdit_GenerateDraft"
+                           Margin="0,0,8,0">
+                  <Grid>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsGenerating, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                      <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Draft}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsGenerating, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Dialog_PersonaEdit_Drafting}"/>
+                    </StackPanel>
+                  </Grid>
+                </ui:Button>
+                <ui:Button Command="{Binding DataContext.AdvancedDraftCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                           IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBooleanConverter}}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="PersonaEdit_Advanced">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str AdvancedCreation_Advanced}"/>
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal"
-                              Visibility="{Binding IsGenerating, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
-                    <TextBlock Text="{loc:Str Dialog_PersonaEdit_Drafting}"/>
-                  </StackPanel>
-                </Grid>
-              </ui:Button>
+                </ui:Button>
+              </StackPanel>
 
               <TextBlock Text="{loc:Str Dialog_PersonaEdit_Name}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>

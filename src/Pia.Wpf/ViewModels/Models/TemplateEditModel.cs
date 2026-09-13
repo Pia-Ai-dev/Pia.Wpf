@@ -60,17 +60,21 @@ public partial class TemplateEditModel : ObservableValidator
         IsGeneratingPrompt = true;
         try
         {
-            var draft = await _textOptimizationService.GenerateTemplateDraftAsync(StyleDescription);
-
-            // Only fill what the user has not already set, so re-drafting never clobbers their input.
-            if (string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(draft.Name)) Name = draft.Name!;
-            if (string.IsNullOrWhiteSpace(Description) && !string.IsNullOrWhiteSpace(draft.Description)) Description = draft.Description!;
-            if (!string.IsNullOrWhiteSpace(draft.Prompt)) GeneratedPrompt = draft.Prompt!;
+            ApplyDraft(await _textOptimizationService.GenerateTemplateDraftAsync(StyleDescription));
         }
         finally
         {
             IsGeneratingPrompt = false;
         }
+    }
+
+    /// <summary>Shared by both draft doors. Name and description only fill when still blank, so re-drafting
+    /// never clobbers them; the prompt is what the user asked for and always lands.</summary>
+    public void ApplyDraft(TemplateDraft draft)
+    {
+        if (string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(draft.Name)) Name = draft.Name!;
+        if (string.IsNullOrWhiteSpace(Description) && !string.IsNullOrWhiteSpace(draft.Description)) Description = draft.Description!;
+        if (!string.IsNullOrWhiteSpace(draft.Prompt)) GeneratedPrompt = draft.Prompt!;
     }
 
     public static TemplateEditModel FromTemplate(OptimizationTemplate template, ITextOptimizationService? textOptimizationService = null)

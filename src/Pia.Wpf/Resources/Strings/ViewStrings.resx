@@ -1618,4 +1618,24 @@
   <data name="Templates_Placeholder" xml:space="preserve"><value>Select a template to see what it does.</value></data>
   <data name="Templates_PlaceholderHint" xml:space="preserve"><value>Or add a new one to rewrite your text in a style you choose.</value></data>
   <data name="Dialog_TemplateEdit_Description" xml:space="preserve"><value>Description</value></data>
+  <data name="AdvancedCreation_Title_Template" xml:space="preserve"><value>Design a template</value></data>
+  <data name="AdvancedCreation_Title_Persona" xml:space="preserve"><value>Design a persona</value></data>
+  <data name="AdvancedCreation_Title_Routine" xml:space="preserve"><value>Design a routine</value></data>
+  <data name="AdvancedCreation_Opening_Template" xml:space="preserve"><value>What should this template do to your text?</value></data>
+  <data name="AdvancedCreation_Opening_Persona" xml:space="preserve"><value>What should this persona be like?</value></data>
+  <data name="AdvancedCreation_Opening_Routine" xml:space="preserve"><value>What should this routine do for you?</value></data>
+  <data name="AdvancedCreation_OpeningHint" xml:space="preserve"><value>One sentence is enough — Pia will ask about the rest.</value></data>
+  <data name="AdvancedCreation_Start" xml:space="preserve"><value>Start</value></data>
+  <data name="AdvancedCreation_Send" xml:space="preserve"><value>Send</value></data>
+  <data name="AdvancedCreation_Skip" xml:space="preserve"><value>Skip</value></data>
+  <data name="AdvancedCreation_Thinking" xml:space="preserve"><value>Thinking…</value></data>
+  <data name="AdvancedCreation_Done" xml:space="preserve"><value>Ready. Use this draft to fill in the editor — you can still change everything.</value></data>
+  <data name="AdvancedCreation_Use" xml:space="preserve"><value>Use this draft</value></data>
+  <data name="AdvancedCreation_Retry" xml:space="preserve"><value>Try again</value></data>
+  <data name="AdvancedCreation_Error_BadReply" xml:space="preserve"><value>That reply could not be read. Trying again usually works.</value></data>
+  <data name="AdvancedCreation_Error_Failed" xml:space="preserve"><value>Designing this failed. Check the provider and try again.</value></data>
+  <data name="AdvancedCreation_DiscardPrompt" xml:space="preserve"><value>Discard this design and close?</value></data>
+  <data name="AdvancedCreation_Discard" xml:space="preserve"><value>Discard</value></data>
+  <data name="AdvancedCreation_KeepEditing" xml:space="preserve"><value>Keep going</value></data>
+  <data name="AdvancedCreation_Advanced" xml:space="preserve"><value>Advanced…</value></data>
 </root>

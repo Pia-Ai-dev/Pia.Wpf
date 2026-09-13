@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 
@@ -20,6 +21,7 @@ public partial class TemplatesSettingsViewModel : UiThreadViewModel, IDisposable
     private readonly ITemplateService _templateService;
     private readonly ISettingsService _settingsService;
     private readonly ITextOptimizationService _textOptimizationService;
+    private readonly IAdvancedCreationLauncher? _advancedCreation;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
     private readonly ILocalizationService _localizationService;
     private readonly IAuthService _authService;
@@ -95,7 +97,8 @@ public partial class TemplatesSettingsViewModel : UiThreadViewModel, IDisposable
         Wpf.Ui.ISnackbarService snackbarService,
         ILocalizationService localizationService,
         IAuthService authService,
-        IPolicyService policyService)
+        IPolicyService policyService,
+        IAdvancedCreationLauncher? advancedCreation = null)
     {
         Policy = new PolicyLock(policyService);
         _logger = logger;
@@ -105,6 +108,7 @@ public partial class TemplatesSettingsViewModel : UiThreadViewModel, IDisposable
         _snackbarService = snackbarService;
         _localizationService = localizationService;
         _authService = authService;
+        _advancedCreation = advancedCreation;
         Templates = new ObservableCollection<OptimizationTemplate>();
 
         _templateService.TemplatesChanged += OnTemplatesChanged;
@@ -252,6 +256,33 @@ public partial class TemplatesSettingsViewModel : UiThreadViewModel, IDisposable
     private bool CanDeleteSelected() => CanDeleteTemplate(SelectedTemplate);
 
     private bool CanSetDefaultSelected() => SelectedTemplate is not null;
+
+    /// <summary>Brainstorms the template with the model instead of drafting it in one shot; the result
+    /// lands through <see cref="TemplateEditModel.ApplyDraft"/>, exactly as the one-shot assist does.</summary>
+    [RelayCommand]
+    private async Task AdvancedDraftAsync()
+    {
+        if (_advancedCreation is null || Editor is not { } editor)
+            return;
+
+        editor.IsGeneratingPrompt = true;
+        try
+        {
+            var json = await _advancedCreation.LaunchAsync(
+                AdvancedCreationModes.Template(), providerId: null, seed: editor.StyleDescription);
+
+            if (json is not null)
+                editor.ApplyDraft(DraftParsing.ParseTemplateDraft(json));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Designing a template failed");
+        }
+        finally
+        {
+            editor.IsGeneratingPrompt = false;
+        }
+    }
 
     [RelayCommand]
     private void CancelEdit()

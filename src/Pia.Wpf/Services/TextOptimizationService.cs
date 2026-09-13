@@ -179,7 +179,7 @@ Style description:
         if (string.IsNullOrWhiteSpace(raw))
             throw new InvalidOperationException("The model returned no template draft.");
 
-        return ParseTemplateDraft(raw);
+        return DraftParsing.ParseTemplateDraft(raw);
     }
 
     public async Task<PersonaDraft> GeneratePersonaDraftAsync(string description, Guid? providerId = null)
@@ -209,7 +209,7 @@ Description:
         // /api/ai/chat only returns the expected shape on the streaming path (its non-streaming
         // response shape is unsupported here), and this is the proven path for every provider. The
         // system message keeps reasoning models from wrapping the JSON in think/commentary, which
-        // would defeat the extraction in ParsePersonaDraft.
+        // would defeat the extraction in DraftParsing.ParsePersonaDraft.
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
             new(Microsoft.Extensions.AI.ChatRole.System,
@@ -225,7 +225,7 @@ Description:
                 buffer.Append(delta.Text);
         }
 
-        return ParsePersonaDraft(buffer.ToString());
+        return DraftParsing.ParsePersonaDraft(buffer.ToString());
     }
 
     public async Task<RoutineDraft> GenerateRoutineDraftAsync(
@@ -285,7 +285,7 @@ Description:
         if (string.IsNullOrWhiteSpace(raw))
             throw new InvalidOperationException("The model returned no routine draft.");
 
-        return ParseRoutineDraft(raw);
+        return DraftParsing.ParseRoutineDraft(raw);
     }
 
     private async Task<string> CollectTextAsync(
@@ -300,146 +300,5 @@ Description:
         }
 
         return buffer.ToString();
-    }
-
-    private static RoutineDraft ParseRoutineDraft(string raw)
-    {
-        var json = ExtractJsonObject(raw);
-        if (json is null)
-            return RawGoal(raw);
-
-        try
-        {
-            var dto = JsonSerializer.Deserialize<RoutineDraftDto>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (dto is null)
-                return RawGoal(raw);
-
-            return new RoutineDraft(
-                Clean(dto.Name),
-                Clean(dto.Goal),
-                Enum.TryParse<RecurrenceType>(dto.Recurrence, ignoreCase: true, out var recurrence) ? recurrence : null,
-                Enum.TryParse<DayOfWeek>(dto.DayOfWeek, ignoreCase: true, out var day) ? day : null,
-                TimeOnly.TryParseExact(dto.TimeOfDay, "HH\\:mm", out var time) ? time : null,
-                Enum.TryParse<ReasoningEffort>(dto.Effort, ignoreCase: true, out var effort) ? effort : null,
-                dto.NeedsWebSearch,
-                dto.Tools?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList());
-        }
-        catch (JsonException)
-        {
-            return RawGoal(raw);
-        }
-
-        static RoutineDraft RawGoal(string text) =>
-            new(null, text.Trim(), null, null, null, null, false, null);
-
-        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    private static TemplateDraft ParseTemplateDraft(string raw)
-    {
-        var json = ExtractJsonObject(raw);
-        if (json is null)
-            return new TemplateDraft(null, null, raw.Trim());
-
-        try
-        {
-            var dto = JsonSerializer.Deserialize<TemplateDraftDto>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (dto is null)
-                return new TemplateDraft(null, null, raw.Trim());
-
-            // A JSON object that carries no prompt is worse than no JSON: the caller would fill the
-            // editor with nothing. Fall back to the raw text, as the non-JSON path does.
-            var prompt = Clean(dto.Prompt) ?? raw.Trim();
-            return new TemplateDraft(Clean(dto.Name), Clean(dto.Description), prompt);
-        }
-        catch (JsonException)
-        {
-            return new TemplateDraft(null, null, raw.Trim());
-        }
-
-        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    private static PersonaDraft ParsePersonaDraft(string raw)
-    {
-        var json = ExtractJsonObject(raw);
-        if (json is null)
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-
-        try
-        {
-            var dto = JsonSerializer.Deserialize<PersonaDraftDto>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (dto is null)
-                return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-
-            return new PersonaDraft(
-                Clean(dto.Name),
-                Clean(dto.Tagline),
-                Clean(dto.SystemPrompt),
-                Clean(dto.Guardrails),
-                Clean(dto.OutputFormat),
-                Clean(dto.Archetype),
-                Clean(dto.Emoji),
-                Clean(dto.AccentColor),
-                dto.Expertise?.Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e.Trim()).ToList());
-        }
-        catch (JsonException)
-        {
-            // Model didn't return valid JSON — fall back to using the raw text as the system prompt.
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-        }
-
-        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    // Extracts the first {...} object from a model response, tolerating code fences / surrounding prose.
-    private static string? ExtractJsonObject(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start < 0 || end <= start) return null;
-        return text.Substring(start, end - start + 1);
-    }
-
-    private sealed class RoutineDraftDto
-    {
-        public string? Name { get; set; }
-        public string? Goal { get; set; }
-        public string? Recurrence { get; set; }
-        public string? DayOfWeek { get; set; }
-        public string? TimeOfDay { get; set; }
-        public string? Effort { get; set; }
-        public bool NeedsWebSearch { get; set; }
-        public List<string>? Tools { get; set; }
-    }
-
-    private sealed class TemplateDraftDto
-    {
-        public string? Name { get; set; }
-        public string? Description { get; set; }
-        public string? Prompt { get; set; }
-    }
-
-    private sealed class PersonaDraftDto
-    {
-        public string? Name { get; set; }
-        public string? Tagline { get; set; }
-        public string? SystemPrompt { get; set; }
-        public string? Guardrails { get; set; }
-        public string? OutputFormat { get; set; }
-        public string? Archetype { get; set; }
-        public string? Emoji { get; set; }
-        public string? AccentColor { get; set; }
-        public List<string>? Expertise { get; set; }
     }
 }

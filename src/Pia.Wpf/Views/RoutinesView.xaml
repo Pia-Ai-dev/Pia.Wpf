@@ -616,24 +616,34 @@
                           IsReadOnly="{Binding IsDrafting}"
                           AutomationProperties.AutomationId="Routines_Draft_Description"
                           Margin="0,0,0,8"/>
-              <ui:Button Command="{Binding GenerateDraftCommand}"
-                         IsEnabled="{Binding IsDrafting, Converter={StaticResource InverseBooleanConverter}}"
-                         AutomationProperties.AutomationId="Routines_Draft_Generate"
-                         HorizontalAlignment="Left"
-                         Margin="0,0,0,16">
-                <Grid>
-                  <StackPanel Orientation="Horizontal"
-                              Visibility="{Binding IsDrafting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
-                    <TextBlock Text="{loc:Str Routines_Draft_Button}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <ui:Button Command="{Binding GenerateDraftCommand}"
+                           IsEnabled="{Binding IsDrafting, Converter={StaticResource InverseBooleanConverter}}"
+                           AutomationProperties.AutomationId="Routines_Draft_Generate"
+                           Margin="0,0,8,0">
+                  <Grid>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsDrafting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                      <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Routines_Draft_Button}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsDrafting, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Routines_Draft_Working}"/>
+                    </StackPanel>
+                  </Grid>
+                </ui:Button>
+                <ui:Button Command="{Binding AdvancedDraftCommand}"
+                           IsEnabled="{Binding IsDrafting, Converter={StaticResource InverseBooleanConverter}}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="Routines_Draft_Advanced">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str AdvancedCreation_Advanced}"/>
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal"
-                              Visibility="{Binding IsDrafting, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
-                    <TextBlock Text="{loc:Str Routines_Draft_Working}"/>
-                  </StackPanel>
-                </Grid>
-              </ui:Button>
+                </ui:Button>
+              </StackPanel>
 
               <TextBlock Text="{loc:Str Routines_Field_Name}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>

@@ -1,6 +1,7 @@
 # Advanced Creation + templates parity — checklist
 
-**Status:** Groups A, B and step C1 landed; C2/C3 fold into E1.
+**Status:** All 23 steps landed. Tests build but have not been run — this machine cannot
+execute `net10.0-windows`; the exe gate is outstanding on Windows/CI.
 **Owner:** Marco Altmann
 **Written:** 2026-09-13
 **Origin:** Owner request, 2026-09-13 (advanced creation overlay; optimize templates
@@ -72,39 +73,39 @@ answered plus the current one — rather than drawing an unknown total up front.
 - [x] **C1 · `MaxPanelHeight` + scrolling body.** New dependency property on
       `OverlayDialogPanel`; wrap the template's `ContentPresenter` in a `ScrollViewer`.
       *Deps:* G-2 · *Effort:* S · *Value:* Enabler
-- [ ] **C2 · Inline confirm and error regions.** A discard confirmation and an error
-      banner that render inside the panel, because `DialogOverlayHost` is single-slot and
-      `IDialogService` would orphan the panel's `TaskCompletionSource`.
+- [x] **C2 · Inline confirm and error regions.** Landed on the panel itself (E1) rather
+      than on the base class, since it is the only consumer: an error banner with Retry and
+      a discard confirmation, both rendered inside the panel.
       *Deps:* C1 · *Effort:* S · *Value:* High
-- [ ] **C3 · Escape override.** `OnEscapePressed` confirms instead of closing once at
+- [x] **C3 · Escape override.** `OnEscapePressed` confirms instead of closing once at
       least one answer has been given. *Deps:* C2 · *Effort:* XS · *Value:* Med
 
 ## Group D — Interview engine
 
-- [ ] **D1 · `AdvancedCreationMode` + the three instances.** Subject preamble, draft-key
+- [x] **D1 · `AdvancedCreationMode` + the three instances.** Subject preamble, draft-key
       block, extra context, localization keys. Routines pass `OfferableDraftTools()`.
       *Deps:* B1 · *Effort:* S · *Value:* Enabler
-- [ ] **D2 · `IAdvancedCreationService` + envelope parser.** `StartAsync` / `AnswerAsync`
+- [x] **D2 · `IAdvancedCreationService` + envelope parser.** `StartAsync` / `AnswerAsync`
       over the existing streaming path, turn cap, empty-stream retry, tolerant JSON
       extraction. *Deps:* D1, G-3 · *Effort:* M · *Value:* High
-- [ ] **D3 · Parser tests.** Empty, prose, fenced JSON, unknown `kind`, `done` without
+- [x] **D3 · Parser tests.** Empty, prose, fenced JSON, unknown `kind`, `done` without
       `draft`, `ask` without questions, over-long question list, turn-cap termination.
       Mirrors `RoutineDraftFailureTests`. *Deps:* D2 · *Effort:* S · *Value:* High
 
 ## Group E — Interview UI
 
-- [ ] **E1 · `AdvancedCreationOverlayPanel`.** `OverlayDialogPanel` subclass in
+- [x] **E1 · `AdvancedCreationOverlayPanel`.** `OverlayDialogPanel` subclass in
       `Views/Dialogs/Overlay/`, copying `PolicyRestartOverlayPanel` — including its
       explicit `Style="{StaticResource {x:Type controls:OverlayDialogPanel}}"`, without
       which a subclass renders untemplated. Opening prompt, transcript, question region,
       live draft summary, Primary enabled only on `done`.
       *Deps:* C3, D2, G-2 · *Effort:* M · *Value:* High
-- [ ] **E2 · Question `DataTemplateSelector`.** One template per `kind` — `text`,
+- [x] **E2 · Question `DataTemplateSelector`.** One template per `kind` — `text`,
       `longtext`, `choice`, `multichoice`, `sample` — shared by all three modes. This is
       what makes the look and feel identical. *Deps:* E1 · *Effort:* M · *Value:* High
-- [ ] **E3 · Localization.** Every string through `loc:Str` into `ViewStrings.resx`,
+- [x] **E3 · Localization.** Every string through `loc:Str` into `ViewStrings.resx`,
       `.de.resx` and `.fr.resx` together. *Deps:* E2 · *Effort:* S · *Value:* High
-- [ ] **E4 · Automation ids.** `AdvancedCreation_*` on fixed controls, the per-item
+- [x] **E4 · Automation ids.** `AdvancedCreation_*` on fixed controls, the per-item
       `{Binding Id, StringFormat='AdvancedCreation_Q_{0}'}` form on question rows, plus
       the `ViewAutomationIdTests` row — which works here, because `Take` walks the
       logical tree and declared templates, not the unapplied `ControlTemplate`. The
@@ -114,20 +115,20 @@ answered plus the current one — rather than drawing an unknown total up front.
 
 ## Group F — Wiring and close-out
 
-- [ ] **F1 · `IAdvancedCreationLauncher` + the three entry buttons.** *Advanced…* beside
+- [x] **F1 · `IAdvancedCreationLauncher` + the three entry buttons.** *Advanced…* beside
       each existing Sparkle button, never replacing it. *Deps:* E4, G-4 · *Effort:* S · *Value:* High
-- [ ] **F2 · Apply through the existing paths.** Routine drafts go through
+- [x] **F2 · Apply through the existing paths.** Routine drafts go through
       `AcceptableDraftTools()` and `ApplyWebSearchGuard()`; personas through
       `PersonaEditModel`; templates through `TemplateEditModel`. *Deps:* F1 · *Effort:* S · *Value:* High
-- [ ] **F3 · Apply-path tests.** Including an invented tool name dropped on the interview
+- [x] **F3 · Apply-path tests.** Including an invented tool name dropped on the interview
       path — the one failure that can reach a stored grant. *Deps:* F2 · *Effort:* S · *Value:* High
-- [ ] **F4 · Privacy-logging pass.** Opening sentence, questions, answers and drafts on
+- [x] **F4 · Privacy-logging pass.** Opening sentence, questions, answers and drafts on
       `SensitiveDebug`; turn index, question count and `state` at normal level.
       *Deps:* F2 · *Effort:* XS · *Value:* High
-- [ ] **F5 · Zero-warning rebuild, Debug and Release.** `dotnet build -t:Rebuild -v:n`
+- [x] **F5 · Zero-warning rebuild, Debug and Release.** `dotnet build -t:Rebuild -v:n`
       and again with `-c Release`; read the count off the `N Warning(s)` line.
       *Deps:* F4 · *Effort:* XS · *Value:* High
-- [ ] **F6 · Release notes.** Rewrite `docs/release_notes/RELEASE.md` in place per
+- [x] **F6 · Release notes.** Rewrite `docs/release_notes/RELEASE.md` in place per
       `docs/release_notes/README.md`. *Deps:* F5 · *Effort:* XS · *Value:* Med
 
 ## Not yet planned
