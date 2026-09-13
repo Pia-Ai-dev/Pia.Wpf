@@ -1,6 +1,7 @@
 # Advanced Creation: an interview overlay for templates, routines and personas
 
-**Status:** Proposed — not started
+**Status:** Landed 2026-09-13. Tests build but were not run on the authoring machine
+(macOS cannot execute `net10.0-windows`); the exe gate is outstanding on Windows/CI.
 **Owner:** Marco Altmann
 **Written:** 2026-09-13
 **Origin:** Owner request, 2026-09-13: an "advanced creation" mode beside the existing

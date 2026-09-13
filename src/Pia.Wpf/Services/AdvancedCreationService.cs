@@ -72,6 +72,23 @@ public class AdvancedCreationService : IAdvancedCreationService
         return await RunTurnAsync(session, cancellationToken);
     }
 
+    public Task<AdvancedCreationTurn> RetryTurnAsync(
+        AdvancedCreationSession session,
+        CancellationToken cancellationToken = default)
+    {
+        if (session.Messages.Count == 0)
+            throw new InvalidOperationException("The interview has not been started.");
+
+        // A failed transport left the transcript ending on the user's turn, so it can go back untouched.
+        // A reply we could not read is still in it, and a transcript ending on the assistant is one some
+        // providers refuse outright — so only that case needs a turn of its own.
+        if (session.Messages[^1].Role == ChatRole.Assistant)
+            session.Messages.Add(new ChatMessage(ChatRole.User,
+                "That reply could not be read. Answer again with ONLY the JSON object and nothing else."));
+
+        return RunTurnAsync(session, cancellationToken);
+    }
+
     private async Task<AdvancedCreationTurn> RunTurnAsync(
         AdvancedCreationSession session, CancellationToken cancellationToken)
     {
@@ -111,7 +128,7 @@ public class AdvancedCreationService : IAdvancedCreationService
         var buffer = new StringBuilder();
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             session.Messages, provider, tools: null, toolHandler: null,
-            mode: nameof(WindowMode.Assistant)))
+            mode: session.Mode.ProviderMode.ToString()))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (item is TextDelta delta)
@@ -147,11 +164,18 @@ public class AdvancedCreationService : IAdvancedCreationService
 
         if (isDone)
         {
-            // "done" with no draft is the one shape that would hand the caller an empty editor. The raw
-            // reply is the better guess — the one-shot parsers already treat loose text that way.
+            // "done" with no draft parses to an all-null record, so the editor would fill with nothing and
+            // "Use this draft" would do visibly nothing. Treat it as a reply we could not use.
             var draft = dto.Draft?.GetRawText();
-            return new AdvancedCreationTurn(true, summary, [], string.IsNullOrWhiteSpace(draft) ? json : draft);
+            return string.IsNullOrWhiteSpace(draft) || draft == "null"
+                ? Unusable(raw, capReached)
+                : new AdvancedCreationTurn(true, summary, [], draft);
         }
+
+        // Past the cap the model has already been told to finish, so another question is a refusal rather
+        // than a turn to render — there is no turn left to spend on it.
+        if (capReached)
+            return Unusable(raw, capReached: false);
 
         var questions = (dto.Questions ?? [])
             .Where(q => !string.IsNullOrWhiteSpace(q.Id) && !string.IsNullOrWhiteSpace(q.Label))

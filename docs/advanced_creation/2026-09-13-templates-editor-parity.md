@@ -1,6 +1,8 @@
 # Optimize templates: master–detail parity with routines and personas
 
-**Status:** Proposed — not started
+**Status:** Landed 2026-09-13. Templates became a second inner tab of Settings → Optimize
+rather than a section below the output settings: a master-detail pane needs a bounded
+height, which a page-level `ScrollViewer` does not give it.
 **Owner:** Marco Altmann
 **Written:** 2026-09-13
 **Origin:** Owner request, 2026-09-13: "we should also change the whole design of the
@@ -34,11 +36,17 @@ mirroring `RoutinesViewModel`". That is the pattern to land on.
 ## Shape to build
 
 Extract the templates half of the Optimize settings page into a
-`src/Pia.Wpf/Views/SettingsViews/TemplatesView.xaml` UserControl and embed it in
-`SettingsViews/OptimizeView.xaml` below the output settings — exactly the way
-`PersonasView` is embedded in `SettingsViews/AssistantView`. That keeps the Settings
-navigation unchanged (no new category, no new `SettingsCategory_*` automation id) and
-reuses a precedent that already passes `ViewAutomationIdTests`.
+`src/Pia.Wpf/Views/SettingsViews/TemplatesView.xaml` UserControl and give it its own inner
+tab of `SettingsViews/OptimizeView.xaml` — exactly the way `PersonasView` sits in a
+`TabItem` of `SettingsViews/AssistantView`. That keeps the Settings navigation unchanged
+(no new category, no new `SettingsCategory_*` automation id) and reuses a precedent that
+already passes `ViewAutomationIdTests`.
+
+A tab rather than a section below the output settings, because the height matters: every
+other tab wraps its content in a `ScrollViewer`, but `PersonasView` does not — sitting
+directly in a `TabItem` is what bounds it, so its list and its editor scroll separately
+instead of stretching the page. Below a page-level `ScrollViewer` the `ListBox` would grow
+to hold every template and the whole page would scroll as one.
 
 ```
 ┌ Templates ───────────────────────────────── [+ Add] ┐

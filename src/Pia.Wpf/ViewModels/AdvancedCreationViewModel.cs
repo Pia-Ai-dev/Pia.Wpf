@@ -131,11 +131,12 @@ public partial class AdvancedCreationViewModel : ObservableObject
             [.. Questions.Select(q => q.Question.Id)],
             ct));
 
-    /// <summary>The transcript survived the failed turn, so retrying re-sends it rather than restarting.</summary>
+    /// <summary>The transcript survived the failed turn, so retrying re-sends it rather than answering
+    /// something again. Before the first successful turn there is nothing to re-send, so it restarts.</summary>
     [RelayCommand]
     private Task RetryAsync(CancellationToken ct) =>
         HasStarted
-            ? RunAsync(() => _service.AnswerAsync(_session, new Dictionary<string, string>(), [], ct))
+            ? RunAsync(() => _service.RetryTurnAsync(_session, ct))
             : RunAsync(() => _service.StartAsync(_session, Opening, ct));
 
     [RelayCommand]

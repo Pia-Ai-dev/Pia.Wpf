@@ -118,7 +118,7 @@ public class SettingsPolicyReloadTests : IDisposable
         var templates = new TemplatesSettingsViewModel(
             logger, Substitute.For<ITemplateService>(), settings,
             Substitute.For<ITextOptimizationService>(), snackbar, localization,
-            Substitute.For<IAuthService>(), policy);
+            Substitute.For<IAuthService>(), policy, Substitute.For<IAdvancedCreationLauncher>());
 
         var optimize = new OptimizeSettingsViewModel(providers, templates, logger, settings, policy);
 
@@ -435,7 +435,8 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<IAssistantFolderRelocationService>(),
             Substitute.For<Pia.Services.IWorkingDirectoryService>(),
             Substitute.For<IDiagnosticsExportService>(),
-            EmptyScreenCaptureAllowlist());
+            EmptyScreenCaptureAllowlist(),
+            Substitute.For<IAdvancedCreationLauncher>());
 
         return new Page(root, settings, policy);
     }

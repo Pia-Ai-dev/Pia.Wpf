@@ -9,8 +9,12 @@
     <converters:EnumToLocalizedStringConverter x:Key="EnumToLocalizedStringConverter"/>
     <converters:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
   </UserControl.Resources>
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-    <StackPanel MaxWidth="1080" HorizontalAlignment="Stretch">
+  <Grid>
+    <TabControl Style="{DynamicResource SettingsInnerTabControlStyle}">
+      <TabItem Header="{loc:Str Settings_InnerTab_General}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_Optimize_Tab_General">
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel MaxWidth="1080" HorizontalAlignment="Left">
       <!-- Provider hint (the default provider for this mode is set on the Providers tab) -->
       <StackPanel Margin="0,0,0,20">
         <TextBlock Text="{loc:Str Settings_Tab_Providers}"
@@ -73,13 +77,16 @@
         <TextBlock Text="{loc:Str Settings_AutoTypeDelay_Description}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"/>
       </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
 
-      <Border BorderThickness="0,1,0,0"
-              BorderBrush="{DynamicResource BorderBrush_}"
-              Margin="0,4,0,20"/>
-
-      <localSettings:TemplatesView DataContext="{Binding TemplatesVm}"
-                                   MinHeight="460"/>
-    </StackPanel>
-  </ScrollViewer>
+      <!-- Its own tab, not a section below the settings: the master-detail pane needs a bounded height to
+           scroll its list and its editor separately, which a page-level ScrollViewer would not give it. -->
+      <TabItem Header="{loc:Str Settings_Tab_Templates}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_Optimize_Tab_Templates">
+        <localSettings:TemplatesView DataContext="{Binding TemplatesVm}"/>
+      </TabItem>
+    </TabControl>
+  </Grid>
 </UserControl>

@@ -22,4 +22,9 @@ public interface IAdvancedCreationService
         IReadOnlyDictionary<string, string> answers,
         IReadOnlyList<string> skipped,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Re-runs the last turn after a failure, without answering anything again.</summary>
+    Task<AdvancedCreationTurn> RetryTurnAsync(
+        AdvancedCreationSession session,
+        CancellationToken cancellationToken = default);
 }

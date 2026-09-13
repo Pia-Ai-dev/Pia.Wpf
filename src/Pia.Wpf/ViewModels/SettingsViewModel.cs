@@ -57,17 +57,18 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IAssistantFolderRelocationService folderRelocationService,
         IWorkingDirectoryService workingDirectoryService,
         IDiagnosticsExportService diagnosticsExportService,
-        IScreenCaptureAllowlistStore screenCaptureAllowlistStore)
+        IScreenCaptureAllowlistStore screenCaptureAllowlistStore,
+        IAdvancedCreationLauncher advancedCreation)
     {
         _logger = logger;
 
         ProvidersVm = new ProvidersSettingsViewModel(this, logger, providerService, settingsService, dialogService, snackbarService, authService, localizationService, policyService, syncClientService);
 
-        TemplatesVm = new TemplatesSettingsViewModel(logger, templateService, settingsService, textOptimizationService, snackbarService, localizationService, authService, policyService);
+        TemplatesVm = new TemplatesSettingsViewModel(logger, templateService, settingsService, textOptimizationService, snackbarService, localizationService, authService, policyService, advancedCreation);
 
         OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, TemplatesVm, logger, settingsService, policyService);
 
-        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, snackbarService, localizationService, authService, settingsService, policyService);
+        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, snackbarService, localizationService, authService, settingsService, policyService, advancedCreation);
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(
             toolPermissionService, pluginService, logger, screenCaptureAllowlistStore, dialogService);

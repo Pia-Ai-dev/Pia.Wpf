@@ -29,8 +29,13 @@ public partial class AdvancedCreationOverlayPanel : OverlayDialogPanel
         // Only meaningful once a draft exists; until then the panel's own buttons carry the interview.
         IsPrimaryButtonEnabled = viewModel.IsComplete;
 
-        Loaded += (_, _) => Dispatcher.BeginInvoke(
-            new Action(() => Keyboard.Focus(OpeningBox)), DispatcherPriority.Input);
+        // DialogOverlayHost focuses the panel itself after its show animation, which lands after anything
+        // Loaded could do. Handing focus on from there is what actually reaches the box.
+        GotKeyboardFocus += (_, e) =>
+        {
+            if (ReferenceEquals(e.NewFocus, this) && OpeningBox.IsVisible)
+                Dispatcher.BeginInvoke(new Action(() => Keyboard.Focus(OpeningBox)), DispatcherPriority.Input);
+        };
     }
 
     /// <summary>Confirms inside the panel instead of closing: the host holds one panel, so a confirmation

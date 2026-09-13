@@ -100,14 +100,15 @@ public sealed class AdvancedCreationTurnParsingTests
         Assert.Equal("c", turn.Questions[0].Id);
     }
 
-    [Fact]
-    public void Done_without_a_draft_falls_back_to_the_object_rather_than_emptying_the_editor()
+    /// <summary>"done" with nothing in it parses to an all-null record, so the editor would fill with
+    /// nothing and "Use this draft" would visibly do nothing. Better to ask the model again.</summary>
+    [Theory]
+    [InlineData("""{"state":"done","summary":"Ready."}""")]
+    [InlineData("""{"state":"done","draft":null}""")]
+    public void Done_without_a_draft_is_refused(string raw)
     {
-        var turn = AdvancedCreationService.ParseTurn(
-            """{"state":"done","summary":"Ready."}""", capReached: false);
-
-        Assert.True(turn.IsComplete);
-        Assert.False(string.IsNullOrWhiteSpace(turn.DraftJson));
+        Assert.Throws<AdvancedCreationReplyException>(
+            () => AdvancedCreationService.ParseTurn(raw, capReached: false));
     }
 
     [Theory]
@@ -121,9 +122,27 @@ public sealed class AdvancedCreationTurnParsingTests
             () => AdvancedCreationService.ParseTurn(raw, capReached: false));
     }
 
+    /// <summary>Past the cap the model has already been told to finish. Rendering a seventh question would
+    /// make the cap advisory, which is the one thing bounding what an interview can cost.</summary>
+    [Fact]
+    public void A_question_past_the_cap_is_refused_rather_than_rendered()
+    {
+        Assert.Throws<AdvancedCreationReplyException>(() => AdvancedCreationService.ParseTurn(
+            """{"state":"ask","questions":[{"id":"x","label":"One more thing?"}]}""", capReached: true));
+    }
+
+    [Fact]
+    public void A_draft_at_the_cap_is_still_accepted()
+    {
+        var turn = AdvancedCreationService.ParseTurn(
+            """{"state":"done","draft":{"name":"Digest"}}""", capReached: true);
+
+        Assert.True(turn.IsComplete);
+        Assert.Equal("Digest", DraftParsing.ParseRoutineDraft(turn.DraftJson!).Name);
+    }
+
     [Theory]
     [InlineData("Just some prose, no JSON at all.")]
-    [InlineData("""{"state":"ask","questions":[]}""")]
     public void The_same_reply_at_the_cap_ends_the_interview_on_what_there_is(string raw)
     {
         var turn = AdvancedCreationService.ParseTurn(raw, capReached: true);
