@@ -41,7 +41,6 @@ public interface IPersonaService
     /// <summary>
     /// Deletes a user persona and tracks the deletion as <c>"personas"</c>. No-op for built-ins and for
     /// managed ids — a managed id never reaches the delete tracker (it must not enqueue a push tombstone).
-    /// Pass <paramref name="trackForSync"/> false when applying a tombstone that came from sync.
     /// </summary>
     Task DeletePersonaAsync(Guid id, bool trackForSync = true);
 
