@@ -293,7 +293,7 @@ public class SettingsPolicyReloadTests : IDisposable
 
         // Non-vacuity: the hook is live before the dispose, so the unchanged count below is the unsubscribe.
         suite.Policy.LocksChanged += Raise.EventWith(EventArgs.Empty);
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
 
         foreach (var vm in suite.All)
             vm.Dispose();
@@ -302,7 +302,7 @@ public class SettingsPolicyReloadTests : IDisposable
         suite.Settings.RaiseSettingsChanged();
         suite.Policy.LocksChanged += Raise.EventWith(EventArgs.Empty);
 
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
         Assert.False(suite.Account.TrustSelfSignedCertificates);
         Assert.NotEqual(7, suite.Assistant.AgentMaxSteps);
         Assert.False(suite.General.AutoCaptureSelectedText);
@@ -356,7 +356,7 @@ public class SettingsPolicyReloadTests : IDisposable
         }
     }
 
-    /// <summary>Reflected rather than listed: a ninth settings VM inherits the PolicyLock behaviour for
+    /// <summary>Reflected rather than listed: a tenth settings VM inherits the PolicyLock behaviour for
     /// free but not the unsubscribe, and its handler would outlive its window.</summary>
     [Fact]
     public void EverySettingsViewModelHoldingAPolicyLock_IsDisposable()
@@ -366,7 +366,7 @@ public class SettingsPolicyReloadTests : IDisposable
                 ?.PropertyType == typeof(PolicyLock))
             .ToList();
 
-        Assert.Equal(8, holders.Count);
+        Assert.Equal(9, holders.Count);
 
         var leaking = holders.Where(t => !typeof(IDisposable).IsAssignableFrom(t))
             .Select(t => t.Name).ToArray();
@@ -379,13 +379,13 @@ public class SettingsPolicyReloadTests : IDisposable
     }
 
     /// <summary>Meeting and Privacy are constructed as locals and reachable only through another sub-VM, so
-    /// only the real graph proves the window's one Dispose reaches all eight.</summary>
+    /// only the real graph proves the window's one Dispose reaches all nine.</summary>
     private sealed record Page(SettingsViewModel Root, FakeSettingsService Settings, IPolicyService Policy)
     {
         public IEnumerable<PolicyLock> AllLocks =>
             [Root.AccountVm.Policy, Root.AssistantVm.Policy, Root.AssistantVm.MeetingVm.Policy,
              Root.GeneralVm.Policy, Root.GeneralVm.PrivacyVm.Policy, Root.OptimizeVm.Policy,
-             Root.PersonasVm.Policy, Root.ProvidersVm.Policy];
+             Root.PersonasVm.Policy, Root.ProvidersVm.Policy, Root.TemplatesVm.Policy];
     }
 
     private static Page CreatePage()
@@ -461,7 +461,7 @@ public class SettingsPolicyReloadTests : IDisposable
 
         // Non-vacuity: every handler is live before the dispose, so the unchanged values below are the
         // unsubscribe and not a subscription that was never made.
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
         Assert.True(root.AccountVm.TrustSelfSignedCertificates);
         Assert.Equal(7, root.AssistantVm.AgentMaxSteps);
         Assert.Equal(5, root.AssistantVm.MeetingVm.MeetingMaxSpeakers);
@@ -488,7 +488,7 @@ public class SettingsPolicyReloadTests : IDisposable
         page.Settings.RaiseSettingsChanged();
         page.Policy.LocksChanged += Raise.EventWith(EventArgs.Empty);
 
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
         Assert.True(root.AccountVm.TrustSelfSignedCertificates);
         Assert.Equal(7, root.AssistantVm.AgentMaxSteps);
         Assert.Equal(5, root.AssistantVm.MeetingVm.MeetingMaxSpeakers);
