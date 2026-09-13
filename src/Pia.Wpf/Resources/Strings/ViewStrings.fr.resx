@@ -1602,4 +1602,10 @@
   <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>La capture d'écran n'est disponible qu'avec le fournisseur PiaCloud</value></data>
   <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Capturer l'écran</value></data>
   <data name="Settings_Hotkey_ScreenCapture_Description" xml:space="preserve"><value>Ouvre l'Assistant et propose un écran ou une fenêtre à joindre comme image</value></data>
+  <data name="Templates_Duplicate" xml:space="preserve"><value>Dupliquer</value></data>
+  <data name="Templates_Empty" xml:space="preserve"><value>Aucun modèle pour l’instant.</value></data>
+  <data name="Templates_EmptyHint" xml:space="preserve"><value>Ajoutez-en un pour réécrire votre texte dans le style de votre choix.</value></data>
+  <data name="Templates_Placeholder" xml:space="preserve"><value>Sélectionnez un modèle pour voir ce qu’il fait.</value></data>
+  <data name="Templates_PlaceholderHint" xml:space="preserve"><value>Ou ajoutez-en un nouveau pour réécrire votre texte dans le style de votre choix.</value></data>
+  <data name="Dialog_TemplateEdit_Description" xml:space="preserve"><value>Description</value></data>
 </root>

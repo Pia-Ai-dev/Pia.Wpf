@@ -16,6 +16,7 @@
                   CornerRadius="12"
                   Padding="28,24"
                   MaxWidth="{TemplateBinding MaxPanelWidth}"
+                  MaxHeight="{TemplateBinding MaxPanelHeight}"
                   MinWidth="320">
             <Border.Effect>
               <DropShadowEffect ShadowDepth="0"
@@ -24,28 +25,25 @@
                                 Color="Black" />
             </Border.Effect>
 
-            <StackPanel>
-              <!-- Dialog body content -->
-              <ContentPresenter />
+            <!-- Grid, not StackPanel: the button row has to stay pinned while the body scrolls. -->
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
 
-              <!-- Button row -->
-              <StackPanel Orientation="Horizontal"
+              <!-- Disabled horizontally so the body measures at the viewport width and text wraps. -->
+              <ScrollViewer Grid.Row="0"
+                            VerticalScrollBarVisibility="Auto"
+                            HorizontalScrollBarVisibility="Disabled"
+                            Focusable="False">
+                <ContentPresenter />
+              </ScrollViewer>
+
+              <StackPanel Grid.Row="1"
+                          Orientation="Horizontal"
                           HorizontalAlignment="Right"
                           Margin="0,20,0,0">
-                <StackPanel.Style>
-                  <Style TargetType="StackPanel">
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding PrimaryButtonText, RelativeSource={RelativeSource TemplatedParent}}" Value="{x:Null}">
-                        <DataTrigger.EnterActions>
-                          <BeginStoryboard>
-                            <Storyboard />
-                          </BeginStoryboard>
-                        </DataTrigger.EnterActions>
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </StackPanel.Style>
-
                 <ui:Button x:Name="PART_SecondaryButton"
                            Content="{TemplateBinding SecondaryButtonText}"
                            Appearance="Secondary"
@@ -106,7 +104,7 @@
                   </ui:Button.Style>
                 </ui:Button>
               </StackPanel>
-            </StackPanel>
+            </Grid>
           </Border>
         </ControlTemplate>
       </Setter.Value>

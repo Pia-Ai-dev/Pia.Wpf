@@ -137,6 +137,51 @@ Provide only the generated prompt, no additional explanation.";
         return completion.Text;
     }
 
+    public async Task<TemplateDraft> GenerateTemplateDraftAsync(string styleDescription, Guid? providerId = null)
+    {
+        var provider = providerId.HasValue
+            ? await _providerService.GetProviderAsync(providerId.Value)
+            : await _providerService.GetDefaultProviderForModeAsync(WindowMode.Optimize);
+
+        if (provider is null)
+            throw new InvalidOperationException("No AI provider configured");
+
+        // The cloud endpoint returns a bare prompt, so there is no name or description to be had.
+        if (provider.ProviderType == AiProviderType.PiaCloud)
+        {
+            var cloudPrompt = await _aiClientService.GeneratePromptViaPiaCloudAsync(styleDescription);
+            return new TemplateDraft(null, null, string.IsNullOrWhiteSpace(cloudPrompt) ? null : cloudPrompt.Trim());
+        }
+
+        var draftPrompt = $@"You are designing a text-optimization template: one instruction an assistant will be given together with a piece of the user's text, to rewrite that text in a particular style. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
+- ""name"": a short display name for the template (max 40 characters)
+- ""description"": a one-line summary of what this template does (max 120 characters)
+- ""prompt"": the instruction itself, 2-4 sentences, written in the second person as a command. It must capture the tone, the sentence structure and complexity, the vocabulary level, and any formatting or structural pattern the style description asks for. Write it so it applies to ANY input text, not to one example.
+
+Write every value in the same language as the style description below.
+
+Style description:
+{styleDescription}";
+
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(Microsoft.Extensions.AI.ChatRole.System,
+                "You produce only the requested output. Do not reason, think, or explain."),
+            new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
+        };
+
+        // Retried once for the same reason the routine draft is: an upstream error frame is dropped
+        // rather than thrown, so a failed turn is indistinguishable from a silent one here.
+        var raw = await CollectTextAsync(messages, provider);
+        if (string.IsNullOrWhiteSpace(raw))
+            raw = await CollectTextAsync(messages, provider);
+
+        if (string.IsNullOrWhiteSpace(raw))
+            throw new InvalidOperationException("The model returned no template draft.");
+
+        return ParseTemplateDraft(raw);
+    }
+
     public async Task<PersonaDraft> GeneratePersonaDraftAsync(string description, Guid? providerId = null)
     {
         var provider = providerId.HasValue
@@ -293,6 +338,34 @@ Description:
         static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    private static TemplateDraft ParseTemplateDraft(string raw)
+    {
+        var json = ExtractJsonObject(raw);
+        if (json is null)
+            return new TemplateDraft(null, null, raw.Trim());
+
+        try
+        {
+            var dto = JsonSerializer.Deserialize<TemplateDraftDto>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            if (dto is null)
+                return new TemplateDraft(null, null, raw.Trim());
+
+            // A JSON object that carries no prompt is worse than no JSON: the caller would fill the
+            // editor with nothing. Fall back to the raw text, as the non-JSON path does.
+            var prompt = Clean(dto.Prompt) ?? raw.Trim();
+            return new TemplateDraft(Clean(dto.Name), Clean(dto.Description), prompt);
+        }
+        catch (JsonException)
+        {
+            return new TemplateDraft(null, null, raw.Trim());
+        }
+
+        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
     private static PersonaDraft ParsePersonaDraft(string raw)
     {
         var json = ExtractJsonObject(raw);
@@ -348,6 +421,13 @@ Description:
         public string? Effort { get; set; }
         public bool NeedsWebSearch { get; set; }
         public List<string>? Tools { get; set; }
+    }
+
+    private sealed class TemplateDraftDto
+    {
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public string? Prompt { get; set; }
     }
 
     private sealed class PersonaDraftDto

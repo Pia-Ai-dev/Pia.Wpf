@@ -22,6 +22,11 @@ public class OverlayDialogPanel : ContentControl
         DependencyProperty.Register(nameof(MaxPanelWidth), typeof(double), typeof(OverlayDialogPanel),
             new PropertyMetadata(480.0));
 
+    /// <summary>Unbounded by default, so a panel that already fits keeps growing as it did.</summary>
+    public static readonly DependencyProperty MaxPanelHeightProperty =
+        DependencyProperty.Register(nameof(MaxPanelHeight), typeof(double), typeof(OverlayDialogPanel),
+            new PropertyMetadata(double.PositiveInfinity));
+
     public static readonly DependencyProperty PrimaryButtonTextProperty =
         DependencyProperty.Register(nameof(PrimaryButtonText), typeof(string), typeof(OverlayDialogPanel),
             new PropertyMetadata(null));
@@ -44,6 +49,12 @@ public class OverlayDialogPanel : ContentControl
     {
         get => (double)GetValue(MaxPanelWidthProperty);
         set => SetValue(MaxPanelWidthProperty, value);
+    }
+
+    public double MaxPanelHeight
+    {
+        get => (double)GetValue(MaxPanelHeightProperty);
+        set => SetValue(MaxPanelHeightProperty, value);
     }
 
     public string? PrimaryButtonText

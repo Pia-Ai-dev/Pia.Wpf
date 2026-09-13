@@ -1,59 +1,39 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
-using System.Collections.ObjectModel;
 
 namespace Pia.ViewModels;
 
 public partial class OptimizeSettingsViewModel : UiThreadViewModel, IDisposable
 {
     private readonly ILogger<SettingsViewModel> _logger;
-    private readonly ITemplateService _templateService;
     private readonly ISettingsService _settingsService;
-    private readonly ITextOptimizationService _textOptimizationService;
-    private readonly IDialogService _dialogService;
-    private readonly Wpf.Ui.ISnackbarService _snackbarService;
-    private readonly ILocalizationService _localizationService;
     private readonly IPolicyService _policyService;
-
-    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
-    public PolicyLock Policy { get; }
-    private readonly IAuthService _authService;
     private readonly ProvidersSettingsViewModel _providersVm;
+    private readonly TemplatesSettingsViewModel _templatesVm;
     private bool _isLoading;
     private bool _disposed;
 
+    /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
+    public PolicyLock Policy { get; }
+
     public OptimizeSettingsViewModel(
         ProvidersSettingsViewModel providersVm,
+        TemplatesSettingsViewModel templatesVm,
         ILogger<SettingsViewModel> logger,
-        ITemplateService templateService,
         ISettingsService settingsService,
-        ITextOptimizationService textOptimizationService,
-        IDialogService dialogService,
-        Wpf.Ui.ISnackbarService snackbarService,
-        ILocalizationService localizationService,
-        IPolicyService policyService,
-        IAuthService authService)
+        IPolicyService policyService)
     {
         _providersVm = providersVm;
+        _templatesVm = templatesVm;
         _logger = logger;
-        _templateService = templateService;
         _settingsService = settingsService;
-        _textOptimizationService = textOptimizationService;
-        _dialogService = dialogService;
-        _snackbarService = snackbarService;
-        _localizationService = localizationService;
         _policyService = policyService;
         Policy = new PolicyLock(policyService);
-        _authService = authService;
-        Templates = new ObservableCollection<OptimizationTemplate>();
 
-        _templateService.TemplatesChanged += OnTemplatesChanged;
-        _authService.LoginStateChanged += OnLoginStateChanged;
         _policyService.LocksChanged += OnLocksChanged;
         _settingsService.SettingsChanged += OnSettingsChanged;
     }
@@ -70,17 +50,6 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private void OnTemplatesChanged(object? sender, EventArgs e)
-    {
-        RefreshTemplatesAsync().SafeFireAndForget(_logger);
-    }
-
-    private void OnLoginStateChanged(object? sender, bool isLoggedIn)
-    {
-        if (isLoggedIn)
-            RefreshTemplatesAsync().SafeFireAndForget(_logger);
-    }
-
     // Enterprise policy enforcement
     public bool IsOutputActionEnforced => _policyService.IsEnforced(nameof(AppSettings.DefaultOutputAction));
     public bool IsAutoTypeDelayEnforced => _policyService.IsEnforced(nameof(AppSettings.AutoTypeDelayMs));
@@ -92,14 +61,9 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel, IDisposable
         OnPropertyChanged(nameof(IsAutoTypeDelayEnforced));
     });
 
-    // Expose provider VM for bindings
     public ProvidersSettingsViewModel ProvidersVm => _providersVm;
 
-    [ObservableProperty]
-    private ObservableCollection<OptimizationTemplate> _templates;
-
-    [ObservableProperty]
-    private Guid? _defaultTemplateId;
+    public TemplatesSettingsViewModel TemplatesVm => _templatesVm;
 
     [ObservableProperty]
     private OutputAction _outputAction;
@@ -108,11 +72,6 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel, IDisposable
     private int _autoTypeDelayMs;
 
     public IEnumerable<OutputAction> OutputActions => Enum.GetValues<OutputAction>();
-
-    partial void OnDefaultTemplateIdChanged(Guid? value)
-    {
-        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
-    }
 
     partial void OnOutputActionChanged(OutputAction value)
     {
@@ -127,15 +86,10 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel, IDisposable
     public async Task InitializeAsync()
     {
         _isLoading = true;
-
-        Templates.Clear();
-        var templatesList = await _templateService.GetTemplatesAsync();
-        foreach (var template in templatesList)
-            Templates.Add(template);
-
         ApplySettings(await _settingsService.GetSettingsAsync());
-
         _isLoading = false;
+
+        await _templatesVm.InitializeAsync();
     }
 
     // Raised from the policy pull thread, so the mirror has to be marshalled.
@@ -148,120 +102,15 @@ public partial class OptimizeSettingsViewModel : UiThreadViewModel, IDisposable
 
     private void ApplySettings(AppSettings settings)
     {
-        DefaultTemplateId = settings.DefaultTemplateId;
         OutputAction = settings.DefaultOutputAction;
         AutoTypeDelayMs = settings.AutoTypeDelayMs;
-    }
-
-    [RelayCommand]
-    private async Task AddTemplateAsync()
-    {
-        var editModel = new TemplateEditModel(_textOptimizationService);
-
-        if (await _dialogService.ShowTemplateEditDialogAsync(editModel))
-        {
-            await _templateService.AddTemplateAsync(editModel.ToTemplate());
-            await RefreshTemplatesAsync();
-            _snackbarService.Show(_localizationService["Msg_Success"], _localizationService["Msg_Settings_TemplateAdded"], Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-        }
-    }
-
-    [RelayCommand]
-    private async Task ViewTemplatePromptAsync(OptimizationTemplate? template)
-    {
-        if (template is null)
-            return;
-
-        var prompt = template.IsBuiltIn
-            ? template.Prompt
-            : _localizationService["Msg_Settings_CustomTemplatePromptInfo"];
-
-        await _dialogService.ShowMessageDialogAsync(template.Name, prompt);
-    }
-
-    [RelayCommand]
-    private async Task EditTemplateAsync(OptimizationTemplate? template)
-    {
-        if (template is null || template.IsBuiltIn)
-            return;
-
-        var editModel = TemplateEditModel.FromTemplate(template, _textOptimizationService);
-
-        if (await _dialogService.ShowTemplateEditDialogAsync(editModel))
-        {
-            await _templateService.UpdateTemplateAsync(editModel.ToTemplate());
-            await RefreshTemplatesAsync();
-            _snackbarService.Show(_localizationService["Msg_Success"], _localizationService["Msg_Settings_TemplateUpdated"], Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanDeleteTemplate))]
-    private async Task DeleteTemplateAsync(OptimizationTemplate? template)
-    {
-        if (template is null)
-            return;
-
-        if (template.IsBuiltIn)
-        {
-            _snackbarService.Show(_localizationService["Msg_Warning"], _localizationService["Msg_Settings_CannotDeleteBuiltInTemplate"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
-            return;
-        }
-
-        if (template.Id == DefaultTemplateId)
-        {
-            _snackbarService.Show(_localizationService["Msg_Warning"], _localizationService["Msg_Settings_CannotDeleteDefaultTemplate"], Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(3));
-            return;
-        }
-
-        await _templateService.DeleteTemplateAsync(template.Id);
-        await RefreshTemplatesAsync();
-        _snackbarService.Show(_localizationService["Msg_Success"], _localizationService["Msg_Settings_TemplateDeleted"], Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
-    }
-
-    [RelayCommand]
-    private async Task SetDefaultTemplateAsync(OptimizationTemplate? template)
-    {
-        if (template is null)
-            return;
-
-        _isLoading = true;
-        try
-        {
-            DefaultTemplateId = template.Id;
-            await SaveSettingsAsync();
-        }
-        finally
-        {
-            _isLoading = false;
-        }
-    }
-
-    private bool CanDeleteTemplate(OptimizationTemplate? template)
-    {
-        return template != null && !template.IsBuiltIn && template.Id != DefaultTemplateId;
-    }
-
-    private async Task RefreshTemplatesAsync()
-    {
-        // Fetch first (off any thread), then marshal the bound-collection mutation to the captured
-        // UI context — RefreshTemplatesAsync is reachable from OnTemplatesChanged, which the sync
-        // pull loop can raise on a background thread. Clearing before the await would throw there.
-        var templatesList = await _templateService.GetTemplatesAsync();
-        await PostAsync(() =>
-        {
-            Templates.Clear();
-            foreach (var template in templatesList)
-                Templates.Add(template);
-        });
     }
 
     private async Task SaveSettingsAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
-        settings.DefaultTemplateId = DefaultTemplateId;
         settings.DefaultOutputAction = OutputAction;
         settings.AutoTypeDelayMs = AutoTypeDelayMs;
         await _settingsService.SaveSettingsAsync(settings);
     }
-
 }
