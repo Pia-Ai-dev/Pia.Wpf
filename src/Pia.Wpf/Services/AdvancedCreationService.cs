@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -92,10 +93,7 @@ public class AdvancedCreationService : IAdvancedCreationService
     private async Task<AdvancedCreationTurn> RunTurnAsync(
         AdvancedCreationSession session, CancellationToken cancellationToken)
     {
-        var provider = session.ProviderId.HasValue
-            ? await _providerService.GetProviderAsync(session.ProviderId.Value)
-            : await _providerService.GetDefaultProviderForModeAsync(session.Mode.ProviderMode);
-
+        var provider = await ResolveProviderAsync(session);
         if (provider is null)
             throw new InvalidOperationException("No AI provider configured");
 
@@ -122,13 +120,50 @@ public class AdvancedCreationService : IAdvancedCreationService
         return turn;
     }
 
+    /// <summary>Same rungs as a headless run: the caller's explicit pin, then the persona's own provider,
+    /// then the mode default.</summary>
+    private async Task<AiProvider?> ResolveProviderAsync(AdvancedCreationSession session)
+    {
+        var persona = session.Persona;
+
+        AiProvider? provider = null;
+        var rung = "mode default";
+        if (session.ProviderId.HasValue)
+        {
+            provider = await _providerService.GetProviderAsync(session.ProviderId.Value);
+            if (provider is not null) rung = "caller pin";
+        }
+
+        if (provider is null && persona?.PreferredProviderId is Guid preferred)
+        {
+            provider = await _providerService.GetProviderAsync(preferred);
+            if (provider is not null) rung = "persona pin";
+        }
+
+        provider ??= await _providerService.GetDefaultProviderForModeAsync(session.Mode.ProviderMode);
+        if (provider is null) return null;
+
+        _logger.LogInformation(
+            "Advanced creation provider for {Subject}: {Rung}, persona={HasPersona}",
+            session.Mode.Subject, rung, persona is not null);
+        _logger.SensitiveDebug("Advanced creation persona: {Persona}", persona?.Name);
+
+        return RunPinResolver.ApplyEffort(provider, jobPin: null, persona?.ReasoningEffort);
+    }
+
     private async Task<string> CollectTextAsync(
         AdvancedCreationSession session, AiProvider provider, CancellationToken cancellationToken)
     {
+        var persona = session.Persona;
         var buffer = new StringBuilder();
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
             session.Messages, provider, tools: null, toolHandler: null,
-            mode: session.Mode.ProviderMode.ToString()))
+            mode: session.Mode.ProviderMode.ToString(),
+            managedPersonaId: persona?.Id,
+            // Blank is never sent: every read path normalizes it to the default routing hint.
+            personaModelType: persona is null
+                ? null
+                : string.IsNullOrWhiteSpace(persona.ModelType) ? Persona.DefaultModelType : persona.ModelType))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (item is TextDelta delta)

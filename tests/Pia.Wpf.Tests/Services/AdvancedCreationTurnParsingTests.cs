@@ -1,5 +1,6 @@
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Xunit;
 
 namespace Pia.Tests.Services;

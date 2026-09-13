@@ -17,7 +17,7 @@
                   Padding="28,24"
                   MaxWidth="{TemplateBinding MaxPanelWidth}"
                   MaxHeight="{TemplateBinding MaxPanelHeight}"
-                  MinWidth="320">
+                  MinWidth="{TemplateBinding MinPanelWidth}">
             <Border.Effect>
               <DropShadowEffect ShadowDepth="0"
                                 BlurRadius="24"
@@ -46,9 +46,11 @@
                           Margin="0,20,0,0">
                 <ui:Button x:Name="PART_SecondaryButton"
                            Content="{TemplateBinding SecondaryButtonText}"
+                           Icon="{TemplateBinding SecondaryButtonIcon}"
                            Appearance="Secondary"
                            Margin="0,0,8,0"
-                           Padding="16,8">
+                           Padding="16,8"
+                           IsEnabled="{TemplateBinding IsSecondaryButtonEnabled}">
                   <ui:Button.Style>
                     <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                       <Setter Property="Visibility" Value="Visible" />
@@ -66,6 +68,7 @@
 
                 <ui:Button x:Name="PART_PrimaryButton"
                            Content="{TemplateBinding PrimaryButtonText}"
+                           Icon="{TemplateBinding PrimaryButtonIcon}"
                            Appearance="Primary"
                            Margin="0,0,8,0"
                            Padding="16,8"
@@ -87,6 +90,7 @@
 
                 <ui:Button x:Name="PART_CloseButton"
                            Content="{TemplateBinding CloseButtonText}"
+                           Icon="{TemplateBinding CloseButtonIcon}"
                            Appearance="Secondary"
                            Padding="16,8">
                   <ui:Button.Style>

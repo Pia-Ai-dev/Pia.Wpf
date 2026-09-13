@@ -1,4 +1,4 @@
-namespace Pia.Services;
+namespace Pia.Services.Exceptions;
 
 /// <summary>
 /// The model's reply was neither a question set nor a draft. Retryable: the transcript is intact, so the

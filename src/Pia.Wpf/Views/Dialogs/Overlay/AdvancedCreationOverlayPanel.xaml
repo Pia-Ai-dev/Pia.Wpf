@@ -7,16 +7,54 @@
   xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
   xmlns:loc="clr-namespace:Pia.Localization"
+  xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+  xmlns:behaviors="clr-namespace:Pia.Behaviors"
+  xmlns:piacontrols="clr-namespace:Pia.Controls"
   xmlns:controls="clr-namespace:Pia.Views.Controls"
   xmlns:overlay="clr-namespace:Pia.Views.Dialogs.Overlay"
   mc:Ignorable="d"
   Style="{StaticResource {x:Type controls:OverlayDialogPanel}}"
-  MaxPanelWidth="560"
-  MaxPanelHeight="640"
-  PrimaryButtonText="{loc:Str AdvancedCreation_Use}"
+  MinPanelWidth="560"
+  MaxPanelWidth="760"
+  MaxPanelHeight="880"
+  PrimaryButtonText="{Binding PrimaryLabel}"
+  IsPrimaryButtonEnabled="{Binding CanPrimary}"
+  SecondaryButtonText="{Binding SecondaryLabel}"
+  IsSecondaryButtonEnabled="{Binding CanSecondary}"
   CloseButtonText="{loc:Str Common_Cancel}">
 
   <controls:OverlayDialogPanel.Resources>
+    <!-- What DroppedFileImporter can turn into text. Declared per surface, as the other drop targets do:
+         the Assistant also takes images, which would insert nothing here. -->
+    <sys:String x:Key="DroppableExtensions">.txt,.md,.json,.xml,.yaml,.yml,.csv,.log,.ini,.cs,.js,.ts,.py,.html,.htm,.css,.sql,.sh,.ps1,.bat,.cmd,.toml,.docx,.xlsx,.xlsm,.pdf,.eml,.msg</sys:String>
+
+    <Style TargetType="ContentControl" x:Key="DropHighlight">
+      <Setter Property="IsHitTestVisible" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ContentControl">
+            <Border CornerRadius="6"
+                    BorderThickness="2"
+                    BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                    Background="{DynamicResource AcrylicBackgroundFillColorBaseBrush}">
+              <StackPanel Orientation="Horizontal"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="ArrowDownload24"
+                               FontSize="20"
+                               Foreground="{DynamicResource AccentFillColorDefaultBrush}"/>
+                <TextBlock Text="{loc:Str FileDrop_Overlay_Hint}"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
     <Style TargetType="TextBlock" x:Key="QuestionLabel">
       <Setter Property="FontSize" Value="14"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
@@ -42,23 +80,37 @@
     <DataTemplate x:Key="TextQuestion">
       <StackPanel Margin="0,0,0,16">
         <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource QuestionHeader}"/>
-        <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
-                    AutomationProperties.AutomationId="{Binding AutomationId, StringFormat='AdvancedCreation_Q_{0}'}"
-                    AutomationProperties.Name="{Binding Label}"
-                    Margin="0,6,0,0"/>
+        <Grid x:Name="DropHost"
+              Margin="0,6,0,0"
+              behaviors:FileDropBehavior.IsEnabled="True"
+              behaviors:FileDropBehavior.AcceptedExtensions="{StaticResource DroppableExtensions}"
+              behaviors:FileDropBehavior.FilesDroppedCommand="{Binding FilesDroppedCommand}">
+          <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                      AutomationProperties.AutomationId="{Binding AutomationId, StringFormat='AdvancedCreation_Q_{0}'}"
+                      AutomationProperties.Name="{Binding Label}"/>
+          <ContentControl Style="{StaticResource DropHighlight}"
+                          Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=DropHost, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+        </Grid>
       </StackPanel>
     </DataTemplate>
 
     <DataTemplate x:Key="LongTextQuestion">
       <StackPanel Margin="0,0,0,16">
         <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource QuestionHeader}"/>
-        <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
-                    TextWrapping="Wrap"
-                    AcceptsReturn="True"
-                    MinHeight="80"
-                    AutomationProperties.AutomationId="{Binding AutomationId, StringFormat='AdvancedCreation_Q_{0}'}"
-                    AutomationProperties.Name="{Binding Label}"
-                    Margin="0,6,0,0"/>
+        <Grid x:Name="DropHost"
+              Margin="0,6,0,0"
+              behaviors:FileDropBehavior.IsEnabled="True"
+              behaviors:FileDropBehavior.AcceptedExtensions="{StaticResource DroppableExtensions}"
+              behaviors:FileDropBehavior.FilesDroppedCommand="{Binding FilesDroppedCommand}">
+          <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                      TextWrapping="Wrap"
+                      AcceptsReturn="True"
+                      MinHeight="80"
+                      AutomationProperties.AutomationId="{Binding AutomationId, StringFormat='AdvancedCreation_Q_{0}'}"
+                      AutomationProperties.Name="{Binding Label}"/>
+          <ContentControl Style="{StaticResource DropHighlight}"
+                          Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=DropHost, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+        </Grid>
       </StackPanel>
     </DataTemplate>
 
@@ -66,16 +118,23 @@
     <DataTemplate x:Key="SampleQuestion">
       <StackPanel Margin="0,0,0,16">
         <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource QuestionHeader}"/>
-        <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
-                    TextWrapping="Wrap"
-                    AcceptsReturn="True"
-                    MinHeight="120"
-                    FontFamily="Consolas"
-                    FontSize="12"
-                    VerticalScrollBarVisibility="Auto"
-                    AutomationProperties.AutomationId="{Binding AutomationId, StringFormat='AdvancedCreation_Q_{0}'}"
-                    AutomationProperties.Name="{Binding Label}"
-                    Margin="0,6,0,0"/>
+        <Grid x:Name="DropHost"
+              Margin="0,6,0,0"
+              behaviors:FileDropBehavior.IsEnabled="True"
+              behaviors:FileDropBehavior.AcceptedExtensions="{StaticResource DroppableExtensions}"
+              behaviors:FileDropBehavior.FilesDroppedCommand="{Binding FilesDroppedCommand}">
+          <ui:TextBox Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                      TextWrapping="Wrap"
+                      AcceptsReturn="True"
+                      MinHeight="120"
+                      FontFamily="Consolas"
+                      FontSize="12"
+                      VerticalScrollBarVisibility="Auto"
+                      AutomationProperties.AutomationId="{Binding AutomationId, StringFormat='AdvancedCreation_Q_{0}'}"
+                      AutomationProperties.Name="{Binding Label}"/>
+          <ContentControl Style="{StaticResource DropHighlight}"
+                          Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=DropHost, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+        </Grid>
       </StackPanel>
     </DataTemplate>
 
@@ -196,6 +255,24 @@
       </StackPanel>
     </Border>
 
+    <!-- A file that could not be read. Dismiss-only: unlike the error banner above, there is no model turn
+         to retry. -->
+    <Border Style="{StaticResource PiaRequiredHintStyle}"
+            Margin="0,0,0,12"
+            Visibility="{Binding HasDropNotice, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <StackPanel>
+        <TextBlock Text="{Binding DropNotice}"
+                   AutomationProperties.AutomationId="AdvancedCreation_DropNotice"
+                   TextWrapping="Wrap"/>
+        <ui:Button Content="{loc:Str Common_Cancel}"
+                   Appearance="Secondary"
+                   Margin="0,8,0,0"
+                   HorizontalAlignment="Left"
+                   AutomationProperties.AutomationId="AdvancedCreation_DismissDropNotice"
+                   Command="{Binding DismissDropNoticeCommand}"/>
+      </StackPanel>
+    </Border>
+
     <!-- Discard confirmation, for the same reason: Escape cannot raise a second dialog over this one. -->
     <Border Style="{StaticResource PiaRequiredHintStyle}"
             Margin="0,0,0,12"
@@ -225,35 +302,84 @@
                  Style="{StaticResource QuestionLabel}"/>
       <TextBlock Text="{loc:Str AdvancedCreation_OpeningHint}"
                  Style="{StaticResource QuestionHelp}"/>
-      <ui:TextBox x:Name="OpeningBox"
-                  Text="{Binding Opening, UpdateSourceTrigger=PropertyChanged}"
-                  TextWrapping="Wrap"
-                  AcceptsReturn="True"
-                  MinHeight="90"
-                  AutomationProperties.AutomationId="AdvancedCreation_Opening"
-                  Margin="0,8,0,12"/>
-      <ui:Button Content="{loc:Str AdvancedCreation_Start}"
-                 Appearance="Primary"
-                 HorizontalAlignment="Left"
-                 AutomationProperties.AutomationId="AdvancedCreation_Start"
-                 Command="{Binding StartCommand}"/>
+      <Grid x:Name="OpeningDropHost"
+            Margin="0,8,0,0"
+            behaviors:FileDropBehavior.IsEnabled="True"
+            behaviors:FileDropBehavior.AcceptedExtensions="{StaticResource DroppableExtensions}"
+            behaviors:FileDropBehavior.FilesDroppedCommand="{Binding OpeningFilesDroppedCommand}">
+        <ui:TextBox x:Name="OpeningBox"
+                    Text="{Binding Opening, UpdateSourceTrigger=PropertyChanged}"
+                    TextWrapping="Wrap"
+                    AcceptsReturn="True"
+                    MinHeight="90"
+                    AutomationProperties.AutomationId="AdvancedCreation_Opening"/>
+        <ContentControl Style="{StaticResource DropHighlight}"
+                        Visibility="{Binding Path=(behaviors:FileDropBehavior.IsDragOver), ElementName=OpeningDropHost, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+      </Grid>
+
+      <TextBlock Text="{loc:Str AdvancedCreation_Persona}"
+                 Style="{StaticResource QuestionLabel}"
+                 Margin="0,16,0,0"/>
+      <TextBlock Text="{loc:Str AdvancedCreation_Persona_Hint}"
+                 Style="{StaticResource QuestionHelp}"/>
+      <!-- The Assistant's own picker, item template and all, so one persona list is learned once. -->
+      <ComboBox ItemsSource="{Binding AvailablePersonas}"
+                SelectedItem="{Binding SelectedPersona, Mode=TwoWay}"
+                HorizontalAlignment="Left"
+                MinWidth="260"
+                MaxWidth="320"
+                AutomationProperties.AutomationId="AdvancedCreation_Persona"
+                Margin="0,6,0,0">
+        <ComboBox.ItemTemplate>
+          <DataTemplate>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <piacontrols:PersonaGlyph Grid.Column="0"
+                                        PersonaId="{Binding Id}"
+                                        Emoji="{Binding Emoji}"
+                                        GlyphSize="14"
+                                        Margin="0,0,6,0"
+                                        VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1"
+                         Text="{Binding Name}"
+                         VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis"/>
+              <Ellipse Grid.Column="2"
+                       Width="10"
+                       Height="10"
+                       Margin="8,0,0,0"
+                       VerticalAlignment="Center"
+                       Fill="{Binding AccentColor, Converter={StaticResource HexToBrushConverter}}"
+                       Stroke="{DynamicResource BorderBrush_}"
+                       StrokeThickness="1"
+                       Visibility="{Binding AccentColor, Converter={StaticResource NullToVisibilityConverter}}"
+                       ToolTip="{Binding AccentColor}"/>
+              <Border Grid.Column="3"
+                      Style="{StaticResource PiaLabelChipStyle}"
+                      Background="{DynamicResource PiaAccentSoftBrush}"
+                      Margin="6,0,0,0"
+                      Visibility="{Binding IsManaged, Converter={StaticResource BooleanToVisibilityConverter}}"
+                      ToolTip="{loc:Str Personas_ManagedTooltip}">
+                <TextBlock Text="{loc:Str Personas_Managed}"
+                           FontSize="10.5"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource PiaInkBrush}"/>
+              </Border>
+            </Grid>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
     </StackPanel>
 
     <!-- Asking -->
     <StackPanel Visibility="{Binding ShowsQuestions, Converter={StaticResource BooleanToVisibilityConverter}}">
       <ItemsControl ItemsSource="{Binding Questions}"
                     ItemTemplateSelector="{StaticResource QuestionSelector}"/>
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <ui:Button Content="{loc:Str AdvancedCreation_Skip}"
-                   Appearance="Secondary"
-                   Margin="0,0,8,0"
-                   AutomationProperties.AutomationId="AdvancedCreation_Skip"
-                   Command="{Binding SkipCommand}"/>
-        <ui:Button Content="{loc:Str AdvancedCreation_Send}"
-                   Appearance="Primary"
-                   AutomationProperties.AutomationId="AdvancedCreation_Send"
-                   Command="{Binding SendCommand}"/>
-      </StackPanel>
     </StackPanel>
 
     <!-- Done -->

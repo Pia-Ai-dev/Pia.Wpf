@@ -1625,6 +1625,8 @@
   <data name="AdvancedCreation_Opening_Persona" xml:space="preserve"><value>What should this persona be like?</value></data>
   <data name="AdvancedCreation_Opening_Routine" xml:space="preserve"><value>What should this routine do for you?</value></data>
   <data name="AdvancedCreation_OpeningHint" xml:space="preserve"><value>One sentence is enough — Pia will ask about the rest.</value></data>
+  <data name="AdvancedCreation_Persona" xml:space="preserve"><value>Persona for this interview</value></data>
+  <data name="AdvancedCreation_Persona_Hint" xml:space="preserve"><value>Picks the model that answers every turn, the closing draft included. Choose a persona routed to a private model to keep the whole interview there. It selects the model, not the voice the draft is written in.</value></data>
   <data name="AdvancedCreation_Start" xml:space="preserve"><value>Start</value></data>
   <data name="AdvancedCreation_Send" xml:space="preserve"><value>Send</value></data>
   <data name="AdvancedCreation_Skip" xml:space="preserve"><value>Skip</value></data>

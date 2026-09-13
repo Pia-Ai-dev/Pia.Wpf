@@ -1615,6 +1615,8 @@
   <data name="AdvancedCreation_Opening_Persona" xml:space="preserve"><value>Comment cette persona doit-elle être ?</value></data>
   <data name="AdvancedCreation_Opening_Routine" xml:space="preserve"><value>Que doit faire cette routine pour vous ?</value></data>
   <data name="AdvancedCreation_OpeningHint" xml:space="preserve"><value>Une phrase suffit — Pia posera les autres questions.</value></data>
+  <data name="AdvancedCreation_Persona" xml:space="preserve"><value>Persona pour cet entretien</value></data>
+  <data name="AdvancedCreation_Persona_Hint" xml:space="preserve"><value>Détermine le modèle qui répond à chaque tour, y compris le brouillon final. Choisissez une persona routée vers un modèle privé pour que tout l'entretien y reste. Elle choisit le modèle, pas le ton du brouillon.</value></data>
   <data name="AdvancedCreation_Start" xml:space="preserve"><value>Commencer</value></data>
   <data name="AdvancedCreation_Send" xml:space="preserve"><value>Envoyer</value></data>
   <data name="AdvancedCreation_Skip" xml:space="preserve"><value>Passer</value></data>

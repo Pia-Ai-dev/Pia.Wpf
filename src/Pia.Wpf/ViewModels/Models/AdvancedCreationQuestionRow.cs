@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Pia.Models;
 
 namespace Pia.ViewModels.Models;
@@ -29,9 +30,18 @@ public partial class AdvancedCreationQuestionRow : ObservableObject
     [ObservableProperty]
     private string? _selectedOption;
 
+    /// <summary>Set by the view model, which owns the services a file import needs; the row only has to know
+    /// which question the drop landed on.</summary>
+    public Func<IReadOnlyList<string>, Task>? FilesDropped { get; set; }
+
+    public IAsyncRelayCommand<IReadOnlyList<string>> FilesDroppedCommand { get; }
+
     public AdvancedCreationQuestionRow(AdvancedCreationQuestion question)
     {
         Question = question;
+        FilesDroppedCommand = new AsyncRelayCommand<IReadOnlyList<string>>(
+            paths => paths is null ? Task.CompletedTask : FilesDropped?.Invoke(paths) ?? Task.CompletedTask);
+
         foreach (var option in question.Options)
         {
             var row = new AdvancedCreationOption(option);
@@ -39,6 +49,10 @@ public partial class AdvancedCreationQuestionRow : ObservableObject
             Options.Add(row);
         }
     }
+
+    /// <summary>Appends rather than replaces: a box the user has already typed into is theirs.</summary>
+    public void AppendDroppedText(string dropped) =>
+        Text = string.IsNullOrWhiteSpace(Text) ? dropped : $"{Text}{Environment.NewLine}{Environment.NewLine}{dropped}";
 
     public string Label => Question.Label;
 

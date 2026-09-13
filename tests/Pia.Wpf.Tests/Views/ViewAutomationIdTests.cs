@@ -63,7 +63,7 @@ public class ViewAutomationIdTests
         "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar,PiaWorkingDirectoryPicker")]
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 26, 2, "PersonaGlyph,PiaEmptyState")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
-    [InlineData(typeof(Pia.Views.Dialogs.Overlay.AdvancedCreationOverlayPanel), 13, 5, "")]
+    [InlineData(typeof(Pia.Views.Dialogs.Overlay.AdvancedCreationOverlayPanel), 12, 5, "PersonaGlyph")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultHeader), 5, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultSearchBar), 1, 0, "")]

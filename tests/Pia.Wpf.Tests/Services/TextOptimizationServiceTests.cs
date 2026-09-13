@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -41,9 +42,12 @@ public class TextOptimizationServiceTests
     private readonly IProviderService _providerService = Substitute.For<IProviderService>();
     private readonly IHistoryService _historyService = Substitute.For<IHistoryService>();
     private readonly IAiClientService _aiClientService = Substitute.For<IAiClientService>();
+    private readonly IPersonaService _personaService = Substitute.For<IPersonaService>();
+    private readonly ISettingsService _settingsService = Substitute.For<ISettingsService>();
 
     private TextOptimizationService CreateService() =>
-        new(_templateService, _providerService, _historyService, _aiClientService);
+        new(_templateService, _providerService, _historyService, _aiClientService,
+            _personaService, _settingsService, NullLogger<TextOptimizationService>.Instance);
 
     [Fact]
     public async Task OptimizeTextAsync_PiaCloud_CallsOptimizeViaPiaCloud()

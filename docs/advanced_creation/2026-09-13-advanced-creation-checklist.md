@@ -1,7 +1,11 @@
 # Advanced Creation + templates parity — checklist
 
-**Status:** All 23 steps landed. Tests build but have not been run — this machine cannot
-execute `net10.0-windows`; the exe gate is outstanding on Windows/CI.
+**Status:** All 28 steps landed and the exe gate is green on Windows. Its first run found
+six failures, all from this work — two policy-lock counts, a layer violation, a naming
+violation, a ViewModel-constructor violation and a moved binding assertion — fixed under
+Group G. A live walkthrough on 2026-09-13 covered all three entry points; the interview
+engine's cap, retry and `done`-without-draft arms stay parser-test-only, since they need a
+misbehaving model.
 **Owner:** Marco Altmann
 **Written:** 2026-09-13
 **Origin:** Owner request, 2026-09-13 (advanced creation overlay; optimize templates
@@ -131,7 +135,59 @@ answered plus the current one — rather than drawing an unknown total up front.
 - [x] **F6 · Release notes.** Rewrite `docs/release_notes/RELEASE.md` in place per
       `docs/release_notes/README.md`. *Deps:* F5 · *Effort:* XS · *Value:* Med
 
+## Group G — what the Windows gate and the live walkthrough turned up
+
+- [x] **G1 · Clear the six gate failures.** `AdvancedCreationLauncher` moves to
+      `Pia.Views.Overlays` (it builds a ViewModel and a panel, so it was never a service);
+      `AdvancedCreationReplyException` joins `Pia.Services.Exceptions` as every other
+      exception already does; records count as data in `DependencyInjectionTests`, matching
+      the rule `NamingConventionTests` already applies; the two policy-lock counts go to
+      nine, and `Page.AllLocks` gains the templates lock it was missing — that one was a
+      real coverage hole, not a count. *Deps:* F5 · *Effort:* S · *Value:* High
+- [x] **G2 · One action row, and drag-and-drop into the questions.** Owner review of the
+      live walkthrough: the interview showed four buttons in two rows, the lower one
+      disabled throughout. Start/Skip/Send move into the `OverlayDialogPanel` footer, whose
+      primary now changes meaning by phase and no longer closes the dialog mid-interview;
+      the panel gains optional button icons. Each text, long-text and sample box — and the
+      opening box — becomes its own drop target reusing `DroppedFileImporter`, with an
+      inline notice for an unreadable file rather than the retryable error banner or a
+      snackbar the backdrop would hide. *Deps:* G1 · *Effort:* M · *Value:* High
+- [x] **G3 · Only grantable tools in the routine picker, and a goal that may carry steps.**
+      Owner review of three routine drafts: `write_file` was picked without `read_file` and
+      read as a routine that cannot read. It can — `read_file` returns a result and never
+      reaches the gate, so the list was always a WRITE consent list. Read-only built-ins
+      leave the picker and the offered draft list through one shared `GrantableCatalog()`,
+      an already-stored read grant is dropped rather than shown as unavailable, and the
+      labels say what the list means. The goal loses its 300-character cap and asks for a
+      numbered order when the task has parts, in both draft doors.
+      *Deps:* G2 · *Effort:* S · *Value:* High
+
+- [x] **G4 · A persona picks the model the interview runs on.** Owner request: let a user
+      run the interview on a private model. The opening card offers a persona; the session
+      holds it whole and the turn resolves caller pin → persona's `PreferredProviderId` →
+      mode default, then sends the persona id and its model type the way a chat turn does.
+      Routing only — the persona's `SystemPrompt` stays out, because the interview is a
+      strict JSON envelope and a voice in the system prompt is how prose gets wrapped
+      around it. Offered on the opening card alone, so the transcript cannot change model
+      halfway. It is the Assistant's own picker — same item template — opening on the
+      persona that mode already resolves, which is why there is no separate "default" row:
+      a row naming no model could not say which one would answer.
+      *Deps:* G3 · *Effort:* S · *Value:* High
+
+- [x] **G5 · The one-shot doors run on the same persona.** Owner request: the interview
+      alone was not enough, because a user who keeps the Assistant private still had every
+      "Draft with AI" leave on the default model. All three one-shot generators — routine,
+      persona and template — resolve the Assistant's active persona themselves, so no call
+      site changed, and apply the same three rungs and the same id/model-type hint as G4.
+      The one exception is a template draft whose provider is Pia Cloud: it takes the
+      dedicated prompt route, which reads no persona header, so the persona cannot be
+      carried there without server work. That branch logs which route it took.
+      *Deps:* G4 · *Effort:* S · *Value:* High
+
 ## Not yet planned
+
+- Carrying a persona on the Pia Cloud template-prompt route — needs either the server to
+  read `X-Pia-Persona` there, or the draft rerouted through `/api/ai/chat`.
 
 - A `tests/ui-scripts/` recording driving one interview end to end.
 - Resuming an abandoned interview — today Escape discards it.

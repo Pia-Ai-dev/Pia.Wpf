@@ -1615,6 +1615,8 @@
   <data name="AdvancedCreation_Opening_Persona" xml:space="preserve"><value>Wie soll diese Persona sein?</value></data>
   <data name="AdvancedCreation_Opening_Routine" xml:space="preserve"><value>Was soll diese Routine für dich tun?</value></data>
   <data name="AdvancedCreation_OpeningHint" xml:space="preserve"><value>Ein Satz genügt — nach dem Rest fragt Pia.</value></data>
+  <data name="AdvancedCreation_Persona" xml:space="preserve"><value>Persona für dieses Interview</value></data>
+  <data name="AdvancedCreation_Persona_Hint" xml:space="preserve"><value>Bestimmt das antwortende Modell für jeden Turn, auch für den abschließenden Entwurf. Wähle eine Persona mit privatem Modell, damit das ganze Interview dort bleibt. Sie wählt das Modell, nicht den Tonfall des Entwurfs.</value></data>
   <data name="AdvancedCreation_Start" xml:space="preserve"><value>Los</value></data>
   <data name="AdvancedCreation_Send" xml:space="preserve"><value>Senden</value></data>
   <data name="AdvancedCreation_Skip" xml:space="preserve"><value>Überspringen</value></data>

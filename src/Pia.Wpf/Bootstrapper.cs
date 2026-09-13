@@ -959,7 +959,7 @@ public static class Bootstrapper
         services.AddScoped<IDialogService, DialogService>();
         services.AddScoped<ITextOptimizationService, TextOptimizationService>();
         services.AddScoped<IAdvancedCreationService, AdvancedCreationService>();
-        services.AddScoped<IAdvancedCreationLauncher, AdvancedCreationLauncher>();
+        services.AddScoped<IAdvancedCreationLauncher, Views.Overlays.AdvancedCreationLauncher>();
         services.AddScoped<IVoiceInputService, VoiceInputService>();
 
         // Services - Transient (no shared state)

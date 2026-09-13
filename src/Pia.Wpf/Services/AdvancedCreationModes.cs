@@ -59,7 +59,8 @@ public static class AdvancedCreationModes
 
         var toolList = availableTools.Count == 0
             ? null
-            : "Tools available on this device:\n"
+            : "Tools available on this device that need a grant. Reading and searching — files, notes, chats, "
+              + "todos, git history — is always possible and is deliberately not listed:\n"
               + string.Join("\n", availableTools.Select(t => string.IsNullOrWhiteSpace(t.Description)
                   ? $"- {t.Name}"
                   : $"- {t.Name}: {t.Description}"));
@@ -69,11 +70,12 @@ public static class AdvancedCreationModes
             SubjectPreamble:
                 "a scheduled routine: one instruction an assistant will carry out on its own, on a schedule, "
                 + "with nobody there to answer a follow-up question. Ask about what it should look at, what "
-                + "shape the answer takes, how often it runs and when. Because nobody is there to correct it, "
-                + "ask for anything the instruction would otherwise have to guess.",
+                + "shape the answer takes, how often it runs and when, and — when the task has several parts "
+                + "— the order they should happen in. Because nobody is there to correct it, ask for anything "
+                + "the instruction would otherwise have to guess.",
             DraftKeysBlock: $"""
                 - "name": a short display name for the routine (max 40 characters)
-                - "goal": the instruction the assistant will be given every time it runs, written in the second person as a command. Two to three sentences, at most 300 characters. Say what to look at, what shape the answer takes, and how long it may be. Do not tell it to remember anything from a previous run — each run is a fresh conversation with no memory of the last one.
+                - "goal": the instruction the assistant will be given every time it runs, written in the second person as a command. Say what to look at, what shape the answer takes, and how long it may be. When the task has more than one part, set the parts out as a numbered list in the order they should happen, one short line each, so the run follows that order instead of working it out again. Be specific rather than brief: nobody is there to fill a gap. At most 1000 characters. Do not tell it to remember anything from a previous run — each run is a fresh conversation with no memory of the last one.
                 - "recurrence": exactly one of "once", "daily", "weekly", "monthly", "yearly", "manual"
                 - "dayOfWeek": the English weekday name when the recurrence is weekly, otherwise an empty string
                 - "timeOfDay": the time of day to run, as "HH:mm" on a 24-hour clock
