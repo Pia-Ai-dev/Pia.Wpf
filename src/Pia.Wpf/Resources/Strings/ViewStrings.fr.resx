@@ -1264,8 +1264,8 @@
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Effort de raisonnement</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Utiliser le réglage de la persona</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Remplace l'effort de raisonnement de la persona pour les exécutions de cette routine.</value></data>
-  <data name="Routines_Field_Tools" xml:space="preserve"><value>Outils que cette routine peut utiliser</value></data>
-  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Facultatif. Un outil coché peut être utilisé par les exécutions de cette routine sans demander.</value></data>
+  <data name="Routines_Field_Tools" xml:space="preserve"><value>Modifications que cette routine peut faire seule</value></data>
+  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Facultatif. La lecture ne demande aucune permission — seuls les outils qui modifient quelque chose sont listés. Un outil coché peut être exécuté par cette routine sans demander.</value></data>
   <data name="Routines_Field_Tools_AgentDefault" xml:space="preserve"><value>Sans rien de coché, une routine agent peut toujours utiliser write_file. Cocher un outil remplace cette valeur par défaut au lieu de s'y ajouter.</value></data>
   <data name="Routines_Field_Tools_Empty" xml:space="preserve"><value>Aucun plugin de cet appareil ne propose d'outils.</value></data>
   <data name="Routines_Field_Tools_Missing" xml:space="preserve"><value>Plus disponible</value></data>
@@ -1273,7 +1273,7 @@
   <data name="Routines_Field_Tools_Missing_Notice" xml:space="preserve"><value>Certains outils nommés par cette routine ne sont plus disponibles sur cet appareil.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Agent" xml:space="preserve"><value>Rien de coché — les exécutions peuvent toujours utiliser write_file.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Research" xml:space="preserve"><value>Rien de coché — les exécutions se contentent de lire et de rapporter.</value></data>
-  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Outils</value></data>
+  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Peut modifier sans demander</value></data>
   <data name="Routines_Detail_Tools_AgentDefault" xml:space="preserve"><value>write_file uniquement — la valeur par défaut d'une routine agent.</value></data>
   <data name="Routines_Detail_Tools_None" xml:space="preserve"><value>Aucun — cette routine se contente de lire et de rapporter.</value></data>
   <data name="Routines_Effort_None" xml:space="preserve"><value>Sans raisonnement</value></data>

@@ -62,6 +62,8 @@ public class RoutinesViewModelTests
         new(TodoPlugin, "todo", "create_todo", "Create a todo", IsExternalRoute: false, ServerDeclaredDestructive: false),
         new(FilesPlugin, "files", "write_file", "Write a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
         new(FilesPlugin, "files", "delete_file", "Delete a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
+        // Never grantable: the call returns a result and no gate is consulted. Here so the filter is testable.
+        new(FilesPlugin, "files", "read_file", "Read a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
         new(McpPlugin, "some-mcp-server", "create_todo", "Create a todo", IsExternalRoute: true, ServerDeclaredDestructive: false),
     ];
 
@@ -409,6 +411,42 @@ public class RoutinesViewModelTests
         // delete_file is one of ours, so the picker still offers it — the filter is about names we do not ship.
         Assert.Contains("delete_file", offered!.Select(t => t.Name));
         Assert.Empty(TickedTools(sut.Vm));
+    }
+
+    /// <summary>Ticking a read-only tool would authorize nothing — reads never reach the gate — so the picker
+    /// does not offer the choice at all.</summary>
+    [Fact]
+    public void ThePicker_LeavesOutAReadOnlyBuiltIn()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        var offered = sut.Vm.EditToolGroups.SelectMany(g => g.Tools).Select(t => t.ToolName).ToArray();
+
+        Assert.DoesNotContain("read_file", offered);
+        Assert.Contains("write_file", offered);
+    }
+
+    /// <summary>The same filter on the other side: a tool the picker cannot show must not be proposed to the
+    /// model either, or the draft would tick a row that does not exist.</summary>
+    [Fact]
+    public async Task ADraft_IsNotOfferedAReadOnlyBuiltIn()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        IReadOnlyList<RoutineDraftTool> offered = [];
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(ci =>
+            {
+                offered = (IReadOnlyList<RoutineDraftTool>)ci[1];
+                return Draft(tools: ["write_file"]);
+            });
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(offered, t => t.Name == "read_file");
+        Assert.Contains(offered, t => t.Name == "write_file");
     }
 
     /// <summary>A grant has a blank state, so nothing ticked is the only case the draft may fill — a tick the
@@ -2265,6 +2303,37 @@ public class RoutinesViewModelTests
             providerId: Arg.Any<Guid?>(),
             grantedTools: Arg.Is<IReadOnlyCollection<string>>(
                 g => g.SequenceEqual(new[] { "write_file", "create_todo" })),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
+    }
+
+    /// <summary>The opposite of the unavailable case below, and the reason the two are told apart: a stored
+    /// read-only grant authorized nothing when it was made either, so it is dropped rather than filed as
+    /// missing — "not offered on this device" would say the routine lost a capability it never had.</summary>
+    [Fact]
+    public async Task AStoredReadOnlyGrant_IsDroppedSilently_NotShownAsUnavailable()
+    {
+        var job = NewJob();
+        job.GrantedTools = ["read_file", "write_file"];
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.False(sut.Vm.HasEditMissingTools);
+        Assert.DoesNotContain(sut.Vm.EditToolGroups.SelectMany(g => g.Tools), t => t.ToolName == "read_file");
+        Assert.Equal(["write_file"], TickedTools(sut.Vm));
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, name: Arg.Any<string>(), query: Arg.Any<string>(),
+            recurrence: Arg.Any<RecurrenceType?>(), timeOfDay: Arg.Any<TimeOnly?>(),
+            dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(), month: Arg.Any<int?>(),
+            providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.SequenceEqual(new[] { "write_file" })),
             specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
             quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
             reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -87,9 +88,16 @@ public sealed class RoutineDraftFailureTests
                 return respond();
             });
 
+        var personas = Substitute.For<IPersonaService>();
+        personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "active", SystemPrompt = "p" });
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+
         var service = new TextOptimizationService(
             Substitute.For<ITemplateService>(), providers,
-            Substitute.For<IHistoryService>(), client);
+            Substitute.For<IHistoryService>(), client, personas, settings,
+            NullLogger<TextOptimizationService>.Instance);
 
         return new Harness(service, () => calls);
     }

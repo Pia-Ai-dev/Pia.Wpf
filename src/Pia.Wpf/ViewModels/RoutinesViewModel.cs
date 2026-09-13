@@ -1005,17 +1005,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     {
         EditToolGroups.Clear();
 
-        IReadOnlyList<ToolCatalogEntry> catalog;
-        try
-        {
-            catalog = _plugins.GetToolCatalog();
-        }
-        catch (Exception ex)
-        {
-            // Degrade to "no tools offered" rather than dropping grants: the selection list is untouched.
-            _logger.LogWarning(ex, "Could not read the tool catalog for the routines editor");
-            catalog = [];
-        }
+        // Degrades to "no tools offered" rather than dropping grants: the selection list is untouched.
+        var catalog = GrantableCatalog("routines editor");
 
         var offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var group in catalog.GroupBy(e => e.PluginName, StringComparer.Ordinal)
@@ -1027,6 +1018,11 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             foreach (var row in rows) offered.Add(row.ToolName);
             EditToolGroups.Add(new RoutineToolGroup(group.Key, false, rows));
         }
+
+        // A grant stored before read-only tools left the picker authorized nothing then either, so it is
+        // dropped rather than filed as missing — "unavailable on this device" would be the wrong story.
+        _editGrantSelection.RemoveAll(n =>
+            !offered.Contains(n) && ToolPermissionService.IsReadOnlyBuiltIn(n));
 
         var orphans = _editGrantSelection.Where(n => !offered.Contains(n)).ToList();
         if (orphans.Count > 0)
@@ -1199,23 +1195,24 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         return applied;
     }
 
-    /// <summary>What the drafting model may pick from: one entry per distinct tool name this device offers,
-    /// minus the names a create-time grant is refused anyway — no point offering what would be dropped.</summary>
-    private List<RoutineDraftTool> OfferableDraftTools()
+    /// <summary>The catalog reduced to what a grant can authorize — a read-only built-in never reaches the gate.</summary>
+    private IReadOnlyList<ToolCatalogEntry> GrantableCatalog(string failureContext)
     {
-        IReadOnlyList<ToolCatalogEntry> catalog;
         try
         {
-            catalog = _plugins.GetToolCatalog();
+            return [.. _plugins.GetToolCatalog()
+                .Where(e => e.IsExternalRoute || !ToolPermissionService.IsReadOnlyBuiltIn(e.ToolName))];
         }
         catch (Exception ex)
         {
-            // Same degradation as the picker: offer nothing rather than fail the draft.
-            _logger.LogWarning(ex, "Could not read the tool catalog for the routine draft");
+            _logger.LogWarning(ex, "Could not read the tool catalog for the {Context}", failureContext);
             return [];
         }
+    }
 
-        return [.. catalog
+    private List<RoutineDraftTool> OfferableDraftTools()
+    {
+        return [.. GrantableCatalog("routine draft")
             .Where(e => !ToolPermissionService.IsPresumedExternalDeleteLike(e.ToolName))
             .Where(e => !e.ServerDeclaredDestructive)
             .GroupBy(e => e.ToolName, StringComparer.OrdinalIgnoreCase)

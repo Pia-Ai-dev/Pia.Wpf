@@ -1274,8 +1274,8 @@
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Reasoning effort</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Use the persona's setting</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Overrides the persona's own reasoning effort for this routine's runs.</value></data>
-  <data name="Routines_Field_Tools" xml:space="preserve"><value>Tools this routine may use</value></data>
-  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Tick a tool and this routine&#x27;s runs may use it without asking.</value></data>
+  <data name="Routines_Field_Tools" xml:space="preserve"><value>Changes this routine may make on its own</value></data>
+  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Reading needs no permission — only tools that change something are listed. Tick one and this routine&#x27;s runs may do it without asking.</value></data>
   <data name="Routines_Field_Tools_AgentDefault" xml:space="preserve"><value>With nothing ticked, an agent routine may still use write_file. Ticking any tool replaces that default rather than adding to it.</value></data>
   <data name="Routines_Field_Tools_Empty" xml:space="preserve"><value>No plugin on this device offers any tools.</value></data>
   <data name="Routines_Field_Tools_Missing" xml:space="preserve"><value>No longer available</value></data>
@@ -1283,7 +1283,7 @@
   <data name="Routines_Field_Tools_Missing_Notice" xml:space="preserve"><value>Some tools this routine names are no longer available on this device.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Agent" xml:space="preserve"><value>Nothing ticked — runs may still use write_file.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Research" xml:space="preserve"><value>Nothing ticked — runs only read and report.</value></data>
-  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Tools</value></data>
+  <data name="Routines_Detail_Tools" xml:space="preserve"><value>May change without asking</value></data>
   <data name="Routines_Detail_Tools_AgentDefault" xml:space="preserve"><value>write_file only — the default for an agent routine.</value></data>
   <data name="Routines_Detail_Tools_None" xml:space="preserve"><value>None — this routine only reads and reports.</value></data>
   <data name="Routines_Effort_None" xml:space="preserve"><value>No reasoning</value></data>

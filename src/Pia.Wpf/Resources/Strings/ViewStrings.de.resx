@@ -1264,8 +1264,8 @@
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Denkaufwand</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Einstellung der Persona verwenden</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Überschreibt für die Läufe dieser Routine den Denkaufwand der Persona.</value></data>
-  <data name="Routines_Field_Tools" xml:space="preserve"><value>Tools, die diese Routine nutzen darf</value></data>
-  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Ein angehaktes Tool dürfen die Läufe dieser Routine ohne Rückfrage nutzen.</value></data>
+  <data name="Routines_Field_Tools" xml:space="preserve"><value>Änderungen, die diese Routine selbst vornehmen darf</value></data>
+  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Lesen braucht keine Erlaubnis — aufgeführt sind nur Tools, die etwas verändern. Ein angehaktes Tool dürfen die Läufe dieser Routine ohne Rückfrage ausführen.</value></data>
   <data name="Routines_Field_Tools_AgentDefault" xml:space="preserve"><value>Ohne Haken darf eine Agenten-Routine weiterhin write_file nutzen. Ein gesetzter Haken ersetzt diese Vorgabe, statt sie zu ergänzen.</value></data>
   <data name="Routines_Field_Tools_Empty" xml:space="preserve"><value>Kein Plugin auf diesem Gerät bietet Tools an.</value></data>
   <data name="Routines_Field_Tools_Missing" xml:space="preserve"><value>Nicht mehr verfügbar</value></data>
@@ -1273,7 +1273,7 @@
   <data name="Routines_Field_Tools_Missing_Notice" xml:space="preserve"><value>Einige von dieser Routine genannte Tools sind auf diesem Gerät nicht mehr verfügbar.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Agent" xml:space="preserve"><value>Nichts angehakt — Läufe dürfen weiterhin write_file nutzen.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Research" xml:space="preserve"><value>Nichts angehakt — Läufe lesen und berichten nur.</value></data>
-  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Tools</value></data>
+  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Darf ohne Rückfrage ändern</value></data>
   <data name="Routines_Detail_Tools_AgentDefault" xml:space="preserve"><value>Nur write_file — die Vorgabe für eine Agenten-Routine.</value></data>
   <data name="Routines_Detail_Tools_None" xml:space="preserve"><value>Keine — diese Routine liest und berichtet nur.</value></data>
   <data name="Routines_Effort_None" xml:space="preserve"><value>Ohne Denkaufwand</value></data>
