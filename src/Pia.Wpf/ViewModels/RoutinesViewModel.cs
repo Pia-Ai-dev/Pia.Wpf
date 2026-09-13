@@ -35,6 +35,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly IWorkingDirectoryService _workingDirectories;
     private readonly ISettingsService _settings;
     private readonly ITextOptimizationService? _textOptimization;
+    private readonly IAdvancedCreationLauncher? _advancedCreation;
     private readonly ILogger<RoutinesViewModel> _logger;
 
     /// <summary>The grant list as it will be persisted: insertion-ordered, deduped OrdinalIgnoreCase. The rows
@@ -503,7 +504,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         IWorkingDirectoryService workingDirectories,
         ISettingsService settings,
         ILogger<RoutinesViewModel> logger,
-        ITextOptimizationService? textOptimization = null)
+        ITextOptimizationService? textOptimization = null,
+        IAdvancedCreationLauncher? advancedCreation = null)
     {
         _jobs = jobs;
         _runner = runner;
@@ -519,6 +521,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _settings = settings;
         _logger = logger;
         _textOptimization = textOptimization;
+        _advancedCreation = advancedCreation;
 
         WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectories);
         WorkingDirectoryPicker.WorkingDirectoryChosen += (_, path) =>
@@ -1087,50 +1090,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             var draft = await _textOptimization.GenerateRoutineDraftAsync(
                 EditDescription, offered, EditProvider?.Id);
 
-            // Text fills only what is still blank, so re-drafting cannot clobber what the user typed.
-            var applied = false;
-            if (string.IsNullOrWhiteSpace(EditName) && draft.Name is { } name)
-            {
-                EditName = name;
-                applied = true;
-            }
-            if (string.IsNullOrWhiteSpace(EditQuery) && draft.Goal is { } goal)
-            {
-                EditQuery = ApplyWebSearchGuard(goal, draft);
-                applied = true;
-            }
-
-            // The schedule fills only while it still holds what StartCreate set: a draft must not move a time
-            // the user has already chosen, and there is no "blank" for a typed field to test.
-            if (_pickersUntouched)
-            {
-                _applyingDraft = true;
-                try
-                {
-                    // Not drafted, decided: a blank start opens on AgentTask, and an AgentTask with an empty
-                    // grant list is remapped by the launcher to its write_file default — so a drafted routine
-                    // advertising no grants could write files. Research grants exactly what it says.
-                    EditKind = ScheduledJobKind.Research;
-                    if (draft.Recurrence is { } recurrence) EditRecurrence = recurrence;
-                    if (draft.DayOfWeek is { } day) EditDayOfWeek = day;
-                    if (draft.TimeOfDay is { } time) EditTimeOfDay = time.ToString("HH\\:mm");
-                    if (draft.Effort is { } effort)
-                        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == effort) ?? EditEffort;
-                }
-                finally
-                {
-                    _applyingDraft = false;
-                }
-
-                // A grant HAS a blank state, so it needs no latch of its own: anything already ticked is the
-                // user's, and a card's empty list is a deliberate "this one only reads".
-                if (_editGrantSelection.Count == 0)
-                    ResetEditTools(AcceptableDraftTools(draft.Tools, offered));
-
-                // The draft has now chosen them, so a second draft must not move them again.
-                _pickersUntouched = false;
-                applied = true;
-            }
+            var applied = ApplyRoutineDraft(draft, offered);
 
             // Otherwise the button reads as broken: the draft arrived and every field it may write was
             // already filled, so nothing on screen moved.
@@ -1153,6 +1113,90 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         {
             IsDrafting = false;
         }
+    }
+
+    /// <summary>Brainstorms the routine with the model instead of drafting it in one shot. Lands in the
+    /// same fields, through the same filtering, as <see cref="GenerateDraftAsync"/>.</summary>
+    [RelayCommand]
+    private async Task AdvancedDraftAsync()
+    {
+        if (_advancedCreation is null) return;
+
+        IsDrafting = true;
+        StatusMessage = null;
+        try
+        {
+            var offered = OfferableDraftTools();
+            var json = await _advancedCreation.LaunchAsync(
+                AdvancedCreationModes.Routine(offered), EditProvider?.Id, EditDescription);
+
+            if (json is null) return;
+
+            var applied = ApplyRoutineDraft(Services.DraftParsing.ParseRoutineDraft(json), offered);
+            if (!applied)
+                StatusMessage = _localization["Routines_Draft_NothingToFill"];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Designing a routine failed");
+            StatusMessage = _localization["Routines_Draft_Failed"];
+        }
+        finally
+        {
+            IsDrafting = false;
+        }
+    }
+
+    /// <summary>Shared by both draft doors, so the tool filtering and the web-search guard cannot be
+    /// skipped by whichever one is written second.</summary>
+    private bool ApplyRoutineDraft(RoutineDraft draft, List<RoutineDraftTool> offered)
+    {
+        // Text fills only what is still blank, so re-drafting cannot clobber what the user typed.
+        var applied = false;
+        if (string.IsNullOrWhiteSpace(EditName) && draft.Name is { } name)
+        {
+            EditName = name;
+            applied = true;
+        }
+        if (string.IsNullOrWhiteSpace(EditQuery) && draft.Goal is { } goal)
+        {
+            EditQuery = ApplyWebSearchGuard(goal, draft);
+            applied = true;
+        }
+
+        // The schedule fills only while it still holds what StartCreate set: a draft must not move a time
+        // the user has already chosen, and there is no "blank" for a typed field to test.
+        if (_pickersUntouched)
+        {
+            _applyingDraft = true;
+            try
+            {
+                // Not drafted, decided: a blank start opens on AgentTask, and an AgentTask with an empty
+                // grant list is remapped by the launcher to its write_file default — so a drafted routine
+                // advertising no grants could write files. Research grants exactly what it says.
+                EditKind = ScheduledJobKind.Research;
+                if (draft.Recurrence is { } recurrence) EditRecurrence = recurrence;
+                if (draft.DayOfWeek is { } day) EditDayOfWeek = day;
+                if (draft.TimeOfDay is { } time) EditTimeOfDay = time.ToString("HH\\:mm");
+                if (draft.Effort is { } effort)
+                    EditEffort = EffortChoices.FirstOrDefault(e => e.Value == effort) ?? EditEffort;
+            }
+            finally
+            {
+                _applyingDraft = false;
+            }
+
+            // A grant HAS a blank state, so it needs no latch of its own: anything already ticked is the
+            // user's, and a card's empty list is a deliberate "this one only reads".
+            if (_editGrantSelection.Count == 0)
+                ResetEditTools(AcceptableDraftTools(draft.Tools, offered));
+
+            // The draft has now chosen them, so a second draft must not move them again.
+            _pickersUntouched = false;
+            applied = true;
+        }
+
+        return applied;
     }
 
     /// <summary>What the drafting model may pick from: one entry per distinct tool name this device offers,

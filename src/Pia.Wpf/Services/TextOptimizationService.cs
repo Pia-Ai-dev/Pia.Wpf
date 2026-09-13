@@ -137,6 +137,51 @@ Provide only the generated prompt, no additional explanation.";
         return completion.Text;
     }
 
+    public async Task<TemplateDraft> GenerateTemplateDraftAsync(string styleDescription, Guid? providerId = null)
+    {
+        var provider = providerId.HasValue
+            ? await _providerService.GetProviderAsync(providerId.Value)
+            : await _providerService.GetDefaultProviderForModeAsync(WindowMode.Optimize);
+
+        if (provider is null)
+            throw new InvalidOperationException("No AI provider configured");
+
+        // The cloud endpoint returns a bare prompt, so there is no name or description to be had.
+        if (provider.ProviderType == AiProviderType.PiaCloud)
+        {
+            var cloudPrompt = await _aiClientService.GeneratePromptViaPiaCloudAsync(styleDescription);
+            return new TemplateDraft(null, null, string.IsNullOrWhiteSpace(cloudPrompt) ? null : cloudPrompt.Trim());
+        }
+
+        var draftPrompt = $@"You are designing a text-optimization template: one instruction an assistant will be given together with a piece of the user's text, to rewrite that text in a particular style. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
+- ""name"": a short display name for the template (max 40 characters)
+- ""description"": a one-line summary of what this template does (max 120 characters)
+- ""prompt"": the instruction itself, 2-4 sentences, written in the second person as a command. It must capture the tone, the sentence structure and complexity, the vocabulary level, and any formatting or structural pattern the style description asks for. Write it so it applies to ANY input text, not to one example.
+
+Write every value in the same language as the style description below.
+
+Style description:
+{styleDescription}";
+
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(Microsoft.Extensions.AI.ChatRole.System,
+                "You produce only the requested output. Do not reason, think, or explain."),
+            new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
+        };
+
+        // Retried once for the same reason the routine draft is: an upstream error frame is dropped
+        // rather than thrown, so a failed turn is indistinguishable from a silent one here.
+        var raw = await CollectTextAsync(messages, provider);
+        if (string.IsNullOrWhiteSpace(raw))
+            raw = await CollectTextAsync(messages, provider);
+
+        if (string.IsNullOrWhiteSpace(raw))
+            throw new InvalidOperationException("The model returned no template draft.");
+
+        return DraftParsing.ParseTemplateDraft(raw);
+    }
+
     public async Task<PersonaDraft> GeneratePersonaDraftAsync(string description, Guid? providerId = null)
     {
         var provider = providerId.HasValue
@@ -164,7 +209,7 @@ Description:
         // /api/ai/chat only returns the expected shape on the streaming path (its non-streaming
         // response shape is unsupported here), and this is the proven path for every provider. The
         // system message keeps reasoning models from wrapping the JSON in think/commentary, which
-        // would defeat the extraction in ParsePersonaDraft.
+        // would defeat the extraction in DraftParsing.ParsePersonaDraft.
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
             new(Microsoft.Extensions.AI.ChatRole.System,
@@ -180,7 +225,7 @@ Description:
                 buffer.Append(delta.Text);
         }
 
-        return ParsePersonaDraft(buffer.ToString());
+        return DraftParsing.ParsePersonaDraft(buffer.ToString());
     }
 
     public async Task<RoutineDraft> GenerateRoutineDraftAsync(
@@ -240,7 +285,7 @@ Description:
         if (string.IsNullOrWhiteSpace(raw))
             throw new InvalidOperationException("The model returned no routine draft.");
 
-        return ParseRoutineDraft(raw);
+        return DraftParsing.ParseRoutineDraft(raw);
     }
 
     private async Task<string> CollectTextAsync(
@@ -255,111 +300,5 @@ Description:
         }
 
         return buffer.ToString();
-    }
-
-    private static RoutineDraft ParseRoutineDraft(string raw)
-    {
-        var json = ExtractJsonObject(raw);
-        if (json is null)
-            return RawGoal(raw);
-
-        try
-        {
-            var dto = JsonSerializer.Deserialize<RoutineDraftDto>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (dto is null)
-                return RawGoal(raw);
-
-            return new RoutineDraft(
-                Clean(dto.Name),
-                Clean(dto.Goal),
-                Enum.TryParse<RecurrenceType>(dto.Recurrence, ignoreCase: true, out var recurrence) ? recurrence : null,
-                Enum.TryParse<DayOfWeek>(dto.DayOfWeek, ignoreCase: true, out var day) ? day : null,
-                TimeOnly.TryParseExact(dto.TimeOfDay, "HH\\:mm", out var time) ? time : null,
-                Enum.TryParse<ReasoningEffort>(dto.Effort, ignoreCase: true, out var effort) ? effort : null,
-                dto.NeedsWebSearch,
-                dto.Tools?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList());
-        }
-        catch (JsonException)
-        {
-            return RawGoal(raw);
-        }
-
-        static RoutineDraft RawGoal(string text) =>
-            new(null, text.Trim(), null, null, null, null, false, null);
-
-        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    private static PersonaDraft ParsePersonaDraft(string raw)
-    {
-        var json = ExtractJsonObject(raw);
-        if (json is null)
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-
-        try
-        {
-            var dto = JsonSerializer.Deserialize<PersonaDraftDto>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (dto is null)
-                return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-
-            return new PersonaDraft(
-                Clean(dto.Name),
-                Clean(dto.Tagline),
-                Clean(dto.SystemPrompt),
-                Clean(dto.Guardrails),
-                Clean(dto.OutputFormat),
-                Clean(dto.Archetype),
-                Clean(dto.Emoji),
-                Clean(dto.AccentColor),
-                dto.Expertise?.Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e.Trim()).ToList());
-        }
-        catch (JsonException)
-        {
-            // Model didn't return valid JSON — fall back to using the raw text as the system prompt.
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-        }
-
-        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    // Extracts the first {...} object from a model response, tolerating code fences / surrounding prose.
-    private static string? ExtractJsonObject(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start < 0 || end <= start) return null;
-        return text.Substring(start, end - start + 1);
-    }
-
-    private sealed class RoutineDraftDto
-    {
-        public string? Name { get; set; }
-        public string? Goal { get; set; }
-        public string? Recurrence { get; set; }
-        public string? DayOfWeek { get; set; }
-        public string? TimeOfDay { get; set; }
-        public string? Effort { get; set; }
-        public bool NeedsWebSearch { get; set; }
-        public List<string>? Tools { get; set; }
-    }
-
-    private sealed class PersonaDraftDto
-    {
-        public string? Name { get; set; }
-        public string? Tagline { get; set; }
-        public string? SystemPrompt { get; set; }
-        public string? Guardrails { get; set; }
-        public string? OutputFormat { get; set; }
-        public string? Archetype { get; set; }
-        public string? Emoji { get; set; }
-        public string? AccentColor { get; set; }
-        public List<string>? Expertise { get; set; }
     }
 }

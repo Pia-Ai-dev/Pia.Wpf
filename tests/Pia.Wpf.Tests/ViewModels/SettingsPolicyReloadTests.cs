@@ -81,17 +81,18 @@ public class SettingsPolicyReloadTests : IDisposable
         OptimizeSettingsViewModel Optimize,
         PersonaSettingsViewModel Persona,
         PrivacySettingsViewModel Privacy,
-        ProvidersSettingsViewModel Providers)
+        ProvidersSettingsViewModel Providers,
+        TemplatesSettingsViewModel Templates)
     {
         public IEnumerable<IDisposable> All =>
-            [Account, Assistant, General, Meeting, Optimize, Persona, Privacy, Providers];
+            [Account, Assistant, General, Meeting, Optimize, Persona, Privacy, Providers, Templates];
 
         public IEnumerable<PolicyLock> AllLocks =>
             [Account.Policy, Assistant.Policy, General.Policy, Meeting.Policy, Optimize.Policy,
-             Persona.Policy, Privacy.Policy, Providers.Policy];
+             Persona.Policy, Privacy.Policy, Providers.Policy, Templates.Policy];
     }
 
-    /// <summary>All eight share one settings service and one policy service, exactly as
+    /// <summary>All nine share one settings service and one policy service, exactly as
     /// <see cref="SettingsViewModel"/> wires them, so one raise exercises every handler.</summary>
     private static Suite CreateSuite()
     {
@@ -114,10 +115,12 @@ public class SettingsPolicyReloadTests : IDisposable
             null!, logger, Substitute.For<IProviderService>(), settings, dialogs, snackbar,
             Substitute.For<IAuthService>(), localization, policy);
 
-        var optimize = new OptimizeSettingsViewModel(
-            providers, logger, Substitute.For<ITemplateService>(), settings,
-            Substitute.For<ITextOptimizationService>(), dialogs, snackbar, localization, policy,
-            Substitute.For<IAuthService>());
+        var templates = new TemplatesSettingsViewModel(
+            logger, Substitute.For<ITemplateService>(), settings,
+            Substitute.For<ITextOptimizationService>(), snackbar, localization,
+            Substitute.For<IAuthService>(), policy, Substitute.For<IAdvancedCreationLauncher>());
+
+        var optimize = new OptimizeSettingsViewModel(providers, templates, logger, settings, policy);
 
         var persona = new PersonaSettingsViewModel(
             logger, Substitute.For<IPersonaService>(), Substitute.For<IProviderService>(),
@@ -154,7 +157,7 @@ public class SettingsPolicyReloadTests : IDisposable
                 NullLogger<E2EEOnboardingViewModel>.Instance));
 
         return new Suite(settings, policy, localization, account, assistant, general, meeting, optimize,
-            persona, privacy, providers);
+            persona, privacy, providers, templates);
     }
 
     private static void MutateEverySurface(AppSettings stored)
@@ -168,7 +171,10 @@ public class SettingsPolicyReloadTests : IDisposable
         stored.Privacy.TokenizationEnabled = true;
         stored.UseSameProviderForAllModes = false;
         stored.AllowProviderManagement = false;
+        stored.DefaultTemplateId = MutatedTemplateId;
     }
+
+    private static readonly Guid MutatedTemplateId = new("8f1d6c2a-3b47-4e58-9a01-2c5d7e9f0b31");
 
     [Fact]
     public void SettingsChanged_ReloadsEverySettingsViewModel()
@@ -185,6 +191,7 @@ public class SettingsPolicyReloadTests : IDisposable
         Assert.False(suite.Privacy.TokenizationEnabled);
         Assert.True(suite.Providers.UseSameProviderForAllModes);
         Assert.True(suite.Providers.CanManageProviders);
+        Assert.NotEqual(MutatedTemplateId, suite.Templates.DefaultTemplateId);
 
         MutateEverySurface(suite.Settings.Stored);
         suite.Settings.RaiseSettingsChanged();
@@ -198,6 +205,7 @@ public class SettingsPolicyReloadTests : IDisposable
         Assert.True(suite.Privacy.TokenizationEnabled);
         Assert.False(suite.Providers.UseSameProviderForAllModes);
         Assert.False(suite.Providers.CanManageProviders);
+        Assert.Equal(MutatedTemplateId, suite.Templates.DefaultTemplateId);
     }
 
     [Fact]
@@ -427,7 +435,8 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<IAssistantFolderRelocationService>(),
             Substitute.For<Pia.Services.IWorkingDirectoryService>(),
             Substitute.For<IDiagnosticsExportService>(),
-            EmptyScreenCaptureAllowlist());
+            EmptyScreenCaptureAllowlist(),
+            Substitute.For<IAdvancedCreationLauncher>());
 
         return new Page(root, settings, policy);
     }

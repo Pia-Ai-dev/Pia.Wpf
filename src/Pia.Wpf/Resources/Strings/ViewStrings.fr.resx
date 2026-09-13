@@ -1602,4 +1602,30 @@
   <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>La capture d'écran n'est disponible qu'avec le fournisseur PiaCloud</value></data>
   <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Capturer l'écran</value></data>
   <data name="Settings_Hotkey_ScreenCapture_Description" xml:space="preserve"><value>Ouvre l'Assistant et propose un écran ou une fenêtre à joindre comme image</value></data>
+  <data name="Templates_Duplicate" xml:space="preserve"><value>Dupliquer</value></data>
+  <data name="Templates_Empty" xml:space="preserve"><value>Aucun modèle pour l’instant.</value></data>
+  <data name="Templates_EmptyHint" xml:space="preserve"><value>Ajoutez-en un pour réécrire votre texte dans le style de votre choix.</value></data>
+  <data name="Templates_Placeholder" xml:space="preserve"><value>Sélectionnez un modèle pour voir ce qu’il fait.</value></data>
+  <data name="Templates_PlaceholderHint" xml:space="preserve"><value>Ou ajoutez-en un nouveau pour réécrire votre texte dans le style de votre choix.</value></data>
+  <data name="Dialog_TemplateEdit_Description" xml:space="preserve"><value>Description</value></data>
+  <data name="AdvancedCreation_Title_Template" xml:space="preserve"><value>Concevoir un modèle</value></data>
+  <data name="AdvancedCreation_Title_Persona" xml:space="preserve"><value>Concevoir une persona</value></data>
+  <data name="AdvancedCreation_Title_Routine" xml:space="preserve"><value>Concevoir une routine</value></data>
+  <data name="AdvancedCreation_Opening_Template" xml:space="preserve"><value>Que doit faire ce modèle à votre texte ?</value></data>
+  <data name="AdvancedCreation_Opening_Persona" xml:space="preserve"><value>Comment cette persona doit-elle être ?</value></data>
+  <data name="AdvancedCreation_Opening_Routine" xml:space="preserve"><value>Que doit faire cette routine pour vous ?</value></data>
+  <data name="AdvancedCreation_OpeningHint" xml:space="preserve"><value>Une phrase suffit — Pia posera les autres questions.</value></data>
+  <data name="AdvancedCreation_Start" xml:space="preserve"><value>Commencer</value></data>
+  <data name="AdvancedCreation_Send" xml:space="preserve"><value>Envoyer</value></data>
+  <data name="AdvancedCreation_Skip" xml:space="preserve"><value>Passer</value></data>
+  <data name="AdvancedCreation_Thinking" xml:space="preserve"><value>Réflexion…</value></data>
+  <data name="AdvancedCreation_Done" xml:space="preserve"><value>Prêt. Utilisez ce brouillon pour remplir l’éditeur — tout reste modifiable.</value></data>
+  <data name="AdvancedCreation_Use" xml:space="preserve"><value>Utiliser ce brouillon</value></data>
+  <data name="AdvancedCreation_Retry" xml:space="preserve"><value>Réessayer</value></data>
+  <data name="AdvancedCreation_Error_BadReply" xml:space="preserve"><value>Cette réponse était illisible. Un nouvel essai suffit généralement.</value></data>
+  <data name="AdvancedCreation_Error_Failed" xml:space="preserve"><value>La conception a échoué. Vérifiez le fournisseur et réessayez.</value></data>
+  <data name="AdvancedCreation_DiscardPrompt" xml:space="preserve"><value>Abandonner cette conception et fermer ?</value></data>
+  <data name="AdvancedCreation_Discard" xml:space="preserve"><value>Abandonner</value></data>
+  <data name="AdvancedCreation_KeepEditing" xml:space="preserve"><value>Continuer</value></data>
+  <data name="AdvancedCreation_Advanced" xml:space="preserve"><value>Avancé…</value></data>
 </root>

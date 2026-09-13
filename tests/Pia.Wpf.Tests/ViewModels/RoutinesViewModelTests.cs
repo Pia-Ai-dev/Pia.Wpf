@@ -77,7 +77,8 @@ public class RoutinesViewModelTests
         IPluginService Plugins,
         IWorkingDirectoryService WorkingDirectories,
         ISettingsService Settings,
-        ITextOptimizationService Drafting);
+        ITextOptimizationService Drafting,
+        IAdvancedCreationLauncher Advanced);
 
     private static Sut CreateSut(params ScheduledJob[] jobs) => CreateSut(runs: null, jobs);
 
@@ -116,6 +117,7 @@ public class RoutinesViewModelTests
         plugins.GetToolCatalog().Returns(ToolCatalog());
 
         var drafting = Substitute.For<ITextOptimizationService>();
+        var advanced = Substitute.For<IAdvancedCreationLauncher>();
 
         // Returns null the way the real service does with no sandbox configured, so a create sends no folder
         // unless the test asks for one.
@@ -128,10 +130,10 @@ public class RoutinesViewModelTests
 
         var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
             plugins, Substitute.For<IBrowserProvisioner>(), workingDirectories, settings,
-            NullLogger<RoutinesViewModel>.Instance, drafting);
+            NullLogger<RoutinesViewModel>.Instance, drafting, advanced);
 
         return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins,
-            workingDirectories, settings, drafting);
+            workingDirectories, settings, drafting, advanced);
     }
 
     private static RoutineDraft Draft(
@@ -439,6 +441,72 @@ public class RoutinesViewModelTests
         await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
 
         Assert.Empty(TickedTools(sut.Vm));
+    }
+
+    // ---- the interview door ---------------------------------------------------------------------
+
+    /// <summary>The interview reaches the same fields as the one-shot draft, so a name the catalogue does not
+    /// offer must be dropped on this path too — it is the one that can otherwise reach a stored grant.</summary>
+    [Fact]
+    public async Task AnInterviewDraft_DropsAToolThisDeviceDoesNotOffer()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns("""{"name":"Digest","goal":"Summarise.","tools":["create_todo","post_to_slack"]}""");
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(["create_todo"], TickedTools(sut.Vm));
+    }
+
+    [Fact]
+    public async Task AnInterviewDraft_FillsTheSameFieldsAsTheOneShotDraft()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns("""{"name":"Digest","goal":"Summarise the week.","recurrence":"weekly","dayOfWeek":"Friday","timeOfDay":"17:00"}""");
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("Digest", sut.Vm.EditName);
+        Assert.Contains("Summarise the week.", sut.Vm.EditQuery);
+        Assert.Equal(RecurrenceType.Weekly, sut.Vm.EditRecurrence);
+        Assert.Equal(DayOfWeek.Friday, sut.Vm.EditDayOfWeek);
+        Assert.Equal("17:00", sut.Vm.EditTimeOfDay);
+    }
+
+    /// <summary>Closing the overlay without finishing must leave the editor exactly as it was.</summary>
+    [Fact]
+    public async Task AnAbandonedInterview_ChangesNothing()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Mine";
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns((string?)null);
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("Mine", sut.Vm.EditName);
+        Assert.False(sut.Vm.IsDrafting);
+    }
+
+    /// <summary>The web-search guard is appended on this path too: a routine whose provider cannot search
+    /// would otherwise answer from memory.</summary>
+    [Fact]
+    public async Task AnInterviewDraft_AppendsTheWebSearchGuard()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns("""{"name":"News","goal":"Report the news.","needsWebSearch":true}""");
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.NotEqual("Report the news.", sut.Vm.EditQuery);
+        Assert.StartsWith("Report the news.", sut.Vm.EditQuery);
     }
 
     // ---- the slot value inside the goal ---------------------------------------------------------

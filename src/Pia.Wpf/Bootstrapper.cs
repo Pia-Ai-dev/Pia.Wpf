@@ -958,6 +958,8 @@ public static class Bootstrapper
         services.AddScoped<Navigation.INavigationService, Navigation.NavigationService>();
         services.AddScoped<IDialogService, DialogService>();
         services.AddScoped<ITextOptimizationService, TextOptimizationService>();
+        services.AddScoped<IAdvancedCreationService, AdvancedCreationService>();
+        services.AddScoped<IAdvancedCreationLauncher, AdvancedCreationLauncher>();
         services.AddScoped<IVoiceInputService, VoiceInputService>();
 
         // Services - Transient (no shared state)

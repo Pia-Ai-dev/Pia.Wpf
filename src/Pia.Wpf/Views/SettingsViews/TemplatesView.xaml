@@ -1,0 +1,319 @@
+<UserControl x:Class="Pia.Views.SettingsViews.TemplatesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:shared="clr-namespace:Pia.Controls.Shared"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <UserControl.Resources>
+    <Style TargetType="ui:Button" BasedOn="{StaticResource PiaHandCursorButtonStyle}"/>
+  </UserControl.Resources>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <Grid Grid.Row="0" Margin="0,0,0,12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
+      </Grid.ColumnDefinitions>
+      <StackPanel Grid.Column="0">
+        <TextBlock Text="{loc:Str Settings_Tab_Templates}"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextDefaultBrush}"/>
+        <TextBlock Text="{loc:Str Templates_Description}"
+                   FontSize="12"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,2,0,0"/>
+      </StackPanel>
+      <ui:Button Grid.Column="1"
+                 Appearance="Secondary"
+                 VerticalAlignment="Top"
+                 AutomationProperties.AutomationId="Templates_AddButton"
+                 AutomationProperties.Name="{loc:Str Templates_Add}"
+                 Command="{Binding AddTemplateCommand}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
+          <TextBlock Text="{loc:Str Templates_Add}"/>
+        </StackPanel>
+      </ui:Button>
+    </Grid>
+
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <!-- Both star-sized, following RoutinesView: a fixed list column leaves the detail pane with
+             almost nothing, and this one sits on an already-narrow settings page. -->
+        <ColumnDefinition Width="*" MinWidth="260" MaxWidth="380"/>
+        <ColumnDefinition Width="14"/>
+        <ColumnDefinition Width="2*"/>
+      </Grid.ColumnDefinitions>
+
+      <Grid Grid.Column="0">
+        <shared:PiaEmptyState Symbol="DocumentText24"
+                              Title="{loc:Str Templates_Empty}"
+                              Hint="{loc:Str Templates_EmptyHint}"
+                              Visibility="{Binding HasTemplates, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+        <ListBox ItemsSource="{Binding Templates}"
+                 SelectedItem="{Binding SelectedTemplate, Mode=TwoWay}"
+                 BorderThickness="0"
+                 Background="Transparent"
+                 Padding="0,0,4,0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 AutomationProperties.AutomationId="Templates_List"
+                 Visibility="{Binding HasTemplates, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ListBox.ItemContainerStyle>
+            <!-- Named and identified on the CONTAINER, which is the node UIA offers for a row: without these
+                 every row reports the model's ToString() and can only be reached by index. -->
+            <Style TargetType="ListBoxItem" BasedOn="{StaticResource PiaMemoryRowItemStyle}">
+              <Setter Property="AutomationProperties.AutomationId" Value="{Binding Id, StringFormat='Templates_Row_{0}'}"/>
+              <Setter Property="AutomationProperties.Name" Value="{Binding Name}"/>
+            </Style>
+          </ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <Border Style="{StaticResource PiaMasterRowCardStyle}">
+                <StackPanel>
+                  <TextBlock Text="{Binding Name}"
+                             FontSize="13"
+                             FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource TextDefaultBrush}"/>
+
+                  <TextBlock Text="{Binding Description}"
+                             Margin="0,8,0,0"
+                             FontSize="12"
+                             TextTrimming="CharacterEllipsis"
+                             Foreground="{DynamicResource TextSubtleBrush}"
+                             Visibility="{Binding Description, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <ui:Badge Content="{loc:Str Templates_BuiltIn}"
+                              Visibility="{Binding IsBuiltIn, Converter={StaticResource BooleanToVisibilityConverter}}"
+                              Appearance="Caution"
+                              Margin="0,0,8,0"/>
+                    <ui:Badge Content="{loc:Str Templates_Default}"
+                              Appearance="Primary">
+                      <ui:Badge.Visibility>
+                        <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                          <Binding Path="Id"/>
+                          <Binding Path="DataContext.DefaultTemplateId" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                        </MultiBinding>
+                      </ui:Badge.Visibility>
+                    </ui:Badge>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+
+      <!-- Right pane, three states: the editor, the selected template, or the placeholder. -->
+      <Border Grid.Column="2"
+              Style="{StaticResource PiaCardStyle}"
+              Padding="16">
+        <Grid>
+          <!-- Centred, unlike the list empty state above: this one owns a whole pane rather than sitting
+               under a header. -->
+          <shared:PiaEmptyState Symbol="DocumentText24"
+                                Title="{loc:Str Templates_Placeholder}"
+                                Hint="{loc:Str Templates_PlaceholderHint}"
+                                VerticalAlignment="Center"
+                                Margin="0"
+                                Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Margin="0,0,10,0">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding SelectedTemplate.Name}"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDefaultBrush}"/>
+                <ui:Badge Content="{loc:Str Templates_BuiltIn}"
+                          Visibility="{Binding SelectedTemplate.IsBuiltIn, Converter={StaticResource BooleanToVisibilityConverter}}"
+                          Appearance="Caution"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0"/>
+                <ui:Badge Content="{loc:Str Templates_Default}"
+                          Appearance="Primary"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0">
+                  <ui:Badge.Visibility>
+                    <MultiBinding Converter="{StaticResource IdEqualsVisibilityConverter}">
+                      <Binding Path="SelectedTemplate.Id"/>
+                      <Binding Path="DefaultTemplateId"/>
+                    </MultiBinding>
+                  </ui:Badge.Visibility>
+                </ui:Badge>
+              </StackPanel>
+
+              <TextBlock Text="{Binding SelectedTemplate.Description}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Margin="0,8,0,0"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding SelectedTemplate.Description, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_StyleDescription}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedTemplate.StyleDescription, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedTemplate.StyleDescription}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="Templates_Detail_StyleDescription"
+                         Visibility="{Binding SelectedTemplate.StyleDescription, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_GeneratedPrompt}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{Binding SelectedTemplate.Prompt}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="Templates_Detail_Prompt"/>
+
+              <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                <ui:Button Content="{loc:Str Common_Edit}"
+                           Icon="{ui:SymbolIcon Edit24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
+                           AutomationProperties.AutomationId="Templates_Detail_Edit"
+                           Visibility="{Binding SelectedTemplate.IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                           Command="{Binding EditSelectedCommand}"/>
+                <!-- Always offered: on a built-in this is the only way to get an editable copy. -->
+                <ui:Button Content="{loc:Str Templates_Duplicate}"
+                           Icon="{ui:SymbolIcon Copy24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
+                           AutomationProperties.AutomationId="Templates_Detail_Duplicate"
+                           Command="{Binding DuplicateSelectedCommand}"/>
+                <ui:Button Content="{loc:Str Templates_SetDefault}"
+                           Icon="{ui:SymbolIcon Star24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
+                           IsEnabled="{Binding Policy[DefaultTemplateId]}"
+                           AutomationProperties.AutomationId="Templates_Detail_SetDefault"
+                           Command="{Binding SetDefaultSelectedCommand}"/>
+                <ui:Button Content="{loc:Str Common_Delete}"
+                           Icon="{ui:SymbolIcon Delete24}"
+                           Appearance="Secondary"
+                           Foreground="{DynamicResource PiaDangerBrush}"
+                           AutomationProperties.AutomationId="Templates_Detail_Delete"
+                           Visibility="{Binding SelectedTemplate.IsBuiltIn, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                           Command="{Binding DeleteSelectedCommand}"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        IsVisibleChanged="EditorPane_IsVisibleChanged"
+                        Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Margin="0,0,10,0" DataContext="{Binding Editor}">
+
+              <!-- The Save button is bound to CanSave rather than disabled by CanExecute, so the reason has to
+                   live here. A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+              <Border Style="{StaticResource PiaRequiredHintStyle}"
+                      Visibility="{Binding CanSave, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                <TextBlock Text="{loc:Str Dialog_Edit_RequiredHint}"
+                           AutomationProperties.AutomationId="Templates_RequiredHint"
+                           TextWrapping="Wrap"/>
+              </Border>
+
+              <!-- AI-assist: draft from a style description -->
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_StyleDescription}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_StyleHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding StyleDescription, UpdateSourceTrigger=PropertyChanged}"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          MinHeight="80"
+                          IsReadOnly="{Binding IsGeneratingPrompt}"
+                          AutomationProperties.AutomationId="TemplateEdit_StyleDescription"
+                          Margin="0,0,0,8"/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <ui:Button Command="{Binding GeneratePromptCommand}"
+                           IsEnabled="{Binding IsGeneratingPrompt, Converter={StaticResource InverseBooleanConverter}}"
+                           AutomationProperties.AutomationId="TemplateEdit_GeneratePrompt"
+                           Margin="0,0,8,0">
+                  <Grid>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsGeneratingPrompt, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                      <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Dialog_TemplateEdit_GeneratePrompt}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsGeneratingPrompt, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Dialog_TemplateEdit_Generating}"/>
+                    </StackPanel>
+                  </Grid>
+                </ui:Button>
+                <ui:Button Command="{Binding DataContext.AdvancedDraftCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                           IsEnabled="{Binding IsGeneratingPrompt, Converter={StaticResource InverseBooleanConverter}}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="TemplateEdit_Advanced">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str AdvancedCreation_Advanced}"/>
+                  </StackPanel>
+                </ui:Button>
+              </StackPanel>
+
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_Name}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ui:TextBox x:Name="EditorNameBox"
+                          Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.AutomationId="TemplateEdit_Name"
+                          Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_Description}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <ui:TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.AutomationId="TemplateEdit_Description"
+                          Margin="0,2,0,8"/>
+
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_GeneratedPrompt}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+              <TextBlock Text="{loc:Str Dialog_TemplateEdit_PromptEditHint}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,2,0,4"/>
+              <ui:TextBox Text="{Binding GeneratedPrompt, UpdateSourceTrigger=PropertyChanged}"
+                          TextWrapping="Wrap"
+                          AcceptsReturn="True"
+                          MinHeight="140"
+                          IsReadOnly="{Binding IsGeneratingPrompt}"
+                          AutomationProperties.AutomationId="TemplateEdit_GeneratedPrompt"
+                          Margin="0,0,0,8"/>
+
+              <!-- Both bind past the Editor re-root: the commands live on the view model that owns it. -->
+              <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <ui:Button Content="{loc:Str Common_Save}"
+                           Icon="{ui:SymbolIcon Save24}"
+                           Appearance="Primary"
+                           Margin="0,0,8,0"
+                           IsEnabled="{Binding CanSave}"
+                           AutomationProperties.AutomationId="Templates_Save"
+                           Command="{Binding DataContext.SaveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                <ui:Button Content="{loc:Str Common_Cancel}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="Templates_Cancel"
+                           Command="{Binding DataContext.CancelEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</UserControl>

@@ -16,6 +16,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
 
     public ProvidersSettingsViewModel ProvidersVm { get; }
     public OptimizeSettingsViewModel OptimizeVm { get; }
+    public TemplatesSettingsViewModel TemplatesVm { get; }
     public AssistantSettingsViewModel AssistantVm { get; }
     public GeneralSettingsViewModel GeneralVm { get; }
     public AccountSettingsViewModel AccountVm { get; }
@@ -56,15 +57,18 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IAssistantFolderRelocationService folderRelocationService,
         IWorkingDirectoryService workingDirectoryService,
         IDiagnosticsExportService diagnosticsExportService,
-        IScreenCaptureAllowlistStore screenCaptureAllowlistStore)
+        IScreenCaptureAllowlistStore screenCaptureAllowlistStore,
+        IAdvancedCreationLauncher advancedCreation)
     {
         _logger = logger;
 
         ProvidersVm = new ProvidersSettingsViewModel(this, logger, providerService, settingsService, dialogService, snackbarService, authService, localizationService, policyService, syncClientService);
 
-        OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, logger, templateService, settingsService, textOptimizationService, dialogService, snackbarService, localizationService, policyService, authService);
+        TemplatesVm = new TemplatesSettingsViewModel(logger, templateService, settingsService, textOptimizationService, snackbarService, localizationService, authService, policyService, advancedCreation);
 
-        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, snackbarService, localizationService, authService, settingsService, policyService);
+        OptimizeVm = new OptimizeSettingsViewModel(ProvidersVm, TemplatesVm, logger, settingsService, policyService);
+
+        PersonasVm = new PersonaSettingsViewModel(logger, personaService, providerService, textOptimizationService, snackbarService, localizationService, authService, settingsService, policyService, advancedCreation);
 
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(
             toolPermissionService, pluginService, logger, screenCaptureAllowlistStore, dialogService);
@@ -131,6 +135,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
 
         ProvidersVm.Dispose();
         OptimizeVm.Dispose();
+        TemplatesVm.Dispose();
         PersonasVm.Dispose();
         AssistantVm.MeetingVm.Dispose();
         AssistantVm.Dispose();
