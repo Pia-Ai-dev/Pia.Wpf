@@ -366,7 +366,7 @@ public class PersonaService : IPersonaService
         OnPersonasChanged();
     }
 
-    public async Task DeletePersonaAsync(Guid id)
+    public async Task DeletePersonaAsync(Guid id, bool trackForSync = true)
     {
         if (_builtInIds.Contains(id))
         {
@@ -374,11 +374,8 @@ public class PersonaService : IPersonaService
             return;
         }
 
-        // This return MUST stay above the _deleteTracker.TrackDeletion call below — that is the whole point
-        // of the guard. The DELETE targets Personas, so a managed id would not remove the managed row
-        // anyway; the hazard is purely the tracker, which would enqueue a push tombstone for a row this
-        // client does not own. The server quarantines such a tombstone, but the client contract is to never
-        // emit one. Do not "simplify" this check down past the tracker.
+        // Must stay above the TrackDeletion below: a managed id must never enqueue a push tombstone for a
+        // row this client does not own.
         if (await IsManagedIdAsync(id))
         {
             _logger.LogDebug("Skipped delete for persona {Id}: managed personas cannot be deleted locally", id);
@@ -390,9 +387,11 @@ public class PersonaService : IPersonaService
         command.CommandText = "DELETE FROM Personas WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
 
-        await command.ExecuteNonQueryAsync();
-        _deleteTracker.TrackDeletion("personas", id);
-        _logger.LogInformation("Deleted persona {Id}", id);
+        var removed = await command.ExecuteNonQueryAsync();
+        if (trackForSync)
+            _deleteTracker.TrackDeletion("personas", id);
+        if (removed > 0)
+            _logger.LogInformation("Deleted persona {Id}", id);
         OnPersonasChanged();
     }
 

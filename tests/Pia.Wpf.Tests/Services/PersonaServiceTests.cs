@@ -44,6 +44,26 @@ public class PersonaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeletePersonaAsync_WhenApplyingASyncTombstone_DoesNotEnqueueItForPush()
+    {
+        var persona = await AddUserPersonaAsync();
+
+        await _service.DeletePersonaAsync(persona.Id, trackForSync: false);
+
+        Assert.DoesNotContain(persona.Id, _deleteTracker.GetPendingDeletes().GetValueOrDefault("personas", []));
+        Assert.DoesNotContain(await _service.GetPersonasAsync(), p => p.Id == persona.Id);
+    }
+
+    [Fact]
+    public async Task DeletePersonaAsync_WhenTheUserDeletes_EnqueuesItForPush()
+    {
+        var persona = await AddUserPersonaAsync();
+
+        await _service.DeletePersonaAsync(persona.Id);
+
+        Assert.Contains(persona.Id, _deleteTracker.GetPendingDeletes()["personas"]);
+    }
+    [Fact]
     public async Task GetPersonasAsync_MergesBuiltInsFirstThenUser()
     {
         var user = await AddUserPersonaAsync();

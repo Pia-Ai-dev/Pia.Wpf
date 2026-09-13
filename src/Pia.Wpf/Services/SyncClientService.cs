@@ -1308,7 +1308,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         foreach (var deletedId in pullResponse.Templates.Deleted)
         {
             _logger.LogDebug("Pull deleted: {EntityType} {Id}", "templates", deletedId);
-            await _templateService.DeleteTemplateAsync(deletedId);
+            await _templateService.DeleteTemplateAsync(deletedId, trackForSync: false);
             mergeDeleted++;
         }
         if (pullResponse.Templates.Deleted.Count > 0)
@@ -1373,7 +1373,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             foreach (var deletedId in pullResponse.Personas.Deleted)
             {
                 _logger.LogDebug("Pull deleted: {EntityType} {Id}", "personas", deletedId);
-                await _personaService.DeletePersonaAsync(deletedId);
+                await _personaService.DeletePersonaAsync(deletedId, trackForSync: false);
                 mergeDeleted++;
             }
             if (pullResponse.Personas.Deleted.Count > 0)
@@ -1480,7 +1480,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         foreach (var deletedId in pullResponse.Providers.Deleted)
         {
             _logger.LogDebug("Pull deleted: {EntityType} {Id}", "providers", deletedId);
-            await _providerService.DeleteProviderAsync(deletedId);
+            await _providerService.DeleteProviderAsync(deletedId, trackForSync: false);
             mergeDeleted++;
         }
         if (pullResponse.Providers.Deleted.Count > 0)
@@ -1575,7 +1575,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         foreach (var deletedId in pullResponse.Memories.Deleted)
         {
             _logger.LogDebug("Pull deleted: {EntityType} {Id}", "memories", deletedId);
-            await _memoryService.DeleteObjectAsync(deletedId);
+            await _memoryService.DeleteObjectAsync(deletedId, trackForSync: false);
             mergeDeleted++;
         }
         if (pullResponse.Memories.Deleted.Count > 0)
@@ -1682,7 +1682,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             foreach (var deletedId in pullResponse.Todos.Deleted)
             {
                 _logger.LogDebug("Pull deleted: {EntityType} {Id}", "todos", deletedId);
-                await _todoService.DeleteAsync(deletedId);
+                await _todoService.DeleteAsync(deletedId, trackForSync: false);
                 mergeDeleted++;
             }
             if (pullResponse.Todos.Deleted.Count > 0)
@@ -1728,7 +1728,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             foreach (var deletedId in pullResponse.ScheduledJobs.Deleted)
             {
                 _logger.LogDebug("Pull deleted: {EntityType} {Id}", "scheduledJobs", deletedId);
-                await _scheduledJobService.DeleteAsync(deletedId);
+                await _scheduledJobService.DeleteAsync(deletedId, trackForSync: false);
                 mergeDeleted++;
             }
             if (pullResponse.ScheduledJobs.Deleted.Count > 0)

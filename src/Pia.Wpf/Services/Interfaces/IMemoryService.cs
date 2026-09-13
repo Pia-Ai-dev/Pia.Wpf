@@ -106,7 +106,7 @@ public interface IMemoryService
     Task UpdateObjectAsync(Guid id, string jsonMergePatch);
     Task UpdateObjectDataAsync(Guid id, string label, string jsonData);
     Task AppendToListAsync(Guid id, string jsonEntry);
-    Task DeleteObjectAsync(Guid id);
+    Task DeleteObjectAsync(Guid id, bool trackForSync = true);
     Task<IReadOnlyList<MemoryObject>> GetObjectsByTypeAsync(string type);
     Task<IReadOnlyList<MemoryObject>> GetAllObjectsAsync();
     Task<IReadOnlyList<MemoryObject>> SearchAsync(string query);

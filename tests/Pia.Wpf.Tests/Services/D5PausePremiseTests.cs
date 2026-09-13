@@ -756,7 +756,7 @@ public sealed class D5PausePremiseTests : IDisposable
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
         public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(true);
-        public Task DeleteAsync(Guid id) => throw new NotImplementedException();
+        public Task DeleteAsync(Guid id, bool trackForSync = true) => throw new NotImplementedException();
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) => throw new NotImplementedException();

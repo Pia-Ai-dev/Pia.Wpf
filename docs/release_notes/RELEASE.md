@@ -143,6 +143,10 @@
   counted as using it on that device alone, so an old chat you kept coming back
   to still looked untouched to your other devices — and the first one to clear
   out old chats cleared it everywhere.
+- Deleting a persona, task or routine no longer leaves Pia syncing every five
+  minutes for good. Each device handed the deletion straight back to Pia Cloud,
+  which sent it out again, so there was always something to sync and Pia never
+  eased off to its quiet fifteen-minute cadence.
 - Clearing out old chats now asks Pia Cloud when each one was last opened,
   instead of going on what this device happens to know. A chat you read on
   another computer is kept, and a device that cannot reach the server clears

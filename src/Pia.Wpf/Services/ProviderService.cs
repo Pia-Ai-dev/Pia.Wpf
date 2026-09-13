@@ -251,7 +251,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         ProvidersChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task DeleteProviderAsync(Guid id)
+    public async Task DeleteProviderAsync(Guid id, bool trackForSync = true)
     {
         if (id == PiaCloudProviderId)
             throw new InvalidOperationException("The built-in Pia Cloud provider cannot be deleted.");
@@ -263,7 +263,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         providers.Remove(provider);
         await SaveAsync(providers);
-        _deleteTracker.TrackDeletion("providers", id);
+        if (trackForSync)
+            _deleteTracker.TrackDeletion("providers", id);
         ProvidersChanged?.Invoke(this, EventArgs.Empty);
 
         // Clean up any mode defaults pointing to deleted provider

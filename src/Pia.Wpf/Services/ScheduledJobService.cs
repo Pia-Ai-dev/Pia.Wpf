@@ -260,15 +260,17 @@ public class ScheduledJobService : IScheduledJobService
         _logger.LogInformation("Updated scheduled job {Id} ({Status})", id, existing.Status);
     }
 
-    public async Task DeleteAsync(Guid id)
+    public async Task DeleteAsync(Guid id, bool trackForSync = true)
     {
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM ScheduledJobs WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
-        await command.ExecuteNonQueryAsync();
-        _deleteTracker.TrackDeletion("scheduledJobs", id);
-        _logger.LogInformation("Deleted scheduled job {Id}", id);
+        var removed = await command.ExecuteNonQueryAsync();
+        if (trackForSync)
+            _deleteTracker.TrackDeletion("scheduledJobs", id);
+        if (removed > 0)
+            _logger.LogInformation("Deleted scheduled job {Id}", id);
     }
 
     public async Task DisableAsync(Guid id)

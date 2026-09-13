@@ -81,7 +81,7 @@ public interface IScheduledJobService
         // trick the pins use, and a path is never legitimately empty, so empty is free to be the sentinel.
         string? workingDirectory = null);
 
-    Task DeleteAsync(Guid id);
+    Task DeleteAsync(Guid id, bool trackForSync = true);
 
     Task DisableAsync(Guid id);
     Task EnableAsync(Guid id);

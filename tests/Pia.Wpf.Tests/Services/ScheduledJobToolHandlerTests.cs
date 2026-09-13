@@ -553,7 +553,7 @@ public class ScheduledJobToolHandlerTests
 
         public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(true);
 
-        public Task DeleteAsync(Guid id)
+        public Task DeleteAsync(Guid id, bool trackForSync = true)
         {
             Deleted.Add(id);
             return Task.CompletedTask;
@@ -590,7 +590,7 @@ public class ScheduledJobToolHandlerTests
         public Task<AiProvider?> GetDefaultProviderForModeAsync(WindowMode mode) => Task.FromResult<AiProvider?>(null);
         public Task<AiProvider> AddProviderAsync(AiProvider provider, string? apiKey) => throw new NotImplementedException();
         public Task UpdateProviderAsync(AiProvider provider, string? newApiKey = null) => throw new NotImplementedException();
-        public Task DeleteProviderAsync(Guid id) => throw new NotImplementedException();
+        public Task DeleteProviderAsync(Guid id, bool trackForSync = true) => throw new NotImplementedException();
         public string? GetDecryptedApiKey(AiProvider provider) => null;
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider) => throw new NotImplementedException();
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider, string? plainApiKey) => throw new NotImplementedException();
