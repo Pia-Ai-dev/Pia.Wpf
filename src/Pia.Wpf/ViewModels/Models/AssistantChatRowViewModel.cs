@@ -28,6 +28,15 @@ public sealed partial class AssistantChatRowViewModel : ObservableObject
 
     public DateTime UpdatedAt => Chat.UpdatedAt;
 
+    public bool IsFavorite => Chat.IsFavorite;
+
+    /// <summary><see cref="IsFavorite"/> reads through to a plain DTO field, so a toggle has to raise for it.</summary>
+    public void SetFavorite(bool isFavorite)
+    {
+        Chat.IsFavorite = isFavorite;
+        OnPropertyChanged(nameof(IsFavorite));
+    }
+
     [ObservableProperty]
     private ChatState _state;
 

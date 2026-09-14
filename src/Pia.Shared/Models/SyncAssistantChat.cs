@@ -34,6 +34,9 @@ public class SyncAssistantChat
     /// the same as having declined. A string because Pia.Shared does not see the client's model types.</summary>
     public string? AgentContextMode { get; set; }
 
+    /// <summary>User starred this chat: it groups above the date buckets and retention never evicts it.</summary>
+    public bool IsFavorite { get; set; }
+
     public List<SyncAssistantChatMessage> Messages { get; set; } = [];
 
     /// <summary>

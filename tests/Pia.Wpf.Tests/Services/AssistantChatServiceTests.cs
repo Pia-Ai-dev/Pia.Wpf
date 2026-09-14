@@ -578,6 +578,81 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Null(back.Messages[0].AttachedFiles);
     }
 
+    [Fact]
+    public async Task SetFavoriteAsync_PersistsAndBumpsUpdatedAt()
+    {
+        var chat = MakeChat(title: "starred", body: "body");
+        chat.UpdatedAt = DateTime.UtcNow.AddDays(-3);
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        Assert.True(await _service.SetFavoriteAsync(chat.Id, true, TestContext.Current.CancellationToken));
+
+        var stored = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+        Assert.True(stored!.IsFavorite);
+        // Without the bump the other device's since= pull never fetches the star.
+        Assert.True(stored.UpdatedAt > chat.UpdatedAt);
+
+        Assert.True(await _service.SetFavoriteAsync(chat.Id, false, TestContext.Current.CancellationToken));
+        Assert.False((await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken))!.IsFavorite);
+    }
+
+    [Fact]
+    public async Task SetFavoriteAsync_ReturnsFalse_WhenTheChatIsGone() =>
+        Assert.False(await _service.SetFavoriteAsync(Guid.NewGuid(), true, TestContext.Current.CancellationToken));
+
+    [Fact]
+    public async Task SetFavoriteAsync_LeavesTheMessagesAlone()
+    {
+        var chat = MakeChat(title: "starred", body: "body");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        await _service.SetFavoriteAsync(chat.Id, true, TestContext.Current.CancellationToken);
+
+        var stored = await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken);
+        Assert.Single(stored!.Messages);
+        Assert.Equal("body", stored.Messages[0].Content);
+    }
+
+    [Fact]
+    public async Task GetFavoritesAsync_ReturnsOnlyStarredChats_PastThePageTheSearchWouldReturn()
+    {
+        var favorite = MakeChat(title: "starred", body: "body");
+        favorite.UpdatedAt = DateTime.UtcNow.AddDays(-200);
+        await _service.SaveAsync(favorite, TestContext.Current.CancellationToken);
+        _createdIds.Add(favorite.Id);
+        await _service.SetFavoriteAsync(favorite.Id, true, TestContext.Current.CancellationToken);
+
+        var plain = MakeChat(title: "ordinary", body: "body");
+        await _service.SaveAsync(plain, TestContext.Current.CancellationToken);
+        _createdIds.Add(plain.Id);
+
+        // A page that cannot contain the favourite: it is the older of the two, and only one row fits.
+        var page = await _service.SearchAsync(limit: 1, ct: TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(page, c => c.Id == favorite.Id);
+
+        var favorites = await _service.GetFavoritesAsync(ct: TestContext.Current.CancellationToken);
+        Assert.Equal(favorite.Id, Assert.Single(favorites).Id);
+    }
+
+    [Fact]
+    public async Task GetFavoritesAsync_HonoursTheSearchText()
+    {
+        var matching = MakeChat(title: "UniqueFavoriteAAA", body: "body");
+        var other = MakeChat(title: "UniqueFavoriteBBB", body: "body");
+        foreach (var c in new[] { matching, other })
+        {
+            await _service.SaveAsync(c, TestContext.Current.CancellationToken);
+            _createdIds.Add(c.Id);
+            await _service.SetFavoriteAsync(c.Id, true, TestContext.Current.CancellationToken);
+        }
+
+        var hits = await _service.GetFavoritesAsync(
+            searchText: "UniqueFavoriteAAA", ct: TestContext.Current.CancellationToken);
+        Assert.Equal(matching.Id, Assert.Single(hits).Id);
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;

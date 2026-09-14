@@ -1120,6 +1120,7 @@ public class SyncMapper
                 // from an encrypted document (assistant-chat-history.md §1), so a plaintext field here comes
                 // back null on every pull and the context banner re-appears in a chat that answered it.
                 AgentContextMode = chat.AgentContextMode,
+                IsFavorite = chat.IsFavorite,
                 Messages = chat.Messages,
                 ExtensionData = chat.ExtensionData
             };
@@ -1135,6 +1136,7 @@ public class SyncMapper
             wire.Title = chat.Title;
             wire.ProviderId = chat.ProviderId;
             wire.AgentContextMode = chat.AgentContextMode;
+            wire.IsFavorite = chat.IsFavorite;
             wire.Messages = chat.Messages;
             wire.ExtensionData = chat.ExtensionData;
         }
@@ -1178,6 +1180,7 @@ public class SyncMapper
                 LastAccessedAt = wire.LastAccessedAt,
                 WindowMode = wire.WindowMode,
                 AgentContextMode = decrypted.AgentContextMode,
+                IsFavorite = decrypted.IsFavorite,
                 // Forward-compat fields travel inside the ciphertext for encrypted chats;
                 // plaintext wire extension keys are dropped so they can't re-enter the
                 // local store and echo back out on the next push.
@@ -1198,6 +1201,7 @@ public class SyncMapper
             LastAccessedAt = wire.LastAccessedAt,
             WindowMode = wire.WindowMode,
             AgentContextMode = wire.AgentContextMode,
+            IsFavorite = wire.IsFavorite,
             ExtensionData = wire.ExtensionData
         };
     }
@@ -1228,6 +1232,7 @@ public class SyncMapper
         public string? Title { get; set; }
         public Guid? ProviderId { get; set; }
         public string? AgentContextMode { get; set; }
+        public bool IsFavorite { get; set; }
         public List<SyncAssistantChatMessage> Messages { get; set; } = [];
 
         [JsonExtensionData]

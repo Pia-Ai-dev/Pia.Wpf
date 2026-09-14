@@ -429,6 +429,7 @@ public class SqliteContext : IDisposable
                 ProviderId      TEXT,
                 WorkingDirectory TEXT,
                 AgentContextMode TEXT,
+                IsFavorite      INTEGER NOT NULL DEFAULT 0,
                 ExtraJson       TEXT
             );
 
@@ -1064,11 +1065,13 @@ public class SqliteContext : IDisposable
             }
         }
 
-        // Per-chat working directory (relative to the assistant-files sandbox root) and the per-chat
-        // agent-context choice, both added after AssistantChats shipped. Fresh tables already include them
-        // via CREATE TABLE above, so the PRAGMA check short-circuits and no ALTER is issued.
+        // Per-chat working directory (relative to the assistant-files sandbox root), the per-chat
+        // agent-context choice and the favourite flag, all added after AssistantChats shipped. Fresh tables
+        // already include them via CREATE TABLE above, so the PRAGMA check short-circuits and no ALTER is
+        // issued.
         var hasWorkingDirectory = false;
         var hasAgentContextMode = false;
+        var hasIsFavorite = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(AssistantChats)";
@@ -1078,6 +1081,7 @@ public class SqliteContext : IDisposable
                 var col = r.GetString(1);
                 if (col == "WorkingDirectory") hasWorkingDirectory = true;
                 else if (col == "AgentContextMode") hasAgentContextMode = true;
+                else if (col == "IsFavorite") hasIsFavorite = true;
             }
         }
         if (!hasWorkingDirectory)
@@ -1090,6 +1094,12 @@ public class SqliteContext : IDisposable
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN AgentContextMode TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasIsFavorite)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN IsFavorite INTEGER NOT NULL DEFAULT 0";
             addCol.ExecuteNonQuery();
         }
 

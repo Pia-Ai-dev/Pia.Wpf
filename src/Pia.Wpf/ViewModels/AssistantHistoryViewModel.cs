@@ -40,6 +40,10 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     private (Guid Id, DateTime UpdatedAt)? _loadedChat;
     private bool _suppressReload;
 
+    /// <summary>Rows loaded from the paged query alone. <see cref="Chats"/> also holds favourites pulled in
+    /// unpaged, so it can no longer serve as the next page's offset or the has-more test.</summary>
+    private int _pageCount;
+
     [ObservableProperty]
     private ObservableCollection<AssistantChatRowViewModel> _chats = new();
 
@@ -127,6 +131,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     public IAsyncRelayCommand RenameChatCommand { get; }
     public IAsyncRelayCommand DeleteChatCommand { get; }
     public IAsyncRelayCommand<AssistantChatRowViewModel> QuickDeleteChatCommand { get; }
+    public IAsyncRelayCommand<AssistantChatRowViewModel> ToggleFavoriteChatCommand { get; }
     public IAsyncRelayCommand DeleteAllChatsCommand { get; }
     public IAsyncRelayCommand ClearFilterCommand { get; }
     public IAsyncRelayCommand RefreshCommand { get; }
@@ -182,6 +187,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         RenameChatCommand = new AsyncRelayCommand(ExecuteRenameChatAsync, CanExecuteWithSelection);
         DeleteChatCommand = new AsyncRelayCommand(ExecuteDeleteChatAsync, CanExecuteWithSelection);
         QuickDeleteChatCommand = new AsyncRelayCommand<AssistantChatRowViewModel>(ExecuteQuickDeleteChatAsync);
+        ToggleFavoriteChatCommand = new AsyncRelayCommand<AssistantChatRowViewModel>(ExecuteToggleFavoriteAsync);
         DeleteAllChatsCommand = new AsyncRelayCommand(ExecuteDeleteAllChatsAsync);
         ClearFilterCommand = new AsyncRelayCommand(ExecuteClearFilterAsync);
         RefreshCommand = new AsyncRelayCommand(ExecuteRefreshAsync);
@@ -229,7 +235,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         try
         {
             IsLoading = true;
-            var offset = append ? Chats.Count : 0;
+            var offset = append ? _pageCount : 0;
 
             var chats = await _chatService.SearchAsync(
                 searchText: string.IsNullOrWhiteSpace(SearchQuery) ? null : SearchQuery,
@@ -245,14 +251,29 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
                 toDate: FilterEndDate,
                 providerId: SelectedProviderId);
 
+            var favorites = await _chatService.GetFavoritesAsync(
+                searchText: string.IsNullOrWhiteSpace(SearchQuery) ? null : SearchQuery,
+                fromDate: FilterStartDate,
+                toDate: FilterEndDate,
+                providerId: SelectedProviderId);
+
             var previousSelectedId = SelectedChat?.Id;
 
             if (!append)
+            {
                 Chats.Clear();
-            foreach (var chat in chats)
-                Chats.Add(new AssistantChatRowViewModel(chat, _chatSessionManager.GetState(chat.Id)));
+                _pageCount = 0;
+            }
 
-            HasMoreChats = Chats.Count < TotalCount;
+            // One row VM per chat, whichever query found it: two instances would leave the state-change
+            // handler refreshing the badge on only one of them.
+            var known = Chats.Select(r => r.Id).ToHashSet();
+            foreach (var chat in chats.Concat(favorites))
+                if (known.Add(chat.Id))
+                    Chats.Add(new AssistantChatRowViewModel(chat, _chatSessionManager.GetState(chat.Id)));
+
+            _pageCount += chats.Count;
+            HasMoreChats = _pageCount < TotalCount;
 
             _logger.LogInformation(
                 "AssistantHistory showing {Loaded} of {Total} chats (hasQuery={HasQuery}, providerFilter={HasProvider})",
@@ -298,8 +319,31 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         VisibleCount = filtered.Count;
 
         ChatGroups.Clear();
-        foreach (var group in BuildDateGroups(filtered, existingState))
+        // Starred rows leave the date buckets entirely — showing a chat in both groups would need two row
+        // VMs for it, and only one of them would ever get a live-state refresh.
+        if (BuildFavoritesGroup(filtered, existingState) is { } favorites)
+            ChatGroups.Add(favorites);
+        foreach (var group in BuildDateGroups(filtered.Where(c => !c.IsFavorite).ToList(), existingState))
             ChatGroups.Add(group);
+    }
+
+    private AssistantChatGroupViewModel? BuildFavoritesGroup(
+        IReadOnlyList<AssistantChatRowViewModel> chats,
+        IReadOnlyDictionary<string, bool> existingState)
+    {
+        var items = chats.Where(c => c.IsFavorite).OrderByDescending(c => c.UpdatedAt).ToList();
+        if (items.Count == 0) return null;
+
+        const string key = "favorites";
+        return new AssistantChatGroupViewModel
+        {
+            GroupKey = key,
+            Bucket = HistoryDateBucket.Favorites,
+            DisplayName = _localizationService[BucketResourceKey(HistoryDateBucket.Favorites)],
+            Items = new ObservableCollection<AssistantChatRowViewModel>(items),
+            ItemCount = items.Count,
+            IsExpanded = !existingState.TryGetValue(key, out var prev) || prev,
+        };
     }
 
     private List<AssistantChatGroupViewModel> BuildDateGroups(
@@ -375,6 +419,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
 
     private static string BucketResourceKey(HistoryDateBucket bucket) => bucket switch
     {
+        HistoryDateBucket.Favorites => "History_Group_Favorites",
         HistoryDateBucket.Today => "History_Group_Today",
         HistoryDateBucket.Yesterday => "History_Group_Yesterday",
         HistoryDateBucket.ThisWeek => "History_Group_ThisWeek",
@@ -476,6 +521,29 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     }
 
     /// <summary>Per-row quick delete (hover trash icon): deletes the given row rather than the selected one.</summary>
+    private async Task ExecuteToggleFavoriteAsync(AssistantChatRowViewModel? row)
+    {
+        if (row is null) return;
+
+        var target = !row.IsFavorite;
+        try
+        {
+            if (!await _chatService.SetFavoriteAsync(row.Id, target))
+            {
+                _logger.LogWarning("Chat {ChatId} disappeared before the favorite toggle landed", row.Id);
+                return;
+            }
+
+            row.SetFavorite(target);
+            RebuildGroups();
+            _logger.LogInformation("Chat {ChatId} favorite set to {IsFavorite}", row.Id, target);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to toggle favorite on chat {ChatId}", row.Id);
+        }
+    }
+
     private async Task ExecuteQuickDeleteChatAsync(AssistantChatRowViewModel? row)
     {
         if (row is null) return;

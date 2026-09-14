@@ -250,6 +250,7 @@
   <data name="History_Loading" xml:space="preserve"><value>Chargement des sessions...</value></data>
   <data name="History_NoSessions" xml:space="preserve"><value>Aucune session trouvée</value></data>
   <data name="History_LoadMore" xml:space="preserve"><value>Charger plus</value></data>
+  <data name="History_Group_Favorites" xml:space="preserve"><value>Favoris</value></data>
   <data name="History_Group_Today" xml:space="preserve"><value>Aujourd'hui</value></data>
   <data name="History_Group_Yesterday" xml:space="preserve"><value>Hier</value></data>
   <data name="History_Group_ThisWeek" xml:space="preserve"><value>Cette semaine</value></data>
@@ -278,6 +279,7 @@
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>Aucun chat pour l'instant</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Démarrez un chat en mode Assistant pour alimenter l'historique</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Reprendre ce chat</value></data>
+  <data name="AssistantHistory_Favorite" xml:space="preserve"><value>Favori</value></data>
   <data name="AssistantHistory_Rename" xml:space="preserve"><value>Renommer</value></data>
   <data name="AssistantHistory_RenamePrompt" xml:space="preserve"><value>Comment ce chat doit-il s’appeler ?</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Historique des chats</value></data>

@@ -21,6 +21,19 @@ public partial class PiaAssistantChatRowContent : UserControl
     }
 
     /// <summary>
+    /// Optional per-row star toggle. Unlike the hover actions this one sits beside the state badge and
+    /// stays visible while the row's item reports <c>IsFavorite</c>, so a host must also expose that.
+    /// </summary>
+    public static readonly DependencyProperty FavoriteCommandProperty =
+        DependencyProperty.Register(nameof(FavoriteCommand), typeof(ICommand), typeof(PiaAssistantChatRowContent));
+
+    public ICommand? FavoriteCommand
+    {
+        get => (ICommand?)GetValue(FavoriteCommandProperty);
+        set => SetValue(FavoriteCommandProperty, value);
+    }
+
+    /// <summary>
     /// Optional per-row open command, on the same hover strip as the delete one. A host that offers delete
     /// without this leaves a row that a script can destroy by id but not open by one.
     /// </summary>

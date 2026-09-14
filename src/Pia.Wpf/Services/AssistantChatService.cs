@@ -212,9 +212,9 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 : "excluded.LastAccessedAt";
             upsertChat.CommandText = $"""
                 INSERT INTO AssistantChats
-                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, ExtraJson)
+                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson)
                 VALUES
-                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @AgentContextMode, @ExtraJson)
+                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @AgentContextMode, @IsFavorite, @ExtraJson)
                 ON CONFLICT(Id) DO UPDATE SET
                     SchemaVersion = excluded.SchemaVersion,
                     Title = excluded.Title,
@@ -224,6 +224,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                     ProviderId = excluded.ProviderId,
                     WorkingDirectory = excluded.WorkingDirectory,
                     AgentContextMode = excluded.AgentContextMode,
+                    IsFavorite = excluded.IsFavorite,
                     ExtraJson = excluded.ExtraJson
                 """;
             upsertChat.Parameters.AddWithValue("@Id", chat.Id.ToString());
@@ -236,6 +237,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             upsertChat.Parameters.AddWithValue("@ProviderId", (object?)chat.ProviderId?.ToString() ?? DBNull.Value);
             upsertChat.Parameters.AddWithValue("@WorkingDirectory", (object?)chat.WorkingDirectory ?? DBNull.Value);
             upsertChat.Parameters.AddWithValue("@AgentContextMode", (object?)chat.AgentContextMode ?? DBNull.Value);
+            upsertChat.Parameters.AddWithValue("@IsFavorite", chat.IsFavorite ? 1 : 0);
             upsertChat.Parameters.AddWithValue("@ExtraJson", (object?)SerializeExtensionData(chat.ExtensionData) ?? DBNull.Value);
             await upsertChat.ExecuteNonQueryAsync(ct);
         }
@@ -334,6 +336,72 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         return true;
     }
 
+    public async Task<bool> SetFavoriteAsync(Guid chatId, bool isFavorite, CancellationToken ct = default)
+    {
+        bool updated;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return false;
+
+            var connection = Connection();
+            using var update = connection.CreateCommand();
+            // UpdatedAt moves so the other device's since= pull sees the star at all — the same reason
+            // SetTitleAsync bumps it. The FTS row indexes title and body, neither of which changed.
+            update.CommandText =
+                "UPDATE AssistantChats SET IsFavorite = @IsFavorite, UpdatedAt = @Now WHERE Id = @Id";
+            update.Parameters.AddWithValue("@IsFavorite", isFavorite ? 1 : 0);
+            update.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            update.Parameters.AddWithValue("@Id", chatId.ToString());
+            updated = await update.ExecuteNonQueryAsync(ct) > 0;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        if (updated) OnChatsChanged(chatId, AssistantChatChangeKind.Upserted);
+        return updated;
+    }
+
+    public async Task<IReadOnlyList<SyncAssistantChat>> GetFavoritesAsync(
+        string? searchText = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        Guid? providerId = null,
+        int limit = 100,
+        CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return Array.Empty<SyncAssistantChat>();
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            var whereClause = BuildSearchWhere(command, searchText, fromDate, toDate, providerId, favoritesOnly: true);
+
+            command.CommandText = $"""
+                SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson
+                FROM AssistantChats
+                {whereClause}
+                ORDER BY UpdatedAt DESC
+                LIMIT @Limit
+                """;
+            command.Parameters.AddWithValue("@Limit", limit);
+
+            var chats = new List<SyncAssistantChat>();
+            using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                chats.Add(MapChat(reader));
+            return chats.AsReadOnly();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -347,7 +415,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             using (var getChat = connection.CreateCommand())
             {
                 getChat.CommandText = """
-                    SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, ExtraJson
+                    SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson
                     FROM AssistantChats WHERE Id = @Id
                     """;
                 getChat.Parameters.AddWithValue("@Id", id.ToString());
@@ -527,9 +595,12 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         string? searchText,
         DateTime? fromDate,
         DateTime? toDate,
-        Guid? providerId)
+        Guid? providerId,
+        bool favoritesOnly = false)
     {
         var conditions = new List<string>();
+
+        if (favoritesOnly) conditions.Add("IsFavorite = 1");
 
         // Hide message-less chats from the history list. A failed/empty headless turn leaves a
         // stub AssistantChats row up front (the FK target its AgentRun needs — §16 R1) that never
@@ -583,7 +654,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         var whereClause = BuildSearchWhere(command, searchText, fromDate, toDate, providerId);
 
         command.CommandText = $"""
-            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, ExtraJson
+            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson
             FROM AssistantChats
             {whereClause}
             ORDER BY UpdatedAt DESC
@@ -700,7 +771,9 @@ public class AssistantChatService : IAssistantChatService, IDisposable
     {
         var connection = Connection();
         using var select = connection.CreateCommand();
-        select.CommandText = "SELECT Id FROM AssistantChats WHERE LastAccessedAt < @Cutoff";
+        // A starred chat is exempt: retention deletes account-wide, so ageing one out would destroy the
+        // very chat the user marked to keep.
+        select.CommandText = "SELECT Id FROM AssistantChats WHERE LastAccessedAt < @Cutoff AND IsFavorite = 0";
         select.Parameters.AddWithValue("@Cutoff", cutoffUtc.ToString("O"));
 
         var ids = new List<Guid>();
@@ -1072,7 +1145,8 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             ProviderId = reader.IsDBNull(7) ? null : Guid.Parse(reader.GetString(7)),
             WorkingDirectory = reader.IsDBNull(8) ? null : reader.GetString(8),
             AgentContextMode = reader.IsDBNull(9) ? null : reader.GetString(9),
-            ExtensionData = reader.IsDBNull(10) ? null : DeserializeExtensionData(reader.GetString(10)),
+            IsFavorite = !reader.IsDBNull(10) && reader.GetInt32(10) != 0,
+            ExtensionData = reader.IsDBNull(11) ? null : DeserializeExtensionData(reader.GetString(11)),
         };
     }
 

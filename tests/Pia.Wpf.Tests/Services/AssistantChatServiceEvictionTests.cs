@@ -56,4 +56,36 @@ public sealed class AssistantChatServiceEvictionTests
         ctx.Dispose();
         TempPath.Remove(dir);
     }
+
+    [Fact]
+    public async Task Evict_SkipsFavorites()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        using var ctx = new SqliteContext(Path.Combine(dir, "history.db"));
+        using var runs = new AgentRunService(ctx, NullLogger<AgentRunService>.Instance);
+        var chats = new AssistantChatService(ctx, runs);
+
+        var oldTime = DateTime.UtcNow.AddDays(-100);
+        var plainId = Guid.NewGuid();
+        var favoriteId = Guid.NewGuid();
+        await chats.SaveAsync(Chat(plainId, oldTime), TestContext.Current.CancellationToken);
+        await chats.SaveAsync(Chat(favoriteId, oldTime), TestContext.Current.CancellationToken);
+        await chats.SetFavoriteAsync(favoriteId, true, TestContext.Current.CancellationToken);
+
+        var candidates = await chats.GetChatIdsAccessedBeforeAsync(DateTime.UtcNow, TestContext.Current.CancellationToken);
+        var evicted = await chats.EvictOlderThanAsync(DateTime.UtcNow, TestContext.Current.CancellationToken);
+
+        // The pre-select is what the retention service confirms against the server, so a favourite must
+        // never reach it either — not just survive the delete.
+        Assert.DoesNotContain(favoriteId, candidates);
+        Assert.Contains(plainId, evicted);
+        Assert.DoesNotContain(favoriteId, evicted);
+        Assert.NotNull(await chats.GetAsync(favoriteId, TestContext.Current.CancellationToken));
+
+        chats.Dispose();
+        runs.Dispose();
+        ctx.Dispose();
+        TempPath.Remove(dir);
+    }
 }

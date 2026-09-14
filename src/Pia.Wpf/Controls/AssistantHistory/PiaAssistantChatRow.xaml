@@ -28,6 +28,7 @@
          rather than the selected one. -->
     <ah:PiaAssistantChatRowContent
         OpenCommand="{Binding DataContext.OpenChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"
+        FavoriteCommand="{Binding DataContext.ToggleFavoriteChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"
         DeleteCommand="{Binding DataContext.QuickDeleteChatCommand, RelativeSource={RelativeSource AncestorType=views:AssistantHistoryView}}"/>
   </Border>
 </UserControl>

@@ -216,6 +216,7 @@
   <data name="History_Loading" xml:space="preserve"><value>Loading sessions...</value></data>
   <data name="History_NoSessions" xml:space="preserve"><value>No sessions found</value></data>
   <data name="History_LoadMore" xml:space="preserve"><value>Load More</value></data>
+  <data name="History_Group_Favorites" xml:space="preserve"><value>Favorites</value></data>
   <data name="History_Group_Today" xml:space="preserve"><value>Today</value></data>
   <data name="History_Group_Yesterday" xml:space="preserve"><value>Yesterday</value></data>
   <data name="History_Group_ThisWeek" xml:space="preserve"><value>This week</value></data>
@@ -244,6 +245,7 @@
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>No chats yet</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Start a chat in Assistant mode to build history</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Resume this chat</value></data>
+  <data name="AssistantHistory_Favorite" xml:space="preserve"><value>Favorite</value></data>
   <data name="AssistantHistory_Rename" xml:space="preserve"><value>Rename</value></data>
   <data name="AssistantHistory_RenamePrompt" xml:space="preserve"><value>What should this chat be called?</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Chat history</value></data>
