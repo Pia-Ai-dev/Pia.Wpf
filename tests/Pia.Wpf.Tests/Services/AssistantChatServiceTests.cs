@@ -614,6 +614,28 @@ public class AssistantChatServiceTests : IDisposable
         Assert.True((await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken))!.IsFavorite);
     }
 
+    /// <summary>The other arm of the same branch: the wire DOES own the star, or a chat starred on another
+    /// device never arrives — which is the whole of cross-device favorites.</summary>
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task ARemoteSave_AppliesTheStarItCarries(bool localStarred, bool remoteStarred)
+    {
+        var chat = MakeChat(title: "synced", body: "body");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+        await _service.SetFavoriteAsync(chat.Id, localStarred, TestContext.Current.CancellationToken);
+
+        var fromWire = MakeChat(title: "synced", body: "body");
+        fromWire.Id = chat.Id;
+        fromWire.IsFavorite = remoteStarred;
+        await _service.SaveFromRemoteAsync(fromWire, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            remoteStarred,
+            (await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken))!.IsFavorite);
+    }
+
     [Fact]
     public async Task SetFavoriteAsync_ReturnsFalse_WhenTheChatIsGone() =>
         Assert.False(await _service.SetFavoriteAsync(Guid.NewGuid(), true, TestContext.Current.CancellationToken));
