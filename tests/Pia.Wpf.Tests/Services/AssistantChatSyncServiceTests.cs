@@ -159,6 +159,28 @@ public class AssistantChatSyncServiceTests
         Assert.True(ifNoneMatch.IsWeak);
     }
 
+    /// <summary>The merge builds a fresh chat field by field, so a field it forgets is silently dropped —
+    /// here that would push the star away the moment two devices raced.</summary>
+    [Fact]
+    public async Task SendUpsert_Returns409_MergeKeepsTheLocalFavorite()
+    {
+        var chat = SampleChat();
+        chat.IsFavorite = true;
+
+        var serverBody = $$"""
+            {"id":"{{chat.Id}}","schemaVersion":1,"title":"Sample","createdAt":"2026-05-01T10:00:00Z",
+             "updatedAt":"2026-05-01T10:05:00Z","lastAccessedAt":"2026-05-01T10:05:00Z",
+             "windowMode":"Assistant","isFavorite":false,"messages":[]}
+            """;
+        // The same 409 answers the retry, which is what leaves the MERGED body as the last PUT.
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Conflict, serverBody);
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Contains("\"isFavorite\":true", _handler.LastPutBody);
+    }
+
     [Fact]
     public async Task SendUpsert_Returns404_InvalidatesCapability()
     {

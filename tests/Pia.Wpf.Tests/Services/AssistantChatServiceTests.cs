@@ -597,6 +597,23 @@ public class AssistantChatServiceTests : IDisposable
         Assert.False((await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken))!.IsFavorite);
     }
 
+    /// <summary>The live session loads a chat, the user stars it from the flyout above that very chat, then
+    /// sends a message — and the session's save carries a DTO that predates the star.</summary>
+    [Fact]
+    public async Task AStaleFullChatSave_DoesNotClobberTheStar()
+    {
+        var chat = MakeChat(title: "open chat", body: "body");
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+        _createdIds.Add(chat.Id);
+
+        await _service.SetFavoriteAsync(chat.Id, true, TestContext.Current.CancellationToken);
+
+        // Same in-memory DTO the session has been holding, still IsFavorite = false.
+        await _service.SaveAsync(chat, TestContext.Current.CancellationToken);
+
+        Assert.True((await _service.GetAsync(chat.Id, TestContext.Current.CancellationToken))!.IsFavorite);
+    }
+
     [Fact]
     public async Task SetFavoriteAsync_ReturnsFalse_WhenTheChatIsGone() =>
         Assert.False(await _service.SetFavoriteAsync(Guid.NewGuid(), true, TestContext.Current.CancellationToken));

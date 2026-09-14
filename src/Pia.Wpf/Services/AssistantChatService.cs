@@ -113,20 +113,20 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         ChatsChanged?.Invoke(this, new AssistantChatChangedEventArgs { Id = id, Kind = kind });
 
     public Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
-        SaveCoreAsync(chat, raiseEvent: true, preserveNewerLastAccessed: false, ct);
+        SaveCoreAsync(chat, raiseEvent: true, fromRemote: false, ct);
 
     public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
         // Remote LastAccessedAt is day-truncated on the wire; never let it regress a
         // more precise local value or retention could evict up to a day early.
-        SaveCoreAsync(chat, raiseEvent: false, preserveNewerLastAccessed: true, ct);
+        SaveCoreAsync(chat, raiseEvent: false, fromRemote: true, ct);
 
-    private async Task SaveCoreAsync(SyncAssistantChat chat, bool raiseEvent, bool preserveNewerLastAccessed, CancellationToken ct)
+    private async Task SaveCoreAsync(SyncAssistantChat chat, bool raiseEvent, bool fromRemote, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
             if (_disposed) return;
-            await SaveUnderGateAsync(chat, chat.Messages, preserveNewerLastAccessed, ct);
+            await SaveUnderGateAsync(chat, chat.Messages, fromRemote, ct);
         }
         finally
         {
@@ -177,7 +177,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                     messages = [.. merged.OrderBy(m => m.Timestamp)];
             }
 
-            await SaveUnderGateAsync(chat, messages, preserveNewerLastAccessed: false, ct);
+            await SaveUnderGateAsync(chat, messages, fromRemote: false, ct);
         }
         finally
         {
@@ -196,7 +196,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
     private async Task SaveUnderGateAsync(
         SyncAssistantChat chat,
         IReadOnlyList<SyncAssistantChatMessage> messages,
-        bool preserveNewerLastAccessed,
+        bool fromRemote,
         CancellationToken ct)
     {
         var connection = Connection();
@@ -207,9 +207,13 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             upsertChat.Transaction = transaction;
             // Timestamps are stored as fixed-width ISO-8601 UTC ("O"), so SQLite's
             // lexicographic max() is chronological.
-            var lastAccessedSet = preserveNewerLastAccessed
+            var lastAccessedSet = fromRemote
                 ? "max(LastAccessedAt, excluded.LastAccessedAt)"
                 : "excluded.LastAccessedAt";
+            // Only the wire owns the star. A local writer's DTO routinely predates a SetFavoriteAsync on the
+            // same chat — the live session holds one for as long as the chat is open — so letting it write
+            // this column un-stars a chat on the next message sent.
+            var isFavoriteSet = fromRemote ? "excluded.IsFavorite" : "AssistantChats.IsFavorite";
             upsertChat.CommandText = $"""
                 INSERT INTO AssistantChats
                     (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson)
@@ -224,7 +228,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                     ProviderId = excluded.ProviderId,
                     WorkingDirectory = excluded.WorkingDirectory,
                     AgentContextMode = excluded.AgentContextMode,
-                    IsFavorite = excluded.IsFavorite,
+                    IsFavorite = {isFavoriteSet},
                     ExtraJson = excluded.ExtraJson
                 """;
             upsertChat.Parameters.AddWithValue("@Id", chat.Id.ToString());

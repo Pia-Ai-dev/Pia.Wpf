@@ -79,13 +79,21 @@
               Visibility="{Binding FavoriteCommand,
                            RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
                            Converter={StaticResource NullToVisibilityConverter}}">
-        <Button Style="{StaticResource UnstyledButton}"
-                Padding="3"
-                ToolTip="{loc:Str AssistantHistory_Favorite}"
+        <Button Padding="3"
                 Command="{Binding FavoriteCommand,
                           RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
                 CommandParameter="{Binding}"
                 AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Favorite_{0}'}">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource UnstyledButton}">
+              <Setter Property="ToolTip" Value="{loc:Str AssistantHistory_Favorite}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                  <Setter Property="ToolTip" Value="{loc:Str AssistantHistory_Unfavorite}"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
           <ui:SymbolIcon FontSize="14">
             <ui:SymbolIcon.Style>
               <Style TargetType="ui:SymbolIcon">
