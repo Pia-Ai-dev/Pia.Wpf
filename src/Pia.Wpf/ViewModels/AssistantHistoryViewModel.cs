@@ -40,6 +40,10 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
     private (Guid Id, DateTime UpdatedAt)? _loadedChat;
     private bool _suppressReload;
 
+    /// <summary>The chat this view model is itself writing, boxed so the read on the raising thread is atomic.
+    /// Its own <c>ChatsChanged</c> would reload the whole list behind a change already applied in place.</summary>
+    private volatile object? _selfWriteChatId;
+
     /// <summary>Rows loaded from the paged query alone. <see cref="Chats"/> also holds favourites pulled in
     /// unpaged, so it can no longer serve as the next page's offset or the has-more test.</summary>
     private int _pageCount;
@@ -318,13 +322,57 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
             : Chats.ToList();
         VisibleCount = filtered.Count;
 
-        ChatGroups.Clear();
         // Starred rows leave the date buckets entirely — showing a chat in both groups would need two row
         // VMs for it, and only one of them would ever get a live-state refresh.
+        var desired = new List<AssistantChatGroupViewModel>();
         if (BuildFavoritesGroup(filtered, existingState) is { } favorites)
-            ChatGroups.Add(favorites);
-        foreach (var group in BuildDateGroups(filtered.Where(c => !c.IsFavorite).ToList(), existingState))
-            ChatGroups.Add(group);
+            desired.Add(favorites);
+        desired.AddRange(BuildDateGroups(filtered.Where(c => !c.IsFavorite).ToList(), existingState));
+
+        SyncGroups(desired);
+    }
+
+    /// <summary>Folds the freshly built groups into the live ones. Clearing and re-adding instead would drop
+    /// every row container and cost a full layout pass, which a one-row change (a star) does not earn.</summary>
+    private void SyncGroups(List<AssistantChatGroupViewModel> desired)
+    {
+        for (var i = ChatGroups.Count - 1; i >= 0; i--)
+            if (!desired.Any(g => g.GroupKey == ChatGroups[i].GroupKey))
+                ChatGroups.RemoveAt(i);
+
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var want = desired[i];
+            var existing = ChatGroups.FirstOrDefault(g => g.GroupKey == want.GroupKey);
+            if (existing is null)
+            {
+                ChatGroups.Insert(i, want);
+                continue;
+            }
+
+            if (ChatGroups.IndexOf(existing) != i)
+                ChatGroups.Move(ChatGroups.IndexOf(existing), i);
+            existing.DisplayName = want.DisplayName;
+            existing.ItemCount = want.ItemCount;
+            existing.Bucket = want.Bucket;
+            SyncItems(existing.Items, want.Items);
+        }
+    }
+
+    private static void SyncItems(
+        ObservableCollection<AssistantChatRowViewModel> live,
+        IList<AssistantChatRowViewModel> desired)
+    {
+        for (var i = live.Count - 1; i >= 0; i--)
+            if (!desired.Contains(live[i]))
+                live.RemoveAt(i);
+
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var at = live.IndexOf(desired[i]);
+            if (at < 0) live.Insert(i, desired[i]);
+            else if (at != i) live.Move(at, i);
+        }
     }
 
     private AssistantChatGroupViewModel? BuildFavoritesGroup(
@@ -526,6 +574,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         if (row is null) return;
 
         var target = !row.IsFavorite;
+        _selfWriteChatId = row.Id;
         try
         {
             if (!await _chatService.SetFavoriteAsync(row.Id, target))
@@ -534,13 +583,17 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
                 return;
             }
 
-            row.SetFavorite(target);
+            row.SetFavorite(target, DateTime.UtcNow);
             RebuildGroups();
             _logger.LogInformation("Chat {ChatId} favorite set to {IsFavorite}", row.Id, target);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to toggle favorite on chat {ChatId}", row.Id);
+        }
+        finally
+        {
+            _selfWriteChatId = null;
         }
     }
 
@@ -988,6 +1041,7 @@ public partial class AssistantHistoryViewModel : UiThreadViewModel, IDisposable,
         // hundreds of events need no reload at all. Otherwise debounce: one search per save would
         // contend for the same write gate the next save needs.
         if (IsImporting) return;
+        if (e.Kind == AssistantChatChangeKind.Upserted && _selfWriteChatId is Guid self && self == e.Id) return;
         Post(DebounceReload);
     }
 

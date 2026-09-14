@@ -128,4 +128,86 @@ public class AssistantHistoryViewModelFavoriteTests
         await _chatService.Received(1).SetFavoriteAsync(starred.Id, false, Arg.Any<CancellationToken>());
         Assert.DoesNotContain(sut.ChatGroups, g => g.DisplayName == "History_Group_Favorites");
     }
+
+    /// <summary>The store bumps UpdatedAt on the same write, and no reload follows to correct a row left
+    /// on its old timestamp.</summary>
+    [Fact]
+    public async Task Unstarring_MovesTheRowIntoTodaysBucket()
+    {
+        var old = Chat("starred long ago", isFavorite: true, daysOld: 200);
+        var sut = CreateSut([], [old]);
+        await sut.OnNavigatedToAsync(null);
+
+        await sut.ToggleFavoriteChatCommand.ExecuteAsync(sut.Chats.Single());
+
+        Assert.Equal(HistoryDateBucket.Today, Assert.Single(sut.ChatGroups).Bucket);
+    }
+
+    /// <summary>Rebuilding the groups from scratch drops every row container with them, and WPF pays a full
+    /// layout pass to build them again — the cost a one-row change must not carry.</summary>
+    [Fact]
+    public async Task ToggleFavorite_LeavesTheGroupsItDidNotTouchInPlace()
+    {
+        var chat = Chat("ordinary");
+        var sut = CreateSut([chat, Chat("other")], []);
+        await sut.OnNavigatedToAsync(null);
+        var today = sut.ChatGroups.Single(g => g.Bucket == HistoryDateBucket.Today);
+        var untouched = today.Items.Single(r => r.Id != chat.Id);
+
+        await sut.ToggleFavoriteChatCommand.ExecuteAsync(sut.Chats.First(r => r.Id == chat.Id));
+
+        Assert.Same(today, sut.ChatGroups.Single(g => g.Bucket == HistoryDateBucket.Today));
+        Assert.Same(untouched, Assert.Single(today.Items));
+    }
+
+    /// <summary>The write raises ChatsChanged, and reloading on it re-queries and re-wraps every row behind
+    /// a change already applied in place — a second full rebuild the user sees as a freeze.</summary>
+    [Fact]
+    public async Task ToggleFavorite_DoesNotReloadOnTheEventItsOwnWriteRaises()
+    {
+        var chat = Chat("ordinary");
+        var sut = CreateSut([chat], []);
+        await sut.OnNavigatedToAsync(null);
+        RaiseOnFavoriteWrite(id => id);
+        _chatService.ClearReceivedCalls();
+
+        await sut.ToggleFavoriteChatCommand.ExecuteAsync(sut.Chats.Single());
+        await Task.Delay(700, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(_chatService.ReceivedCalls(), IsReload);
+        sut.Dispose();
+    }
+
+    [Fact]
+    public async Task AnotherChatChangingDuringTheWrite_StillReloads()
+    {
+        var chat = Chat("ordinary");
+        var sut = CreateSut([chat], []);
+        await sut.OnNavigatedToAsync(null);
+        RaiseOnFavoriteWrite(_ => Guid.NewGuid());
+        _chatService.ClearReceivedCalls();
+
+        await sut.ToggleFavoriteChatCommand.ExecuteAsync(sut.Chats.Single());
+        await Task.Delay(700, TestContext.Current.CancellationToken);
+
+        Assert.Contains(_chatService.ReceivedCalls(), IsReload);
+        sut.Dispose();
+    }
+
+    private static bool IsReload(NSubstitute.Core.ICall call) =>
+        call.GetMethodInfo().Name == nameof(IAssistantChatService.SearchAsync);
+
+    /// <summary>Mirrors the store, which raises ChatsChanged from inside the favorite write itself.</summary>
+    private void RaiseOnFavoriteWrite(Func<Guid, Guid> changedId) =>
+        _chatService.SetFavoriteAsync(Arg.Any<Guid>(), Arg.Any<bool>()).ReturnsForAnyArgs(ci =>
+        {
+            _chatService.ChatsChanged += Raise.EventWith(
+                _chatService,
+                new AssistantChatChangedEventArgs
+                {
+                    Id = changedId((Guid)ci[0]),
+                    Kind = AssistantChatChangeKind.Upserted,
+                });
+            return Task.FromResult(true);
+        });
 }

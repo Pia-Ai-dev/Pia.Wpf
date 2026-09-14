@@ -30,11 +30,14 @@ public sealed partial class AssistantChatRowViewModel : ObservableObject
 
     public bool IsFavorite => Chat.IsFavorite;
 
-    /// <summary><see cref="IsFavorite"/> reads through to a plain DTO field, so a toggle has to raise for it.</summary>
-    public void SetFavorite(bool isFavorite)
+    /// <summary>Takes the store's own <see cref="UpdatedAt"/> bump with it: the row regroups and sorts on
+    /// that timestamp, so leaving it stale puts the row in the wrong bucket until the next load.</summary>
+    public void SetFavorite(bool isFavorite, DateTime updatedAt)
     {
         Chat.IsFavorite = isFavorite;
+        Chat.UpdatedAt = updatedAt;
         OnPropertyChanged(nameof(IsFavorite));
+        OnPropertyChanged(nameof(UpdatedAt));
     }
 
     [ObservableProperty]

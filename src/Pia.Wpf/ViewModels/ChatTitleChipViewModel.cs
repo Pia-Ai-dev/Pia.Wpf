@@ -384,9 +384,13 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         {
             if (!await _chatService.SetFavoriteAsync(item.Id, target)) return;
 
-            // The cached DTOs are what RebuildGroups reads, so the row keeps its old star without this.
+            // The cached DTOs are what RebuildGroups reads, so the row keeps its old star without this. The
+            // store bumps UpdatedAt on the same write, and the flyout buckets and sorts on it.
             foreach (var chat in _lastFlyoutChats.Where(c => c.Id == item.Id))
+            {
                 chat.IsFavorite = target;
+                chat.UpdatedAt = DateTime.UtcNow;
+            }
             RebuildGroups();
         }
         catch (Exception ex)
