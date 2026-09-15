@@ -743,9 +743,8 @@ public class FilesToolHandler : IFilesToolHandler
                     // scoped hit round-trips: read_file resolves both the path and the line number.
                     var rel = NormalizeSeparators(SafeRelative(root, full));
 
-                    // An image has no text to match, so counting it as a file the search FAILED on
-                    // reads like a defect. Extension-only, which is exactly what ReadFileTextAsync
-                    // refuses on: an extensionless image still lands in the skipped bucket, as binary.
+                    // Extension-only, which is exactly what ReadFileTextAsync refuses on: an
+                    // extensionless image still lands in the skipped bucket, as binary.
                     if (IsImageExtension(Path.GetExtension(canon))) { imageCount++; continue; }
 
                     // Opening an OpenXml/mail container costs orders of magnitude more than a byte

@@ -24,17 +24,20 @@
                   MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}">
         <Border Style="{StaticResource UserBubbleStyle}">
           <StackPanel>
-            <Image Source="{Binding Attachments[0].Thumbnail}"
-                   MaxWidth="300" MaxHeight="300"
+            <Image MaxWidth="300" MaxHeight="300"
                    Stretch="Uniform"
                    HorizontalAlignment="Left"
                    Margin="0,0,0,6">
               <Image.Style>
+                <!-- Source is set by the trigger, not on the element: a null Attachment used to bind
+                     silently, but an indexer against an empty collection throws and WPF logs it once
+                     per image-less bubble. -->
                 <Style TargetType="Image">
                   <Setter Property="Visibility" Value="Collapsed" />
                   <Style.Triggers>
                     <DataTrigger Binding="{Binding HasAttachments}" Value="True">
                       <Setter Property="Visibility" Value="Visible" />
+                      <Setter Property="Source" Value="{Binding Attachments[0].Thumbnail}" />
                     </DataTrigger>
                   </Style.Triggers>
                 </Style>

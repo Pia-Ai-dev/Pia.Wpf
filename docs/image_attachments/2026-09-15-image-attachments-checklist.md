@@ -37,8 +37,11 @@ surface · `L` a week or more, a new subsystem.
   image after the text in `BuildChatMessage`. *Deps:* A1, G1 · *Effort:* XS · *Value:* Enabler
   **Landed 2026-09-15.** Two bindings in `UserMessageTemplate` had to move with it
   (`Attachments[0].Thumbnail`, `HasAttachments`) — they are inside a `DataTemplate`, which
-  `BindingPathWalker` does not walk, so a rename there breaks the bubble with a green build. A7
-  replaces them with the strip. Until A4 lands, the regenerate path narrows with `FirstOrDefault()`.
+  `BindingPathWalker` does not walk, so a rename there breaks the bubble with a green build. The
+  indexer also had to move inside the `HasAttachments` trigger: a null `Attachment` bound silently,
+  an indexer against an empty collection does not. A7 replaces the whole block with the strip, and
+  nothing short of launching the app proves it renders. Until A4 lands, the regenerate path narrows
+  with `FirstOrDefault()`.
 - [ ] **A4 · The send signature.** `StartTurnAsync` takes `IReadOnlyList<ImageAttachment>?`; the
   parked-run answer guard and five test files move with it. *Deps:* A3 · *Effort:* S · *Value:* Enabler
 - [x] **A5 · The compactor charges per image.** `ImageCountIn` in both `ChargeFor` and the

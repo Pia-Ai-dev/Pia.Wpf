@@ -515,9 +515,9 @@ public class AgentContextCompactorTests
     public async Task AFourImageGoal_OnASmallConfiguredWindow_LeavesNoInputBudget()
     {
         // The head pin is charged UNCONDITIONALLY — it ships by definition, so there is nothing to admit or
-        // refuse. Four images on it pin 14 000 tokens before any history is counted, which on a user-configured
-        // 8000 window trips the early return and sends the request as-is. Charged per turn the same fixture
-        // pins 3500 and compacts, so this is the boundary A5 moves, and no cap can protect it.
+        // refuse. Four images on it pin 14 000 tokens before any history is counted; on a user-configured 8000
+        // window that trips the early return and sends the request as-is. No image cap can protect this: a
+        // mandatory pin cannot be shrunk.
         var messages = AgentStepShapedMessages();
         messages[1] = ImageTurn(ChatRole.User, messages[1].Text!, images: 4);
 
