@@ -23,7 +23,7 @@ surface · `L` a week or more, a new subsystem.
 | Gate | Question | Blocks | Status |
 |---|---|---|---|
 | **G1** | Does anything other than `PiaCloudChatClient` have to learn about N images? | A3, A4 | **Answered 2026-09-15: no.** `PiaCloudChatClient` already iterates `imageParts` into an OpenAI-style `image_url` array (`src/Pia.Wpf/Services/PiaCloudChatClient.cs:517-536`), so this is client-only and no server change is needed. Had it held one image, A would have become cross-repo and `L`. |
-| **G2** | Does a live turn with four images actually come back with all four seen? | A10 sign-off, B live round | **Open.** Needs one live run against a Pia Cloud deployment with a vision endpoint. The 2026-09-09 G3 round found the client-side provider check is necessary and *not* sufficient — a router with no vision endpoint answers `No endpoints found that support image input` after the send. If that deployment is still the only one available, A and B ship behind a gate nobody can exercise, and that is worth knowing before A6's UI work. |
+| **G2** | Does a live turn with four images actually come back with all four seen? | A10 sign-off, B live round | **Still open, but the precondition is answered: the deployment HAS a vision endpoint.** A one-image turn against `cloud.pia-ai.de` on 2026-09-15 came back describing the picture correctly (both shapes, both colours, the text) — so the 2026-09-09 `No endpoints found that support image input` failure does not apply today, and the gate is exercisable. What is still unanswered is the *four*-image half, which cannot be asked until A2 lets the composer hold four. |
 | **G3** | Is 4 the right cap? | A2, B3 | **Open until G2.** The binding constraints are the 12 MB byte budget and how many thumbnails the strip can show, not the compactor — at the 128 000 default window four images pin 11% of it. A live round may argue for 2 or for 6. Both caps are one constant each, so this is cheap to settle late. |
 
 ## Group A — more than one image per chat message
@@ -39,9 +39,11 @@ surface · `L` a week or more, a new subsystem.
   (`Attachments[0].Thumbnail`, `HasAttachments`) — they are inside a `DataTemplate`, which
   `BindingPathWalker` does not walk, so a rename there breaks the bubble with a green build. The
   indexer also had to move inside the `HasAttachments` trigger: a null `Attachment` bound silently,
-  an indexer against an empty collection does not. A7 replaces the whole block with the strip, and
-  nothing short of launching the app proves it renders. Until A4 lands, the regenerate path narrows
-  with `FirstOrDefault()`.
+  an indexer against an empty collection does not. Both are now verified live (one image sent through
+  the real composer on the live profile) and pinned by `UserBubbleAttachmentBindingTests`, which
+  listens to WPF's own data-binding trace across a real layout pass — reverting the trigger makes it
+  fail with `Cannot get 'Item[]' value`. A7 replaces the block with the strip. Until A4 lands, the
+  regenerate path narrows with `FirstOrDefault()`.
 - [ ] **A4 · The send signature.** `StartTurnAsync` takes `IReadOnlyList<ImageAttachment>?`; the
   parked-run answer guard and five test files move with it. *Deps:* A3 · *Effort:* S · *Value:* Enabler
 - [x] **A5 · The compactor charges per image.** `ImageCountIn` in both `ChargeFor` and the

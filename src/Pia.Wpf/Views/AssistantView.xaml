@@ -29,9 +29,8 @@
                    HorizontalAlignment="Left"
                    Margin="0,0,0,6">
               <Image.Style>
-                <!-- Source is set by the trigger, not on the element: a null Attachment used to bind
-                     silently, but an indexer against an empty collection throws and WPF logs it once
-                     per image-less bubble. -->
+                <!-- Source belongs on the trigger, not the element: an indexer against an empty
+                     collection faults, once per image-less bubble. -->
                 <Style TargetType="Image">
                   <Setter Property="Visibility" Value="Collapsed" />
                   <Style.Triggers>
