@@ -24,7 +24,7 @@
                   MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}">
         <Border Style="{StaticResource UserBubbleStyle}">
           <StackPanel>
-            <Image Source="{Binding Attachment.Thumbnail}"
+            <Image Source="{Binding Attachments[0].Thumbnail}"
                    MaxWidth="300" MaxHeight="300"
                    Stretch="Uniform"
                    HorizontalAlignment="Left"
@@ -33,7 +33,7 @@
                 <Style TargetType="Image">
                   <Setter Property="Visibility" Value="Collapsed" />
                   <Style.Triggers>
-                    <DataTrigger Binding="{Binding HasAttachment}" Value="True">
+                    <DataTrigger Binding="{Binding HasAttachments}" Value="True">
                       <Setter Property="Visibility" Value="Visible" />
                     </DataTrigger>
                   </Style.Triggers>

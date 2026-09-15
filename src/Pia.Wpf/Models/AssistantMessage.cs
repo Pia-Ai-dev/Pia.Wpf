@@ -99,8 +99,9 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private PersonaAttribution? _persona;
 
-    [ObservableProperty]
-    private ImageAttachment? _attachment;
+    /// <summary>Images the user attached to this (user) message. In-memory only — not persisted (see
+    /// AssistantMessageMapper), so a reopened chat shows none of them.</summary>
+    public ObservableCollection<ImageAttachment> Attachments { get; } = [];
 
     /// <summary>Rendered text of the files attached to this message, appended to the AI-visible
     /// message but never displayed. In-memory only — not persisted (see AssistantMessageMapper).</summary>
@@ -145,11 +146,11 @@ public partial class AssistantMessage : ObservableObject
     public bool IsEmptyShell =>
         !HasContent && !IsStreaming && !HasThinkingContent && !HasReasoningDuration
         && !HasActionCards && !HasSources && !HasFileRefs && !HasAttachedFiles
-        && !HasAttachment && !HasSuggestions && !HasAgentModeSuggestion;
+        && !HasAttachments && !HasSuggestions && !HasAgentModeSuggestion;
 
     public bool HasToolCalls => ToolCallCount > 0;
 
-    public bool HasAttachment => Attachment is not null;
+    public bool HasAttachments => Attachments.Count > 0;
 
     public bool IsUser => Role == ChatRole.User;
 
@@ -195,11 +196,6 @@ public partial class AssistantMessage : ObservableObject
         OnPropertyChanged(nameof(HasToolCalls));
     }
 
-    partial void OnAttachmentChanged(ImageAttachment? value)
-    {
-        OnPropertyChanged(nameof(HasAttachment));
-    }
-
     partial void OnPersonaChanged(PersonaAttribution? value)
     {
         OnPropertyChanged(nameof(HasPersona));
@@ -224,6 +220,7 @@ public partial class AssistantMessage : ObservableObject
         Sources.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSources));
         FileRefs.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasFileRefs));
         AttachedFiles.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachedFiles));
+        Attachments.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAttachments));
         Suggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSuggestions));
         AgentModeSuggestions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasAgentModeSuggestion));
     }
@@ -390,14 +387,19 @@ public partial class AssistantMessage : ObservableObject
             ? text
             : string.IsNullOrEmpty(text) ? context : $"{text}\n\n{context}";
 
-        if (Attachment is null) return new ChatMessage(Role, visible);
+        if (Attachments.Count == 0) return new ChatMessage(Role, visible);
 
+        // Text first, then the images in attach order: that is the shape PiaCloudChatClient emits and the
+        // shape the compactor's image pin was measured on.
         var contents = new List<AIContent>();
         if (!string.IsNullOrEmpty(visible))
         {
             contents.Add(new TextContent(visible));
         }
-        contents.Add(new DataContent(Attachment.JpegBytes, Attachment.MimeType));
+        foreach (var image in Attachments)
+        {
+            contents.Add(new DataContent(image.JpegBytes, image.MimeType));
+        }
         return new ChatMessage(Role, contents);
     }
 }

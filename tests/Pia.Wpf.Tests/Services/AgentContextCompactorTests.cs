@@ -363,8 +363,12 @@ public class AgentContextCompactorTests
 
     // The shape AssistantMessage.ToChatMessage builds: one fused ChatMessage, which is the unit the pin protects —
     // there is no such thing as a bare image message on either executor path.
-    private static ChatMessage ImageTurn(ChatRole role, string text) =>
-        new(role, [new TextContent(text), new DataContent(Jpeg(), "image/jpeg")]);
+    private static ChatMessage ImageTurn(ChatRole role, string text, int images = 1)
+    {
+        var contents = new List<AIContent> { new TextContent(text) };
+        for (var i = 0; i < images; i++) contents.Add(new DataContent(Jpeg(), "image/jpeg"));
+        return new ChatMessage(role, contents);
+    }
 
     [Fact]
     public async Task ImageAttachment_MidList_IsPinnedRatherThanEvicted()
@@ -465,6 +469,62 @@ public class AgentContextCompactorTests
         Assert.Same(withImage[^1], withImageResult[^1]);
         Assert.Contains("Execute step 9", withImageResult[^1].Text);
         Assert.Contains(withImageResult[^1].Contents, c => c is DataContent);
+    }
+
+    [Fact]
+    public async Task PinAdmission_ChargesEveryImageOnTheTurn_NotJustTheFirst()
+    {
+        // The differential: at 8000/2000 the allowance floors at one ImageTokenCharge, so a one-image turn is
+        // admitted and a two-image turn is refused. Charged per TURN they would both be admitted, and the
+        // second picture would ride the request unpaid for — the direction that overflows the window.
+        var budget = AgentContextBudget.From(Provider(8_000, 2_000));
+
+        static List<ChatMessage> Fixture(ChatMessage image)
+        {
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, "You are Pia, an agent."),
+                new(ChatRole.User, "THE GOAL: explain the screenshots."),
+            };
+            for (var i = 1; i <= 6; i++)
+                messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+            messages.Add(image);
+            for (var i = 7; i <= 12; i++)
+                messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+            messages.Add(new ChatMessage(ChatRole.User, "Execute step 13"));
+            return messages;
+        }
+
+        var one = Fixture(ImageTurn(ChatRole.User, "one screenshot"));
+        var oneResult = await AgentContextCompactor.CompactAsync(
+            one, budget, Logger, TestContext.Current.CancellationToken);
+        var onePinned = oneResult.Where(m => m.Contents.OfType<DataContent>().Any()).ToList();
+        Assert.Single(onePinned);
+
+        var two = Fixture(ImageTurn(ChatRole.User, "two screenshots", images: 2));
+        var twoResult = await AgentContextCompactor.CompactAsync(
+            two, budget, Logger, TestContext.Current.CancellationToken);
+
+        // Refused, so it falls back into the compacted range — where the library's bytes/4 evicts it. Losing the
+        // pictures and keeping a request that fits beats pinning 7000 tokens and declining to compact at all.
+        var twoPinned = twoResult.Where(m => m.Contents.OfType<DataContent>().Any()).ToList();
+        Assert.Empty(twoPinned);
+    }
+
+    [Fact]
+    public async Task AFourImageGoal_OnASmallConfiguredWindow_LeavesNoInputBudget()
+    {
+        // The head pin is charged UNCONDITIONALLY — it ships by definition, so there is nothing to admit or
+        // refuse. Four images on it pin 14 000 tokens before any history is counted, which on a user-configured
+        // 8000 window trips the early return and sends the request as-is. Charged per turn the same fixture
+        // pins 3500 and compacts, so this is the boundary A5 moves, and no cap can protect it.
+        var messages = AgentStepShapedMessages();
+        messages[1] = ImageTurn(ChatRole.User, messages[1].Text!, images: 4);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.Equal(messages.Count, result.Count);
     }
 
     [Fact]

@@ -1,6 +1,6 @@
 # Image attachments — checklist
 
-**Status:** Not started
+**Status:** In progress — B6, B5, B3, A1, A3, A5 landed 2026-09-15 on `feature/image-attachments`
 **Owner:** Marco Altmann
 **Written:** 2026-09-15
 **Origin:** Customer ask relayed 2026-09-15 — multiple images per message, and letting Pia read an
@@ -33,13 +33,20 @@ surface · `L` a week or more, a new subsystem.
 - [ ] **A2 · The pending collection, its caps, and append semantics.** `PendingAttachments`
   replaces `PendingAttachment`; 4 images / 12 MB; a second image adds instead of silently
   overwriting. *Deps:* A1 · *Effort:* S · *Value:* High
-- [ ] **A3 · The message carries N.** `AssistantMessage.Attachments` plus one `DataContent` per
+- [x] **A3 · The message carries N.** `AssistantMessage.Attachments` plus one `DataContent` per
   image after the text in `BuildChatMessage`. *Deps:* A1, G1 · *Effort:* XS · *Value:* Enabler
+  **Landed 2026-09-15.** Two bindings in `UserMessageTemplate` had to move with it
+  (`Attachments[0].Thumbnail`, `HasAttachments`) — they are inside a `DataTemplate`, which
+  `BindingPathWalker` does not walk, so a rename there breaks the bubble with a green build. A7
+  replaces them with the strip. Until A4 lands, the regenerate path narrows with `FirstOrDefault()`.
 - [ ] **A4 · The send signature.** `StartTurnAsync` takes `IReadOnlyList<ImageAttachment>?`; the
   parked-run answer guard and five test files move with it. *Deps:* A3 · *Effort:* S · *Value:* Enabler
-- [ ] **A5 · The compactor charges per image.** `ImageCountIn` in both `ChargeFor` and the
+- [x] **A5 · The compactor charges per image.** `ImageCountIn` in both `ChargeFor` and the
   pin-admission loop. Closes a real context-overflow risk that exists the moment A3 lands.
   *Deps:* A3 · *Effort:* S · *Value:* High
+  **Landed 2026-09-15 with A3**, and both new tests were run against the pre-change compactor first —
+  they fail there, so the differential is real. A10 still owes the warning assertion on the tiny-window
+  boundary; the test here asserts only that compaction is skipped.
 - [ ] **A6 · The composer thumbnail strip.** Horizontal `ItemsControl` with a per-item remove
   button carrying a bound, unique AutomationId. *Deps:* A2 · *Effort:* S · *Value:* High
 - [ ] **A7 · The bubble renders N.** `UserMessageTemplate` wraps the thumbnails.
@@ -65,6 +72,8 @@ surface · `L` a week or more, a new subsystem.
   `[screen capture, …]` stays exact. *Deps:* B2 · *Effort:* XS · *Value:* Med
 - [x] **B5 · `search_files` counts images separately.** Stop reporting every PNG as a file it failed
   to read; point at `read_file`. *Deps:* — · *Effort:* XS · *Value:* Med
+  **Landed 2026-09-15** without the `read_file` pointer, for the same reason as B6 — add it there when
+  B2 makes it true.
 - [x] **B6 · `write_file` / `edit_file` refuse images.** Closes the "write UTF-8 over a PNG" hole in
   `write_file`, and replaces `edit_file`'s inherited "attach the image instead" message.
   *Deps:* — · *Effort:* XS · *Value:* High

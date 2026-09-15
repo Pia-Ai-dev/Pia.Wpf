@@ -91,7 +91,7 @@ public class AssistantMessageFileRefsTests
     [Fact]
     public void ToChatMessage_WithOverrideText_PreservesImageAttachment()
     {
-        var msg = new AssistantMessage(ChatRole.User, "displayed prompt") { Attachment = NewAttachment() };
+        var msg = new AssistantMessage(ChatRole.User, "displayed prompt") { Attachments = { NewAttachment() } };
 
         var chat = msg.ToChatMessage("ai-visible text");
 

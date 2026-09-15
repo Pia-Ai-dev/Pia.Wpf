@@ -741,9 +741,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         var userMessage = new AssistantMessage(ChatRole.User, userText)
         {
-            Attachment = attachment,
             AttachedFileContext = attachedFileContext,
         };
+        if (attachment is not null) userMessage.Attachments.Add(attachment);
         if (attachedFiles is not null)
             foreach (var file in attachedFiles) userMessage.AttachedFiles.Add(file);
         session.Messages.Add(userMessage);

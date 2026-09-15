@@ -59,7 +59,7 @@ internal static class AgentContextCompactor
     private const int MinimumCompactableMessageCount = 4;
 
     /// <summary>
-    /// Tokens charged for ONE pinned image-bearing turn. A deliberate BOUND, not a measurement: Pia
+    /// Tokens charged for ONE pinned image. A deliberate BOUND, not a measurement: Pia
     /// re-encodes every attachment through <c>ImageAttachmentProcessor</c>, whose
     /// <c>MaxLongEdge = 1568</c> scales the long edge down, so the largest image that can reach a
     /// provider is 1568x1568 — about 3278 tokens at Anthropic's w*h/750 — and 3500 rounds that up
@@ -168,8 +168,10 @@ internal static class AgentContextCompactor
         // ~75k phantom tokens and the whole turn carrying it is evicted while the goal that REFERS to
         // the image stays pinned — measured on the Live path as in=7 -> out=6 with no DataContent
         // surviving, i.e. the step confabulates about a screenshot it cannot see. Note the UNIT:
-        // AssistantMessage.ToChatMessage fuses [TextContent, DataContent] into ONE ChatMessage, so what
-        // is withheld here is a whole TURN that contains an image, never a bare image message.
+        // AssistantMessage.ToChatMessage fuses [TextContent, DataContent...] into ONE ChatMessage, so what
+        // is withheld here is a whole TURN that contains images, never a bare image message. Admission is
+        // therefore ALL-OR-NOTHING per turn: a four-image turn that does not fit is dropped whole, leaving
+        // the model referring to four pictures it cannot see rather than to one.
         //
         // Admitted NEWEST-FIRST under a sub-cap, because every pinned token is subtracted from the
         // window: an unbounded pinned set drives 'window' below MaxOutputTokens, trips the early return
@@ -193,7 +195,7 @@ internal static class AgentContextCompactor
             if (i == instructionIndex || !HasImageContent(messages[i]) || HasToolContent(messages[i]))
                 continue;
 
-            var charged = pinnedImageCost + ImageTokenCharge;
+            var charged = pinnedImageCost + ImageCountIn(messages[i]) * ImageTokenCharge;
             if (charged > imageAllowance
                 || contextBudget.WindowTokens - (pinnedCost + charged) <= contextBudget.MaxOutputTokens)
             {
@@ -351,18 +353,23 @@ internal static class AgentContextCompactor
 
     /// <summary>
     /// What ONE pinned message costs against the window: the same text bytes/4 estimate the library
-    /// uses, plus a flat <see cref="ImageTokenCharge"/> when the turn carries an image — bytes/4 is
-    /// wrong in both directions on an attachment (~75k for a 300 KB JPEG, ~0 for the text fronting it).
+    /// uses, plus <see cref="ImageTokenCharge"/> for EVERY image on it — bytes/4 is wrong in both
+    /// directions on an attachment (~75k for a 300 KB JPEG, ~0 for the text fronting it).
     /// Used for the head AND the instruction pin so the two cannot drift apart.
     /// </summary>
     private static int ChargeFor(ChatMessage message) =>
-        (message.Text?.Length ?? 0) / 4 + (HasImageContent(message) ? ImageTokenCharge : 0);
+        (message.Text?.Length ?? 0) / 4 + ImageCountIn(message) * ImageTokenCharge;
 
     /// <summary>
-    /// True when the message carries an image attachment. The media type is matched exactly the way
+    /// How many images the message carries. The media type is matched exactly the way
     /// PiaCloudChatClient's outbound converter matches it, so the pin and the wire agree on what counts
     /// as an image.
     /// </summary>
+    private static int ImageCountIn(ChatMessage message) =>
+        message.Contents.Count(c => c is DataContent data
+            && data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The cheap "is this a pin candidate" test; <see cref="ImageCountIn"/> is what prices it.</summary>
     private static bool HasImageContent(ChatMessage message) =>
         message.Contents.Any(c => c is DataContent data
             && data.MediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));

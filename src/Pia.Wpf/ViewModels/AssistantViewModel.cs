@@ -1623,13 +1623,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var prior = Messages[idx - 1];
         if (prior.Role != ChatRole.User) return;
-        if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachment is null
+        if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachments.Count == 0
             && string.IsNullOrEmpty(prior.AttachedFileContext)) return;
 
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
-        var attachment = prior.Attachment;
+        var attachment = prior.Attachments.FirstOrDefault();
         var attachedFileContext = prior.AttachedFileContext;
         // Captured before the removal below, which takes the answer a styled instruction has to quote.
         var previousAnswer = message.Content;
