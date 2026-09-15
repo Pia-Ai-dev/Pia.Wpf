@@ -65,9 +65,11 @@ surface · `L` a week or more, a new subsystem.
   `[screen capture, …]` stays exact. *Deps:* B2 · *Effort:* XS · *Value:* Med
 - [ ] **B5 · `search_files` counts images separately.** Stop reporting every PNG as a file it failed
   to read; point at `read_file`. *Deps:* — · *Effort:* XS · *Value:* Med
-- [ ] **B6 · `write_file` / `edit_file` refuse images.** Closes the "write UTF-8 over a PNG" hole in
+- [x] **B6 · `write_file` / `edit_file` refuse images.** Closes the "write UTF-8 over a PNG" hole in
   `write_file`, and replaces `edit_file`'s inherited "attach the image instead" message.
   *Deps:* — · *Effort:* XS · *Value:* High
+  **Landed 2026-09-15.** The refusal says why writing is refused and does *not* point at `read_file`,
+  because until B2 lands `read_file` still refuses images; B7 adds the pointer.
 - [ ] **B7 · Tool descriptions.** One clause on `read_file` — shown once, in the next message.
   *Deps:* B2 · *Effort:* XS · *Value:* Enabler
 - [ ] **B8 · Tests.** Thirteen, including two that assert a refusal happens *before* any decode.

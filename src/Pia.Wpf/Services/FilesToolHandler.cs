@@ -1313,6 +1313,10 @@ public class FilesToolHandler : IFilesToolHandler
     private static bool IsImageExtension(string ext)
         => !string.IsNullOrEmpty(ext) && ReadImageExtensions.Contains(ext);
 
+    private static string ImageWriteRefusal(string ext)
+        => $"Error: '{ext}' files are read-only here — an image is pixels, not text, so writing text " +
+           "into one would destroy it. Write to a new .md or .txt file instead.";
+
     /// <summary>Formats whose text is extracted from a container rather than read as the file's own bytes.</summary>
     private static bool IsExtractedKind(FileKind kind)
         => kind is FileKind.Docx or FileKind.Xlsx or FileKind.Email;
@@ -1337,12 +1341,6 @@ public class FilesToolHandler : IFilesToolHandler
         return Encoding.UTF8.GetString(bytes);
     }
 
-    /// <summary>
-    /// Prepares a write. Prepare-time hard failures (bad args, echo, path-outside, blocked path,
-    /// oversized) are deterministic rejections with nothing to approve, so they return an immediate
-    /// <c>(Result, null)</c> — no action card. Only a viable write returns a <c>(null, pending)</c>
-    /// action card carrying the diff for the user to approve.
-    /// </summary>
     /// <summary>
     /// Resolves an exact-string edit into the full new content, then hands it to
     /// <see cref="PrepareWriteFileAsync"/> — so the diff, the patch-engine dry run, the approval card,
@@ -1375,6 +1373,12 @@ public class FilesToolHandler : IFilesToolHandler
 
         if (!File.Exists(safePath))
             return WriteFailure($"Error: '{SafeRelative(root, safePath)}' does not exist. Use write_file to create a new file.");
+
+        // Before the read, which would otherwise answer with its own image message — one written for a
+        // caller who wants to LOOK at the picture, not one trying to write over it.
+        var editExt = Path.GetExtension(safePath);
+        if (IsImageExtension(editExt))
+            return WriteFailure(ImageWriteRefusal(editExt));
 
         var (current, readError) = await ReadFileTextAsync(safePath, requested, cancellationToken);
         if (readError is not null) return WriteFailure(readError);
@@ -1409,6 +1413,12 @@ public class FilesToolHandler : IFilesToolHandler
         return count;
     }
 
+    /// <summary>
+    /// Prepares a write. Prepare-time hard failures (bad args, echo, path-outside, blocked path,
+    /// oversized) are deterministic rejections with nothing to approve, so they return an immediate
+    /// <c>(Result, null)</c> — no action card. Only a viable write returns a <c>(null, pending)</c>
+    /// action card carrying the diff for the user to approve.
+    /// </summary>
     private async Task<(object? Result, FilesToolCall? Pending)> PrepareWriteFileAsync(
         string root, IDictionary<string, object?> args, CancellationToken cancellationToken,
         string toolName = "write_file")
@@ -1461,6 +1471,9 @@ public class FilesToolHandler : IFilesToolHandler
                 $"Error: '{ext}' files are read-only here — read_file returns a rendered view of the " +
                 "message (headers, then body), not the file's own bytes, so writing that back would " +
                 "destroy the original. Write the text to a new .md or .txt file instead.");
+
+        if (IsImageExtension(ext))
+            return WriteFailure(ImageWriteRefusal(ext));
 
         var exists = File.Exists(safePath);
         var rel = SafeRelative(root, safePath);
