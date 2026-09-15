@@ -137,6 +137,83 @@ public class AiClientServiceToolLoopArmTests
         Assert.False(Assert.Single(items.OfType<Finished>()).ToolRoundsExhausted);
     }
 
+    /// <summary>The routine failure this arm exists for: the round that ends the loop carries no text at
+/// all, which a scheduled run would otherwise report as "the model gave no answer".</summary>
+    [Fact]
+    public async Task EmptyFinalRound_SpendsOneToolFreeReAsk()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => EmptyRound());
+        harness.ChatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(Answer("second time lucky")));
+
+        var items = await harness.RunAsync(WithTools());
+
+        await harness.ChatClient.Received(1).GetResponseAsync(
+            Arg.Is<IEnumerable<ChatMessage>>(m => m.Last().Text == AiClientService.EmptyAnswerNudge),
+            Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+        Assert.Equal("second time lucky", Assert.Single(items.OfType<TextDelta>()).Text);
+        // Rounds were not exhausted — the loop chose to stop, so the flag must not claim otherwise.
+        Assert.False(Assert.Single(items.OfType<Finished>()).ToolRoundsExhausted);
+    }
+
+    /// <summary>The observed shape: a reasoning model spends the round thinking and emits no answer.</summary>
+    [Fact]
+    public async Task ReasoningOnlyFinalRound_SpendsOneToolFreeReAsk()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ReasoningRound("weighing the release notes"));
+        harness.ChatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(Answer("8.0.29 is still the latest")));
+
+        var items = await harness.RunAsync(WithTools());
+
+        Assert.Equal("8.0.29 is still the latest", Assert.Single(items.OfType<TextDelta>()).Text);
+        Assert.Equal("weighing the release notes", Assert.Single(items.OfType<ReasoningDelta>()).Text);
+    }
+
+    [Fact]
+    public async Task EmptyFinalRound_ReAskAlsoEmpty_CompletesWithoutASecondReAsk()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => EmptyRound());
+        harness.ChatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(Answer(string.Empty)));
+
+        var items = await harness.RunAsync(WithTools());
+
+        await harness.ChatClient.Received(1).GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+        harness.ChatClient.Received(1).GetStreamingResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+        Assert.Empty(items.OfType<TextDelta>());
+        Assert.Single(items.OfType<Finished>());
+    }
+
+    /// <summary>A round that answers is never re-asked — the re-ask must not cost every turn a round.</summary>
+    [Fact]
+    public async Task AnsweredRound_SpendsNoReAsk()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => TextRound("answered"));
+
+        await harness.RunAsync(WithTools());
+
+        await harness.ChatClient.DidNotReceive().GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+    }
+
     private static List<AITool> WithTools() => [AIFunctionFactory.Create(() => "ok", "read_file", "reads a file")];
 
     private static HttpRequestException BadRequest() =>
@@ -155,6 +232,23 @@ public class AiClientServiceToolLoopArmTests
     private static async IAsyncEnumerable<ChatResponseUpdate> TextRound(string text)
     {
         yield return new ChatResponseUpdate { Role = ChatRole.Assistant, Contents = [new TextContent(text)] };
+        await Task.Yield();
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> EmptyRound()
+    {
+        yield return new ChatResponseUpdate { Role = ChatRole.Assistant, FinishReason = ChatFinishReason.Stop };
+        await Task.Yield();
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> ReasoningRound(string thinking)
+    {
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents = [new TextReasoningContent(thinking)],
+            FinishReason = ChatFinishReason.Stop,
+        };
         await Task.Yield();
     }
 

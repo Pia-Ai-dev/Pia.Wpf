@@ -198,7 +198,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
             if (string.IsNullOrWhiteSpace(visible))
             {
-                _logger.LogWarning("Background turn {ChatId} produced empty content", chatId);
+                _logger.LogWarning(
+                    "Background turn {ChatId} produced empty content (thinkingChars={ThinkingChars}, model={Model}, tokens={Tokens})",
+                    chatId, thinking?.Length ?? 0, model, tokens);
                 if (run is not null)
                 {
                     try
