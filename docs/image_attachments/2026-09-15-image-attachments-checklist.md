@@ -63,7 +63,7 @@ surface · `L` a week or more, a new subsystem.
   *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **B4 · Generalize the placeholder and caption.** `[image file, WxH, consumed]` for this path;
   `[screen capture, …]` stays exact. *Deps:* B2 · *Effort:* XS · *Value:* Med
-- [ ] **B5 · `search_files` counts images separately.** Stop reporting every PNG as a file it failed
+- [x] **B5 · `search_files` counts images separately.** Stop reporting every PNG as a file it failed
   to read; point at `read_file`. *Deps:* — · *Effort:* XS · *Value:* Med
 - [x] **B6 · `write_file` / `edit_file` refuse images.** Closes the "write UTF-8 over a PNG" hole in
   `write_file`, and replaces `edit_file`'s inherited "attach the image instead" message.

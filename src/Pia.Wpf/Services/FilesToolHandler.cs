@@ -664,6 +664,7 @@ public class FilesToolHandler : IFilesToolHandler
         int filesSearched = 0;
         int extractions = 0;
         int skippedCount = 0;
+        int imageCount = 0;
         var skippedNames = new List<string>();
         bool scanTruncated = false;
         bool matchTruncated = false;
@@ -742,6 +743,11 @@ public class FilesToolHandler : IFilesToolHandler
                     // scoped hit round-trips: read_file resolves both the path and the line number.
                     var rel = NormalizeSeparators(SafeRelative(root, full));
 
+                    // An image has no text to match, so counting it as a file the search FAILED on
+                    // reads like a defect. Extension-only, which is exactly what ReadFileTextAsync
+                    // refuses on: an extensionless image still lands in the skipped bucket, as binary.
+                    if (IsImageExtension(Path.GetExtension(canon))) { imageCount++; continue; }
+
                     // Opening an OpenXml/mail container costs orders of magnitude more than a byte
                     // read, so extraction gets a budget of its own.
                     bool extracts = IsExtractedKind(DroppedFileReader.Classify(canon));
@@ -816,16 +822,18 @@ public class FilesToolHandler : IFilesToolHandler
             diagnostics.Add($"Warning: stopped after scanning {MaxFilesScanned} files; results may be incomplete. Narrow the search with a 'path'.");
         if (extractionTruncated)
             diagnostics.Add($"Warning: stopped extracting .docx/.xlsx/.msg/.eml after {MaxExtractions} file(s); the rest were not searched. Narrow the search with a 'path' or 'include'.");
+        if (imageCount > 0)
+            diagnostics.Add($"Note: {imageCount} image file(s) were not searched (an image has no text to match).");
         if (skippedCount > 0)
             diagnostics.Add(
-                $"Note: {skippedCount} file(s) could not be searched (binary, image, or over the size limit): " +
+                $"Note: {skippedCount} file(s) could not be searched (binary, or over the size limit): " +
                 string.Join(", ", skippedNames) + (skippedCount > skippedNames.Count ? ", …" : "") + ".");
         if (matchTruncated)
             diagnostics.Add($"Note: more than {MaxMatches} matches; collection stopped at {MaxMatches} (truncated at {MaxMatches}).");
 
         _logger.LogInformation(
-            "search_files scanned {Files} file(s), searched {Searched}, extracted {Extracted}, skipped {Skipped}, {Matches} match(es), mode {Mode}",
-            filesScanned, filesSearched, extractions, skippedCount, matches.Count, mode);
+            "search_files scanned {Files} file(s), searched {Searched}, extracted {Extracted}, skipped {Skipped}, images {Images}, {Matches} match(es), mode {Mode}",
+            filesScanned, filesSearched, extractions, skippedCount, imageCount, matches.Count, mode);
         _logger.SensitiveDebug("search_files pattern {Pattern} under {Path}", pattern, requestedPath ?? "(root)");
 
         return FormatSearchResults(matches, mode, offset, limit, diagnostics);

@@ -415,6 +415,24 @@ public class FilesToolHandlerSearchTests : IDisposable
     }
 
     [Fact]
+    public async Task Search_CountsImagesSeparatelyFromUnreadableFiles()
+    {
+        Write("notes.txt", "Kekse hier");
+        File.WriteAllBytes(Path.Combine(_root, "shot.png"), [0x89, 0x50, 0x4E, 0x47]);
+        File.WriteAllBytes(Path.Combine(_root, "photo.jpg"), [0xFF, 0xD8, 0xFF]);
+        File.WriteAllBytes(Path.Combine(_root, "scan.pdf"), [0x25, 0x50, 0x44, 0x46, 0x00, 0x01]);
+
+        var result = await SearchAsync("Kekse");
+
+        Assert.Contains("2 image file(s) were not searched", result);
+        Assert.Contains("1 file(s) could not be searched", result);
+        Assert.Contains("scan.pdf", result);
+        // The images are out of the failure bucket entirely — not named there, not counted there.
+        Assert.DoesNotContain("shot.png", result);
+        Assert.DoesNotContain("photo.jpg", result);
+    }
+
+    [Fact]
     public async Task Search_AllLowercasePattern_IgnoresCase()
     {
         Write("a.txt", "Kekse mit Zimt");
