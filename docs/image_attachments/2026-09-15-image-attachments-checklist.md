@@ -59,7 +59,7 @@ surface · `L` a week or more, a new subsystem.
 - [ ] **B2 · `DeliverImageAsync`.** Six ordered refusal arms, then park; a 25 MB pre-decode byte
   ceiling; the call id threaded into the read arm of the dispatch switch.
   *Deps:* B1, B3 · *Effort:* M · *Value:* High
-- [ ] **B3 · Per-round image cap in the channel.** `TryPark` refuses past four, inside the lock.
+- [x] **B3 · Per-round image cap in the channel.** `TryPark` refuses past four, inside the lock.
   *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **B4 · Generalize the placeholder and caption.** `[image file, WxH, consumed]` for this path;
   `[screen capture, …]` stays exact. *Deps:* B2 · *Effort:* XS · *Value:* Med

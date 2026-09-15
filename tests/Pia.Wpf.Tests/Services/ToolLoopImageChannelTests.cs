@@ -65,4 +65,38 @@ public class ToolLoopImageChannelTests
             Assert.NotNull(ToolLoopImageChannel.Current);
         }
     }
+
+    [Fact]
+    public void TryPark_TakesFour_ThenRefuses()
+    {
+        var channel = new ToolLoopImageChannel(AiProviderType.PiaCloud);
+
+        for (var i = 1; i <= ToolLoopImageChannel.MaxImagesPerRound; i++)
+            Assert.True(channel.TryPark(Image($"call-{i}")));
+
+        Assert.False(channel.TryPark(Image("call-5")));
+        Assert.Equal(ToolLoopImageChannel.MaxImagesPerRound, channel.Count);
+        Assert.DoesNotContain("call-5", channel.Drain().Select(i => i.CallId));
+    }
+
+    [Fact]
+    public void TryPark_AfterADrain_TakesAFullRoundAgain()
+    {
+        var channel = new ToolLoopImageChannel(AiProviderType.PiaCloud);
+        for (var i = 1; i <= ToolLoopImageChannel.MaxImagesPerRound; i++) channel.TryPark(Image($"a-{i}"));
+        channel.Drain();
+
+        Assert.True(channel.TryPark(Image("b-1")));
+    }
+
+    /// <summary>screen_capture's path is uncapped on purpose — every frame has an approval card behind it.</summary>
+    [Fact]
+    public void Park_IgnoresTheCap()
+    {
+        var channel = new ToolLoopImageChannel(AiProviderType.PiaCloud);
+
+        for (var i = 1; i <= ToolLoopImageChannel.MaxImagesPerRound + 1; i++) channel.Park(Image($"call-{i}"));
+
+        Assert.Equal(ToolLoopImageChannel.MaxImagesPerRound + 1, channel.Count);
+    }
 }
