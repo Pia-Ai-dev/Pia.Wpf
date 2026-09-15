@@ -1,6 +1,7 @@
 # Routines ending as "The model gave no answer"
 
-**Status:** client mitigation landed, server cause not yet confirmed
+**Status:** client mitigation and server fix landed, both unmerged; the cause
+is still inferred rather than confirmed from a server log
 **Owner:** Marco Altmann
 **Written:** 2026-09-15
 **Origin:** user report — "MongoDB Checkup" routine failing on 09-14 09:00 and
@@ -63,6 +64,22 @@ From the server log for 2026-09-15 07:00:37Z–07:01:38Z:
 - every `Stream completed: finishReason=… hasTokenUsage=…` — a `<null>` finish
   means the upstream stream was cut rather than finished.
 
+## Server change made
+
+`feature/cap-round-forced-answer` in `Pia-Ai-dev/Pia`, commit `2b1538c1`.
+
+Both cap branches of `ToolChatOrchestrator` now spend one final call with the
+tools removed and a message telling the model to answer from what it has — the
+buffered one used to return the last response, which is a tool call.
+`ContentHandbackSse` falls back to `reasoning_content` when `content` is empty
+and hands back a surviving client tool call instead of dropping it. A streaming
+round that ends with no chunk at all now warns, and `roundFinish ?? "stop"` is
+gone, so the usage table can tell a cut stream from a finished one.
+
+`MaxServerToolRounds` is left at 3. If research routines keep reaching the cap,
+raising it is the next lever — the forced answer round makes reaching it
+survivable, not free.
+
 ## Client change made
 
 `AiClientService` counts the visible characters a turn produced. A turn that
@@ -70,6 +87,8 @@ ends with no tool calls and no visible text now spends one tool-less re-ask
 (the same wrap-up call round exhaustion already used, with its own nudge text)
 before the turn is reported empty, and logs a WARN naming the finish reason,
 the reasoning character count and the response content types first.
+
+`feature/empty-answer-reask`, commit `66d6fdfe`.
 
 This is a mitigation, not the fix: it converts a nondeterministic empty answer
 into a second chance on every provider, and it makes the next occurrence
