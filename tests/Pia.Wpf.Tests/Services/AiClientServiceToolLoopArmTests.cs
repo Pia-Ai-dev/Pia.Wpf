@@ -199,6 +199,25 @@ public class AiClientServiceToolLoopArmTests
         Assert.Single(items.OfType<Finished>());
     }
 
+    /// <summary>An agent step's outcome is the emit_step_result call, so the wordless round after it is an
+    /// ending — re-asking there would spend a provider round on every step of every run.</summary>
+    [Fact]
+    public async Task EmptyRoundAfterAStepResult_SpendsNoReAsk()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        var round = 0;
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => round++ == 0 ? StepResultRound() : EmptyRound());
+
+        var items = await harness.RunAsync(
+            [AIFunctionFactory.Create(() => "ok", AgentStepTools.EmitStepResultToolName, "declares the outcome")]);
+
+        await harness.ChatClient.DidNotReceive().GetResponseAsync(
+            Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
+        Assert.Empty(items.OfType<TextDelta>());
+    }
+
     /// <summary>A round that answers is never re-asked — the re-ask must not cost every turn a round.</summary>
     [Fact]
     public async Task AnsweredRound_SpendsNoReAsk()
@@ -232,6 +251,20 @@ public class AiClientServiceToolLoopArmTests
     private static async IAsyncEnumerable<ChatResponseUpdate> TextRound(string text)
     {
         yield return new ChatResponseUpdate { Role = ChatRole.Assistant, Contents = [new TextContent(text)] };
+        await Task.Yield();
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> StepResultRound()
+    {
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents =
+            [
+                new FunctionCallContent("call-1", AgentStepTools.EmitStepResultToolName,
+                    new Dictionary<string, object?> { ["succeeded"] = true }),
+            ],
+        };
         await Task.Yield();
     }
 
@@ -269,6 +302,7 @@ public class AiClientServiceToolLoopArmTests
         public bool SupportsStreaming { get; init; }
 
         public int MaxToolRounds { get; init; } = 24;
+
 
         public List<bool> HasToolsRequested { get; } = [];
 

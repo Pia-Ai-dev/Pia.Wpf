@@ -201,6 +201,7 @@ public class AiClientService : IAiClientService
         string? lastModelId = null;
         var visibleChars = 0;
         var reasoningChars = 0;
+        var declaredStepOutcome = false;
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -421,6 +422,11 @@ public class AiClientService : IAiClientService
 
             if (toolCalls.Count > 0 && toolHandler is not null)
             {
+                // An agent step's outcome IS this call, so a wordless turn after it is an ending rather than
+                // the no-answer failure the re-ask below exists for.
+                declaredStepOutcome |= toolCalls.Any(
+                    c => string.Equals(c.Name, AgentStepTools.EmitStepResultToolName, StringComparison.Ordinal));
+
                 // Yielded before the dispatch (which awaits real tool execution and can throw) so
                 // consumers know a fresh model turn is coming even if the dispatch itself fails.
                 yield return new ToolRoundCompleted();
@@ -444,7 +450,7 @@ public class AiClientService : IAiClientService
                 continue;
             }
 
-            if (visibleChars == 0)
+            if (visibleChars == 0 && !declaredStepOutcome)
             {
                 // Recoverable far more often than not, and the alternative is a routine with no answer.
                 _logger.LogWarning(
