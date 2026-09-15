@@ -28,7 +28,7 @@ surface · `L` a week or more, a new subsystem.
 
 ## Group A — more than one image per chat message
 
-- [ ] **A1 · `ImageAttachment` gains identity.** Add `Guid Id` and `string? SourcePath`; the file-path
+- [x] **A1 · `ImageAttachment` gains identity.** Add `Guid Id` and `string? SourcePath`; the file-path
   `TryPrepare` sets the path, the clipboard one leaves it null. *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **A2 · The pending collection, its caps, and append semantics.** `PendingAttachments`
   replaces `PendingAttachment`; 4 images / 12 MB; a second image adds instead of silently
