@@ -417,6 +417,7 @@ public class SyncMapper
         incoming.MaxOutputTokens = existing.MaxOutputTokens;
         incoming.ReasoningEffort = existing.ReasoningEffort;
         incoming.EnableWebSearch = existing.EnableWebSearch;
+        incoming.EnablePromptCache = existing.EnablePromptCache;
         incoming.MistralAgentId = existing.MistralAgentId;
     }
 

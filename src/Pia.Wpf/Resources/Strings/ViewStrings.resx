@@ -685,6 +685,7 @@
   <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Max output tokens (reserved for the reply)</value></data>
   <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>The context window switches compaction on for long agent runs; 0 turns it off. Max output tokens is held back for the model’s reply, so leaving it at 0 reserves nothing.</value></data>
   <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Enable web search</value></data>
+  <data name="Dialog_ProviderEdit_PromptCache" xml:space="preserve"><value>Cache the prompt prefix (5 min)</value></data>
   <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>Mistral Agent ID</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Edit Template</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Template Name *</value></data>

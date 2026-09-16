@@ -10,6 +10,10 @@ public enum AiProviderType
     OpenAICompatible,
     Mistral,
     VLlm,
+
+    // Appended, never inserted: this enum round-trips numerically, so a new value must not renumber
+    // the providers already on disk.
+    Anthropic,
 }
 
 public class AiProvider
@@ -55,6 +59,10 @@ public class AiProvider
 
     public ReasoningEffort? ReasoningEffort { get; set; }
     public bool EnableWebSearch { get; set; } = false;
+
+    /// <summary>Anthropic only. Off by default: a cache write costs more than the input it replaces, and a
+    /// prompt under the model's minimum prefix is never stored at all.</summary>
+    public bool EnablePromptCache { get; set; }
     public string? MistralAgentId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

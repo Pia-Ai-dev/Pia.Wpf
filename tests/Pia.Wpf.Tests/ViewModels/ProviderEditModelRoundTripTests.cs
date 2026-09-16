@@ -33,6 +33,7 @@ public class ProviderEditModelRoundTripTests
         MaxOutputTokens = 8_192,
         ReasoningEffort = Pia.Models.ReasoningEffort.High,
         EnableWebSearch = true,
+        EnablePromptCache = true,
         MistralAgentId = "ag_123",
     };
 
