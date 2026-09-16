@@ -10,6 +10,9 @@ public sealed class AnthropicProviderHandler : IAiProviderHandler
 {
     private const string DefaultModel = "claude-opus-5";
 
+    // Every Claude model accepts at least this; the provider's own Max output tokens raises it.
+    private const int DefaultMaxOutputTokens = 8192;
+
     public AiProviderType ProviderType => AiProviderType.Anthropic;
 
     // Effort rides in output_config, outside the tools array, so a tool-carrying turn keeps its level.
@@ -50,6 +53,8 @@ public sealed class AnthropicProviderHandler : IAiProviderHandler
         return Task.FromResult(client);
     }
 
-    // Everything provider-specific is applied by AnthropicRequestHandler instead; see its header for why.
-    public ChatOptions CreateChatOptions(AiProvider provider, bool hasTools) => new();
+    // Everything else provider-specific is applied by AnthropicRequestHandler; see its header for why.
+    // MaxOutputTokens cannot be: left unset the SDK adapter sends its own 1024, which truncates every answer.
+    public ChatOptions CreateChatOptions(AiProvider provider, bool hasTools) =>
+        new() { MaxOutputTokens = provider.MaxOutputTokens ?? DefaultMaxOutputTokens };
 }
