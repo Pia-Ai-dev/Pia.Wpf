@@ -1,7 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
@@ -108,13 +107,6 @@ public partial class WindowManagerService : IWindowManagerService
 
             if (window.WindowState != WindowState.Minimized)
                 managed.RestoreState = window.WindowState;
-
-            if (window.WindowState == WindowState.Minimized)
-            {
-                window.Dispatcher.BeginInvoke(
-                    () => HideWindow(mode),
-                    DispatcherPriority.ContextIdle);
-            }
         };
 
         if (_windows.Values.Any(w => w != managed && w.Window.Visibility == Visibility.Visible))
@@ -338,6 +330,12 @@ public partial class WindowManagerService : IWindowManagerService
     {
         return _windows.TryGetValue(mode, out var managed)
             && managed.Window.Visibility == Visibility.Visible;
+    }
+
+    public bool IsMinimized(WindowMode mode)
+    {
+        return _windows.TryGetValue(mode, out var managed)
+            && managed.Window.WindowState == WindowState.Minimized;
     }
 
     public bool IsInForeground(WindowMode mode)
