@@ -30,6 +30,9 @@ public interface IWindowManagerService
     void HideAllWindows();
     void CloseAndDisposeAll();
     bool IsVisible(WindowMode mode);
+
+    /// <summary>Shown but iconic: still in the taskbar, so a toggle must restore it rather than hide it.</summary>
+    bool IsMinimized(WindowMode mode);
     bool IsInForeground(WindowMode mode);
     bool CanDismissWithHotkey(WindowMode mode);
 

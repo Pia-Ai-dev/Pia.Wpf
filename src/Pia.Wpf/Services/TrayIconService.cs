@@ -117,12 +117,12 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         _ = ToggleDefaultWindowAsync();
     }
 
-    private async Task ToggleDefaultWindowAsync()
+    internal async Task ToggleDefaultWindowAsync()
     {
         var settings = await _settingsService.GetSettingsAsync();
         var defaultMode = settings.DefaultWindowMode;
 
-        if (_windowManagerService.IsVisible(defaultMode))
+        if (IsShown(defaultMode))
             _windowManagerService.HideWindow(defaultMode);
         else
             _windowManagerService.ShowWindow(defaultMode);
@@ -360,19 +360,22 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         if (menuItem is null)
             return;
 
-        var isVisible = _windowManagerService.IsVisible(mode);
-        menuItem.Header = isVisible
+        menuItem.Header = IsShown(mode)
             ? _localizationService[closeKey]
             : _localizationService[openKey];
     }
 
-    private void ToggleWindow(WindowMode mode)
+    internal void ToggleWindow(WindowMode mode)
     {
-        if (_windowManagerService.IsVisible(mode))
+        if (IsShown(mode))
             _windowManagerService.HideWindow(mode);
         else
             _windowManagerService.ShowWindow(mode);
     }
+
+    // WPF reports a minimized window as Visibility.Visible, but it belongs to the taskbar, not the tray.
+    private bool IsShown(WindowMode mode) =>
+        _windowManagerService.IsVisible(mode) && !_windowManagerService.IsMinimized(mode);
 
     private void OnLanguageChanged(object? sender, TargetLanguage e)
     {
