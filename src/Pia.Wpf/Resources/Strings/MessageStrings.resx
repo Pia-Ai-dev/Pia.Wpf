@@ -73,7 +73,10 @@
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>At most {0} files can be attached to one message — "{1}" was skipped.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach — the limit is {1}.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>The attached files already fill this message — "{0}" was skipped.</value></data>
-  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Only one image can be attached — kept "{0}".</value></data>
+  <data name="Msg_File_ImageLimit" xml:space="preserve"><value>At most {0} images can be attached — "{1}" was left out.</value></data>
+  <data name="Msg_File_ImageBudget" xml:space="preserve"><value>The attached images are already at the size limit — "{0}" was left out.</value></data>
+  <data name="Msg_File_PastedImageName" xml:space="preserve"><value>Pasted image</value></data>
+  <data name="Msg_File_ScreenCaptureName" xml:space="preserve"><value>Screen capture</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>Couldn't take "{0}" from the app you dragged it from. Save it as a file and drag that instead.</value></data>
   <data name="Msg_File_DropNoFile" xml:space="preserve"><value>That app hands over no file to drag — only its own internal reference. Save the item as a file first, then drag that.</value></data>
   <data name="FileDrop_Overlay_Hint_MeetingInvite" xml:space="preserve"><value>Drop the meeting invite to fill in the link</value></data>

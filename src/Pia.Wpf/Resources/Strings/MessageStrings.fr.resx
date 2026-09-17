@@ -70,7 +70,10 @@
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Au maximum {0} fichiers peuvent être joints à un message – « {1} » a été ignoré.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>« {0} » est trop volumineux pour être joint — la limite est de {1}.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Les fichiers joints remplissent déjà ce message – « {0} » a été ignoré.</value></data>
-  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Une seule image peut être jointe – « {0} » a été conservée.</value></data>
+  <data name="Msg_File_ImageLimit" xml:space="preserve"><value>{0} images au maximum peuvent être jointes – « {1} » n'a pas été ajoutée.</value></data>
+  <data name="Msg_File_ImageBudget" xml:space="preserve"><value>Les images jointes atteignent déjà la limite de taille – « {0} » n'a pas été ajoutée.</value></data>
+  <data name="Msg_File_PastedImageName" xml:space="preserve"><value>Image collée</value></data>
+  <data name="Msg_File_ScreenCaptureName" xml:space="preserve"><value>Capture d'écran</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>Impossible de récupérer « {0} » depuis l'application source. Enregistrez l'élément dans un fichier et faites glisser celui-ci.</value></data>
   <data name="Msg_File_DropNoFile" xml:space="preserve"><value>Cette application ne fournit aucun fichier, seulement sa référence interne. Enregistrez d'abord l'élément dans un fichier, puis faites glisser celui-ci.</value></data>
   <data name="FileDrop_Overlay_Hint_MeetingInvite" xml:space="preserve"><value>Déposez l’invitation pour remplir le lien</value></data>

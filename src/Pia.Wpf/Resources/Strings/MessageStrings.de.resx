@@ -70,7 +70,10 @@
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Es können höchstens {0} Dateien an eine Nachricht angehängt werden – „{1}“ wurde übersprungen.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>„{0}“ ist zu groß zum Anhängen – das Limit liegt bei {1}.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Die angehängten Dateien füllen diese Nachricht bereits – „{0}“ wurde übersprungen.</value></data>
-  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Es kann nur ein Bild angehängt werden – „{0}“ wurde übernommen.</value></data>
+  <data name="Msg_File_ImageLimit" xml:space="preserve"><value>Es können höchstens {0} Bilder angehängt werden – „{1}“ wurde ausgelassen.</value></data>
+  <data name="Msg_File_ImageBudget" xml:space="preserve"><value>Die angehängten Bilder haben die Größengrenze erreicht – „{0}“ wurde ausgelassen.</value></data>
+  <data name="Msg_File_PastedImageName" xml:space="preserve"><value>Eingefügtes Bild</value></data>
+  <data name="Msg_File_ScreenCaptureName" xml:space="preserve"><value>Bildschirmaufnahme</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>„{0}“ konnte nicht aus der Quell-App übernommen werden. Speichern Sie das Element als Datei und ziehen Sie diese herüber.</value></data>
   <data name="Msg_File_DropNoFile" xml:space="preserve"><value>Diese App gibt keine Datei heraus, sondern nur ihren eigenen internen Verweis. Speichern Sie das Element zuerst als Datei und ziehen Sie diese herüber.</value></data>
   <data name="FileDrop_Overlay_Hint_MeetingInvite" xml:space="preserve"><value>Besprechungseinladung ablegen, um den Link zu übernehmen</value></data>

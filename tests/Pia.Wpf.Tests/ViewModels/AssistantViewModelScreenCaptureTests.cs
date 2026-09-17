@@ -61,10 +61,10 @@ public sealed class AssistantViewModelScreenCaptureTests
 
         await vm.CaptureScreenCommand.ExecuteAsync(null);
 
-        Assert.NotNull(vm.PendingAttachment);
-        Assert.Equal(64, vm.PendingAttachment!.Width);
-        Assert.Equal(48, vm.PendingAttachment.Height);
-        Assert.Equal("image/jpeg", vm.PendingAttachment.MimeType);
+        Assert.Single(vm.PendingAttachments);
+        Assert.Equal(64, vm.PendingAttachments[0].Width);
+        Assert.Equal(48, vm.PendingAttachments[0].Height);
+        Assert.Equal("image/jpeg", vm.PendingAttachments[0].MimeType);
         await _screenCapture.Received().CaptureAsync(Notepad, Arg.Any<CancellationToken>());
     }
 
@@ -137,7 +137,7 @@ public sealed class AssistantViewModelScreenCaptureTests
 
         await vm.CaptureScreenCommand.ExecuteAsync(null);
 
-        Assert.Null(vm.PendingAttachment);
+        Assert.Empty(vm.PendingAttachments);
         await _screenCapture.DidNotReceive().CaptureAsync(Notepad, Arg.Any<CancellationToken>());
         _audit.DidNotReceive().Record(Arg.Any<ScreenCaptureAuditEvent>());
     }
@@ -153,7 +153,7 @@ public sealed class AssistantViewModelScreenCaptureTests
 
         _ = _localization.Received()["Msg_Screen_UniformFrame"];
         _snackbar.ReceivedWithAnyArgs(1).Show(default!, default!, default, default, default);
-        Assert.Null(vm.PendingAttachment);
+        Assert.Empty(vm.PendingAttachments);
         _audit.DidNotReceive().Record(Arg.Any<ScreenCaptureAuditEvent>());
     }
 
@@ -168,21 +168,23 @@ public sealed class AssistantViewModelScreenCaptureTests
         await vm.CaptureScreenCommand.ExecuteAsync(null);
 
         _ = _localization.Received(1)["Msg_File_ImageProviderUnsupported"];
-        Assert.Null(vm.PendingAttachment);
+        Assert.Empty(vm.PendingAttachments);
         _audit.DidNotReceive().Record(Arg.Any<ScreenCaptureAuditEvent>());
     }
 
     [Fact]
-    public async Task CaptureScreen_ReplacesAnExistingImage_WithoutTheOneImageWarning()
+    public async Task CaptureScreen_AppendsToAnExistingImage()
     {
         var vm = CreateSut();
         await vm.PendingScreenCaptureAvailabilityRefresh;
-        vm.PendingAttachment = Attachment();
+        var existing = Attachment();
+        vm.PendingAttachments.Add(existing);
 
         await vm.CaptureScreenCommand.ExecuteAsync(null);
 
-        Assert.Equal(64, vm.PendingAttachment!.Width);
-        _localization.DidNotReceive().Format("Msg_File_OneImageOnly", Arg.Any<object[]>());
+        Assert.Equal(2, vm.PendingAttachments.Count);
+        Assert.Same(existing, vm.PendingAttachments[0]);
+        Assert.Equal(64, vm.PendingAttachments[1].Width);
     }
 
     [Fact]
@@ -196,7 +198,7 @@ public sealed class AssistantViewModelScreenCaptureTests
         await vm.CaptureScreenCommand.ExecuteAsync(null);
 
         await _dialogs.Received(1).ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
     }
 
     [Fact]
@@ -217,7 +219,7 @@ public sealed class AssistantViewModelScreenCaptureTests
 
         await vm.CaptureScreenCommand.ExecuteAsync(null);
 
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
         _audit.Received(1).Record(Arg.Any<ScreenCaptureAuditEvent>());
     }
 
@@ -231,7 +233,7 @@ public sealed class AssistantViewModelScreenCaptureTests
         await vm.CaptureScreenCommand.ExecuteAsync(null);
         vm.IsStreaming = false;
 
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
     }
 
     [Fact]
@@ -368,7 +370,7 @@ public sealed class AssistantViewModelScreenCaptureTests
         await vm.OpenScreenCapturePickerFromHotkeyAsync();
 
         await _dialogs.Received(1).ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
     }
 
     [Fact]
@@ -393,7 +395,7 @@ public sealed class AssistantViewModelScreenCaptureTests
         await vm.OpenScreenCapturePickerFromHotkeyAsync();
 
         await _dialogs.Received(1).ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
     }
 
     [Fact]
@@ -478,14 +480,14 @@ public sealed class AssistantViewModelScreenCaptureTests
         var vm = CreateSut();
         await vm.PendingScreenCaptureAvailabilityRefresh;
         await vm.CaptureScreenCommand.ExecuteAsync(null);
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
         vm.InputText = "what is on my screen?";
 
         UseProvider(AiProviderType.OpenAI);
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.DidNotReceiveWithAnyArgs().StartTurnAsync(default!, default!, default);
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
         Assert.Equal("what is on my screen?", vm.InputText);
         _ = _localization.Received()["Msg_File_ImageProviderUnsupported"];
     }
@@ -502,7 +504,7 @@ public sealed class AssistantViewModelScreenCaptureTests
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.ReceivedWithAnyArgs(1).StartTurnAsync(default!, default!, default);
-        Assert.Null(vm.PendingAttachment);
+        Assert.Empty(vm.PendingAttachments);
     }
 
     [Fact]
