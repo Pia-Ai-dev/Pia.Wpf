@@ -32,13 +32,18 @@
   "Not running", a tool's description sits in a hover icon, and editing a server
   keeps what you typed when another one starts.
 
-## Assistant tools
+## Images
 
-- Writing text into an image file is refused instead of corrupting it.
-  write_file and edit_file both say why, rather than repeating the old "attach
-  the image instead" advice.
+- A chat message can carry up to four images instead of one. Dropping, pasting
+  or capturing another one adds it to a thumbnail strip above the composer
+  rather than silently replacing what is already there, and each thumbnail has
+  its own remove button.
+- Pia can look at an image in your files folder. Ask about a screenshot by name
+  and read_file shows it to her, instead of answering that you should attach it.
+  She sees it for one reply, so ask what you need in the same message.
 - search_files counts images separately instead of listing every PNG in the tree
   as a file it failed to read.
+- Writing text into an image file is refused instead of corrupting it.
 
 ## Assistant
 

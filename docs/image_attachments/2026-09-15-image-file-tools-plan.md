@@ -1,6 +1,6 @@
 # Images through the file tools — `read_file` and `search_files`
 
-**Status:** Planned, not started
+**Status:** Implemented 2026-09-17. Tracking surface: [2026-09-15-image-attachments-checklist.md](2026-09-15-image-attachments-checklist.md).
 **Owner:** Marco Altmann
 **Written:** 2026-09-15
 **Origin:** The same customer ask relayed 2026-09-15 — Pia cannot look at an image that is sitting
