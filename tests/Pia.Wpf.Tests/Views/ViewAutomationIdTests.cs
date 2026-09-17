@@ -47,7 +47,7 @@ public class ViewAutomationIdTests
     // The playbook's "Known gaps" section is the single source of truth for what still has no row here.
     [Theory]
     [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 34, 5, "")]
-    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 47, 6, "PersonaGlyph,PersonasView,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 47, 6, "McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
@@ -62,6 +62,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.RoutinesView), 36, 1,
         "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar,PiaWorkingDirectoryPicker")]
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 26, 2, "PersonaGlyph,PiaEmptyState")]
+    [InlineData(typeof(Pia.Views.SettingsViews.McpServersView), 17, 2, "PiaEmptyState")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Views.Dialogs.Overlay.AdvancedCreationOverlayPanel), 12, 5, "PersonaGlyph")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]

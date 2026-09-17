@@ -73,7 +73,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(
             toolPermissionService, pluginService, logger, screenCaptureAllowlistStore, dialogService);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService, policyService);
-        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, policyService, personaService);
+        var mcpServersVm = new McpServersSettingsViewModel(pluginService, dialogService, localizationService, snackbarService, logger);
+        AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, mcpServersVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, policyService, personaService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService, diagnosticsExportService);
@@ -138,6 +139,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         TemplatesVm.Dispose();
         PersonasVm.Dispose();
         AssistantVm.MeetingVm.Dispose();
+        AssistantVm.McpServersVm.Dispose();
         AssistantVm.Dispose();
         GeneralVm.PrivacyVm.Dispose();
         GeneralVm.Dispose();

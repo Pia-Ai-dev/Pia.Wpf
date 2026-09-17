@@ -37,9 +37,10 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
     public ProvidersSettingsViewModel ProvidersVm { get; }
     public PersonaSettingsViewModel PersonasVm { get; }
     public ToolPermissionsSettingsViewModel ToolPermissionsVm { get; }
+    public McpServersSettingsViewModel McpServersVm { get; }
     public MeetingSettingsViewModel MeetingVm { get; }
 
-    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access, 3 = Meeting, 4 = Agent runs).</summary>
+    /// <summary>Index of the inner tab pill — see <see cref="AssistantSettingsInnerTab"/>.</summary>
     [ObservableProperty]
     private int _selectedInnerTabIndex;
 
@@ -50,6 +51,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         ProvidersSettingsViewModel providersVm,
         PersonaSettingsViewModel personasVm,
         ToolPermissionsSettingsViewModel toolPermissionsVm,
+        McpServersSettingsViewModel mcpServersVm,
         MeetingSettingsViewModel meetingVm,
         ILogger<SettingsViewModel> logger,
         ISettingsService settingsService,
@@ -68,6 +70,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         ProvidersVm = providersVm;
         PersonasVm = personasVm;
         ToolPermissionsVm = toolPermissionsVm;
+        McpServersVm = mcpServersVm;
         MeetingVm = meetingVm;
         _logger = logger;
         _settingsService = settingsService;
