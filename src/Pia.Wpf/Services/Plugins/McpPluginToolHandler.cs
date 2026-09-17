@@ -31,7 +31,11 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
 
     /// <summary>Every tool the server reported, before the allowlist — the edit surface has to offer the
     /// ones currently withheld.</summary>
-    public IReadOnlyList<string> DiscoveredToolNames { get; private set; } = [];
+    public IReadOnlyList<McpProbeTool> DiscoveredTools { get; private set; } = [];
+
+    /// <summary>Why the last start failed. A failed start still leaves a registered handler, so without this
+    /// a dead server is indistinguishable from one that reported no tools.</summary>
+    public string? LastError { get; private set; }
 
     public McpPluginToolHandler(
         Guid pluginId,
@@ -71,8 +75,10 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
 
             _client = await McpClient.CreateAsync(_transport, cancellationToken: ct);
             var discovered = await _client.ListToolsAsync(cancellationToken: ct);
-            DiscoveredToolNames = [.. discovered.Select(t => t.Name)];
+            DiscoveredTools = [.. discovered.Select(t => new McpProbeTool(
+                t.Name, t.Description, IsServerDeclaredDestructive(t.ProtocolTool.Annotations)))];
             _tools = Project(discovered, _allowedTools, _toolPrefix);
+            LastError = null;
 
             _logger.LogInformation("MCP plugin {Name} initialized with {ToolCount} of {Discovered} tools: {Tools}",
                 PluginName, _tools.Count, discovered.Count,
@@ -87,6 +93,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             _logger.SensitiveDebug("Failed plugin {Name} command was: '{Command} {Args}'",
                 PluginName, _command, string.Join(" ", _args));
             _tools = [];
+            LastError = ex.Message;
         }
     }
 
@@ -253,6 +260,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _transport = null;
 
         _tools = [];
+        DiscoveredTools = [];
     }
 
     public void ApplyServerMetadata(SyncPlugin plugin)

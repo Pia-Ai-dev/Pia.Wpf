@@ -14,7 +14,9 @@ public sealed record McpProbeResult(bool Success, IReadOnlyList<McpProbeTool> To
 /// text.</summary>
 public static class McpServerProbe
 {
-    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+    /// <summary>Generous because the commonest command is <c>npx -y &lt;package&gt;</c>, whose first run downloads
+    /// the server before it says anything.</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(90);
 
     public static async Task<McpProbeResult> ProbeAsync(
         LocalMcpDefinition definition,

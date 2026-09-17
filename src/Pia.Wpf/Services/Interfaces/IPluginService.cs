@@ -7,9 +7,10 @@ namespace Pia.Services.Interfaces;
 /// <summary>What a locally added server is doing right now. <paramref name="DiscoveredTools"/> is everything
 /// it reported; <paramref name="ActiveTools"/> is what survived the allowlist, already prefixed.</summary>
 public sealed record LocalMcpStatus(
-    bool IsActive,
-    IReadOnlyList<string> DiscoveredTools,
-    IReadOnlyList<string> ActiveTools);
+    bool IsRunning,
+    IReadOnlyList<McpProbeTool> DiscoveredTools,
+    IReadOnlyList<string> ActiveTools,
+    string? Error);
 
 /// <summary>One grantable tool as a pre-approval surface sees it — before any call, so with no
 /// <c>PluginToolCall</c> to read the route or the server's hint off.</summary>

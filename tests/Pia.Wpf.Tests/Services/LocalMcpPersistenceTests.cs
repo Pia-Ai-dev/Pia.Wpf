@@ -169,6 +169,21 @@ public sealed class LocalMcpPersistenceTests : IDisposable
         Assert.Empty(service.GetLocalMcpPlugins());
     }
 
+    /// <summary>A local server skips the PATH preflight, so a command that cannot start reaches the handler
+    /// and comes back as a reason rather than as a silent "running, 0 tools".</summary>
+    [Fact]
+    public async Task AServerThatCannotStart_ReportsWhyInsteadOfLookingHealthy()
+    {
+        var service = CreateService();
+        var id = await service.SaveLocalMcpAsync(null, Definition(), TestContext.Current.CancellationToken);
+
+        var status = service.GetLocalMcpStatus(id);
+
+        Assert.False(status.IsRunning);
+        Assert.False(string.IsNullOrWhiteSpace(status.Error));
+        Assert.Empty(status.ActiveTools);
+    }
+
     [Fact]
     public async Task RemovingAServerPushedPlugin_IsIgnored()
     {

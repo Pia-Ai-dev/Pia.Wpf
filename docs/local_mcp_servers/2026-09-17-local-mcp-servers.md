@@ -110,3 +110,40 @@ with no second filter to keep in sync. `McpClientTool.WithName` keeps the underl
 - **Env values in logs.** Log env **names** only. Not even `SensitiveDebug` should carry a value.
 - **Startup cost.** Each enabled local server spawns a process at launch inside
   `InitializePersistedPluginsAsync`. Activation already runs per plugin sequentially.
+
+## What review caught, and the answers
+
+Four defects found by reading the finished code against the UI flows, all fixed:
+
+- **A stopped server lost its allowlist on edit.** The editor's tool list comes from the *running*
+  handler, so a disabled or failed server opens with nothing to tick — and "nothing ticked" read as
+  "no restriction", so saving a name change reopened every tool. The view-model now carries the
+  saved allowlist through the edit session and falls back to it whenever nothing has been probed.
+- **That fallback list was handed out live.** `CurrentAllowedTools` returned the field itself, which
+  `CloseEditor` then clears. Production survived on call ordering; the copy makes it not depend on
+  that.
+- **Test connection and Save took different launch paths.** Activation ran `where.exe <command>`
+  first, and `where.exe` reads any rooted path as its own `directory:pattern` syntax and errors —
+  so an absolute command (the norm in a pasted config) probed fine and then refused to start with
+  "not found on PATH". A local server now skips the preflight entirely, and
+  `CheckCommandOnPathAsync` answers a rooted path off the filesystem for the server-pushed kind.
+- **A server that failed to start reported "Running · 0 tools".** `InitializeAsync` swallows its
+  exception and the handler was registered regardless. The handler now keeps `LastError`, pre-handler
+  failures land in `PluginService._startFailures`, and `LocalMcpStatus.IsRunning` is the absence of
+  an error rather than the presence of a handler.
+
+Measured rather than assumed:
+
+- **`npx` launches.** The SDK wraps the command in `cmd.exe /c` on Windows, so a `.cmd` shim works
+  and no resolver is needed.
+- **A timed-out probe leaves no orphan.** Probed a command that starts and never speaks MCP, with a
+  5 s timeout: the process count returned to its starting value.
+- The probe timeout is **90 s**, because the first `npx -y <package>` downloads the server before it
+  answers.
+
+## Known gaps
+
+- Removing a server leaves any standing grant keyed on its plugin id behind. Harmless — ids are
+  never reused — but the rows accumulate in settings.
+- `ApplyServerPluginsAsync` would delete a local row if the server ever pushed a tombstone for its
+  id. It cannot: local ids are minted client-side and the server has never seen them.

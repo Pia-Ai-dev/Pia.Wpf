@@ -1672,4 +1672,5 @@
   <data name="McpServers_Error_RemoteTransport" xml:space="preserve"><value>Les serveurs distants ne sont pas pris en charge — uniquement ceux que Pia démarre sur cet ordinateur.</value></data>
   <data name="McpServers_Error_BadArgs" xml:space="preserve"><value>args doit être une liste de chaînes.</value></data>
   <data name="McpServers_Error_BadEnv" xml:space="preserve"><value>env doit être un objet de valeurs textuelles.</value></data>
+  <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Arrêté : {0}</value></data>
 </root>

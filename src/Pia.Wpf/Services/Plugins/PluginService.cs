@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
@@ -36,6 +38,9 @@ public class PluginService : IPluginService
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
     private readonly Dictionary<Guid, SyncPlugin> _pluginConfigs = new();
     private readonly List<SyncPluginPreference> _pendingPrefs = [];
+
+    /// <summary>Why a server never got as far as a handler, so the settings row can say so.</summary>
+    private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
 
     public IReadOnlyList<IPluginToolHandler> ActiveHandlers
     {
@@ -397,10 +402,15 @@ public class PluginService : IPluginService
     {
         lock (_handlers)
         {
+            // A start that threw still leaves a registered handler, so the handler's own error — not its
+            // presence — is what says whether the server is up.
             if (_handlers.TryGetValue(pluginId, out var handler) && handler is McpPluginToolHandler mcp)
-                return new LocalMcpStatus(true, mcp.DiscoveredToolNames, [.. mcp.GetTools().Select(t => t.Name)]);
+                return new LocalMcpStatus(
+                    mcp.LastError is null, mcp.DiscoveredTools, [.. mcp.GetTools().Select(t => t.Name)], mcp.LastError);
         }
-        return new LocalMcpStatus(false, [], []);
+
+        return new LocalMcpStatus(false, [], [],
+            _startFailures.TryGetValue(pluginId, out var failure) ? failure : null);
     }
 
     public Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
@@ -595,10 +605,13 @@ public class PluginService : IPluginService
         }
 
         var localDefinition = ReadLocalDefinition(plugin);
+        _startFailures.TryRemove(plugin.Id, out _);
+
         if (localDefinition is not null && transport != "stdio")
         {
             _logger.LogWarning("Local MCP server {PluginName}: transport '{Transport}' is not supported, only stdio",
                 plugin.Name, transport);
+            _startFailures[plugin.Id] = $"Transport '{transport}' is not supported. Only stdio servers can be added here.";
             return;
         }
 
@@ -644,7 +657,9 @@ public class PluginService : IPluginService
         switch (transport)
         {
             case "stdio":
-                if (!string.IsNullOrEmpty(command))
+                // A local server skips the PATH guess: the user picked the command, so the launch failure
+                // itself is the answer they need, not `where.exe`'s opinion of it.
+                if (!string.IsNullOrEmpty(command) && localDefinition is null)
                 {
                     var commandExists = await CheckCommandOnPathAsync(command);
                     _logger.LogInformation("Plugin {PluginName}: command '{Command}' on PATH = {Exists}",
@@ -779,6 +794,11 @@ public class PluginService : IPluginService
 
     private async Task<bool> CheckCommandOnPathAsync(string command)
     {
+        // where.exe reads a rooted path as its own "directory:pattern" syntax and errors out, so an absolute
+        // command has to be answered off the filesystem.
+        if (Path.IsPathRooted(command))
+            return File.Exists(command);
+
         try
         {
             var psi = new ProcessStartInfo

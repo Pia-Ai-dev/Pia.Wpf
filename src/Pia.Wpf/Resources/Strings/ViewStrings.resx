@@ -1682,4 +1682,5 @@
   <data name="McpServers_Error_RemoteTransport" xml:space="preserve"><value>Remote servers are not supported — only servers Pia starts on this computer.</value></data>
   <data name="McpServers_Error_BadArgs" xml:space="preserve"><value>args must be a list of strings.</value></data>
   <data name="McpServers_Error_BadEnv" xml:space="preserve"><value>env must be an object of text values.</value></data>
+  <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Not running: {0}</value></data>
 </root>

@@ -24,6 +24,15 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private bool _disposed;
     private bool _suppressReload;
 
+    /// <summary>The allowlist the server was saved with. A stopped server lists no tools to tick, so without
+    /// this a save from that state would read the empty list as "no restriction" and open every tool.
+    /// Concrete and readonly, refilled in place: the architecture rule bans a mutable interface-typed field.</summary>
+    private readonly List<string> _editingAllowedTools = [];
+
+    /// <summary>False means the server is unrestricted, which an empty <see cref="_editingAllowedTools"/>
+    /// cannot say on its own — an empty allowlist is a server with every tool withheld.</summary>
+    private bool _editingRestrictsTools;
+
     public ObservableCollection<McpServerRow> Servers { get; } = [];
 
     /// <summary>Every tool the last probe (or the running server) reported, with its allowlist tick.</summary>
@@ -148,7 +157,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
             Servers.Add(new McpServerRow(plugin.Id, plugin.Name, DescribeCommand(definition), enabled)
             {
-                IsRunning = status.IsActive,
+                IsRunning = status.IsRunning,
                 StatusText = DescribeStatus(enabled, status)
             });
         }
@@ -163,8 +172,11 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private string DescribeStatus(bool enabled, LocalMcpStatus status)
     {
         if (!enabled) return _localizationService["McpServers_Status_Disabled"];
-        if (!status.IsActive) return _localizationService["McpServers_Status_Failed"];
-        return _localizationService.Format("McpServers_Status_Running", status.ActiveTools.Count);
+        if (status.IsRunning) return _localizationService.Format("McpServers_Status_Running", status.ActiveTools.Count);
+
+        return string.IsNullOrWhiteSpace(status.Error)
+            ? _localizationService["McpServers_Status_Failed"]
+            : _localizationService.Format("McpServers_Status_FailedWithReason", status.Error);
     }
 
     // ---- editor -------------------------------------------------------------------------------------
@@ -183,6 +195,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         PastedJson = string.Empty;
         EditorMessage = null;
         EditorMessageIsError = false;
+        SetEditingAllowlist(null);
         Tools.Clear();
         HasTools = false;
         IsEditorOpen = true;
@@ -210,10 +223,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
         // The running handler is the only place the full tool list survives a restart — the config keeps the
         // allowlist alone, so a stopped server shows nothing to tick until it is tested again.
-        var status = _pluginService.GetLocalMcpStatus(SelectedServer.Id);
-        FillTools(
-            [.. status.DiscoveredTools.Select(t => new McpProbeTool(t, null, false))],
-            definition.AllowedTools);
+        SetEditingAllowlist(definition.AllowedTools);
+        FillTools(_pluginService.GetLocalMcpStatus(SelectedServer.Id).DiscoveredTools, definition.AllowedTools);
 
         IsEditorOpen = true;
     }
@@ -227,6 +238,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         EditingServerId = null;
         EditorMessage = null;
         EditorMessageIsError = false;
+        SetEditingAllowlist(null);
         Tools.Clear();
         HasTools = false;
     }
@@ -294,6 +306,14 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         }
     }
 
+    private void SetEditingAllowlist(IReadOnlyList<string>? allowed)
+    {
+        _editingAllowedTools.Clear();
+        _editingRestrictsTools = allowed is not null;
+        if (allowed is not null)
+            _editingAllowedTools.AddRange(allowed);
+    }
+
     private void FillTools(IReadOnlyList<McpProbeTool> discovered, IReadOnlyList<string>? allowed)
     {
         Tools.Clear();
@@ -305,10 +325,14 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         HasTools = Tools.Count > 0;
     }
 
-    /// <summary>Null while nothing has been probed, so an untested server exposes whatever tools it turns out
-    /// to have rather than none of them.</summary>
+    /// <summary>With nothing to tick, the server's saved allowlist stands — and on a brand-new server that is
+    /// null, so an untested one exposes whatever tools it turns out to have rather than none of them.</summary>
     private IReadOnlyList<string>? CurrentAllowedTools() =>
-        Tools.Count == 0 ? null : [.. Tools.Where(t => t.IsAllowed).Select(t => t.Name)];
+        Tools.Count == 0
+            // A copy: the field is refilled in place, so handing out the instance would let closing the
+            // editor empty a list the caller is still holding.
+            ? (_editingRestrictsTools ? [.. _editingAllowedTools] : null)
+            : [.. Tools.Where(t => t.IsAllowed).Select(t => t.Name)];
 
     [RelayCommand]
     private void SelectAllTools() => SetAllTools(true);
