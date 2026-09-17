@@ -237,7 +237,9 @@ Candidates with no plan doc, kept here so they are not lost:
 - **A real per-provider vision-capability model**, lifting the PiaCloud-only image gate. Would fix
   pasted and dropped images on other providers too. Explicitly excluded by D2.
 - **More than one image per message.** The composer holds one attachment today
-  (`Msg_File_OneImageOnly`), which is why D2 injects captures as separate messages.
+  (`Msg_File_OneImageOnly`), which is why D2 injects captures as separate messages. Now planned in
+  [../image_attachments/2026-09-15-multi-image-composer-plan.md](../image_attachments/2026-09-15-multi-image-composer-plan.md);
+  it also lets a capture append to the strip instead of replacing what is there.
 - **Watch mode surviving a restart** — reattaching to a target after the app or the watched app
   restarts. More useful, much harder to defend consent-wise.
 - **A visible marker on a message saying which target it was captured from.** The audit line has the

@@ -28,7 +28,7 @@ public static class ImageAttachmentProcessor
                 frame = decoder.Frames[0];
             }
 
-            return Prepare(frame, logger);
+            return Prepare(frame, logger, filePath);
         }
         catch (Exception ex)
         {
@@ -53,7 +53,7 @@ public static class ImageAttachmentProcessor
             var opaque = new FormatConvertedBitmap(source, PixelFormats.Bgr24, null, 0);
             if (opaque.CanFreeze) opaque.Freeze();
 
-            return Prepare(opaque, logger);
+            return Prepare(opaque, logger, sourcePath: null);
         }
         catch (Exception ex)
         {
@@ -63,7 +63,9 @@ public static class ImageAttachmentProcessor
         }
     }
 
-    private static ImageAttachment? Prepare(BitmapSource frame, ILogger logger)
+    // sourcePath is a PARAMETER rather than something each entry point stamps on afterwards, so the two
+    // cannot drift into disagreeing about which of them owns it.
+    private static ImageAttachment? Prepare(BitmapSource frame, ILogger logger, string? sourcePath)
     {
         var resized = ResizeIfNeeded(frame, MaxLongEdge);
         var bytes = TryEncode(resized);
@@ -83,6 +85,7 @@ public static class ImageAttachmentProcessor
             Width = resized.PixelWidth,
             Height = resized.PixelHeight,
             Thumbnail = thumb,
+            SourcePath = sourcePath,
         };
     }
 

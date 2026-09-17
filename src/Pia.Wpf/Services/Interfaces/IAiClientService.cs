@@ -25,6 +25,10 @@ public sealed class ToolLoopImageChannel
 {
     public const string MessageTagKey = "pia.toolImage";
 
+    /// <summary>Per ROUND, which is per flight: <c>Consume</c> withdraws a round's images before the next
+    /// one, so no turn-wide cap is needed. Four is what the compactor's image allowance affords.</summary>
+    public const int MaxImagesPerRound = 4;
+
     private static readonly AsyncLocal<ToolLoopImageChannel?> _current = new();
 
     private readonly List<ToolLoopImage> _parked = [];
@@ -47,10 +51,27 @@ public sealed class ToolLoopImageChannel
         get { lock (_parked) return _parked.Count; }
     }
 
+    /// <summary>Uncapped: the one caller is <c>screen_capture</c>, one frame per approval card the user
+    /// already clicked through. A tool the model can call unattended uses <see cref="TryPark"/>.</summary>
     public void Park(ToolLoopImage image)
     {
         ArgumentNullException.ThrowIfNull(image);
         lock (_parked) _parked.Add(image);
+    }
+
+    /// <summary>False when this round is already full, so the caller can say so in its tool result.</summary>
+    public bool TryPark(ToolLoopImage image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        // Inside the lock: two handlers in one round dispatch sequentially today, but nothing in this
+        // type says they must, and a check-then-add outside it would let both past a full channel.
+        lock (_parked)
+        {
+            if (_parked.Count >= MaxImagesPerRound) return false;
+            _parked.Add(image);
+            return true;
+        }
     }
 
     public IReadOnlyList<ToolLoopImage> Drain()
