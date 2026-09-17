@@ -133,7 +133,7 @@ public class SettingsPolicyReloadTests : IDisposable
             providers, persona,
             new ToolPermissionsSettingsViewModel(
                 Substitute.For<IToolPermissionService>(), Substitute.For<IPluginService>(), logger),
-            meeting, logger, settings, Substitute.For<IAssistantChatService>(), dialogs, localization,
+            SettingsSubViewModels.McpVm(), meeting, logger, settings, Substitute.For<IAssistantChatService>(), dialogs, localization,
             Substitute.For<IAssistantFolderRelocationService>(),
             Substitute.For<Pia.Services.IWorkingDirectoryService>(), policy);
 

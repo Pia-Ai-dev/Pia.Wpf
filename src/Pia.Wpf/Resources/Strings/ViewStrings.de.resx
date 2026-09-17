@@ -722,6 +722,7 @@
   <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Maximale Ausgabe-Token (für die Antwort reserviert)</value></data>
   <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>Das Kontextfenster schaltet die Verdichtung langer Agent-Durchläufe ein; 0 schaltet sie aus. Die maximalen Ausgabe-Token werden für die Antwort des Modells zurückgehalten – bei 0 wird dafür nichts reserviert.</value></data>
   <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Websuche aktivieren</value></data>
+  <data name="Dialog_ProviderEdit_PromptCache" xml:space="preserve"><value>Prompt-Präfix zwischenspeichern (5 Min.)</value></data>
   <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>Mistral Agent-ID</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Vorlage bearbeiten</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Vorlagenname *</value></data>
@@ -1633,4 +1634,57 @@
   <data name="AdvancedCreation_Discard" xml:space="preserve"><value>Verwerfen</value></data>
   <data name="AdvancedCreation_KeepEditing" xml:space="preserve"><value>Weitermachen</value></data>
   <data name="AdvancedCreation_Advanced" xml:space="preserve"><value>Erweitert…</value></data>
+  <data name="Settings_Tab_McpServers" xml:space="preserve"><value>MCP-Server</value></data>
+  <data name="McpServers_Title" xml:space="preserve"><value>MCP-Server</value></data>
+  <data name="McpServers_Subtitle" xml:space="preserve"><value>Binde MCP-Server ein, die auf diesem Computer laufen. Ihren Tool-Namen wird der Servername vorangestellt, damit sie nie mit Pias eigenen Tools kollidieren.</value></data>
+  <data name="McpServers_Add" xml:space="preserve"><value>Server hinzufügen</value></data>
+  <data name="McpServers_Empty" xml:space="preserve"><value>Noch keine MCP-Server</value></data>
+  <data name="McpServers_EmptyHint" xml:space="preserve"><value>Füge einen Server hinzu, um dem Assistenten Tools außerhalb von Pia zu geben.</value></data>
+  <data name="McpServers_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="McpServers_Command" xml:space="preserve"><value>Befehl</value></data>
+  <data name="McpServers_Arguments" xml:space="preserve"><value>Argumente</value></data>
+  <data name="McpServers_ArgumentsHint" xml:space="preserve"><value>Eins pro Zeile.</value></data>
+  <data name="McpServers_Environment" xml:space="preserve"><value>Umgebungsvariablen</value></data>
+  <data name="McpServers_EnvironmentHint" xml:space="preserve"><value>Ein SCHLÜSSEL=Wert pro Zeile. Werte werden für dein Windows-Konto verschlüsselt gespeichert.</value></data>
+  <data name="McpServers_WorkingDirectory" xml:space="preserve"><value>Arbeitsverzeichnis</value></data>
+  <data name="McpServers_WorkingDirectoryHint" xml:space="preserve"><value>Optional. Der Ordner, in dem der Server startet.</value></data>
+  <data name="McpServers_PasteJson" xml:space="preserve"><value>Konfiguration einfügen</value></data>
+  <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Füge einen mcpServers-Eintrag aus einem anderen Client ein, um die Felder zu füllen.</value></data>
+  <data name="McpServers_ApplyJson" xml:space="preserve"><value>Aus JSON übernehmen</value></data>
+  <data name="McpServers_JsonApplied" xml:space="preserve"><value>Konfiguration übernommen.</value></data>
+  <data name="McpServers_TestConnection" xml:space="preserve"><value>Verbindung testen</value></data>
+  <data name="McpServers_TestSucceeded" xml:space="preserve"><value>Verbunden. {0} Tool(s) verfügbar.</value></data>
+  <data name="McpServers_TestFailed" xml:space="preserve"><value>Verbindung fehlgeschlagen: {0}</value></data>
+  <data name="McpServers_Tools" xml:space="preserve"><value>Verfügbare Tools</value></data>
+  <data name="McpServers_ToolsHint" xml:space="preserve"><value>Nur angehakte Tools werden dem Assistenten angeboten.</value></data>
+  <data name="McpServers_ToolsUntested" xml:space="preserve"><value>Teste die Verbindung, um die Tools dieses Servers zu sehen.</value></data>
+  <data name="McpServers_SelectAll" xml:space="preserve"><value>Alle</value></data>
+  <data name="McpServers_SelectNone" xml:space="preserve"><value>Keine</value></data>
+  <data name="McpServers_Destructive" xml:space="preserve"><value>kann löschen</value></data>
+  <data name="McpServers_ToolPrefix" xml:space="preserve"><value>Tool-Präfix</value></data>
+  <data name="McpServers_Status_Running" xml:space="preserve"><value>Verbunden · {0} Tool(s)</value></data>
+  <data name="McpServers_Status_Disabled" xml:space="preserve"><value>Deaktiviert</value></data>
+  <data name="McpServers_Status_Failed" xml:space="preserve"><value>Nicht verbunden</value></data>
+  <data name="McpServers_DeleteTitle" xml:space="preserve"><value>MCP-Server entfernen</value></data>
+  <data name="McpServers_DeleteMessage" xml:space="preserve"><value>"{0}" entfernen? Die Tools stehen dem Assistenten dann nicht mehr zur Verfügung.</value></data>
+  <data name="McpServers_Saved" xml:space="preserve"><value>{0} gespeichert.</value></data>
+  <data name="McpServers_Error_InvalidJson" xml:space="preserve"><value>Das ist kein gültiges JSON.</value></data>
+  <data name="McpServers_Error_NoServerObject" xml:space="preserve"><value>Keine Serverkonfiguration gefunden. Erwartet wird ein command oder ein mcpServers-Eintrag.</value></data>
+  <data name="McpServers_Error_MultipleServers" xml:space="preserve"><value>Darin steht mehr als ein Server. Bitte einzeln hinzufügen.</value></data>
+  <data name="McpServers_Error_MissingCommand" xml:space="preserve"><value>Kein Befehl angegeben.</value></data>
+  <data name="McpServers_Error_RemoteTransport" xml:space="preserve"><value>Entfernte Server werden nicht unterstützt — nur Server, die Pia auf diesem Computer startet.</value></data>
+  <data name="McpServers_Error_BadArgs" xml:space="preserve"><value>args muss eine Liste von Zeichenketten sein.</value></data>
+  <data name="McpServers_Error_BadEnv" xml:space="preserve"><value>env muss ein Objekt mit Textwerten sein.</value></data>
+  <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Nicht verbunden: {0}</value></data>
+  <data name="McpServers_Placeholder" xml:space="preserve"><value>Kein Server ausgewählt</value></data>
+  <data name="McpServers_PlaceholderHint" xml:space="preserve"><value>Wählen Sie links einen Server, um seinen Befehl und seine Tools zu sehen.</value></data>
+  <data name="McpServers_Badge_Running" xml:space="preserve"><value>Verbunden</value></data>
+  <data name="McpServers_Status_Starting" xml:space="preserve"><value>Wird gestartet…</value></data>
+  <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Wird beendet…</value></data>
+  <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} von {1} Tool(s) freigegeben</value></data>
+  <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} Tool(s) freigegeben</value></data>
+  <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Dieser Server ist nicht verbunden. Dies sind die Tools, die beim letzten Lauf freigegeben waren.</value></data>
+  <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Starten Sie diesen Server oder verwenden Sie „Verbindung testen“, um seine Tools zu sehen.</value></data>
+  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>gesperrt</value></data>
+  <data name="McpServers_Saving" xml:space="preserve"><value>Wird gespeichert… der Server startet neu.</value></data>
 </root>

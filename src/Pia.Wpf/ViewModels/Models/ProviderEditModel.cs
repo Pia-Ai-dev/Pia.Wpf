@@ -61,6 +61,9 @@ public partial class ProviderEditModel : ObservableValidator
     private bool _enableWebSearch;
 
     [ObservableProperty]
+    private bool _enablePromptCache;
+
+    [ObservableProperty]
     private string? _mistralAgentId;
 
     partial void OnMistralAgentIdChanged(string? value)
@@ -113,6 +116,7 @@ public partial class ProviderEditModel : ObservableValidator
         [AiProviderType.OpenRouter] = "https://openrouter.ai/api/v1",
         [AiProviderType.OpenAI] = "https://api.openai.com/v1",
         [AiProviderType.Mistral] = "https://api.mistral.ai/v1",
+        [AiProviderType.Anthropic] = "https://api.anthropic.com",
         [AiProviderType.VLlm] = "http://localhost:8000/v1",
     };
 
@@ -155,6 +159,7 @@ public partial class ProviderEditModel : ObservableValidator
             SupportsStreaming = provider.SupportsStreaming,
             ReasoningEffort = provider.ReasoningEffort ?? ReasoningEffort.None,
             EnableWebSearch = provider.EnableWebSearch,
+            EnablePromptCache = provider.EnablePromptCache,
             MistralAgentId = provider.MistralAgentId,
         };
     }
@@ -176,6 +181,7 @@ public partial class ProviderEditModel : ObservableValidator
             MaxOutputTokens = MaxOutputTokens > 0 ? MaxOutputTokens : null,
             ReasoningEffort = ReasoningEffort,
             EnableWebSearch = EnableWebSearch,
+            EnablePromptCache = EnablePromptCache,
             MistralAgentId = MistralAgentId,
         };
     }

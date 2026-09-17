@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
@@ -30,11 +32,15 @@ public class PluginService : IPluginService
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
     private readonly CabManagerService? _cabManager;
+    private readonly DpapiHelper? _dpapiHelper;
 
     private readonly Dictionary<Guid, IPluginToolHandler> _handlers = new();
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
     private readonly Dictionary<Guid, SyncPlugin> _pluginConfigs = new();
     private readonly List<SyncPluginPreference> _pendingPrefs = [];
+
+    /// <summary>Why a server never got as far as a handler, so the settings row can say so.</summary>
+    private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
 
     public IReadOnlyList<IPluginToolHandler> ActiveHandlers
     {
@@ -60,7 +66,8 @@ public class PluginService : IPluginService
         ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
-        CabManagerService? cabManager = null)
+        CabManagerService? cabManager = null,
+        DpapiHelper? dpapiHelper = null)
     {
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
@@ -77,6 +84,7 @@ public class PluginService : IPluginService
         _logger = logger;
         _sqliteContext = sqliteContext;
         _cabManager = cabManager;
+        _dpapiHelper = dpapiHelper;
 
         InitializeBuiltInPlugins();
         LoadPersistedPlugins();
@@ -166,20 +174,25 @@ public class PluginService : IPluginService
 
     public async Task InitializePersistedPluginsAsync()
     {
+        // A disabled local server is skipped rather than started-then-hidden: activation spawns its process,
+        // which the user switched off precisely to avoid.
         var serverPlugins = _pluginConfigs.Values
             .Where(p => !p.IsPreloaded && !_handlers.ContainsKey(p.Id))
+            .Where(p => !LocalMcpConfig.IsLocal(p.ConfigJson) || IsPluginEnabled(p))
             .ToList();
 
         foreach (var plugin in serverPlugins)
         {
-            await HandleNewServerPluginAsync(plugin);
+            await ActivateMcpPluginAsync(plugin);
+
+            // Per server, not once at the end: Settings is built while this loop is still running, and
+            // nothing else tells it one came up — its rows would freeze at whatever was true mid-startup.
+            RebuildToolNameRoutes();
+            PluginsChanged?.Invoke(this, EventArgs.Empty);
         }
 
         if (serverPlugins.Count > 0)
-        {
-            RebuildToolNameRoutes();
             _logger.LogInformation("Initialized {Count} persisted server plugin handler(s)", serverPlugins.Count);
-        }
     }
 
     private List<SyncPlugin> LoadPluginsFromDb()
@@ -374,6 +387,136 @@ public class PluginService : IPluginService
         return _pluginConfigs.Values.ToList();
     }
 
+    public IReadOnlyList<SyncPlugin> GetLocalMcpPlugins() =>
+        [.. _pluginConfigs.Values.Where(p => LocalMcpConfig.IsLocal(p.ConfigJson)).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)];
+
+    public LocalMcpDefinition? GetLocalMcpDefinition(Guid pluginId) =>
+        _pluginConfigs.TryGetValue(pluginId, out var plugin) ? ReadLocalDefinition(plugin) : null;
+
+    private LocalMcpDefinition? ReadLocalDefinition(SyncPlugin plugin) =>
+        LocalMcpConfig.FromConfigJson(plugin.Name, plugin.Description, plugin.ConfigJson, Decrypt);
+
+    private string Encrypt(string value) => _dpapiHelper?.Encrypt(value) ?? value;
+
+    private string Decrypt(string value) => _dpapiHelper?.Decrypt(value) ?? value;
+
+    public LocalMcpStatus GetLocalMcpStatus(Guid pluginId)
+    {
+        lock (_handlers)
+        {
+            // A start that threw still leaves a registered handler, so the handler's own error — not its
+            // presence — is what says whether the server is up.
+            if (_handlers.TryGetValue(pluginId, out var handler) && handler is McpPluginToolHandler mcp)
+                return new LocalMcpStatus(
+                    mcp.LastError is null, mcp.DiscoveredTools, [.. mcp.GetTools().Select(t => t.Name)], mcp.LastError);
+        }
+
+        return new LocalMcpStatus(false, [], [],
+            _startFailures.TryGetValue(pluginId, out var failure) ? failure : null);
+    }
+
+    public Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
+        McpServerProbe.ProbeAsync(definition, timeout: null, ct);
+
+    public async Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default)
+    {
+        var id = pluginId ?? Guid.NewGuid();
+        var existing = _pluginConfigs.TryGetValue(id, out var found) ? found : null;
+
+        if (existing is not null && !LocalMcpConfig.IsLocal(existing.ConfigJson))
+            throw new InvalidOperationException($"Plugin {id} is not a locally added MCP server.");
+
+        var stored = definition with { ToolPrefix = UniqueToolPrefix(definition, id) };
+
+        var plugin = new SyncPlugin
+        {
+            Id = id,
+            Kind = "mcp_server",
+            Name = stored.Name,
+            Description = stored.Description,
+            ConfigJson = LocalMcpConfig.ToConfigJson(stored, Encrypt),
+            Version = existing?.Version ?? "1.0.0",
+            IsPreloaded = false,
+            IsActive = true,
+            UserEnabled = existing?.UserEnabled ?? stored.DefaultEnabled,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await ShutdownHandlerAsync(id);
+
+        _pluginConfigs[id] = plugin;
+        SavePluginToDb(plugin);
+
+        if (IsPluginEnabled(plugin))
+            await ActivateMcpPluginAsync(plugin);
+
+        RebuildToolNameRoutes();
+        PluginsChanged?.Invoke(this, EventArgs.Empty);
+        _logger.LogInformation("Local MCP server {PluginId} saved with prefix {Prefix}", id, stored.ToolPrefix);
+        return id;
+    }
+
+    public async Task RemoveLocalMcpAsync(Guid pluginId)
+    {
+        if (!_pluginConfigs.TryGetValue(pluginId, out var plugin) || !LocalMcpConfig.IsLocal(plugin.ConfigJson))
+            return;
+
+        await ShutdownHandlerAsync(pluginId);
+        _pluginConfigs.Remove(pluginId);
+        DeletePluginFromDb(pluginId);
+
+        lock (_pendingPrefs)
+            _pendingPrefs.RemoveAll(p => p.PluginId == pluginId);
+
+        RebuildToolNameRoutes();
+        PluginsChanged?.Invoke(this, EventArgs.Empty);
+        _logger.LogInformation("Local MCP server {PluginId} removed", pluginId);
+    }
+
+    private async Task ShutdownHandlerAsync(Guid pluginId)
+    {
+        IPluginToolHandler? handler;
+        lock (_handlers)
+            _handlers.TryGetValue(pluginId, out handler);
+
+        if (handler is null) return;
+
+        try
+        {
+            await handler.ShutdownAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error shutting down handler for plugin {PluginId}", pluginId);
+        }
+
+        UnregisterHandler(pluginId);
+        (handler as IDisposable)?.Dispose();
+    }
+
+    /// <summary>Two servers sharing a prefix would collide again on the very names the prefix exists to keep
+    /// apart.</summary>
+    private string UniqueToolPrefix(LocalMcpDefinition definition, Guid id)
+    {
+        var baseName = string.IsNullOrWhiteSpace(definition.ToolPrefix)
+            ? LocalMcpConfig.DeriveToolPrefix(definition.Name)
+            : definition.ToolPrefix;
+
+        var taken = _pluginConfigs.Values
+            .Where(p => p.Id != id && LocalMcpConfig.IsLocal(p.ConfigJson))
+            .Select(p => ReadLocalDefinition(p)?.ToolPrefix)
+            .Where(p => !string.IsNullOrEmpty(p))
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (!taken.Contains(baseName)) return baseName;
+
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{baseName}_{suffix}";
+            if (!taken.Contains(candidate)) return candidate;
+        }
+    }
+
     public async Task ApplyServerPluginsAsync(IReadOnlyList<SyncPlugin> upserted, IReadOnlyList<Guid> deleted)
     {
         // Handle deletions
@@ -413,7 +556,7 @@ public class PluginService : IPluginService
             else if (!plugin.IsPreloaded)
             {
                 // New server-only plugin — run preflight and cab extraction outside the lock
-                await HandleNewServerPluginAsync(plugin);
+                await ActivateMcpPluginAsync(plugin);
             }
         }
 
@@ -426,7 +569,7 @@ public class PluginService : IPluginService
         PluginsChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private async Task HandleNewServerPluginAsync(SyncPlugin plugin)
+    private async Task ActivateMcpPluginAsync(SyncPlugin plugin)
     {
         if (plugin.Kind != "mcp_server")
         {
@@ -460,6 +603,17 @@ public class PluginService : IPluginService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to parse ConfigJson for plugin {PluginName}", plugin.Name);
+            return;
+        }
+
+        var localDefinition = ReadLocalDefinition(plugin);
+        _startFailures.TryRemove(plugin.Id, out _);
+
+        if (localDefinition is not null && transport != "stdio")
+        {
+            _logger.LogWarning("Local MCP server {PluginName}: transport '{Transport}' is not supported, only stdio",
+                plugin.Name, transport);
+            _startFailures[plugin.Id] = $"Transport '{transport}' is not supported. Only stdio servers can be added here.";
             return;
         }
 
@@ -505,7 +659,9 @@ public class PluginService : IPluginService
         switch (transport)
         {
             case "stdio":
-                if (!string.IsNullOrEmpty(command))
+                // A local server skips the PATH guess: the user picked the command, so the launch failure
+                // itself is the answer they need, not `where.exe`'s opinion of it.
+                if (!string.IsNullOrEmpty(command) && localDefinition is null)
                 {
                     var commandExists = await CheckCommandOnPathAsync(command);
                     _logger.LogInformation("Plugin {PluginName}: command '{Command}' on PATH = {Exists}",
@@ -587,7 +743,11 @@ public class PluginService : IPluginService
             plugin.Id, plugin.Name,
             resolvedCommand, args,
             systemPromptAddition,
-            _logger);
+            _logger,
+            localDefinition?.Env,
+            localDefinition?.WorkingDirectory,
+            localDefinition?.ToolPrefix,
+            localDefinition?.AllowedTools);
 
         try
         {
@@ -636,6 +796,11 @@ public class PluginService : IPluginService
 
     private async Task<bool> CheckCommandOnPathAsync(string command)
     {
+        // where.exe reads a rooted path as its own "directory:pattern" syntax and errors out, so an absolute
+        // command has to be answered off the filesystem.
+        if (Path.IsPathRooted(command))
+            return File.Exists(command);
+
         try
         {
             var psi = new ProcessStartInfo
@@ -672,7 +837,7 @@ public class PluginService : IPluginService
         }
     }
 
-    public Task SetPluginEnabledAsync(Guid pluginId, bool enabled)
+    public async Task SetPluginEnabledAsync(Guid pluginId, bool enabled)
     {
         if (_pluginConfigs.TryGetValue(pluginId, out var config))
         {
@@ -682,16 +847,30 @@ public class PluginService : IPluginService
             // carries the switch across a restart.
             SavePluginToDb(config);
 
-            lock (_pendingPrefs)
+            if (LocalMcpConfig.IsLocal(config.ConfigJson))
             {
-                _pendingPrefs.RemoveAll(p => p.PluginId == pluginId);
-                _pendingPrefs.Add(new SyncPluginPreference { PluginId = pluginId, IsEnabled = enabled });
+                // The switch owns the subprocess for a local server — there is no admin push to start or
+                // stop it on the user's behalf.
+                if (enabled)
+                    await ActivateMcpPluginAsync(config);
+                else
+                    await ShutdownHandlerAsync(pluginId);
+
+                RebuildToolNameRoutes();
             }
+            else
+            {
+                lock (_pendingPrefs)
+                {
+                    _pendingPrefs.RemoveAll(p => p.PluginId == pluginId);
+                    _pendingPrefs.Add(new SyncPluginPreference { PluginId = pluginId, IsEnabled = enabled });
+                }
+            }
+
             _logger.LogInformation("Plugin {PluginId} enabled={Enabled}", pluginId, enabled);
             // The tool catalogue skips disabled plugins, so without this it keeps the pre-toggle shape.
             PluginsChanged?.Invoke(this, EventArgs.Empty);
         }
-        return Task.CompletedTask;
     }
 
     public List<SyncPluginPreference> GetPendingPreferenceChanges()

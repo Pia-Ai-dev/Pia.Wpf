@@ -30,6 +30,7 @@ public enum AssistantSettingsInnerTab
     General = 0,
     Personas = 1,
     ToolAccess = 2,
-    Meeting = 3,
-    AgentRuns = 4
+    McpServers = 3,
+    Meeting = 4,
+    AgentRuns = 5
 }

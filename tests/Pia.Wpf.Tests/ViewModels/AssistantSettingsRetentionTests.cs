@@ -51,7 +51,7 @@ public class AssistantSettingsRetentionTests
             Substitute.For<IPolicyService>());
 
         var sut = new AssistantSettingsViewModel(
-            providersVm, personasVm, toolPermissionsVm, meetingVm,
+            providersVm, personasVm, toolPermissionsVm, SettingsSubViewModels.McpVm(), meetingVm,
             NullLogger<SettingsViewModel>.Instance, settingsService,
             Substitute.For<IAssistantChatService>(), dialogService, localization,
             Substitute.For<IAssistantFolderRelocationService>(), workingDirectoryService,

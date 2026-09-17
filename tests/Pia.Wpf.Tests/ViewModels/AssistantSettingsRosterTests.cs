@@ -61,7 +61,7 @@ public class AssistantSettingsRosterTests
             NullLogger<SettingsViewModel>.Instance, settingsService, localization, Substitute.For<IPolicyService>());
 
         var sut = new AssistantSettingsViewModel(
-            providersVm, personasVm, toolPermissionsVm, meetingVm,
+            providersVm, personasVm, toolPermissionsVm, SettingsSubViewModels.McpVm(), meetingVm,
             NullLogger<SettingsViewModel>.Instance, settingsService, Substitute.For<IAssistantChatService>(),
             dialogService, localization, Substitute.For<IAssistantFolderRelocationService>(),
             workingDirectoryService, personaService: personaService, policyService: Substitute.For<IPolicyService>());

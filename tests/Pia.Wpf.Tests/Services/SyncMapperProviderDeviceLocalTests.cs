@@ -36,6 +36,7 @@ public class SyncMapperProviderDeviceLocalTests
         MaxOutputTokens = 16_384,
         ReasoningEffort = ReasoningEffort.High,
         EnableWebSearch = true,             // non-default: the default is false
+        EnablePromptCache = true,           // non-default: the default is false
         MistralAgentId = "agent-local",
     };
 
@@ -62,6 +63,7 @@ public class SyncMapperProviderDeviceLocalTests
         Assert.True(mapped.SupportsStreaming);      // reverted to the default
         Assert.Null(mapped.ReasoningEffort);
         Assert.False(mapped.EnableWebSearch);
+        Assert.False(mapped.EnablePromptCache);
         Assert.Null(mapped.MistralAgentId);
     }
 
@@ -158,6 +160,7 @@ public class SyncMapperProviderDeviceLocalTests
         Assert.DoesNotContain(nameof(AiProvider.MaxOutputTokens), names);
         Assert.DoesNotContain(nameof(AiProvider.SupportsStreaming), names);
         Assert.DoesNotContain(nameof(AiProvider.ReasoningEffort), names);
+        Assert.DoesNotContain(nameof(AiProvider.EnablePromptCache), names);
     }
 
     // Guard against the list going stale: if a new device-local field is added to AiProvider and left out
@@ -176,6 +179,7 @@ public class SyncMapperProviderDeviceLocalTests
             nameof(AiProvider.MaxOutputTokens),
             nameof(AiProvider.ReasoningEffort),
             nameof(AiProvider.EnableWebSearch),
+            nameof(AiProvider.EnablePromptCache),
             nameof(AiProvider.MistralAgentId),
         };
 

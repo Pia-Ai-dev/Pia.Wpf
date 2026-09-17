@@ -469,6 +469,12 @@
         </ScrollViewer>
       </TabItem>
 
+      <!-- MCP servers tab: the local server catalogue, next to the grants those servers' tools land in -->
+      <TabItem Header="{loc:Str Settings_Tab_McpServers}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_Assistant_Tab_McpServers">
+        <local:McpServersView DataContext="{Binding McpServersVm}"/>
+      </TabItem>
+
       <!-- Meeting tab (beta) -->
       <TabItem Style="{DynamicResource SettingsInnerTabItemStyle}"
                AutomationProperties.AutomationId="Settings_Assistant_Tab_Meeting">

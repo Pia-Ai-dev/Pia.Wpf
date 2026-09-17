@@ -490,6 +490,7 @@ public static class Bootstrapper
         services.AddSingleton<IAiProviderHandler, OpenRouterProviderHandler>();
         services.AddSingleton<IAiProviderHandler, OpenAiCompatibleProviderHandler>();
         services.AddSingleton<IAiProviderHandler, VLlmProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, AnthropicProviderHandler>();
         services.AddSingleton<IAiProviderHandler, PiaCloudProviderHandler>();
         services.AddSingleton<AiProviderHandlerResolver>();
 
