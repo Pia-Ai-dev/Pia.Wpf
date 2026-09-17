@@ -23,16 +23,14 @@
   before the assistant does.
 - Tick the tools a server may offer the assistant. Untested servers offer all of
   them; a tool you untick is not just un-approved, the assistant never sees it.
-- Selecting a server opens a detail page like a persona's: whether it is
-  running, its command, working directory and the names of its environment
-  variables, and the full list of tools it offers with the ones you withheld
-  marked. Test connection sits next to Edit and Delete there, so a server that
-  is switched off can still tell you what it offers.
+- Selecting a server opens a detail page: whether it is running, its command,
+  working directory and the names of its environment variables, and the full
+  list of tools it offers with the ones you withheld marked. Test connection
+  sits beside Edit and Delete, so a server that is off can still list its tools.
 - Switching one server on or off no longer greys out every other switch, a
   server that finishes starting later reports its real state instead of reading
-  "Not running", a tool's description sits in a hover icon next to its name, and
-  editing a server keeps what you typed when another one starts in the
-  background.
+  "Not running", a tool's description sits in a hover icon, and editing a server
+  keeps what you typed when another one starts.
 
 ## Assistant tools
 
