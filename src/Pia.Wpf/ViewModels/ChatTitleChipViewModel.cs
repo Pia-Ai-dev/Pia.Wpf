@@ -14,6 +14,7 @@ namespace Pia.ViewModels;
 public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
 {
     private const int RecentLimit = 10;
+    private const int FavoriteLimit = 10;
     private const int DebounceMs = 300;
     private const int QuickSwitcherCandidateLimit = 50;
     private const int QuickSwitcherSnippetTopN = 8;
@@ -100,6 +101,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
 
     public IAsyncRelayCommand<Guid?> ResumeChatCommand { get; }
     public IAsyncRelayCommand<ChatChipItemViewModel?> DeleteChatCommand { get; }
+    public IAsyncRelayCommand<ChatChipItemViewModel?> ToggleFavoriteChatCommand { get; }
     public IAsyncRelayCommand<ChatRowRenameRequest?> RenameChatCommand { get; }
     public IRelayCommand NewChatCommand { get; }
     public IRelayCommand ShowAllChatsCommand { get; }
@@ -144,6 +146,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
 
         ResumeChatCommand = new AsyncRelayCommand<Guid?>(ExecuteResumeChat);
         DeleteChatCommand = new AsyncRelayCommand<ChatChipItemViewModel?>(ExecuteDeleteChat);
+        ToggleFavoriteChatCommand = new AsyncRelayCommand<ChatChipItemViewModel?>(ExecuteToggleFavorite);
         RenameChatCommand = new AsyncRelayCommand<ChatRowRenameRequest?>(ExecuteRenameChat);
         NewChatCommand = new RelayCommand(ExecuteNewChat);
         ShowAllChatsCommand = new RelayCommand(ExecuteShowAllChats);
@@ -269,11 +272,17 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
     {
         try
         {
-            var chats = await _chatService.SearchAsync(
-                searchText: string.IsNullOrWhiteSpace(SearchQuery) ? null : SearchQuery,
-                limit: RecentLimit);
-            _logger.LogInformation("Loaded {Count} recent chats for flyout (hasQuery={HasQuery})",
-                chats.Count, !string.IsNullOrWhiteSpace(SearchQuery));
+            var searchText = string.IsNullOrWhiteSpace(SearchQuery) ? null : SearchQuery;
+            var recent = await _chatService.SearchAsync(searchText: searchText, limit: RecentLimit);
+
+            // Favourites are pulled separately: the recent window is the last 10 by date, which is exactly
+            // where a chat starred months ago is not.
+            var favorites = await _chatService.GetFavoritesAsync(searchText: searchText, limit: FavoriteLimit);
+            var seen = new HashSet<Guid>();
+            var chats = recent.Concat(favorites).Where(c => seen.Add(c.Id)).ToList();
+
+            _logger.LogInformation("Loaded {Count} recent chats ({Favorites} favorite) for flyout (hasQuery={HasQuery})",
+                chats.Count, favorites.Count, !string.IsNullOrWhiteSpace(SearchQuery));
 
             // Rebuilding re-creates every row control, which throws away an inline rename someone is
             // typing into. The flyout reloads on each open and on every ChatsChanged, so an unchanged
@@ -297,7 +306,8 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         {
             if (current[i].Id != incoming[i].Id
                 || current[i].Title != incoming[i].Title
-                || current[i].UpdatedAt != incoming[i].UpdatedAt)
+                || current[i].UpdatedAt != incoming[i].UpdatedAt
+                || current[i].IsFavorite != incoming[i].IsFavorite)
                 return false;
         }
 
@@ -316,7 +326,10 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         var today = DateTime.Today;
         var yesterday = today.AddDays(-1);
         return chats
-            .GroupBy(c => ClassifyForFlyout(c.UpdatedAt.ToLocalTime().Date, today, yesterday))
+            // Starred chats leave the date buckets so each one appears exactly once.
+            .GroupBy(c => c.IsFavorite
+                ? HistoryDateBucket.Favorites
+                : ClassifyForFlyout(c.UpdatedAt.ToLocalTime().Date, today, yesterday))
             .OrderBy(g => (int)g.Key)
             .Select(g => new ChatChipGroupViewModel
             {
@@ -324,7 +337,8 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
                 // State is a SNAPSHOT read once here via _resolveState (Idle when not live);
                 // the flyout row badge reflects it without per-item live notification.
                 Items = g.OrderByDescending(c => c.UpdatedAt)
-                         .Select(c => new ChatChipItemViewModel(c.Id, ResolveTitle(c), c.UpdatedAt, _resolveState(c.Id)))
+                         .Select(c => new ChatChipItemViewModel(
+                             c.Id, ResolveTitle(c), c.UpdatedAt, _resolveState(c.Id), c.IsFavorite))
                          .ToList(),
             })
             .ToList();
@@ -339,6 +353,7 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
 
     private static string BucketResourceKey(HistoryDateBucket bucket) => bucket switch
     {
+        HistoryDateBucket.Favorites => "History_Group_Favorites",
         HistoryDateBucket.Today => "History_Group_Today",
         HistoryDateBucket.Yesterday => "History_Group_Yesterday",
         _ => "History_Group_Older",
@@ -356,6 +371,31 @@ public partial class ChatTitleChipViewModel : UiThreadViewModel, IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to resume chat {ChatId}", id);
+        }
+    }
+
+    /// <summary>Stars from the flyout's own row. The flyout stays open, like the inline rename.</summary>
+    private async Task ExecuteToggleFavorite(ChatChipItemViewModel? item)
+    {
+        if (item is null) return;
+
+        var target = !item.IsFavorite;
+        try
+        {
+            if (!await _chatService.SetFavoriteAsync(item.Id, target)) return;
+
+            // The cached DTOs are what RebuildGroups reads, so the row keeps its old star without this. The
+            // store bumps UpdatedAt on the same write, and the flyout buckets and sorts on it.
+            foreach (var chat in _lastFlyoutChats.Where(c => c.Id == item.Id))
+            {
+                chat.IsFavorite = target;
+                chat.UpdatedAt = DateTime.UtcNow;
+            }
+            RebuildGroups();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to toggle favorite on chat {ChatId} from flyout", item.Id);
         }
     }
 

@@ -501,6 +501,18 @@ public sealed class HeadlessTurnExecutorTests
             return _inner.SetTitleAsync(chatId, title, ct);
         }
 
+        public Task<bool> SetFavoriteAsync(Guid chatId, bool isFavorite, CancellationToken ct = default) =>
+            _inner.SetFavoriteAsync(chatId, isFavorite, ct);
+
+        public Task<IReadOnlyList<SyncAssistantChat>> GetFavoritesAsync(
+            string? searchText = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null,
+            Guid? providerId = null,
+            int limit = 100,
+            CancellationToken ct = default) =>
+            _inner.GetFavoritesAsync(searchText, fromDate, toDate, providerId, limit, ct);
+
         public int GetCalls { get; private set; }
 
         public Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)

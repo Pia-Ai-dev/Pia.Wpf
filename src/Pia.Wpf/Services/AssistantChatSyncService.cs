@@ -736,6 +736,9 @@ public sealed class AssistantChatSyncService : BackgroundService
             // Local wins outright, like WindowMode above: null here means the user re-opened the offer, so
             // coalescing to the server's value would answer it behind their back.
             AgentContextMode = local.AgentContextMode,
+            // Local wins too, and local is the STORED value here (the op re-reads the chat), not a stale
+            // session snapshot — so this carries the star the user just set instead of dropping it.
+            IsFavorite = local.IsFavorite,
             Messages = [.. server.Messages, .. appended],
             ExtensionData = server.ExtensionData,
         };

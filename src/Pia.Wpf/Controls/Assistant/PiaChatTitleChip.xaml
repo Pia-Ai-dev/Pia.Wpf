@@ -284,6 +284,7 @@
                               <ah:PiaAssistantChatRowContent
                                   DeleteCommand="{Binding DataContext.DeleteChatCommand, ElementName=ChipRoot}"
                                   RenameCommand="{Binding DataContext.RenameChatCommand, ElementName=ChipRoot}"
+                                  FavoriteCommand="{Binding DataContext.ToggleFavoriteChatCommand, ElementName=ChipRoot}"
                                   EditableTitle="{Binding Title}"/>
                             </Button>
                           </DataTemplate>

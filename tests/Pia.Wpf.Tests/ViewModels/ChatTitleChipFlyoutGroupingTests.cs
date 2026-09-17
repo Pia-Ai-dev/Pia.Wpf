@@ -38,6 +38,9 @@ public class ChatTitleChipFlyoutGroupingTests
         // a synchronously-completed Task makes the fire-and-forget reload run inline.
         _chatService.SearchAsync().ReturnsForAnyArgs(
             Task.FromResult<IReadOnlyList<SyncAssistantChat>>(chats));
+        // Mirrors the real query: the same store, filtered to the starred rows.
+        _chatService.GetFavoritesAsync().ReturnsForAnyArgs(
+            Task.FromResult<IReadOnlyList<SyncAssistantChat>>([.. chats.Where(c => c.IsFavorite)]));
 
         return new ChatTitleChipViewModel(
             _chatService,
@@ -54,12 +57,28 @@ public class ChatTitleChipFlyoutGroupingTests
             () => _activeWorkingDir);
     }
 
-    private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null)
+    private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null, bool isFavorite = false)
     {
         var id = Guid.NewGuid();
         if (state is { } s)
             _states[id] = s;
-        return new SyncAssistantChat { Id = id, Title = title, UpdatedAt = updatedAt };
+        return new SyncAssistantChat { Id = id, Title = title, UpdatedAt = updatedAt, IsFavorite = isFavorite };
+    }
+
+    [Fact]
+    public void Flyout_GroupsFavoritesFirst_AndOutOfTheDateBuckets()
+    {
+        var sut = CreateSut([
+            Chat("today", DateTime.UtcNow),
+            Chat("starred", DateTime.UtcNow, isFavorite: true),
+        ]);
+
+        sut.IsFlyoutOpen = true;
+
+        Assert.Equal("History_Group_Favorites", sut.Groups[0].DisplayName);
+        Assert.Equal("starred", Assert.Single(sut.Groups[0].Items).Title);
+        // Appearing in both groups would need two item VMs for the one chat.
+        Assert.DoesNotContain(sut.Groups.Skip(1).SelectMany(g => g.Items), i => i.Title == "starred");
     }
 
     /// <summary>Re-creating the rows drops an inline rename someone is typing into one of them, and the

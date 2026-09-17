@@ -250,6 +250,7 @@
   <data name="History_Loading" xml:space="preserve"><value>Sitzungen werden geladen...</value></data>
   <data name="History_NoSessions" xml:space="preserve"><value>Keine Sitzungen gefunden</value></data>
   <data name="History_LoadMore" xml:space="preserve"><value>Mehr laden</value></data>
+  <data name="History_Group_Favorites" xml:space="preserve"><value>Favoriten</value></data>
   <data name="History_Group_Today" xml:space="preserve"><value>Heute</value></data>
   <data name="History_Group_Yesterday" xml:space="preserve"><value>Gestern</value></data>
   <data name="History_Group_ThisWeek" xml:space="preserve"><value>Diese Woche</value></data>
@@ -278,6 +279,8 @@
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>Noch keine Chats</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Starte einen Chat im Assistenten-Modus, um den Verlauf zu füllen</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Diesen Chat fortsetzen</value></data>
+  <data name="AssistantHistory_Favorite" xml:space="preserve"><value>Zu Favoriten hinzufügen</value></data>
+  <data name="AssistantHistory_Unfavorite" xml:space="preserve"><value>Aus Favoriten entfernen</value></data>
   <data name="AssistantHistory_Rename" xml:space="preserve"><value>Umbenennen</value></data>
   <data name="AssistantHistory_RenamePrompt" xml:space="preserve"><value>Wie soll dieser Chat heißen?</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Chatverlauf</value></data>

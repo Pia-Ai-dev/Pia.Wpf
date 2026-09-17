@@ -81,6 +81,27 @@ public interface IAssistantChatService
     /// </summary>
     Task<bool> SetTitleAsync(Guid chatId, string title, CancellationToken ct = default);
 
+    /// <summary>
+    /// Star/unstar a chat: a targeted UPDATE plus <c>UpdatedAt</c>, following <see cref="SetTitleAsync"/>
+    /// rather than <see cref="GetAsync"/>→<see cref="SaveAsync"/>, which would replace the message rows from
+    /// a snapshot a headless run may have appended to since.
+    /// <returns><c>false</c> when the chat had already been deleted/evicted.</returns>
+    /// </summary>
+    Task<bool> SetFavoriteAsync(Guid chatId, bool isFavorite, CancellationToken ct = default);
+
+    /// <summary>
+    /// Starred chats matching the same filters as <see cref="SearchAsync"/>, newest first, but UNPAGED —
+    /// a favourite older than the loaded page would otherwise never reach the history view's favourites
+    /// group. Paging is an artifact; the filters are user intent, so those still apply.
+    /// </summary>
+    Task<IReadOnlyList<SyncAssistantChat>> GetFavoritesAsync(
+        string? searchText = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        Guid? providerId = null,
+        int limit = 100,
+        CancellationToken ct = default);
+
     Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>The chat's provider alone. <see cref="GetAsync"/> reads the whole transcript, which a caller
