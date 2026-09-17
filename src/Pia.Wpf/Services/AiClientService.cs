@@ -29,6 +29,15 @@ public class AiClientService : IAiClientService
         "Error: The arguments for this tool call were not valid JSON, so the call was not run. " +
         "Retry it with one complete JSON object of arguments, and emit each parallel tool call separately.";
 
+    internal const string ToolRoundsExhaustedNudge =
+        "You have reached the maximum number of tool-calling rounds allowed for this turn. Do not "
+        + "attempt another tool call — answer now with your best final response based on everything "
+        + "you have gathered so far.";
+
+    internal const string EmptyAnswerNudge =
+        "Your previous reply carried no answer at all. Do not call another tool — reply now with your "
+        + "best final answer based on everything you have gathered so far.";
+
     private readonly IAuthService _authService;
     private readonly DpapiHelper _dpapiHelper;
     private readonly AiProviderHandlerResolver _handlers;
@@ -190,6 +199,9 @@ public class AiClientService : IAiClientService
         bool hasUsage = false;
         bool protectedRoute = false;
         string? lastModelId = null;
+        var visibleChars = 0;
+        var reasoningChars = 0;
+        var declaredStepOutcome = false;
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -288,6 +300,7 @@ public class AiClientService : IAiClientService
                                 updates.Add(current);
                                 if (!string.IsNullOrEmpty(current.Text))
                                 {
+                                    visibleChars += current.Text.Length;
                                     yield return new TextDelta(current.Text);
                                 }
 
@@ -298,6 +311,7 @@ public class AiClientService : IAiClientService
                                     current.Contents, current.RawRepresentation,
                                     attemptRawExtraction: string.IsNullOrEmpty(current.Text)))
                                 {
+                                    if (reasoning is ReasoningDelta streamed) reasoningChars += streamed.Text.Length;
                                     yield return reasoning;
                                 }
 
@@ -347,6 +361,7 @@ public class AiClientService : IAiClientService
                     round + 1, response.Messages.Count, text?.Length ?? 0);
                 if (!string.IsNullOrEmpty(text))
                 {
+                    visibleChars += text.Length;
                     yield return new TextDelta(text);
                 }
 
@@ -354,6 +369,7 @@ public class AiClientService : IAiClientService
                 foreach (var reasoning in ExtractReasoning(
                     nonStreamingContents, response.RawRepresentation, attemptRawExtraction: true))
                 {
+                    if (reasoning is ReasoningDelta buffered) reasoningChars += buffered.Text.Length;
                     yield return reasoning;
                 }
             }
@@ -406,6 +422,11 @@ public class AiClientService : IAiClientService
 
             if (toolCalls.Count > 0 && toolHandler is not null)
             {
+                // An agent step's outcome IS this call, so a wordless turn after it is an ending rather than
+                // the no-answer failure the re-ask below exists for.
+                declaredStepOutcome |= toolCalls.Any(
+                    c => string.Equals(c.Name, AgentStepTools.EmitStepResultToolName, StringComparison.Ordinal));
+
                 // Yielded before the dispatch (which awaits real tool execution and can throw) so
                 // consumers know a fresh model turn is coming even if the dispatch itself fails.
                 yield return new ToolRoundCompleted();
@@ -429,6 +450,36 @@ public class AiClientService : IAiClientService
                 continue;
             }
 
+            if (visibleChars == 0 && !declaredStepOutcome)
+            {
+                // Recoverable far more often than not, and the alternative is a routine with no answer.
+                _logger.LogWarning(
+                    "Round {Round}: no tool calls and no visible text (finishReason={FinishReason}, reasoningChars={ReasoningChars}, contentTypes=[{ContentTypes}]); re-asking once without tools",
+                    round + 1, response.FinishReason, reasoningChars, string.Join(", ", contentTypes));
+
+                var retry = await RunToolRoundWrapUpAsync(
+                    chatClient, providerHandler, provider, workingMessages, contextBudget, timeout,
+                    protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId,
+                    EmptyAnswerNudge, cancellationToken);
+
+                if (!string.IsNullOrEmpty(retry.Text))
+                {
+                    yield return new TextDelta(retry.Text);
+                }
+
+                yield return BuildFinishedItem(
+                    provider, retry.HasUsage, retry.AggregatedInput, retry.AggregatedOutput,
+                    retry.ProtectedRoute, retry.ModelId);
+
+                // A throw, not a flag, so a Planned step cannot accept the half answer as its output.
+                if (retry.Truncated)
+                {
+                    throw new LlmTruncatedException(provider.Name, retry.Text?.Length ?? 0);
+                }
+
+                yield break;
+            }
+
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
             yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, lastModelId);
             yield break;
@@ -438,7 +489,8 @@ public class AiClientService : IAiClientService
 
         var wrapUp = await RunToolRoundWrapUpAsync(
             chatClient, providerHandler, provider, workingMessages, contextBudget, timeout,
-            protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId, cancellationToken);
+            protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId,
+            ToolRoundsExhaustedNudge, cancellationToken);
 
         if (!string.IsNullOrEmpty(wrapUp.Text))
         {
@@ -710,6 +762,7 @@ public class AiClientService : IAiClientService
         long aggregatedOutput,
         bool hasUsage,
         string? modelId,
+        string nudge,
         CancellationToken cancellationToken)
     {
         string? wrapUpText = null;
@@ -727,12 +780,8 @@ public class AiClientService : IAiClientService
                     .ConfigureAwait(false);
             }
 
-            // The model has no other way to learn its tool-round budget just ran out — without this nudge
-            // it would still try another tool call, into a request that no longer offers any tools.
-            workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(ChatRole.User,
-                "You have reached the maximum number of tool-calling rounds allowed for this turn. Do not "
-                + "attempt another tool call — answer now with your best final response based on everything "
-                + "you have gathered so far."));
+            // Tools are off for this call, so only words can stop the model reaching for one again.
+            workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, nudge));
 
             var wrapUpOptions = providerHandler.CreateChatOptions(provider, hasTools: false);
             try
@@ -761,7 +810,7 @@ public class AiClientService : IAiClientService
                 }
                 // Recorded, not thrown: the catch below would swallow a throw here.
                 wrapUpTruncated = wrapUpResponse.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length;
-                _logger.LogWarning("Tool-round wrap-up call produced {TextLen} chars of final text", wrapUpText?.Length ?? 0);
+                _logger.LogWarning("Wrap-up call produced {TextLen} chars of final text", wrapUpText?.Length ?? 0);
             }
             catch (Exception ex)
             {
@@ -770,7 +819,7 @@ public class AiClientService : IAiClientService
         }
         else
         {
-            _logger.LogWarning("Skipping tool-round wrap-up call: turn already cancelled");
+            _logger.LogWarning("Skipping wrap-up call: turn already cancelled");
         }
 
         return new WrapUpOutcome(
