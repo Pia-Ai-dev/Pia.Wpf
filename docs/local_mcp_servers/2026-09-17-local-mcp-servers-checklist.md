@@ -45,7 +45,7 @@ little standalone value, unblocks a High.
       filtering in the handler, local-vs-server locality, preference-push exclusion.
       *Deps:* A4, B1 · *Effort:* S · *Value:* High
 
-- [ ] **C2 — Live verification.** Add `npx -y @modelcontextprotocol/server-everything` through the
+- [x] **C2 — Live verification.** Add `npx -y @modelcontextprotocol/server-everything` through the
       real UI: test connection, restrict the allowlist, call a tool in a chat, restart and confirm
       it re-activates.
       *Deps:* B2, C1 · *Effort:* XS · *Value:* High

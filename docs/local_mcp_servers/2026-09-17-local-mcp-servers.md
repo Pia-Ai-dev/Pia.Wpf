@@ -147,3 +147,25 @@ Measured rather than assumed:
   never reused — but the rows accumulate in settings.
 - `ApplyServerPluginsAsync` would delete a local row if the server ever pushed a tombstone for its
   id. It cannot: local ids are minted client-side and the server has never seen them.
+
+## Live verification (2026-09-17)
+
+Driven through the real app on a throwaway profile, against
+`npx -y @modelcontextprotocol/server-everything`:
+
+- Pasting the `mcpServers` envelope filled Name, Command, Arguments (one per line) and
+  `DEMO_TOKEN=s3cret-value`.
+- Test connection listed **13 tools**, each rendering its own `McpServers_Tool_<name>` id.
+- Saved with only `echo` ticked. The log line is the evidence:
+  `MCP plugin everything initialized with 1 of 13 tools: everything__echo` — allowlist and prefix
+  both applied.
+- Reopening the editor on the running server showed all 13 with the stored ticks, so a restriction
+  can be widened again.
+- Restart re-activated it unprompted: `Plugin everything (stdio) activated with 1 tools`, which also
+  proves the DPAPI round-trip — the server only starts with its env decrypted.
+- The row read `Running · 1 tool(s)`; the switch flipped it to `Disabled` and the log confirmed
+  `enabled=False`. (`ww_set_checked` is a no-op on that switch — physical click, then read the log.)
+- `s3cret-value` appears **nowhere** in the log or the database; `history.db-wal` holds
+  `"env":{"DEMO_TOKEN":"AQAAANCMnd8BFdER…"}`, the DPAPI blob.
+
+Isolation held: the run wrote its own `Workspace/Vault`, and the real vault was untouched.
