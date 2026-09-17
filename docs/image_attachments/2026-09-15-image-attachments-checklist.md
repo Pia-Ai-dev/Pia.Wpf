@@ -50,8 +50,9 @@ surface · `L` a week or more, a new subsystem.
   pin-admission loop. Closes a real context-overflow risk that exists the moment A3 lands.
   *Deps:* A3 · *Effort:* S · *Value:* High
   **Landed 2026-09-15 with A3**, and both new tests were run against the pre-change compactor first —
-  they fail there, so the differential is real. A10 still owes the warning assertion on the tiny-window
-  boundary; the test here asserts only that compaction is skipped.
+  they fail there, so the differential is real. `AFourImageGoal_OnASmallConfiguredWindow_LeavesNoInputBudget`
+  now also reads the skip warning back and asserts the pin came to at least four charges, so the
+  boundary is held by the number in the log line and not only by the outcome.
 - [x] **A6 · The composer thumbnail strip.** Horizontal `ItemsControl` with a per-item remove
   button carrying a bound, unique AutomationId. *Deps:* A2 · *Effort:* S · *Value:* High
   **Verified live 2026-09-17** over a throwaway profile, driving the real composer: six images through

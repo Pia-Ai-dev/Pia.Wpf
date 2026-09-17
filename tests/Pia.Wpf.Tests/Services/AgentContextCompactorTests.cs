@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Models;
 using Pia.Services;
@@ -520,11 +521,27 @@ public class AgentContextCompactorTests
         // mandatory pin cannot be shrunk.
         var messages = AgentStepShapedMessages();
         messages[1] = ImageTurn(ChatRole.User, messages[1].Text!, images: 4);
+        var logger = new CapturingLogger<AgentContextCompactorTests>();
 
         var result = await AgentContextCompactor.CompactAsync(
-            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), logger, TestContext.Current.CancellationToken);
 
         Assert.Equal(messages.Count, result.Count);
+
+        // The pin cannot deliver an outcome here, so the warning IS the deliverable: it is the only thing
+        // that tells a user reading pia-*.log why a send became a provider 400.
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains("leaves no input budget", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("of 8000", warning.Message, StringComparison.Ordinal);
+
+        // Charged per image, not per image-bearing turn: one would pin 3500 and leave budget, so the
+        // warning would not fire at all.
+        var pinned = int.Parse(
+            System.Text.RegularExpressions.Regex.Match(warning.Message, @"pinned (\d+) tokens").Groups[1].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(
+            pinned >= 4 * AgentContextCompactor.ImageTokenCharge,
+            $"four images must be charged four times, but the pin came to {pinned} tokens");
     }
 
     [Fact]
