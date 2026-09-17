@@ -12,12 +12,22 @@ public sealed class ToolLoopStopSignal
     public void RequestStop() => IsStopRequested = true;
 }
 
+/// <summary>What produced a parked picture, so the consumed placeholder can name it.</summary>
+public enum ToolLoopImageSource
+{
+    ScreenCapture,
+    ImageFile,
+}
+
 /// <summary>One picture a tool produced for the model, parked until every result of its round is appended.</summary>
 public sealed record ToolLoopImage(
-    string CallId, byte[] Bytes, string MediaType, int Width, int Height, string Caption);
+    string CallId, byte[] Bytes, string MediaType, int Width, int Height, string Caption,
+    ToolLoopImageSource Source = ToolLoopImageSource.ScreenCapture);
 
 /// <summary>Marks an injected image message so the swap and the compactor find it without reading its text.</summary>
-public sealed record ToolLoopImageTag(string CallId, int Width, int Height);
+public sealed record ToolLoopImageTag(
+    string CallId, int Width, int Height,
+    ToolLoopImageSource Source = ToolLoopImageSource.ScreenCapture);
 
 /// <summary>Where a handler parks a picture a tool result cannot carry — a result has no image slot and any
 /// non-string one is JSON-serialized — for the loop to append after the round's last result.</summary>

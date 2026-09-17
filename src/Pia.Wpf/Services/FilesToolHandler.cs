@@ -11,6 +11,7 @@ using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -163,7 +164,8 @@ public class FilesToolHandler : IFilesToolHandler
                 "Locate the file with find_files first if you do not already know its path. " +
                 "Also reads .docx (one line per paragraph), .xlsx/.xlsm (each sheet as a '## Sheet: name' header followed by " +
                 "tab-separated rows) and .msg/.eml (headers, then the message body) as plain text — .docm and other " +
-                "macro-enabled Word/template variants are not supported."),
+                "macro-enabled Word/template variants are not supported. An image file is shown to you as a " +
+                "picture attached to your next message, once; offset/limit are ignored for it."),
 
             AIFunctionFactory.Create(WriteFileSchema, "write_file",
                 "Create or overwrite a text file inside the assistant files folder. Used for both creating new files and updating existing ones. " +
@@ -221,7 +223,7 @@ public class FilesToolHandler : IFilesToolHandler
         {
             "list_files" => (HandleListFiles(root, args), null),
             "find_files" => (HandleFindFiles(root, args), null),
-            "read_file"  => (await HandleReadFileAsync(root, args, cancellationToken), null),
+            "read_file"  => (await HandleReadFileAsync(root, args, toolCall.CallId, cancellationToken), null),
             "write_file" => await PrepareWriteFileAsync(root, args, cancellationToken),
             "edit_file" => await PrepareEditFileAsync(root, args, cancellationToken),
             "delete_file" => PrepareDeleteFile(root, args),
@@ -822,7 +824,8 @@ public class FilesToolHandler : IFilesToolHandler
         if (extractionTruncated)
             diagnostics.Add($"Warning: stopped extracting .docx/.xlsx/.msg/.eml after {MaxExtractions} file(s); the rest were not searched. Narrow the search with a 'path' or 'include'.");
         if (imageCount > 0)
-            diagnostics.Add($"Note: {imageCount} image file(s) were not searched (an image has no text to match).");
+            diagnostics.Add($"Note: {imageCount} image file(s) were not searched (an image has no text to match). " +
+                            "read_file can show you one.");
         if (skippedCount > 0)
             diagnostics.Add(
                 $"Note: {skippedCount} file(s) could not be searched (binary, or over the size limit): " +
@@ -1053,7 +1056,7 @@ public class FilesToolHandler : IFilesToolHandler
     }
 
     private async Task<object> HandleReadFileAsync(
-        string root, IDictionary<string, object?> args, CancellationToken cancellationToken)
+        string root, IDictionary<string, object?> args, string callId, CancellationToken cancellationToken)
     {
         var requested = NormalizePathArg(GetStringArg(args, "path"));
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requested, out var safePath))
@@ -1081,6 +1084,11 @@ public class FilesToolHandler : IFilesToolHandler
                 ? notFound + " Did you mean: " + string.Join(", ", suggestions) + "?"
                 : notFound;
         }
+
+        // After containment, the sensitive-path guard and File.Exists, before the offset/limit parse:
+        // a windowed read of an image means nothing, so both args are ignored rather than rejected.
+        if (IsImageExtension(Path.GetExtension(safePath)))
+            return await DeliverImageAsync(root, safePath, requested, callId, cancellationToken);
 
         // offset is 1-indexed (default 1, min 1); limit defaults to 500, clamped to [1, 2000].
         var offset = Math.Max(1, GetOptionalIntArg(args, "offset", 1));
@@ -1317,12 +1325,83 @@ public class FilesToolHandler : IFilesToolHandler
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".tiff", ".tif"
     };
 
+    /// <summary>Checked on the raw file, before any decode: BitmapDecoder allocates the decoded surface,
+    /// not the file, so a 40 MP TIFF is ~480 MB of pixels.</summary>
+    private const long MaxImageFileBytes = 25L * 1024 * 1024;
+
+    /// <summary>
+    /// Parks an image on the round's <see cref="ToolLoopImageChannel"/> and returns text saying so — a tool
+    /// result has no image slot, and any non-string result is JSON-serialized.
+    /// </summary>
+    private async Task<object> DeliverImageAsync(
+        string root, string safePath, string requested, string callId, CancellationToken cancellationToken)
+    {
+        var rel = SafeRelative(root, safePath);
+
+        var channel = ToolLoopImageChannel.Current;
+        if (channel is null)
+        {
+            _logger.LogInformation("read_file cannot show an image: no tool loop is carrying this call");
+            return "Error: This turn cannot receive a picture, so the image cannot be shown.";
+        }
+
+        if (channel.ProviderType != AiProviderType.PiaCloud)
+        {
+            _logger.LogInformation(
+                "read_file cannot show an image: {ProviderType} cannot receive one", channel.ProviderType);
+            return $"Error: The configured provider ({channel.ProviderType}) cannot read pictures.";
+        }
+
+        var length = new FileInfo(safePath).Length;
+        if (length > MaxImageFileBytes)
+        {
+            _logger.LogInformation("read_file refused an image of {Bytes} bytes", length);
+            return $"Error: '{rel}' is {length / (1024 * 1024)} MB, over the " +
+                   $"{MaxImageFileBytes / (1024 * 1024)} MB ceiling for opening an image.";
+        }
+
+        if (channel.Count >= ToolLoopImageChannel.MaxImagesPerRound)
+        {
+            _logger.LogInformation("read_file refused an image: the round is already showing its maximum");
+            return $"Error: Already showing {ToolLoopImageChannel.MaxImagesPerRound} pictures this round; " +
+                   "ask again after you have used them.";
+        }
+
+        // Off the loop thread, as ScreenCaptureToolHandler does: the quality ladder re-encodes JPEG.
+        var image = await Task.Run(
+            () => ImageAttachmentProcessor.TryPrepare(safePath, _logger), cancellationToken);
+        if (image is null)
+        {
+            _logger.LogWarning("read_file could not prepare an image for delivery");
+            return $"Error: '{rel}' could not be opened as a picture, or is too large to show even re-encoded.";
+        }
+
+        var caption = $"Image file from your read_file call: {rel}, {image.Width}x{image.Height} px.";
+        if (!channel.TryPark(new ToolLoopImage(
+                callId, image.JpegBytes, image.MimeType, image.Width, image.Height, caption,
+                ToolLoopImageSource.ImageFile)))
+        {
+            return $"Error: Already showing {ToolLoopImageChannel.MaxImagesPerRound} pictures this round; " +
+                   "ask again after you have used them.";
+        }
+
+        // No RecordRead: nothing can edit an image (write_file and edit_file both refuse one), so a
+        // staleness record would be state no gate ever reads. The chip is still raised.
+        TaskAmbient.Current?.OnFileTouched?.Invoke(new FileTouch(safePath, FileTouchKind.Read));
+
+        _logger.LogInformation("read_file showed an image ({Width}x{Height})", image.Width, image.Height);
+        _logger.SensitiveDebug("read_file image path: {Path}", requested);
+
+        return $"Showed you \"{rel}\" ({image.Width}x{image.Height}). It is attached to your next message — " +
+               "say what you need from it now; it is withdrawn afterwards.";
+    }
+
     private static bool IsImageExtension(string ext)
         => !string.IsNullOrEmpty(ext) && ReadImageExtensions.Contains(ext);
 
     private static string ImageWriteRefusal(string ext)
         => $"Error: '{ext}' files are read-only here — an image is pixels, not text, so writing text " +
-           "into one would destroy it. Write to a new .md or .txt file instead.";
+           "into one would destroy it. read_file shows you the picture; write to a new .md or .txt file instead.";
 
     /// <summary>Formats whose text is extracted from a container rather than read as the file's own bytes.</summary>
     private static bool IsExtractedKind(FileKind kind)
