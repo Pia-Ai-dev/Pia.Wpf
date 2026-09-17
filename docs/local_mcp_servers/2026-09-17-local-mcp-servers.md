@@ -169,3 +169,141 @@ Driven through the real app on a throwaway profile, against
   `"env":{"DEMO_TOKEN":"AQAAANCMnd8BFdER…"}`, the DPAPI blob.
 
 Isolation held: the run wrote its own `Workspace/Vault`, and the real vault was untouched.
+
+### Three public servers, end to end (2026-09-17)
+
+The everything server is a demo. This round used three servers people actually install, none of
+which needs a credential, added through the real profile's UI and driven from real chats on **both**
+providers — the Anthropic one (Sonnet) and Pia Cloud, whose tool calls take the server-side path.
+Each server was handshaken from a shell first, so a slow first `npx`/`uvx` download could not be
+mistaken for a broken server.
+
+| Server | Command | Tools |
+|---|---|---|
+| `filesystem` | `npx -y @modelcontextprotocol/server-filesystem <dir>` | 14 of 14 |
+| `memory` | `npx -y @modelcontextprotocol/server-memory`, `MEMORY_FILE_PATH` in env | 9 of 9 |
+| `time` | an **absolute** path to `uvx.exe`, `mcp-server-time --local-timezone Europe/Berlin` | 1 of 2 |
+
+What each one was chosen to prove:
+
+- **The prefix earns its keep.** One turn made both calls: `filesystem__read_file` on the server's
+  own directory and the built-in `read_file` on a workspace file. The log shows two different
+  handlers answering the same underlying tool name — `MCP tool filesystem__read_file invocation on
+  plugin filesystem` returning the server's `{"content":[…]}` envelope, against the built-in's
+  `total_lines=2`. Without the prefix one of them is unreachable.
+- **Env reaches the child.** `memory` was given `MEMORY_FILE_PATH`, and `knowledge-graph.json`
+  appeared at exactly that path on the first `create_entities` call — disk as the witness, not a log
+  line. After a restart, `memory__search_nodes` read the same entity back, so the DPAPI round-trip
+  feeds the same file across sessions.
+- **A rooted command starts.** `time` was entered as a full path to `uvx.exe`, the shape that used
+  to probe fine and then fail activation with "not found on PATH". It probes, saves, starts, and
+  re-starts after a restart.
+- **A withheld tool is invisible, not just unrouted.** `convert_time` was left unticked; the row
+  reads `1 Tool(s)`, the log says `initialized with 1 of 2 tools`, and Settings → Tool permissions
+  lists `time__get_current_time` and no `convert_time` at all.
+
+Restart re-activated all three sequentially in **2.4 s** total (13:04:21.3 → 13:04:23.7), allowlist
+intact. Closing Pia left no orphan child process.
+
+Two negative paths, both landing where they should:
+
+- A pasted `{"type":"http","url":"https://mcp.context7.com/mcp"}` is refused at parse time, naming
+  the URL: "Remote servers are not supported — only servers that Pia starts on this machine."
+- A server whose command does not exist reads `Not running: MCP server process exited unexpectedly
+  (exit code: 1)` with the child's stderr tail underneath, in both the editor message and the list
+  row — never `Running · 0 tool(s)`. Its editor reopens with the fields intact and no tool list.
+
+Two automation notes for the next run:
+
+- The row's enable switch did not respond to a WinWright mouse click **or** to a raw `SendInput`
+  click at its centre (100 % DPI, window foreground, a click on the row itself worked from the same
+  coordinates). `ww_set_checked` flips `IsChecked` but never runs `ToggleServerCommand`, so the row
+  reads disabled while the subprocess keeps running. Since `IsChecked` is a `TwoWay` binding and the
+  persistence hangs off `Command`, the two can disagree — worth a human click to see whether this is
+  only an automation artefact.
+- The delete confirmation is a WPF-UI `ContentDialog` whose buttons carry the framework's own
+  `PrimaryButton` / `CloseButton` ids, not Pia ones.
+
+### Detail pane and the enable switch (2026-09-17)
+
+Driven through a throwaway profile with two servers: a deliberately broken one
+(`no-such-mcp-binary`, a working directory and one env var) and `everything` with `echo` unticked.
+
+- The failed server reads `Not running` as a badge, the child's stderr tail in the notice block,
+  and `DEMO_TOKEN` under Environment variables — the name, never the value.
+- The running one reads `Running`, `everything · 12 of 13 tool(s) offered`, and all 13 tools with
+  their descriptions, `echo` marked `withheld`.
+- Toggling it off put `Stopping…` and a ring on that row alone; the other row's switch
+  stayed live throughout. Toggling back on returned `Running · 12 tool(s)`, allowlist intact.
+- Test connection on the detail pane probed a server that was switched **off** and filled the pane
+  with all 13 tools, `13 of 13 tool(s) offered` and `Connected. 13 tool(s) available.` — the state
+  that previously had nothing to show.
+
+Two corrections to the automation notes above:
+
+- The enable switch **is** drivable: `ww_focus` on it plus `Space` runs the command and
+  persists, because `ButtonBase.OnKeyDown` routes through `OnClick`. Each toggle rebuilds the
+  list, so focus is lost and the next `Space` goes nowhere — re-focus between toggles.
+- The blank-screenshot stall cleared here right after a `ww_window action=resize` (whose response
+  still fails to serialize). The blank captures were the window's background gradient with nothing
+  painted over it; every shot after that one call rendered. One data point, so retry a resize
+  before giving up on screenshots rather than counting on it.
+
+### The stale-status bug (2026-09-17)
+
+Owner report: after every restart only one of three servers read `Läuft`, and `Test connection` on
+one of the others answered `Verbunden. 2 Tool(s) verfügbar.` — a flat contradiction.
+
+The servers were all up. The real log has `Plugin filesystem (stdio) activated with 14 tools`,
+then `memory`, then `time`, all successful — and `Settings page initialized` timestamped between
+the first and the second. `InitializePersistedPluginsAsync` activated each server without raising
+`PluginsChanged`, so a Settings page built during that loop froze its rows at whatever happened to
+be true at that instant and nothing ever corrected them. Every other mutating path already raised it,
+which is why a toggle looked fine and only a restart showed the bug.
+
+The fix raises it (and rebuilds the tool routes) **per server** inside the loop, not once at the end,
+so a page built mid-startup fills in as each one comes up. Two tests hold the halves:
+`StartupActivation_AnnouncesEveryServerItBringsUp` on the service, and
+`AServerThatComesUpAfterTheViewIsBuilt_StopsSayingNotRunning` on the view model. A live restart did
+**not** reproduce the race — a throwaway profile boots so much faster than the real one that activation
+finished ~5 s before the Settings page was built — so the tests are the evidence, not the walkthrough.
+
+### The open editor was collateral (2026-09-17)
+
+Raising `PluginsChanged` per server made an existing defect reachable, and it is observable: open
+**Add server**, type a name, toggle another row, and the editor is gone with everything in it.
+`Reload()` clears `Servers`, the ListBox writes **null** back through the two-way `SelectedItem` binding,
+and `OnSelectedServerChanged` reads that as a different server and closes the editor. Comparing ids
+cannot catch it — the transient value is null, not another id. A `_reloading` flag around the whole
+reload now limits the close to a selection the user actually changed.
+
+The test for it has to push the null itself (`Servers.CollectionChanged` → `Reset` → set `SelectedServer`
+to null), because there is no ListBox in the harness; it was mutation-checked — it fails with the flag
+removed and passes with it.
+
+### Saving looked like nothing happened (2026-09-17)
+
+Owner report: tick or untick a tool in the editor, press **Save**, and the button greys out for
+several seconds with no indicator at all.
+
+The grey is the `AsyncRelayCommand` doing its job — it reports `CanExecute` false for as long as
+`SaveAsync` runs. What runs that long is `SaveLocalMcpAsync`: it shuts the subprocess down, persists,
+and activates the server again, and bringing an `npx` server back up is seconds of work. Nothing in
+the view said so. `IsSaving` now drives a `ProgressRing` and a line naming the restart, mirroring the
+`IsTesting` pattern a few rows up in the same editor.
+
+`CancelEdit` is gated on `!IsSaving` in the same change: leaving the editor mid-save let the save's
+own `CloseEditor()` land on whatever had been opened after it.
+
+Two things this does **not** cover. A row's switch stays clickable while a save restarts that same
+server — `_toggleGate` serialises toggles against each other, not against a save. And the editor's
+fields stay editable during the window; what gets written is the snapshot taken when Save was pressed.
+
+### "Läuft" was the wrong word (2026-09-17)
+
+Owner call: the German status read `Läuft` / `Läuft nicht`, a literal rendering of Running that does
+not fit a server the user connects to. The running/failed pair is now `Verbunden` / `Nicht verbunden`
+(badge, status line, and the with-reason variant), which matches what `Verbindung testen` already
+answers; `Deaktiviert` still marks the switch being off, and `Wird gestartet…` / `Wird beendet…` still
+mark the transitions. The German `Detail_ToolsStopped` sentence moved with them. The `Läuft` hits
+under `ChatState_*`, `Run_State_*` and `Assignments_*` belong to other features and were left alone.

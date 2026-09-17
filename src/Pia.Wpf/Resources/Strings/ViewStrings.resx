@@ -1683,4 +1683,15 @@
   <data name="McpServers_Error_BadArgs" xml:space="preserve"><value>args must be a list of strings.</value></data>
   <data name="McpServers_Error_BadEnv" xml:space="preserve"><value>env must be an object of text values.</value></data>
   <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Not running: {0}</value></data>
+  <data name="McpServers_Placeholder" xml:space="preserve"><value>No server selected</value></data>
+  <data name="McpServers_PlaceholderHint" xml:space="preserve"><value>Pick a server on the left to see its command and the tools it offers.</value></data>
+  <data name="McpServers_Badge_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="McpServers_Status_Starting" xml:space="preserve"><value>Starting…</value></data>
+  <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Stopping…</value></data>
+  <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} of {1} tool(s) offered</value></data>
+  <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} tool(s) allowed</value></data>
+  <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>This server is not running. These are the tools it was allowed when it last ran.</value></data>
+  <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Start this server, or use Test connection, to list its tools.</value></data>
+  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
+  <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
 </root>

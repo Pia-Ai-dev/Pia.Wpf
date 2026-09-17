@@ -22,6 +22,14 @@ public partial class McpServerRow : ObservableObject
     [ObservableProperty]
     private bool _isRunning;
 
+    /// <summary>Switched on but not up — a different badge from the user having switched it off.</summary>
+    [ObservableProperty]
+    private bool _isFailed;
+
+    /// <summary>The subprocess is starting or stopping, and how long that takes is not knowable.</summary>
+    [ObservableProperty]
+    private bool _isToggling;
+
     public McpServerRow(Guid id, string name, string commandLine, bool isEnabled)
     {
         Id = id;
@@ -48,4 +56,13 @@ public partial class McpToolRow : ObservableObject
         ServerDeclaredDestructive = serverDeclaredDestructive;
         _isAllowed = isAllowed;
     }
+}
+
+/// <summary>One tool as the read-only detail pane shows it; the editor's ticks live on <see cref="McpToolRow"/>.</summary>
+public sealed record McpServerToolInfo(string Name, string? Description, bool ServerDeclaredDestructive, bool IsAllowed)
+{
+    public bool IsWithheld => !IsAllowed;
+
+    // The item container reports this to UIA; the record default would read out the whole dump.
+    public override string ToString() => Name;
 }

@@ -1659,9 +1659,9 @@
   <data name="McpServers_SelectNone" xml:space="preserve"><value>Keine</value></data>
   <data name="McpServers_Destructive" xml:space="preserve"><value>kann löschen</value></data>
   <data name="McpServers_ToolPrefix" xml:space="preserve"><value>Tool-Präfix</value></data>
-  <data name="McpServers_Status_Running" xml:space="preserve"><value>Läuft · {0} Tool(s)</value></data>
+  <data name="McpServers_Status_Running" xml:space="preserve"><value>Verbunden · {0} Tool(s)</value></data>
   <data name="McpServers_Status_Disabled" xml:space="preserve"><value>Deaktiviert</value></data>
-  <data name="McpServers_Status_Failed" xml:space="preserve"><value>Läuft nicht</value></data>
+  <data name="McpServers_Status_Failed" xml:space="preserve"><value>Nicht verbunden</value></data>
   <data name="McpServers_DeleteTitle" xml:space="preserve"><value>MCP-Server entfernen</value></data>
   <data name="McpServers_DeleteMessage" xml:space="preserve"><value>"{0}" entfernen? Die Tools stehen dem Assistenten dann nicht mehr zur Verfügung.</value></data>
   <data name="McpServers_Saved" xml:space="preserve"><value>{0} gespeichert.</value></data>
@@ -1672,5 +1672,16 @@
   <data name="McpServers_Error_RemoteTransport" xml:space="preserve"><value>Entfernte Server werden nicht unterstützt — nur Server, die Pia auf diesem Computer startet.</value></data>
   <data name="McpServers_Error_BadArgs" xml:space="preserve"><value>args muss eine Liste von Zeichenketten sein.</value></data>
   <data name="McpServers_Error_BadEnv" xml:space="preserve"><value>env muss ein Objekt mit Textwerten sein.</value></data>
-  <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Läuft nicht: {0}</value></data>
+  <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Nicht verbunden: {0}</value></data>
+  <data name="McpServers_Placeholder" xml:space="preserve"><value>Kein Server ausgewählt</value></data>
+  <data name="McpServers_PlaceholderHint" xml:space="preserve"><value>Wählen Sie links einen Server, um seinen Befehl und seine Tools zu sehen.</value></data>
+  <data name="McpServers_Badge_Running" xml:space="preserve"><value>Verbunden</value></data>
+  <data name="McpServers_Status_Starting" xml:space="preserve"><value>Wird gestartet…</value></data>
+  <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Wird beendet…</value></data>
+  <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} von {1} Tool(s) freigegeben</value></data>
+  <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} Tool(s) freigegeben</value></data>
+  <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Dieser Server ist nicht verbunden. Dies sind die Tools, die beim letzten Lauf freigegeben waren.</value></data>
+  <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Starten Sie diesen Server oder verwenden Sie „Verbindung testen“, um seine Tools zu sehen.</value></data>
+  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>gesperrt</value></data>
+  <data name="McpServers_Saving" xml:space="preserve"><value>Wird gespeichert… der Server startet neu.</value></data>
 </root>

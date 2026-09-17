@@ -1673,4 +1673,15 @@
   <data name="McpServers_Error_BadArgs" xml:space="preserve"><value>args doit être une liste de chaînes.</value></data>
   <data name="McpServers_Error_BadEnv" xml:space="preserve"><value>env doit être un objet de valeurs textuelles.</value></data>
   <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Arrêté : {0}</value></data>
+  <data name="McpServers_Placeholder" xml:space="preserve"><value>Aucun serveur sélectionné</value></data>
+  <data name="McpServers_PlaceholderHint" xml:space="preserve"><value>Choisissez un serveur à gauche pour voir sa commande et les outils qu'il propose.</value></data>
+  <data name="McpServers_Badge_Running" xml:space="preserve"><value>En cours</value></data>
+  <data name="McpServers_Status_Starting" xml:space="preserve"><value>Démarrage…</value></data>
+  <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Arrêt…</value></data>
+  <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} outil(s) sur {1} proposé(s)</value></data>
+  <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} outil(s) autorisé(s)</value></data>
+  <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Ce serveur est arrêté. Voici les outils qui étaient autorisés lors de sa dernière exécution.</value></data>
+  <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Démarrez ce serveur, ou utilisez « Tester la connexion », pour lister ses outils.</value></data>
+  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>bloqué</value></data>
+  <data name="McpServers_Saving" xml:space="preserve"><value>Enregistrement… le serveur redémarre.</value></data>
 </root>

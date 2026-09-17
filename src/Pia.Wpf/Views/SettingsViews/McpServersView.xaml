@@ -94,13 +94,20 @@
                                Margin="0,6,0,0"
                                Style="{StaticResource PiaMetaTextStyle}"/>
                   </StackPanel>
-                  <ui:ToggleSwitch Grid.Column="1"
-                                   VerticalAlignment="Top"
-                                   Margin="8,0,0,0"
-                                   AutomationProperties.AutomationId="{Binding Id, StringFormat='McpServers_Toggle_{0}'}"
-                                   IsChecked="{Binding IsEnabled, Mode=TwoWay}"
-                                   Command="{Binding DataContext.ToggleServerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                   CommandParameter="{Binding}"/>
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <!-- Starting a server spawns a subprocess; how long that takes is the server's business,
+                         so the ring is indeterminate and only the row that is moving shows one. -->
+                    <ui:ProgressRing IsIndeterminate="True"
+                                     Width="16" Height="16"
+                                     Margin="0,2,8,0"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding IsToggling, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <ui:ToggleSwitch AutomationProperties.AutomationId="{Binding Id, StringFormat='McpServers_Toggle_{0}'}"
+                                     IsEnabled="{Binding IsToggling, Converter={StaticResource InverseBooleanConverter}}"
+                                     IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                     Command="{Binding DataContext.ToggleServerCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                     CommandParameter="{Binding}"/>
+                  </StackPanel>
                 </Grid>
               </Border>
             </DataTemplate>
@@ -108,257 +115,384 @@
         </ListBox>
       </Grid>
 
-      <Grid Grid.Column="2">
-        <shared:PiaEmptyState Symbol="Info24"
-                              Title="{loc:Str McpServers_Empty}"
-                              Hint="{loc:Str McpServers_EmptyHint}"
-                              Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+      <!-- Right pane, three states: the editor, the selected server, or the placeholder. -->
+      <Border Grid.Column="2"
+              Style="{StaticResource PiaCardStyle}"
+              Padding="16">
+        <Grid>
+          <shared:PiaEmptyState Symbol="PlugDisconnected24"
+                                Title="{loc:Str McpServers_Placeholder}"
+                                Hint="{loc:Str McpServers_PlaceholderHint}"
+                                VerticalAlignment="Center"
+                                Margin="0"
+                                Visibility="{Binding ShowsPlaceholder, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-        <!-- Detail -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
-          <StackPanel Margin="0,0,10,0">
-            <TextBlock Text="{Binding SelectedServer.Name}"
-                       FontSize="18"
-                       FontWeight="SemiBold"
-                       TextWrapping="Wrap"
-                       Foreground="{DynamicResource TextDefaultBrush}"/>
-            <TextBlock Text="{Binding SelectedServer.StatusText}"
-                       Style="{StaticResource PiaMetaTextStyle}"
-                       Margin="0,6,0,0"/>
-
-            <TextBlock Text="{loc:Str McpServers_Command}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,18,0,6"/>
-            <TextBlock Text="{Binding SelectedServer.CommandLine}"
-                       Style="{StaticResource PiaDetailValueStyle}"
-                       FontFamily="Consolas"
-                       TextWrapping="Wrap"
-                       AutomationProperties.AutomationId="McpServers_Detail_Command"/>
-
-            <TextBlock Text="{loc:Str McpServers_ToolPrefix}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,18,0,6"
-                       Visibility="{Binding SelectedToolPrefix, Converter={StaticResource NullToVisibilityConverter}}"/>
-            <TextBlock Text="{Binding SelectedToolPrefix}"
-                       Style="{StaticResource PiaDetailValueStyle}"
-                       FontFamily="Consolas"
-                       AutomationProperties.AutomationId="McpServers_Detail_ToolPrefix"
-                       Visibility="{Binding SelectedToolPrefix, Converter={StaticResource NullToVisibilityConverter}}"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
-              <ui:Button Content="{loc:Str Common_Edit}"
-                         Icon="{ui:SymbolIcon Edit24}"
-                         Appearance="Secondary"
-                         Margin="0,0,8,0"
-                         AutomationProperties.AutomationId="McpServers_Detail_Edit"
-                         Command="{Binding EditSelectedCommand}"/>
-              <ui:Button Content="{loc:Str Common_Delete}"
-                         Icon="{ui:SymbolIcon Delete24}"
-                         Appearance="Secondary"
-                         Foreground="{DynamicResource PiaDangerBrush}"
-                         AutomationProperties.AutomationId="McpServers_Detail_Delete"
-                         Command="{Binding DeleteSelectedCommand}"/>
-            </StackPanel>
-          </StackPanel>
-        </ScrollViewer>
-
-        <!-- Editor -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
-          <StackPanel Margin="0,0,10,0">
-
-            <TextBlock Text="{loc:Str McpServers_PasteJson}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,0,0,6"/>
-            <TextBlock Text="{loc:Str McpServers_PasteJsonHint}"
-                       Style="{StaticResource PiaMetaTextStyle}"
-                       TextWrapping="Wrap"
-                       Margin="0,0,0,6"/>
-            <ui:TextBox Text="{Binding PastedJson, UpdateSourceTrigger=PropertyChanged}"
-                        AcceptsReturn="True"
-                        TextWrapping="Wrap"
-                        MinHeight="88"
-                        MaxHeight="160"
-                        VerticalScrollBarVisibility="Auto"
-                        FontFamily="Consolas"
-                        AutomationProperties.AutomationId="McpServers_Edit_Json"/>
-            <ui:Button Content="{loc:Str McpServers_ApplyJson}"
-                       Appearance="Secondary"
-                       Margin="0,8,0,0"
-                       HorizontalAlignment="Left"
-                       AutomationProperties.AutomationId="McpServers_Edit_ApplyJson"
-                       Command="{Binding ApplyPastedJsonCommand}"/>
-
-            <TextBlock Text="{loc:Str McpServers_Name}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,18,0,6"/>
-            <ui:TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
-                        AutomationProperties.AutomationId="McpServers_Edit_Name"/>
-
-            <TextBlock Text="{loc:Str McpServers_Command}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,18,0,6"/>
-            <ui:TextBox Text="{Binding EditCommand, UpdateSourceTrigger=PropertyChanged}"
-                        FontFamily="Consolas"
-                        AutomationProperties.AutomationId="McpServers_Edit_Command"/>
-
-            <TextBlock Text="{loc:Str McpServers_Arguments}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,18,0,6"/>
-            <TextBlock Text="{loc:Str McpServers_ArgumentsHint}"
-                       Style="{StaticResource PiaMetaTextStyle}"
-                       Margin="0,0,0,6"/>
-            <ui:TextBox Text="{Binding EditArguments, UpdateSourceTrigger=PropertyChanged}"
-                        AcceptsReturn="True"
-                        MinHeight="64"
-                        MaxHeight="140"
-                        VerticalScrollBarVisibility="Auto"
-                        FontFamily="Consolas"
-                        AutomationProperties.AutomationId="McpServers_Edit_Arguments"/>
-
-            <TextBlock Text="{loc:Str McpServers_Environment}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,18,0,6"/>
-            <TextBlock Text="{loc:Str McpServers_EnvironmentHint}"
-                       Style="{StaticResource PiaMetaTextStyle}"
-                       TextWrapping="Wrap"
-                       Margin="0,0,0,6"/>
-            <ui:TextBox Text="{Binding EditEnvironment, UpdateSourceTrigger=PropertyChanged}"
-                        AcceptsReturn="True"
-                        MinHeight="64"
-                        MaxHeight="140"
-                        VerticalScrollBarVisibility="Auto"
-                        FontFamily="Consolas"
-                        AutomationProperties.AutomationId="McpServers_Edit_Environment"/>
-
-            <TextBlock Text="{loc:Str McpServers_WorkingDirectory}"
-                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                       Margin="0,18,0,6"/>
-            <TextBlock Text="{loc:Str McpServers_WorkingDirectoryHint}"
-                       Style="{StaticResource PiaMetaTextStyle}"
-                       Margin="0,0,0,6"/>
-            <ui:TextBox Text="{Binding EditWorkingDirectory, UpdateSourceTrigger=PropertyChanged}"
-                        FontFamily="Consolas"
-                        AutomationProperties.AutomationId="McpServers_Edit_WorkingDirectory"/>
-
-            <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
-              <ui:Button Content="{loc:Str McpServers_TestConnection}"
-                         Icon="{ui:SymbolIcon PlugConnected24}"
-                         Appearance="Secondary"
-                         AutomationProperties.AutomationId="McpServers_Edit_Test"
-                         Command="{Binding TestConnectionCommand}"/>
-              <ui:ProgressRing IsIndeterminate="True"
-                               Width="18" Height="18"
-                               Margin="10,0,0,0"
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Margin="0,0,10,0">
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="PlugConnected24"
+                               FontSize="22"
                                VerticalAlignment="Center"
-                               Visibility="{Binding IsTesting, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-            </StackPanel>
-
-            <!-- A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
-            <Border Style="{StaticResource PiaRequiredHintStyle}"
-                    Margin="0,10,0,0"
-                    Visibility="{Binding EditorMessage, Converter={StaticResource NullToVisibilityConverter}}">
-              <TextBlock Text="{Binding EditorMessage}"
-                         TextWrapping="Wrap"
-                         AutomationProperties.AutomationId="McpServers_Edit_Message">
-                <TextBlock.Style>
-                  <Style TargetType="TextBlock">
-                    <Style.Triggers>
-                      <DataTrigger Binding="{Binding EditorMessageIsError}" Value="True">
-                        <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}"/>
-                      </DataTrigger>
-                    </Style.Triggers>
-                  </Style>
-                </TextBlock.Style>
-              </TextBlock>
-            </Border>
-
-            <Grid Margin="0,18,0,6">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-              </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0"
-                         Text="{loc:Str McpServers_Tools}"
-                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
-                         VerticalAlignment="Center"/>
-              <StackPanel Grid.Column="1"
-                          Orientation="Horizontal"
-                          Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ui:Button Content="{loc:Str McpServers_SelectAll}"
-                           Appearance="Transparent"
-                           Padding="8,2"
-                           AutomationProperties.AutomationId="McpServers_Edit_SelectAllTools"
-                           Command="{Binding SelectAllToolsCommand}"/>
-                <ui:Button Content="{loc:Str McpServers_SelectNone}"
-                           Appearance="Transparent"
-                           Padding="8,2"
-                           AutomationProperties.AutomationId="McpServers_Edit_SelectNoTools"
-                           Command="{Binding SelectNoToolsCommand}"/>
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource TextMutedBrush}"/>
+                <TextBlock Text="{Binding SelectedServer.Name}"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDefaultBrush}"/>
+                <ui:Badge Content="{loc:Str McpServers_Badge_Running}"
+                          Appearance="Success"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0"
+                          Visibility="{Binding SelectedServer.IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <ui:Badge Content="{loc:Str McpServers_Status_Failed}"
+                          Appearance="Danger"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0"
+                          Visibility="{Binding SelectedServer.IsFailed, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <ui:Badge Content="{loc:Str McpServers_Status_Disabled}"
+                          Appearance="Caution"
+                          VerticalAlignment="Center"
+                          Margin="10,0,0,0"
+                          Visibility="{Binding SelectedServer.IsEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="18" Height="18"
+                                 Margin="10,0,0,0"
+                                 VerticalAlignment="Center"
+                                 Visibility="{Binding SelectedServer.IsToggling, Converter={StaticResource BooleanToVisibilityConverter}}"/>
               </StackPanel>
-            </Grid>
 
-            <TextBlock Text="{loc:Str McpServers_ToolsUntested}"
-                       Style="{StaticResource PiaMetaTextStyle}"
-                       TextWrapping="Wrap"
-                       Visibility="{Binding HasTools, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock Text="{Binding SelectedToolPrefix}"
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           FontFamily="Consolas"
+                           AutomationProperties.AutomationId="McpServers_Detail_ToolPrefix"/>
+                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"
+                           Visibility="{Binding SelectedToolsSummary, Converter={StaticResource NullToVisibilityConverter}}"/>
+                <TextBlock Text="{Binding SelectedToolsSummary}"
+                           Style="{StaticResource PiaMetaTextStyle}"/>
+              </StackPanel>
 
-            <TextBlock Text="{loc:Str McpServers_ToolsHint}"
-                       Style="{StaticResource PiaMetaTextStyle}"
-                       TextWrapping="Wrap"
-                       Margin="0,0,0,6"
-                       Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <Border Style="{StaticResource PiaRequiredHintStyle}"
+                      Margin="0,14,0,0"
+                      Visibility="{Binding SelectedError, Converter={StaticResource NullToVisibilityConverter}}">
+                <TextBlock Text="{Binding SelectedError}"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource PiaDangerBrush}"
+                           AutomationProperties.AutomationId="McpServers_Detail_Error"/>
+              </Border>
 
-            <ItemsControl ItemsSource="{Binding Tools}"
-                          Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Grid Margin="0,2">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto"/>
-                      <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <CheckBox Grid.Column="0"
-                              VerticalAlignment="Top"
-                              IsChecked="{Binding IsAllowed, Mode=TwoWay}"
-                              AutomationProperties.AutomationId="{Binding Name, StringFormat='McpServers_Tool_{0}'}"
-                              AutomationProperties.Name="{Binding Name}"/>
-                    <StackPanel Grid.Column="1" Margin="4,0,0,0">
-                      <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Name}"
-                                   FontFamily="Consolas"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextDefaultBrush}"/>
-                        <ui:Badge Content="{loc:Str McpServers_Destructive}"
-                                  Appearance="Caution"
-                                  Margin="8,0,0,0"
-                                  Visibility="{Binding ServerDeclaredDestructive, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                      </StackPanel>
-                      <TextBlock Text="{Binding Description}"
-                                 Style="{StaticResource PiaMetaTextStyle}"
-                                 TextWrapping="Wrap"
-                                 Visibility="{Binding Description, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{loc:Str McpServers_Command}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{Binding SelectedServer.CommandLine}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         FontFamily="Consolas"
+                         TextWrapping="Wrap"
+                         AutomationProperties.AutomationId="McpServers_Detail_Command"/>
+
+              <TextBlock Text="{loc:Str McpServers_WorkingDirectory}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedWorkingDirectory, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedWorkingDirectory}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         FontFamily="Consolas"
+                         AutomationProperties.AutomationId="McpServers_Detail_WorkingDirectory"
+                         Visibility="{Binding SelectedWorkingDirectory, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str McpServers_Environment}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedEnvironmentKeys, Converter={StaticResource NullToVisibilityConverter}}"/>
+              <!-- Names only: an env value is the token the server authenticates with. -->
+              <TextBlock Text="{Binding SelectedEnvironmentKeys}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         FontFamily="Consolas"
+                         AutomationProperties.AutomationId="McpServers_Detail_Environment"
+                         Visibility="{Binding SelectedEnvironmentKeys, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str McpServers_Tools}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{Binding SelectedToolsHint}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,6"
+                         AutomationProperties.AutomationId="McpServers_Detail_ToolsHint"
+                         Visibility="{Binding SelectedToolsHint, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <ItemsControl ItemsSource="{Binding SelectedTools}"
+                            AutomationProperties.AutomationId="McpServers_Detail_Tools"
+                            Visibility="{Binding HasSelectedTools, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Margin="0,3">
+                      <TextBlock Text="{Binding Name}"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource TextDefaultBrush}"/>
+                      <shared:PiaHelpHint Text="{Binding Description}" IconSize="14" Margin="2,0,0,0"/>
+                      <ui:Badge Content="{loc:Str McpServers_Destructive}"
+                                Appearance="Caution"
+                                VerticalAlignment="Center"
+                                Margin="4,0,0,0"
+                                Visibility="{Binding ServerDeclaredDestructive, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                      <ui:Badge Content="{loc:Str McpServers_Detail_Withheld}"
+                                Appearance="Light"
+                                VerticalAlignment="Center"
+                                Margin="8,0,0,0"
+                                ToolTip="{loc:Str McpServers_ToolsHint}"
+                                Visibility="{Binding IsWithheld, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     </StackPanel>
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
 
-            <StackPanel Orientation="Horizontal" Margin="0,20,0,20">
-              <ui:Button Content="{loc:Str Common_Save}"
-                         Appearance="Primary"
-                         Margin="0,0,8,0"
-                         AutomationProperties.AutomationId="McpServers_Edit_Save"
-                         Command="{Binding SaveCommand}"/>
-              <ui:Button Content="{loc:Str Common_Cancel}"
-                         Appearance="Secondary"
-                         AutomationProperties.AutomationId="McpServers_Edit_Cancel"
-                         Command="{Binding CancelEditCommand}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                <ui:Button Content="{loc:Str McpServers_TestConnection}"
+                           Icon="{ui:SymbolIcon PlugConnected24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
+                           AutomationProperties.AutomationId="McpServers_Detail_Test"
+                           Command="{Binding TestSelectedCommand}"/>
+                <ui:Button Content="{loc:Str Common_Edit}"
+                           Icon="{ui:SymbolIcon Edit24}"
+                           Appearance="Secondary"
+                           Margin="0,0,8,0"
+                           AutomationProperties.AutomationId="McpServers_Detail_Edit"
+                           Command="{Binding EditSelectedCommand}"/>
+                <ui:Button Content="{loc:Str Common_Delete}"
+                           Icon="{ui:SymbolIcon Delete24}"
+                           Appearance="Secondary"
+                           Foreground="{DynamicResource PiaDangerBrush}"
+                           AutomationProperties.AutomationId="McpServers_Detail_Delete"
+                           Command="{Binding DeleteSelectedCommand}"/>
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="18" Height="18"
+                                 Margin="10,0,0,0"
+                                 VerticalAlignment="Center"
+                                 Visibility="{Binding IsTestingSelected, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              </StackPanel>
+
+              <Border Style="{StaticResource PiaRequiredHintStyle}"
+                      Margin="0,10,0,0"
+                      Visibility="{Binding DetailMessage, Converter={StaticResource NullToVisibilityConverter}}">
+                <TextBlock Text="{Binding DetailMessage}"
+                           TextWrapping="Wrap"
+                           AutomationProperties.AutomationId="McpServers_Detail_Message">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding DetailMessageIsError}" Value="True">
+                          <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </Border>
             </StackPanel>
-          </StackPanel>
-        </ScrollViewer>
-      </Grid>
+          </ScrollViewer>
+
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                        Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel Margin="0,0,10,0">
+
+              <TextBlock Text="{loc:Str McpServers_PasteJson}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,0,0,6"/>
+              <TextBlock Text="{loc:Str McpServers_PasteJsonHint}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,6"/>
+              <ui:TextBox Text="{Binding PastedJson, UpdateSourceTrigger=PropertyChanged}"
+                          AcceptsReturn="True"
+                          TextWrapping="Wrap"
+                          MinHeight="88"
+                          MaxHeight="160"
+                          VerticalScrollBarVisibility="Auto"
+                          FontFamily="Consolas"
+                          AutomationProperties.AutomationId="McpServers_Edit_Json"/>
+              <ui:Button Content="{loc:Str McpServers_ApplyJson}"
+                         Appearance="Secondary"
+                         Margin="0,8,0,0"
+                         HorizontalAlignment="Left"
+                         AutomationProperties.AutomationId="McpServers_Edit_ApplyJson"
+                         Command="{Binding ApplyPastedJsonCommand}"/>
+
+              <TextBlock Text="{loc:Str McpServers_Name}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <ui:TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.AutomationId="McpServers_Edit_Name"/>
+
+              <TextBlock Text="{loc:Str McpServers_Command}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <ui:TextBox Text="{Binding EditCommand, UpdateSourceTrigger=PropertyChanged}"
+                          FontFamily="Consolas"
+                          AutomationProperties.AutomationId="McpServers_Edit_Command"/>
+
+              <TextBlock Text="{loc:Str McpServers_Arguments}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{loc:Str McpServers_ArgumentsHint}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         Margin="0,0,0,6"/>
+              <ui:TextBox Text="{Binding EditArguments, UpdateSourceTrigger=PropertyChanged}"
+                          AcceptsReturn="True"
+                          MinHeight="64"
+                          MaxHeight="140"
+                          VerticalScrollBarVisibility="Auto"
+                          FontFamily="Consolas"
+                          AutomationProperties.AutomationId="McpServers_Edit_Arguments"/>
+
+              <TextBlock Text="{loc:Str McpServers_Environment}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{loc:Str McpServers_EnvironmentHint}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,6"/>
+              <ui:TextBox Text="{Binding EditEnvironment, UpdateSourceTrigger=PropertyChanged}"
+                          AcceptsReturn="True"
+                          MinHeight="64"
+                          MaxHeight="140"
+                          VerticalScrollBarVisibility="Auto"
+                          FontFamily="Consolas"
+                          AutomationProperties.AutomationId="McpServers_Edit_Environment"/>
+
+              <TextBlock Text="{loc:Str McpServers_WorkingDirectory}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{loc:Str McpServers_WorkingDirectoryHint}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         Margin="0,0,0,6"/>
+              <ui:TextBox Text="{Binding EditWorkingDirectory, UpdateSourceTrigger=PropertyChanged}"
+                          FontFamily="Consolas"
+                          AutomationProperties.AutomationId="McpServers_Edit_WorkingDirectory"/>
+
+              <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                <ui:Button Content="{loc:Str McpServers_TestConnection}"
+                           Icon="{ui:SymbolIcon PlugConnected24}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="McpServers_Edit_Test"
+                           Command="{Binding TestConnectionCommand}"/>
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="18" Height="18"
+                                 Margin="10,0,0,0"
+                                 VerticalAlignment="Center"
+                                 Visibility="{Binding IsTesting, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              </StackPanel>
+
+              <!-- A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+              <Border Style="{StaticResource PiaRequiredHintStyle}"
+                      Margin="0,10,0,0"
+                      Visibility="{Binding EditorMessage, Converter={StaticResource NullToVisibilityConverter}}">
+                <TextBlock Text="{Binding EditorMessage}"
+                           TextWrapping="Wrap"
+                           AutomationProperties.AutomationId="McpServers_Edit_Message">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding EditorMessageIsError}" Value="True">
+                          <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}"/>
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </Border>
+
+              <Grid Margin="0,18,0,6">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{loc:Str McpServers_Tools}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                           VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <ui:Button Content="{loc:Str McpServers_SelectAll}"
+                             Appearance="Transparent"
+                             Padding="8,2"
+                             AutomationProperties.AutomationId="McpServers_Edit_SelectAllTools"
+                             Command="{Binding SelectAllToolsCommand}"/>
+                  <ui:Button Content="{loc:Str McpServers_SelectNone}"
+                             Appearance="Transparent"
+                             Padding="8,2"
+                             AutomationProperties.AutomationId="McpServers_Edit_SelectNoTools"
+                             Command="{Binding SelectNoToolsCommand}"/>
+                </StackPanel>
+              </Grid>
+
+              <TextBlock Text="{loc:Str McpServers_ToolsUntested}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         TextWrapping="Wrap"
+                         Visibility="{Binding HasTools, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str McpServers_ToolsHint}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,6"
+                         Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+              <ItemsControl ItemsSource="{Binding Tools}"
+                            Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                      <CheckBox Content="{Binding Name}"
+                                FontFamily="Consolas"
+                                FontSize="12"
+                                VerticalAlignment="Center"
+                                IsChecked="{Binding IsAllowed, Mode=TwoWay}"
+                                AutomationProperties.AutomationId="{Binding Name, StringFormat='McpServers_Tool_{0}'}"
+                                AutomationProperties.Name="{Binding Name}"/>
+                      <shared:PiaHelpHint Text="{Binding Description}" IconSize="14"/>
+                      <ui:Badge Content="{loc:Str McpServers_Destructive}"
+                                Appearance="Caution"
+                                VerticalAlignment="Center"
+                                Margin="4,0,0,0"
+                                Visibility="{Binding ServerDeclaredDestructive, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </StackPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+              <StackPanel Orientation="Horizontal" Margin="0,20,0,20">
+                <ui:Button Content="{loc:Str Common_Save}"
+                           Appearance="Primary"
+                           Margin="0,0,8,0"
+                           AutomationProperties.AutomationId="McpServers_Edit_Save"
+                           Command="{Binding SaveCommand}"/>
+                <ui:Button Content="{loc:Str Common_Cancel}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="McpServers_Edit_Cancel"
+                           Command="{Binding CancelEditCommand}"/>
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="18" Height="18"
+                                 Margin="10,0,0,0"
+                                 VerticalAlignment="Center"
+                                 Visibility="{Binding IsSaving, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <TextBlock Text="{loc:Str McpServers_Saving}"
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           AutomationProperties.AutomationId="McpServers_Edit_SavingHint"
+                           Visibility="{Binding IsSaving, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </Border>
     </Grid>
   </Grid>
 </UserControl>

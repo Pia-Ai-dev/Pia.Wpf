@@ -184,13 +184,15 @@ public class PluginService : IPluginService
         foreach (var plugin in serverPlugins)
         {
             await ActivateMcpPluginAsync(plugin);
+
+            // Per server, not once at the end: Settings is built while this loop is still running, and
+            // nothing else tells it one came up — its rows would freeze at whatever was true mid-startup.
+            RebuildToolNameRoutes();
+            PluginsChanged?.Invoke(this, EventArgs.Empty);
         }
 
         if (serverPlugins.Count > 0)
-        {
-            RebuildToolNameRoutes();
             _logger.LogInformation("Initialized {Count} persisted server plugin handler(s)", serverPlugins.Count);
-        }
     }
 
     private List<SyncPlugin> LoadPluginsFromDb()

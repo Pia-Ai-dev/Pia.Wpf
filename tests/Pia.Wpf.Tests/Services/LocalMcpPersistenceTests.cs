@@ -80,6 +80,24 @@ public sealed class LocalMcpPersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task StartupActivation_AnnouncesEveryServerItBringsUp()
+    {
+        var seed = CreateService();
+        await seed.SaveLocalMcpAsync(null, Definition("GitHub"), TestContext.Current.CancellationToken);
+        await seed.SaveLocalMcpAsync(null, Definition("Memory"), TestContext.Current.CancellationToken);
+
+        var restarted = CreateService();
+        var announced = 0;
+        restarted.PluginsChanged += (_, _) => announced++;
+
+        await restarted.InitializePersistedPluginsAsync();
+
+        // One per server, and before the loop ends: a Settings page built mid-startup is the whole point,
+        // and without these its rows keep saying "not running" for servers that are up.
+        Assert.Equal(2, announced);
+    }
+
+    [Fact]
     public async Task AnEnvironmentValue_IsNotStoredInPlaintext()
     {
         var service = CreateService();

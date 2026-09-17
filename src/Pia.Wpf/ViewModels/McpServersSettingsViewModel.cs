@@ -23,6 +23,15 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     private bool _disposed;
     private bool _suppressReload;
+    private bool _reloading;
+
+    /// <summary>Starting or stopping a server owns a subprocess, and PluginService mutates one shared catalogue
+    /// while it does, so the calls are serialised here rather than by disabling every row's switch.</summary>
+    private readonly SemaphoreSlim _toggleGate = new(1, 1);
+
+    /// <summary>Toggles in flight, by server id and the state each is moving to. <see cref="Reload"/> projects
+    /// it, so a rebuild cannot drop the spinner off a row whose subprocess is still coming up.</summary>
+    private readonly Dictionary<Guid, bool> _pendingToggles = [];
 
     /// <summary>The allowlist the server was saved with. A stopped server lists no tools to tick, so without
     /// this a save from that state would read the empty list as "no restriction" and open every tool.
@@ -38,12 +47,17 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     /// <summary>Every tool the last probe (or the running server) reported, with its allowlist tick.</summary>
     public ObservableCollection<McpToolRow> Tools { get; } = [];
 
+    /// <summary>What the detail pane lists for the selected server. Separate from <see cref="Tools"/>, which
+    /// carries the editor's two-way ticks and is emptied when the editor closes.</summary>
+    public ObservableCollection<McpServerToolInfo> SelectedTools { get; } = [];
+
     [ObservableProperty]
     private bool _hasServers;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(EditSelectedCommand))]
     [NotifyCanExecuteChangedFor(nameof(DeleteSelectedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(TestSelectedCommand))]
     private McpServerRow? _selectedServer;
 
     [ObservableProperty]
@@ -85,14 +99,48 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     [ObservableProperty]
     private bool _isTesting;
 
+    /// <summary>A save stops and restarts the subprocess, which takes seconds the view has to account for.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(CancelEditCommand))]
+    private bool _isSaving;
+
     [ObservableProperty]
     private bool _hasTools;
 
+    [ObservableProperty]
+    private string? _selectedToolPrefix;
+
+    [ObservableProperty]
+    private string? _selectedWorkingDirectory;
+
+    /// <summary>Key names only: the values are the tokens these servers authenticate with.</summary>
+    [ObservableProperty]
+    private string? _selectedEnvironmentKeys;
+
+    [ObservableProperty]
+    private string? _selectedError;
+
+    [ObservableProperty]
+    private string? _selectedToolsSummary;
+
+    [ObservableProperty]
+    private string? _selectedToolsHint;
+
+    [ObservableProperty]
+    private bool _hasSelectedTools;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(TestSelectedCommand))]
+    private bool _isTestingSelected;
+
+    [ObservableProperty]
+    private string? _detailMessage;
+
+    [ObservableProperty]
+    private bool _detailMessageIsError;
+
     public bool ShowsDetail => !IsEditorOpen && SelectedServer is not null;
     public bool ShowsPlaceholder => !IsEditorOpen && SelectedServer is null;
-
-    public string? SelectedToolPrefix =>
-        SelectedServer is null ? null : _pluginService.GetLocalMcpDefinition(SelectedServer.Id)?.ToolPrefix;
 
     public McpServersSettingsViewModel(
         IPluginService pluginService,
@@ -130,11 +178,12 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         OnPropertyChanged(nameof(ShowsDetail));
         OnPropertyChanged(nameof(ShowsPlaceholder));
-        OnPropertyChanged(nameof(SelectedToolPrefix));
+        RefreshDetail();
 
-        // A reload rebuilds the rows, so the same server returns as a new instance — only a genuinely
-        // different one may close an editor mid-edit.
-        if (IsEditorOpen && oldValue?.Id != newValue?.Id)
+        // Only a selection the USER changed may close an open editor. Comparing ids is not enough: a reload
+        // clears the list, and the ListBox writes null back through the two-way binding on the way, which
+        // reads as a different server and would discard whatever is half-typed.
+        if (!_reloading && IsEditorOpen && oldValue?.Id != newValue?.Id)
             CloseEditor();
     }
 
@@ -146,6 +195,19 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     private void Reload()
     {
+        _reloading = true;
+        try
+        {
+            ReloadCore();
+        }
+        finally
+        {
+            _reloading = false;
+        }
+    }
+
+    private void ReloadCore()
+    {
         var selectedId = SelectedServer?.Id;
         Servers.Clear();
 
@@ -154,17 +216,81 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
             var definition = _pluginService.GetLocalMcpDefinition(plugin.Id);
             var status = _pluginService.GetLocalMcpStatus(plugin.Id);
             var enabled = plugin.UserEnabled ?? true;
+            var pending = _pendingToggles.TryGetValue(plugin.Id, out var target);
 
-            Servers.Add(new McpServerRow(plugin.Id, plugin.Name, DescribeCommand(definition), enabled)
+            Servers.Add(new McpServerRow(plugin.Id, plugin.Name, DescribeCommand(definition), pending ? target : enabled)
             {
-                IsRunning = status.IsRunning,
-                StatusText = DescribeStatus(enabled, status)
+                IsRunning = !pending && enabled && status.IsRunning,
+                IsFailed = !pending && enabled && !status.IsRunning,
+                IsToggling = pending,
+                StatusText = pending ? PendingStatus(target) : DescribeStatus(enabled, status)
             });
         }
 
         HasServers = Servers.Count > 0;
-        SelectedServer = Servers.FirstOrDefault(s => s.Id == selectedId) ?? Servers.FirstOrDefault();
+
+        var reselected = Servers.FirstOrDefault(s => s.Id == selectedId) ?? Servers.FirstOrDefault();
+        if (ReferenceEquals(reselected, SelectedServer))
+            RefreshDetail();
+        else
+            SelectedServer = reselected;
     }
+
+    private string PendingStatus(bool target) =>
+        _localizationService[target ? "McpServers_Status_Starting" : "McpServers_Status_Stopping"];
+
+    /// <summary>Everything the detail pane reads, from one definition/status pair: reading the definition
+    /// decrypts its env values, so it is not something a binding should trigger per property.</summary>
+    private void RefreshDetail()
+    {
+        var definition = SelectedServer is null ? null : _pluginService.GetLocalMcpDefinition(SelectedServer.Id);
+        var status = SelectedServer is null ? null : _pluginService.GetLocalMcpStatus(SelectedServer.Id);
+
+        DetailMessage = null;
+        DetailMessageIsError = false;
+        SelectedToolPrefix = NullIfBlank(definition?.ToolPrefix);
+        SelectedWorkingDirectory = NullIfBlank(definition?.WorkingDirectory);
+        SelectedEnvironmentKeys = definition is { Env.Count: > 0 } ? string.Join(", ", definition.Env.Keys) : null;
+        SelectedError = SelectedServer is { IsFailed: true } ? NullIfBlank(status?.Error) : null;
+
+        FillSelectedTools(definition?.AllowedTools, status?.DiscoveredTools ?? []);
+    }
+
+    private void FillSelectedTools(IReadOnlyList<string>? allowed, IReadOnlyList<McpProbeTool> discovered)
+    {
+        SelectedTools.Clear();
+
+        if (discovered.Count > 0)
+        {
+            foreach (var tool in discovered)
+            {
+                SelectedTools.Add(new McpServerToolInfo(tool.Name, tool.Description, tool.ServerDeclaredDestructive,
+                    allowed is null || allowed.Contains(tool.Name, StringComparer.Ordinal)));
+            }
+
+            SelectedToolsSummary = _localizationService.Format("McpServers_Detail_ToolsSummary",
+                SelectedTools.Count(t => t.IsAllowed), SelectedTools.Count);
+            SelectedToolsHint = null;
+        }
+        else if (allowed is { Count: > 0 })
+        {
+            // A stopped server reports nothing, so its saved allowlist is the only tool list left to show.
+            foreach (var name in allowed)
+                SelectedTools.Add(new McpServerToolInfo(name, null, false, true));
+
+            SelectedToolsSummary = _localizationService.Format("McpServers_Detail_ToolsAllowed", allowed.Count);
+            SelectedToolsHint = _localizationService["McpServers_Detail_ToolsStopped"];
+        }
+        else
+        {
+            SelectedToolsSummary = null;
+            SelectedToolsHint = _localizationService["McpServers_Detail_ToolsUnknown"];
+        }
+
+        HasSelectedTools = SelectedTools.Count > 0;
+    }
+
+    private static string? NullIfBlank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
 
     private static string DescribeCommand(LocalMcpDefinition? definition) =>
         definition is null ? "" : string.Join(" ", new[] { definition.Command }.Concat(definition.Args));
@@ -229,7 +355,42 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         IsEditorOpen = true;
     }
 
-    [RelayCommand]
+    private bool CanTestSelected() => SelectedServer is not null && !IsTestingSelected;
+
+    /// <summary>Probes the SAVED definition, so a stopped server can list its tools without opening the
+    /// editor — the state the detail pane otherwise has nothing to show for.</summary>
+    [RelayCommand(CanExecute = nameof(CanTestSelected))]
+    private async Task TestSelectedAsync()
+    {
+        if (SelectedServer is null) return;
+
+        var definition = _pluginService.GetLocalMcpDefinition(SelectedServer.Id);
+        if (definition is null) return;
+
+        IsTestingSelected = true;
+        DetailMessage = null;
+        try
+        {
+            var result = await _pluginService.ProbeLocalMcpAsync(definition);
+            if (!result.Success)
+            {
+                SetDetailMessage(_localizationService.Format("McpServers_TestFailed", result.Error ?? ""), isError: true);
+                return;
+            }
+
+            FillSelectedTools(definition.AllowedTools, result.Tools);
+            SetDetailMessage(_localizationService.Format("McpServers_TestSucceeded", result.Tools.Count), isError: false);
+        }
+        finally
+        {
+            IsTestingSelected = false;
+        }
+    }
+
+    private bool CanCancelEdit() => !IsSaving;
+
+    // Leaving the editor mid-save lets the save's own CloseEditor land on whatever was opened after it.
+    [RelayCommand(CanExecute = nameof(CanCancelEdit))]
     private void CancelEdit() => CloseEditor();
 
     private void CloseEditor()
@@ -354,6 +515,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         var definition = BuildDefinition() with { AllowedTools = CurrentAllowedTools() };
 
         _suppressReload = true;
+        IsSaving = true;
+        EditorMessage = null;
         Guid id;
         try
         {
@@ -368,6 +531,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         finally
         {
             _suppressReload = false;
+            IsSaving = false;
         }
 
         CloseEditor();
@@ -429,11 +593,44 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         Reload();
     }
 
-    [RelayCommand]
+    // Concurrent by design: one command instance serves every row, so the default serialisation reports
+    // CanExecute false and greys out every other switch for as long as one subprocess takes to come up.
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleServerAsync(McpServerRow? row)
     {
-        if (row is null) return;
-        await _pluginService.SetPluginEnabledAsync(row.Id, row.IsEnabled);
+        if (row is null || _pendingToggles.ContainsKey(row.Id)) return;
+
+        var target = row.IsEnabled;
+        _pendingToggles[row.Id] = target;
+        Reload();
+
+        await _toggleGate.WaitAsync();
+        try
+        {
+            await _pluginService.SetPluginEnabledAsync(row.Id, target);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to toggle local MCP server {PluginId}", row.Id);
+            _snackbarService.Show(
+                _localizationService["McpServers_Title"],
+                ex.Message,
+                Wpf.Ui.Controls.ControlAppearance.Danger,
+                null,
+                TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            _pendingToggles.Remove(row.Id);
+            _toggleGate.Release();
+            Reload();
+        }
+    }
+
+    private void SetDetailMessage(string text, bool isError)
+    {
+        DetailMessage = text;
+        DetailMessageIsError = isError;
     }
 
     private void SetMessage(string text, bool isError)
