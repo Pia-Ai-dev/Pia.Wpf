@@ -96,10 +96,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private string _inputText = string.Empty;
 
-    [ObservableProperty]
-    private ImageAttachment? _pendingAttachment;
+    public ObservableCollection<ImageAttachment> PendingAttachments { get; } = new();
 
-    /// <summary>Text and mail files staged as chips, kept apart from the single image attachment.</summary>
+    public const int MaxPendingImages = 4;
+
+    /// <summary>The real gate: four images at ImageAttachmentProcessor.ThresholdBytes each is 14 MB.</summary>
+    public const long MaxPendingImageBytes = 12L * 1024 * 1024;
+
+    public bool HasPendingAttachments => PendingAttachments.Count > 0;
+
+    /// <summary>Text and mail files staged as chips, kept apart from the image attachments.</summary>
     public ObservableCollection<PendingFileAttachment> PendingFiles { get; } = new();
 
     public bool HasPendingFiles => PendingFiles.Count > 0;
@@ -459,7 +465,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         HandleDropFailedCommand = new RelayCommand<string>(ExecuteHandleDropFailed);
         HandleImageAttachedCommand = new AsyncRelayCommand<string>(ExecuteHandleImageAttached);
         HandleImagePastedCommand = new AsyncRelayCommand<BitmapSource>(ExecuteHandleImagePasted);
-        RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
+        RemoveAttachmentCommand = new RelayCommand<ImageAttachment>(attachment =>
+        {
+            if (attachment is not null) PendingAttachments.Remove(attachment);
+        });
         RemovePendingFileCommand = new RelayCommand<PendingFileAttachment>(file =>
         {
             if (file is not null) PendingFiles.Remove(file);
@@ -481,6 +490,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // would mutate outside the window until the first session attach re-points it.
         Messages.CollectionChanged += OnMessagesCollectionChanged;
         PendingFiles.CollectionChanged += OnPendingFilesChanged;
+        PendingAttachments.CollectionChanged += OnPendingAttachmentsChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
         MeetingAttendee.SummarizeRequested += OnMeetingAttendeeSummarizeRequested;
         MeetingAttendee.OpenSettingsRequested += OnMeetingAttendeeOpenSettingsRequested;
@@ -596,7 +606,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // sending it into the wrong conversation is the worse failure, and it is a file they can re-drop.
         if (switchedChat)
         {
-            PendingAttachment = null;
+            PendingAttachments.Clear();
             PendingFiles.Clear();
             SeedAgentModeOnChatLoadAsync().SafeFireAndForget(_logger);
         }
@@ -1038,11 +1048,21 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         DropFailureMessage = null;
     }
 
+    // Same blind spot as OnPendingFilesChanged: the [ObservableProperty] this collection replaced re-raised
+    // CanExecute for free, so without this Send stays disabled with an image attached.
+    private void OnPendingAttachmentsChanged(
+        object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasPendingAttachments));
+        SendMessageCommand.NotifyCanExecuteChanged();
+        RunInBackgroundCommand.NotifyCanExecuteChanged();
+    }
+
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(InputText)) DropFailureMessage = null;
 
-        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming)
             or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive) or nameof(AgentContextChoicePending))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
@@ -1151,7 +1171,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // (sensitive) transcript.
         IsDirectTranscriptionVisible = false;
         StartFreshChat();
-        PendingAttachment = null;
+        PendingAttachments.Clear();
         InputText = prompt;
         SendMessageCommand.Execute(null);
     }
@@ -1166,8 +1186,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IsMeetingAttendeeVisible = false;
         StartFreshChat();
         // Drop any image left pending in the composer behind the overlay so the summary turn carries only
-        // the prompt (StartFreshChat clears InputText but not PendingAttachment).
-        PendingAttachment = null;
+        // the prompt (StartFreshChat clears InputText but not the staged images).
+        PendingAttachments.Clear();
         InputText = prompt;
         SendMessageCommand.Execute(null);
     }
@@ -1200,11 +1220,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // own model context never sees the typed message, so the transcript would be garbled even without loss.
     private bool CanExecuteSendMessage() =>
         !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive && !AgentContextChoicePending
-        && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null || PendingFiles.Count > 0);
+        && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachments.Count > 0 || PendingFiles.Count > 0);
 
     /// <summary>Nothing typed, attached or in flight — the hotkey may tuck the window away.</summary>
     public bool CanDismissWithHotkey =>
-        string.IsNullOrWhiteSpace(InputText) && PendingAttachment is null && PendingFiles.Count == 0
+        string.IsNullOrWhiteSpace(InputText) && PendingAttachments.Count == 0 && PendingFiles.Count == 0
         && !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive;
 
     // Factored out so the gate below and the hint that explains it cannot drift out of sync.
@@ -1265,7 +1285,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         // The provider is read again here because it can change between attaching a picture and sending it,
         // and the picture may be a grab of the whole screen.
-        if (PendingAttachment is not null && !await AssistantProviderTakesImagesAsync())
+        if (PendingAttachments.Count > 0 && !await AssistantProviderTakesImagesAsync())
         {
             WarnImageProviderUnsupported();
             return;
@@ -1273,8 +1293,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var userText = InputText.Trim();
         InputText = string.Empty;
-        var attachment = PendingAttachment;
-        PendingAttachment = null;
+        var attachments = PendingAttachments.ToArray();
+        PendingAttachments.Clear();
         // Captured above the Clear, and read again at the planned line below.
         var files = PendingFiles.ToArray();
         var attachedFileContext = files.Length > 0
@@ -1299,15 +1319,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten (Step 4-compatible).
         var accepted = await _chatSessionManager.StartTurnAsync(
-            session, userText, attachment, planned: planned, attachedFileContext: attachedFileContext,
-            attachedFiles: attachedFiles);
+            session, userText, attachments, planned: planned,
+            attachedFileContext: attachedFileContext, attachedFiles: attachedFiles);
 
         // A refused send consumed nothing, so put the composer back rather than dropping what was typed —
         // reachable in the window between a plan-approval park releasing the session and the flag landing.
         if (!accepted)
         {
             InputText = userText;
-            PendingAttachment = attachment;
+            foreach (var attachment in attachments) PendingAttachments.Add(attachment);
             foreach (var file in files) PendingFiles.Add(file);
         }
     }
@@ -1629,7 +1649,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
-        var attachment = prior.Attachments.FirstOrDefault();
+        var attachments = prior.Attachments.ToArray();
         var attachedFileContext = prior.AttachedFileContext;
         // Captured before the removal below, which takes the answer a styled instruction has to quote.
         var previousAnswer = message.Content;
@@ -1642,7 +1662,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
         await _chatSessionManager.StartTurnAsync(
-            session, prompt, attachment, RegenerateInstructions.For(style, previousAnswer),
+            session, prompt, attachments, RegenerateInstructions.For(style, previousAnswer),
             attachedFileContext: attachedFileContext);
     }
 
@@ -1983,7 +2003,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             PendingFiles.Add(file);
 
         if (result.ImagePaths.Count > 0)
-            await AttachFirstImageAsync(result.ImagePaths);
+            await AttachImagesAsync(result.ImagePaths);
     }
 
     /// <summary>Copies a staged file into the chat's working directory so it survives the send and stays
@@ -2031,24 +2051,29 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
     }
 
-    private async Task AttachFirstImageAsync(IReadOnlyList<string> imagePaths)
+    private async Task AttachImagesAsync(IReadOnlyList<string> imagePaths)
     {
-        // Gated on the attach really happening: the vision-provider and size refusals below leave nothing
-        // attached, and "kept X" would then name a file the user never got.
-        var attached = await ExecuteHandleImageAttached(imagePaths[0]);
-        if (!attached || imagePaths.Count == 1) return;
+        // The provider gate answers for the whole drop, so it is read once and says so once; every refusal
+        // inside the loop is per-file and names the file it left out.
+        if (!await AssistantProviderTakesImagesAsync())
+        {
+            WarnImageProviderUnsupported();
+            return;
+        }
 
-        _snackbarService.Show(
-            _localizationService["Msg_Warning"],
-            _localizationService.Format("Msg_File_OneImageOnly", System.IO.Path.GetFileName(imagePaths[0])),
-            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+        foreach (var path in imagePaths)
+            await AdmitImageAsync(
+                () => ImageAttachmentProcessor.TryPrepare(path, _logger),
+                System.IO.Path.GetFileName(path), path);
     }
 
     private async Task<bool> ExecuteHandleImageAttached(string? filePath)
     {
         if (string.IsNullOrEmpty(filePath)) return false;
         if (IsStreaming) return false;
-        return await PrepareImageAttachmentAsync(() => ImageAttachmentProcessor.TryPrepare(filePath, _logger));
+        return await PrepareImageAttachmentAsync(
+            () => ImageAttachmentProcessor.TryPrepare(filePath, _logger),
+            System.IO.Path.GetFileName(filePath), filePath) is not null;
     }
 
     private async Task ExecuteHandleImagePasted(BitmapSource? source)
@@ -2060,7 +2085,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // cross-thread access exception (Clipboard.GetImage runs on the UI thread).
         if (source.CanFreeze && !source.IsFrozen) source.Freeze();
 
-        await PrepareImageAttachmentAsync(() => ImageAttachmentProcessor.TryPrepare(source, _logger));
+        await PrepareImageAttachmentAsync(
+            () => ImageAttachmentProcessor.TryPrepare(source, _logger),
+            _localizationService["Msg_File_PastedImageName"]);
     }
 
     /// <summary>Refused rather than assumed on a failed read: the picture may be the user's whole desktop.</summary>
@@ -2084,27 +2111,60 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _localizationService["Msg_File_ImageProviderUnsupported"],
             Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
 
-    private async Task<bool> PrepareImageAttachmentAsync(Func<ImageAttachment?> prepare)
+    /// <summary>Returns the admitted attachment so a caller cannot read back "whatever is last" — with a
+    /// collection, the one just added is not identifiable any other way.</summary>
+    private async Task<ImageAttachment?> PrepareImageAttachmentAsync(
+        Func<ImageAttachment?> prepare, string displayName, string? sourcePath = null)
     {
         if (!await AssistantProviderTakesImagesAsync())
         {
             WarnImageProviderUnsupported();
-            return false;
+            return null;
+        }
+
+        return await AdmitImageAsync(prepare, displayName, sourcePath);
+    }
+
+    private async Task<ImageAttachment?> AdmitImageAsync(
+        Func<ImageAttachment?> prepare, string displayName, string? sourcePath)
+    {
+        // Count and dedup are checked before the encode so a refused image costs no JPEG work; the byte
+        // budget cannot be, because the size is not known until the quality ladder settles.
+        if (PendingAttachments.Count >= MaxPendingImages)
+        {
+            WarnImageAttach(_localizationService.Format("Msg_File_ImageLimit", MaxPendingImages, displayName));
+            return null;
+        }
+
+        if (sourcePath is not null && PendingAttachments.Any(
+                a => string.Equals(a.SourcePath, sourcePath, StringComparison.OrdinalIgnoreCase)))
+        {
+            WarnImageAttach(_localizationService.Format("Msg_File_DuplicateAttachment", displayName));
+            return null;
         }
 
         var attachment = await Task.Run(prepare);
         if (attachment is null)
         {
-            _snackbarService.Show(
-                _localizationService["Msg_Warning"],
-                _localizationService["Msg_File_ImageTooLarge"],
-                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
-            return false;
+            WarnImageAttach(_localizationService["Msg_File_ImageTooLarge"]);
+            return null;
         }
 
-        PendingAttachment = attachment;
-        return true;
+        var staged = PendingAttachments.Sum(a => (long)a.JpegBytes.Length);
+        if (staged + attachment.JpegBytes.Length > MaxPendingImageBytes)
+        {
+            WarnImageAttach(_localizationService.Format("Msg_File_ImageBudget", displayName));
+            return null;
+        }
+
+        PendingAttachments.Add(attachment);
+        return attachment;
     }
+
+    private void WarnImageAttach(string message) =>
+        _snackbarService.Show(
+            _localizationService["Msg_Warning"], message,
+            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
 
     /// <summary>False when the default Assistant provider cannot read a picture, so the button says why
     /// instead of refusing after the user has chosen a window.</summary>
@@ -2171,10 +2231,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             }
 
             var attached = await PrepareImageAttachmentAsync(
-                () => ImageAttachmentProcessor.TryPrepare(result.Bitmap!, _logger));
-            if (!attached || PendingAttachment is null) return;
+                () => ImageAttachmentProcessor.TryPrepare(result.Bitmap!, _logger),
+                _localizationService["Msg_File_ScreenCaptureName"]);
+            if (attached is null) return;
 
-            RecordScreenCapture(result, PendingAttachment);
+            RecordScreenCapture(result, attached);
         }
         catch (Exception ex)
         {
@@ -2375,7 +2436,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ActiveAgentContextMode = AgentContextMode.Summary;
 
         AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
-        await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachment: null, planned: true);
+        await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachments: null, planned: true);
     }
 
     /// <summary>Warning-first evaluation (§14.4): shows the subtle adorner/banner when the active provider
@@ -2829,6 +2890,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _runProgress?.Dispose(); // unsubscribes the last RunChanged handler off the singleton
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
         PendingFiles.CollectionChanged -= OnPendingFilesChanged;
+        PendingAttachments.CollectionChanged -= OnPendingAttachmentsChanged;
 
         ChatTitleChip.Dispose();
 

@@ -49,6 +49,14 @@ public class UserBubbleAttachmentBindingTests
         Assert.Empty(AttachmentFaults(lines));
     }
 
+    [Fact]
+    public void AUserTurnWithFourAttachments_RaisesNoAttachmentBindingError()
+    {
+        var lines = RenderAndCaptureBindingTrace(attachments: 4);
+
+        Assert.Empty(AttachmentFaults(lines));
+    }
+
     // Scoped to the attachment path rather than asserting silence: PiaCollapsibleMessageText binds null into
     // AutomationId while its template applies, in both arms, and that noise is not this template's to answer for.
     private static IReadOnlyList<string> AttachmentFaults(IReadOnlyList<string> lines) =>

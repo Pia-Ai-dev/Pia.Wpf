@@ -1,6 +1,6 @@
 # More than one image per chat message
 
-**Status:** Planned, not started
+**Status:** Implemented 2026-09-17. Tracking surface: [2026-09-15-image-attachments-checklist.md](2026-09-15-image-attachments-checklist.md).
 **Owner:** Marco Altmann
 **Written:** 2026-09-15
 **Origin:** A customer ask relayed 2026-09-15 — "why do we only support one image as input but

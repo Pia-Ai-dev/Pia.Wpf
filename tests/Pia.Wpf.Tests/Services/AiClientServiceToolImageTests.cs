@@ -69,7 +69,7 @@ public class AiClientServiceToolImageTests
 
         var tagged = harness.Sent[2].Where(ToolLoopImageMessages.IsTagged).ToList();
         var placeholder = Assert.Single(tagged);
-        Assert.Equal(ToolLoopImageMessages.Placeholder(4, 4), placeholder.Text);
+        Assert.Equal(ToolLoopImageMessages.Placeholder(ToolLoopImageSource.ScreenCapture, 4, 4), placeholder.Text);
     }
 
     [Fact]

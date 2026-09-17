@@ -18,7 +18,8 @@ internal static class ToolLoopImageMessages
         {
             AdditionalProperties = new AdditionalPropertiesDictionary
             {
-                [ToolLoopImageChannel.MessageTagKey] = new ToolLoopImageTag(image.CallId, image.Width, image.Height),
+                [ToolLoopImageChannel.MessageTagKey] =
+                    new ToolLoopImageTag(image.CallId, image.Width, image.Height, image.Source),
             },
         };
     }
@@ -40,7 +41,9 @@ internal static class ToolLoopImageMessages
             if (!IsTagged(message) || !CarriesImage(message)) continue;
 
             var tag = message.AdditionalProperties?[ToolLoopImageChannel.MessageTagKey] as ToolLoopImageTag;
-            messages[i] = new ChatMessage(ChatRole.User, Placeholder(tag?.Width ?? 0, tag?.Height ?? 0))
+            messages[i] = new ChatMessage(
+                ChatRole.User,
+                Placeholder(tag?.Source ?? ToolLoopImageSource.ScreenCapture, tag?.Width ?? 0, tag?.Height ?? 0))
             {
                 AdditionalProperties = message.AdditionalProperties,
             };
@@ -50,7 +53,8 @@ internal static class ToolLoopImageMessages
         return consumed;
     }
 
-    internal static string Placeholder(int width, int height) => $"[screen capture, {width}x{height}, consumed]";
+    internal static string Placeholder(ToolLoopImageSource source, int width, int height) =>
+        $"[{(source == ToolLoopImageSource.ImageFile ? "image file" : "screen capture")}, {width}x{height}, consumed]";
 
     internal static int CountImageMessages(IReadOnlyList<ChatMessage> messages)
     {

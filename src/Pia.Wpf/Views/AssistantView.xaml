@@ -24,24 +24,24 @@
                   MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}">
         <Border Style="{StaticResource UserBubbleStyle}">
           <StackPanel>
-            <Image MaxWidth="300" MaxHeight="300"
-                   Stretch="Uniform"
-                   HorizontalAlignment="Left"
-                   Margin="0,0,0,6">
-              <Image.Style>
-                <!-- Source belongs on the trigger, not the element: an indexer against an empty
-                     collection faults, once per image-less bubble. -->
-                <Style TargetType="Image">
-                  <Setter Property="Visibility" Value="Collapsed" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding HasAttachments}" Value="True">
-                      <Setter Property="Visibility" Value="Visible" />
-                      <Setter Property="Source" Value="{Binding Attachments[0].Thumbnail}" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </Image.Style>
-            </Image>
+            <ItemsControl ItemsSource="{Binding Attachments}"
+                          HorizontalAlignment="Left"
+                          Margin="0,0,0,6"
+                          Visibility="{Binding HasAttachments, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Image Source="{Binding Thumbnail}"
+                         MaxWidth="140" MaxHeight="140"
+                         Stretch="Uniform"
+                         Margin="0,0,6,6" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
             <chat:PiaCollapsibleMessageText
                 Text="{Binding Content}"
                 TextAutomationId="{Binding Id, StringFormat='Assistant_MessageText_{0}'}"
@@ -573,32 +573,37 @@
                   CornerRadius="6"
                   BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                   BorderThickness="1"
-                  HorizontalAlignment="Left">
-            <Border.Style>
-              <Style TargetType="Border">
-                <Setter Property="Visibility" Value="Visible" />
-                <Style.Triggers>
-                  <DataTrigger Binding="{Binding PendingAttachment}" Value="{x:Null}">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                  </DataTrigger>
-                </Style.Triggers>
-              </Style>
-            </Border.Style>
-            <StackPanel Orientation="Horizontal">
-              <Image Source="{Binding PendingAttachment.Thumbnail}"
-                     MaxWidth="64" MaxHeight="64"
-                     Stretch="Uniform"
-                     Margin="0,0,8,0" />
-              <ui:Button Command="{Binding RemoveAttachmentCommand}"
-                         Appearance="Transparent"
-                         Padding="4"
-                         VerticalAlignment="Center"
-                         AutomationProperties.Name="{loc:Str Assistant_RemoveAttachment_Tooltip}"
-                         AutomationProperties.AutomationId="Assistant_RemoveAttachment"
-                         ToolTip="{loc:Str Assistant_RemoveAttachment_Tooltip}">
-                <ui:SymbolIcon Symbol="Dismiss16" FontSize="12" />
-              </ui:Button>
-            </StackPanel>
+                  HorizontalAlignment="Left"
+                  Visibility="{Binding HasPendingAttachments, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <ItemsControl ItemsSource="{Binding PendingAttachments}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                    <Image Source="{Binding Thumbnail}"
+                           MaxWidth="64" MaxHeight="64"
+                           Stretch="Uniform"
+                           Margin="0,0,4,0"
+                           ToolTip="{Binding SourcePath}" />
+                    <ui:Button Command="{Binding DataContext.RemoveAttachmentCommand,
+                                         RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                               CommandParameter="{Binding}"
+                               Appearance="Transparent"
+                               Padding="4"
+                               VerticalAlignment="Center"
+                               AutomationProperties.Name="{loc:Str Assistant_RemoveAttachment_Tooltip}"
+                               AutomationProperties.AutomationId="{Binding Id, StringFormat='Assistant_RemoveAttachment_{0}'}"
+                               ToolTip="{loc:Str Assistant_RemoveAttachment_Tooltip}">
+                      <ui:SymbolIcon Symbol="Dismiss16" FontSize="12" />
+                    </ui:Button>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </Border>
           <!-- Says what the mode changed, in the spot the goal-too-short hint uses; the VM hides this one
                when that one appears. -->

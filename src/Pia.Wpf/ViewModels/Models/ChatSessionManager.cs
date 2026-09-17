@@ -704,11 +704,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// is reachable only programmatically (tests / debug); the user-facing Chat/Agent lever is 1.3.
     /// </summary>
     internal Task<bool> StartPlannedTurnAsync(ChatSession session, string goal) =>
-        StartTurnAsync(session, goal, attachment: null, regenerationInstruction: null, planned: true,
+        StartTurnAsync(session, goal, attachments: null, regenerationInstruction: null, planned: true,
             attachedFileContext: null);
 
     public async Task<bool> StartTurnAsync(
-        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
+        ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
+        string? regenerationInstruction = null,
         bool planned = false, string? attachedFileContext = null,
         IReadOnlyList<AttachedFileRef>? attachedFiles = null)
     {
@@ -729,7 +730,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Must run before anything below mutates the session: if the attached run is parked asking the user
         // a question, this send is that answer, not a new turn.
         if (await TryAnswerParkedRunAsync(
-                session, userText, attachment, regenerationInstruction, attachedFileContext, parkReason))
+                session, userText, attachments, regenerationInstruction, attachedFileContext, parkReason))
             return true;
 
         // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
@@ -743,7 +744,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         {
             AttachedFileContext = attachedFileContext,
         };
-        if (attachment is not null) userMessage.Attachments.Add(attachment);
+        if (attachments is not null)
+            foreach (var attachment in attachments) userMessage.Attachments.Add(attachment);
         if (attachedFiles is not null)
             foreach (var file in attachedFiles) userMessage.AttachedFiles.Add(file);
         session.Messages.Add(userMessage);
@@ -1045,11 +1047,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     /// </para>
     /// </summary>
     private async Task<bool> TryAnswerParkedRunAsync(
-        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction,
-        string? attachedFileContext, string? parkReason)
+        ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
+        string? regenerationInstruction, string? attachedFileContext, string? parkReason)
     {
+        // A resume carries only a text nudge, so an image riding beside the answer would be dropped silently.
         if (_resumeService is null || session.ActiveRunId is not { } runId
-            || regenerationInstruction is not null || attachment is not null
+            || regenerationInstruction is not null || attachments is { Count: > 0 }
             || attachedFileContext is not null
             || string.IsNullOrWhiteSpace(userText))
         {

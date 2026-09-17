@@ -41,7 +41,7 @@ public class ToolLoopImageMessagesTests
 
         Assert.Equal(1, consumed);
         Assert.Equal("look at this", messages[0].Text);
-        Assert.Equal(ToolLoopImageMessages.Placeholder(800, 600), messages[1].Text);
+        Assert.Equal(ToolLoopImageMessages.Placeholder(ToolLoopImageSource.ScreenCapture, 800, 600), messages[1].Text);
         Assert.False(ToolLoopImageMessages.CarriesImage(messages[1]));
         Assert.True(ToolLoopImageMessages.IsTagged(messages[1]));
         Assert.Equal("I see it", messages[2].Text);
@@ -67,10 +67,13 @@ public class ToolLoopImageMessagesTests
         Assert.Same(pasted, messages[0]);
     }
 
-    [Fact]
-    public void Placeholder_NamesTheDimensionsAndSaysItIsSpent()
+    [Theory]
+    [InlineData(ToolLoopImageSource.ScreenCapture, "[screen capture, 4x2, consumed]")]
+    [InlineData(ToolLoopImageSource.ImageFile, "[image file, 4x2, consumed]")]
+    public void Placeholder_NamesTheSourceAndTheDimensions_AndSaysItIsSpent(
+        ToolLoopImageSource source, string expected)
     {
-        Assert.Equal("[screen capture, 4x2, consumed]", ToolLoopImageMessages.Placeholder(4, 2));
+        Assert.Equal(expected, ToolLoopImageMessages.Placeholder(source, 4, 2));
     }
 
     [Fact]

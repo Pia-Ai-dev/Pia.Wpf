@@ -99,4 +99,26 @@ public class AssistantMessageFileRefsTests
         Assert.Contains(chat.Contents, c => c is DataContent);
         Assert.Contains(chat.Contents, c => c is TextContent t && t.Text == "ai-visible text");
     }
+
+    /// <summary>Text first, then the images in order — the shape PiaCloudChatClient emits and the one the
+    /// compactor's image pin was measured on.</summary>
+    [Fact]
+    public void ToChatMessage_EmitsOneDataContentPerImage_AfterTheText()
+    {
+        var msg = new AssistantMessage(ChatRole.User, "what is in these");
+        var first = NewAttachment();
+        var second = NewAttachment();
+        var third = NewAttachment();
+        msg.Attachments.Add(first);
+        msg.Attachments.Add(second);
+        msg.Attachments.Add(third);
+
+        var chat = msg.ToChatMessage();
+
+        Assert.IsType<TextContent>(chat.Contents[0]);
+        Assert.Equal(3, chat.Contents.OfType<DataContent>().Count());
+        Assert.Equal(
+            [first.MimeType, second.MimeType, third.MimeType],
+            chat.Contents.Skip(1).Cast<DataContent>().Select(d => d.MediaType));
+    }
 }
