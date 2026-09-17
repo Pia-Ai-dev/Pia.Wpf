@@ -50,7 +50,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         // One Arg.Any<> short would leave the trailing parameter at its default, miss the call and hand
         // the awaited send a null Task.
         _manager.StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
 
         // StartFreshChat calls SetWorkingDirectory on whatever this returns.
@@ -323,7 +323,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
 
         await _manager.Received(1).StartTurnAsync(
             Arg.Any<ChatSession>(), "summarize the attached report for the team",
-            Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             planned: false,
             attachedFileContext: Arg.Is<string?>(s => s != null && s.Contains("notes.txt")),
             attachedFiles: Arg.Any<IReadOnlyList<AttachedFileRef>?>());
@@ -348,7 +348,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     {
         var vm = CreateSut();
         _manager.StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
         var chip = Chip();
         vm.InputText = "summarize this";
@@ -656,7 +656,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     {
         var vm = CreateSut();
         _manager.StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
         var chip = Chip();
         chip.SavedRelativePath = "Playground/notes.txt";

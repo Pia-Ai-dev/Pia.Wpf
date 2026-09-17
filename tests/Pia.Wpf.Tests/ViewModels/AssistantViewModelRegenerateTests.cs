@@ -36,7 +36,7 @@ public class AssistantViewModelRegenerateTests
         _manager.GetOrCreateActiveForNewChat().Returns(_session);
         _manager.ActiveSession.Returns(_session);
         _manager.StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
             Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
 
         var meeting = new MeetingAttendeeViewModel(

@@ -59,7 +59,8 @@ public interface IChatSessionManager
     /// pending), so the caller owns restoring its composer. Every other outcome, a failed setup included,
     /// is true.</returns>
     Task<bool> StartTurnAsync(
-        ChatSession session, string userText, ImageAttachment? attachment, string? regenerationInstruction = null,
+        ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
+        string? regenerationInstruction = null,
         bool planned = false, string? attachedFileContext = null,
         IReadOnlyList<AttachedFileRef>? attachedFiles = null);
 

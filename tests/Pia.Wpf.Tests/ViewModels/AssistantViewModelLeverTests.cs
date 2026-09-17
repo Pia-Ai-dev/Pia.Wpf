@@ -117,7 +117,7 @@ public class AssistantViewModelLeverTests
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.Received(1).StartTurnAsync(
-            Arg.Any<ChatSession>(), "plan my week", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: true);
+            Arg.Any<ChatSession>(), "plan my week", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: true);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class AssistantViewModelLeverTests
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.Received(1).StartTurnAsync(
-            Arg.Any<ChatSession>(), "just chat", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: false);
+            Arg.Any<ChatSession>(), "just chat", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: false);
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public class AssistantViewModelLeverTests
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.Received(1).StartTurnAsync(
-            Arg.Any<ChatSession>(), "hello", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: false);
+            Arg.Any<ChatSession>(), "hello", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: false);
     }
 
     // ---- Persistence: persist-on-change, seed guard, reopen restore ------------------------------
@@ -272,7 +272,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("   ", "reason"));
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     // ---- Weak-provider banner surfaces but never blocks ------------------------------------------
@@ -517,7 +517,7 @@ public class AssistantViewModelLeverTests
     {
         var vm = CreateSut();
         vm.InputText = "meanwhile, what is the weather";
-        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
+        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
             Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
 
         await vm.SendMessageCommand.ExecuteAsync(null);
@@ -530,7 +530,7 @@ public class AssistantViewModelLeverTests
     {
         var vm = CreateSut();
         vm.InputText = "hello";
-        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
+        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
             Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
 
         await vm.SendMessageCommand.ExecuteAsync(null);
@@ -617,7 +617,7 @@ public class AssistantViewModelLeverTests
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
         Assert.Equal(2, vm.Messages.Count);   // not truncated either
     }
 
@@ -632,7 +632,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -648,7 +648,7 @@ public class AssistantViewModelLeverTests
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
         Assert.Equal(2, vm.Messages.Count);   // not truncated either
     }
 
@@ -664,7 +664,7 @@ public class AssistantViewModelLeverTests
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _manager.Received(1).StartTurnAsync(
-            session, "summarize the repo", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -680,7 +680,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -694,7 +694,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
 
         await _manager.Received(1).StartTurnAsync(
-            session, "plan my week", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: true);
+            session, "plan my week", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: true);
     }
 
     // ---- Dispose is unsubscribe-only, so it has to unsubscribe every session event ----

@@ -2087,7 +2087,7 @@ public class ChatSessionManagerTests
         AttachParkedRun(session, "needs-goal");
 
         await sut.StartTurnAsync(session, "the printed catalogue", null, regenerationInstruction: "make it shorter");
-        await sut.StartTurnAsync(session, "the printed catalogue", NewAttachment());
+        await sut.StartTurnAsync(session, "the printed catalogue", [NewAttachment()]);
 
         await _resumeService.DidNotReceive().ResumeAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());

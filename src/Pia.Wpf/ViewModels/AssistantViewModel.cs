@@ -1299,8 +1299,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten (Step 4-compatible).
         var accepted = await _chatSessionManager.StartTurnAsync(
-            session, userText, attachment, planned: planned, attachedFileContext: attachedFileContext,
-            attachedFiles: attachedFiles);
+            session, userText, attachment is null ? null : [attachment], planned: planned,
+            attachedFileContext: attachedFileContext, attachedFiles: attachedFiles);
 
         // A refused send consumed nothing, so put the composer back rather than dropping what was typed —
         // reachable in the window between a plan-approval park releasing the session and the flag landing.
@@ -1629,7 +1629,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
-        var attachment = prior.Attachments.FirstOrDefault();
+        var attachments = prior.Attachments.ToArray();
         var attachedFileContext = prior.AttachedFileContext;
         // Captured before the removal below, which takes the answer a styled instruction has to quote.
         var previousAnswer = message.Content;
@@ -1642,7 +1642,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
         await _chatSessionManager.StartTurnAsync(
-            session, prompt, attachment, RegenerateInstructions.For(style, previousAnswer),
+            session, prompt, attachments, RegenerateInstructions.For(style, previousAnswer),
             attachedFileContext: attachedFileContext);
     }
 
@@ -2375,7 +2375,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ActiveAgentContextMode = AgentContextMode.Summary;
 
         AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
-        await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachment: null, planned: true);
+        await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachments: null, planned: true);
     }
 
     /// <summary>Warning-first evaluation (§14.4): shows the subtle adorner/banner when the active provider
