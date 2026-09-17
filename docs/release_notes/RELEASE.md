@@ -34,16 +34,13 @@
   editing a server keeps what you typed when another one starts in the
   background.
 
-## Images
+## Assistant tools
 
-- A chat message can carry up to four images instead of one. Dropping, pasting
-  or capturing another one adds it to the strip above the composer rather than
-  silently replacing what was already there, and each thumbnail has its own
-  remove button.
-- read_file now looks at an image in your files folder instead of telling you to
-  attach it, so you can ask about a screenshot by name. search_files no longer
-  reports every image in the tree as a file it failed to read.
-- Writing text into an image file is refused rather than corrupting it.
+- Writing text into an image file is refused instead of corrupting it.
+  write_file and edit_file both say why, rather than repeating the old "attach
+  the image instead" advice.
+- search_files counts images separately instead of listing every PNG in the tree
+  as a file it failed to read.
 
 ## Assistant
 
