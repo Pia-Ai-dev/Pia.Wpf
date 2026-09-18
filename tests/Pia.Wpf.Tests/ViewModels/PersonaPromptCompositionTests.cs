@@ -212,6 +212,20 @@ public class PersonaPromptCompositionTests
     }
 
     [Fact]
+    public void BuildAtCommandHint_MemoryWithTitle_PointsAtTheKnowledgeLoopNotAnIdLookup()
+    {
+        var hint = AssistantPromptComposer.BuildAtCommandHint(
+        [
+            new AtCommand { Domain = AtCommandDomain.Memory, ItemTitle = "Acme Corp" }
+        ]);
+
+        Assert.Contains("Acme Corp", hint);
+        Assert.Contains("read_topic", hint);
+        // A vault page has no ID to resolve — the picker offers titles, and recall returns references.
+        Assert.DoesNotContain("obtain its ID", hint);
+    }
+
+    [Fact]
     public void BuildAtCommandHint_NonFileDomain_KeepsIdLookupWording()
     {
         // Regression guard: the file-specific branch must not alter the other domains' hint.

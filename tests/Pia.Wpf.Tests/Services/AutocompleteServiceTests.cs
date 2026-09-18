@@ -354,6 +354,78 @@ public class AutocompleteServiceTests
         await _assignmentApi.Received(1).ListAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
+    private void VaultHolds(params string[] titles) =>
+        _memory.BrowseIndexAsync().Returns(new BrowseIndexResult([
+            new BrowseCategory("topic", "Topics",
+                titles.Select(t => new BrowseEntry(t, $"memory/topics/{t}.md", "gist")).ToArray())
+        ]));
+
+    [Fact]
+    public async Task Tier2_Memory_OffersVaultTopics()
+    {
+        VaultHolds("Acme Corp", "Quarterly Review");
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(AtCommandDomain.Memory, filter: null);
+
+        Assert.Equal(["Acme Corp", "Quarterly Review"], results.Select(r => r.DisplayText));
+        Assert.All(results, r => Assert.Equal(AtCommandDomain.Memory, r.Domain));
+    }
+
+    [Fact]
+    public async Task Tier2_Memory_FiltersOnTheTopicTitle()
+    {
+        VaultHolds("Acme Corp", "Quarterly Review");
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(AtCommandDomain.Memory, filter: "quart");
+
+        Assert.Single(results);
+        Assert.Equal("Quarterly Review", results[0].DisplayText);
+    }
+
+    /// <summary>The wizard writes the profile to the legacy table only, so vault-only would drop it.</summary>
+    [Fact]
+    public async Task Tier2_Memory_UnionsTheLegacyTableBehindTheVault()
+    {
+        VaultHolds("Acme Corp");
+        IReadOnlyList<MemorySummary> legacy =
+            [new(Guid.NewGuid(), "personal_profile", "Personal Profile")];
+        _memory.GetMemorySummariesAsync().Returns(legacy);
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(AtCommandDomain.Memory, filter: null);
+
+        Assert.Equal(["Acme Corp", "Personal Profile"], results.Select(r => r.DisplayText));
+    }
+
+    [Fact]
+    public async Task Tier2_Memory_ATitleInBothStores_IsOfferedOnce()
+    {
+        VaultHolds("Personal Profile");
+        IReadOnlyList<MemorySummary> legacy =
+            [new(Guid.NewGuid(), "personal_profile", "personal profile")];
+        _memory.GetMemorySummariesAsync().Returns(legacy);
+        var service = CreateService();
+
+        var results = await service.GetSuggestionsAsync(AtCommandDomain.Memory, filter: null);
+
+        Assert.Single(results);
+    }
+
+    [Fact]
+    public async Task Tier2_Memory_RepeatedFragments_ReReadTheVaultOnce()
+    {
+        // browse_index re-reads every record file from disk; the picker asks once per keystroke pause.
+        VaultHolds("Acme Corp");
+        var service = CreateService();
+
+        foreach (var fragment in new[] { "", "a", "ac", "acm" })
+            await service.GetSuggestionsAsync(AtCommandDomain.Memory, fragment);
+
+        await _memory.Received(1).BrowseIndexAsync();
+    }
+
     [Fact]
     public async Task EverySuggestionIconIsInTheBasicMultilingualPlane()
     {

@@ -23,7 +23,7 @@ public class AssistantViewModelAgentContextTests
     private readonly IChatSessionManager _manager = Substitute.For<IChatSessionManager>();
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
 
-    private AssistantViewModel CreateSut()
+    private AssistantViewModel CreateSut(IAgentRunService? runs = null)
     {
         if (SynchronizationContext.Current is null)
             SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
@@ -78,7 +78,7 @@ public class AssistantViewModelAgentContextTests
             directTranscription,
             Substitute.For<IAssistantPromptComposer>(),
             Substitute.For<IProviderCapabilityService>(),
-            Substitute.For<IAgentRunService>(),
+            runs ?? Substitute.For<IAgentRunService>(),
             Substitute.For<IAgentRunResumeService>(),
             _manager,
             Substitute.For<IWorkingDirectoryService>(),
@@ -175,6 +175,107 @@ public class AssistantViewModelAgentContextTests
 
         Assert.False(vm.AgentContextChoicePending);
         Assert.True(vm.AgentContextSettledVisible);
+    }
+
+    // ---- a run already attached to the chat ------------------------------------------------------
+
+    private static IAgentRunService RunService(Guid runId, AgentRunState state)
+    {
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun { Id = runId, State = state, Plan = [] });
+        return runs;
+    }
+
+    /// <summary>
+    /// The reported defect: a run started from an empty chat never got the offer, then parked asking the user
+    /// to clarify the goal — at which point the transcript was no longer empty, so the offer appeared and its
+    /// send gate refused the very answer the run was parked on.
+    /// </summary>
+    [Theory]
+    [InlineData(AgentRunState.WaitingForInput)]
+    [InlineData(AgentRunState.Running)]
+    [InlineData(AgentRunState.Planning)]
+    public void ARunStillInFlight_SuppressesTheBanner(AgentRunState state)
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var vm = CreateSut(RunService(runId, state));
+        Activate(withTranscript: true);
+        vm.SyncRunProgress(runId);
+
+        vm.AgentModeEnabled = true;
+
+        Assert.False(vm.AgentContextChoicePending);
+        Assert.False(vm.AgentContextSettledVisible);
+    }
+
+    /// <summary>The suppression is the run's, not the chat's: the next run in the same chat is asked again.</summary>
+    [Theory]
+    [InlineData(AgentRunState.Completed)]
+    [InlineData(AgentRunState.Failed)]
+    public void ASettledRun_LetsTheBannerReturn(AgentRunState state)
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var vm = CreateSut(RunService(runId, state));
+        Activate(withTranscript: true);
+        vm.SyncRunProgress(runId);
+
+        vm.AgentModeEnabled = true;
+
+        Assert.True(vm.AgentContextChoicePending);
+    }
+
+    /// <summary>
+    /// The state the run reaches, not the event it raises: RunSettled arms itself on a non-terminal State
+    /// change and Planning is the default, so a run that dies while planning raises nothing — and the offer
+    /// would stay suppressed for the rest of the chat, taking the next run with mode unanswered.
+    /// </summary>
+    [Fact]
+    public void ARunFailingWhilePlanning_ReleasesTheSuppression()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Planning, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        Activate(withTranscript: true);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+        Assert.False(vm.AgentContextChoicePending);
+
+        run.State = AgentRunState.Failed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Failed, null));
+
+        Assert.True(vm.AgentModeEnabled);
+        Assert.True(vm.AgentContextChoicePending);
+    }
+
+    [Fact]
+    public void ARunSettlingWhileParked_ReleasesTheSuppression()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.WaitingForInput, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        Activate(withTranscript: true);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+        Assert.False(vm.AgentContextChoicePending);
+
+        run.State = AgentRunState.Completed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+
+        // The settle also drops the lever back to Chat, so the offer is moot until it is raised again.
+        Assert.False(vm.AgentModeEnabled);
+        vm.AgentModeEnabled = true;
+        Assert.True(vm.AgentContextChoicePending);
     }
 
     // ---- the gate --------------------------------------------------------------------------------

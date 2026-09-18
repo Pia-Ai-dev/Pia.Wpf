@@ -1687,4 +1687,5 @@
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Starten Sie diesen Server oder verwenden Sie „Verbindung testen“, um seine Tools zu sehen.</value></data>
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>gesperrt</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Wird gespeichert… der Server startet neu.</value></data>
+  <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Von Ihrer Organisation gesperrt: Diese Einstellung wird per Pia-Richtlinie vorgegeben und kann hier nicht geändert werden.</value></data>
 </root>

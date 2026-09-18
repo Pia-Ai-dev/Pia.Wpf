@@ -199,6 +199,8 @@
                            Appearance="Secondary"
                            Margin="0,0,8,0"
                            IsEnabled="{Binding Policy[DefaultTemplateId]}"
+                           ToolTipService.ShowOnDisabled="True"
+                           ToolTip="{Binding Policy.Reason[DefaultTemplateId]}"
                            AutomationProperties.AutomationId="Templates_Detail_SetDefault"
                            Command="{Binding SetDefaultSelectedCommand}"/>
                 <ui:Button Content="{loc:Str Common_Delete}"

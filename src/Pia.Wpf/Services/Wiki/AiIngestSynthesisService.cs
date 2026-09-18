@@ -30,6 +30,7 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
     private readonly IProviderService _providers;
     private readonly Func<ITokenMapService> _tokenMapFactory;
     private readonly ISettingsService _settings;
+    private readonly ILocalizationService _localization;
     private readonly ILogger<AiIngestSynthesisService> _logger;
 
     public AiIngestSynthesisService(
@@ -37,12 +38,14 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
         IProviderService providers,
         Func<ITokenMapService> tokenMapFactory,
         ISettingsService settings,
+        ILocalizationService localization,
         ILogger<AiIngestSynthesisService> logger)
     {
         _aiClient = aiClient;
         _providers = providers;
         _tokenMapFactory = tokenMapFactory;
         _settings = settings;
+        _localization = localization;
         _logger = logger;
     }
 
@@ -70,6 +73,7 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
             "do NOT restate it as if it were several distinct things. " +
             BuildShapeInstruction(template) +
             BuildLinkInstruction(knownSlugs, tokenizationEnabled) +
+            BuildLanguageInstruction() +
             "Preserve any bracketed placeholder tokens (e.g. " +
             "[Person_1], [Email_2]) EXACTLY as written — never lowercase, translate, rephrase, or invent them. " +
             "Do NOT include a title heading or frontmatter. First output a line 'SUMMARY: <one sentence>' then a " +
@@ -204,6 +208,16 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
             "EXACT slug: [[topics/<slug>]] (optionally [[topics/<slug>|display text]]). NEVER invent a link " +
             $"to a topic whose slug is not in the list. Known topic slugs{truncated}: " +
             string.Join(", ", listed) + ". ";
+    }
+
+    // The marker is carved out of the translation because ParseSynthesis matches "SUMMARY:" literally, and
+    // the proper nouns because a translated name stops resolving against the sources that cite it.
+    private string BuildLanguageInstruction()
+    {
+        var language = AssistantPromptComposer.GetLanguageName(_localization.CurrentLanguage);
+        return $"Write the summary and the whole body in {language}, whatever language the sources are in — " +
+            "never mix languages within the page. Keep the literal marker 'SUMMARY:', the topic title, " +
+            "proper nouns, and quoted source wording as they are. ";
     }
 
     private static string Truncate(string content) =>

@@ -76,6 +76,8 @@
           <CheckBox Content="{loc:Str Providers_SameForAllModes}"
                     IsChecked="{Binding UseSameProviderForAllModes}"
                     IsEnabled="{Binding IsUseSameProviderEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                    ToolTipService.ShowOnDisabled="True"
+                    ToolTip="{Binding Policy.Reason[UseSameProviderForAllModes]}"
                     Margin="0,0,0,12"
                     AutomationProperties.AutomationId="Settings_Providers_UseSameProviderForAllModes"/>
 

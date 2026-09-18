@@ -258,7 +258,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
 
     private void UpdateHotkeyHints(AppSettings settings)
     {
-        OptimizeHotkeyHint = settings.OptimizeHotkey.DisplayText;
+        OptimizeHotkeyHint = settings.OptimizeHotkey?.DisplayText ?? string.Empty;
         AssistantHotkeyHint = settings.AssistantHotkey?.DisplayText ?? string.Empty;
     }
 

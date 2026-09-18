@@ -81,7 +81,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         GetAtCommandToolMapping(Pia.Models.AtCommandDomain.Routine).ToolNames
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    private static string GetLanguageName(TargetLanguage language) => language switch
+    internal static string GetLanguageName(TargetLanguage language) => language switch
     {
         TargetLanguage.DE => "German",
         TargetLanguage.FR => "French",
@@ -273,6 +273,14 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
                     sb.AppendLine($"- The user's request targets the file at relative path \"{cmd.ItemTitle}\". Operate on that exact path directly with the {toolFamily} — no lookup step is needed (read_file before editing, then write_file).");
                 else
                     sb.AppendLine($"- The user's request is about files in the assistant files folder — use the {toolFamily}.");
+                continue;
+            }
+
+            // A vault entry is addressed by the reference recall returns, not by an ID — and the tagged title
+            // is a page or record title, so the knowledge loop opens it rather than resolving it.
+            if (cmd.Domain == Pia.Models.AtCommandDomain.Memory && cmd.ItemTitle is not null)
+            {
+                sb.AppendLine($"- The user's request targets the memory entry titled \"{cmd.ItemTitle}\". Run {queryTool} on that title and open the best hit with read_topic (or read_source for a cited source) before answering, then perform the action described in the rest of the user's message. Available {toolFamily}.");
                 continue;
             }
 

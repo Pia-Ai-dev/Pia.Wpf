@@ -56,6 +56,12 @@
   before.
 - Favorites sync, so a chat starred on one machine is starred on the next,
   end-to-end encryption included.
+- "@Memory" in the composer now lists your vault: every topic page and record
+  it holds, filtered as you type, instead of only Personal Profile. Tagging one
+  points the assistant straight at that page.
+- The question about how much of a conversation the planner should see no longer
+  appears while a run is already going. It used to cut in when a run stopped to
+  ask you something and then blocked the box you had to answer in.
 
 ## Routines
 
@@ -71,3 +77,19 @@
 
 - Minimizing Pia now sends it to the taskbar, like any other app. Closing the
   window with the X is what puts it away into the notification area.
+
+## Memory
+
+- New topic pages are written in the language Pia is set to, whatever language
+  the documents behind them are in. A vault fed by mixed sources reads as one
+  language instead of switching page by page.
+
+## Settings
+
+- The Optimize hotkey can be cleared, not just reset. The row has both buttons:
+  the arrow puts Ctrl+Alt+O back, the cross leaves Optimize with no hotkey at
+  all.
+- A setting your organization locked says so on hover, instead of being greyed
+  out with no explanation.
+- A long entry under Private Keywords is readable again: it ends in an ellipsis
+  and the full word or phrase appears on hover.

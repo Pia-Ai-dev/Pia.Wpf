@@ -43,6 +43,8 @@
                   ItemsSource="{Binding OutputActions}"
                   SelectedItem="{Binding OutputAction}"
                   IsEnabled="{Binding IsOutputActionEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                  ToolTipService.ShowOnDisabled="True"
+                  ToolTip="{Binding Policy.Reason[DefaultOutputAction]}"
                   Width="400"
                   HorizontalAlignment="Left">
           <ComboBox.ItemTemplate>
@@ -70,6 +72,8 @@
         <ui:NumberBox AutomationProperties.AutomationId="Settings_Optimize_AutoTypeDelayMs"
                       Value="{Binding AutoTypeDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                       IsEnabled="{Binding IsAutoTypeDelayEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[AutoTypeDelayMs]}"
                       Minimum="5"
                       Maximum="100"
                       Width="200"

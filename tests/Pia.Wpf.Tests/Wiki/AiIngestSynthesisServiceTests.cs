@@ -25,6 +25,13 @@ public class AiIngestSynthesisServiceTests
         return settings;
     }
 
+    private static ILocalizationService Localization(TargetLanguage language = TargetLanguage.EN)
+    {
+        var loc = Substitute.For<ILocalizationService>();
+        loc.CurrentLanguage.Returns(language);
+        return loc;
+    }
+
     private static ITokenMapService NewEmptyTokenMap()
     {
         var pii = Substitute.For<IPiiDetector>();
@@ -43,6 +50,7 @@ public class AiIngestSynthesisServiceTests
             new NullProviderService(),
             NewEmptyTokenMap,
             NewSettings(),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         var page = await svc.SynthesizeAsync(
@@ -71,6 +79,7 @@ public class AiIngestSynthesisServiceTests
             providers,
             NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: false),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync(
@@ -107,6 +116,7 @@ public class AiIngestSynthesisServiceTests
             new SingleProviderService(),
             () => tokenMap,
             settings,
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         var page = await svc.SynthesizeAsync(
@@ -127,6 +137,7 @@ public class AiIngestSynthesisServiceTests
             new SingleProviderService(),
             NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: false),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         var page = await svc.SynthesizeAsync(
@@ -146,6 +157,7 @@ public class AiIngestSynthesisServiceTests
         var svc = new AiIngestSynthesisService(
             aiClient, new SingleProviderService(), NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: true),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
@@ -161,6 +173,7 @@ public class AiIngestSynthesisServiceTests
         var svc = new AiIngestSynthesisService(
             aiClient, new SingleProviderService(), NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: false),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
@@ -180,6 +193,7 @@ public class AiIngestSynthesisServiceTests
         var svc = new AiIngestSynthesisService(
             aiClient, new SingleProviderService(), NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: false),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
@@ -198,6 +212,7 @@ public class AiIngestSynthesisServiceTests
         var svc = new AiIngestSynthesisService(
             aiClient, new SingleProviderService(), NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: true),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
@@ -209,6 +224,29 @@ public class AiIngestSynthesisServiceTests
         Assert.Contains("lowercase-hyphen form", aiClient.LastPrompt!); // generic instruction instead
     }
 
+    [Theory]
+    [InlineData(TargetLanguage.EN, "English")]
+    [InlineData(TargetLanguage.DE, "German")]
+    [InlineData(TargetLanguage.FR, "French")]
+    public async Task SynthesizeAsync_writes_the_page_in_the_ui_language(
+        TargetLanguage language, string expected)
+    {
+        var aiClient = new StubAiClient("SUMMARY: s.\n\nbody");
+        var svc = new AiIngestSynthesisService(
+            aiClient, new SingleProviderService(), NewEmptyTokenMap,
+            NewSettings(tokenizationEnabled: false),
+            Localization(language),
+            NullLogger<AiIngestSynthesisService>.Instance);
+
+        await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
+            [("sources/a.md", "raw")], [], TestContext.Current.CancellationToken);
+
+        Assert.Contains($"Write the summary and the whole body in {expected}", aiClient.LastPrompt!);
+        // ParseSynthesis matches the marker literally, so the instruction has to carve it out of the
+        // translation it just asked for.
+        Assert.Contains("Keep the literal marker 'SUMMARY:'", aiClient.LastPrompt!);
+    }
+
     [Fact]
     public async Task SynthesizeAsync_keeps_the_free_form_shape_when_there_is_no_template()
     {
@@ -218,6 +256,7 @@ public class AiIngestSynthesisServiceTests
         var svc = new AiIngestSynthesisService(
             aiClient, new SingleProviderService(), NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: false),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Acme", "organization", "charter", template: "",
@@ -235,6 +274,7 @@ public class AiIngestSynthesisServiceTests
         var svc = new AiIngestSynthesisService(
             aiClient, new SingleProviderService(), NewEmptyTokenMap,
             NewSettings(tokenizationEnabled: false),
+            Localization(),
             NullLogger<AiIngestSynthesisService>.Instance);
 
         await svc.SynthesizeAsync("Alice", "person", "charter",

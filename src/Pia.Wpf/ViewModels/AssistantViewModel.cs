@@ -645,6 +645,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (_runProgress is not null)
         {
             _runProgress.RunSettled -= OnRunProgressSettled;
+            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
             _runProgress.Dispose(); // unsubscribes the prior RunChanged handler
         }
         _runProgress = runId is { } id
@@ -653,8 +654,21 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 _navigationService, _toolCalls)
             : null;
         if (_runProgress is not null)
+        {
             _runProgress.RunSettled += OnRunProgressSettled;
+            _runProgress.PropertyChanged += OnRunProgressPropertyChanged;
+        }
         ActiveRunProgress = _runProgress;
+        RefreshAgentContextBanner();
+    }
+
+    // Not RunSettled: that event arms itself on a non-terminal State CHANGE, and Planning is the field's
+    // default — so a run that fails while planning never raises it, and the offer the gate below suppressed
+    // would stay suppressed for the rest of the chat.
+    private void OnRunProgressPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RunProgressViewModel.State))
+            RefreshAgentContextBanner();
     }
 
     // A finished run must not silently arm the NEXT send as a fresh run: the lever falls back to Chat so a
@@ -2515,11 +2529,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
     }
 
+    // A run already attached to this chat is past the point the offer decides, and a parked one is waiting
+    // for an answer the composer types — which the offer's send gate would refuse. Terminal states let the
+    // offer return, so the NEXT run in the chat still gets asked.
+    private bool RunNotYetSettled =>
+        _runProgress is { State: not (RunProgressState.Completed or RunProgressState.TruncatedCompleted
+            or RunProgressState.Failed) };
+
     /// <summary>Evaluated on the lever toggle AND on chat load: agent mode is frequently already on without
     /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>
     private void RefreshAgentContextBanner()
     {
-        var applicable = AgentModeEnabled && HasMessages;
+        var applicable = AgentModeEnabled && HasMessages && !RunNotYetSettled;
         AgentContextChoicePending = applicable && ActiveAgentContextMode is null;
         AgentContextSettledVisible = applicable && ActiveAgentContextMode is not null;
 
@@ -2887,7 +2908,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
             session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
-        _runProgress?.Dispose(); // unsubscribes the last RunChanged handler off the singleton
+        if (_runProgress is not null)
+        {
+            _runProgress.RunSettled -= OnRunProgressSettled;
+            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
+            _runProgress.Dispose(); // unsubscribes the last RunChanged handler off the singleton
+        }
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
         PendingFiles.CollectionChanged -= OnPendingFilesChanged;
         PendingAttachments.CollectionChanged -= OnPendingAttachmentsChanged;
