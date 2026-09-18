@@ -28,7 +28,7 @@ public class ReminderToolHandler : IReminderToolHandler
         return
         [
             AIFunctionFactory.Create(CreateReminderSchema, "create_reminder",
-                $"Create a new reminder. Current date/time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}). " +
+                "Create a new reminder. Resolve a relative date or time ('tomorrow', 'in 20 minutes') against the current date and time given in the conversation. " +
                 "Parse the user's natural language request into structured fields. " +
                 "Examples: 'remind me every day at 9pm to take meds' -> recurrence=Daily, timeOfDay=21:00. " +
                 "'remind me on Nov 16 every year about mom's birthday' -> recurrence=Yearly, month=11, dayOfMonth=16. " +

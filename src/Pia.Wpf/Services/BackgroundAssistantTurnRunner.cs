@@ -140,7 +140,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, turnSetup.SystemPrompt),
-                new(ChatRole.User, request.Prompt),
+                new(ChatRole.User, AssistantPromptComposer.AppendTimeNote(request.Prompt)),
             };
 
             var grantedWrites = new HashSet<string>(request.GrantedWriteTools, StringComparer.OrdinalIgnoreCase);

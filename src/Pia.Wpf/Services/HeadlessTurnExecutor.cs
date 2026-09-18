@@ -736,7 +736,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             new(ChatRole.System, turnSetup.SystemPrompt),
         };
         exchangeMessages.AddRange(_messages.Skip(1));
-        exchangeMessages.Add(new ChatMessage(ChatRole.User, instruction));
+        // The time note rides the copy too: _setup is resolved once per RUN, so a run spanning hours
+        // would otherwise carry the minute it started at.
+        exchangeMessages.Add(new ChatMessage(ChatRole.User, AssistantPromptComposer.AppendTimeNote(instruction)));
 
         // ONE compaction seam covers all three Headless entry points: ExecuteStepAsync, the R10
         // degrade turn (RunSingleTurnFallbackAsync) — both funnel through here — and the RESUME path.

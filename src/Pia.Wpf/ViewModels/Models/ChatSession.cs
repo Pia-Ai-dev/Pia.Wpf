@@ -392,17 +392,17 @@ public sealed class ChatSession : IDisposable
                 if (msg == assistantMessage)
                     continue;
 
-                var hasInjection = !string.IsNullOrEmpty(injectedFileContext) || !string.IsNullOrEmpty(regenerationInstruction);
-                if (msg == userMessage && (atCommands.Count > 0 || hasInjection))
+                if (msg == userMessage)
                 {
                     // Swap the @-command tokens for the items they name (when present), then append any
-                    // @Files content the manager read at setup and/or a styled-regeneration instruction so
-                    // the model sees them inline. Injection is ephemeral — msg.Content (the persisted/
-                    // displayed text) is unchanged, so history never bloats and the user's bubble stays clean.
+                    // @Files content the manager read at setup, a styled-regeneration instruction, and the
+                    // turn's time note so the model sees them inline. Injection is ephemeral — msg.Content
+                    // (the persisted/displayed text) is unchanged, so history never bloats and the user's
+                    // bubble stays clean.
                     var stripped = atCommands.Count > 0 ? AtCommandParser.SubstituteCommands(msg.Content) : msg.Content;
                     var parts = new[] { stripped, injectedFileContext, regenerationInstruction }
                         .Where(p => !string.IsNullOrEmpty(p));
-                    var visible = string.Join("\n\n", parts);
+                    var visible = AssistantPromptComposer.AppendTimeNote(string.Join("\n\n", parts));
                     // ToChatMessage(overrideText) preserves an image attachment — the prior text-only
                     // ChatMessage construction here silently dropped it.
                     chatMessages.Add(msg.ToChatMessage(visible));
@@ -1033,7 +1033,8 @@ public sealed class ChatSession : IDisposable
         }
 
         // The ONLY place a user steering note may ride — a ChatRole.User message, never System.
-        chatMessages.Add(new ChatMessage(ChatRole.User, ctx.AppendNudge(instruction)));
+        chatMessages.Add(new ChatMessage(ChatRole.User,
+            AssistantPromptComposer.AppendTimeNote(ctx.AppendNudge(instruction))));
 
         // Cleared before compaction, and by construction — _stepToolExchanges holds the full results and the
         // next step must still be able to be the one that gets them verbatim.

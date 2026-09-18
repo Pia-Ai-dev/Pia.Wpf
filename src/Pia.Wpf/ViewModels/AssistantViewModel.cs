@@ -2656,7 +2656,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         chatMessages.AddRange(Messages.Select(m => m.ToChatMessage()));
 
-        chatMessages.Add(new ChatMessage(ChatRole.User, userText));
+        chatMessages.Add(new ChatMessage(ChatRole.User, AssistantPromptComposer.AppendTimeNote(userText)));
 
         var rawBuffer = new StringBuilder();
         var lastVisibleLength = 0;

@@ -108,6 +108,16 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             DateTime.Now,
             CultureInfo.CurrentCulture);
 
+    /// <summary>
+    /// Stamps the minute onto the turn's LAST user message, where nothing follows it — in the system
+    /// prompt or a tool description it would cost the provider's prefix cache once a minute.
+    /// </summary>
+    public static string AppendTimeNote(string? userText)
+    {
+        var note = PersonaPromptShape.BuildTimeNote(DateTime.Now, CultureInfo.CurrentCulture);
+        return string.IsNullOrEmpty(userText) ? note : $"{userText}\n\n{note}";
+    }
+
     // Output-format guidance the substrate falls back to when the active persona doesn't define its
     // own (personas created/synced before the field existed, or left blank). Kept byte-identical to
     // BuiltInPersonas.PiaOutputFormat — pinned by a test — so the Pia personas render the historical

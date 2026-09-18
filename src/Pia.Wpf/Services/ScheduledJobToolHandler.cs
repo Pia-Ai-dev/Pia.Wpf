@@ -37,7 +37,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         return
         [
             AIFunctionFactory.Create(CreateScheduledSchema, "create_scheduled_research",
-                $"Create a new scheduled research job that fires on a recurring schedule, runs the query as a background assistant turn, saves the result as a new assistant chat, and shows a toast when complete. Current date/time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}). " +
+                "Create a new scheduled research job that fires on a recurring schedule, runs the query as a background assistant turn, saves the result as a new assistant chat, and shows a toast when complete. Resolve a relative date or time against the current date and time given in the conversation. " +
                 "PRECONDITION: before calling, you must have explicit user-given values for name (display name) and query. The query is a self-contained prompt that will be run once at fire time, so craft it well (bake in any desired answer length/format). If the user does not give a query - but a name - suggest a query. " +
                 "If the user's request is ambiguous, do NOT call this tool. Ask a single clarifying question that requests the missing fields, then call once the user has answered. " +
                 "Parse the user's natural language request into structured fields. " +

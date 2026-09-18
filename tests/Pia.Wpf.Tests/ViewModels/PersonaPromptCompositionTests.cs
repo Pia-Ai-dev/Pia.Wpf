@@ -24,7 +24,7 @@ public class PersonaPromptCompositionTests
 
         Assert.Contains("You are a senior software engineer.", block);
         // The substrate date line is preserved below the identity.
-        Assert.Contains("The current date and time is", block);
+        Assert.Contains("The current date is", block);
         // The old hardcoded identity is gone.
         Assert.DoesNotContain("You are Pia, a helpful personal assistant.", block);
     }

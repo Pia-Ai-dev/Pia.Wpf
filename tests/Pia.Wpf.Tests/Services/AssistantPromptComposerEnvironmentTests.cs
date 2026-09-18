@@ -50,10 +50,10 @@ public class AssistantPromptComposerEnvironmentTests
         Composer().PrepareTurn(Persona(scope), Provider(), [], tokenizationEnabled: false, environmentRoot: environmentRoot)
             .SystemPrompt;
 
-    // The identity block stamps the current minute, so two prompts composed either side of a minute
-    // boundary differ on that line alone.
+    // The identity block stamps the current date, so two prompts composed either side of midnight
+    // differ on that line alone.
     private static string WithoutTimestamp(string prompt) =>
-        Regex.Replace(prompt, @"The current date and time is [^\n]*", "<stamp>");
+        Regex.Replace(prompt, @"The current date is [^\n]*", "<stamp>");
 
     [Fact]
     public void NoRoot_RendersNoEnvironmentSection_AndLeavesThePromptUnchanged()
@@ -91,7 +91,7 @@ public class AssistantPromptComposerEnvironmentTests
         var prompt = Prompt(Root);
         var block = prompt[prompt.IndexOf("## Environment", StringComparison.Ordinal)..];
 
-        Assert.DoesNotContain("The current date and time is", block, StringComparison.Ordinal);
+        Assert.DoesNotContain("The current date is", block, StringComparison.Ordinal);
         Assert.DoesNotContain(DateTime.Now.Year.ToString(CultureInfo.InvariantCulture), block, StringComparison.Ordinal);
     }
 
