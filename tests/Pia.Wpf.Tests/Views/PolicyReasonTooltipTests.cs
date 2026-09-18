@@ -62,6 +62,25 @@ public class PolicyReasonTooltipTests
             "the control itself — on the view root it does not reach them: " + string.Join("; ", hidden));
     }
 
+    /// <summary>
+    /// The reason is a full sentence in a 260px-wide tooltip, so it wraps — and WPF-UI's ToolTip style
+    /// justifies it, which stretches the wrapped lines into gappy columns. The value is inherited from the
+    /// tooltip rather than set on the TextBlock, which is why the override is a derived ToolTip style.
+    /// </summary>
+    [Fact]
+    public void TheToolTipContainer_AlignsItsTextLeft()
+    {
+        var alignment = WpfStaHost.Run(() =>
+        {
+            var tip = new ToolTip { Content = "Locked by your organization: this setting is enforced." };
+            tip.ApplyTemplate();
+            tip.Measure(new Size(300, 300));
+            return (TextAlignment)tip.GetValue(TextBlock.TextAlignmentProperty);
+        });
+
+        Assert.Equal(TextAlignment.Left, alignment);
+    }
+
     private static Locked[] Survey(Type viewType)
     {
         var root = (FrameworkElement)Activator.CreateInstance(viewType)!;
