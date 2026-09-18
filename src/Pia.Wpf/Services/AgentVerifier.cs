@@ -97,7 +97,7 @@ public sealed class AgentVerifier : IAgentVerifier
         List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
     {
         EmitVerdictArgs? captured = null;
-        ToolCallHandler toolHandler = (call, _) =>
+        ToolCallHandler toolHandler = (call, dispatch) =>
         {
             if (string.Equals(call.Name, "emit_verdict", StringComparison.Ordinal))
             {
@@ -110,6 +110,9 @@ public sealed class AgentVerifier : IAgentVerifier
                 {
                     _logger.LogWarning(ex, "Failed to parse emit_verdict arguments");
                 }
+                // The verdict is the whole point of this turn — ending here saves a round whose reply
+                // nothing reads.
+                dispatch.Stop?.RequestStop();
                 return Task.FromResult<object?>("Verdict received.");
             }
             return Task.FromResult<object?>("Only emit_verdict is available here.");

@@ -14,7 +14,9 @@ public class RateLimitRetryHandler : DelegatingHandler
 
     private const int MaxRetries = 3;
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan MinRequestInterval = TimeSpan.FromMilliseconds(500);
+    // A pacing net against a burst, not a rate-limit remedy: it is paid on every request to a host that
+    // has never answered 429, and an agent run pays it once per LLM round.
+    private static readonly TimeSpan MinRequestInterval = TimeSpan.FromMilliseconds(100);
 
     public RateLimitRetryHandler(ILogger<RateLimitRetryHandler> logger)
     {

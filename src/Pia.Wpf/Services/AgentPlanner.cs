@@ -669,7 +669,7 @@ public sealed class AgentPlanner : IAgentPlanner
         PlanStepArg[]? captured = null;
         var cannotGround = false;
         string? question = null;
-        ToolCallHandler toolHandler = (call, _) =>
+        ToolCallHandler toolHandler = (call, dispatch) =>
         {
             if (string.Equals(call.Name, "emit_plan", StringComparison.Ordinal))
             {
@@ -689,7 +689,9 @@ public sealed class AgentPlanner : IAgentPlanner
                     // single turn over a plan the model had actually produced.
                     captured = SalvageSteps(call.Arguments);
                 }
-                // Short ack — the tool loop appends this as a FunctionResult and does one more round (R6).
+                // The plan is the whole point of this turn: the loop appends this ack as the call
+                // result and ends there, instead of paying a round whose reply nothing reads.
+                dispatch.Stop?.RequestStop();
                 return Task.FromResult<object?>("Plan received.");
             }
             return Task.FromResult<object?>("Only emit_plan is available here.");
