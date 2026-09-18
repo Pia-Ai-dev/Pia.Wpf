@@ -1,3 +1,4 @@
+using System.Windows.Data;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -237,5 +238,34 @@ public class ManagementLockTests
 
         Assert.False(sut[nameof(AppSettings.Theme)]);
         Assert.True(sut[nameof(AppSettings.StartMinimized)]);
+    }
+
+    /// <summary>Null is the unenforced answer on purpose: a bound ToolTip that is null shows nothing.</summary>
+    [Fact]
+    public void PolicyReason_ExplainsOnlyTheEnforcedSetting()
+    {
+        var policy = Substitute.For<IPolicyService>();
+        policy.IsEnforced(nameof(AppSettings.Theme)).Returns(true);
+
+        var sut = new PolicyLock(policy);
+
+        Assert.False(string.IsNullOrWhiteSpace(sut.Reason[nameof(AppSettings.Theme)]));
+        Assert.Null(sut.Reason[nameof(AppSettings.StartMinimized)]);
+    }
+
+    [Fact]
+    public void PolicyReason_InvalidatesItsBindingWhenTheEnforcedSetMoves()
+    {
+        var policy = Substitute.For<IPolicyService>();
+        var sut = new PolicyLock(policy);
+        var raised = 0;
+        sut.Reason.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == Binding.IndexerName) raised++;
+        };
+
+        policy.LocksChanged += Raise.Event<EventHandler>(policy, EventArgs.Empty);
+
+        Assert.Equal(1, raised);
     }
 }

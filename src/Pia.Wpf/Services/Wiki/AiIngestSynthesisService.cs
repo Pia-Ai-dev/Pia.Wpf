@@ -210,10 +210,8 @@ public sealed class AiIngestSynthesisService : IIngestSynthesizer
             string.Join(", ", listed) + ". ";
     }
 
-    // The vault is read in the UI's language, not the sources': a German user ingesting an English report
-    // otherwise gets an English page, and one topic fed by sources in two languages gets a mixture. The
-    // marker and the names are carved out because ParseSynthesis matches "SUMMARY:" literally and a
-    // translated person or product name stops resolving against the sources that cite it.
+    // The marker is carved out of the translation because ParseSynthesis matches "SUMMARY:" literally, and
+    // the proper nouns because a translated name stops resolving against the sources that cite it.
     private string BuildLanguageInstruction()
     {
         var language = AssistantPromptComposer.GetLanguageName(_localization.CurrentLanguage);

@@ -7,9 +7,9 @@ namespace Pia.Tests.Views;
 
 /// <summary>
 /// A control greyed out by enterprise policy has to say why, and WPF suppresses tooltips on a disabled
-/// control unless <see cref="ToolTipService.ShowOnDisabledProperty"/> is set — which the views set once on
-/// their root and inherit. Both halves are asserted here: the inheritance (so the single root setting is
-/// evidence, not assumption) and one reason binding per policy-locked control.
+/// control unless <see cref="ToolTipService.ShowOnDisabledProperty"/> is set. Both halves are asserted per
+/// locked control: the reason binding, and that flag — which is set on each control because setting it on
+/// the view root did not reach them.
 /// </summary>
 [Collection("WpfApplicationStatic")]
 public class PolicyReasonTooltipTests
@@ -23,7 +23,7 @@ public class PolicyReasonTooltipTests
     /// </summary>
     private static readonly string[] Exempt = ["DataContext.Policy[TtsVoiceModelKey]"];
 
-    private sealed record Locked(string Path, string? ToolTipPath, bool ShowOnDisabled, bool InTemplate);
+    private sealed record Locked(string Path, string? ToolTipPath, bool ShowOnDisabled);
 
     [Theory]
     [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 9)]
@@ -51,29 +51,27 @@ public class PolicyReasonTooltipTests
             "ToolTip=\"{Binding Policy.Reason[<SettingName>]}\" beside the IsEnabled binding: " +
             string.Join("; ", silent));
 
-        // Only the controls the real tree holds: DataTemplate content is loaded detached, where nothing
-        // inherits.
-        var notInherited = locked
-            .Where(l => !l.InTemplate && !l.ShowOnDisabled)
+        var hidden = locked
+            .Where(l => !l.ShowOnDisabled)
             .Select(l => l.Path)
             .ToArray();
 
-        Assert.True(notInherited.Length == 0,
-            $"ToolTipService.ShowOnDisabled did not reach these controls in {viewType.Name}, so their reason " +
-            "tooltip stays invisible in the one state it exists for. Set it on the view root: " +
-            string.Join("; ", notInherited));
+        Assert.True(hidden.Length == 0,
+            $"these controls in {viewType.Name} carry no ToolTipService.ShowOnDisabled, so their tooltip " +
+            "stays invisible in the one state it exists for. Add ToolTipService.ShowOnDisabled=\"True\" to " +
+            "the control itself — on the view root it does not reach them: " + string.Join("; ", hidden));
     }
 
     private static Locked[] Survey(Type viewType)
     {
         var root = (FrameworkElement)Activator.CreateInstance(viewType)!;
         var found = new List<Locked>();
-        Collect(root, root, found, [], 0, false);
+        Collect(root, root, found, [], 0);
         return [.. found];
     }
 
     private static void Collect(DependencyObject element, DependencyObject root, List<Locked> found,
-        HashSet<DataTemplate> open, int depth, bool inTemplate)
+        HashSet<DataTemplate> open, int depth)
     {
         if (depth > MaxTemplateDepth) return;
         if (!ReferenceEquals(element, root) && element is UserControl) return;
@@ -83,8 +81,7 @@ public class PolicyReasonTooltipTests
             found.Add(new Locked(
                 path,
                 BoundPath(element, FrameworkElement.ToolTipProperty),
-                ToolTipService.GetShowOnDisabled(element),
-                inTemplate));
+                ToolTipService.GetShowOnDisabled(element)));
         }
 
         foreach (var property in (DependencyProperty[])
@@ -92,12 +89,12 @@ public class PolicyReasonTooltipTests
         {
             if (element.ReadLocalValue(property) is not DataTemplate template || !open.Add(template)) continue;
             if (template.LoadContent() is DependencyObject content)
-                Collect(content, content, found, open, depth + 1, true);
+                Collect(content, content, found, open, depth + 1);
             open.Remove(template);
         }
 
         foreach (var child in LogicalTreeHelper.GetChildren(element).OfType<DependencyObject>())
-            Collect(child, root, found, open, depth, inTemplate);
+            Collect(child, root, found, open, depth);
     }
 
     // Both shapes in the markup: the PolicyLock indexer, and the older per-setting Is…Enforced property.

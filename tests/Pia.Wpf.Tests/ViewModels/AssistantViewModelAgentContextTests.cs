@@ -227,6 +227,33 @@ public class AssistantViewModelAgentContextTests
         Assert.True(vm.AgentContextChoicePending);
     }
 
+    /// <summary>
+    /// The state the run reaches, not the event it raises: RunSettled arms itself on a non-terminal State
+    /// change and Planning is the default, so a run that dies while planning raises nothing — and the offer
+    /// would stay suppressed for the rest of the chat, taking the next run with mode unanswered.
+    /// </summary>
+    [Fact]
+    public void ARunFailingWhilePlanning_ReleasesTheSuppression()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Planning, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        Activate(withTranscript: true);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+        Assert.False(vm.AgentContextChoicePending);
+
+        run.State = AgentRunState.Failed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Failed, null));
+
+        Assert.True(vm.AgentModeEnabled);
+        Assert.True(vm.AgentContextChoicePending);
+    }
+
     [Fact]
     public void ARunSettlingWhileParked_ReleasesTheSuppression()
     {

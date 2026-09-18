@@ -645,6 +645,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (_runProgress is not null)
         {
             _runProgress.RunSettled -= OnRunProgressSettled;
+            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
             _runProgress.Dispose(); // unsubscribes the prior RunChanged handler
         }
         _runProgress = runId is { } id
@@ -653,9 +654,21 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 _navigationService, _toolCalls)
             : null;
         if (_runProgress is not null)
+        {
             _runProgress.RunSettled += OnRunProgressSettled;
+            _runProgress.PropertyChanged += OnRunProgressPropertyChanged;
+        }
         ActiveRunProgress = _runProgress;
         RefreshAgentContextBanner();
+    }
+
+    // Not RunSettled: that event arms itself on a non-terminal State CHANGE, and Planning is the field's
+    // default — so a run that fails while planning never raises it, and the offer the gate below suppressed
+    // would stay suppressed for the rest of the chat.
+    private void OnRunProgressPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RunProgressViewModel.State))
+            RefreshAgentContextBanner();
     }
 
     // A finished run must not silently arm the NEXT send as a fresh run: the lever falls back to Chat so a
@@ -665,7 +678,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // the next new chat inherited it.
     private void OnRunProgressSettled()
     {
-        RefreshAgentContextBanner();
         if (!AgentModeEnabled)
             return;
 
@@ -2896,7 +2908,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
             session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
-        _runProgress?.Dispose(); // unsubscribes the last RunChanged handler off the singleton
+        if (_runProgress is not null)
+        {
+            _runProgress.RunSettled -= OnRunProgressSettled;
+            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
+            _runProgress.Dispose(); // unsubscribes the last RunChanged handler off the singleton
+        }
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
         PendingFiles.CollectionChanged -= OnPendingFilesChanged;
         PendingAttachments.CollectionChanged -= OnPendingAttachmentsChanged;
