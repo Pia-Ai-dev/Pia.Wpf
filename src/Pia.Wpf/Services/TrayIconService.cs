@@ -184,7 +184,8 @@ public class TrayIconService : NotifyIconService, ITrayIconService, IDisposable
         {
             var settings = await _settingsService.GetSettingsAsync();
 
-            RegisterHotkey(WindowMode.Optimize, settings.OptimizeHotkey);
+            if (settings.OptimizeHotkey != null)
+                RegisterHotkey(WindowMode.Optimize, settings.OptimizeHotkey);
 
             if (settings.AssistantHotkey != null)
                 RegisterHotkey(WindowMode.Assistant, settings.AssistantHotkey);

@@ -67,7 +67,7 @@ public class AppSettings
     public Dictionary<Guid, double> TodoColumnWidths { get; set; } = new();
     public bool HasCompletedFirstRunWizard { get; set; } = false;
     public UserOperatingMode? UserOperatingMode { get; set; }
-    public KeyboardShortcut OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
+    public KeyboardShortcut? OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
     public KeyboardShortcut? AssistantHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltP();
     public KeyboardShortcut? FastPathHotkey { get; set; }
     public KeyboardShortcut? ScreenCaptureHotkey { get; set; }

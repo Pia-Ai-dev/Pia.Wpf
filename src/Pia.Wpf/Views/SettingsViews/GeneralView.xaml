@@ -27,6 +27,8 @@
                         SelectedItem="{Binding UiLanguage}"
                         AutomationProperties.AutomationId="Settings_General_UiLanguage"
                         IsEnabled="{Binding IsUiLanguageEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[UiLanguage]}"
                         Width="400"
                         HorizontalAlignment="Left">
                 <ComboBox.ItemTemplate>
@@ -48,6 +50,8 @@
               <ComboBox ItemsSource="{Binding WindowModes}"
                         SelectedItem="{Binding DefaultWindowMode}"
                         IsEnabled="{Binding Policy[DefaultWindowMode]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[DefaultWindowMode]}"
                         AutomationProperties.AutomationId="Settings_General_DefaultWindowMode"
                         Width="400"
                         HorizontalAlignment="Left">
@@ -68,6 +72,8 @@
                         IsChecked="{Binding LaunchAtStartup}"
                         AutomationProperties.AutomationId="Settings_General_LaunchAtStartup"
                         IsEnabled="{Binding IsLaunchAtStartupEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[LaunchAtStartup]}"
                         Margin="0,4,0,0"/>
               <TextBlock Text="{loc:Str Settings_LaunchAtStartup_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -76,6 +82,8 @@
                         IsChecked="{Binding StartMinimized}"
                         AutomationProperties.AutomationId="Settings_General_StartMinimized"
                         IsEnabled="{Binding IsStartMinimizedEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[StartMinimized]}"
                         Margin="0,10,0,0"/>
               <TextBlock Text="{loc:Str Settings_StartMinimized_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -83,6 +91,8 @@
               <CheckBox Content="{loc:Str Settings_AutoCaptureSelectedText}"
                         IsChecked="{Binding AutoCaptureSelectedText}"
                         IsEnabled="{Binding Policy[AutoCaptureSelectedText]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[AutoCaptureSelectedText]}"
                         AutomationProperties.AutomationId="Settings_General_AutoCaptureSelectedText"
                         Margin="0,10,0,0"/>
               <TextBlock Text="{loc:Str Settings_AutoCaptureSelectedText_Description}"
@@ -91,6 +101,8 @@
               <CheckBox Content="{loc:Str Settings_AutoUpdateEnabled}"
                         IsChecked="{Binding AutoUpdateEnabled}"
                         IsEnabled="{Binding Policy[AutoUpdateEnabled]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[AutoUpdateEnabled]}"
                         AutomationProperties.AutomationId="Settings_General_AutoUpdateEnabled"
                         Margin="0,10,0,0"/>
               <TextBlock Text="{loc:Str Settings_AutoUpdateEnabled_Description}"
@@ -170,6 +182,7 @@
                   <ColumnDefinition Width="*"/>
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{loc:Str Settings_Hotkey_Optimize}"
                            VerticalAlignment="Center"
@@ -195,8 +208,17 @@
                            Command="{Binding ClearOptimizeHotkeyCommand}"
                            AutomationProperties.AutomationId="Settings_General_ClearOptimizeHotkey"
                            AutomationProperties.Name="{loc:Str Settings_Hotkey_ResetToDefault}"
-                           ToolTip="{loc:Str Settings_Hotkey_ResetToDefault}">
+                           ToolTip="{loc:Str Settings_Hotkey_ResetToDefault}"
+                           Margin="0,0,4,0">
                   <ui:SymbolIcon Symbol="ArrowReset24" FontSize="14"/>
+                </ui:Button>
+                <ui:Button Grid.Column="4"
+                           Appearance="Secondary"
+                           Command="{Binding RemoveOptimizeHotkeyCommand}"
+                           AutomationProperties.AutomationId="Settings_General_RemoveOptimizeHotkey"
+                           AutomationProperties.Name="{loc:Str Settings_Hotkey_ClearHotkey}"
+                           ToolTip="{loc:Str Settings_Hotkey_ClearHotkey}">
+                  <ui:SymbolIcon Symbol="Dismiss24" FontSize="14"/>
                 </ui:Button>
               </Grid>
             </Border>
@@ -363,6 +385,8 @@
                         SelectedItem="{Binding SttBackend}"
                         AutomationProperties.AutomationId="Settings_General_SttEngine"
                         IsEnabled="{Binding IsSttBackendEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[SttBackend]}"
                         Width="400"
                         HorizontalAlignment="Left">
                 <ComboBox.ItemTemplate>
@@ -384,6 +408,8 @@
                         SelectedItem="{Binding WhisperModel}"
                         AutomationProperties.AutomationId="Settings_General_WhisperModel"
                         IsEnabled="{Binding IsWhisperModelEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[WhisperModel]}"
                         Width="400"
                         HorizontalAlignment="Left">
                 <ComboBox.ItemTemplate>
@@ -435,6 +461,8 @@
                         SelectedItem="{Binding TargetSpeechLanguage}"
                         AutomationProperties.AutomationId="Settings_General_SttLanguage"
                         IsEnabled="{Binding IsTargetSpeechLanguageEnforced, Converter={StaticResource InverseBooleanConverter}}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[TargetSpeechLanguage]}"
                         Width="400"
                         HorizontalAlignment="Left">
                 <ComboBox.ItemTemplate>
@@ -534,6 +562,8 @@
                         <ui:Button Command="{Binding DataContext.SelectVoiceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    CommandParameter="{Binding}"
                                    IsEnabled="{Binding DataContext.Policy[TtsVoiceModelKey], RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   ToolTipService.ShowOnDisabled="True"
+                                   ToolTip="{Binding DataContext.Policy.Reason[TtsVoiceModelKey], RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_General_SelectVoice_{0}'}"
                                    Appearance="Secondary"
                                    Visibility="{Binding IsDownloaded, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -566,6 +596,7 @@
                         <ui:Button Command="{Binding DataContext.DeleteVoiceCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                    CommandParameter="{Binding}"
                                    IsEnabled="{Binding DataContext.Policy[TtsVoiceModelKey], RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                   ToolTipService.ShowOnDisabled="True"
                                    AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_General_DeleteVoice_{0}'}"
                                    AutomationProperties.Name="{loc:Str Tts_Delete}"
                                    ToolTip="{loc:Str Tts_Delete}"
@@ -603,6 +634,8 @@
               <CheckBox Content="{loc:Str Settings_Privacy_TokenizationEnabled}"
                         IsChecked="{Binding TokenizationEnabled}"
                         IsEnabled="{Binding Policy[Privacy]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[Privacy]}"
                         AutomationProperties.AutomationId="Settings_General_TokenizationEnabled"
                         Margin="0,4,0,0"/>
               <TextBlock Text="{loc:Str Settings_Privacy_TokenizationDescription}"
@@ -675,6 +708,8 @@
                         <TextBlock Grid.Column="0"
                                    Text="{Binding Keyword}"
                                    VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding Keyword}"
                                    Foreground="{DynamicResource TextDefaultBrush}"/>
                         <ComboBox Grid.Column="1"
                                   ItemsSource="{Binding DataContext.AvailableCategories, RelativeSource={RelativeSource AncestorType=ItemsControl}}"

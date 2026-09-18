@@ -1697,4 +1697,5 @@
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Start this server, or use Test connection, to list its tools.</value></data>
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
+  <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Locked by your organization: this setting is enforced by Pia policy and cannot be changed here.</value></data>
 </root>

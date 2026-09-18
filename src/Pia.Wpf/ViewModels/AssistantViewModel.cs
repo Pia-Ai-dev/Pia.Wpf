@@ -655,6 +655,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (_runProgress is not null)
             _runProgress.RunSettled += OnRunProgressSettled;
         ActiveRunProgress = _runProgress;
+        RefreshAgentContextBanner();
     }
 
     // A finished run must not silently arm the NEXT send as a fresh run: the lever falls back to Chat so a
@@ -664,6 +665,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // the next new chat inherited it.
     private void OnRunProgressSettled()
     {
+        RefreshAgentContextBanner();
         if (!AgentModeEnabled)
             return;
 
@@ -2515,11 +2517,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
     }
 
+    // A run already attached to this chat is past the point the offer decides, and a parked one is waiting
+    // for an answer the composer types — which the offer's send gate would refuse. Terminal states let the
+    // offer return, so the NEXT run in the chat still gets asked.
+    private bool RunNotYetSettled =>
+        _runProgress is { State: not (RunProgressState.Completed or RunProgressState.TruncatedCompleted
+            or RunProgressState.Failed) };
+
     /// <summary>Evaluated on the lever toggle AND on chat load: agent mode is frequently already on without
     /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>
     private void RefreshAgentContextBanner()
     {
-        var applicable = AgentModeEnabled && HasMessages;
+        var applicable = AgentModeEnabled && HasMessages && !RunNotYetSettled;
         AgentContextChoicePending = applicable && ActiveAgentContextMode is null;
         AgentContextSettledVisible = applicable && ActiveAgentContextMode is not null;
 

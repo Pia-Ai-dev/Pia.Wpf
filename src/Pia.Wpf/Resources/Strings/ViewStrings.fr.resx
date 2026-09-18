@@ -1687,4 +1687,5 @@
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Démarrez ce serveur, ou utilisez « Tester la connexion », pour lister ses outils.</value></data>
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>bloqué</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Enregistrement… le serveur redémarre.</value></data>
+  <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Verrouillé par votre organisation : ce paramètre est imposé par la stratégie Pia et ne peut pas être modifié ici.</value></data>
 </root>

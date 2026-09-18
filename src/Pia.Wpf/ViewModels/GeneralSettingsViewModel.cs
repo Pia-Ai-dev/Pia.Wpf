@@ -133,7 +133,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private string _screenCaptureHotkeyDisplayText = "";
 
-    private KeyboardShortcut _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
+    private KeyboardShortcut? _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
     private KeyboardShortcut? _assistantHotkey = KeyboardShortcut.DefaultCtrlAltP();
     private KeyboardShortcut? _fastPathHotkey;
     private KeyboardShortcut? _screenCaptureHotkey;
@@ -267,7 +267,8 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
 
         _optimizeHotkey = settings.OptimizeHotkey;
-        OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
+        OptimizeHotkeyDisplayText =
+            _optimizeHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
         _assistantHotkey = settings.AssistantHotkey;
         AssistantHotkeyDisplayText = _assistantHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
         _fastPathHotkey = settings.FastPathHotkey;
@@ -357,6 +358,15 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
         await SaveSettingsAsync();
         _trayIconService.UpdateHotkey(WindowMode.Optimize, _optimizeHotkey);
+    }
+
+    [RelayCommand]
+    private async Task RemoveOptimizeHotkeyAsync()
+    {
+        _optimizeHotkey = null;
+        OptimizeHotkeyDisplayText = _localizationService["Msg_Settings_HotkeyNotSet"];
+        await SaveSettingsAsync();
+        _trayIconService.UpdateHotkey(WindowMode.Optimize, null);
     }
 
     [RelayCommand]
