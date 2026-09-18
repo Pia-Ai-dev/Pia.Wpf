@@ -78,6 +78,11 @@ public sealed class AgentTurnRoutingTests
         ctx.RecordStep(
             new AgentStep { Ordinal = 0, Title = "A", Intent = "ia" },
             new StepTurnResult(true, false, null, "step result text", null, Guid.NewGuid(), Guid.NewGuid()));
+        // Two steps: AgentVerifier skips a lone step that named no artifact, so the verify turn whose
+        // routing this asserts would never be sent.
+        ctx.RecordStep(
+            new AgentStep { Ordinal = 1, Title = "B", Intent = "ib" },
+            new StepTurnResult(true, false, null, "second step result text", null, Guid.NewGuid(), Guid.NewGuid()));
         return ctx;
     }
 

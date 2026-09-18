@@ -107,8 +107,10 @@ public sealed class AgentTerminalToolStopTests : IDisposable
             ["passed"] = true, ["reason"] = "looks right", ["missing"] = Array.Empty<object?>(),
         });
 
+        // Declares an artifact so the turn is actually sent: AgentVerifier skips a lone step that
+        // named none on either channel.
         var ctx = new RunContext("build a thing", RunProfile.Interactive);
-        ctx.RecordStep(new AgentStep { Ordinal = 0, Title = "A", Intent = "ia" },
+        ctx.RecordStep(new AgentStep { Ordinal = 0, Title = "A", Intent = "ia", ExpectedArtifact = "report.md" },
             new StepTurnResult(true, false, null, "step result text", null, Guid.NewGuid(), Guid.NewGuid()));
 
         var verifier = new AgentVerifier(_ai, _settingsService, NullLogger<AgentVerifier>.Instance);

@@ -10,4 +10,6 @@
   runs feel it most, because they pay it on every round of thinking.
 - Agent runs stop thinking once they have what they need. Building a plan and
   checking the finished work each spent one extra round on an answer nothing
-  read — about nine seconds a run.
+  read.
+- A run that took a single step and wrote no file no longer spends a round
+  double-checking its own answer. There was nothing there to check it against.

@@ -239,9 +239,9 @@ public sealed class AgentRunOrchestrator
                 await SafeBuildConversationDigest(run, ctx, provider, cts.Token).ConfigureAwait(false);
 
                 var plan = await _planner.PlanAsync(ctx.Goal, ctx, persona, provider, cts.Token).ConfigureAwait(false);
-                // I1: the plan turn's rounds (≥2, doubled by the firm retry) are real spend — accrue
-                // them run-level BEFORE branching, so neither the degrade path nor the decline path below
-                // can drop them.
+                // The plan turn's rounds — one, doubled by the firm retry and by the optional reasoning
+                // turn — are real spend. Accrue them run-level BEFORE branching, so neither the degrade path
+                // nor the decline path below can drop them.
                 await SafeAddUsage(run.Id, plan.Usage, cts.Token).ConfigureAwait(false);
 
                 // Must run BEFORE the R10 single-turn fallback below: falling into that fallback would send

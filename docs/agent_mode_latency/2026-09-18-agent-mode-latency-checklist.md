@@ -39,7 +39,7 @@ little standalone value, unblocks a High.
 - [ ] **Triage a goal before the plan turn.** One tool-less `fast` classification call answers "does
       this need a plan?"; anything that does not becomes an ordinary chat turn.
       *Deps:* — · *Effort:* M · *Value:* High
-- [ ] **Skip verify on a single-step run that declared no artifact.** The critic re-reads one step's
+- [x] **Skip verify on a single-step run that declared no artifact.** The critic re-reads one step's
       own self-report against the goal that produced it and agrees, for ~8.5 s.
       *Deps:* — · *Effort:* XS · *Value:* High
 - [ ] **Route a 1-step plan to the single-turn path.** A plan that succeeds with one step needing no
