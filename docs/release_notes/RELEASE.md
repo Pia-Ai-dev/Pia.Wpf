@@ -25,6 +25,9 @@
 - Pia no longer makes you wait behind its own background syncing. A request you
   are waiting for used to queue behind every housekeeping upload already in
   flight; the two are paced separately now.
+- The file list behind a message's "+N" chip stays open while you scroll it. It
+  shut on the first wheel notch, which put every file past the first few out of
+  reach.
 
 ## Transcription
 
@@ -35,6 +38,7 @@
 
 ## Privacy
 
-- Log files no longer carry your Windows account name. Folder paths are written
-  as `%APPDATA%\Pia` instead of the full path through your user folder, so a
-  log you attach to a support request no longer identifies you.
+- Log files no longer carry your Windows account name, the web addresses Pia
+  calls, the names you gave your providers, or which applications you have open.
+  Folder paths are written as `%APPDATA%\Pia` instead of the full path through
+  your user folder, so a log you attach to support no longer identifies you.

@@ -21,7 +21,7 @@ little standalone value, unblocks a High.
 | G-throttle | Delete the proactive pre-delay, make it per-provider config, or lower it? | Lower to 100 ms — keep the pacing net, recover 80 % of the loss, no new config surface |
 | G-triage | Classify before the plan turn, or let `emit_plan` declare "no plan needed" after it? | Triage call before the plan turn (doc option A) — the after-the-fact member cannot recover the 12 s already spent |
 | G-lever | Per-chat lever defaulting to Chat, or let the settle fall-back persist? | Per-chat, plus an explicit setting for the new-chat default. Persisting the fall-back is out: `bc846e00` added `_isSettlingAgentMode` because that silently overwrote a preference nobody touched |
-| G-triage-accuracy | Does the classifier misroute real agent work to chat often enough to hurt? | OPEN — answered by the four appendix prompts now that B2 has landed. A wrong "chat" is worse than a slow plan turn, so the classifier defaults to PLAN on anything but the exact word ANSWER, and `AssistantAgentTriageEnabled` turns it off wholesale |
+| G-triage-accuracy | Does the classifier misroute real agent work to chat often enough to hurt? | CLOSED 2026-09-19 — all four appendix prompts run live, no misroute. Classification costs 1.7–2.6 s. See the validation section below |
 
 ## Batch 1 — pure latency, no behaviour change
 
@@ -97,26 +97,47 @@ little standalone value, unblocks a High.
 - Re-measurement against production rather than a local dev server. Every absolute number in the
   analysis is the owner's own machine against `localhost:8081`.
 
+## Live validation, 2026-09-19
+
+All four appendix prompts run against Pia Cloud with the lever on Agent. Evidence is
+`%LOCALAPPDATA%PiaLogspia-2026-09-19.log`.
+
+| Prompt | Triage | Outcome |
+|---|---|---|
+| 1 `@Memory:SpaceX…` | AnswerDirectly, 2168 ms | No run created. Was ≥ 38.5 s, now one chat turn |
+| 2 files/largest | NeedsPlan, 2602 ms | 1-step run, 39.2 s, **verifier skipped** |
+| 3 EV networks | NeedsPlan, 1692 ms | 3 steps after a replan, 4 min 46 s |
+| 4 `d as asd as` | AnswerDirectly, 1843 ms | Answered in 3 s. Previously a 7.4 s plan turn before declining |
+
+**Batch 1 holds on every run.** `Round 1: a tool handler stopped the loop` appears once per plan turn,
+once per replan and once per verify turn across all four runs — no turn spent a second round.
+
+**Batch 2's verify-skip fired in the wild** on prompt 2: `Verifier skipped: one step, no artifact on
+either channel`. Spine overhead on that run is now triage 2.6 s + plan 4.5 s ≈ 7 s of its 39.2 s; the
+other 34 s is the step itself scanning 22 files. Before this work the same shape cost ~28–30 s of spine.
+
+**Prompt 2 is the case for the unbuilt step 4.** It planned one step, declared no artifact and needed no
+write tool — exactly the shape that should have gone to `RunDegradedSingleTurnAsync`. Triage was not
+wrong to plan it (it is a tool task), so triage cannot be the thing that catches it.
+
+**Prompt 3's 4 min 46 s is mostly not the spine.** Step 0 ran 99 s and called no tool at all: Pia
+Cloud's server-side web search reported its budget exhausted, and the model wrote prose saying so
+instead of the file. The critic caught it (`passed: false`), the replan re-ran the work and the file
+landed — the spine earning its cost on real agent work. The exhausted search budget is a server-side
+quota with no client-side lever; there is no `web_search` among the 53 tools the client sends.
 ## What remains
 
 Cheapest decisive work first.
 
-1. **Live-validate the rest of the appendix.** Prompt 1 is done — `Goal triage → AnswerDirectly in
-   2168ms`, no run created. Prompts 2/3/4 with the lever on Agent still owe: expect `Goal triage →
-   NeedsPlan`, then exactly one `RequestStart`/`RequestEnd` pair inside Planning and inside Verifying
-   with `a tool handler stopped the loop` at round 1 of each, and `Verifier skipped` on prompt 2. Then
-   the disabled arm — `"AssistantAgentTriageEnabled": false` in settings.json, no restart needed, and
-   prompt 1 must plan. Prompt 4 (`d as asd as`) has whitespace, so it passes `GoalPreflight` and now
-   reaches triage for the first time; whichever way it goes is new data. This is what closes
-   G-triage-accuracy.
-2. **Route a 1-step plan to the single-turn path** — the one planned step never authorized. Check what
+1. **Route a 1-step plan to the single-turn path** — the one planned step never authorized, and
+   prompt 2 above is a measured instance of exactly the shape it targets. Check what
    `RunDegradedSingleTurnAsync` stamps on the run first: it was built for a FAILED plan, and a
    "degraded" label on a run that worked is its own regression.
-3. The two items under **Not yet planned** above.
+2. The two items under **Not yet planned** above.
 
 Verifiable only by eye, since no test reaches them: the clock ticking through a plan turn, the lever
 falling back to Chat after a downgrade, the `Answered directly` chip beside `Protected` on a narrow
 window, and the new Settings → Assistant toggle.
 
-`AssistantAgentTriageEnabled` has no Settings UI on purpose — it exists to turn triage off while
-G-triage-accuracy is open, not as a user-facing choice.
+`AssistantAgentTriageEnabled` has no Settings UI. It was added as an off switch for while
+G-triage-accuracy was open; that gate is now closed, so the setting is a candidate for removal.
