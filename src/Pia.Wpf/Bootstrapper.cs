@@ -385,6 +385,11 @@ public static class Bootstrapper
             builder.AddDebug();
             builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
+            // None, not Warning. At Warning the framework's own lines stop, but its "HTTP {method} {uri}"
+            // SCOPE stays alive and ScopeRenderingLoggerProvider then stamps the full URL onto every Pia
+            // line inside it - measured. HttpLoggingHandler already reports the same requests, SafeUrl-wrapped.
+            builder.AddFilter("System.Net.Http.HttpClient", LogLevel.None);
+
             var logDirectory = PiaPaths.LogsDirectory;
             Directory.CreateDirectory(logDirectory);
 
@@ -414,10 +419,17 @@ public static class Bootstrapper
             // compile-time erasure of the Sensitive* family — 17-trust-model.md §4).
             //
             // ORDER: scope OUTSIDE cap, so the scope prefix is inside the capped text and survives truncation
-            // (which keeps the head) — a capped line still says which run it belongs to.
+            // (which keeps the head) — a capped line still says which run it belongs to. Tokenising sits between
+            // them: it rewrites the profile roots so no account name reaches the file a user attaches to support.
             builder.Services.AddSingleton<ILoggerProvider>(_ => new ScopeRenderingLoggerProvider(
-                new LogMessageCapLoggerProvider(
-                    new FileLoggerProvider(Path.Combine(logDirectory, "pia.log"), fileOptions))));
+                new PathTokenisingLoggerProvider(
+                    new LogMessageCapLoggerProvider(
+                        new FileLoggerProvider(Path.Combine(logDirectory, "pia.log"), fileOptions)),
+                    [
+                        new(PiaPaths.LocalProfileRoot, "%LOCALAPPDATA%"),
+                        new(PiaPaths.RoamingProfileRoot, "%APPDATA%"),
+                        new(PiaPaths.UserProfileRoot, "%USERPROFILE%"),
+                    ])));
         });
 
         // Infrastructure
@@ -620,6 +632,7 @@ public static class Bootstrapper
         // is NOT registered — ChatSessionManager new's it on the UI thread bound to the session.
         services.AddTransient<IAgentPlanner, AgentPlanner>();
         services.AddTransient<IAgentVerifier, AgentVerifier>();
+        services.AddTransient<IGoalTriageService, GoalTriageService>();
         services.AddTransient<AgentRunOrchestrator>();
         services.AddTransient<HeadlessTurnExecutor>();
         // Batch 07 G6: per-step persona/provider/prompt resolution and the assignable-persona roster.

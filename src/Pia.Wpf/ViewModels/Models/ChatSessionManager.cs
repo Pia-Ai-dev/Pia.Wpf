@@ -44,6 +44,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
     private readonly AgentRunOrchestrator _agentRunOrchestrator;
     private readonly IAgentRunService _agentRunService;
     private readonly IProviderCapabilityService _providerCapabilityService;
+    private readonly IGoalTriageService _goalTriage;
     private readonly IHeadlessRunLauncher _headlessRunLauncher;
     private readonly IWindowManagerService _windowManager;
     private readonly IExecutingRunStore _executingRuns;
@@ -143,6 +144,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         AgentRunOrchestrator agentRunOrchestrator,
         IAgentRunService agentRunService,
         IProviderCapabilityService providerCapabilityService,
+        IGoalTriageService goalTriage,
         IHeadlessRunLauncher headlessRunLauncher,
         IWindowManagerService windowManager,
         IExecutingRunStore executingRuns,
@@ -185,6 +187,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         _agentRunOrchestrator = agentRunOrchestrator;
         _agentRunService = agentRunService;
         _providerCapabilityService = providerCapabilityService;
+        _goalTriage = goalTriage;
         _headlessRunLauncher = headlessRunLauncher;
         _windowManager = windowManager;
         _executingRuns = executingRuns;
@@ -785,6 +788,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         ChatTurnRequest request;
         Persona persona;
+        var plannedRun = planned;
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
@@ -822,6 +826,21 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             session.SetProviderId(provider.Id);
             _logger.LogInformation("SendMessage: resolved persona {PersonaId} (ToolScope {ToolScope})", persona.Id, persona.ToolScope);
 
+            // Triage runs HERE and not in the orchestrator: by the time the planner is reached a run row
+            // already exists, and a goal that turns out not to need one would leave a phantom in run
+            // history. Interactive only — a routine triaged to chat would have no chat to land in.
+            if (plannedRun && settings.AssistantAgentTriageEnabled
+                && await _goalTriage.ClassifyAsync(userText, provider, session.Cts!.Token)
+                    == GoalTriageVerdict.AnswerDirectly)
+            {
+                plannedRun = false;
+                assistantMessage.AnsweredDirectly = true;
+                // The composer must stop saying Agent: no run is coming, and the agent-context offer keys
+                // off the lever to decide whether to ask what the planning should see.
+                session.SetAgentMode(false);
+                _logger.LogInformation("Chat {ChatId}: goal triaged to a direct answer; no run created", session.Id);
+            }
+
             // suggest_agent_mode eligibility (R7/§14.3): only an interactive Chat turn (never a Planned
             // dispatch) on a tool-Capable provider may offer the switch. Capability is async + cached, so
             // pre-resolve it here (F2 — keeps PrepareTurn synchronous). Swallowed inside the service on
@@ -831,10 +850,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                     == PlanningCapability.Capable;
 
             var turnSetup = _promptComposer.PrepareTurn(persona, provider, atCommands, tokenizationEnabled,
+                // !planned, not !plannedRun: a downgraded turn still ARRIVED with the lever on Agent, and
+                // offering to switch to the mode the user is already in is worse than not offering.
                 suggestAgentModeEligible: !planned && providerToolCapable,
                 // No folder named for a Planned dispatch: its steps run against an isolated workspace
                 // that is not provisioned until below, so naming this one would point them outside it.
-                environmentRoot: planned ? null : _filesToolHandler.DescribeEffectiveRoot(session.WorkingDirectory));
+                environmentRoot: plannedRun ? null : _filesToolHandler.DescribeEffectiveRoot(session.WorkingDirectory));
             // Provider name is a user-named item (CLAUDE.md) — keep it out of the
             // release-surviving log; surface IDs/counts at Info, the name only in DEBUG.
             _logger.LogInformation("SendMessage: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
@@ -886,7 +907,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             return true;
         }
 
-        if (planned)
+        if (plannedRun)
         {
             // The pre-added empty streaming assistant placeholder is for the single-turn path; a Planned
             // run's transcript is [user: goal] + one assistant message per step. Remove it BEFORE the persist

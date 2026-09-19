@@ -315,6 +315,10 @@ public partial class AssistantView : UserControl
 
     private void MessageScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        // A nested scroller — a chip dropdown's popup list — bubbles in here with its own offsets, which
+        // would read as the user leaving the bottom of the chat.
+        if (e.OriginalSource is ScrollViewer origin && !ReferenceEquals(origin, MessageScrollViewer)) return;
+
         // Distinguish a user-driven vertical scroll from a scroll caused by content growth.
         // ExtentHeightChange != 0 means new content arrived; ignore those.
         // A chat opened from history arrives already populated, and its markdown bubbles keep growing

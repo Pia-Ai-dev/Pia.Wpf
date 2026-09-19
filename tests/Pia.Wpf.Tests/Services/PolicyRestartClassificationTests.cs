@@ -18,6 +18,8 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.AgentPlanReasoningTurnEnabled),
         nameof(AppSettings.AgentRunAutoApproveBuiltInWrites),
         nameof(AppSettings.AgentWallClockMinutes),
+        nameof(AppSettings.AssistantAgentTriageEnabled),
+        nameof(AppSettings.AssistantNewChatAgentMode),
         nameof(AppSettings.AssistantBackgroundRunConfirmSuppressed),
         nameof(AppSettings.AutoCaptureSelectedText),
         nameof(AppSettings.AutoTypeDelayMs),
@@ -65,7 +67,6 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.AllowPersonaManagement),
         nameof(AppSettings.AllowProviderManagement),
         nameof(AppSettings.AlwaysAllowedTools),
-        nameof(AppSettings.AssistantAgentModeDefault),
         nameof(AppSettings.AssistantChatHistoryToolsEnabled),
         nameof(AppSettings.AssistantDefaultWorkingDirectory),
         nameof(AppSettings.AssistantFilesFolder),
@@ -179,7 +180,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 45 && LiveWithWork.Length == 24
+            LiveAlready.Length == 47 && LiveWithWork.Length == 23
                 && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

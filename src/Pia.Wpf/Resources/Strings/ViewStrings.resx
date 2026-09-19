@@ -78,6 +78,8 @@
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Start a conversation with Pia</value></data>
   <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Open this folder in Explorer</value></data>
+  <data name="Assistant_AnsweredDirectly_Label" xml:space="preserve"><value>Answered directly</value></data>
+  <data name="Assistant_AnsweredDirectly_Tooltip" xml:space="preserve"><value>You sent this in Agent mode, but it needed no plan — Pia answered it in one turn.</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protected</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>This answer was handled by a protected model.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Remember that I'm allergic to peanuts</value></data>
@@ -1171,6 +1173,9 @@
   <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Re-plans on failure</value></data>
   <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} re-plans</value></data>
   <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>How many times a run may revise its plan after a step fails.</value></data>
+  <data name="Settings_Agent_NewChatMode_Section_Header" xml:space="preserve"><value>New chats</value></data>
+  <data name="Settings_Agent_NewChatAgentMode" xml:space="preserve"><value>Start new chats in Agent mode</value></data>
+  <data name="Settings_Agent_NewChatAgentMode_Description" xml:space="preserve"><value>A new chat opens on Agent instead of Chat. The Chat/Agent lever itself belongs to each chat, so switching it for one conversation never changes what the next one starts on.</value></data>
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Think before planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Adds a short tool-free thinking turn before the plan is created, so the model can reason at the effort you configured. Helps on providers that switch reasoning off while tools are attached — and doubles the cost of the planning turn.</value></data>

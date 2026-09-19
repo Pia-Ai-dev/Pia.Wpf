@@ -74,7 +74,7 @@ public class SuggestionService : ISuggestionService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Follow-up suggestion request failed (provider={ProviderName})", provider.Name);
+            _logger.LogWarning(ex, "Follow-up suggestion request failed (provider={ProviderType})", provider.ProviderType);
             return [];
         }
 

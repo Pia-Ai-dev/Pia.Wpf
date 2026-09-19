@@ -78,6 +78,8 @@
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Starte eine Unterhaltung mit Pia</value></data>
   <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Diesen Ordner im Explorer öffnen</value></data>
+  <data name="Assistant_AnsweredDirectly_Label" xml:space="preserve"><value>Direkt beantwortet</value></data>
+  <data name="Assistant_AnsweredDirectly_Tooltip" xml:space="preserve"><value>Du hast das im Agentenmodus gesendet, aber es brauchte keinen Plan — Pia hat es in einem Zug beantwortet.</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Geschützt</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>Diese Antwort wurde von einem geschützten Modell verarbeitet.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Merk dir, dass ich eine Erdnussallergie habe</value></data>
@@ -158,6 +160,9 @@
   <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Neuplanungen bei Fehlern</value></data>
   <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} Neuplanungen</value></data>
   <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>Wie oft eine Ausführung ihren Plan überarbeiten darf, nachdem ein Schritt fehlgeschlagen ist.</value></data>
+  <data name="Settings_Agent_NewChatMode_Section_Header" xml:space="preserve"><value>Neue Chats</value></data>
+  <data name="Settings_Agent_NewChatAgentMode" xml:space="preserve"><value>Neue Chats im Agentenmodus starten</value></data>
+  <data name="Settings_Agent_NewChatAgentMode_Description" xml:space="preserve"><value>Ein neuer Chat öffnet im Agentenmodus statt im Chatmodus. Der Chat/Agent-Schalter gehört zu jedem Chat einzeln — ihn in einem Gespräch umzulegen ändert also nie, womit das nächste startet.</value></data>
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planung</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Vor der Planung nachdenken</value></data>
   <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Fügt vor dem Erstellen des Plans einen kurzen werkzeugfreien Denkschritt hinzu, damit das Modell mit dem von dir eingestellten Denkaufwand arbeiten kann. Hilft bei Anbietern, die das Nachdenken abschalten, solange Werkzeuge aktiv sind – und verdoppelt die Kosten des Planungsschritts.</value></data>

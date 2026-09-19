@@ -210,13 +210,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private bool _isLoadingPersonas;
 
-    /// <summary>The Chat/Agent lever state (R15). false = Chat, true = Agent (Planned run). Persisted
-    /// as a global last-used default in <see cref="AppSettings.AssistantAgentModeDefault"/>.</summary>
+    /// <summary>The Chat/Agent lever state. false = Chat, true = Agent (Planned run). Per-chat: it is held
+    /// on the active <see cref="ChatSession"/>, never written back to settings.</summary>
     [ObservableProperty]
     private bool _agentModeEnabled;
 
-    /// <summary>Guards the settings-seed of <see cref="AgentModeEnabled"/> so seeding never re-persists
-    /// (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
+    /// <summary>Guards the seed of <see cref="AgentModeEnabled"/> so activating a chat is not mistaken for
+    /// the user flipping the lever (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
     private bool _isLoadingAgentMode;
 
     /// <summary>The active chat's recorded agent-context choice; null means never asked.</summary>
@@ -234,14 +234,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     [ObservableProperty]
     private string _agentContextSettledLabel = string.Empty;
-
-    /// <summary>
-    /// Guards the run-settled fall-back to Chat so it changes the composer without rewriting the user's saved
-    /// default. A flag of its own rather than <see cref="_isLoadingAgentMode"/>: that one returns over the
-    /// WHOLE handler, and mid-session that would also strand the Agent-mode hint line and the Weak-provider
-    /// adorner the fall-back has to clear.
-    /// </summary>
-    private bool _isSettlingAgentMode;
 
     /// <summary>The run-progress view-model for the active session's live/selected run (§15.1); null when
     /// the active chat has no run to surface. New'd on the UI thread, disposed on session swap (not DI'd).</summary>
@@ -587,6 +579,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.RunFailed -= OnActiveSessionRunFailed;
             prev.ActiveRunChanged -= OnActiveRunChanged;
             prev.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            prev.AgentModeChanged -= OnSessionAgentModeChanged;
             prev.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
 
@@ -597,6 +590,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.RunFailed += OnActiveSessionRunFailed;
         session.ActiveRunChanged += OnActiveRunChanged;
         session.ForeignRunActiveChanged += OnForeignRunActiveChanged;
+        session.AgentModeChanged += OnSessionAgentModeChanged;
         session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
@@ -608,7 +602,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         {
             PendingAttachments.Clear();
             PendingFiles.Clear();
-            SeedAgentModeOnChatLoadAsync().SafeFireAndForget(_logger);
+            SeedAgentModeOnChatLoadAsync(session).SafeFireAndForget(_logger);
         }
 
         ActiveAgentContextMode = session.AgentContextMode;
@@ -636,6 +630,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void OnPlanApprovalParkActiveChanged(object? sender, bool active) =>
         _uiDispatcher.Post(() => PlanApprovalParkActive = active);
+
+    // Unguarded, like the run-settled fall-back: the write back to the session is a no-op at the same value,
+    // and the rest of the handler is what clears the Agent-mode hint and the weak-provider adorner for a
+    // mode the composer has just left.
+    private void OnSessionAgentModeChanged(object? sender, bool enabled) =>
+        _uiDispatcher.Post(() => AgentModeEnabled = enabled);
 
     // Internal so the lever facts can attach the panel to a stubbed run without a whole ChatSession.
     internal void SyncRunProgress(Guid? runId)
@@ -673,18 +673,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     // A finished run must not silently arm the NEXT send as a fresh run: the lever falls back to Chat so a
     // follow-up message lands in the conversation instead of replacing the settled header with a new one.
-    // It is a COMPOSER decision, not the user's: without the guard the fall-back wrote
-    // AssistantAgentModeDefault=false, so finishing a run silently changed a preference nobody touched — and
-    // the next new chat inherited it.
-    private void OnRunProgressSettled()
-    {
-        if (!AgentModeEnabled)
-            return;
-
-        _isSettlingAgentMode = true;
-        try { AgentModeEnabled = false; }
-        finally { _isSettlingAgentMode = false; }
-    }
+    private void OnRunProgressSettled() => AgentModeEnabled = false;
 
     partial void OnMessagesChanged(ObservableCollection<AssistantMessage>? oldValue, ObservableCollection<AssistantMessage> newValue)
     {
@@ -758,6 +747,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         DeleteCurrentChatCommand.NotifyCanExecuteChanged();
         RefreshAgentContextBanner();
     }
+
+    partial void OnIsStreamingChanged(bool value) => RefreshAgentContextBanner();
 
     // Sync-void fire-and-forget: followups + TTS for the active session only.
     private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
@@ -884,9 +875,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
                 ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
 
-                // Seed the Chat/Agent lever from the persisted global default (R15).
-                if (seedAgentMode)
-                    SeedAgentModeFromSettings(settings);
+                // The lever is per-chat, so the startup seed needs the chat as well as the default.
+                if (seedAgentMode && _chatSessionManager.ActiveSession is { } leverSession)
+                    SeedAgentMode(leverSession, settings);
 
                 // Inside the posted lambda so the snackbar is raised on the UI thread, and after
                 // ActivePersona so the notice names the fallback the user is actually now on.
@@ -939,20 +930,20 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(6));
     }
 
-    /// <summary>Seeds the Chat/Agent lever from the persisted global default (R15), guarded so the
-    /// seed itself never re-persists via <see cref="OnAgentModeEnabledChanged"/>. Internal seam so the
-    /// seed-guard + reopen-restore can be exercised without spinning the whole persona-load path.</summary>
-    internal void SeedAgentModeFromSettings(AppSettings settings)
+    /// <summary>Adopts the lever of the chat being activated, falling back to the new-chat default for a
+    /// chat whose lever was never touched. Guarded so the switch does not read as the user flipping it.
+    /// Internal seam so the guard can be exercised without the whole activation path.</summary>
+    internal void SeedAgentMode(ChatSession session, AppSettings settings)
     {
         _isLoadingAgentMode = true;
-        try { AgentModeEnabled = settings.AssistantAgentModeDefault; }
+        try { AgentModeEnabled = session.AgentModeEnabled ?? settings.AssistantNewChatAgentMode; }
         finally { _isLoadingAgentMode = false; }
     }
 
-    private async Task SeedAgentModeOnChatLoadAsync()
+    private async Task SeedAgentModeOnChatLoadAsync(ChatSession session)
     {
         var settings = await _settingsService.GetSettingsAsync();
-        await _uiDispatcher.PostAsync(() => SeedAgentModeFromSettings(settings));
+        await _uiDispatcher.PostAsync(() => SeedAgentMode(session, settings));
     }
 
     partial void OnActivePersonaChanged(Persona? value)
@@ -977,10 +968,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         RefreshAgentContextBanner();
         if (_isLoadingAgentMode)
             return;
-        // Everything BELOW still runs on a settle: the fall-back has to clear the hint and the adorner, it
-        // just must not save. Only the persist is gated.
-        if (!_isSettlingAgentMode)
-            PersistAgentModeDefaultAsync(value).SafeFireAndForget(_logger);
+        // The lever belongs to THIS chat, so nothing here reaches settings: one curious flip must not arm
+        // every chat the user opens afterwards.
+        if (_chatSessionManager.ActiveSession is { } session)
+            session.AgentModeEnabled = value;
         // Warning-first (§14.4): surface the subtle Weak-provider adorner when flipping to Agent.
         if (value)
         {
@@ -1041,14 +1032,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // Never blocks a Planned send (R10). Populated by EvaluateProviderWarningAsync (Commit Group 2).
     [ObservableProperty]
     private bool _weakProviderWarningVisible;
-
-    private async Task PersistAgentModeDefaultAsync(bool enabled)
-    {
-        var settings = await _settingsService.GetSettingsAsync();
-        settings.AssistantAgentModeDefault = enabled;
-        await _settingsService.SaveSettingsAsync(settings);
-        _logger.LogInformation("Assistant agent-mode default set to {Enabled}", enabled);
-    }
 
     // A collection mutation notifies the collection, never this VM, so the name filter below cannot see
     // one: without this Send stays disabled and no hint explains it.
@@ -2540,7 +2523,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>
     private void RefreshAgentContextBanner()
     {
-        var applicable = AgentModeEnabled && HasMessages && !RunNotYetSettled;
+        var applicable = AgentModeEnabled && HasMessages && !IsStreaming && !RunNotYetSettled;
         AgentContextChoicePending = applicable && ActiveAgentContextMode is null;
         AgentContextSettledVisible = applicable && ActiveAgentContextMode is not null;
 
@@ -2723,7 +2706,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         if (assistantMessage.Suggestions.Count > 0) return;
 
-        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderName}", provider.Name);
+        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderType}", provider.ProviderType);
 
         IReadOnlyList<string> picks;
         try
@@ -2906,6 +2889,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.RunFailed -= OnActiveSessionRunFailed;
             session.ActiveRunChanged -= OnActiveRunChanged;
             session.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            session.AgentModeChanged -= OnSessionAgentModeChanged;
             session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
         if (_runProgress is not null)

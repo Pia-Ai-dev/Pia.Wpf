@@ -45,6 +45,13 @@ public static class PiaPaths
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);
 
+    // Redaction keys for the log sink, not data paths: the REAL profile roots, which an override still sits under.
+    public static string RoamingProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+    public static string LocalProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+    public static string UserProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
     // Downloaded artifacts and audit trails, always on the real profile — see the class summary. Exposed as
     // individual leaves rather than one shared root so a future *data* path cannot reach for "the real root"
     // and silently lose its override.
