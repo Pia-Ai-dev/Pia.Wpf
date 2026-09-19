@@ -417,6 +417,16 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // What a chat whose lever was never touched starts on. The lever itself is per-chat and never
+    // writes back, so this is the only place the answer can be changed.
+    [ObservableProperty]
+    private bool _assistantNewChatAgentMode;
+
+    partial void OnAssistantNewChatAgentModeChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     // Batch 04 autonomy default: when on, an agent run carries a policy that auto-approves Pia's OWN write
     // tools BY CLASS (memory / todo / reminder / scheduling / files) so the run does not stop at a card for
     // every write. Never covers a delete-like tool, never Git, never an external (MCP) tool. Global and
@@ -549,6 +559,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
         MaxToolRoundsPerStep = Math.Clamp(settings.MaxToolRoundsPerStep, RunProfile.MinToolRounds, RunProfile.MaxToolRoundsCap);
         AgentPlanReasoningTurnEnabled = settings.AgentPlanReasoningTurnEnabled;
+        AssistantNewChatAgentMode = settings.AssistantNewChatAgentMode;
         AgentRunAutoApproveBuiltInWrites = settings.AgentRunAutoApproveBuiltInWrites;
 
         ScheduledMaxSteps = Math.Clamp(settings.ScheduledMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
@@ -687,6 +698,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         settings.AgentWallClockMinutes = AgentWallClockMinutes;
         settings.MaxToolRoundsPerStep = MaxToolRoundsPerStep;
         settings.AgentPlanReasoningTurnEnabled = AgentPlanReasoningTurnEnabled;
+        settings.AssistantNewChatAgentMode = AssistantNewChatAgentMode;
         settings.AgentRunAutoApproveBuiltInWrites = AgentRunAutoApproveBuiltInWrites;
         settings.ScheduledMaxSteps = ScheduledMaxSteps;
         settings.ScheduledMaxReplans = ScheduledMaxReplans;

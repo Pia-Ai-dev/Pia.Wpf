@@ -59,6 +59,11 @@ public sealed class ChatSession : IDisposable
     /// context banner.</summary>
     public AgentContextMode? AgentContextMode { get; internal set; }
 
+    /// <summary>The Chat/Agent lever for THIS chat; null until the lever is first set, which is what makes
+    /// <see cref="AppSettings.AssistantNewChatAgentMode"/> the answer for an untouched chat. In-memory: it
+    /// arms the next send rather than describing the chat, and a settled run resets it anyway.</summary>
+    public bool? AgentModeEnabled { get; internal set; }
+
     public string? Title { get; internal set; }
     public ObservableCollection<AssistantMessage> Messages { get; } = new();
     public ChatState State { get; private set; } = ChatState.Idle;

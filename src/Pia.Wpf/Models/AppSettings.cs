@@ -215,7 +215,9 @@ public class AppSettings
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 
     /// <summary>Global last-used Chat/Agent lever default (R15). Not per-chat, not per-mode. false = Chat.</summary>
-    public bool AssistantAgentModeDefault { get; set; } = false;
+    // Whether a NEW chat starts on Agent rather than Chat. Deliberately explicit: the lever itself is
+    // per-chat and never writes here, so trying Agent once cannot silently arm every later chat.
+    public bool AssistantNewChatAgentMode { get; set; } = false;
 
     /// <summary>Set by the confirm dialog's "don't ask again"; device-local (never in the sync projection).</summary>
     public bool AssistantBackgroundRunConfirmSuppressed { get; set; } = false;

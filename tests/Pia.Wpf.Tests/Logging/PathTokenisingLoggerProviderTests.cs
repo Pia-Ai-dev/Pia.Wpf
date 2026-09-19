@@ -73,5 +73,15 @@ public class PathTokenisingLoggerProviderTests
     [Fact]
     public void ABlankRoot_IsDropped() =>
         Assert.Empty(PathTokenisingLoggerProvider.Ordered([new("  ", "%NOPE%")]));
+
+    /// <summary>A sibling account whose name merely starts with this one must survive intact.</summary>
+    [Fact]
+    public void ARootThatPrefixesAnotherAccount_IsNotMatched() =>
+        Assert.Equal(@"C:\Users\lovelaceXL\notes.md", Run(@"C:\Users\lovelaceXL\notes.md"));
+
+    [Fact]
+    public void ARootEndingAQuotedValue_IsStillTokenised() =>
+        Assert.Equal(@"path=""%APPDATA%""", Run(@"path=""C:\Users\lovelace\AppData\Roaming"""));
+
 }
 

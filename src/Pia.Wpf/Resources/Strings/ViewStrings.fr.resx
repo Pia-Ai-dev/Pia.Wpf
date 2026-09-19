@@ -160,6 +160,9 @@
   <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Replanifications en cas d'échec</value></data>
   <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} replanifications</value></data>
   <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>Combien de fois une exécution peut réviser son plan après l'échec d'une étape.</value></data>
+  <data name="Settings_Agent_NewChatMode_Section_Header" xml:space="preserve"><value>Nouvelles discussions</value></data>
+  <data name="Settings_Agent_NewChatAgentMode" xml:space="preserve"><value>Démarrer les nouvelles discussions en mode agent</value></data>
+  <data name="Settings_Agent_NewChatAgentMode_Description" xml:space="preserve"><value>Une nouvelle discussion s'ouvre en mode agent plutôt qu'en mode chat. Le sélecteur Chat/Agent appartient à chaque discussion : le basculer dans l'une ne change jamais le mode de départ de la suivante.</value></data>
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planification</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Réfléchir avant de planifier</value></data>
   <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Ajoute un court tour de réflexion sans outils avant la création du plan, afin que le modèle puisse raisonner au niveau d'effort que vous avez configuré. Utile chez les fournisseurs qui désactivent le raisonnement lorsque des outils sont attachés — et double le coût de l'étape de planification.</value></data>

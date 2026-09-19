@@ -53,10 +53,10 @@ little standalone value, unblocks a High.
 
 ## Batch 3 — the mode lever
 
-- [ ] **Make the Chat/Agent lever per-chat.** Flipping it arms the current chat only; it stops
+- [x] **Make the Chat/Agent lever per-chat.** Flipping it arms the current chat only; it stops
       writing a global default that every future new chat inherits from one curious click.
       *Deps:* — · *Effort:* S · *Value:* High
-- [ ] **Add an explicit new-chat default setting.** A user who genuinely wants every chat to start in
+- [x] **Add an explicit new-chat default setting.** A user who genuinely wants every chat to start in
       Agent mode sets it deliberately in Settings instead of acquiring it as a side effect.
       *Deps:* per-chat lever · *Effort:* XS · *Value:* Med
 

@@ -1173,6 +1173,9 @@
   <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Re-plans on failure</value></data>
   <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} re-plans</value></data>
   <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>How many times a run may revise its plan after a step fails.</value></data>
+  <data name="Settings_Agent_NewChatMode_Section_Header" xml:space="preserve"><value>New chats</value></data>
+  <data name="Settings_Agent_NewChatAgentMode" xml:space="preserve"><value>Start new chats in Agent mode</value></data>
+  <data name="Settings_Agent_NewChatAgentMode_Description" xml:space="preserve"><value>A new chat opens on Agent instead of Chat. The Chat/Agent lever itself belongs to each chat, so switching it for one conversation never changes what the next one starts on.</value></data>
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Think before planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Adds a short tool-free thinking turn before the plan is created, so the model can reason at the effort you configured. Helps on providers that switch reasoning off while tools are attached — and doubles the cost of the planning turn.</value></data>

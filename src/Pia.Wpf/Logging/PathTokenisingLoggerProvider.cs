@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace Pia.Logging;
@@ -38,9 +39,29 @@ public sealed class PathTokenisingLoggerProvider : ILoggerProvider
     {
         foreach (var root in roots)
             foreach (var form in SeparatorForms(root.Root))
-                message = message.Replace(form, root.Token, StringComparison.OrdinalIgnoreCase);
+                message = ReplaceRoot(message, form, root.Token);
 
         return message;
+    }
+
+    // Bounded like the export's own keys: a root must not also eat C:\Users\adalovelace.
+    private static string ReplaceRoot(string message, string form, string token)
+    {
+        var builder = new StringBuilder(message.Length);
+        var cursor = 0;
+
+        while (message.IndexOf(form, cursor, StringComparison.OrdinalIgnoreCase) is var hit and >= 0)
+        {
+            var after = hit + form.Length;
+            var bounded = (hit == 0 || !char.IsLetterOrDigit(message[hit - 1]))
+                && (after == message.Length || !char.IsLetterOrDigit(message[after]));
+
+            builder.Append(message, cursor, hit - cursor)
+                .Append(bounded ? token : message.Substring(hit, form.Length));
+            cursor = after;
+        }
+
+        return cursor == 0 ? message : builder.Append(message, cursor, message.Length - cursor).ToString();
     }
 
     /// <summary>The escaped form first: a JSON-serialised tool argument carries the root with doubled separators.</summary>
