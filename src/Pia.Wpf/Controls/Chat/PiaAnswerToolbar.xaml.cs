@@ -33,6 +33,9 @@ public partial class PiaAnswerToolbar : UserControl
     public static readonly DependencyProperty IsProtectedRouteProperty =
         DependencyProperty.Register(nameof(IsProtectedRoute), typeof(bool), typeof(PiaAnswerToolbar));
 
+    public static readonly DependencyProperty AnsweredDirectlyProperty =
+        DependencyProperty.Register(nameof(AnsweredDirectly), typeof(bool), typeof(PiaAnswerToolbar));
+
     private static readonly DependencyPropertyKey FooterSummaryKey =
         DependencyProperty.RegisterReadOnly(nameof(FooterSummary), typeof(string), typeof(PiaAnswerToolbar),
             new PropertyMetadata(string.Empty));
@@ -96,6 +99,12 @@ public partial class PiaAnswerToolbar : UserControl
     {
         get => (bool)GetValue(IsProtectedRouteProperty);
         set => SetValue(IsProtectedRouteProperty, value);
+    }
+
+    public bool AnsweredDirectly
+    {
+        get => (bool)GetValue(AnsweredDirectlyProperty);
+        set => SetValue(AnsweredDirectlyProperty, value);
     }
 
     public string FooterSummary => (string)GetValue(FooterSummaryProperty);

@@ -81,6 +81,11 @@ public partial class AssistantMessage : ObservableObject
     [ObservableProperty]
     private bool _isProtectedRoute;
 
+    /// <summary>True when the user sent this in Agent mode but triage answered it as an ordinary chat
+    /// turn. In-memory only — not persisted, like <see cref="IsProtectedRoute"/>.</summary>
+    [ObservableProperty]
+    private bool _answeredDirectly;
+
     /// <summary>True when the in-step tool loop ran out of rounds before the model stopped calling
     /// tools on its own — read by <c>ChatSession.CleanupPerExchange</c> to pick the right empty-response
     /// wording if even the tools-disabled wrap-up call came back with no text. In-memory only.</summary>

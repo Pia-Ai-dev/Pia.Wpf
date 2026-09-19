@@ -13,3 +13,13 @@
   read.
 - A run that took a single step and wrote no file no longer spends a round
   double-checking its own answer. There was nothing there to check it against.
+- Agent mode now recognises a question. Ask one with the Agent lever on and Pia
+  answers it straight away instead of drawing up a plan for it, marking the reply
+  so you can see it chose to. Real multi-step work still plans as before.
+
+## Transcription
+
+- Saving or summarizing a long recording now covers the whole session. Past
+  about an hour, everything before that was missing from the saved file, the
+  vault copy and the summary — silently, and it could not be recovered
+  afterwards.

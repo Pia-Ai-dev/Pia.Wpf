@@ -237,9 +237,14 @@ public class AppSettings
     // reasoning effort as soon as tools are attached (AzureOpenAI / Ollama / Mistral — see
     // IAiProviderHandler.DropsReasoningEffortWithTools) is split into TWO provider turns: a tool-FREE
     // free-form reasoning turn at the configured effort, then the constrained emit_plan turn seeded with
-    // that analysis. Default OFF: it doubles the plan-turn cost, and the plan turn already costs ≥2 rounds
-    // (§16 R6). Global, not per-provider — the same answer applies to interactive, detached and scheduled runs.
+    // that analysis. Default OFF: it doubles the plan-turn cost. Global, not per-provider — the same answer
+    // applies to interactive, detached and scheduled runs.
     public bool AgentPlanReasoningTurnEnabled { get; set; } = false;
+
+    // One tool-less classification turn in front of the plan turn, so a goal that needs no plan is answered
+    // as an ordinary chat turn. Costs ~2-3s on real agent work and saves the whole spine on the rest. Here
+    // to be turned OFF: how often the classifier misroutes real agent work is not yet measured.
+    public bool AssistantAgentTriageEnabled { get; set; } = true;
 
     // Batch 04 — per-run autonomy policy default. When true, the preset auto-approves Pia's OWN write tools by
     // CLASS — memory, todo, reminder, scheduling and files — so the caller does not stop at a card for every

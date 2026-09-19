@@ -21,7 +21,7 @@ little standalone value, unblocks a High.
 | G-throttle | Delete the proactive pre-delay, make it per-provider config, or lower it? | Lower to 100 ms — keep the pacing net, recover 80 % of the loss, no new config surface |
 | G-triage | Classify before the plan turn, or let `emit_plan` declare "no plan needed" after it? | Triage call before the plan turn (doc option A) — the after-the-fact member cannot recover the 12 s already spent |
 | G-lever | Per-chat lever defaulting to Chat, or let the settle fall-back persist? | Per-chat, plus an explicit setting for the new-chat default. Persisting the fall-back is out: `bc846e00` added `_isSettlingAgentMode` because that silently overwrote a preference nobody touched |
-| G-triage-accuracy | Does the classifier misroute real agent work to chat often enough to hurt? | OPEN — answered by the four appendix prompts after B2 lands; a wrong "chat" answer is worse than a slow plan turn, so B2 ships behind the escape hatch in step 7 |
+| G-triage-accuracy | Does the classifier misroute real agent work to chat often enough to hurt? | OPEN — answered by the four appendix prompts now that B2 has landed. A wrong "chat" is worse than a slow plan turn, so the classifier defaults to PLAN on anything but the exact word ANSWER, and `AssistantAgentTriageEnabled` turns it off wholesale |
 
 ## Batch 1 — pure latency, no behaviour change
 
@@ -36,7 +36,7 @@ little standalone value, unblocks a High.
 
 ## Batch 2 — stop running the spine on non-agent work
 
-- [ ] **Triage a goal before the plan turn.** One tool-less `fast` classification call answers "does
+- [x] **Triage a goal before the plan turn.** One tool-less `fast` classification call answers "does
       this need a plan?"; anything that does not becomes an ordinary chat turn.
       *Deps:* — · *Effort:* M · *Value:* High
 - [x] **Skip verify on a single-step run that declared no artifact.** The critic re-reads one step's
@@ -46,9 +46,9 @@ little standalone value, unblocks a High.
       write tool runs through `RunDegradedSingleTurnAsync` instead of plan→step→verify; this is the
       backstop for goals triage waves through.
       *Deps:* triage · *Effort:* S · *Value:* Med
-- [ ] **Offer the downgrade instead of taking it.** When triage says "no plan needed", render the
-      inline composer offer the weak-provider banner and agent-context offer already use, rather than
-      silently switching modes.
+- [x] **Say that the downgrade happened.** An "Answered directly" chip on the reply, built on the
+      protected-route indicator's shape. Replaces the planned inline offer: the owner chose to
+      downgrade silently and mark it afterwards rather than spend a click confirming it.
       *Deps:* triage · *Effort:* S · *Value:* Med
 
 ## Batch 3 — the mode lever
