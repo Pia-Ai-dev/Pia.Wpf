@@ -129,11 +129,24 @@ quota with no client-side lever; there is no `web_search` among the 53 tools the
 
 Cheapest decisive work first.
 
-1. **Route a 1-step plan to the single-turn path** — the one planned step never authorized, and
-   prompt 2 above is a measured instance of exactly the shape it targets. Check what
-   `RunDegradedSingleTurnAsync` stamps on the run first: it was built for a FAILED plan, and a
-   "degraded" label on a run that worked is its own regression.
-2. The two items under **Not yet planned** above.
+1. ~~**Route a 1-step plan to the single-turn path.**~~ **BLOCKED — attempted 2026-09-19 and reverted.**
+   The saving is real and measured: prompt 2's `emit_step_result` round cost 8.7 s of its 39.2 s. But
+   `RunDegradedSingleTurnAsync` reads only `Cancelled` and `Succeeded` from its turn result. The
+   `ApprovalRequiredTool` and `UserInputQuestion` arms live in the step drain loop alone
+   (`AgentRunOrchestrator.cs:502` and `:520`), so a run routed to the single-turn path cannot park for
+   a tool approval or a mid-plan question. Routing 1-step plans there turned three existing facts from
+   `WaitingForInput` into `Completed` — a run that should have stopped to ask permission instead
+   finished. That is an authority regression, not a latency trade, and 8.7 s does not buy it.
+
+   Unblocking it means teaching the single-turn arm the same two parks the step loop has. Worth doing
+   only alongside the open question below, since it is the same gap.
+
+2. **Does the EXISTING degrade path drop the approval park too?** `plan.FallBackToSingleTurn` reaches
+   `RunDegradedSingleTurnAsync` today whenever the planner produces no usable plan, and that arm has
+   the same two missing checks. Whether a real executor's fallback turn can even report
+   `ApprovalRequiredTool` was not established — the failures above came through a stub. If it can, a
+   degraded run that needs write permission settles without asking for it.
+3. The two items under **Not yet planned** above.
 
 Verifiable only by eye, since no test reaches them: the clock ticking through a plan turn, the lever
 falling back to Chat after a downgrade, the `Answered directly` chip beside `Protected` on a narrow
