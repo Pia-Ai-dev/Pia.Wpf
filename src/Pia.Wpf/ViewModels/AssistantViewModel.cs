@@ -579,6 +579,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.RunFailed -= OnActiveSessionRunFailed;
             prev.ActiveRunChanged -= OnActiveRunChanged;
             prev.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            prev.AgentModeChanged -= OnSessionAgentModeChanged;
             prev.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
 
@@ -589,6 +590,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.RunFailed += OnActiveSessionRunFailed;
         session.ActiveRunChanged += OnActiveRunChanged;
         session.ForeignRunActiveChanged += OnForeignRunActiveChanged;
+        session.AgentModeChanged += OnSessionAgentModeChanged;
         session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
@@ -628,6 +630,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private void OnPlanApprovalParkActiveChanged(object? sender, bool active) =>
         _uiDispatcher.Post(() => PlanApprovalParkActive = active);
+
+    // Unguarded, like the run-settled fall-back: the write back to the session is a no-op at the same value,
+    // and the rest of the handler is what clears the Agent-mode hint and the weak-provider adorner for a
+    // mode the composer has just left.
+    private void OnSessionAgentModeChanged(object? sender, bool enabled) =>
+        _uiDispatcher.Post(() => AgentModeEnabled = enabled);
 
     // Internal so the lever facts can attach the panel to a stubbed run without a whole ChatSession.
     internal void SyncRunProgress(Guid? runId)
@@ -739,6 +747,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         DeleteCurrentChatCommand.NotifyCanExecuteChanged();
         RefreshAgentContextBanner();
     }
+
+    partial void OnIsStreamingChanged(bool value) => RefreshAgentContextBanner();
 
     // Sync-void fire-and-forget: followups + TTS for the active session only.
     private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
@@ -2513,7 +2523,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>
     private void RefreshAgentContextBanner()
     {
-        var applicable = AgentModeEnabled && HasMessages && !RunNotYetSettled;
+        var applicable = AgentModeEnabled && HasMessages && !IsStreaming && !RunNotYetSettled;
         AgentContextChoicePending = applicable && ActiveAgentContextMode is null;
         AgentContextSettledVisible = applicable && ActiveAgentContextMode is not null;
 
@@ -2879,6 +2889,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.RunFailed -= OnActiveSessionRunFailed;
             session.ActiveRunChanged -= OnActiveRunChanged;
             session.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            session.AgentModeChanged -= OnSessionAgentModeChanged;
             session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
         if (_runProgress is not null)

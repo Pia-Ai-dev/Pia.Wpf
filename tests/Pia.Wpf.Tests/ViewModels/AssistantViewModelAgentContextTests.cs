@@ -177,6 +177,52 @@ public class AssistantViewModelAgentContextTests
         Assert.True(vm.AgentContextSettledVisible);
     }
 
+    /// <summary>The offer is a PRE-send question. A Planned send does not attach its run for several awaits
+    /// after the messages land, so without this the banner flashed on every agent send; with triage answering
+    /// a goal directly there is no run to attach at all and it stayed up for the whole turn.</summary>
+    [Fact]
+    public void AStreamingTurn_NeverRaisesTheBanner()
+    {
+        var vm = CreateSut();
+        vm.AgentModeEnabled = true;
+        var session = Activate(withTranscript: true);
+        Assert.True(vm.AgentContextChoicePending);
+
+        session.SetState(ChatState.Running);
+
+        Assert.False(vm.AgentContextChoicePending);
+    }
+
+    /// <summary>Triage answering an Agent send directly moves the lever, so the composer stops offering to
+    /// configure what "the planning" sees for a plan that is never drawn up.</summary>
+    [Fact]
+    public void TriageAnsweringDirectly_DropsTheLeverAndTheBanner()
+    {
+        var vm = CreateSut();
+        vm.AgentModeEnabled = true;
+        var session = Activate(withTranscript: true);
+        Assert.True(vm.AgentContextChoicePending);
+
+        session.SetAgentMode(false);
+
+        Assert.False(vm.AgentModeEnabled);
+        Assert.False(vm.AgentContextChoicePending);
+    }
+
+    /// <summary>The lever moving for a reason other than a click must still clear what a click would have.</summary>
+    [Fact]
+    public void TriageAnsweringDirectly_ClearsTheAgentModeHint()
+    {
+        var vm = CreateSut();
+        var session = Activate(withTranscript: true);
+        vm.AgentModeEnabled = true;
+        Assert.True(vm.AgentModeHintVisible);
+
+        session.SetAgentMode(false);
+
+        Assert.False(vm.AgentModeHintVisible);
+        Assert.False(vm.WeakProviderWarningVisible);
+    }
     // ---- a run already attached to the chat ------------------------------------------------------
 
     private static IAgentRunService RunService(Guid runId, AgentRunState state)

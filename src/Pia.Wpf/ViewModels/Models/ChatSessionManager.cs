@@ -835,6 +835,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             {
                 plannedRun = false;
                 assistantMessage.AnsweredDirectly = true;
+                // The composer must stop saying Agent: no run is coming, and the agent-context offer keys
+                // off the lever to decide whether to ask what the planning should see.
+                session.SetAgentMode(false);
                 _logger.LogInformation("Chat {ChatId}: goal triaged to a direct answer; no run created", session.Id);
             }
 
