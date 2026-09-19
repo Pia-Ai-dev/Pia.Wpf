@@ -2706,7 +2706,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         if (assistantMessage.Suggestions.Count > 0) return;
 
-        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderName}", provider.Name);
+        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderType}", provider.ProviderType);
 
         IReadOnlyList<string> picks;
         try

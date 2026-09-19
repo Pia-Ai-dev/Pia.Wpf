@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 
 namespace Pia.Infrastructure;
 
@@ -58,12 +59,12 @@ public class RateLimitRetryHandler : DelegatingHandler
             if (delay == null)
             {
                 _logger.LogWarning("Retry-After exceeds {MaxSeconds}s, not retrying {Lane}",
-                    MaxRetryAfter.TotalSeconds, lane);
+                    MaxRetryAfter.TotalSeconds, LaneLabel(lane));
                 break;
             }
 
             _logger.LogInformation("Rate limited by {Lane}, retrying in {DelayMs}ms (attempt {Attempt}/{Max})",
-                lane, (int)delay.Value.TotalMilliseconds, attempt + 1, MaxRetries);
+                LaneLabel(lane), (int)delay.Value.TotalMilliseconds, attempt + 1, MaxRetries);
 
             response.Dispose();
             await Task.Delay(delay.Value, cancellationToken);
@@ -84,6 +85,15 @@ public class RateLimitRetryHandler : DelegatingHandler
             : $"{uri.Host}/{string.Join('/', segments.Take(2))}";
     }
 
+    // The lane KEYS the throttle dictionary; this is only what reaches the log. The host is a configured
+    // server, which the export treats as key material, so it travels as a stable code instead.
+    private static string LaneLabel(string lane)
+    {
+        var slash = lane.IndexOf('/');
+        var host = slash < 0 ? lane : lane[..slash];
+        return $"host-{LogRedactor.HostCode(host)}{(slash < 0 ? string.Empty : lane[slash..])}";
+    }
+
     private async Task ThrottleAsync(string lane, CancellationToken cancellationToken)
     {
         var laneLock = _laneLocks.GetOrAdd(lane, _ => new SemaphoreSlim(1, 1));
@@ -96,7 +106,7 @@ public class RateLimitRetryHandler : DelegatingHandler
                 if (elapsed < MinRequestInterval)
                 {
                     var wait = MinRequestInterval - elapsed;
-                    _logger.LogDebug("Throttling request to {Lane} for {WaitMs}ms", lane, (int)wait.TotalMilliseconds);
+                    _logger.LogDebug("Throttling request to {Lane} for {WaitMs}ms", LaneLabel(lane), (int)wait.TotalMilliseconds);
                     await Task.Delay(wait, cancellationToken);
                 }
             }
@@ -159,7 +169,7 @@ public class RateLimitRetryHandler : DelegatingHandler
             "Rate limited (429) by {Lane}: Retry-After={RetryAfter}, " +
             "Limit={Limit}, Remaining={Remaining}, Reset={Reset}, " +
             "Server={Server}, CF-RAY={CfRay}",
-            lane, retryAfter, limit, remaining, reset, server, cfRay);
+            LaneLabel(lane), retryAfter, limit, remaining, reset, server, cfRay);
     }
 
     private static string GetHeaderValue(HttpResponseMessage response, string name)

@@ -97,8 +97,8 @@ public class AiClientService : IAiClientService
         catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !callerToken.IsCancellationRequested)
         {
             _logger.LogWarning(
-                "Provider {ProviderName}: the {Seconds}s timeout elapsed while QUEUED for a per-provider request permit — nothing was sent",
-                provider.Name, timeout.TotalSeconds);
+                "Provider {ProviderType}: the {Seconds}s timeout elapsed while QUEUED for a per-provider request permit — nothing was sent",
+                provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds,
                 $"The request to provider '{provider.Name}' was never sent: the {timeout.TotalSeconds}s timeout "
                 + "elapsed while it was queued behind other requests to the same provider "
@@ -191,8 +191,8 @@ public class AiClientService : IAiClientService
             [EnumeratorCancellation] CancellationToken cancellationToken = default,
             AgentContextBudget? contextBudget = null)
     {
-        _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
-            provider.Name, tools?.Count ?? 0);
+        _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderType}, toolCount={ToolCount}",
+            provider.ProviderType, tools?.Count ?? 0);
 
         long aggregatedInput = 0;
         long aggregatedOutput = 0;
@@ -322,7 +322,7 @@ public class AiClientService : IAiClientService
                                 }
                                 catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                                 {
-                                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out mid-stream (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out mid-stream (round {Round}) after {Seconds}s", provider.ProviderType, round + 1, timeout.TotalSeconds);
                                     throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
                                 }
 
@@ -544,7 +544,7 @@ public class AiClientService : IAiClientService
         }
         catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out at stream start (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+            _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out at stream start (round {Round}) after {Seconds}s", provider.ProviderType, round + 1, timeout.TotalSeconds);
             if (enumerator != null) await enumerator.DisposeAsync();
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
@@ -554,7 +554,7 @@ public class AiClientService : IAiClientService
             // says true for essentially any 400, so a context overflow arrives here dressed as a
             // tool-support problem. The retry itself is unchanged either way.
             LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
-            _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
+            _logger.LogWarning(ex, "Provider {ProviderType} returned an error with tools enabled during streaming, retrying without tools", provider.ProviderType);
             options = providerHandler.CreateChatOptions(provider, hasTools: false);
             useTools = false;
             if (enumerator != null) await enumerator.DisposeAsync();
@@ -570,7 +570,7 @@ public class AiClientService : IAiClientService
             }
             catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out on tool-disabled retry after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                 if (enumerator != null) await enumerator.DisposeAsync();
                 throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
             }
@@ -608,7 +608,7 @@ public class AiClientService : IAiClientService
             }
             catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out (round {Round}) after {Seconds}s", provider.ProviderType, round + 1, timeout.TotalSeconds);
                 throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
             }
             catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
@@ -616,7 +616,7 @@ public class AiClientService : IAiClientService
                 // Same ordering as the streaming path above, for the same reason: name the real cause
                 // before the tool-support line. Diagnosis only; the retry below is untouched.
                 LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
-                _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
+                _logger.LogWarning(ex, "Provider {ProviderType} returned an error with tools enabled, retrying without tools", provider.ProviderType);
                 options = providerHandler.CreateChatOptions(provider, hasTools: false);
                 useTools = false;
                 try
@@ -626,7 +626,7 @@ public class AiClientService : IAiClientService
                 }
                 catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out on tool-disabled retry after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                     throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
                 }
             }
@@ -814,7 +814,7 @@ public class AiClientService : IAiClientService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Tool-round wrap-up call failed for provider {ProviderName}", provider.Name);
+                _logger.LogWarning(ex, "Tool-round wrap-up call failed for provider {ProviderType}", provider.ProviderType);
             }
         }
         else
@@ -876,7 +876,7 @@ public class AiClientService : IAiClientService
                 }
                 catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
                 {
-                    _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
+                    _logger.LogWarning(ex, "Provider {ProviderType} returned an error with tools enabled, retrying without tools", provider.ProviderType);
                     options = handler.CreateChatOptions(provider, hasTools: false);
                     return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
                 }
@@ -884,7 +884,7 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            _logger.LogWarning("GetChatResponseAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            _logger.LogWarning("GetChatResponseAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
     }
@@ -1088,12 +1088,12 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            _logger.LogWarning("SendRequestAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            _logger.LogWarning("SendRequestAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SendRequestAsync: provider {ProviderName} threw an exception", provider.Name);
+            _logger.LogError(ex, "SendRequestAsync: provider {ProviderType} threw an exception", provider.ProviderType);
             throw;
         }
     }
@@ -1135,7 +1135,7 @@ public class AiClientService : IAiClientService
             }
             catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                 throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
             }
 
@@ -1148,7 +1148,7 @@ public class AiClientService : IAiClientService
                 }
                 catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out mid-stream after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                    _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderType} timed out mid-stream after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                     throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
                 }
 

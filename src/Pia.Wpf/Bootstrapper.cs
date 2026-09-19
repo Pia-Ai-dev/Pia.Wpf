@@ -385,6 +385,11 @@ public static class Bootstrapper
             builder.AddDebug();
             builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
+            // None, not Warning. At Warning the framework's own lines stop, but its "HTTP {method} {uri}"
+            // SCOPE stays alive and ScopeRenderingLoggerProvider then stamps the full URL onto every Pia
+            // line inside it - measured. HttpLoggingHandler already reports the same requests, SafeUrl-wrapped.
+            builder.AddFilter("System.Net.Http.HttpClient", LogLevel.None);
+
             var logDirectory = PiaPaths.LogsDirectory;
             Directory.CreateDirectory(logDirectory);
 

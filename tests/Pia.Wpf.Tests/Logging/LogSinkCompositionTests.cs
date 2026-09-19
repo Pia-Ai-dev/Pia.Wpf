@@ -20,7 +20,7 @@ public sealed class LogSinkCompositionTests : IDisposable
     }
 
     /// <summary><paramref name="cap"/> is explicit because the DEBUG build default is unlimited.</summary>
-    private (ILoggerFactory Factory, string Path) BuildSink(int cap, IReadOnlyList<ProfileRootToken>? roots = null)
+    private (ILoggerFactory Factory, string Path) BuildSink(int cap, IReadOnlyList<ProfileRootToken>? roots = null, Action<ILoggingBuilder>? configure = null)
     {
         // A file per fact, so the second test never meets the first's still-open handle.
         var path = Path.Combine(_dir, "pia-" + Guid.NewGuid().ToString("N") + ".log");
@@ -36,7 +36,7 @@ public sealed class LogSinkCompositionTests : IDisposable
                 new LogMessageCapLoggerProvider(new FileLoggerProvider(path, options), cap),
                 roots ?? []));
 
-        var factory = LoggerFactory.Create(b => b.AddProvider(provider));
+        var factory = LoggerFactory.Create(b => { configure?.Invoke(b); b.AddProvider(provider); });
         return (factory, path);
     }
 
@@ -128,6 +128,28 @@ public sealed class LogSinkCompositionTests : IDisposable
         Assert.Contains(@"Roaming=%APPDATA%\Pia", text);
         Assert.DoesNotContain("lovelace", text);
     }
+    /// <summary>
+    /// Warning is NOT enough: it silences the framework's own lines but leaves its "HTTP {method} {uri}"
+    /// scope open, and this decorator then stamps the URL onto every Pia line inside it.
+    /// </summary>
+    [Theory]
+    [InlineData(LogLevel.Warning, true)]
+    [InlineData(LogLevel.None, false)]
+    public void TheHttpClientScope_ReachesPiaLines_UnlessFilteredToNone(LogLevel filter, bool expectedToLeak)
+    {
+        var (factory, path) = BuildSink(
+            cap: int.MaxValue,
+            configure: b => b.AddFilter("System.Net.Http.HttpClient", filter));
+
+        var http = factory.CreateLogger("System.Net.Http.HttpClient.Default.LogicalHandler");
+        using (http.BeginScope("HTTP GET https://secret.example/api/v1/chats/abc"))
+            factory.CreateLogger("Pia.Services.Test").LogInformation("pia line");
+
+        var text = ReadAfter(factory, path, expected: "pia line");
+
+        Assert.Equal(expectedToLeak, text.Contains("secret.example", StringComparison.Ordinal));
+    }
+
 
     public void Dispose()
     {

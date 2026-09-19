@@ -206,9 +206,15 @@ public partial class PiaChipOverflowPanel : UserControl
     // over unrelated messages.
     private void OnHostScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        if (e.VerticalChange != 0 || e.HorizontalChange != 0)
+        if (ShouldCloseOnScroll(e, _scrollHost))
             MorePopup.IsOpen = false;
     }
+
+    // A Popup routes its events into the placement target's tree, so the dropdown's own scroller reaches
+    // the host too — reacting to that would shut the list on the first wheel notch inside it.
+    private static bool ShouldCloseOnScroll(ScrollChangedEventArgs e, ScrollViewer? host) =>
+        (e.VerticalChange != 0 || e.HorizontalChange != 0)
+        && (e.OriginalSource is not ScrollViewer origin || ReferenceEquals(origin, host));
 
     private void PopupContent_Click(object sender, RoutedEventArgs e) => MorePopup.IsOpen = false;
 

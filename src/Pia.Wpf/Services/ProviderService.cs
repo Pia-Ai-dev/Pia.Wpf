@@ -404,7 +404,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Tool calling probe failed for provider {ProviderName}, assuming not supported", provider.Name);
+            _logger.LogWarning(ex, "Tool calling probe failed for provider {ProviderType}, assuming not supported", provider.ProviderType);
             supportsToolCalling = false;
         }
 
@@ -416,7 +416,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Streaming probe failed for provider {ProviderName}, assuming not supported", provider.Name);
+            _logger.LogWarning(ex, "Streaming probe failed for provider {ProviderType}, assuming not supported", provider.ProviderType);
             supportsStreaming = false;
         }
 

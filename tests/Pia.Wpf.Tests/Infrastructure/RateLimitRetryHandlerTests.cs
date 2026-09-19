@@ -4,6 +4,7 @@ using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Xunit;
 
 namespace Pia.Tests.Infrastructure;
@@ -95,6 +96,39 @@ public class RateLimitRetryHandlerTests
 
         Assert.True(sw.ElapsedMilliseconds >= 50,
             $"one lane covers the whole sync surface, took {sw.ElapsedMilliseconds}ms");
+    }
+
+    /// <summary>The lane reaches a release log, and the host it is built from is key material at export.</summary>
+    [Fact]
+    public async Task ARateLimitedLane_IsLoggedAsAHostCode()
+    {
+        var host = UniqueHost();
+        var logger = new CapturingLogger();
+        // Over MaxRetryAfter, so the handler gives up immediately and the test pays no backoff.
+        var invoker = new HttpMessageInvoker(new RateLimitRetryHandler(logger)
+        {
+            InnerHandler = new RateLimitedOnceHandler(TimeSpan.FromSeconds(60)),
+        });
+
+        await invoker.SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, $"https://{host}/api/v1/a"), CancellationToken.None);
+
+        var text = string.Join(Environment.NewLine, logger.Lines);
+        Assert.Contains($"host-{LogRedactor.HostCode(host)}", text);
+        Assert.DoesNotContain(host, text);
+    }
+
+    private sealed class CapturingLogger : ILogger<RateLimitRetryHandler>
+    {
+        public List<string> Lines { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) => Lines.Add(formatter(state, exception));
     }
 
     private sealed class StubHandler(HttpStatusCode statusCode) : HttpMessageHandler
