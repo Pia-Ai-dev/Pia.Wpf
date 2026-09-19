@@ -232,6 +232,24 @@ public class DirectTranscriptionViewModelTests
     }
 
     [Fact]
+    public void BuildMarkdown_KeepsTheOpeningOfTheSession_AfterTheDisplayWindowTrimmedIt()
+    {
+        var (vm, _) = CreateSut();
+        var t0 = DateTimeOffset.Now;
+
+        // 30 s apart, so each utterance starts its own bubble and the rolling display window trims.
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "opening remarks", t0, "Speaker 1"));
+        for (var i = 1; i < 250; i++)
+        {
+            vm.AddUtterance(new TranscriptUtterance(
+                TranscriptSpeaker.You, $"filler {i}", t0.AddSeconds(i * 30), "Speaker 1"));
+        }
+
+        Assert.InRange(vm.Bubbles.Count, 181, 200);
+        Assert.Contains("opening remarks", vm.BuildMarkdown(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSummaryPrompt_ContainsNoYamlFrontMatter()
     {
         var (vm, _) = CreateSut();

@@ -20,7 +20,7 @@ public sealed class LogSinkCompositionTests : IDisposable
     }
 
     /// <summary><paramref name="cap"/> is explicit because the DEBUG build default is unlimited.</summary>
-    private (ILoggerFactory Factory, string Path) BuildSink(int cap)
+    private (ILoggerFactory Factory, string Path) BuildSink(int cap, IReadOnlyList<ProfileRootToken>? roots = null)
     {
         // A file per fact, so the second test never meets the first's still-open handle.
         var path = Path.Combine(_dir, "pia-" + Guid.NewGuid().ToString("N") + ".log");
@@ -32,7 +32,9 @@ public sealed class LogSinkCompositionTests : IDisposable
         };
 
         var provider = new ScopeRenderingLoggerProvider(
-            new LogMessageCapLoggerProvider(new FileLoggerProvider(path, options), cap));
+            new PathTokenisingLoggerProvider(
+                new LogMessageCapLoggerProvider(new FileLoggerProvider(path, options), cap),
+                roots ?? []));
 
         var factory = LoggerFactory.Create(b => b.AddProvider(provider));
         return (factory, path);
@@ -108,6 +110,23 @@ public sealed class LogSinkCompositionTests : IDisposable
         Assert.Contains($"[run {runId}]", text);
         Assert.Contains("chars withheld from the release log", text);
         Assert.DoesNotContain(new string('x', 200), text);
+    }
+
+    /// <summary>The sink is the last place a profile root can be caught before a user attaches the file.</summary>
+    [Fact]
+    public void AProfileRoot_ReachesTheFileAsAnEnvironmentVariable()
+    {
+        var (factory, path) = BuildSink(
+            cap: int.MaxValue,
+            roots: [new(@"C:\Users\lovelace\AppData\Roaming", "%APPDATA%")]);
+
+        factory.CreateLogger("Pia.Services.Test").LogInformation(
+            "Data directories: Roaming={Root}", @"C:\Users\lovelace\AppData\Roaming\Pia");
+
+        var text = ReadAfter(factory, path, expected: "Data directories");
+
+        Assert.Contains(@"Roaming=%APPDATA%\Pia", text);
+        Assert.DoesNotContain("lovelace", text);
     }
 
     public void Dispose()

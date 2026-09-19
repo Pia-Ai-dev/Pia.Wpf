@@ -413,7 +413,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         var sb = new StringBuilder();
         sb.Append(instruction);
         sb.AppendLine().AppendLine();
-        sb.Append(DirectTranscriptMarkdown.RenderBody(_localizationService[TitleKey], Bubbles.ToList(), CounterpartName));
+        sb.Append(DirectTranscriptMarkdown.RenderBody(_localizationService[TitleKey], BuildFullTranscript(), CounterpartName));
         return sb.ToString();
     }
 
@@ -422,12 +422,13 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     /// <summary>Prepends YAML front matter (schema/session bounds/speakers) and the voice-stats block.</summary>
     internal override string BuildMarkdown()
     {
-        var sessionEnd = Bubbles.Count > 0 ? Bubbles[^1].EndTimestamp : _sessionStart;
+        var transcript = BuildFullTranscript();
+        var sessionEnd = transcript.Count > 0 ? transcript[^1].EndTimestamp : _sessionStart;
         return DirectTranscriptMarkdown.Render(
             _localizationService[TitleKey],
             _sessionStart,
             sessionEnd,
-            Bubbles.ToList(),
+            transcript,
             SuppressSpeakerLabels ? [] : _service.GetVoiceStats(),
             CounterpartName);
     }

@@ -7,9 +7,9 @@ using System.Text.RegularExpressions;
 namespace Pia.Logging;
 
 /// <summary>
-/// Scrubs a <c>pia-*.log</c> on its way into a diagnostics export. The log file itself is left exactly as
-/// written: 523 call sites hand an exception to LogError/LogWarning, so its Message and stack trace are in
-/// there by design, and rewriting all of them would cost more than it buys.
+/// Scrubs a <c>pia-*.log</c> on its way into a diagnostics export. The sink already tokenises the profile
+/// roots as it writes; the rest of the file arrives exactly as written, because 523 call sites hand an
+/// exception to LogError/LogWarning and rewriting all of them would cost more than it buys.
 /// </summary>
 public static class LogRedactor
 {
@@ -113,7 +113,8 @@ public static class LogRedactor
 
     // Emits the separator it matched, so a forward-slash path does not come back mixed.
     private static readonly Regex TokenisedDirectoryPattern = new(
-        @"(<profile-(?:roaming|local|user)>)([\\/])(?:[^\\/\r\n:*?""<>|]+[\\/])+", RegexOptions.Compiled);
+        @"((?:<profile-(?:roaming|local|user)>|%(?:APPDATA|LOCALAPPDATA|USERPROFILE)%))([\\/])"
+        + @"(?:[^\\/\r\n:*?""<>|]+[\\/])+", RegexOptions.Compiled);
 
     private static readonly Regex MachineSuffixPattern =
         new(@"<machine>(\.[A-Za-z0-9\-]+)+", RegexOptions.Compiled);
@@ -121,7 +122,8 @@ public static class LogRedactor
     // A closed list rather than <[^<>]*>, so ordinary prose like List<string> stays redactable.
     private static readonly Regex EmittedToken = new(
         @"<(?:response-body|process|window-class|window-title|profile-(?:roaming|local|user)|machine|user"
-        + @"|email|token|path|unc|provider-\d+|url:[^<>\r\n]*)>|host-\d{3}",
+        + @"|email|token|path|unc|provider-\d+|url:[^<>\r\n]*)>|host-\d{3}"
+        + @"|%(?:APPDATA|LOCALAPPDATA|USERPROFILE)%",
         RegexOptions.Compiled);
 
     /// <summary>

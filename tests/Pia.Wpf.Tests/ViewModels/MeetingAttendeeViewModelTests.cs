@@ -569,6 +569,59 @@ public class MeetingAttendeeViewModelTests
         Assert.Contains("**Speaker 2**", md);
     }
 
+    // ---- Exports cover the whole session, not the display window ---------------------------------
+
+    /// <summary>Utterances 30 s apart, so each starts its own bubble and the rolling display window trims.</summary>
+    private static void AddLongMeeting(MeetingAttendeeViewModel vm, DateTimeOffset t0, int count)
+    {
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "opening remarks", t0, "Speaker 1", SegmentId: 0));
+        for (var i = 1; i < count; i++)
+        {
+            vm.AddUtterance(new TranscriptUtterance(
+                TranscriptSpeaker.Them, $"filler {i}", t0.AddSeconds(i * 30), "Speaker 1", SegmentId: i));
+        }
+    }
+
+    [Fact]
+    public void BuildMarkdown_KeepsTheOpeningOfTheMeeting_AfterTheDisplayWindowTrimmedIt()
+    {
+        var (vm, _) = CreateSut();
+
+        AddLongMeeting(vm, DateTimeOffset.Now, 250);
+
+        Assert.InRange(vm.Bubbles.Count, 181, 200);
+        var md = vm.BuildMarkdown();
+        Assert.Contains("opening remarks", md, StringComparison.Ordinal);
+        Assert.Contains("filler 249", md, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMarkdown_KeepsTheOpeningOfTheMeeting_AfterAReassignmentRebuild()
+    {
+        var (vm, _) = CreateSut();
+        AddLongMeeting(vm, DateTimeOffset.Now, 250);
+
+        vm.ApplyReassignments(new[] { new SpeakerReassignment(249, "Speaker 2") });
+
+        Assert.InRange(vm.Bubbles.Count, 181, 200);
+        Assert.Contains("opening remarks", vm.BuildMarkdown(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveToVault_WritesTheWholeMeeting_NotJustTheDisplayWindow()
+    {
+        var (vm, _, dialog, memory, _) = CreateSutWithVault();
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { ci.Arg<MeetingSaveEditModel>().Title = "Long sync"; return Task.FromResult(true); });
+        AddLongMeeting(vm, DateTimeOffset.Now, 250);
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        var call = Assert.Single(
+            memory.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync));
+        Assert.Contains("opening remarks", (string)call.GetArguments()[1]!, StringComparison.Ordinal);
+    }
+
     // ---- Busy indicator (joining / leaving) ------------------------------------------------------
 
     [Theory]
