@@ -19,6 +19,12 @@
 - A new chat no longer starts in Agent mode because you once tried it. The
   Chat/Agent lever now belongs to each conversation, and what a new chat starts
   on is a setting you choose in Settings > Assistant.
+- An agent run shows its clock running while it thinks. Drawing up a plan can
+  take half a minute and reported nothing for the whole of it, which read as a
+  hung window. The clock deliberately stops while a run is waiting on you.
+- Pia no longer makes you wait behind its own background syncing. A request you
+  are waiting for used to queue behind every housekeeping upload already in
+  flight; the two are paced separately now.
 
 ## Transcription
 

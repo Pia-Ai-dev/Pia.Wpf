@@ -62,15 +62,23 @@ little standalone value, unblocks a High.
 
 ## Batch 4 — progress display
 
-- [ ] **Stream the plan turn's reasoning into the activity line.** The optional reasoning turn sends
-      `tools: null` so its text already streams; it is consumed as an internal string and thrown away,
-      in exactly the 12–42 s window that reads as hung.
+- [ ] ~~**Stream the plan turn's reasoning into the activity line.**~~ DROPPED — the premise is false on
+      two counts. The reasoning turn is gated behind `AgentPlanReasoningTurnEnabled` (default OFF) **and**
+      a provider whose handler drops reasoning effort under tools, so it never runs on Pia Cloud at all;
+      and it calls `GetChatResponseAsync`, which returns a complete string rather than streaming. There
+      is nothing to surface in the window that reads as hung. The ticking clock below answers that
+      complaint instead.
       *Deps:* — · *Effort:* S · *Value:* High
-- [ ] **Show elapsed time and the round counter on the run card.** "Planning… 14 s" reads as working;
-      a static skeleton reads as frozen.
+- [x] **Make the elapsed time on the run card tick.** The band's sub-line already carried an elapsed
+      figure, but it was read off the persisted ledger and recomputed only on a run event — and the plan
+      turn raises none for its whole 12–42 s, so the number sat frozen beside a static skeleton. A
+      one-second timer now advances it while the run is working, and deliberately not while it is parked
+      on the user.
       *Deps:* — · *Effort:* XS · *Value:* Med
-- [ ] **Name the wait at the approval gates.** Run B sat 3 min 16 s at one tool-approval prompt; a run
-      blocked on the user must say so, or the wait is remembered as Pia being slow.
+- [x] **Name the wait at the approval gates.** Already true when checked:
+      `Run_Activity_WaitingForToolApproval` reads "Waiting for your approval to use {0}" and
+      `Run_Activity_PlanApproval` reads "Waiting for you to approve the plan", both localized. No change
+      needed. What is still misattributed is the elapsed figure beside them — see below.
       *Deps:* — · *Effort:* XS · *Value:* Med
 
 ## Not yet planned
@@ -78,8 +86,14 @@ little standalone value, unblocks a High.
 - The server-side `"fast"` persona mapping. `AgentTurnRouting` pins plan, replan, reasoning and
   verify to it, so it — not the user's persona — sets the plan turn's floor. No client change can
   reach it.
-- Concurrent runs to Pia Cloud still serialise: `RateLimitRetryHandler`'s semaphore is `static` and
-  keyed by host, so two runs pace against each other even after the 100 ms change.
+- The elapsed figure beside a parked run may still count the user's own think time as run time. The
+  clock no longer ticks while parked, but its base comes from the ledger's `wallClockMs`, and whether
+  that excludes parked time was not checked — the ledger also tracks `activeMs`, which may be the
+  honest number for that line.
+- The chat-sync service is in a sustained 429 loop: 1231 rate-limited `PUT /api/v1/chats` in one day
+  against the local dev server, 68 of them inside the seven seconds that starved a triage call. The
+  throttle no longer lets that traffic delay the user, but nothing has looked at why sync keeps pushing
+  into a wall. Unrelated to agent latency.
 - Re-measurement against production rather than a local dev server. Every absolute number in the
   analysis is the owner's own machine against `localhost:8081`.
 

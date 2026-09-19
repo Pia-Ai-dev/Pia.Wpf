@@ -766,6 +766,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // Captured on the construction (UI) thread; may be null in a headless test → run inline.
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _runService.RunChanged += OnRunChanged;
+        _elapsedTimer = new System.Threading.Timer(
+            _ => OnElapsedTick(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         if (_themeService is not null)
             _themeService.ThemeChanged += OnThemeChanged;
         RefreshAsync().SafeFireAndForget(_logger); // initial projection
@@ -1116,6 +1118,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         ShowProgressSegments = Steps.Count > 0
             && State is RunProgressState.Running or RunProgressState.WaitingForChildren;
         ApplyStepWindow();
+        SyncElapsedTimer();
         SubLine = ComposeSubLine();
         // Here and not on the state change: a step advance leaves State on Running, and the next timeline row
         // only lands once step N+1's first call RETURNS — so the line would carry step N's tally until then.
@@ -1166,7 +1169,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 // "step 3 of 4" beside a spinner would claim work this run is not doing.
                 parts.Add(StateName);
                 if (ChildrenNote is { } childrenNote) parts.Add(childrenNote);
-                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(WallClockMs)));
+                if (DisplayElapsedMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(DisplayElapsedMs)));
                 break;
 
             case RunProgressState.Paused:
@@ -1182,7 +1185,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 parts.Add(StateName);
                 if (CurrentStepOrdinal > 0 && total > 0)
                     parts.Add(_localization.Format("Run_Sub_Step", CurrentStepOrdinal, total));
-                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(WallClockMs)));
+                if (DisplayElapsedMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(DisplayElapsedMs)));
                 break;
         }
 
@@ -2380,10 +2383,54 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         return string.Join(" · ", parts);
     }
 
+    // The plan turn raises NO run events for its whole 12-42s, so an elapsed time read off the persisted
+    // ledger sits frozen beside a static skeleton and the card reads as hung. This is what moves.
+    private readonly System.Threading.Timer _elapsedTimer;
+    private static readonly TimeSpan ElapsedTick = TimeSpan.FromSeconds(1);
+
+    /// <summary>Ledger elapsed at the last projection, and when that projection landed. A tick adds the
+    /// time since to the base, so the figure resyncs to the persisted one whenever a real event arrives.
+    /// <para>
+    /// <see cref="DisplayElapsedMs"/> is written to equal <see cref="WallClockMs"/> at projection time and
+    /// only diverges on a tick — folding the delta into a computed property instead would move the number a
+    /// few milliseconds during the projection itself, which is enough to change how it rounds.
+    /// </para></summary>
+    private long _elapsedBaseMs;
+    private DateTime _elapsedBaseAt;
+    private long _displayElapsedMs;
+
+    private long DisplayElapsedMs => _displayElapsedMs;
+
+    /// <summary>Only while the RUN is working. A run parked on the user must not tick: that would count
+    /// their think time as latency, which is the reading the whole analysis warns against.</summary>
+    private bool IsClockRunning => State is RunProgressState.Planning or RunProgressState.Running
+        or RunProgressState.WaitingForChildren;
+
+    // Only the sub-line is recomposed: it is the one surface carrying a number that moves without an event.
+    // Internal so the advance can be driven without a Dispatcher to pump the timer.
+    internal void AdvanceElapsedClock()
+    {
+        if (!IsClockRunning) return;
+        _displayElapsedMs = _elapsedBaseMs + (long)(DateTime.UtcNow - _elapsedBaseAt).TotalMilliseconds;
+        SubLine = ComposeSubLine();
+    }
+
+    private void OnElapsedTick() => _uiContext.Post(_ => AdvanceElapsedClock(), null);
+
+    private void SyncElapsedTimer()
+    {
+        _elapsedBaseMs = WallClockMs;
+        _elapsedBaseAt = DateTime.UtcNow;
+        _displayElapsedMs = WallClockMs;
+        if (IsClockRunning) _elapsedTimer.Change(ElapsedTick, ElapsedTick);
+        else _elapsedTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        _elapsedTimer.Dispose();
         _runService.RunChanged -= OnRunChanged;
         if (_timelineWatcher is not null)
             _timelineWatcher.TimelineAppended -= OnTimelineAppended;
