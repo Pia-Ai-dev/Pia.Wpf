@@ -97,11 +97,26 @@ little standalone value, unblocks a High.
 - Re-measurement against production rather than a local dev server. Every absolute number in the
   analysis is the owner's own machine against `localhost:8081`.
 
-## Suggested order
+## What remains
 
-1. Batch 1, both steps — cheapest, decisive, and they land before any behaviour question is open.
-2. Re-measure with `scripts/Measure-AgentRun.mjs` on appendix prompt 1 to confirm the ~12 s.
-3. Batch 4's streaming step — it makes every remaining wait legible, and is independent of Batch 2.
-4. Batch 2, verify-skip first (XS, no new concept), then triage, then the composer offer.
-5. Batch 3 last: it changes who is exposed to all of the above, so it is worth the most once the
-   above has made agent mode cheaper.
+Cheapest decisive work first.
+
+1. **Live-validate the rest of the appendix.** Prompt 1 is done — `Goal triage → AnswerDirectly in
+   2168ms`, no run created. Prompts 2/3/4 with the lever on Agent still owe: expect `Goal triage →
+   NeedsPlan`, then exactly one `RequestStart`/`RequestEnd` pair inside Planning and inside Verifying
+   with `a tool handler stopped the loop` at round 1 of each, and `Verifier skipped` on prompt 2. Then
+   the disabled arm — `"AssistantAgentTriageEnabled": false` in settings.json, no restart needed, and
+   prompt 1 must plan. Prompt 4 (`d as asd as`) has whitespace, so it passes `GoalPreflight` and now
+   reaches triage for the first time; whichever way it goes is new data. This is what closes
+   G-triage-accuracy.
+2. **Route a 1-step plan to the single-turn path** — the one planned step never authorized. Check what
+   `RunDegradedSingleTurnAsync` stamps on the run first: it was built for a FAILED plan, and a
+   "degraded" label on a run that worked is its own regression.
+3. The two items under **Not yet planned** above.
+
+Verifiable only by eye, since no test reaches them: the clock ticking through a plan turn, the lever
+falling back to Chat after a downgrade, the `Answered directly` chip beside `Protected` on a narrow
+window, and the new Settings → Assistant toggle.
+
+`AssistantAgentTriageEnabled` has no Settings UI on purpose — it exists to turn triage off while
+G-triage-accuracy is open, not as a user-facing choice.

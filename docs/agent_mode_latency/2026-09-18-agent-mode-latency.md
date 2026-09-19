@@ -1,6 +1,6 @@
 # Agent mode: where the wait comes from, and what to do about it
 
-**Status:** Batches 1 and 2 landed — see [the checklist](2026-09-18-agent-mode-latency-checklist.md)
+**Status:** Batches 1–4 landed — see [the checklist](2026-09-18-agent-mode-latency-checklist.md)
 **Owner:** Marco Altmann
 **Written:** 2026-09-18
 **Origin:** User report — "users complain about the time they need to wait in assistant agent mode",
