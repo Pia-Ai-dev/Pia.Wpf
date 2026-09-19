@@ -10,8 +10,7 @@ namespace Pia.Tests.Infrastructure;
 
 public class RateLimitRetryHandlerTests
 {
-    // _lastRequestTime is static and keyed by host, so a shared host name would pace these tests
-    // against each other.
+    // _lastRequestTime is static, so a shared host name would pace these tests against each other.
     private static string UniqueHost() => $"{Guid.NewGuid():N}.invalid";
 
     private static HttpMessageInvoker CreateInvoker(HttpMessageHandler inner)
@@ -23,10 +22,10 @@ public class RateLimitRetryHandlerTests
         var host = UniqueHost();
         var invoker = CreateInvoker(new StubHandler(HttpStatusCode.OK));
 
-        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{host}/a"), CancellationToken.None);
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{host}/api/v1/a"), CancellationToken.None);
         var sw = Stopwatch.StartNew();
-        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{host}/b"), CancellationToken.None);
-        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{host}/c"), CancellationToken.None);
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{host}/api/v1/b"), CancellationToken.None);
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{host}/api/v1/c"), CancellationToken.None);
         sw.Stop();
 
         Assert.True(sw.ElapsedMilliseconds >= 150,
@@ -43,7 +42,7 @@ public class RateLimitRetryHandlerTests
         var invoker = CreateInvoker(new StubHandler(HttpStatusCode.OK));
 
         var sw = Stopwatch.StartNew();
-        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{UniqueHost()}/a"), CancellationToken.None);
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Get, $"https://{UniqueHost()}/api/v1/a"), CancellationToken.None);
         sw.Stop();
 
         Assert.True(sw.ElapsedMilliseconds < 100, $"took {sw.ElapsedMilliseconds}ms");
@@ -56,10 +55,46 @@ public class RateLimitRetryHandlerTests
         var invoker = CreateInvoker(inner);
 
         var response = await invoker.SendAsync(
-            new HttpRequestMessage(HttpMethod.Get, $"https://{UniqueHost()}/a"), CancellationToken.None);
+            new HttpRequestMessage(HttpMethod.Get, $"https://{UniqueHost()}/api/v1/a"), CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(2, inner.Attempts);
+    }
+
+    /// <summary>The measured failure: a burst of background sync PUTs queued ahead of one interactive LLM
+    /// call through a single per-host FIFO, and the call timed out before it was ever sent.</summary>
+    [Fact]
+    public async Task ABurstOnOneEndpoint_DoesNotDelayAnother()
+    {
+        var host = UniqueHost();
+        var invoker = CreateInvoker(new StubHandler(HttpStatusCode.OK));
+        for (var i = 0; i < 8; i++)
+        {
+            await invoker.SendAsync(
+                new HttpRequestMessage(HttpMethod.Put, $"https://{host}/api/v1/chats/{i}"), CancellationToken.None);
+        }
+
+        var sw = Stopwatch.StartNew();
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Post, $"https://{host}/api/ai/chat"), CancellationToken.None);
+        sw.Stop();
+
+        Assert.True(sw.ElapsedMilliseconds < 100,
+            $"the AI call must not pace behind the sync burst, took {sw.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
+    public async Task TwoEndpointsUnderOnePrefix_StillPaceTogether()
+    {
+        var host = UniqueHost();
+        var invoker = CreateInvoker(new StubHandler(HttpStatusCode.OK));
+
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Put, $"https://{host}/api/v1/chats/1"), CancellationToken.None);
+        var sw = Stopwatch.StartNew();
+        await invoker.SendAsync(new HttpRequestMessage(HttpMethod.Put, $"https://{host}/api/v1/personas/2"), CancellationToken.None);
+        sw.Stop();
+
+        Assert.True(sw.ElapsedMilliseconds >= 50,
+            $"one lane covers the whole sync surface, took {sw.ElapsedMilliseconds}ms");
     }
 
     private sealed class StubHandler(HttpStatusCode statusCode) : HttpMessageHandler

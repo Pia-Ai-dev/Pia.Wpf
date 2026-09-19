@@ -10,11 +10,11 @@ public class RateLimitRetryHandler : DelegatingHandler
 {
     private readonly ILogger<RateLimitRetryHandler> _logger;
     private static readonly ConcurrentDictionary<string, DateTime> _lastRequestTime = new();
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _hostLocks = new();
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _laneLocks = new();
 
     private const int MaxRetries = 3;
     private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(30);
-    // A pacing net against a burst, not a rate-limit remedy: it is paid on every request to a host that
+    // A pacing net against a burst, not a rate-limit remedy: it is paid on every request to an endpoint that
     // has never answered 429, and an agent run pays it once per LLM round.
     private static readonly TimeSpan MinRequestInterval = TimeSpan.FromMilliseconds(100);
 
@@ -26,10 +26,10 @@ public class RateLimitRetryHandler : DelegatingHandler
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var host = request.RequestUri?.Host ?? "unknown";
+        var lane = LaneOf(request.RequestUri);
 
-        // Proactive throttle: enforce minimum gap between requests to same host
-        await ThrottleAsync(host, cancellationToken);
+        // Proactive throttle: enforce a minimum gap between requests to the same endpoint group
+        await ThrottleAsync(lane, cancellationToken);
 
         // Buffer request content for potential retries
         var (contentBytes, contentType) = await BufferRequestAsync(request);
@@ -39,17 +39,17 @@ public class RateLimitRetryHandler : DelegatingHandler
         for (var attempt = 0; attempt <= MaxRetries; attempt++)
         {
             if (attempt > 0)
-                await ThrottleAsync(host, cancellationToken);
+                await ThrottleAsync(lane, cancellationToken);
 
             var clone = attempt == 0 ? request : CloneRequest(request, contentBytes, contentType);
 
             response = await base.SendAsync(clone, cancellationToken);
-            _lastRequestTime[host] = DateTime.UtcNow;
+            _lastRequestTime[lane] = DateTime.UtcNow;
 
             if (response.StatusCode != HttpStatusCode.TooManyRequests)
                 return response;
 
-            LogRateLimitHeaders(response, host);
+            LogRateLimitHeaders(response, lane);
 
             if (attempt == MaxRetries)
                 break;
@@ -57,13 +57,13 @@ public class RateLimitRetryHandler : DelegatingHandler
             var delay = GetRetryDelay(response, attempt);
             if (delay == null)
             {
-                _logger.LogWarning("Retry-After exceeds {MaxSeconds}s, not retrying {Host}",
-                    MaxRetryAfter.TotalSeconds, host);
+                _logger.LogWarning("Retry-After exceeds {MaxSeconds}s, not retrying {Lane}",
+                    MaxRetryAfter.TotalSeconds, lane);
                 break;
             }
 
-            _logger.LogInformation("Rate limited by {Host}, retrying in {DelayMs}ms (attempt {Attempt}/{Max})",
-                host, (int)delay.Value.TotalMilliseconds, attempt + 1, MaxRetries);
+            _logger.LogInformation("Rate limited by {Lane}, retrying in {DelayMs}ms (attempt {Attempt}/{Max})",
+                lane, (int)delay.Value.TotalMilliseconds, attempt + 1, MaxRetries);
 
             response.Dispose();
             await Task.Delay(delay.Value, cancellationToken);
@@ -72,27 +72,39 @@ public class RateLimitRetryHandler : DelegatingHandler
         return response;
     }
 
-    private async Task ThrottleAsync(string host, CancellationToken cancellationToken)
+    /// <summary>Host plus up to two path segments. Per HOST alone, one FIFO covered every caller, so a
+    /// burst of background sync PUTs queued ahead of the interactive request behind it — measured at 68
+    /// requests deep, which is 6.8s of pacing before the user's turn was even sent.</summary>
+    private static string LaneOf(Uri? uri)
     {
-        var hostLock = _hostLocks.GetOrAdd(host, _ => new SemaphoreSlim(1, 1));
-        await hostLock.WaitAsync(cancellationToken);
+        if (uri is null) return "unknown";
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length == 0
+            ? uri.Host
+            : $"{uri.Host}/{string.Join('/', segments.Take(2))}";
+    }
+
+    private async Task ThrottleAsync(string lane, CancellationToken cancellationToken)
+    {
+        var laneLock = _laneLocks.GetOrAdd(lane, _ => new SemaphoreSlim(1, 1));
+        await laneLock.WaitAsync(cancellationToken);
         try
         {
-            if (_lastRequestTime.TryGetValue(host, out var lastTime))
+            if (_lastRequestTime.TryGetValue(lane, out var lastTime))
             {
                 var elapsed = DateTime.UtcNow - lastTime;
                 if (elapsed < MinRequestInterval)
                 {
                     var wait = MinRequestInterval - elapsed;
-                    _logger.LogDebug("Throttling request to {Host} for {WaitMs}ms", host, (int)wait.TotalMilliseconds);
+                    _logger.LogDebug("Throttling request to {Lane} for {WaitMs}ms", lane, (int)wait.TotalMilliseconds);
                     await Task.Delay(wait, cancellationToken);
                 }
             }
-            _lastRequestTime[host] = DateTime.UtcNow;
+            _lastRequestTime[lane] = DateTime.UtcNow;
         }
         finally
         {
-            hostLock.Release();
+            laneLock.Release();
         }
     }
 
@@ -134,7 +146,7 @@ public class RateLimitRetryHandler : DelegatingHandler
         return null;
     }
 
-    private void LogRateLimitHeaders(HttpResponseMessage response, string host)
+    private void LogRateLimitHeaders(HttpResponseMessage response, string lane)
     {
         var retryAfter = response.Headers.RetryAfter?.ToString() ?? "-";
         var limit = GetHeaderValue(response, "x-ratelimit-limit-requests");
@@ -144,10 +156,10 @@ public class RateLimitRetryHandler : DelegatingHandler
         var cfRay = GetHeaderValue(response, "CF-RAY");
 
         _logger.LogWarning(
-            "Rate limited (429) by {Host}: Retry-After={RetryAfter}, " +
+            "Rate limited (429) by {Lane}: Retry-After={RetryAfter}, " +
             "Limit={Limit}, Remaining={Remaining}, Reset={Reset}, " +
             "Server={Server}, CF-RAY={CfRay}",
-            host, retryAfter, limit, remaining, reset, server, cfRay);
+            lane, retryAfter, limit, remaining, reset, server, cfRay);
     }
 
     private static string GetHeaderValue(HttpResponseMessage response, string name)
