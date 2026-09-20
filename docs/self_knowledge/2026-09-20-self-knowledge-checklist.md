@@ -41,11 +41,14 @@ little standalone value, unblocks a High.
       against a real provider, with the pack-disabled arm for contrast. The three questions are done
       — see [`2026-09-20-live-validation.md`](2026-09-20-live-validation.md); only the disabled arm
       is left. *Deps:* S8 · *Effort:* `XS` · *Value:* `High`
+- [x] **S11 — Pre-push refresh.** The `help-corpus` skill (`.claude/skills/help-corpus/`) preflights
+      the shared docs checkout, checks the release notes against `wpf/**` coverage, runs `-Check`, and
+      refreshes and gates the snapshot; `CLAUDE.md` makes it mandatory before a push to `main`.
+      *Deps:* S1 · *Effort:* `XS` · *Value:* `Med`
 
 ## Not yet planned
 
 - A Pia.Docs page describing this feature, so the corpus can answer questions about itself.
-- A pre-release step (or a release-playbook line) that runs `Update-HelpCorpus.ps1 -Check`.
 - The two arms the live pass deliberately skipped, both because they mutate a synced production
   profile: the pack-disabled contrast, and a turn on a direct (non-Pia-Cloud) provider. Both are
   safe on a throwaway profile — see the live-validation doc's "Not covered".
