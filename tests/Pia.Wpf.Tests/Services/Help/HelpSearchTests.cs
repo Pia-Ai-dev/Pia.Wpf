@@ -16,7 +16,7 @@ public sealed class HelpSearchTests
     [InlineData("where do I set up a second provider", "guides/ai-providers")]
     [InlineData("how do I stop a reply that is generating", "guides/assistant")]
     [InlineData("what happens to my data", "guides/where-your-data-goes")]
-    [InlineData("schedule something to run every morning", "guides/scheduled-jobs")]
+    [InlineData("schedule something to run every morning", "guides/routines")]
     [InlineData("can Pia edit files on my computer", "guides/coding-tools")]
     [InlineData("does my data leave my computer", "guides/where-your-data-goes")]
     public void ADrivingQuestionFindsThePageThatAnswersIt(string question, string expectedPage)
