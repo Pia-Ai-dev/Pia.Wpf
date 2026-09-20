@@ -1,8 +1,8 @@
-using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
 using Pia.Services.Interfaces;
+using Pia.Services.Search;
 using Pia.Shared.Models;
 
 namespace Pia.Services;
@@ -1195,32 +1195,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
-    private static string BuildFtsQuery(string searchText)
-    {
-        // Per-token prefix match: "hello wor" -> hello* wor*. Quoting each
-        // token (phrase query) requires an exact-token match, so partially
-        // typed words never matched — strip FTS5 operator chars and append *.
-        var tokens = searchText
-            .Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(SanitizeFtsToken)
-            .Where(t => t.Length > 0)
-            .Select(t => t + "*");
-        return string.Join(' ', tokens);
-    }
-
-    private static string SanitizeFtsToken(string token)
-    {
-        // Lowercase, then keep only letters/digits. Lowercasing neutralises
-        // FTS5's uppercase boolean operators (AND/OR/NOT) — without it,
-        // a user typing "OR" produces "OR*" which is a syntax error.
-        var sb = new StringBuilder(token.Length);
-        foreach (var ch in token)
-        {
-            if (char.IsLetterOrDigit(ch))
-                sb.Append(char.ToLowerInvariant(ch));
-        }
-        return sb.ToString();
-    }
+    private static string BuildFtsQuery(string searchText) => FtsQueryBuilder.PrefixAnd(searchText);
 
     /// <summary>
     /// Takes the gate and sets <c>_disposed</c> BEFORE closing the handle (FlowPersistenceStore's ordering),

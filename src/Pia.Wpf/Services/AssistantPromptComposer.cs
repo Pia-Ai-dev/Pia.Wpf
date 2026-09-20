@@ -38,12 +38,16 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         if (supportsTools)
         {
             var hasAtCommands = atCommands.Count > 0;
-            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive, environmentRoot: environmentRoot, unattended: unattended)
-                + BuildAtCommandHint(atCommands);
 
             var allTools = unattended
                 ? _pluginService.GetAllTools().Where(t => !RoutineToolNames.Contains(t.Name)).ToList()
                 : _pluginService.GetAllTools();
+
+            // Resolved before the prompt so the tree never points at a tool the user has switched off.
+            var helpToolsAvailable = allTools.Any(t => t.Name == HelpToolName);
+
+            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive, environmentRoot: environmentRoot, unattended: unattended, helpToolsAvailable: helpToolsAvailable)
+                + BuildAtCommandHint(atCommands);
             if (hasAtCommands)
             {
                 // @-command turns narrow the toolset to the tagged domain — leave suggest_agent_mode out
@@ -150,7 +154,17 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             ? DefaultOutputFormat
             : activePersona.OutputFormat.Trim();
 
-    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false, string? environmentRoot = null, bool unattended = false)
+    internal const string HelpToolName = "pia_help";
+
+    /// <summary>
+    /// The tree's terminal branch is "respond conversationally without tools", which steers away from
+    /// asking — so a question about Pia has to be caught before the tree, not inside it.
+    /// </summary>
+    internal const string SelfKnowledgeLeadIn =
+        "Before the tree: a question about PIA ITSELF - a feature, a setting, a screen, what you can or "
+        + "cannot do - is answered with pia_help, never from memory and never from the web.";
+
+    private string BuildSystemPrompt(Persona activePersona, bool tokenizationEnabled, bool skipToolSelectionTree = false, bool webSearchActive = false, string? environmentRoot = null, bool unattended = false, bool helpToolsAvailable = false)
     {
         var pluginPrompts = ResolvePluginAdditions(unattended);
         var pluginSection = string.IsNullOrWhiteSpace(pluginPrompts)
@@ -169,12 +183,14 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             ? "Web search is already enabled for this conversation — see the Web Search section. It needs no tool call, so do not reach for search_chats, recall or search_files instead."
             : "You cannot browse. Say so plainly, then answer from what you know while flagging that it may be out of date.";
 
+        var selfKnowledgeLeadIn = helpToolsAvailable ? SelfKnowledgeLeadIn + "\n\n" : string.Empty;
+
         var toolSelectionSection = skipToolSelectionTree
             ? string.Empty
             : $"""
               ## Tool Selection
 
-              Follow this decision tree strictly:
+              {selfKnowledgeLeadIn}Follow this decision tree strictly:
 
               1. Does the request mention a specific TIME, DATE, or SCHEDULE for notification?
                  - YES → Use Reminder tools. NOT a reminder: "Remember I like coffee" (no time = memory).

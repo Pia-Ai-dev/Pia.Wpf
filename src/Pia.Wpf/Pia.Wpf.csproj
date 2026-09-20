@@ -24,6 +24,8 @@
     <!-- Default file-tool / @Files ignore patterns. LogicalName is fixed so SandboxIgnore can load
          it by a stable manifest name instead of the namespace-derived default. -->
     <EmbeddedResource Include="Resources\FileTools\default.piaignore" LogicalName="Pia.DefaultFileIgnore" />
+    <!-- The user guide the pia_help tool searches. Regenerate with scripts\Update-HelpCorpus.ps1. -->
+    <EmbeddedResource Include="Resources\Help\help-corpus.json.gz" LogicalName="Pia.HelpCorpus" />
   </ItemGroup>
 
   <ItemGroup>

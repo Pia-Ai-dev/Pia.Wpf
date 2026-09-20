@@ -106,6 +106,7 @@ public class ToolPermissionService : IToolPermissionService
         "query_scheduled_research", "list_routine_blueprints",
         "query_assignments", "get_assignment",
         "git_status", "git_log", "git_diff", "git_branch", "git_show",
+        "pia_help", "pia_settings",
     };
 
     /// <summary>

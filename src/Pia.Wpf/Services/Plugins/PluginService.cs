@@ -27,6 +27,7 @@ public class PluginService : IPluginService
     private readonly IChatHistoryToolHandler _chatHistoryToolHandler;
     private readonly IAssignmentToolHandler _assignmentToolHandler;
     private readonly IScreenCaptureToolHandler _screenCaptureToolHandler;
+    private readonly IHelpToolHandler _helpToolHandler;
     private readonly IAssignmentSurfaceCache _assignmentSurfaceCache;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
@@ -62,6 +63,7 @@ public class PluginService : IPluginService
         IChatHistoryToolHandler chatHistoryToolHandler,
         IAssignmentToolHandler assignmentToolHandler,
         IScreenCaptureToolHandler screenCaptureToolHandler,
+        IHelpToolHandler helpToolHandler,
         IAssignmentSurfaceCache assignmentSurfaceCache,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
@@ -79,6 +81,7 @@ public class PluginService : IPluginService
         _chatHistoryToolHandler = chatHistoryToolHandler;
         _assignmentToolHandler = assignmentToolHandler;
         _screenCaptureToolHandler = screenCaptureToolHandler;
+        _helpToolHandler = helpToolHandler;
         _assignmentSurfaceCache = assignmentSurfaceCache;
         _settingsService = settingsService;
         _logger = logger;
@@ -119,6 +122,7 @@ public class PluginService : IPluginService
                 "chat-history" => BuiltInPluginHandler.FromChatHistoryHandler(_chatHistoryToolHandler, config),
                 "assignments" => BuiltInPluginHandler.FromAssignmentHandler(_assignmentToolHandler, config),
                 "screen" => BuiltInPluginHandler.FromScreenCaptureHandler(_screenCaptureToolHandler, config),
+                "help" => BuiltInPluginHandler.FromHelpHandler(_helpToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 

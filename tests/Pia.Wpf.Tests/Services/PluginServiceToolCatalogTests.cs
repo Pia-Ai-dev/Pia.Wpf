@@ -56,6 +56,7 @@ public sealed class PluginServiceToolCatalogTests : IDisposable
             Substitute.For<IChatHistoryToolHandler>(),
             Substitute.For<IAssignmentToolHandler>(),
             Substitute.For<IScreenCaptureToolHandler>(),
+            Substitute.For<IHelpToolHandler>(),
             Substitute.For<IAssignmentSurfaceCache>(),
             Substitute.For<ISettingsService>(),
             NullLogger<PluginService>.Instance,
