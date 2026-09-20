@@ -90,4 +90,15 @@ internal sealed class FakeRunWorkspaceService : IRunWorkspaceService
         OrphanSweeps++;
         return Task.CompletedTask;
     }
+
+    public Task CleanScratchAsync(string? workingSubpath, DateTime runStartedUtc, CancellationToken ct)
+    {
+        ScratchCleanups.Add(workingSubpath);
+        Order?.Add("clean-scratch");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>The working subpath of each cleanup, so a test can assert the orchestrator asked for the
+    /// run's own root and not the base one.</summary>
+    public List<string?> ScratchCleanups { get; } = [];
 }

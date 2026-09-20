@@ -2792,7 +2792,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 // reach the speaker, and the refusal below is already spoken back as a remedy.
                 CanPark: false,
                 // A voice turn belongs to no run, so there is no run row to answer this from.
-                IsTopLevelUserRun: false));
+                IsTopLevelUserRun: false,
+                // The honest lookup, like HasSessionGrant above: Resolve's scratch arm excludes voice, and the
+                // reason stays there rather than being hardcoded into a false here.
+                IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
 
             if (verdict.Outcome != ToolGateOutcome.AutoRun)
             {

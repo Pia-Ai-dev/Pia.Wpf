@@ -27,6 +27,9 @@ namespace Pia.Services;
 /// <param name="IsTopLevelUserRun">Is somebody expected at the machine? True only for a run a person started
 /// themselves and that is nobody's delegate (<c>TriggerKind == User</c>, no <c>ParentRunId</c>), resolved from
 /// the run row and never from a tool name. It is what lets the park ask about a delete-like tool.</param>
+/// <param name="IsScratchTarget"><c>RunScratchFolder.IsGateAutoApprovable(class, TargetPath)</c> — the one
+/// input answered by a PATH rather than a name, and the handler has already resolved and containment-checked
+/// it.</param>
 public readonly record struct ToolGateInput(
     ToolGateSurface Surface,
     string ToolName,
@@ -41,7 +44,8 @@ public readonly record struct ToolGateInput(
     // Nothing here is defaulted: a new gate must answer every question out loud at compile time rather than
     // inherit a silent false.
     bool CanPark,
-    bool IsTopLevelUserRun);
+    bool IsTopLevelUserRun,
+    bool IsScratchTarget);
 
 /// <summary>What the gate must do, and the audit reason persisted beside it.</summary>
 public readonly record struct ToolGateVerdict(ToolGateOutcome Outcome, ToolGateDecision Decision);
@@ -142,6 +146,17 @@ public static class ToolAutonomy
         // A name in the run's grant list (headless launch envelope / scheduled job).
         if (input.IsNamedGrant)
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.GrantedByName);
+
+        // THE SCRATCH FOLDER, and the only arm a PATH answers — so the class is re-checked here rather than
+        // trusted from the producer. Delete-like is included, unlike the policy arm: nothing under
+        // `.scratch/` is ever promoted. Voice is excluded for the session tier's reason, and the arm sits
+        // below every grant tier so those keep the attribution they earned.
+        if (input.IsScratchTarget
+            && input.ToolClass == ToolClass.Files
+            && input.Surface != ToolGateSurface.Voice)
+        {
+            return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedScratch);
+        }
 
         if (input.Surface == ToolGateSurface.Interactive)
             return new ToolGateVerdict(ToolGateOutcome.Prompt, ToolGateDecision.Unknown);

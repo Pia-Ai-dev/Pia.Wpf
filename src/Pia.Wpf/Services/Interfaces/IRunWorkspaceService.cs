@@ -124,6 +124,20 @@ public interface IRunWorkspaceService
     Task TearDownAsync(Guid runId, CancellationToken ct);
 
     /// <summary>
+    /// Remove the working notes an UN-ISOLATED run left in the user's own folder. A run that got a workspace
+    /// needs nothing here — <see cref="TearDownAsync"/> takes <c>.scratch/</c> with the rest of it — but the
+    /// degrade every provisioning fault falls back to writes straight into the assistant files folder, where
+    /// nothing has ever collected them and <c>list_files</c> hides them from the person whose folder it is.
+    /// <para>
+    /// Deletes a file under the root-level <c>.scratch/</c> only when it was last written at or after
+    /// <paramref name="runStartedUtc"/>, then prunes the directories that empties. So it removes what the run
+    /// wrote and nothing else: a <c>.scratch/</c> the USER keeps files in survives, holding exactly those.
+    /// A <c>default</c> timestamp is refused outright rather than treated as "everything".
+    /// </para>
+    /// </summary>
+    Task CleanScratchAsync(string? workingSubpath, DateTime runStartedUtc, CancellationToken ct);
+
+    /// <summary>
     /// Delete metadata documents whose workspace directory is already gone, pruning the stale worktree
     /// registration first. The startup sweep enumerates DIRECTORIES only, so without this pass the
     /// documents — and, in worktree mode, the <c>.git/worktrees/&lt;id&gt;</c> entry they know how to prune —

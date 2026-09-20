@@ -881,6 +881,7 @@
   <data name="ActionCard_AutoApprovedForSession" xml:space="preserve"><value>Automatisch genehmigt · {0} für diese Sitzung zugelassen</value></data>
   <data name="ActionCard_AutoApprovedByAutonomy" xml:space="preserve"><value>Automatisch genehmigt · Agenten-Autonomie ist für diese Art von Tool aktiviert</value></data>
   <data name="ActionCard_AutoApprovedByRunGrant" xml:space="preserve"><value>Automatisch genehmigt · dieser Ausführung wurde {0} erlaubt</value></data>
+  <data name="ActionCard_AutoApprovedScratch" xml:space="preserve"><value>Automatisch genehmigt · eine Arbeitsnotiz im Scratch-Ordner, die nie veröffentlicht wird</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Verwalten</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool-Zugriff</value></data>
   <data name="Settings_ToolPermissions_Page_Title" xml:space="preserve"><value>Was ohne Nachfrage ausgeführt wird</value></data>

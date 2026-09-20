@@ -1427,7 +1427,8 @@ public sealed class ChatSession : IDisposable
             CanPark: false,
             // Only the park reads it, and this surface never parks. False keeps the input honest about
             // what it is answering rather than about what happens to be reachable from here.
-            IsTopLevelUserRun: false));
+            IsTopLevelUserRun: false,
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
 
         return new ToolGateResolution(
             pluginId, tool, toolClass, askedAt, verdict, DateTime.UtcNow);

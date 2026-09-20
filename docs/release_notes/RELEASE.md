@@ -21,6 +21,10 @@
   these under `.scratch/`, which is never published, so they now run without a
   confirmation — and they no longer appear as a second file link next to the
   deliverable they were notes for.
+- An agent run clears its working notes away when it finishes. Those notes are
+  normally thrown out with the run's private copy of your folder, but a run that
+  could not make one wrote them into the folder itself and left them there,
+  where Pia's own file list does not show them. Only files the run wrote go.
 - Agent mode now recognises a question. Ask one with the Agent lever on and Pia
   answers it straight away instead of drawing up a plan for it, marking the reply
   so you can see it chose to. Real multi-step work still plans as before.

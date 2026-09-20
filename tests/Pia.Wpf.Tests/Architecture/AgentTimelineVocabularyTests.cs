@@ -29,6 +29,8 @@ public class AgentTimelineVocabularyTests
         // The deny beside a tool-approval park: the unattended gate's DeniedForRun Refuse arm writes it on
         // the re-run call a declined resume refuses.
         ToolGateDecision.DeniedForRun,
+        // The path arm: both non-voice surfaces reach it, and voice emits no timeline row at all.
+        ToolGateDecision.AutoApprovedScratch,
     ];
 
     // Decisions a gate can produce that the timeline deliberately does NOT record; an entry is a decision, not
@@ -130,6 +132,7 @@ public class AgentTimelineVocabularyTests
             ["AutoApprovedSessionGrant"] = 13,
             ["ApprovedForSession"] = 14,
             ["DeniedForRun"] = 15,
+            ["AutoApprovedScratch"] = 16,
         }, Enum.GetValues<ToolGateDecision>());
     }
 

@@ -881,6 +881,7 @@
   <data name="ActionCard_AutoApprovedForSession" xml:space="preserve"><value>Approuvé automatiquement · {0} autorisé pour cette session</value></data>
   <data name="ActionCard_AutoApprovedByAutonomy" xml:space="preserve"><value>Approuvé automatiquement · l'autonomie de l'agent est activée pour ce type d'outil</value></data>
   <data name="ActionCard_AutoApprovedByRunGrant" xml:space="preserve"><value>Approuvé automatiquement · cette exécution a reçu l'autorisation pour {0}</value></data>
+  <data name="ActionCard_AutoApprovedScratch" xml:space="preserve"><value>Approuvé automatiquement · une note de travail dans le dossier scratch, jamais publiée</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Gérer</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Accès aux outils</value></data>
   <data name="Settings_ToolPermissions_Page_Title" xml:space="preserve"><value>Ce qui s'exécute sans confirmation</value></data>
