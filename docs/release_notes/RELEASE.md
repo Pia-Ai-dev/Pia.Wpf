@@ -32,6 +32,9 @@
 - An agent run gets started sooner. Preparing its private copy of your folder
   could stall for half a minute before anything reached the screen, and nothing
   on screen said what it was waiting for.
+- A finished agent run folds its plan away, so the answer is what you land on.
+  The run's heading and its buttons stay put, and the chevron reopens the steps.
+  A run that failed stays open — the reason is in there.
 - Agent mode now recognises a question. Ask one with the Agent lever on and Pia
   answers it straight away instead of drawing up a plan for it, marking the
   reply so you can see it chose to. Real multi-step work still plans as before.
