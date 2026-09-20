@@ -639,7 +639,7 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         // panel offer to publish a workspace that was already promoted. Promotion is once per workspace (B7).
         if (!gone)
             _logger.LogWarning(
-                "Run {RunId} workspace directory survived teardown in {Mode} mode; the next startup sweep removes it",
+                "Run {RunId} workspace directory survived teardown in {Mode} mode; it is left for a later sweep to retry",
                 runId, meta?.ParsedMode ?? RunWorkspaceMode.None);
 
         // Last, so a crash between the two leaves a metadata document the orphan sweep can still act on.
@@ -813,7 +813,16 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             if (!_runner.IsGitInstalled)
                 return null; // F1
 
-            var toplevel = await RunGitAsync(sourceRoot, ["rev-parse", "--show-toplevel"], GitCommandKind.ReadOnly, ct)
+            // RunGitAsync ceilings discovery at the source root's parent, so the probe below can only ever
+            // report the source root itself — which makes a plain existence test an exact substitute for it,
+            // and keeps a non-repo working folder (the normal case) off the subprocess path entirely. A
+            // submodule or linked worktree makes `.git` a file, so both shapes count.
+            var dotGit = Path.Combine(sourceRoot, ".git");
+            if (!Directory.Exists(dotGit) && !File.Exists(dotGit))
+                return null; // F2, without the subprocess
+
+            var toplevel = await RunGitAsync(
+                sourceRoot, ["rev-parse", "--show-toplevel"], GitCommandKind.ReadOnly, ct, ProbeTimeout)
                 .ConfigureAwait(false);
             if (!toplevel.Succeeded || string.IsNullOrWhiteSpace(toplevel.StandardOutput))
                 return null; // F2/F3/F4
@@ -837,7 +846,8 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 return null; // F6
             }
 
-            var head = await RunGitAsync(canonicalTop, ["rev-parse", "--verify", "HEAD"], GitCommandKind.ReadOnly, ct)
+            var head = await RunGitAsync(
+                canonicalTop, ["rev-parse", "--verify", "HEAD"], GitCommandKind.ReadOnly, ct, ProbeTimeout)
                 .ConfigureAwait(false);
             if (!head.Succeeded)
             {
@@ -1182,12 +1192,20 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         return (canonicalFolder, canonicalFolder);
     }
 
+    /// <summary>The budget for a question git answers from one directory read. Well above the ~4 s a cold
+    /// git start has been seen to cost, since overrunning it silently declines worktree mode — but far below
+    /// the default 30 s, which is sized for `worktree add` and stalls the run panel with nothing on screen.
+    /// </summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
+
     private Task<GitProcessResult> RunGitAsync(
-        string workingDirectory, IReadOnlyList<string> args, GitCommandKind kind, CancellationToken ct)
+        string workingDirectory, IReadOnlyList<string> args, GitCommandKind kind, CancellationToken ct,
+        TimeSpan? timeout = null)
         // Ceiling = the parent of the working directory, mirroring GitToolHandler: upward .git discovery may
         // reach the working directory itself but never cross above it, so provisioning can never bind a
         // repository the user keeps further up their profile.
-        => _runner.RunAsync(new GitProcessRequest(workingDirectory, args, kind, TryParentOf(workingDirectory)), ct);
+        => _runner.RunAsync(
+            new GitProcessRequest(workingDirectory, args, kind, TryParentOf(workingDirectory), timeout), ct);
 
     private static string? TryParentOf(string path)
     {
@@ -1248,12 +1266,38 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     {
         try
         {
-            if (Directory.Exists(dir))
+            if (!Directory.Exists(dir)) return;
+            try
+            {
                 Directory.Delete(dir, recursive: true);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Git writes loose objects read-only and Windows refuses to delete a read-only entry, so a
+                // workspace the model ran the git tools in is undeletable until the attribute is cleared.
+                ClearReadOnlyAttributes(dir);
+                Directory.Delete(dir, recursive: true);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to delete a run workspace directory");
+        }
+    }
+
+    private static void ClearReadOnlyAttributes(string root)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories).Append(root))
+        {
+            try
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReadOnly) != 0)
+                    File.SetAttributes(entry, attributes & ~FileAttributes.ReadOnly);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
         }
     }
 
