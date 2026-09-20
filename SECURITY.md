@@ -12,7 +12,7 @@ that has been online is normally already on it.
 
 ## Reporting a vulnerability
 
-Email **entwicklung@neo42.de** with `SECURITY` in the subject. Please do **not** open a public
+Email **piasupport@pia-ai.de** with `SECURITY` in the subject. Please do **not** open a public
 GitHub issue for a suspected vulnerability.
 
 Helpful to include:

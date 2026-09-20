@@ -259,3 +259,23 @@ dotnet clean
 - `var` for apparent types, expression-bodied members preferred
 - PascalCase for public members, `_camelCase` for private fields
 - All business logic in ViewModels, never in code-behind
+
+---
+
+## License
+
+Copyright &copy; 2026 Pia-Ai-dev
+
+This program is free software: you can redistribute it and/or modify it under the terms of the **GNU
+Lesser General Public License, version 3**, as published by the Free Software Foundation.
+
+It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
+implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General
+Public License for more details.
+
+LGPL-3.0 incorporates the terms of the GNU General Public License, version 3: [`LICENSE`](LICENSE)
+holds the former and [`GPL-3.0.txt`](GPL-3.0.txt) the latter.
+
+Licences for the models and components Pia downloads at runtime &mdash; speech models and
+text-to-speech voices among them &mdash; are listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

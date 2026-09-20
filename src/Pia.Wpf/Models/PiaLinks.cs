@@ -18,7 +18,7 @@ public static class PiaLinks
         _ => "https://docs.pia-ai.de/wpf/"
     };
 
-    /// <summary>Interim address for AI-related concerns (AI Act Art. 50 complaint channel) until a dedicated alias exists.</summary>
-    public const string AiFeedbackAddress = "entwicklung@neo42.de";
+    /// <summary>Address for AI-related concerns (AI Act Art. 50 complaint channel).</summary>
+    public const string AiFeedbackAddress = "piasupport@pia-ai.de";
     public const string AiFeedbackMailto = "mailto:" + AiFeedbackAddress + "?subject=Pia%20AI%20feedback";
 }
