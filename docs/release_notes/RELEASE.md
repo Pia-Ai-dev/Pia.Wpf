@@ -26,8 +26,8 @@
   could not make one wrote them into the folder itself and left them there,
   where Pia's own file list does not show them. Only files the run wrote go.
 - Agent mode now recognises a question. Ask one with the Agent lever on and Pia
-  answers it straight away instead of drawing up a plan for it, marking the reply
-  so you can see it chose to. Real multi-step work still plans as before.
+  answers it straight away instead of drawing up a plan for it, marking the
+  reply so you can see it chose to. Real multi-step work still plans as before.
 - A new chat no longer starts in Agent mode because you once tried it. The
   Chat/Agent lever now belongs to each conversation, and what a new chat starts
   on is a setting you choose in Settings > Assistant.
