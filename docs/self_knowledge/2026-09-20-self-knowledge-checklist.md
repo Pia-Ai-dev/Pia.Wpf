@@ -46,10 +46,16 @@ little standalone value, unblocks a High.
 
 - A Pia.Docs page describing this feature, so the corpus can answer questions about itself.
 - A pre-release step (or a release-playbook line) that runs `Update-HelpCorpus.ps1 -Check`.
+- The two arms the live pass deliberately skipped, both because they mutate a synced production
+  profile: the pack-disabled contrast, and a turn on a direct (non-Pia-Cloud) provider. Both are
+  safe on a throwaway profile — see the live-validation doc's "Not covered".
 - Anything for `ToolScope.None` personas and providers without tool calling — see the plan's §4.
 
 ## Suggested order
 
 S1 → S2 → S3 → S4 → S6 is the vertical slice: it answers all three driving questions on its own and
-can be live-validated before `pia_settings` exists. S7 is the accuracy layer on top. S10 is the only
-step left and needs a desktop session with a real provider key.
+can be live-validated before `pia_settings` exists. S7 is the accuracy layer on top.
+
+S10 is the only step left, and only its contrast arm: the three questions passed on a real profile.
+That arm needs a **throwaway** profile rather than a provider key — toggling the pack writes a synced
+plugin preference, which is why the live pass left it alone on production data.

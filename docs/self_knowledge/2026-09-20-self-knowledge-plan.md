@@ -1,6 +1,6 @@
 # Pia answers questions about Pia
 
-**Status:** implemented, gate green; live validation outstanding. **Owner:** Marco Altmann.
+**Status:** shipped and live-validated on a real profile; one contrast arm outstanding. **Owner:** Marco Altmann.
 **Written:** 2026-09-20.
 **Origin:** users asking the in-app assistant *"can I perform agentic tasks?"*, *"can you change the
 way you answer?"*, *"how do I change the TTS output language?"* and getting a web search or an
@@ -211,10 +211,16 @@ ordering), `AssistantChatService.cs` (uses the extracted query builder).
 - **Retrieval:** `HelpSearchTests` pins eight real user questions to the page that answers them,
   plus punctuation cases that would be an FTS5 syntax error unsanitized.
 - **Cost:** measured, not estimated — §2.5.
-- **Still outstanding:** the live run against a real provider. Ask all three questions verbatim plus
-  one German phrasing, in **Chat** mode (agent triage is exactly what *"can I perform agentic
-  tasks?"* trips). The evidence is the Debug-only `AiClientService` tool args/result log lines, not
-  the reply text, which can be right for the wrong reason. Run the pack-disabled arm too.
+- **Live:** all three questions answered from the tools on a real, server-synced profile that
+  predates the pack, with no `web_search` in any turn — see
+  [`2026-09-20-live-validation.md`](2026-09-20-live-validation.md). The German answer quoted
+  *Einstellungen > Allgemein > Sprache > Sprachausgabe > Stimmauswahl*, which matches
+  `ViewStrings.de.resx` key for key, so the path came from the resx rather than from the model
+  translating an English one — that is §2.3 working end to end.
+- **Still outstanding:** the pack-disabled contrast arm. It was deliberately not run on production
+  data, because toggling the pack writes a synced plugin preference. It is safe on a throwaway
+  profile: point `PIA_DATA_DIR` / `PIA_LOCAL_DATA_DIR` at scratch directories with a dummy provider,
+  where a preference push goes nowhere.
 
 ## 8. Follow-ups
 
