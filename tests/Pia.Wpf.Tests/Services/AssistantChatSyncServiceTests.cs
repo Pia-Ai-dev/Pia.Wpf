@@ -414,6 +414,92 @@ public class AssistantChatSyncServiceTests
         await _chatService.DidNotReceive().MarkBackfilledAsync(rejected.Id, Arg.Any<CancellationToken>());
     }
 
+    // The nudge exists for exactly one condition: the server said "not now". Arming it for a rejected
+    // sign-in or a missing E2EE onboarding would retry something broken every minute, forever.
+    [Fact]
+    public async Task StartupPush_AsksForAnotherPass_OnlyWhenTheRateLimitStoppedIt()
+    {
+        var chat = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
+
+        Assert.True(await InvokeRunStartupPushAsync(CreateSut(NewPlainMapper())));
+    }
+
+    [Fact]
+    public async Task StartupPush_AsksForNoFurtherPass_WhenThePushWasRejectedOutright()
+    {
+        var chat = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Unauthorized, "");
+
+        Assert.False(await InvokeRunStartupPushAsync(CreateSut(NewPlainMapper())));
+    }
+
+    // The whole point of banking progress: a second pass must start from what is still owed, not from
+    // the top, or the nudge just replays the same prefix every minute.
+    [Fact]
+    public async Task StartupPush_SecondPass_PushesOnlyTheRemainder()
+    {
+        var first = SampleChat();
+        var second = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>()).Returns(
+            new List<Guid> { first.Id, second.Id }.AsReadOnly(),
+            new List<Guid> { second.Id }.AsReadOnly());
+        _chatService.GetAsync(first.Id, Arg.Any<CancellationToken>()).Returns(first);
+        _chatService.GetAsync(second.Id, Arg.Any<CancellationToken>()).Returns(second);
+        _handler.SetPut("/api/v1/chats/" + first.Id, HttpStatusCode.Created, "{}");
+        _handler.SetPut("/api/v1/chats/" + second.Id, HttpStatusCode.TooManyRequests, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        Assert.True(await InvokeRunStartupPushAsync(sut));
+        await InvokeRunStartupPushAsync(sut);
+
+        await _chatService.Received(1).GetAsync(first.Id, Arg.Any<CancellationToken>());
+        await _chatService.Received(2).GetAsync(second.Id, Arg.Any<CancellationToken>());
+    }
+
+    // The wiring the two assertions above cannot see: timer -> channel -> loop body -> another pass.
+    // Without it the remainder waits for the next launch, which on a real catalogue is weeks.
+    [Fact]
+    public async Task TheNudge_RunsAnotherBackfillPass_WithoutWaitingForTheNextLaunch()
+    {
+        var chat = SampleChat();
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
+
+        var sut = new AssistantChatSyncService(
+            _chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
+            Substitute.For<ISyncClientService>(), NullLogger<AssistantChatSyncService>.Instance,
+            startupDelayOverride: TimeSpan.Zero, backfillRetryIntervalOverride: TimeSpan.FromMilliseconds(20));
+
+        int Passes() => _chatService.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.GetUnbackfilledIdsAsync));
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            // Three passes means at least two nudges landed; one would prove nothing but the startup pass.
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline && Passes() < 3)
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(Passes() >= 3, $"only {Passes()} backfill pass(es) ran; the nudge never fired");
+    }
+
     // A chat deleted locally between the id sweep and its push is already in its desired end state,
     // so the server answering 404 must not hold the gate open forever.
     [Fact]
@@ -581,11 +667,12 @@ public class AssistantChatSyncServiceTests
         return (Task)m.Invoke(sut, [chat, false, CancellationToken.None])!;
     }
 
-    private static Task InvokeRunStartupPushAsync(AssistantChatSyncService sut)
+    /// <summary>The result is what arms the once-a-minute nudge, so it is worth asserting on.</summary>
+    private static Task<bool> InvokeRunStartupPushAsync(AssistantChatSyncService sut)
     {
         var m = typeof(AssistantChatSyncService)
             .GetMethod("RunStartupPushAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        return (Task)m.Invoke(sut, [CancellationToken.None])!;
+        return (Task<bool>)m.Invoke(sut, [CancellationToken.None])!;
     }
 
     private static Task InvokeDrainAsync(AssistantChatSyncService sut)

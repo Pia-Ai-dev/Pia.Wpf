@@ -47,7 +47,7 @@
 - Conversations from before you signed in now reach the cloud. The first upload
   sent your whole history at once, was turned away for going too quickly, and
   began again from nothing at the next launch, so most of it never arrived. It
-  now keeps what it managed and carries on from there.
+  now keeps what it managed and picks up again a minute later until it is done.
 - The file list behind a message's "+N" chip stays open while you scroll it. It
   shut on the first wheel notch, which put every file past the first few out of
   reach.

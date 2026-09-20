@@ -95,11 +95,21 @@ Shipped 2026-09-20: the per-chat `BackfilledAt` marker, the query that asks only
 and the stop-on-first-429. That ends the storm — a launch now costs one rejected request instead of
 619 — and every pass is permanent progress, so the gate closes on its own.
 
-**Not done: in-session pacing.** A pass still banks only what one rate-limit window allows (~49
-chats), so a 670-chat profile converges over roughly a dozen launches rather than inside one
-session. Finishing it means resuming the pass after the `Retry-After` elapses, and the constraint
-that makes it more than a `Task.Delay` is that `RunStartupPushAsync` is awaited *before* the signal
-loop starts reading: sleeping there would hold up ordinary chat syncing for the ~22 minutes the
-server's budget needs. It wants a resumption that runs alongside the signal loop — which also breaks
-the "no other upsert is in flight" invariant the `_rateLimited` field currently documents. Design
-that before writing it.
+Also shipped: the in-session nudge. A pass stops at the first 429, and by then the startup pull has
+already spent part of the 30-permit window — measured on 2026-09-20, **19** pushes landed before the
+first rejection. On stop-and-wait alone a launch banks ~19, so a 670-chat profile would converge over
+roughly **35 launches**, i.e. weeks. The gate would close, just not promptly.
+
+The nudge is a `Timer` whose callback does nothing but `_signal.Writer.TryWrite(0)` once a minute
+while the backfill is outstanding. That works because the worker's loop already wakes on `_signal`
+and `DrainAsync` returns immediately when nothing is queued — so the pass runs **on the loop thread
+like every other upsert**, and the "no other upsert is in flight" invariant the `_rateLimited` field
+documents survives untouched. Convergence becomes ~35 minutes in the first session that stays open,
+costing one rejected request per minute while it runs.
+
+`RunStartupPushAsync` returns true only when the rate limiter is what stopped it. A rejected sign-in
+or a missing E2EE onboarding returns false deliberately: retrying those every minute fixes nothing.
+
+What was NOT done, and should not be: sleeping out the `Retry-After` inside `RunStartupPushAsync`. It
+is awaited *before* the signal loop starts reading, so that would hold up ordinary chat syncing for
+the whole half hour.

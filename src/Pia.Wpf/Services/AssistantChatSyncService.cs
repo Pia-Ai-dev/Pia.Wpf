@@ -46,10 +46,20 @@ public sealed class AssistantChatSyncService : BackgroundService
 
     /// <summary>Set by the upsert path on a 429 so the backfill can abandon a pass the server has already
     /// closed the window on, instead of spending the rest of the catalogue on rejections. Unsynchronized
-    /// because the startup cycle completes before the signal loop starts reading, so the backfill is the
-    /// only reader and no other upsert is in flight while it runs.</summary>
+    /// because every upsert — backfill or ordinary — runs on the worker's single loop thread.</summary>
     private bool _rateLimited;
 
+    /// <summary>True while the rate limiter has cut a backfill pass short and chats are still owed.</summary>
+    private volatile bool _backfillPaced;
+
+    private readonly TimeSpan _startupDelay;
+
+    /// <summary>The server's sync policy refills over a one-minute window, so nudging faster than this only
+    /// buys more rejections.</summary>
+    private readonly TimeSpan _backfillRetryInterval;
+
+    /// <summary>The two overrides exist so a test can drive the whole worker loop in milliseconds; nothing
+    /// in the app passes them.</summary>
     public AssistantChatSyncService(
         IAssistantChatService chatService,
         ICloudCapabilityService capabilities,
@@ -58,7 +68,9 @@ public sealed class AssistantChatSyncService : BackgroundService
         IHttpClientFactory httpClientFactory,
         SyncMapper mapper,
         ISyncClientService syncClient,
-        ILogger<AssistantChatSyncService> logger)
+        ILogger<AssistantChatSyncService> logger,
+        TimeSpan? startupDelayOverride = null,
+        TimeSpan? backfillRetryIntervalOverride = null)
     {
         _chatService = chatService;
         _capabilities = capabilities;
@@ -68,6 +80,8 @@ public sealed class AssistantChatSyncService : BackgroundService
         _mapper = mapper;
         _syncClient = syncClient;
         _logger = logger;
+        _startupDelay = startupDelayOverride ?? TimeSpan.FromSeconds(5);
+        _backfillRetryInterval = backfillRetryIntervalOverride ?? TimeSpan.FromMinutes(1);
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -122,13 +136,25 @@ public sealed class AssistantChatSyncService : BackgroundService
 
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            await Task.Delay(_startupDelay, stoppingToken);
 
             if (!await RunStartupCycleAsync(stoppingToken)) return;
+
+            // A pass gets one rate-limit window, so without a nudge the remainder waits for the next launch
+            // — weeks, on a catalogue of any size. The callback does nothing but wake the loop below, which
+            // keeps every push on this one thread.
+            using Timer? backfillNudge = _backfillPaced
+                ? new Timer(
+                    _ => { if (_backfillPaced) _signal.Writer.TryWrite(0); },
+                    null, _backfillRetryInterval, _backfillRetryInterval)
+                : null;
 
             await foreach (var _ in _signal.Reader.ReadAllAsync(stoppingToken))
             {
                 await DrainAsync(stoppingToken);
+
+                if (_backfillPaced)
+                    _backfillPaced = await RunStartupPushAsync(stoppingToken);
             }
         }
         catch (OperationCanceledException)
@@ -155,7 +181,7 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
 
         await RunStartupPullAsync(ct);
-        await RunStartupPushAsync(ct);
+        _backfillPaced = await RunStartupPushAsync(ct);
         return true;
     }
 
@@ -413,13 +439,17 @@ public sealed class AssistantChatSyncService : BackgroundService
     /// connection (gated by <c>AssistantChatsBackfilledAt</c>, cleared on logout)
     /// and only after the startup pull, so freshly pulled chats are reconciled by
     /// the upsert path's normal 409-merge rather than overwriting remote state.
+    /// <br/>
+    /// Returns true when the rate limiter is the only thing standing between this pass and a finished
+    /// backfill, i.e. when another pass a minute from now is worth running. Every other unfinished outcome
+    /// returns false: retrying a rejected sign-in or a missing E2EE onboarding once a minute fixes nothing.
     /// </summary>
-    private async Task RunStartupPushAsync(CancellationToken ct)
+    private async Task<bool> RunStartupPushAsync(CancellationToken ct)
     {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
-            if (settings.AssistantChatsBackfilledAt is not null) return;
+            if (settings.AssistantChatsBackfilledAt is not null) return false;
 
             // Only what the server has not already accepted. A pass the rate limiter closes down banks its
             // successes, so the next launch resumes from the remainder instead of replaying the catalogue.
@@ -448,7 +478,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                     _logger.LogInformation(
                         "Startup backfill pass stopped by the server's rate limit: pushed {Pushed}, {Remaining} chat(s) still owed",
                         pushed, ids.Count - pushed);
-                    return;
+                    return true;
                 }
             }
 
@@ -462,7 +492,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                 _logger.LogWarning(
                     "Startup backfill deferred: E2EE onboarding required; {Count} chat(s) not yet uploaded, will retry on next launch after onboarding",
                     ids.Count);
-                return;
+                return false;
             }
 
             // Same reasoning for every other failure: marking a backfill done that the server never
@@ -472,7 +502,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                 _logger.LogWarning(
                     "Startup backfill incomplete: pushed {Pushed}, {Remaining} chat(s) still owed; the gate stays unset so the next launch resumes",
                     pushed, ids.Count - pushed);
-                return;
+                return false;
             }
 
             // Re-read so we don't clobber any settings written meanwhile.
@@ -482,6 +512,7 @@ public sealed class AssistantChatSyncService : BackgroundService
 
             _logger.LogInformation(
                 "Startup backfill pushed {Count} pre-existing chat(s) to cloud", ids.Count);
+            return false;
         }
         catch (OperationCanceledException)
         {
@@ -490,8 +521,9 @@ public sealed class AssistantChatSyncService : BackgroundService
         catch (Exception ex)
         {
             // Leave AssistantChatsBackfilledAt unset so the next launch retries the
-            // full backfill; pre-existing chats stay local-only until then.
+            // outstanding chats; they stay local-only until then.
             _logger.LogWarning(ex, "Startup backfill push failed; will retry next launch");
+            return false;
         }
     }
 
