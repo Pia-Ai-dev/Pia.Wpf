@@ -2,6 +2,10 @@
 
 ## Assistant
 
+- Ask Pia about Pia. Questions like "can I run agentic tasks?" or "how do
+  I change the language Pia speaks in?" are now answered from the built-in user
+  guide and from your own settings, naming the exact path through Settings in
+  your language. Pia no longer searches the web for them or guesses.
 - Long conversations are cheaper and faster from the second turn on, on
   providers that cache a prompt prefix. The saving grows with the chat, so it is
   largest exactly where a reply used to feel slowest.
