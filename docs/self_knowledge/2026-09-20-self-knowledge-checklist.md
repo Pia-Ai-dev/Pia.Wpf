@@ -38,8 +38,9 @@ little standalone value, unblocks a High.
 - [x] **S9 — Cost measurement.** 1505 chars ≈ 376 tokens per turn, with a test that caps both prompt
       fragments. *Deps:* S6 · *Effort:* `XS` · *Value:* `Med`
 - [ ] **S10 — Live validation.** All three driving questions plus a German phrasing, in Chat mode,
-      against a real provider, with the pack-disabled arm for contrast. Evidence is the Debug-only
-      `AiClientService` tool args/result log lines. *Deps:* S8 · *Effort:* `XS` · *Value:* `High`
+      against a real provider, with the pack-disabled arm for contrast. The three questions are done
+      — see [`2026-09-20-live-validation.md`](2026-09-20-live-validation.md); only the disabled arm
+      is left. *Deps:* S8 · *Effort:* `XS` · *Value:* `High`
 
 ## Not yet planned
 
