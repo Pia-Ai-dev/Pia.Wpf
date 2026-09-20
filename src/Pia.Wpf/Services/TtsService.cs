@@ -172,6 +172,18 @@ public class TtsService : ITtsService, IDisposable
             TryRemoveLegacyPiperTree(PiaPaths.LegacyPiperDirectory, _logger);
 
             var settings = await _settingsService.GetSettingsAsync();
+
+            if (TtsVoiceCatalog.IsRetired(settings.TtsVoiceModelKey))
+            {
+                // The bundle may still be on disk; clearing the key is what stops it being loaded,
+                // because every adoption path below picks from the curated list.
+                _logger.LogInformation(
+                    "Cleared the saved TTS voice {VoiceKey}: its licence does not permit this use",
+                    settings.TtsVoiceModelKey);
+                settings.TtsVoiceModelKey = string.Empty;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
+
             var voiceKey = settings.TtsVoiceModelKey;
 
             if (IsVoiceDownloaded(voiceKey))
@@ -405,7 +417,7 @@ public class TtsService : ITtsService, IDisposable
 
     private static FillerPhraseSet GetFillerPhraseSetForVoice(string voiceKey)
     {
-        // Voice keys are formatted as "lang_REGION-name-quality", e.g. "en_US-lessac-medium"
+        // Voice keys are formatted as "lang_REGION-name-quality", e.g. "en_GB-alba-medium"
         var langPrefix = voiceKey.Split('_')[0];
         return FillerPhrasesByLanguage.TryGetValue(langPrefix, out var set)
             ? set

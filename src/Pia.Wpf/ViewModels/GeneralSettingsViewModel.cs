@@ -6,6 +6,7 @@ using Pia.Models;
 using Pia.Paths;
 using Pia.Services.Diagnostics;
 using Pia.Services.Interfaces;
+using Pia.Services.Tts;
 using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -156,7 +157,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     private ObservableCollection<TtsVoice> _ttsVoices = new();
 
     [ObservableProperty]
-    private string _selectedVoiceKey = "en_US-lessac-medium";
+    private string _selectedVoiceKey = TtsVoiceCatalog.DefaultVoiceKey;
 
     // Inner tab index
     [ObservableProperty]

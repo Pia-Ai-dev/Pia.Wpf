@@ -120,7 +120,7 @@ public class AppSettings
 
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
-    public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
+    public string TtsVoiceModelKey { get; set; } = "en_GB-alba-medium";
 
     // Meeting attendee / live transcription settings
 
@@ -167,9 +167,10 @@ public class AppSettings
     // the plain microphone on its own when unavailable. Local-only (no SyncSettings mirror).
     public bool MicEchoCancellation { get; set; } = true;
 
-    // The escape hatch for a meeting where attribution is visibly wrong: a confidently mislabelled
-    // transcript is worse than an unlabelled one. Local-only (no SyncSettings mirror).
-    public bool MeetingSuppressSpeakerLabels { get; set; } = false;
+    // Attribution derives a voice embedding per participant, so it stays opt-in. Also the escape hatch
+    // for a meeting where it is visibly wrong: a confidently mislabelled transcript is worse than an
+    // unlabelled one. Local-only (no SyncSettings mirror).
+    public bool MeetingSuppressSpeakerLabels { get; set; } = true;
     public float SpeakerEmbeddingThreshold { get; set; } = 0.50f;
     // Caps how many distinct speakers diarization may create in one meeting; 0 = no limit. Local-only.
     public int MeetingMaxSpeakers { get; set; } = 0;

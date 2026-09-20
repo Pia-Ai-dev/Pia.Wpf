@@ -13,6 +13,10 @@
   read.
 - A run that took a single step and wrote no file no longer spends a round
   double-checking its own answer. There was nothing there to check it against.
+- An agent run no longer asks you to approve its own working notes. Pia drafts
+  these under `.scratch/`, which is never published, so they now run without a
+  confirmation — and they no longer appear as a second file link next to the
+  deliverable they were notes for.
 - Agent mode now recognises a question. Ask one with the Agent lever on and Pia
   answers it straight away instead of drawing up a plan for it, marking the reply
   so you can see it chose to. Real multi-step work still plans as before.
@@ -38,7 +42,19 @@
 
 ## Privacy
 
+- Meeting transcripts no longer say who spoke which line unless you ask for
+  it. Telling speakers apart means measuring each participant's voice, so that
+  is now something you switch on rather than something Pia does by default.
+  The setting sits with the other transcription options in Settings.
+
 - Log files no longer carry your Windows account name, the web addresses Pia
   calls, the names you gave your providers, or which applications you have open.
   Folder paths are written as `%APPDATA%\Pia` instead of the full path through
   your user folder, so a log you attach to support no longer identifies you.
+
+## Text to speech
+
+- Pia reads aloud in Alba by default now, and two voices have been withdrawn.
+  The recordings Lessac and Ryan were built from are licensed for research and
+  non-commercial use only, so Pia no longer offers them. If you had one
+  selected, Pia moves to another installed voice or asks you to pick one.

@@ -1101,6 +1101,10 @@ public class MeetingAttendeeViewModelTests
         vm.ConsentAcknowledged = true;
         await vm.StartCommand.ExecuteAsync(null);
 
+        // Start adopts the setting, which suppresses labels by default; the numbering under test is
+        // only observable with them on.
+        vm.SuppressSpeakerLabels = false;
+
         Utter(vm, "Speaker 1", "c", 0, segmentId: 99);
 
         var bubble = Assert.Single(vm.Bubbles);

@@ -25,14 +25,22 @@ public static class TtsVoiceCatalog
     internal const string SherpaTtsReleasesBase =
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
 
-    public const string DefaultVoiceKey = "en_US-lessac-medium";
+    public const string DefaultVoiceKey = "en_GB-alba-medium";
+
+    /// <summary>
+    /// Keys dropped from <see cref="Curated"/> because their training corpus forbids commercial use:
+    /// Blizzard 2013 Lessac (research only) and RyanSpeech (CC BY-NC-SA 4.0). A saved selection naming
+    /// one is cleared on startup, so a copy still on disk is never loaded again.
+    /// </summary>
+    public static IReadOnlySet<string> Retired { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { "en_US-lessac-medium", "en_US-ryan-medium" };
+
+    public static bool IsRetired(string? voiceKey) => voiceKey is not null && Retired.Contains(voiceKey);
 
     /// <summary>BundleBytes is the archive's Content-Length, measured 2026-09-09.</summary>
     public static IReadOnlyList<TtsVoiceDescriptor> Curated { get; } =
     [
-        new("en_US-lessac-medium", "Lessac", "English (US)", "Medium", "Male", 67_230_653),
         new("en_US-amy-medium", "Amy", "English (US)", "Medium", "Female", 67_223_746),
-        new("en_US-ryan-medium", "Ryan", "English (US)", "Medium", "Male", 67_213_100),
         new("en_GB-alba-medium", "Alba", "English (GB)", "Medium", "Female", 67_212_349),
         new("de_DE-thorsten-medium", "Thorsten", "German", "Medium", "Male", 67_214_254),
         new("de_DE-eva_k-x_low", "Eva", "German", "Low", "Female", 26_521_242),

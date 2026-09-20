@@ -101,18 +101,10 @@ function Get-RuntimeAssetCatalogue {
         # rhasspy download does not carry — so the bundle is the unit, not the .onnx. SizeHints measured
         # 2026-09-09 and pinned a second time in src/Pia.Wpf/Services/Tts/TtsVoiceCatalog.cs.
         TtsVoices = @(
-            @{ Kind = 'Bundle'; Name = 'Voice: Lessac (English US)'
-               Url = "$script:SherpaTts/vits-piper-en_US-lessac-medium.tar.bz2"
-               MirrorKey = 'tts/vits-piper-en_US-lessac-medium.tar.bz2'
-               Target = Join-Path $voicesDir 'vits-piper-en_US-lessac-medium'; SizeHint = 67230653 }
             @{ Kind = 'Bundle'; Name = 'Voice: Amy (English US)'
                Url = "$script:SherpaTts/vits-piper-en_US-amy-medium.tar.bz2"
                MirrorKey = 'tts/vits-piper-en_US-amy-medium.tar.bz2'
                Target = Join-Path $voicesDir 'vits-piper-en_US-amy-medium'; SizeHint = 67223746 }
-            @{ Kind = 'Bundle'; Name = 'Voice: Ryan (English US)'
-               Url = "$script:SherpaTts/vits-piper-en_US-ryan-medium.tar.bz2"
-               MirrorKey = 'tts/vits-piper-en_US-ryan-medium.tar.bz2'
-               Target = Join-Path $voicesDir 'vits-piper-en_US-ryan-medium'; SizeHint = 67213100 }
             @{ Kind = 'Bundle'; Name = 'Voice: Alba (English GB)'
                Url = "$script:SherpaTts/vits-piper-en_GB-alba-medium.tar.bz2"
                MirrorKey = 'tts/vits-piper-en_GB-alba-medium.tar.bz2'

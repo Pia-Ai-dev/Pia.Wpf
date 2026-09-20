@@ -54,6 +54,33 @@ public sealed class TtsVoiceCatalogTests : IDisposable
         Assert.Contains(TtsVoiceCatalog.DefaultVoiceKey, TtsVoiceCatalog.Curated.Select(v => v.Key));
     }
 
+    /// <summary>
+    /// Their training corpora forbid commercial use — Blizzard 2013 Lessac is research-only and
+    /// RyanSpeech is CC BY-NC-SA 4.0 — so offering either from the picker would ship the breach.
+    /// </summary>
+    [Theory]
+    [InlineData("en_US-lessac-medium")]
+    [InlineData("en_US-ryan-medium")]
+    public void A_retired_voice_is_never_offered(string key)
+    {
+        Assert.True(TtsVoiceCatalog.IsRetired(key));
+        Assert.DoesNotContain(key, TtsVoiceCatalog.Curated.Select(v => v.Key));
+    }
+
+    [Fact]
+    public void The_default_voice_is_not_retired()
+    {
+        Assert.False(TtsVoiceCatalog.IsRetired(TtsVoiceCatalog.DefaultVoiceKey));
+    }
+
+    [Fact]
+    public void IsRetired_is_false_for_a_curated_voice_and_for_no_selection()
+    {
+        Assert.All(TtsVoiceCatalog.Curated, v => Assert.False(TtsVoiceCatalog.IsRetired(v.Key), v.Key));
+        Assert.False(TtsVoiceCatalog.IsRetired(null));
+        Assert.False(TtsVoiceCatalog.IsRetired(string.Empty));
+    }
+
     /// <summary>The picker shows this as the download size, so a zero would read as "free".</summary>
     [Fact]
     public void Every_curated_voice_carries_a_measured_bundle_size()
