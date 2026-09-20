@@ -2054,6 +2054,26 @@ public sealed class AgentRunOrchestrator
         // Executor cleanup is not allowed to flip an already-terminal run — swallow + log.
         try { await executor.EndRunAsync(run, ctx, cancelled, failed, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception ex) { _logger.LogWarning(ex, "Executor EndRun failed for run {RunId}", run.Id); }
+
+        await SafeCleanScratch(run, ctx).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Collect an un-isolated run's working notes. Sits in <see cref="SafeEndRun"/> because that is the ONE
+    /// call every terminal path makes and no park does — a parked run is going to resume and still needs them.
+    /// <para>
+    /// Both guards are the ones <see cref="SafePromote"/> carries, for the same reasons: a workspace takes its
+    /// own <c>.scratch/</c> down with it, and a CHILD shares the parent's folder, so cleaning at the child's
+    /// settle would delete notes its still-running siblings are writing.
+    /// </para>
+    /// </summary>
+    private async Task SafeCleanScratch(AgentRun run, RunContext ctx)
+    {
+        if (_workspaces is null || !string.IsNullOrEmpty(ctx.WorkspaceRoot) || run.ParentRunId is not null)
+            return;
+
+        await _workspaces.CleanScratchAsync(
+            ctx.WorkingSubpath, run.StartedAt ?? run.CreatedAt, CancellationToken.None).ConfigureAwait(false);
     }
 
     private async Task SafeOnPaused(IAgentTurnExecutor executor, AgentRun run, RunContext ctx)

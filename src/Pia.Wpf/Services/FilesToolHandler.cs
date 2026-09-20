@@ -1107,7 +1107,7 @@ public class FilesToolHandler : IFilesToolHandler
             _stalenessStore.RecordRead(TaskAmbient.Current?.TaskId ?? Guid.Empty, safePath, File.GetLastWriteTimeUtc(safePath));
 
             // Surface the read to the active turn's message as an "open file" chip (read scope).
-            TaskAmbient.Current?.OnFileTouched?.Invoke(new FileTouch(safePath, FileTouchKind.Read));
+            RaiseFileTouch(TaskAmbient.Current?.OnFileTouched, root, safePath, FileTouchKind.Read);
 
             _logger.LogInformation("read_file succeeded (offset {Offset}, limit {Limit})", offset, limit);
             _logger.SensitiveDebug("read_file path: {Path}", requested);
@@ -1387,7 +1387,7 @@ public class FilesToolHandler : IFilesToolHandler
 
         // No RecordRead: nothing can edit an image (write_file and edit_file both refuse one), so a
         // staleness record would be state no gate ever reads. The chip is still raised.
-        TaskAmbient.Current?.OnFileTouched?.Invoke(new FileTouch(safePath, FileTouchKind.Read));
+        RaiseFileTouch(TaskAmbient.Current?.OnFileTouched, root, safePath, FileTouchKind.Read);
 
         _logger.LogInformation("read_file showed an image ({Width}x{Height})", image.Width, image.Height);
         _logger.SensitiveDebug("read_file image path: {Path}", requested);
@@ -1687,6 +1687,19 @@ public class FilesToolHandler : IFilesToolHandler
     private static (object? Result, FilesToolCall? Pending) WriteFailure(string message)
         => (WriteResult.Failed(message), null);
 
+    /// <summary>
+    /// The one emitter for the open-file chip, so the <c>.scratch/</c> exclusion cannot be missed at one of
+    /// the four sites. A working note is never promoted and dies with the workspace, so its chip is a dead
+    /// second link beside the deliverable's.
+    /// </summary>
+    private static void RaiseFileTouch(Action<FileTouch>? sink, string root, string absolutePath, FileTouchKind kind)
+    {
+        if (sink is null || RunScratchFolder.ContainsAbsolute(root, absolutePath))
+            return;
+
+        sink(new FileTouch(absolutePath, kind));
+    }
+
     private async Task<object?> ExecuteWriteAsync(
         string root, string requested, string rel, string content, string? oldContent, IReadOnlyList<DiffLine> diff,
         bool existedAtPrepare, DateTime? previewMtime, Guid taskId, string? vaultAnchor,
@@ -1749,7 +1762,7 @@ public class FilesToolHandler : IFilesToolHandler
                 var structuredResult = await ExecuteStructuredWriteAsync(ext, finalPath, rel, content, diff, existsNow);
                 if (structuredResult is WriteResult { success: true } ok)
                 {
-                    touch?.Invoke(new FileTouch(finalPath, existsNow ? FileTouchKind.Updated : FileTouchKind.Created));
+                    RaiseFileTouch(touch, root, finalPath, existsNow ? FileTouchKind.Updated : FileTouchKind.Created);
                     return ClampResult(ok with { _warning = warning ?? ok._warning });
                 }
                 return structuredResult;
@@ -1768,7 +1781,7 @@ public class FilesToolHandler : IFilesToolHandler
 
             // Surface the written file to the active turn's message as an "open file" chip. Use the
             // re-resolved finalPath (the bytes' true location) and existsNow (create vs update at write time).
-            touch?.Invoke(new FileTouch(finalPath, existsNow ? FileTouchKind.Updated : FileTouchKind.Created));
+            RaiseFileTouch(touch, root, finalPath, existsNow ? FileTouchKind.Updated : FileTouchKind.Created);
 
             var result = WriteResult.Ok(rel, write.BytesWritten, lineCount, lint, warning, !existsNow);
             return ClampResult(result);

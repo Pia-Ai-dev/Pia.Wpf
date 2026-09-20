@@ -117,6 +117,13 @@ public enum ToolGateDecision
     /// records an interactive card click; this one records a run-scoped decision persisted on the envelope.
     /// </summary>
     DeniedForRun = 15,
+
+    /// <summary>
+    /// The target was the run's own <c>.scratch/</c> folder, which is never promoted. Its own ordinal rather
+    /// than <see cref="AutoApprovedPolicy"/>'s: this authorizes by path whatever the autonomy switch says, and
+    /// conflating them would send the user hunting for a setting they never turned on.
+    /// </summary>
+    AutoApprovedScratch = 16,
 }
 
 /// <summary>

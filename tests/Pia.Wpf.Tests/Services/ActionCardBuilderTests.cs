@@ -222,6 +222,7 @@ public class ActionCardBuilderTests
     [InlineData(ToolGateDecision.AutoApprovedPolicy, "ActionCard_AutoApprovedByAutonomy")]
     [InlineData(ToolGateDecision.GrantedByName, "ActionCard_AutoApprovedByRunGrant")]
     [InlineData(ToolGateDecision.AutoApprovedAllowlist, "ActionCard_AutoApproved")]
+    [InlineData(ToolGateDecision.AutoApprovedScratch, "ActionCard_AutoApprovedScratch")]
     public void Build_AutoApproved_NamesTheTierThatApproved(ToolGateDecision decision, string expectedKey)
     {
         var builder = CreateBuilder(out _);

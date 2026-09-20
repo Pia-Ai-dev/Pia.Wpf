@@ -1,3 +1,6 @@
+using System.IO;
+using Pia.Models;
+
 namespace Pia.Services;
 
 /// <summary>
@@ -30,5 +33,25 @@ internal static class RunScratchFolder
         var normalized = relativePath.Replace('\\', '/').TrimStart('/');
         return normalized.Equals(Name, StringComparison.OrdinalIgnoreCase)
             || normalized.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// <c>ToolGateInput.IsScratchTarget</c>, in one place so the three gate producers cannot drift.
+    /// <paramref name="targetPath"/> is <c>PluginToolCall.TargetPath</c> — already resolved and
+    /// containment-checked, so no model-supplied <c>..</c> reaches this as true. Files only: a memory
+    /// target is vault-relative and no path may speak for an MCP tool.
+    /// </summary>
+    internal static bool IsGateAutoApprovable(ToolClass toolClass, string? targetPath) =>
+        toolClass == ToolClass.Files && Contains(targetPath ?? string.Empty);
+
+    /// <summary>True when an absolute path under <paramref name="root"/> is a run's own scratch file.</summary>
+    internal static bool ContainsAbsolute(string root, string absolutePath)
+    {
+        if (string.IsNullOrEmpty(root) || string.IsNullOrEmpty(absolutePath))
+            return false;
+
+        var withSeparator = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        return absolutePath.StartsWith(withSeparator, StringComparison.OrdinalIgnoreCase)
+            && Contains(absolutePath[withSeparator.Length..]);
     }
 }

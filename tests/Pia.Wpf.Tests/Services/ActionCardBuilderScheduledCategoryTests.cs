@@ -159,6 +159,6 @@ public class ActionCardBuilderScheduledCategoryTests
             ToolGateSurface.Interactive, toolName, toolClass,
             ServerDeclaredDestructive: false, IsAllowlisted: false, HasSessionGrant: !standing,
             HasStandingGrant: standing, IsNamedGrant: false, HasNamedDenial: false, Policy: null, CanPark: false,
-            IsTopLevelUserRun: false));
+            IsTopLevelUserRun: false, IsScratchTarget: false));
     }
 }

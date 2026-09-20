@@ -2006,7 +2006,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // panel's point of view the call ran without anyone being asked, which is what this category says.
         ToolGateDecision.AutoApprovedStandingGrant or ToolGateDecision.AutoApprovedPolicy
             or ToolGateDecision.GrantedByName or ToolGateDecision.AutoApprovedAllowlist
-            or ToolGateDecision.AutoApprovedSessionGrant
+            or ToolGateDecision.AutoApprovedSessionGrant or ToolGateDecision.AutoApprovedScratch
             => "Run_Timeline_Decision_AutoApproved",
         // ...and ApprovedForSession with the other card answers: a person said yes to this row.
         ToolGateDecision.ApprovedOnce or ToolGateDecision.ApprovedAlways

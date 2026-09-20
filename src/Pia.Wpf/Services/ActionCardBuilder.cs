@@ -151,6 +151,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         ToolGateDecision.AutoApprovedSessionGrant => "ActionCard_AutoApprovedForSession",
         ToolGateDecision.AutoApprovedPolicy => "ActionCard_AutoApprovedByAutonomy",
         ToolGateDecision.GrantedByName => "ActionCard_AutoApprovedByRunGrant",
+        ToolGateDecision.AutoApprovedScratch => "ActionCard_AutoApprovedScratch",
         _ => "ActionCard_AutoApproved",
     };
 

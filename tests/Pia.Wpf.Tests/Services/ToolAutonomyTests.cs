@@ -31,9 +31,10 @@ public class ToolAutonomyTests
         bool sessionGrant = false,
         bool serverDeclaredDestructive = false,
         bool namedDenial = false,
-        bool topLevelUserRun = false)
+        bool topLevelUserRun = false,
+        bool scratchTarget = false)
         => new(surface, toolName, toolClass, serverDeclaredDestructive, allowlisted, sessionGrant, standingGrant,
-               namedGrant, namedDenial, policy, canPark, topLevelUserRun);
+               namedGrant, namedDenial, policy, canPark, topLevelUserRun, scratchTarget);
 
     /// <summary>Nested loops in one Fact, not a ~3.5k-case Theory, to keep the cross product out of the suite total.</summary>
     [Fact]
@@ -53,11 +54,13 @@ public class ToolAutonomyTests
         foreach (var sessionGrant in new[] { false, true })
         foreach (var namedDenial in new[] { false, true })
         foreach (var topLevelUserRun in new[] { false, true })
+        foreach (var scratchTarget in new[] { false, true })
         {
             var verdict = ToolAutonomy.Resolve(Input(
                 surface, name, toolClass, policy,
                 allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark,
-                sessionGrant: sessionGrant, namedDenial: namedDenial, topLevelUserRun: topLevelUserRun));
+                sessionGrant: sessionGrant, namedDenial: namedDenial, topLevelUserRun: topLevelUserRun,
+                scratchTarget: scratchTarget));
 
             // A policy may never be the reason a delete-like tool ran; a grant the user typed still may.
             var policyBroken = verdict.Decision == ToolGateDecision.AutoApprovedPolicy;
@@ -73,12 +76,19 @@ public class ToolAutonomyTests
             // The denial tier is a REFUSE-only arm: a declined tool never auto-runs, whatever else is granted.
             var denialBroken = namedDenial && verdict.Outcome == ToolGateOutcome.AutoRun;
 
-            if (policyBroken || parkBroken || denialBroken)
+            // The scratch folder is the ONE exception to "a delete-like tool needs an explicit grant", and
+            // it is bounded here rather than left to the arm: Files class, never voice, and never without
+            // the fact itself. Anything else reaching this decision is the arm leaking.
+            var scratchBroken = verdict.Decision == ToolGateDecision.AutoApprovedScratch
+                && (!scratchTarget || toolClass != ToolClass.Files || surface == ToolGateSurface.Voice);
+
+            if (policyBroken || parkBroken || denialBroken || scratchBroken)
             {
                 violations.Add(
                     $"{surface}/{toolClass}/{name}/policy={(policy is null ? "none" : string.Join('+', policy.AutoApproveClasses))}"
                     + $"/granted={granted}/allowlisted={allowlisted}/named={named}/canPark={canPark}"
                     + $"/session={sessionGrant}/denied={namedDenial}/topLevel={topLevelUserRun}"
+                    + $"/scratch={scratchTarget}"
                     + $" => {verdict.Outcome} {verdict.Decision}");
             }
 
@@ -798,5 +808,86 @@ public class ToolAutonomyTests
 
         Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
         Assert.Equal(ToolGateDecision.DeniedNotGranted, verdict.Decision);
+    }
+    // ---- the scratch arm -----------------------------------------------------------------------------
+
+    /// <summary>Both non-voice surfaces, and DELETE included: nothing under <c>.scratch/</c> is promoted.</summary>
+    [Theory]
+    [InlineData(ToolGateSurface.Interactive, "write_file")]
+    [InlineData(ToolGateSurface.Interactive, "edit_file")]
+    [InlineData(ToolGateSurface.Interactive, "delete_file")]
+    [InlineData(ToolGateSurface.Unattended, "write_file")]
+    [InlineData(ToolGateSurface.Unattended, "delete_file")]
+    public void AScratchTarget_AutoRunsWithoutAskingAnybody(ToolGateSurface surface, string tool)
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            surface, tool, ToolClass.Files, canPark: true, scratchTarget: true));
+
+        Assert.Equal(ToolGateOutcome.AutoRun, verdict.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedScratch, verdict.Decision);
+    }
+
+    /// <summary>The same calls minus the one fact still stop: the arm is what changed the answer.</summary>
+    [Fact]
+    public void WithoutTheScratchTarget_TheSameCallStillStops()
+    {
+        Assert.Equal(ToolGateOutcome.Prompt, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "write_file", ToolClass.Files)).Outcome);
+        Assert.Equal(ToolGateOutcome.Park, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files, canPark: true)).Outcome);
+    }
+
+    /// <summary>Every other class's TargetPath means something this arm never reasoned about.</summary>
+    [Fact]
+    public void TheScratchArm_IsFilesClassOnly()
+    {
+        foreach (var toolClass in AllClasses.Where(c => c != ToolClass.Files))
+        foreach (var surface in AllSurfaces)
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                surface, "write_file", toolClass, canPark: true, scratchTarget: true));
+
+            Assert.NotEqual(ToolGateDecision.AutoApprovedScratch, verdict.Decision);
+        }
+    }
+
+    /// <summary>Voice has no card and no visible transcript, so nothing there could show what ran.</summary>
+    [Fact]
+    public void TheScratchArm_NeverAuthorizesVoice()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "write_file", ToolClass.Files, scratchTarget: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+    }
+
+    /// <summary>A person's "no" for this run outranks the folder — the denial tier is still first.</summary>
+    [Fact]
+    public void APerRunDenial_StillBeatsTheScratchArm()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files,
+            canPark: true, namedDenial: true, scratchTarget: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedForRun, verdict.Decision);
+    }
+
+    /// <summary>A call several authorities cover is audited as the one the user chose — a timeline naming the
+    /// folder instead would send them looking for the wrong thing to revoke.</summary>
+    [Fact]
+    public void AGrantKeepsItsAttribution_WhenTheTargetIsAlsoScratch()
+    {
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "write_file", ToolClass.Files,
+            standingGrant: true, scratchTarget: true)).Decision);
+
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "write_file", ToolClass.Files,
+            sessionGrant: true, scratchTarget: true)).Decision);
+
+        Assert.Equal(ToolGateDecision.AutoApprovedPolicy, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files,
+            policy: new RunAutonomyPolicy([ToolClass.Files]), scratchTarget: true)).Decision);
     }
 }

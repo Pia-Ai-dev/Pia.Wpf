@@ -585,7 +585,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             CanPark: approvals?.CanPark == true,
             // Riding on the same store and for the same reason: read ambiently it would tell a CHILD run that
             // somebody is watching it. A null store is false, i.e. delete-like stays a hard denial.
-            IsTopLevelUserRun: approvals?.IsTopLevelUserRun == true));
+            IsTopLevelUserRun: approvals?.IsTopLevelUserRun == true,
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pending.TargetPath)));
 
         return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
     }

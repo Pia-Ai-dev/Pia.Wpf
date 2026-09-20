@@ -661,6 +661,80 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         TryDeleteFile(MetadataPathFor(runId));
     }
 
+    public async Task CleanScratchAsync(string? workingSubpath, DateTime runStartedUtc, CancellationToken ct)
+    {
+        // A default timestamp would make every file "written during the run", including the user's own.
+        if (runStartedUtc == default)
+            return;
+
+        try
+        {
+            var (sourceRoot, _) = await ResolveSourceRootAsync(workingSubpath).ConfigureAwait(false);
+            if (sourceRoot is null)
+                return;
+
+            var scratch = Path.Combine(sourceRoot, RunScratchFolder.Name);
+            if (!Directory.Exists(scratch))
+                return;
+
+            var cutoff = runStartedUtc.Kind == DateTimeKind.Utc
+                ? runStartedUtc
+                : DateTime.SpecifyKind(runStartedUtc, DateTimeKind.Utc);
+
+            var removed = await Task.Run(() => DeleteScratchWrittenSince(scratch, cutoff, ct), ct).ConfigureAwait(false);
+
+            // Counts only — a path here would name the user's folder in a release log.
+            if (removed > 0)
+                _logger.LogInformation("Cleaned {Count} working-note file(s) left by an un-isolated run", removed);
+        }
+        catch (Exception ex)
+        {
+            // Bookkeeping must never fail a run (guardrail 1), and this one runs on the terminal path.
+            _logger.LogWarning(ex, "Scratch cleanup failed");
+        }
+    }
+
+    /// <summary>Deletes files last written at or after <paramref name="cutoff"/>, then the directories that
+    /// leaves empty, deepest first, up to and including <paramref name="scratch"/> itself.</summary>
+    private static int DeleteScratchWrittenSince(string scratch, DateTime cutoff, CancellationToken ct)
+    {
+        var removed = 0;
+        foreach (var file in Directory.EnumerateFiles(scratch, "*", SearchOption.AllDirectories))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (File.GetLastWriteTimeUtc(file) < cutoff)
+                    continue;
+
+                File.Delete(file);
+                removed++;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(scratch, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(d => d.Length))
+        {
+            TryDeleteEmptyDirectory(dir);
+        }
+
+        TryDeleteEmptyDirectory(scratch);
+        return removed;
+    }
+
+    private static void TryDeleteEmptyDirectory(string dir)
+    {
+        try
+        {
+            if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                Directory.Delete(dir);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     public async Task SweepOrphanMetadataAsync(CancellationToken ct)
     {
         string[] files;
