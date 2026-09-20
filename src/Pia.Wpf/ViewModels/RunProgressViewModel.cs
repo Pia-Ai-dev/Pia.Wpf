@@ -128,7 +128,12 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         var terminal = value is RunProgressState.Completed or RunProgressState.TruncatedCompleted
             or RunProgressState.Failed;
-        if (terminal && _wasLive) RunSettled?.Invoke();
+        if (terminal && _wasLive)
+        {
+            RunSettled?.Invoke();
+            // Not Failed: the failure note and its fix action sit in the body the chevron folds.
+            if (value != RunProgressState.Failed) IsCardExpanded = false;
+        }
         _wasLive = !terminal;
 
         // Running, not Planning too: a planning turn records nothing under a step, so opening there would
@@ -485,7 +490,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     public ObservableCollection<TimelineRowViewModel> Timeline { get; } = [];
 
-    /// <summary>The band's chevron: folds everything below the signal band. Default open.</summary>
+    /// <summary>The band's chevron: folds everything below the signal band. Open until the run completes.</summary>
     [ObservableProperty]
     private bool _isCardExpanded = true;
 

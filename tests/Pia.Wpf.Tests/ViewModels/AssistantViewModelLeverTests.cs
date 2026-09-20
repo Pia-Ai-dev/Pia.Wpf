@@ -348,6 +348,28 @@ public class AssistantViewModelLeverTests
         Assert.False(vm.AgentModeEnabled);
     }
 
+    /// <summary>The same settle folds the run card, so the answer is what the eye lands on.</summary>
+    [Fact]
+    public void ARunSettling_FoldsTheRunCard()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
+        Assert.True(vm.ActiveRunProgress!.IsCardExpanded);
+
+        run.State = AgentRunState.Completed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+
+        Assert.False(vm.AgentModeEnabled);
+        Assert.False(vm.ActiveRunProgress!.IsCardExpanded);
+    }
+
     /// <summary>The fall-back is a COMPOSER decision, so nothing about it may reach settings.</summary>
     [Fact]
     public void ARunSettling_SavesNothing()

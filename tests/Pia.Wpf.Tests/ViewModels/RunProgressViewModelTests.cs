@@ -781,6 +781,56 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
+    // ---- The card folds itself when a live run finishes ------------------------------------------
+
+    [Fact]
+    public async Task ARunFinishing_FoldsTheCardBody()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        await _runs.SetStateAsync(run.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+        Assert.True(vm.IsCardExpanded);
+
+        await _runs.CompleteAsync(run.Id, ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.False(vm.IsCardExpanded);
+        vm.Dispose();
+    }
+
+    /// <summary>The failure note and its action live in the body, so a failed run keeps it open.</summary>
+    [Fact]
+    public async Task AFailingRun_LeavesTheCardOpen()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        await _runs.SetStateAsync(run.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        await _runs.FailAsync(run.Id, "boom", ct: TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Failed, vm.State);
+        Assert.True(vm.IsCardExpanded);
+        vm.Dispose();
+    }
+
+    /// <summary>The fold is a transition, not a state: reopening a finished run shows the plan again.</summary>
+    [Fact]
+    public async Task AttachingToAnAlreadyFinishedRun_LeavesTheCardOpen()
+    {
+        var run = await NewPlannedRunAsync();
+        await _runs.CompleteAsync(run.Id, ct: TestContext.Current.CancellationToken);
+
+        var vm = CreateVm(run.Id);
+        await vm.RefreshAsync();
+
+        Assert.Equal(RunProgressState.Completed, vm.State);
+        Assert.True(vm.IsCardExpanded);
+        vm.Dispose();
+    }
+
     public void Dispose()
     {
         _runs.Dispose();

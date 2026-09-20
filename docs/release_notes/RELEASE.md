@@ -25,6 +25,9 @@
   normally thrown out with the run's private copy of your folder, but a run that
   could not make one wrote them into the folder itself and left them there,
   where Pia's own file list does not show them. Only files the run wrote go.
+- A finished agent run folds its plan away, so the answer is what you land on.
+  The run's heading and its buttons stay put, and the chevron reopens the steps.
+  A run that failed stays open — the reason is in there.
 - Agent mode now recognises a question. Ask one with the Agent lever on and Pia
   answers it straight away instead of drawing up a plan for it, marking the
   reply so you can see it chose to. Real multi-step work still plans as before.
