@@ -54,6 +54,10 @@
 - The file list behind a message's "+N" chip stays open while you scroll it. It
   shut on the first wheel notch, which put every file past the first few out of
   reach.
+- Pia now says so when it is running as administrator. A notice at the top of
+  the chat explains that file tools, agent runs and MCP servers inherit those
+  rights, and suggests restarting without them. Dismissing it lasts for that
+  session only.
 
 ## Transcription
 

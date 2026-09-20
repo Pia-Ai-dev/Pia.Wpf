@@ -167,6 +167,42 @@
 
     <!-- Chat title chip + run-progress panel -->
     <StackPanel Grid.Row="0">
+      <!-- Every file tool, agent run and MCP server this window starts inherits the process token. -->
+      <Border x:Name="ElevatedSessionHint"
+              Style="{StaticResource PiaStatusBannerStyle}"
+              Margin="20,12,20,0"
+              Visibility="{Binding IsElevatedSessionHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <ui:SymbolIcon Grid.Column="0"
+                         Symbol="Shield24"
+                         FontSize="16"
+                         Margin="0,0,8,0"
+                         VerticalAlignment="Top"
+                         Foreground="{DynamicResource WarningBrush}"/>
+          <TextBlock Grid.Column="1"
+                     Text="{loc:Str Assistant_ElevatedSession_Hint}"
+                     Style="{StaticResource PiaDetailValueStyle}"
+                     VerticalAlignment="Center"
+                     AutomationProperties.AutomationId="Assistant_ElevatedSessionHint"/>
+          <ui:Button Grid.Column="2"
+                     Command="{Binding DismissElevatedSessionHintCommand}"
+                     Appearance="Transparent"
+                     BorderThickness="0"
+                     Padding="4"
+                     Margin="8,0,0,0"
+                     VerticalAlignment="Top"
+                     AutomationProperties.Name="{loc:Str Assistant_ElevatedSession_Dismiss_Tooltip}"
+                     AutomationProperties.AutomationId="Assistant_DismissElevatedSessionHint"
+                     ToolTip="{loc:Str Assistant_ElevatedSession_Dismiss_Tooltip}">
+            <ui:SymbolIcon Symbol="Dismiss24" FontSize="12"/>
+          </ui:Button>
+        </Grid>
+      </Border>
       <assistant:PiaChatTitleChip DataContext="{Binding ChatTitleChip}"
                                   Margin="20,12,20,0" />
       <!-- Read-only run-progress panel (1.4). Embedded when the active chat has a live/selected run.
