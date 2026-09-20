@@ -430,7 +430,8 @@ public class SqliteContext : IDisposable
                 WorkingDirectory TEXT,
                 AgentContextMode TEXT,
                 IsFavorite      INTEGER NOT NULL DEFAULT 0,
-                ExtraJson       TEXT
+                ExtraJson       TEXT,
+                BackfilledAt    TEXT
             );
 
             CREATE INDEX IF NOT EXISTS IX_AssistantChats_UpdatedAt
@@ -873,6 +874,22 @@ public class SqliteContext : IDisposable
                 CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_OwnerDeviceId ON ScheduledJobs(OwnerDeviceId);
                 """;
             idx.ExecuteNonQuery();
+        }
+
+        // Per-chat record of the first-sync backfill, so a pass the server rate-limits still banks its progress.
+        var hasChatBackfilledAt = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AssistantChats)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+                if (r.GetString(1) == "BackfilledAt") hasChatBackfilledAt = true;
+        }
+        if (!hasChatBackfilledAt)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN BackfilledAt TEXT";
+            addCol.ExecuteNonQuery();
         }
 
         // Persona attribution snapshot on assistant messages.

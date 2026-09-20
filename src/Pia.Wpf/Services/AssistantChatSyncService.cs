@@ -44,6 +44,12 @@ public sealed class AssistantChatSyncService : BackgroundService
     private readonly object _stateLock = new();
     private readonly Dictionary<Guid, OpKind> _desired = new();
 
+    /// <summary>Set by the upsert path on a 429 so the backfill can abandon a pass the server has already
+    /// closed the window on, instead of spending the rest of the catalogue on rejections. Unsynchronized
+    /// because the startup cycle completes before the signal loop starts reading, so the backfill is the
+    /// only reader and no other upsert is in flight while it runs.</summary>
+    private bool _rateLimited;
+
     public AssistantChatSyncService(
         IAssistantChatService chatService,
         ICloudCapabilityService capabilities,
@@ -283,6 +289,9 @@ public sealed class AssistantChatSyncService : BackgroundService
                 }
             }
 
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                _rateLimited = true;
+
             _logger.LogInformation(
                 "Cloud upsert for chat {ChatId} returned status {Status}",
                 chat.Id, (int)response.StatusCode);
@@ -412,20 +421,41 @@ public sealed class AssistantChatSyncService : BackgroundService
             var settings = await _settingsService.GetSettingsAsync();
             if (settings.AssistantChatsBackfilledAt is not null) return;
 
-            var ids = await _chatService.GetAllIdsAsync(ct);
+            // Only what the server has not already accepted. A pass the rate limiter closes down banks its
+            // successes, so the next launch resumes from the remainder instead of replaying the catalogue.
+            var ids = await _chatService.GetUnbackfilledIdsAsync(ct);
             var allPushed = true;
+            var pushed = 0;
+            _rateLimited = false;
             foreach (var id in ids)
             {
                 ct.ThrowIfCancellationRequested();
                 // Reuses the normal op path: fetches the full chat (with messages)
                 // and handles 409 conflicts via merge-and-retry.
-                allPushed &= await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct);
+                if (await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct))
+                {
+                    await _chatService.MarkBackfilledAsync(id, ct);
+                    pushed++;
+                    continue;
+                }
+
+                allPushed = false;
+
+                // Every remaining push in this pass would be rejected too, and the handler does not wait out
+                // a Retry-After this long — so firing them spends the catalogue on nothing.
+                if (_rateLimited)
+                {
+                    _logger.LogInformation(
+                        "Startup backfill pass stopped by the server's rate limit: pushed {Pushed}, {Remaining} chat(s) still owed",
+                        pushed, ids.Count - pushed);
+                    return;
+                }
             }
 
             // If any push hit 403 e2ee_required, the account is E2EE-enabled server-side but
             // this device hasn't onboarded — the chats went out plaintext and were rejected.
-            // Do NOT mark the backfill complete: leaving the gate unset re-runs the full
-            // backfill on the next launch (after onboarding, the pushes succeed encrypted).
+            // Do NOT mark the backfill complete: leaving the gate unset re-runs the outstanding
+            // chats on the next launch (after onboarding, the pushes succeed encrypted).
             // Marking it done here would strand those chats in the cloud until logout/login.
             if (_syncClient.IsE2EEOnboardingRequired)
             {
@@ -440,8 +470,8 @@ public sealed class AssistantChatSyncService : BackgroundService
             if (!allPushed)
             {
                 _logger.LogWarning(
-                    "Startup backfill incomplete; leaving the gate unset so the next launch retries all {Count} chat(s)",
-                    ids.Count);
+                    "Startup backfill incomplete: pushed {Pushed}, {Remaining} chat(s) still owed; the gate stays unset so the next launch resumes",
+                    pushed, ids.Count - pushed);
                 return;
             }
 

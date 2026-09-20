@@ -276,7 +276,7 @@ public class AssistantChatSyncServiceTests
     public async Task StartupPush_BackfillsAllLocalChats_AndSetsFlag()
     {
         var chat = SampleChat();
-        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { chat.Id }.AsReadOnly());
         _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created,
@@ -305,7 +305,7 @@ public class AssistantChatSyncServiceTests
         var sut = CreateSut(NewPlainMapper());
         await InvokeRunStartupPushAsync(sut);
 
-        await _chatService.DidNotReceive().GetAllIdsAsync(Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>());
         await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
@@ -345,7 +345,7 @@ public class AssistantChatSyncServiceTests
     {
         SignOut();
         var chat = SampleChat();
-        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { chat.Id }.AsReadOnly());
         _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
 
@@ -360,7 +360,7 @@ public class AssistantChatSyncServiceTests
     public async Task StartupPush_WhenAPushIsRejected_LeavesTheGateUnset()
     {
         var chat = SampleChat();
-        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { chat.Id }.AsReadOnly());
         _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Unauthorized, "");
@@ -372,13 +372,55 @@ public class AssistantChatSyncServiceTests
         await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
+    // The server's sync policy permits 30 requests a minute, so a catalogue-sized backfill spends the rest
+    // of the pass on rejections and arrives at the next launch with nothing banked.
+    [Fact]
+    public async Task StartupPush_StopsThePass_OnTheFirstRateLimit()
+    {
+        var first = SampleChat();
+        var second = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { first.Id, second.Id }.AsReadOnly());
+        _chatService.GetAsync(first.Id, Arg.Any<CancellationToken>()).Returns(first);
+        _chatService.GetAsync(second.Id, Arg.Any<CancellationToken>()).Returns(second);
+        _handler.SetPut("/api/v1/chats/" + first.Id, HttpStatusCode.TooManyRequests, "");
+        _handler.SetPut("/api/v1/chats/" + second.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        Assert.DoesNotContain(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + second.Id));
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    // Without this a pass the limiter cuts short banks nothing, so the next launch replays the whole
+    // catalogue and trips the same limit at the same place — forever.
+    [Fact]
+    public async Task StartupPush_MarksTheChatsItManaged_BeforeTheRateLimitStopsIt()
+    {
+        var pushed = SampleChat();
+        var rejected = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { pushed.Id, rejected.Id }.AsReadOnly());
+        _chatService.GetAsync(pushed.Id, Arg.Any<CancellationToken>()).Returns(pushed);
+        _chatService.GetAsync(rejected.Id, Arg.Any<CancellationToken>()).Returns(rejected);
+        _handler.SetPut("/api/v1/chats/" + pushed.Id, HttpStatusCode.Created, "{}");
+        _handler.SetPut("/api/v1/chats/" + rejected.Id, HttpStatusCode.TooManyRequests, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        await _chatService.Received(1).MarkBackfilledAsync(pushed.Id, Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().MarkBackfilledAsync(rejected.Id, Arg.Any<CancellationToken>());
+    }
+
     // A chat deleted locally between the id sweep and its push is already in its desired end state,
     // so the server answering 404 must not hold the gate open forever.
     [Fact]
     public async Task StartupPush_WhenAChatVanishedLocally_StillClosesTheGate()
     {
         var id = Guid.NewGuid();
-        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { id }.AsReadOnly());
         _chatService.GetAsync(id, Arg.Any<CancellationToken>()).Returns((SyncAssistantChat?)null);
         _handler.SetDelete("/api/v1/chats/" + id, HttpStatusCode.NotFound, "");
@@ -412,7 +454,7 @@ public class AssistantChatSyncServiceTests
     {
         _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
         _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
-        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid>().AsReadOnly());
 
         var sut = CreateSut(NewPlainMapper());
