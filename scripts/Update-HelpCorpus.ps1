@@ -104,11 +104,18 @@ if ($Check) {
     $oldText = [System.Text.Encoding]::UTF8.GetString($buffer.ToArray())
     $buffer.Dispose()
 
-    if ($oldText -eq $json) {
-        Write-Host "Up to date: $($pages.Count) pages, docs commit $($manifest.sourceCommit)."
+    # Compare the PAGES, not the whole file: sourceCommit moves on every unrelated docs commit, and a
+    # check that cries drift over a server/** edit is a check nobody runs.
+    $oldPages = ($oldText | ConvertFrom-Json).pages | ConvertTo-Json -Depth 6 -Compress
+    $newPages = $pages | ConvertTo-Json -Depth 6 -Compress
+
+    if ($oldPages -eq $newPages) {
+        Write-Host "Up to date: $($pages.Count) pages. Snapshot taken at $(($oldText | ConvertFrom-Json).sourceCommit); docs are now at $($manifest.sourceCommit)."
         exit 0
     }
-    Write-Host "DRIFT: the committed corpus differs from the docs at commit $($manifest.sourceCommit). Re-run without -Check."
+    Write-Host "DRIFT: the desktop guide has changed since the snapshot. Re-run without -Check."
+    Write-Host "  snapshot: $(($oldText | ConvertFrom-Json).sourceCommit)"
+    Write-Host "  docs now: $($manifest.sourceCommit)"
     exit 1
 }
 

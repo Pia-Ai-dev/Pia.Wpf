@@ -53,8 +53,14 @@ flattens Starlight MDX components, strips front matter and rewrites links to abs
 startup. No `server/**` admin docs; no `de/`/`fr/` mirrors (they are stale, and `build-kb.mjs`
 filters them out anyway).
 
-The script's `-Check` mode regenerates to memory and reports drift. CI cannot run it — the docs repo
-is a separate checkout that is not on the build agent — so refreshing is a manual pre-release step.
+The script's `-Check` mode regenerates to memory and compares the **pages**, not the whole file:
+`sourceCommit` moves on every unrelated docs commit, and a check that cries drift over a `server/**`
+edit is a check nobody runs. CI cannot run it at all — the docs repo is a separate checkout that is
+not on the build agent — so refreshing is a manual pre-release step.
+
+That sibling checkout is shared and moves under you: it advanced twice during the session that built
+this. `-Check` names both the snapshot commit and the current one, so a stale snapshot is visible
+even when the desktop guide itself has not changed.
 
 ### 2.2 Search
 
@@ -69,7 +75,8 @@ check rather than a reproduction — measured, it passes with the gate removed, 
 in-memory table answers too fast to lose the race reliably. The gate is there on the contract, not
 on the evidence of that test.
 
-Three things decide whether it retrieves anything, and all three were measured, not assumed:
+Three things decide whether it retrieves anything. The first two were measured; the third is on the
+contract:
 
 - **Sanitizing.** A model-supplied string goes straight into `MATCH`, where a colon, a quote, a bare
   `*` or an uppercase `OR` is a syntax error. `AssistantChatService`'s existing token sanitizer was
@@ -78,7 +85,8 @@ Three things decide whether it retrieves anything, and all three were measured, 
   `text-to-speech:` becomes three searchable words.
 - **OR, not AND.** A four-word question ANDed against a 250-section corpus returns nothing. Help
   ORs its terms and ranks with `bm25`, weighting title 12 and heading 6 against body 1.
-- **Stemming plus an alias table.** `tokenize='porter unicode61'` gets *answers*→*answer*. Prefix
+- **Stemming plus an alias table.** `tokenize='porter unicode61'` is set for *answers*→*answer*; that
+  one was reasoned, not A/B'd against a no-stemming index. The alias table was measured. Prefix
   matching does not close the gap in the other direction — `agentic*` never reaches *agent* — so
   ~20 terms users actually type are mapped by hand, and English question scaffolding (*can, how,
   what, where, you, my, happens*) is dropped as stop words. Before the stop-word list, *"can you
