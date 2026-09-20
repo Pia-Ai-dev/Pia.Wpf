@@ -25,6 +25,13 @@
   normally thrown out with the run's private copy of your folder, but a run that
   could not make one wrote them into the folder itself and left them there,
   where Pia's own file list does not show them. Only files the run wrote go.
+- An agent run no longer leaves its private copy of your folder behind. A run
+  that used version control inside it left a directory Windows refused to
+  delete, and every launch since retried and failed. Those are cleared away
+  now, including the ones already stranded.
+- An agent run gets started sooner. Preparing its private copy of your folder
+  could stall for half a minute before anything reached the screen, and nothing
+  on screen said what it was waiting for.
 - Agent mode now recognises a question. Ask one with the Agent lever on and Pia
   answers it straight away instead of drawing up a plan for it, marking the
   reply so you can see it chose to. Real multi-step work still plans as before.
@@ -37,6 +44,10 @@
 - Pia no longer makes you wait behind its own background syncing. A request you
   are waiting for used to queue behind every housekeeping upload already in
   flight; the two are paced separately now.
+- Conversations from before you signed in now reach the cloud. The first upload
+  sent your whole history at once, was turned away for going too quickly, and
+  began again from nothing at the next launch, so most of it never arrived. It
+  now keeps what it managed and carries on from there.
 - The file list behind a message's "+N" chip stays open while you scroll it. It
   shut on the first wheel notch, which put every file past the first few out of
   reach.
