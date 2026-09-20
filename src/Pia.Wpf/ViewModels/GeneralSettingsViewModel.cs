@@ -278,7 +278,11 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         ScreenCaptureHotkeyDisplayText =
             _screenCaptureHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
 
-        SelectedVoiceKey = settings.TtsVoiceModelKey;
+        // The picker lists curated voices only, so a saved retired key would bind to no item — this
+        // page can load before TtsService has cleared it.
+        SelectedVoiceKey = TtsVoiceCatalog.IsRetired(settings.TtsVoiceModelKey)
+            ? TtsVoiceCatalog.DefaultVoiceKey
+            : settings.TtsVoiceModelKey;
     }
 
     [RelayCommand]

@@ -55,8 +55,10 @@ Points most relevant to a review, and where to look:
   the default — an unattended or voice-mode request without a prior grant is refused, not queued.
   Every decision is persisted with the permission tier that authorised it
   (`src/Pia.Wpf/Models/ToolGateEnums.cs`).
-- **File and git tools** are confined to a sandbox folder the user configures, re-checked at
-  execution time. The git tools perform no network operations.
+- **File and git tools** are confined to a sandbox root the user configures: every path the model
+  supplies is validated against it, and a deferred write pins the root it resolved when the action
+  was prepared, so an approval cannot be redirected while it waits. The git tools perform no network
+  operations.
 - **Releases are Authenticode-signed** from an Azure Key Vault certificate with RFC-3161
   timestamping, applied to the executable, the MSI and the update packages
   (`.github/workflows/build-and-release.yml`).
