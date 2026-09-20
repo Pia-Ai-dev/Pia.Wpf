@@ -171,9 +171,12 @@ public interface IAssistantChatService
 
     Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default);
 
-    /// <summary>
-    /// All locally stored chat IDs. Used by the cloud-sync worker's one-time
-    /// startup backfill to push chats that predate cloud sign-in.
-    /// </summary>
+    /// <summary>All locally stored chat IDs.</summary>
     Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken ct = default);
+
+    /// <summary>The chats the startup backfill still owes the server. A rate-limited pass banks what it
+    /// managed, so the next one resumes from the remainder instead of restarting the whole catalogue.</summary>
+    Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default);
+
+    Task MarkBackfilledAsync(Guid id, CancellationToken ct = default);
 }

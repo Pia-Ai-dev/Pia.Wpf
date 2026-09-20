@@ -107,6 +107,11 @@ Main: `main`. Features: `feature/<name>`.
 
 Before treating a feature branch as done, clear the **Zero-Warning Policy** above.
 
+**Mandatory before every push to `main`:** run the `help-corpus` skill
+(`.claude/skills/help-corpus/`). That push cuts a release, and the help corpus the assistant's
+`pia_help` tool searches is a checked-in artifact CI cannot regenerate — so a stale one ships. The
+skill also checks that Pia.Docs covers what the release notes claim.
+
 ## Release Notes
 
 `docs/release_notes/RELEASE.md` is the curated, cumulative changelog for the **next** release —

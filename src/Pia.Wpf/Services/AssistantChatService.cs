@@ -1021,6 +1021,52 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
+    public async Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return Array.Empty<Guid>();
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT Id FROM AssistantChats WHERE BackfilledAt IS NULL";
+
+            var ids = new List<Guid>();
+            using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (Guid.TryParse(reader.GetString(0), out var id))
+                    ids.Add(id);
+            }
+            return ids.AsReadOnly();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task MarkBackfilledAsync(Guid id, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return;
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE AssistantChats SET BackfilledAt = $at WHERE Id = $id";
+            command.Parameters.AddWithValue("$at", DateTime.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("$id", id.ToString());
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static async Task<List<SyncAssistantChatMessage>> GetMessagesAsync(
         SqliteConnection connection, Guid chatId, CancellationToken ct)
     {

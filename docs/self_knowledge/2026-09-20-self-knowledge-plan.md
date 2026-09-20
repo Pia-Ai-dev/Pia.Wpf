@@ -56,7 +56,8 @@ filters them out anyway).
 The script's `-Check` mode regenerates to memory and compares the **pages**, not the whole file:
 `sourceCommit` moves on every unrelated docs commit, and a check that cries drift over a `server/**`
 edit is a check nobody runs. CI cannot run it at all — the docs repo is a separate checkout that is
-not on the build agent — so refreshing is a manual pre-release step.
+not on the build agent — so refreshing is a manual step, driven by the
+`help-corpus` skill before a push to `main`.
 
 That sibling checkout is shared and moves under you: it advanced twice during the session that built
 this. `-Check` names both the snapshot commit and the current one, so a stale snapshot is visible
@@ -224,7 +225,7 @@ ordering), `AssistantChatService.cs` (uses the extracted query builder).
 
 ## 8. Follow-ups
 
-- **Corpus staleness.** Refresh with `scripts/Update-HelpCorpus.ps1` before a release. Every hit
+- **Corpus staleness.** The `help-corpus` skill refreshes it before a push to `main`. Every hit
   carries its `docs.pia-ai.de` URL so a user can check the live page, and the result footer tells
   the model to say so when the user's screen disagrees.
 - **A Pia.Docs page describing this feature**, which would then answer questions about itself.

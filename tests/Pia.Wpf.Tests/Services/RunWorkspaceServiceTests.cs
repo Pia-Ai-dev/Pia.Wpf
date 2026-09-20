@@ -71,8 +71,14 @@ public sealed class RunWorkspaceServiceTests : IDisposable
     private static GitProcessResult Exit(int code) => new(code, string.Empty, "fatal", TimedOut: false);
 
     /// <summary>Arms the runner so the whole worktree gate passes for a repo at <paramref name="toplevel"/>.</summary>
-    private void ArrangeRepoWithCommits(string toplevel) => _runner.Responder = req =>
-        IsShowToplevel(req) ? Ok(toplevel.Replace('\\', '/') + "\n") : Ok();
+    private void ArrangeRepoWithCommits(string toplevel)
+    {
+        SeedRepoMarker();
+        _runner.Responder = req => IsShowToplevel(req) ? Ok(toplevel.Replace('\\', '/') + "\n") : Ok();
+    }
+
+    /// <summary>Without this the gate declines before it runs git, so an armed runner would never be asked.</summary>
+    private void SeedRepoMarker() => Directory.CreateDirectory(Path.Combine(_source, ".git"));
 
     // ---- copy mode ----
 
@@ -174,6 +180,7 @@ public sealed class RunWorkspaceServiceTests : IDisposable
     public async Task WorktreeGate_DegradesToCopy_OnEveryFaultInTheList(string fault)
     {
         WriteSource("a.md", "alpha");
+        SeedRepoMarker();
         var outside = Path.Combine(_dir, "outside-repo");
         Directory.CreateDirectory(outside);
         var missing = Path.Combine(_source, "gone-" + Guid.NewGuid().ToString("N"));
@@ -205,6 +212,40 @@ public sealed class RunWorkspaceServiceTests : IDisposable
         Assert.Null(ws.BranchName);
         // "Usable" means the run can actually read the user's files, not merely that a directory exists.
         Assert.Equal("alpha", File.ReadAllText(Path.Combine(ws.Root, "a.md")));
+    }
+
+    /// <summary>
+    /// The runner is armed to grant a worktree, so copy mode here can only come from the pre-probe check —
+    /// and an empty call list is what proves no git process was paid for.
+    /// </summary>
+    [Fact]
+    public async Task WorktreeGate_LaunchesNoGit_WhenTheSourceRootIsNotARepo()
+    {
+        WriteSource("a.md", "alpha");
+        var top = SafeFolderPath.Canonicalize(_source).Replace('\\', '/') + "\n";
+        _runner.Responder = req => IsShowToplevel(req) ? Ok(top) : Ok();
+
+        var ws = await Build().ProvisionAsync(Guid.NewGuid(), null, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(ws);
+        Assert.Equal(RunWorkspaceMode.Copy, ws!.Mode);
+        Assert.Empty(_runner.Calls);
+    }
+
+    /// <summary>A submodule or a linked worktree carries `.git` as a file, which is still a repository.</summary>
+    [Fact]
+    public async Task WorktreeGate_ProbesGit_WhenDotGitIsAFile()
+    {
+        WriteSource("a.md", "alpha");
+        File.WriteAllText(Path.Combine(_source, ".git"), "gitdir: ../main/.git/worktrees/x");
+        var top = SafeFolderPath.Canonicalize(_source).Replace('\\', '/') + "\n";
+        _runner.Responder = req => IsShowToplevel(req) ? Ok(top) : Ok();
+
+        var ws = await Build().ProvisionAsync(Guid.NewGuid(), null, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(ws);
+        Assert.Equal(RunWorkspaceMode.Worktree, ws!.Mode);
+        Assert.Contains(_runner.Calls, IsShowToplevel);
     }
 
     // ---- idempotence + metadata ----
@@ -289,6 +330,31 @@ public sealed class RunWorkspaceServiceTests : IDisposable
     }
 
     // ---- teardown ----
+
+    /// <summary>
+    /// Git writes its loose objects read-only, and Windows refuses to delete a read-only entry — so before
+    /// this a workspace the model ran the git tools in survived every sweep it was ever offered to.
+    /// </summary>
+    [Fact]
+    public async Task TearDown_DeletesTheWorkspace_WhenItHoldsReadOnlyEntries()
+    {
+        WriteSource("a.md");
+        var svc = Build();
+        var runId = Guid.NewGuid();
+        var ws = await svc.ProvisionAsync(runId, null, TestContext.Current.CancellationToken);
+        Assert.NotNull(ws);
+
+        var nested = Path.Combine(ws!.Root, "objects", "10");
+        Directory.CreateDirectory(nested);
+        var loose = Path.Combine(nested, "9b0364c5");
+        File.WriteAllText(loose, "object");
+        File.SetAttributes(loose, FileAttributes.ReadOnly);
+        File.SetAttributes(nested, File.GetAttributes(nested) | FileAttributes.ReadOnly);
+
+        await svc.TearDownAsync(runId, TestContext.Current.CancellationToken);
+
+        Assert.False(Directory.Exists(ws.Root));
+    }
 
     /// <summary>An rmdir here would leave a .git/worktrees registration in the user's repository forever.</summary>
     [Fact]

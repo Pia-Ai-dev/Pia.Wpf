@@ -541,6 +541,11 @@ public sealed class HeadlessTurnExecutorTests
         public Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default) => _inner.DeleteAllAsync(ct);
         public Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default) => _inner.GetMaxUpdatedAtAsync(ct);
         public Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken ct = default) => _inner.GetAllIdsAsync(ct);
+
+        public Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default)
+            => _inner.GetUnbackfilledIdsAsync(ct);
+
+        public Task MarkBackfilledAsync(Guid id, CancellationToken ct = default) => _inner.MarkBackfilledAsync(id, ct);
     }
 
     /// <summary>Everything a headless run needs, wired to one temp SQLite file.</summary>
