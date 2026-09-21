@@ -62,6 +62,10 @@
   the chat explains that file tools, agent runs and MCP servers inherit those
   rights, and suggests restarting without them. Dismissing it lasts for that
   session only.
+- An agent run's steps now use the model your persona asks for. A step assigned
+  to a coding persona reached the server without saying so and was answered by
+  whatever model your group has set as its default, so picking a persona for its
+  model only worked in ordinary chat.
 
 ## Transcription
 
@@ -76,6 +80,11 @@
   it. Telling speakers apart means measuring each participant's voice, so that
   is now something you switch on rather than something Pia does by default.
   The setting sits with the other transcription options in Settings.
+
+- The "Protected" shield now appears on every answer a protected model helped
+  write, not only the ones whose last request went there. An agent step asks the
+  server several times as it works, so a step answered under the shield and then
+  finishing normally used to show nothing.
 
 - Log files no longer carry your Windows account name, the web addresses Pia
   calls, the names you gave your providers, or which applications you have open.
