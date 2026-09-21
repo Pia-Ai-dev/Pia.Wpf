@@ -84,7 +84,14 @@ public sealed record StepTurnSpec(
     /// root (B6), so narrowing a second time would probe <c>&lt;runRoot&gt;\&lt;subpath&gt;</c>.
     /// </para>
     /// </summary>
-    string? WorkspaceRoot = null);
+    string? WorkspaceRoot = null,
+
+    /// <summary>
+    /// The step persona's model-routing hint, relayed as <c>metadata.pia_persona_type</c>. Null ⇒ the server
+    /// routes on the mode default, which is what every step got while this member did not exist — a persona
+    /// picked FOR its model reached the proxy as a system prompt and nothing else.
+    /// </summary>
+    string? ModelType = null);
 
 /// <summary>
 /// The outcome a step DECLARED for itself by calling <c>emit_step_result</c> (hermes #9).
