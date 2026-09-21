@@ -78,6 +78,8 @@
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Start a conversation with Pia</value></data>
   <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Open this folder in Explorer</value></data>
+  <data name="Assistant_ElevatedSession_Hint" xml:space="preserve"><value>Pia is running as administrator. File tools, agent runs and MCP servers inherit those rights, so restart Pia without elevation unless you need it.</value></data>
+  <data name="Assistant_ElevatedSession_Dismiss_Tooltip" xml:space="preserve"><value>Hide this notice for this session</value></data>
   <data name="Assistant_AnsweredDirectly_Label" xml:space="preserve"><value>Answered directly</value></data>
   <data name="Assistant_AnsweredDirectly_Tooltip" xml:space="preserve"><value>You sent this in Agent mode, but it needed no plan — Pia answered it in one turn.</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protected</value></data>

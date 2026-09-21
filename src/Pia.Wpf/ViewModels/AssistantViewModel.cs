@@ -146,6 +146,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private int _goalHintGeneration;
 
+    /// <summary>Set once at construction: elevation cannot change while the process runs.</summary>
+    [ObservableProperty]
+    private bool _isElevatedSessionHintVisible;
+
+    /// <summary>Dismissal is deliberately session-only, so the next elevated launch warns again.</summary>
+    [RelayCommand]
+    private void DismissElevatedSessionHint() => IsElevatedSessionHintVisible = false;
+
     /// <summary>Says what agent mode changes about a send; shown when the lever is flipped to Agent and
     /// yields to the goal-too-short hint, which shares this spot in the composer.</summary>
     [ObservableProperty]
@@ -384,7 +392,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // no provider read is made for one.
         IScreenCaptureService? screenCapture = null,
         IScreenCaptureAuditLog? screenCaptureAudit = null,
-        IScreenCaptureIndicator? screenCaptureIndicator = null)
+        IScreenCaptureIndicator? screenCaptureIndicator = null,
+        // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
+        IElevationService? elevation = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -435,6 +445,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _screenCapture = screenCapture;
         _screenCaptureAudit = screenCaptureAudit;
         _screenCaptureIndicator = screenCaptureIndicator;
+        IsElevatedSessionHintVisible = elevation?.IsElevated ?? false;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);

@@ -604,7 +604,7 @@ public sealed class ChatSession : IDisposable
         // Planned step off its own per-step persona attribution.
         Guid? personaId = null,
         // The persona's model-routing hint (metadata.pia_persona_type). Sourced the same way as
-        // personaId; a Planned step passes nothing and routes on the mode default.
+        // personaId: the interactive turn off the AssistantTurnSetup, a Planned step off its spec.
         string? personaModelType = null,
         // Where this turn's tool call/result messages accumulate, so the NEXT step can be built on them.
         // Only a Planned step passes one — the interactive turn has no next step and would grow it forever.
@@ -846,7 +846,7 @@ public sealed class ChatSession : IDisposable
             usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
                 spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct,
                 AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline, spec.Persona.Id,
-                toolExchangeSink: StepToolExchangeSink(assistantMessage.Id));
+                spec.ModelType, toolExchangeSink: StepToolExchangeSink(assistantMessage.Id));
             succeeded = true;
             exchangeCompleted = true;
         }

@@ -198,6 +198,9 @@ public class AiClientService : IAiClientService
         long aggregatedOutput = 0;
         bool hasUsage = false;
         bool protectedRoute = false;
+        // Latched, never reset: an agent step assembles its answer from several rounds, so prose a protected
+        // round already streamed to the user stays protected even if a later round routes normally.
+        bool protectedContributedText = false;
         string? lastModelId = null;
         var visibleChars = 0;
         var reasoningChars = 0;
@@ -242,11 +245,11 @@ public class AiClientService : IAiClientService
                 round + 1, maxToolRounds, provider.SupportsStreaming ? "streaming" : "non-streaming");
 
             // The server decides the guardrail route (and emits the protected marker) per request, so it is
-            // re-evaluated every tool round. Reset the flag each round so the badge reflects the round that
-            // produced the FINAL answer — not a transient intermediate round (e.g. a classifier ERROR that
-            // fail-closed to the protected model but recovered to the normal model on the next round). A
-            // genuine HIT keeps marking every round because the offending content stays in workingMessages.
+            // re-evaluated every tool round. Reset per round so a transient intermediate round — a classifier
+            // ERROR that fail-closed and then recovered — does not mark an answer no protected model wrote;
+            // the latch below is what keeps a round that DID write prose marked.
             protectedRoute = false;
+            var visibleBeforeRound = visibleChars;
 
             // Bound the IN-STEP tool loop. workingMessages is the ONLY list in Pia that ever holds
             // FunctionCallContent / FunctionResultContent messages (appended below, after a round that
@@ -377,6 +380,11 @@ public class AiClientService : IAiClientService
             if (response.AdditionalProperties is { } respProps && respProps.ContainsKey(GuardrailMarker.AdditionalPropertyKey))
                 protectedRoute = true;
 
+            // A marked round that only emitted tool calls is the recoverable classifier ERROR the reset above
+            // exists for; one that also emitted prose put protected output in front of the user.
+            if (protectedRoute && visibleChars > visibleBeforeRound)
+                protectedContributedText = true;
+
             // Seen once, now that it rode in this round's request. Nothing else drops it — the carryover
             // filters match tool content only — so an unswapped picture is re-sent on every remaining round.
             var consumedImages = ToolLoopImageMessages.Consume(workingMessages);
@@ -443,7 +451,8 @@ public class AiClientService : IAiClientService
                     // No wrap-up round: that one is for round exhaustion, and spending a provider round-trip
                     // on a turn a gate already stopped is the delay this arm exists to remove.
                     _logger.LogInformation("Round {Round}: a tool handler stopped the loop; finishing the exchange", round + 1);
-                    yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, lastModelId);
+                    yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
+                        protectedRoute || protectedContributedText, lastModelId);
                     yield break;
                 }
                 // Continue the loop to get the AI's response after tool execution
@@ -469,7 +478,7 @@ public class AiClientService : IAiClientService
 
                 yield return BuildFinishedItem(
                     provider, retry.HasUsage, retry.AggregatedInput, retry.AggregatedOutput,
-                    retry.ProtectedRoute, retry.ModelId);
+                    retry.ProtectedRoute || protectedContributedText, retry.ModelId);
 
                 // A throw, not a flag, so a Planned step cannot accept the half answer as its output.
                 if (retry.Truncated)
@@ -481,7 +490,8 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
-            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, lastModelId);
+            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
+                protectedRoute || protectedContributedText, lastModelId);
             yield break;
         }
 
@@ -500,8 +510,8 @@ public class AiClientService : IAiClientService
         // Before the throw below, not instead of it: this carries the aggregated usage and the flags, and
         // the tokenizing decorator flushes its pending detokenize buffer on it.
         yield return BuildFinishedItem(
-            provider, wrapUp.HasUsage, wrapUp.AggregatedInput, wrapUp.AggregatedOutput, wrapUp.ProtectedRoute,
-            wrapUp.ModelId, toolRoundsExhausted: true);
+            provider, wrapUp.HasUsage, wrapUp.AggregatedInput, wrapUp.AggregatedOutput,
+            wrapUp.ProtectedRoute || protectedContributedText, wrapUp.ModelId, toolRoundsExhausted: true);
 
         // A throw, not a flag, so a Planned step cannot accept the half answer as its output.
         if (wrapUp.Truncated)

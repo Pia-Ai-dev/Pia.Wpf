@@ -194,7 +194,9 @@ public sealed class ChatArchiveService : IChatArchiveService
                 chat.LastAccessedAt = DateTime.UtcNow;
 
                 var existing = await _chatService.GetAsync(chat.Id, ct).ConfigureAwait(false);
-                if (existing is not null && existing.UpdatedAt >= chat.UpdatedAt)
+                if (existing is not null
+                    && existing.UpdatedAt >= chat.UpdatedAt
+                    && (existing.UpdatedAt > chat.UpdatedAt || TranscriptMatches(existing, chat)))
                 {
                     // The stored row can still carry the archive's own years-old date, and re-importing is
                     // the only repair the user has for it.
@@ -232,6 +234,27 @@ public sealed class ChatArchiveService : IChatArchiveService
     }
 
     /// <summary>Makes a chat from an untrusted file satisfy the store's NOT NULL and uniqueness rules.</summary>
+    /// <summary>Same date but a different transcript means the converter improved, so re-importing the
+    /// file repairs the stored chat; one continued in Pia carries a later date and never reaches here.</summary>
+    private static bool TranscriptMatches(SyncAssistantChat existing, SyncAssistantChat incoming)
+    {
+        if (existing.Messages.Count != incoming.Messages.Count)
+            return false;
+
+        for (var i = 0; i < existing.Messages.Count; i++)
+        {
+            var stored = existing.Messages[i];
+            var fresh = incoming.Messages[i];
+            if (!string.Equals(stored.Content, fresh.Content, StringComparison.Ordinal)
+                || !string.Equals(stored.ThinkingContent, fresh.ThinkingContent, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static void Normalize(SyncAssistantChat chat, HashSet<Guid> seenMessageIds)
     {
         StripTransportEncryption(chat);

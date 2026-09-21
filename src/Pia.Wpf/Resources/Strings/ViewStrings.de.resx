@@ -78,6 +78,8 @@
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Starte eine Unterhaltung mit Pia</value></data>
   <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Diesen Ordner im Explorer öffnen</value></data>
+  <data name="Assistant_ElevatedSession_Hint" xml:space="preserve"><value>Pia läuft mit Administratorrechten. Dateiwerkzeuge, Agentenläufe und MCP-Server erben diese Rechte – starte Pia ohne erhöhte Rechte neu, sofern du sie nicht benötigst.</value></data>
+  <data name="Assistant_ElevatedSession_Dismiss_Tooltip" xml:space="preserve"><value>Diesen Hinweis für diese Sitzung ausblenden</value></data>
   <data name="Assistant_AnsweredDirectly_Label" xml:space="preserve"><value>Direkt beantwortet</value></data>
   <data name="Assistant_AnsweredDirectly_Tooltip" xml:space="preserve"><value>Du hast das im Agentenmodus gesendet, aber es brauchte keinen Plan — Pia hat es in einem Zug beantwortet.</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Geschützt</value></data>

@@ -261,7 +261,10 @@ public sealed class LiveTurnExecutor : IAgentTurnExecutor
             // isolates an interactive step: ChatSession turns it into the ambient TaskContext the file tools
             // read. Trailing and defaulted on the record, so deleting this line COMPILES and silently
             // un-isolates every interactive run — keep it while rewriting the members around it.
-            WorkspaceRoot: _workspaceRoot);
+            WorkspaceRoot: _workspaceRoot,
+            // Off the SAME turnSetup the system prompt above came from, so a step that resolved its own
+            // persona routes on that persona's type rather than the run's.
+            ModelType: turnSetup.ModelType);
     }
 
     /// <summary>Marshals <paramref name="work"/> onto the captured UI context and bridges it back to an awaitable.</summary>

@@ -873,6 +873,7 @@ public static class Bootstrapper
         services.AddSingleton<Services.Flow.IFlowPersistenceStore, Services.Flow.FlowPersistenceStore>();
         services.AddSingleton<Services.Flow.IFlowService, Services.Flow.FlowService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
+        services.AddSingleton<Services.Interfaces.IElevationService, Services.ElevationService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
 
         // The single place Application.Current.Dispatcher is read for a ViewModel marshal (Batch 12).
