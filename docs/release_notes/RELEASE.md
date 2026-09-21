@@ -14,6 +14,13 @@
   to a coding persona reached the server without saying so and was answered by
   whatever model your group has set as its default, so picking a persona for its
   model only worked in ordinary chat.
+- YAML keeps its indentation. A snippet lost its nesting on the way to the
+  screen when the model indented the fence further than the snippet inside it,
+  and code pasted into a message that also used an @-command reached the model
+  flattened — either way the Copy button handed back a file that no longer
+  parsed.
+- YAML is syntax-highlighted in code blocks, the way JSON and the other
+  languages already were.
 
 ## Privacy
 
