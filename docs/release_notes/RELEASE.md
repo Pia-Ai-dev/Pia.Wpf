@@ -54,6 +54,10 @@
 - The file list behind a message's "+N" chip stays open while you scroll it. It
   shut on the first wheel notch, which put every file past the first few out of
   reach.
+- Imported Open WebUI chats read as answers again. The model's thinking came
+  over as raw markup in the middle of the reply; it now sits behind the same
+  collapsible heading Pia uses for its own reasoning. Importing the same file
+  again repairs the conversations you already brought over.
 - Pia warns you when it is running as administrator. A notice at the top of
   the chat explains that file tools, agent runs and MCP servers inherit those
   rights, and suggests restarting without them. Dismissing it lasts for that

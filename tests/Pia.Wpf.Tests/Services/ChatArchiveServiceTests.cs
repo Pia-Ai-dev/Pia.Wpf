@@ -178,6 +178,25 @@ public sealed class ChatArchiveServiceTests : IDisposable
         Assert.Equal([chat.Id], accessed);
     }
 
+    // Without this the only repair for a chat an older converter mangled is deleting it by hand first.
+    [Fact]
+    public async Task ReImporting_RewritesATranscriptTheFileNoLongerAgreesWith()
+    {
+        var chat = FullyPopulatedChat();
+        await _chats.SaveAsync(chat, Ct);
+        var file = PathFor("converter-fix.json");
+        await _sut.ExportAsync([chat.Id], file, Ct);
+
+        chat.Messages[0].Content = "<details type=\"reasoning\">what an older converter left</details>";
+        await _chats.SaveAsync(chat, Ct);
+
+        var result = await _sut.ImportAsync(file, ct: Ct);
+
+        Assert.Equal(1, result.Imported);
+        var stored = await _chats.GetAsync(chat.Id, Ct);
+        Assert.DoesNotContain("<details", stored!.Messages[0].Content, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Import_DoesNotOverwriteALocallyNewerChat()
     {
