@@ -21,3 +21,10 @@
   write, not only the ones whose last request went there. An agent step asks the
   server several times as it works, so a step answered under the shield and then
   finishing normally used to show nothing.
+
+## Models
+
+- Speech, voice and embedding models now download from Pia's own server only.
+  When it cannot be reached the download fails instead of quietly pulling the
+  file from Hugging Face or GitHub, so a machine that is allowed to reach Pia
+  and nothing else behaves the same way every time.

@@ -12,8 +12,8 @@ using Xunit;
 namespace Pia.Tests.Services.Assets;
 
 /// <summary>
-/// The mirror is a new hop in front of every model download, and it is invisible when it works: a
-/// silent fallback and a silent mirror hit look identical from the app. These pin the difference.
+/// A configured mirror is the only source a download has. These pin that a mirror failure surfaces
+/// instead of being answered from somewhere else.
 /// </summary>
 public class AssetDownloaderTests : IDisposable
 {
@@ -33,7 +33,7 @@ public class AssetDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Prefers_the_mirror_and_never_touches_upstream()
+    public async Task Fetches_from_the_mirror_and_never_touches_upstream()
     {
         var handler = new RoutingHandler { [MirrorUrl] = Ok("mirrored") };
         var downloader = Create(handler, Mirror);
@@ -47,7 +47,7 @@ public class AssetDownloaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Falls_back_upstream_when_the_mirror_answers_404()
+    public async Task A_mirror_404_fails_the_download_instead_of_reaching_upstream()
     {
         var handler = new RoutingHandler
         {
@@ -56,14 +56,15 @@ public class AssetDownloaderTests : IDisposable
         };
         var downloader = Create(handler, Mirror);
 
-        await downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal("upstream", File.ReadAllText(Destination));
-        Assert.Equal([MirrorUrl, Asset.UpstreamUrl], handler.Requested);
+        Assert.Equal([MirrorUrl], handler.Requested);
+        Assert.False(File.Exists(Destination));
     }
 
     [Fact]
-    public async Task Falls_back_upstream_when_the_mirror_is_unreachable()
+    public async Task An_unreachable_mirror_fails_the_download_instead_of_reaching_upstream()
     {
         var handler = new RoutingHandler
         {
@@ -72,49 +73,32 @@ public class AssetDownloaderTests : IDisposable
         };
         var downloader = Create(handler, Mirror);
 
-        await downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal("upstream", File.ReadAllText(Destination));
+        Assert.Equal([MirrorUrl], handler.Requested);
     }
 
     /// <summary>
-    /// Why the latch exists: a first run fetches eleven assets, and against a dead host each one would
-    /// otherwise re-pay a DNS or TLS timeout before falling back. That is the state today — the mirror
-    /// host serves no certificate.
+    /// No failure may latch the mirror off: with nowhere else to download from, a latched process could
+    /// not fetch an asset again until it restarts.
     /// </summary>
     [Fact]
-    public async Task Stops_retrying_a_mirror_that_failed_at_the_transport_level()
+    public async Task Keeps_trying_the_mirror_after_it_failed_once()
     {
         var handler = new RoutingHandler
         {
             Transport = { [MirrorUrl] = () => new HttpRequestException("no route") },
-            [Asset.UpstreamUrl] = Ok("upstream"),
         };
         var downloader = Create(handler, Mirror);
 
-        await downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken));
         handler.Requested.Clear();
-        await downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal([Asset.UpstreamUrl], handler.Requested);
-    }
-
-    /// <summary>A status code proves the host is up and says nothing about the next key, so it must not latch.</summary>
-    [Fact]
-    public async Task Keeps_trying_a_mirror_that_answered_with_a_status_code()
-    {
-        var handler = new RoutingHandler
-        {
-            [MirrorUrl] = Status(HttpStatusCode.NotFound),
-            [Asset.UpstreamUrl] = Ok("upstream"),
-        };
-        var downloader = Create(handler, Mirror);
-
-        await downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken);
-        handler.Requested.Clear();
-        await downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken);
-
-        Assert.Equal([MirrorUrl, Asset.UpstreamUrl], handler.Requested);
+        Assert.Equal([MirrorUrl], handler.Requested);
     }
 
     [Fact]
@@ -133,20 +117,30 @@ public class AssetDownloaderTests : IDisposable
     {
         var downloader = Create(new RoutingHandler(), "https://storage.example/f/assets");
 
-        Assert.Equal(MirrorUrl, downloader.TryBuildMirrorUrl("models/thing.onnx"));
+        Assert.Equal(MirrorUrl, downloader.MirrorUrlFor("models/thing.onnx"));
     }
 
     /// <summary>
-    /// A cancelled caller must not be answered by silently starting the same transfer against a second
-    /// host — the user pressed cancel, and the fallback would look like the cancel did nothing.
+    /// The deadline cancels a token linked to the caller's, so a silent host reaches callers as the
+    /// exception the Cancel button raises — and the ones filtering on "did the user cancel?" would
+    /// unwind without ever reporting the host.
     /// </summary>
     [Fact]
-    public async Task Cancellation_is_never_a_reason_to_fall_back()
+    public async Task A_mirror_that_never_answers_reads_as_a_timeout_not_a_cancel()
+    {
+        var handler = new RoutingHandler { Hangs = { MirrorUrl } };
+        var downloader = Create(handler, Mirror, mirrorTimeoutSeconds: 1);
+
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_cancelled_caller_gets_no_file()
     {
         var handler = new RoutingHandler
         {
             Transport = { [MirrorUrl] = () => new OperationCanceledException() },
-            [Asset.UpstreamUrl] = Ok("upstream"),
         };
         var downloader = Create(handler, Mirror);
         using var cts = new CancellationTokenSource();
@@ -154,7 +148,7 @@ public class AssetDownloaderTests : IDisposable
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => downloader.DownloadAsync(Asset, Destination, cancellationToken: cts.Token));
-        Assert.DoesNotContain(Asset.UpstreamUrl, handler.Requested);
+        Assert.False(File.Exists(Destination));
     }
 
     /// <summary>
@@ -175,13 +169,13 @@ public class AssetDownloaderTests : IDisposable
                 truncated.Content.Headers.ContentLength = 99;
                 return truncated;
             },
-            [Asset.UpstreamUrl] = Ok("upstream"),
         };
         var downloader = Create(handler, Mirror);
 
-        await downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<IOException>(
+            () => downloader.DownloadAsync(Asset, Destination, cancellationToken: TestContext.Current.CancellationToken));
 
-        Assert.Equal("upstream", File.ReadAllText(Destination));
+        Assert.False(File.Exists(Destination));
     }
 
     /// <summary>
@@ -203,9 +197,14 @@ public class AssetDownloaderTests : IDisposable
         Assert.Equal(Timeout.InfiniteTimeSpan, Assert.Single(factory.Created).Timeout);
     }
 
-    private static AssetDownloader Create(HttpMessageHandler handler, string? mirrorBaseUrl) =>
+    private static AssetDownloader Create(
+        HttpMessageHandler handler, string? mirrorBaseUrl, int mirrorTimeoutSeconds = 60) =>
         new(new SingleHandlerFactory(handler),
-            Options.Create(new AssetMirrorOptions { MirrorBaseUrl = mirrorBaseUrl }),
+            Options.Create(new AssetMirrorOptions
+            {
+                MirrorBaseUrl = mirrorBaseUrl,
+                MirrorTimeoutSeconds = mirrorTimeoutSeconds,
+            }),
             NullLogger<AssetDownloader>.Instance);
 
     private static Func<HttpResponseMessage> Ok(string body) =>
@@ -232,6 +231,7 @@ public class AssetDownloaderTests : IDisposable
         private readonly Dictionary<string, Func<HttpResponseMessage>> _responses = [];
 
         public Dictionary<string, Func<Exception>> Transport { get; } = [];
+        public HashSet<string> Hangs { get; } = [];
         public List<string> Requested { get; } = [];
 
         public Func<HttpResponseMessage> this[string url] { set => _responses[url] = value; }
@@ -241,6 +241,9 @@ public class AssetDownloaderTests : IDisposable
         {
             var url = request.RequestUri!.ToString();
             Requested.Add(url);
+            if (Hangs.Contains(url))
+                return Task.Delay(Timeout.Infinite, cancellationToken).ContinueWith(
+                    _ => new HttpResponseMessage(), cancellationToken);
             if (Transport.TryGetValue(url, out var thrower))
                 return Task.FromException<HttpResponseMessage>(thrower());
             return Task.FromResult(_responses.TryGetValue(url, out var response)
