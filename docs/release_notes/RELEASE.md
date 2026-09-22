@@ -21,6 +21,11 @@
   parsed.
 - YAML is syntax-highlighted in code blocks, the way JSON and the other
   languages already were.
+- A long answer that uses many tools no longer stops with a provider timeout
+  when every request was answered in time. The limit covered the whole turn,
+  file edits between requests included, so a provider that replied within
+  seconds a dozen times over still ran it out.
+- A provider's "Timeout (seconds)" accepts up to 600; it stopped at 300.
 - Answer text is sharp on every line. Single lines of a reply rendered
   blurred, most often the second or third, and which ones changed as the
   chat scrolled.

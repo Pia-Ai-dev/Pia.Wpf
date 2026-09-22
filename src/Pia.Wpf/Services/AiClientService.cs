@@ -68,7 +68,7 @@ public class AiClientService : IAiClientService
         _throttle = throttle;
     }
 
-    /// <summary>The per-method timeoutCts owns the request bound; HttpClient's 100s default would fire first and surface as a bare cancellation.</summary>
+    /// <summary>The caller's timeoutCts owns the request bound; HttpClient's 100s default would fire first and surface as a bare cancellation.</summary>
     private HttpClient CreateAiHttpClient()
     {
         var client = _httpClientFactory.CreateClient();
@@ -209,14 +209,10 @@ public class AiClientService : IAiClientService
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, timeoutCts.Token);
-
         var providerHandler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await providerHandler.CreateChatClientAsync(
-            provider, apiKey, httpClient, mode, managedPersonaId, personaModelType, linkedCts.Token);
+            provider, apiKey, httpClient, mode, managedPersonaId, personaModelType, cancellationToken);
 
         var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
         var options = providerHandler.CreateChatOptions(provider, hasTools: useTools);
@@ -241,6 +237,12 @@ public class AiClientService : IAiClientService
 
         for (var round = 0; round < maxToolRounds; round++)
         {
+            // Per ROUND, not per call: the timeout bounds one provider round-trip. A step's wall clock also
+            // carries every tool dispatch between rounds, and a step budget cancels a provider that answered.
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, timeoutCts.Token);
+
             _logger.LogDebug("Tool round {Round}/{MaxRounds} starting, path={Path}",
                 round + 1, maxToolRounds, provider.SupportsStreaming ? "streaming" : "non-streaming");
 
