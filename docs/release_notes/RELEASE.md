@@ -21,6 +21,9 @@
   parsed.
 - YAML is syntax-highlighted in code blocks, the way JSON and the other
   languages already were.
+- Answer text is sharp on every line. Single lines of a reply rendered
+  blurred, most often the second or third, and which ones changed as the
+  chat scrolled.
 
 ## Privacy
 
