@@ -12,6 +12,90 @@ public sealed class ToolLoopStopSignal
     public void RequestStop() => IsStopRequested = true;
 }
 
+/// <summary>What produced a parked picture, so the consumed placeholder can name it.</summary>
+public enum ToolLoopImageSource
+{
+    ScreenCapture,
+    ImageFile,
+}
+
+/// <summary>One picture a tool produced for the model, parked until every result of its round is appended.</summary>
+public sealed record ToolLoopImage(
+    string CallId, byte[] Bytes, string MediaType, int Width, int Height, string Caption,
+    ToolLoopImageSource Source = ToolLoopImageSource.ScreenCapture);
+
+/// <summary>Marks an injected image message so the swap and the compactor find it without reading its text.</summary>
+public sealed record ToolLoopImageTag(
+    string CallId, int Width, int Height,
+    ToolLoopImageSource Source = ToolLoopImageSource.ScreenCapture);
+
+/// <summary>Where a handler parks a picture a tool result cannot carry — a result has no image slot and any
+/// non-string one is JSON-serialized — for the loop to append after the round's last result.</summary>
+public sealed class ToolLoopImageChannel
+{
+    public const string MessageTagKey = "pia.toolImage";
+
+    /// <summary>Per ROUND, which is per flight: <c>Consume</c> withdraws a round's images before the next
+    /// one, so no turn-wide cap is needed. Four is what the compactor's image allowance affords.</summary>
+    public const int MaxImagesPerRound = 4;
+
+    private static readonly AsyncLocal<ToolLoopImageChannel?> _current = new();
+
+    private readonly List<ToolLoopImage> _parked = [];
+
+    public ToolLoopImageChannel(AiProviderType providerType) => ProviderType = providerType;
+
+    /// <summary>The channel of the dispatch on this logical flow; null means no loop, so no way to hand a
+    /// picture over, so the handler must refuse before it captures anything.</summary>
+    public static ToolLoopImageChannel? Current
+    {
+        get => _current.Value;
+        set => _current.Value = value;
+    }
+
+    /// <summary>Where this round's frame would go — the fact only the loop holds.</summary>
+    public AiProviderType ProviderType { get; }
+
+    public int Count
+    {
+        get { lock (_parked) return _parked.Count; }
+    }
+
+    /// <summary>Uncapped: the one caller is <c>screen_capture</c>, one frame per approval card the user
+    /// already clicked through. A tool the model can call unattended uses <see cref="TryPark"/>.</summary>
+    public void Park(ToolLoopImage image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        lock (_parked) _parked.Add(image);
+    }
+
+    /// <summary>False when this round is already full, so the caller can say so in its tool result.</summary>
+    public bool TryPark(ToolLoopImage image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+
+        // Inside the lock: two handlers in one round dispatch sequentially today, but nothing in this
+        // type says they must, and a check-then-add outside it would let both past a full channel.
+        lock (_parked)
+        {
+            if (_parked.Count >= MaxImagesPerRound) return false;
+            _parked.Add(image);
+            return true;
+        }
+    }
+
+    public IReadOnlyList<ToolLoopImage> Drain()
+    {
+        lock (_parked)
+        {
+            if (_parked.Count == 0) return [];
+            var drained = _parked.ToArray();
+            _parked.Clear();
+            return drained;
+        }
+    }
+}
+
 /// <summary>
 /// What the tool LOOP knows about a dispatch that the handler cannot work out for itself. Today: the round.
 /// <para>

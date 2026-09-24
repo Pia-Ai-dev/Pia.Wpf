@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -74,6 +75,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     private string _goal = string.Empty;
     private string? _existingTitle;
     private string? _existingWorkingDirectory;
+    private string? _existingAgentContextMode;
+
+    /// <summary>The chat folder this run's steps narrow to; null when an isolated workspace already is it.</summary>
+    private string? _workingSubpath;
 
     // Seeded by the launcher via Initialize before the orchestrator runs.
     private string? _workspaceRoot;
@@ -216,12 +221,24 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _runCreatedAt = run.CreatedAt;
         _goal = ctx.Goal;
 
-        // Parity note (guardrail 3): LiveTurnExecutor hands the chat's working subpath to the context so the
-        // verifier's artifact probe stats the root its steps wrote into. A headless run deliberately does NOT
-        // inherit one — every step runs with TaskContext.WorkingSubpath: null (RunExchangeStepAsync), so its
-        // writes land at the base root even when the chat row carries a WorkingDirectory. Stated as an
-        // explicit assignment rather than left to the default.
-        ctx.WorkingSubpath = null;
+        var chat = await _chatService.GetAsync(run.ChatId, ct).ConfigureAwait(false);
+        // Carry the row's own metadata forward: every chat write here is a FULL replace, and with per-step
+        // interim saves it now happens repeatedly mid-run. Re-using the persisted title keeps an interim
+        // save from downgrading a good title (the launcher's derived one, or an LLM title an earlier segment
+        // produced) and re-using WorkingDirectory keeps the folder the row carries — the launcher's stamp, or an
+        // interactive chat's own — from being nulled by these saves.
+        _existingTitle = chat?.Title;
+        _existingWorkingDirectory = chat?.WorkingDirectory;
+        _existingAgentContextMode = chat?.AgentContextMode;
+
+        // The folder a scheduled job names, or the one an approved plan's chat was pointed at, is where the
+        // work belongs — writing at the base root instead put a run's deliverable somewhere nobody asked for.
+        // Same one-narrowing rule as LiveTurnExecutor: an isolated run's workspace root already IS the
+        // narrowed root (provisioned FROM <folder>\<subpath>), so narrowing again would probe
+        // <runRoot>\<subpath>. The context member is what the planner's grounding digest and the verifier's
+        // artifact probe both read, outside any step's ambient.
+        _workingSubpath = _workspaceRoot is null ? _existingWorkingDirectory : null;
+        ctx.WorkingSubpath = _workingSubpath;
         // Batch 06 B3: publish the run's workspace root onto the context so the verifier (which runs on
         // the orchestrator thread, outside any step's ambient) can resolve declared artifacts against the
         // root the steps actually wrote into instead of falling back to the settings folder. Non-null for
@@ -256,19 +273,20 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
         _provider = provider;
 
-        // No working subpath on either branch: a headless run's steps never narrow — ctx.WorkingSubpath above.
-        // Nothing to name once the user switches the file tools off — the run is offered none.
+        // Must name the folder the steps are actually confined to, or the prompt sends the model at a root it
+        // cannot write into. Nothing to name once the user switches the file tools off — the run is offered none.
         var environmentRoot = !settings.AssistantFileToolsEnabled
             ? null
             : _workspaceRoot is not null
                 ? SafeFolderPath.NormalizeWorkspaceRoot(_workspaceRoot)
                 : SafeFolderPath.IsConfiguredAndExists(settings.AssistantFilesFolder)
-                    ? SafeFolderPath.NormalizeWorkspaceRoot(settings.AssistantFilesFolder!)
+                    ? NarrowToWorkingSubpath(
+                        SafeFolderPath.NormalizeWorkspaceRoot(settings.AssistantFilesFolder!), _workingSubpath)
                     : null;
 
-        // Headless path — no user to click the chip (R7) → never eligible.
+        // Headless path — no user to click the chip (R7) → never eligible, and unattended by definition.
         _setup = _promptComposer.PrepareTurn(_persona, _provider, [], _tokenizationEnabled,
-            suggestAgentModeEligible: false, environmentRoot: environmentRoot);
+            suggestAgentModeEligible: false, environmentRoot: environmentRoot, unattended: true);
 
         // Batch 07 G6: the resolution above is now the run DEFAULT rather than the only answer. Deliberately
         // still done here and still cached — see _runDefault's own comment for the three consumers that need a
@@ -312,15 +330,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         _messages.Clear();
         _persisted.Clear();
         _messages.Add(new ChatMessage(ChatRole.System, _setup.SystemPrompt)); // system: never persisted
-
-        var chat = await _chatService.GetAsync(run.ChatId, ct).ConfigureAwait(false);
-        // Carry the row's own metadata forward: every chat write here is a FULL replace, and with per-step
-        // interim saves it now happens repeatedly mid-run. Re-using the persisted title keeps an interim
-        // save from downgrading a good title (the launcher's derived one, or an LLM title an earlier segment
-        // produced) and re-using WorkingDirectory keeps an interactive chat's per-chat folder from being
-        // nulled by a resumed run's saves.
-        _existingTitle = chat?.Title;
-        _existingWorkingDirectory = chat?.WorkingDirectory;
 
         // The prose transcript alone told a resumed step nothing about the files an abandoned attempt had
         // already read or written, so it asked the user for data it had.
@@ -513,8 +522,17 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     /// <summary>Two callers, so the replay's sandbox and audit attribution cannot drift from the step's.</summary>
     private TaskContext StepAmbient() =>
-        new(_runId, WorkingSubpath: null, OnFileTouched: null, WorkspaceRoot: _workspaceRoot, ChatId: _chatId,
+        new(_runId, _workingSubpath, OnFileTouched: null, WorkspaceRoot: _workspaceRoot, ChatId: _chatId,
             UnattendedGranter: _grantedBy);
+
+    /// <summary>Fail-safe like FilesToolHandler.ResolveEffectiveRoot: a subpath that escapes containment or
+    /// is missing falls back to <paramref name="baseRoot"/>, never wider.</summary>
+    private static string NarrowToWorkingSubpath(string baseRoot, string? workingSubpath) =>
+        !string.IsNullOrWhiteSpace(workingSubpath)
+        && SafeFolderPath.TryResolveInsideAllowingAbsolute(baseRoot, workingSubpath, out var narrowed)
+        && Directory.Exists(narrowed)
+            ? narrowed
+            : baseRoot;
 
     /// <summary>
     /// Run the calls a person just approved, once each, then seed them so the model can see they ran. MUST NEVER
@@ -718,7 +736,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             new(ChatRole.System, turnSetup.SystemPrompt),
         };
         exchangeMessages.AddRange(_messages.Skip(1));
-        exchangeMessages.Add(new ChatMessage(ChatRole.User, instruction));
+        // The time note rides the copy too: _setup is resolved once per RUN, so a run spanning hours
+        // would otherwise carry the minute it started at.
+        exchangeMessages.Add(new ChatMessage(ChatRole.User, AssistantPromptComposer.AppendTimeNote(instruction)));
 
         // ONE compaction seam covers all three Headless entry points: ExecuteStepAsync, the R10
         // degrade turn (RunSingleTurnFallbackAsync) — both funnel through here — and the RESUME path.
@@ -917,21 +937,30 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // here, so the chat and a resume's re-seed are unchanged.
         _messages.AddRange(exchange.ToolExchanges);
 
-        // The visible reply IS persisted and IS carried forward as context for later steps.
+        // Carried forward as context either way, so a later step still sees that this one ran.
         _messages.Add(new ChatMessage(ChatRole.Assistant, exchange.Visible));
-        _persisted.Add(new SyncAssistantChatMessage
+
+        // A step may finish without prose — an emit_step_result{true} claim needs none — and a chat row with
+        // no content renders as a bare avatar forever. Skipped rather than filled with "didn't respond" text,
+        // which would misreport a step that succeeded. The tool-exchange rows still seal against
+        // assistantMsgId; the re-seed reads an anchor with no chat row as stale and carries it as trailing.
+        var hasVisibleReply = !string.IsNullOrWhiteSpace(exchange.Visible);
+        if (hasVisibleReply)
         {
-            Id = assistantMsgId,
-            Role = "assistant",
-            Content = exchange.Visible,
-            ThinkingContent = exchange.Thinking,
-            Timestamp = DateTime.UtcNow,
-            Tokens = exchange.Tokens,
-            ModelName = exchange.Model,
-            ProviderName = exchange.Provider,
-            IsProtectedRoute = exchange.Protected,
-            Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
-        });
+            _persisted.Add(new SyncAssistantChatMessage
+            {
+                Id = assistantMsgId,
+                Role = "assistant",
+                Content = exchange.Visible,
+                ThinkingContent = exchange.Thinking,
+                Timestamp = DateTime.UtcNow,
+                Tokens = exchange.Tokens,
+                ModelName = exchange.Model,
+                ProviderName = exchange.Provider,
+                IsProtectedRoute = exchange.Protected,
+                Persona = new SyncMessagePersona { Id = p.Persona.Id, Name = p.Persona.Name, Emoji = p.Persona.Emoji },
+            });
+        }
 
         // Unconditional even when this attempt recorded nothing: a previous, PARKED attempt's rows for the
         // same step are still unanchored, and this is the write that finally anchors them. CancellationToken.None
@@ -954,8 +983,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             Error: succeeded ? null : DescribeFailure(claim),
             VisibleText: exchange.Visible,
             Usage: exchange.Usage,
-            FirstMessageId: assistantMsgId,
-            LastMessageId: assistantMsgId,
+            // Guid.Empty when no row was written, the same signal the park arm returns — the orchestrator's
+            // range bookkeeping already skips it rather than pointing a step at a message that does not exist.
+            FirstMessageId: hasVisibleReply ? assistantMsgId : Guid.Empty,
+            LastMessageId: hasVisibleReply ? assistantMsgId : Guid.Empty,
             Outcome: claim);
     }
 
@@ -1118,6 +1149,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             // multi-persona run may have used several.
             ProviderId = _provider.Id,
             WorkingDirectory = _existingWorkingDirectory,
+            AgentContextMode = _existingAgentContextMode,
             Messages = [.. _persisted],
         };
     }

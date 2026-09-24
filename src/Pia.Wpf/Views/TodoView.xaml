@@ -294,6 +294,15 @@
                                       BorderThickness="1"
                                       CornerRadius="6"
                                       Opacity="0">
+                                <!-- Safe next to the kanban drag: that behaviour needs a hold plus movement and
+                                     never marks the press handled, and the checkbox and buttons handle their own.
+                                     A script drives it through Todo_Title_<id> — a Border gets no automation peer,
+                                     so an id here would never reach the tree. -->
+                                <Border.InputBindings>
+                                  <MouseBinding MouseAction="LeftDoubleClick"
+                                                Command="{Binding DataContext.StartEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"/>
+                                </Border.InputBindings>
                                 <Border.Triggers>
                                   <EventTrigger RoutedEvent="Loaded">
                                     <BeginStoryboard>

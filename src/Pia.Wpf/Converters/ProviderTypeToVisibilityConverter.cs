@@ -16,7 +16,7 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
 
         return field switch
         {
-            "ModelName" => providerType is AiProviderType.OpenAI or AiProviderType.Ollama or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Mistral or AiProviderType.VLlm
+            "ModelName" => providerType is AiProviderType.OpenAI or AiProviderType.Ollama or AiProviderType.OpenRouter or AiProviderType.OpenAICompatible or AiProviderType.Mistral or AiProviderType.VLlm or AiProviderType.Anthropic
                 ? Visibility.Visible : Visibility.Collapsed,
             "AzureDeployment" => providerType == AiProviderType.AzureOpenAI
                 ? Visibility.Visible : Visibility.Collapsed,
@@ -26,9 +26,12 @@ public class ProviderTypeToVisibilityConverter : IValueConverter
                 ? Visibility.Visible : Visibility.Collapsed,
             "Delete" => providerType != AiProviderType.PiaCloud
                 ? Visibility.Visible : Visibility.Collapsed,
-            "ReasoningEffort" => providerType is AiProviderType.OpenAI or AiProviderType.AzureOpenAI or AiProviderType.Ollama or AiProviderType.Mistral or AiProviderType.OpenRouter or AiProviderType.VLlm
+            "ReasoningEffort" => providerType is AiProviderType.OpenAI or AiProviderType.AzureOpenAI or AiProviderType.Ollama or AiProviderType.Mistral or AiProviderType.OpenRouter or AiProviderType.VLlm or AiProviderType.Anthropic
                 ? Visibility.Visible : Visibility.Collapsed,
-            "WebSearch" => providerType is AiProviderType.OpenAI or AiProviderType.OpenRouter
+            "WebSearch" => providerType is AiProviderType.OpenAI or AiProviderType.OpenRouter or AiProviderType.Anthropic
+                ? Visibility.Visible : Visibility.Collapsed,
+            // Anthropic alone takes a cache directive; no other provider here has one.
+            "PromptCache" => providerType is AiProviderType.Anthropic
                 ? Visibility.Visible : Visibility.Collapsed,
             "MistralAgentId" => providerType is AiProviderType.Mistral
                 ? Visibility.Visible : Visibility.Collapsed,

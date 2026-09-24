@@ -10,6 +10,7 @@ using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Scheduling;
 using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
@@ -31,7 +32,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly IWindowManagerService _windowManager;
     private readonly ILocalizationService _localization;
     private readonly IPluginService _plugins;
+    private readonly IWorkingDirectoryService _workingDirectories;
+    private readonly ISettingsService _settings;
     private readonly ITextOptimizationService? _textOptimization;
+    private readonly IAdvancedCreationLauncher? _advancedCreation;
     private readonly ILogger<RoutinesViewModel> _logger;
 
     /// <summary>The grant list as it will be persisted: insertion-ordered, deduped OrdinalIgnoreCase. The rows
@@ -342,7 +346,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     /// "that is not HH:mm".</summary>
     public bool CanSave =>
         !string.IsNullOrWhiteSpace(EditName)
-        && !string.IsNullOrWhiteSpace(EditTimeOfDay)
+        && (!EditorWantsTimeOfDay || !string.IsNullOrWhiteSpace(EditTimeOfDay))
         && (EditorIsMeeting
             ? !string.IsNullOrWhiteSpace(EditMeetingUrl) && EditMeetingConsent
             : !string.IsNullOrWhiteSpace(EditQuery));
@@ -436,6 +440,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     public bool EditorWantsDayOfWeek => EditRecurrence == RecurrenceType.Weekly;
     public bool EditorWantsDayOfMonth => EditRecurrence is RecurrenceType.Monthly or RecurrenceType.Yearly;
     public bool EditorWantsMonth => EditRecurrence == RecurrenceType.Yearly;
+    public bool EditorWantsTimeOfDay => EditRecurrence != RecurrenceType.Manual;
 
     partial void OnEditRecurrenceChanged(RecurrenceType value)
     {
@@ -444,6 +449,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         OnPropertyChanged(nameof(EditorWantsDayOfWeek));
         OnPropertyChanged(nameof(EditorWantsDayOfMonth));
         OnPropertyChanged(nameof(EditorWantsMonth));
+        OnPropertyChanged(nameof(EditorWantsTimeOfDay));
+        OnPropertyChanged(nameof(CanSave));
     }
 
     // The kind decides what an EMPTY grant list means, so switching it rewrites both lines the picker shows.
@@ -455,6 +462,31 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         OnPropertyChanged(nameof(EditorIsMeeting));
         OnPropertyChanged(nameof(EditToolsSummary));
     }
+
+    /// <summary>Folder the routine's run works in, relative to the assistant-files sandbox; null = its root.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EditWorkingDirectoryDisplay))]
+    private string? _editWorkingDirectory;
+
+    /// <summary>Backslash form for the button, matching the chat chip's pill: <c>\</c> at root.</summary>
+    public string EditWorkingDirectoryDisplay =>
+        string.IsNullOrEmpty(EditWorkingDirectory) ? "\\" : "\\" + EditWorkingDirectory.Replace('/', '\\');
+
+    [ObservableProperty]
+    private bool _isWorkingDirPickerOpen;
+
+    public WorkingDirectoryPickerViewModel WorkingDirectoryPicker { get; }
+
+    // Re-opened at the current folder rather than wherever the last session left it, and enumerated only here:
+    // the picker deliberately lists nothing until its popup opens.
+    partial void OnIsWorkingDirPickerOpenChanged(bool value)
+    {
+        if (value) WorkingDirectoryPicker.InitializeFrom(EditWorkingDirectory);
+    }
+
+    /// <summary>The folder a NEW routine opens on, resolved once per load; one already on disk keeps what it
+    /// stored, including nothing.</summary>
+    private string? _defaultWorkingDirectory;
 
     private readonly Services.MeetingAttendee.IBrowserProvisioner _browserProvisioner;
 
@@ -469,8 +501,11 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ILocalizationService localization,
         IPluginService plugins,
         Services.MeetingAttendee.IBrowserProvisioner browserProvisioner,
+        IWorkingDirectoryService workingDirectories,
+        ISettingsService settings,
         ILogger<RoutinesViewModel> logger,
-        ITextOptimizationService? textOptimization = null)
+        ITextOptimizationService? textOptimization = null,
+        IAdvancedCreationLauncher? advancedCreation = null)
     {
         _jobs = jobs;
         _runner = runner;
@@ -482,8 +517,15 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _localization = localization;
         _plugins = plugins;
         _browserProvisioner = browserProvisioner;
+        _workingDirectories = workingDirectories;
+        _settings = settings;
         _logger = logger;
         _textOptimization = textOptimization;
+        _advancedCreation = advancedCreation;
+
+        WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectories);
+        WorkingDirectoryPicker.WorkingDirectoryChosen += (_, path) =>
+            EditWorkingDirectory = string.IsNullOrEmpty(path) ? null : path;
 
         JobKinds = [.. Enum.GetValues<ScheduledJobKind>()
             .Select(k => new RoutineKindChoice(k, _localization[$"Settings_ScheduledJobs_Kind_{k}"]))];
@@ -536,6 +578,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             var providers = await _providers.GetProvidersAsync();
             var personas = await _personas.GetPersonasAsync();
             var assistantProvider = await ResolveAssistantProviderAsync();
+            var appSettings = await _settings.GetSettingsAsync();
+            _defaultWorkingDirectory = _workingDirectories.EnsureSubfolder(appSettings.AssistantDefaultWorkingDirectory);
 
             var rows = new List<RoutineRow>(jobs.Count);
             foreach (var job in jobs)
@@ -711,6 +755,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             QuietOnSuccess = job.QuietOnSuccess,
             MeetingUrl = job.MeetingUrl,
             MeetingConsentAckAt = job.MeetingConsentAckAt,
+            WorkingDirectory = job.WorkingDirectory,
             RecentRunsSummary = BuildRecentRunsSummary(recentFirings),
             RecentRuns = [.. recentFirings.Select(BuildRunRow)],
             OwnedByThisDevice = ownedHere,
@@ -743,6 +788,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditSpecificDate = null;
         EditMeetingUrl = string.Empty;
         EditMeetingConsent = false;
+        EditWorkingDirectory = _defaultWorkingDirectory;
         ResetEditTools([]);
         EditQuietOnSuccess = false;
         ApplyPinChoices(null, null, null);
@@ -859,6 +905,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditDayOfMonth = now.Day;
         EditMonth = now.Month;
         EditSpecificDate = null;
+        EditWorkingDirectory = _defaultWorkingDirectory;
         ResetEditTools(blueprint.GrantedTools);
         EditQuietOnSuccess = blueprint.QuietOnSuccess;
         ApplyPinChoices(null, null, blueprint.DefaultEffort);
@@ -890,13 +937,16 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         EditRecurrence = row.Recurrence;
         EditTimeOfDay = row.TimeOfDay.ToString("HH\\:mm");
         // A job predating the day pickers has no stored day; NextFireAt is the day it actually fires on, which
-        // is the honest thing to show rather than today.
-        EditDayOfWeek = row.DayOfWeek ?? row.NextFireAt.DayOfWeek;
-        EditDayOfMonth = row.DayOfMonth ?? row.NextFireAt.Day;
-        EditMonth = row.Month ?? row.NextFireAt.Month;
+        // is the honest thing to show rather than today. A manual routine's is the never-sentinel, and the
+        // year 9999 is no one's intended default for the recurrence they may switch to next.
+        var dayFallback = row.NextFireAt >= RecurrenceCalculator.Never ? DateTime.Now : row.NextFireAt;
+        EditDayOfWeek = row.DayOfWeek ?? dayFallback.DayOfWeek;
+        EditDayOfMonth = row.DayOfMonth ?? dayFallback.Day;
+        EditMonth = row.Month ?? dayFallback.Month;
         EditSpecificDate = row.SpecificDate;
         EditMeetingUrl = row.MeetingUrl ?? string.Empty;
         EditMeetingConsent = row.MeetingConsentAckAt is not null;
+        EditWorkingDirectory = row.WorkingDirectory;
         ResetEditTools(row.GrantedToolNames);
         EditQuietOnSuccess = row.QuietOnSuccess;
         ApplyPinChoices(row.ProviderId, row.PersonaId, row.ReasoningEffort);
@@ -955,17 +1005,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     {
         EditToolGroups.Clear();
 
-        IReadOnlyList<ToolCatalogEntry> catalog;
-        try
-        {
-            catalog = _plugins.GetToolCatalog();
-        }
-        catch (Exception ex)
-        {
-            // Degrade to "no tools offered" rather than dropping grants: the selection list is untouched.
-            _logger.LogWarning(ex, "Could not read the tool catalog for the routines editor");
-            catalog = [];
-        }
+        // Degrades to "no tools offered" rather than dropping grants: the selection list is untouched.
+        var catalog = GrantableCatalog("routines editor");
 
         var offered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var group in catalog.GroupBy(e => e.PluginName, StringComparer.Ordinal)
@@ -977,6 +1018,11 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             foreach (var row in rows) offered.Add(row.ToolName);
             EditToolGroups.Add(new RoutineToolGroup(group.Key, false, rows));
         }
+
+        // A grant stored before read-only tools left the picker authorized nothing then either, so it is
+        // dropped rather than filed as missing — "unavailable on this device" would be the wrong story.
+        _editGrantSelection.RemoveAll(n =>
+            !offered.Contains(n) && ToolPermissionService.IsReadOnlyBuiltIn(n));
 
         var orphans = _editGrantSelection.Where(n => !offered.Contains(n)).ToList();
         if (orphans.Count > 0)
@@ -1040,43 +1086,16 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             var draft = await _textOptimization.GenerateRoutineDraftAsync(
                 EditDescription, offered, EditProvider?.Id);
 
-            // Text fills only what is still blank, so re-drafting cannot clobber what the user typed.
-            if (string.IsNullOrWhiteSpace(EditName) && draft.Name is { } name) EditName = name;
-            if (string.IsNullOrWhiteSpace(EditQuery) && draft.Goal is { } goal) EditQuery = ApplyWebSearchGuard(goal, draft);
+            var applied = ApplyRoutineDraft(draft, offered);
 
-            // The schedule fills only while it still holds what StartCreate set: a draft must not move a time
-            // the user has already chosen, and there is no "blank" for a typed field to test.
-            if (_pickersUntouched)
-            {
-                _applyingDraft = true;
-                try
-                {
-                    // Not drafted, decided: a blank start opens on AgentTask, and an AgentTask with an empty
-                    // grant list is remapped by the launcher to its write_file default — so a drafted routine
-                    // advertising no grants could write files. Research grants exactly what it says.
-                    EditKind = ScheduledJobKind.Research;
-                    if (draft.Recurrence is { } recurrence) EditRecurrence = recurrence;
-                    if (draft.DayOfWeek is { } day) EditDayOfWeek = day;
-                    if (draft.TimeOfDay is { } time) EditTimeOfDay = time.ToString("HH\\:mm");
-                    if (draft.Effort is { } effort)
-                        EditEffort = EffortChoices.FirstOrDefault(e => e.Value == effort) ?? EditEffort;
-                }
-                finally
-                {
-                    _applyingDraft = false;
-                }
+            // Otherwise the button reads as broken: the draft arrived and every field it may write was
+            // already filled, so nothing on screen moved.
+            if (!applied)
+                StatusMessage = _localization["Routines_Draft_NothingToFill"];
 
-                // A grant HAS a blank state, so it needs no latch of its own: anything already ticked is the
-                // user's, and a card's empty list is a deliberate "this one only reads".
-                if (_editGrantSelection.Count == 0)
-                    ResetEditTools(AcceptableDraftTools(draft.Tools, offered));
-
-                // The draft has now chosen them, so a second draft must not move them again.
-                _pickersUntouched = false;
-            }
-
-            _logger.LogInformation("Drafted a routine from a description (web search needed: {Needed})",
-                draft.NeedsWebSearch);
+            _logger.LogInformation(
+                "Drafted a routine from a description (web search needed: {Needed}, applied: {Applied})",
+                draft.NeedsWebSearch, applied);
             _logger.SensitiveDebug("Routine draft from {Description} produced name: {Name} goal: {Goal}",
                 EditDescription, EditName, EditQuery);
         }
@@ -1092,23 +1111,108 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         }
     }
 
-    /// <summary>What the drafting model may pick from: one entry per distinct tool name this device offers,
-    /// minus the names a create-time grant is refused anyway — no point offering what would be dropped.</summary>
-    private List<RoutineDraftTool> OfferableDraftTools()
+    /// <summary>Brainstorms the routine with the model instead of drafting it in one shot. Lands in the
+    /// same fields, through the same filtering, as <see cref="GenerateDraftAsync"/>.</summary>
+    [RelayCommand]
+    private async Task AdvancedDraftAsync()
     {
-        IReadOnlyList<ToolCatalogEntry> catalog;
+        if (_advancedCreation is null) return;
+
+        IsDrafting = true;
+        StatusMessage = null;
         try
         {
-            catalog = _plugins.GetToolCatalog();
+            var offered = OfferableDraftTools();
+            var json = await _advancedCreation.LaunchAsync(
+                AdvancedCreationModes.Routine(offered), EditProvider?.Id, EditDescription);
+
+            if (json is null) return;
+
+            var applied = ApplyRoutineDraft(Services.DraftParsing.ParseRoutineDraft(json), offered);
+            if (!applied)
+                StatusMessage = _localization["Routines_Draft_NothingToFill"];
         }
         catch (Exception ex)
         {
-            // Same degradation as the picker: offer nothing rather than fail the draft.
-            _logger.LogWarning(ex, "Could not read the tool catalog for the routine draft");
-            return [];
+            _logger.LogWarning(ex, "Designing a routine failed");
+            StatusMessage = _localization["Routines_Draft_Failed"];
+        }
+        finally
+        {
+            IsDrafting = false;
+        }
+    }
+
+    /// <summary>Shared by both draft doors, so the tool filtering and the web-search guard cannot be
+    /// skipped by whichever one is written second.</summary>
+    private bool ApplyRoutineDraft(RoutineDraft draft, List<RoutineDraftTool> offered)
+    {
+        // Text fills only what is still blank, so re-drafting cannot clobber what the user typed.
+        var applied = false;
+        if (string.IsNullOrWhiteSpace(EditName) && draft.Name is { } name)
+        {
+            EditName = name;
+            applied = true;
+        }
+        if (string.IsNullOrWhiteSpace(EditQuery) && draft.Goal is { } goal)
+        {
+            EditQuery = ApplyWebSearchGuard(goal, draft);
+            applied = true;
         }
 
-        return [.. catalog
+        // The schedule fills only while it still holds what StartCreate set: a draft must not move a time
+        // the user has already chosen, and there is no "blank" for a typed field to test.
+        if (_pickersUntouched)
+        {
+            _applyingDraft = true;
+            try
+            {
+                // Not drafted, decided: a blank start opens on AgentTask, and an AgentTask with an empty
+                // grant list is remapped by the launcher to its write_file default — so a drafted routine
+                // advertising no grants could write files. Research grants exactly what it says.
+                EditKind = ScheduledJobKind.Research;
+                if (draft.Recurrence is { } recurrence) EditRecurrence = recurrence;
+                if (draft.DayOfWeek is { } day) EditDayOfWeek = day;
+                if (draft.TimeOfDay is { } time) EditTimeOfDay = time.ToString("HH\\:mm");
+                if (draft.Effort is { } effort)
+                    EditEffort = EffortChoices.FirstOrDefault(e => e.Value == effort) ?? EditEffort;
+            }
+            finally
+            {
+                _applyingDraft = false;
+            }
+
+            // A grant HAS a blank state, so it needs no latch of its own: anything already ticked is the
+            // user's, and a card's empty list is a deliberate "this one only reads".
+            if (_editGrantSelection.Count == 0)
+                ResetEditTools(AcceptableDraftTools(draft.Tools, offered));
+
+            // The draft has now chosen them, so a second draft must not move them again.
+            _pickersUntouched = false;
+            applied = true;
+        }
+
+        return applied;
+    }
+
+    /// <summary>The catalog reduced to what a grant can authorize — a read-only built-in never reaches the gate.</summary>
+    private IReadOnlyList<ToolCatalogEntry> GrantableCatalog(string failureContext)
+    {
+        try
+        {
+            return [.. _plugins.GetToolCatalog()
+                .Where(e => e.IsExternalRoute || !ToolPermissionService.IsReadOnlyBuiltIn(e.ToolName))];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the tool catalog for the {Context}", failureContext);
+            return [];
+        }
+    }
+
+    private List<RoutineDraftTool> OfferableDraftTools()
+    {
+        return [.. GrantableCatalog("routine draft")
             .Where(e => !ToolPermissionService.IsPresumedExternalDeleteLike(e.ToolName))
             .Where(e => !e.ServerDeclaredDestructive)
             .GroupBy(e => e.ToolName, StringComparer.OrdinalIgnoreCase)
@@ -1188,7 +1292,9 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
             }
         }
 
-        if (!TimeOnly.TryParseExact(EditTimeOfDay.Trim(), "HH\\:mm", out var timeOfDay))
+        // A manual routine has no time field to type into, so its stored time is inert and never parsed.
+        var timeOfDay = default(TimeOnly);
+        if (EditorWantsTimeOfDay && !TimeOnly.TryParseExact(EditTimeOfDay.Trim(), "HH\\:mm", out timeOfDay))
         {
             StatusMessage = _localization["Settings_ScheduledJobs_Validation_Time"];
             return;
@@ -1219,6 +1325,10 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         // stands now, not about whatever it was when first created.
         var meetingConsentAt = EditorIsMeeting && EditMeetingConsent ? DateTime.Now : (DateTime?)null;
 
+        // Empty CLEARS on update — null there means "leave unchanged", which would strand a folder the user
+        // has just cleared. Create takes the null as-is.
+        var workingDirectory = EditorIsMeeting ? null : EditWorkingDirectory;
+
         IsBusy = true;
         try
         {
@@ -1241,11 +1351,12 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     reasoningEffort: effort,
                     clearReasoningEffort: effort is null,
                     meetingUrl: meetingUrl,
-                    meetingConsentAckAt: meetingConsentAt);
+                    meetingConsentAckAt: meetingConsentAt,
+                    workingDirectory: workingDirectory ?? string.Empty);
 
                 _logger.LogInformation("Updated scheduled job {Id} from the routines view", id);
-                _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona}",
-                    id, EditName, EditQuery, EditPersona?.Name);
+                _logger.SensitiveDebug("Updated scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona} folder: {Folder}",
+                    id, EditName, EditQuery, EditPersona?.Name, workingDirectory);
             }
             else
             {
@@ -1254,12 +1365,13 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                     specificDate: specificDate, providerId: providerId,
                     grantedTools: grants, kind: EditKind, quietOnSuccess: EditQuietOnSuccess,
                     personaId: personaId, reasoningEffort: effort, blueprintKey: _editBlueprintKey,
-                    meetingUrl: meetingUrl, meetingConsentAckAt: meetingConsentAt);
+                    meetingUrl: meetingUrl, meetingConsentAckAt: meetingConsentAt,
+                    workingDirectory: workingDirectory);
 
                 _logger.LogInformation("Created scheduled job {Id} from the routines view ({Kind})",
                     created.Id, EditKind);
-                _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona}",
-                    created.Id, EditName, EditQuery, EditPersona?.Name);
+                _logger.SensitiveDebug("Created scheduled job {Id} name: {Name} goal: {Goal} persona: {Persona} folder: {Folder}",
+                    created.Id, EditName, EditQuery, EditPersona?.Name, workingDirectory);
                 EditingJobId = created.Id;
             }
 
@@ -1574,6 +1686,11 @@ public sealed class RoutineRow
     public DateTime? SpecificDate { get; init; }
     public required DateTime NextFireAt { get; init; }
 
+    /// <summary>False for a manual routine, whose time of day and next run are both meaningless.</summary>
+    public bool FiresOnSchedule => Recurrence != RecurrenceType.Manual;
+
+    public string NextRunLabel => FiresOnSchedule ? NextFireAt.ToString("g", CultureInfo.CurrentCulture) : "—";
+
     public required ScheduledJobStatus Status { get; init; }
     public required string StatusLabel { get; init; }
 
@@ -1620,6 +1737,15 @@ public sealed class RoutineRow
     /// device-local; the link never leaves this machine.</summary>
     public string? MeetingUrl { get; init; }
     public DateTime? MeetingConsentAckAt { get; init; }
+
+    /// <summary>Sandbox-relative folder this routine works in; null = the sandbox root. USER CONTENT.</summary>
+    public string? WorkingDirectory { get; init; }
+
+    public bool HasWorkingDirectory => !string.IsNullOrEmpty(WorkingDirectory);
+
+    /// <summary>Backslash form for the detail pane, matching the chat chip's pill.</summary>
+    public string WorkingDirectoryLabel =>
+        HasWorkingDirectory ? "\\" + WorkingDirectory!.Replace('/', '\\') : "\\";
 
     /// <summary>"N runs: X ok, Y failed"; empty when none are recorded.</summary>
     public required string RecentRunsSummary { get; init; }

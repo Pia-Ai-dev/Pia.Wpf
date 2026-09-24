@@ -15,6 +15,9 @@ public interface ITtsService
     Task DownloadVoiceAsync(string voiceKey, IProgress<TtsDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default);
     Task SetVoiceAsync(string voiceKey, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes the voice's bundle from disk, unloading it first if it is the one in use.</summary>
+    Task DeleteVoiceAsync(string voiceKey, CancellationToken cancellationToken = default);
     event EventHandler<bool>? IsPlayingChanged;
 
     // Filler phrases for voice mode

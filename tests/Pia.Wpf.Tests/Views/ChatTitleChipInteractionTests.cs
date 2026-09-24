@@ -113,7 +113,8 @@ public class ChatTitleChipInteractionTests
         // run yet at this point, which is exactly why the arrows of a one-call burst went nowhere.
         var landed = WpfStaHost.Run(() =>
         {
-            var list = (ListBox)_chip.FindName("WorkingDirEntries")!;
+            var picker = (Pia.Controls.Shared.PiaWorkingDirectoryPicker)_chip.FindName("WorkingDirPicker")!;
+            var list = (ListBox)picker.FindName("WorkingDirEntries")!;
             Send(list, Key.Back);
             return $"{string.Join(',', list.Items.Cast<string>())}|{list.SelectedItem}";
         });

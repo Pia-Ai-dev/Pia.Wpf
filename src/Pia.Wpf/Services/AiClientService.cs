@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Localization;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Exceptions;
@@ -27,6 +28,15 @@ public class AiClientService : IAiClientService
     internal const string MalformedToolArgumentsResult =
         "Error: The arguments for this tool call were not valid JSON, so the call was not run. " +
         "Retry it with one complete JSON object of arguments, and emit each parallel tool call separately.";
+
+    internal const string ToolRoundsExhaustedNudge =
+        "You have reached the maximum number of tool-calling rounds allowed for this turn. Do not "
+        + "attempt another tool call — answer now with your best final response based on everything "
+        + "you have gathered so far.";
+
+    internal const string EmptyAnswerNudge =
+        "Your previous reply carried no answer at all. Do not call another tool — reply now with your "
+        + "best final answer based on everything you have gathered so far.";
 
     private readonly IAuthService _authService;
     private readonly DpapiHelper _dpapiHelper;
@@ -87,8 +97,8 @@ public class AiClientService : IAiClientService
         catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !callerToken.IsCancellationRequested)
         {
             _logger.LogWarning(
-                "Provider {ProviderName}: the {Seconds}s timeout elapsed while QUEUED for a per-provider request permit — nothing was sent",
-                provider.Name, timeout.TotalSeconds);
+                "Provider {ProviderType}: the {Seconds}s timeout elapsed while QUEUED for a per-provider request permit — nothing was sent",
+                provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds,
                 $"The request to provider '{provider.Name}' was never sent: the {timeout.TotalSeconds}s timeout "
                 + "elapsed while it was queued behind other requests to the same provider "
@@ -129,7 +139,7 @@ public class AiClientService : IAiClientService
 
             if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {
-                var friendlyMessage = "Token limit reached.";
+                var friendlyMessage = LocalizationSource.Instance["Msg_CreditLimit_Reached"];
                 try
                 {
                     using var errDoc = System.Text.Json.JsonDocument.Parse(responseJson);
@@ -138,12 +148,14 @@ public class AiClientService : IAiClientService
                     {
                         var resetsAt = resetsAtProp.GetDateTime();
                         var remaining = resetsAt - DateTime.UtcNow;
-                        if (remaining.TotalMinutes > 60)
-                            friendlyMessage = $"Token limit reached. Resets in {remaining.Hours}h {remaining.Minutes}m.";
+                        if (remaining.TotalHours >= 24)
+                            friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInDays"], remaining.Days, remaining.Hours);
+                        else if (remaining.TotalMinutes > 60)
+                            friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInHours"], (int)remaining.TotalHours, remaining.Minutes);
                         else if (remaining.TotalMinutes > 1)
-                            friendlyMessage = $"Token limit reached. Resets in {(int)remaining.TotalMinutes} minutes.";
+                            friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInMinutes"], (int)remaining.TotalMinutes);
                         else
-                            friendlyMessage = "Token limit reached. Resets shortly.";
+                            friendlyMessage = LocalizationSource.Instance["Msg_CreditLimit_ResetsShortly"];
                     }
                 }
                 catch { }
@@ -179,14 +191,20 @@ public class AiClientService : IAiClientService
             [EnumeratorCancellation] CancellationToken cancellationToken = default,
             AgentContextBudget? contextBudget = null)
     {
-        _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderName}, toolCount={ToolCount}",
-            provider.Name, tools?.Count ?? 0);
+        _logger.LogInformation("Starting tool-aware chat completion, provider={ProviderType}, toolCount={ToolCount}",
+            provider.ProviderType, tools?.Count ?? 0);
 
         long aggregatedInput = 0;
         long aggregatedOutput = 0;
         bool hasUsage = false;
         bool protectedRoute = false;
+        // Latched, never reset: an agent step assembles its answer from several rounds, so prose a protected
+        // round already streamed to the user stays protected even if a later round routes normally.
+        bool protectedContributedText = false;
         string? lastModelId = null;
+        var visibleChars = 0;
+        var reasoningChars = 0;
+        var declaredStepOutcome = false;
 
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
@@ -227,11 +245,11 @@ public class AiClientService : IAiClientService
                 round + 1, maxToolRounds, provider.SupportsStreaming ? "streaming" : "non-streaming");
 
             // The server decides the guardrail route (and emits the protected marker) per request, so it is
-            // re-evaluated every tool round. Reset the flag each round so the badge reflects the round that
-            // produced the FINAL answer — not a transient intermediate round (e.g. a classifier ERROR that
-            // fail-closed to the protected model but recovered to the normal model on the next round). A
-            // genuine HIT keeps marking every round because the offending content stays in workingMessages.
+            // re-evaluated every tool round. Reset per round so a transient intermediate round — a classifier
+            // ERROR that fail-closed and then recovered — does not mark an answer no protected model wrote;
+            // the latch below is what keeps a round that DID write prose marked.
             protectedRoute = false;
+            var visibleBeforeRound = visibleChars;
 
             // Bound the IN-STEP tool loop. workingMessages is the ONLY list in Pia that ever holds
             // FunctionCallContent / FunctionResultContent messages (appended below, after a round that
@@ -249,6 +267,9 @@ public class AiClientService : IAiClientService
                     .CompactAsync(workingMessages, budget, _logger, linkedCts.Token)
                     .ConfigureAwait(false);
             }
+
+            _logger.LogDebug("Round {Round}: request carries {ImageCount} image message(s)",
+                round + 1, ToolLoopImageMessages.CountImageMessages(workingMessages));
 
             ChatResponse response;
 
@@ -282,6 +303,7 @@ public class AiClientService : IAiClientService
                                 updates.Add(current);
                                 if (!string.IsNullOrEmpty(current.Text))
                                 {
+                                    visibleChars += current.Text.Length;
                                     yield return new TextDelta(current.Text);
                                 }
 
@@ -292,6 +314,7 @@ public class AiClientService : IAiClientService
                                     current.Contents, current.RawRepresentation,
                                     attemptRawExtraction: string.IsNullOrEmpty(current.Text)))
                                 {
+                                    if (reasoning is ReasoningDelta streamed) reasoningChars += streamed.Text.Length;
                                     yield return reasoning;
                                 }
 
@@ -302,7 +325,7 @@ public class AiClientService : IAiClientService
                                 }
                                 catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                                 {
-                                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out mid-stream (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out mid-stream (round {Round}) after {Seconds}s", provider.ProviderType, round + 1, timeout.TotalSeconds);
                                     throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
                                 }
 
@@ -341,6 +364,7 @@ public class AiClientService : IAiClientService
                     round + 1, response.Messages.Count, text?.Length ?? 0);
                 if (!string.IsNullOrEmpty(text))
                 {
+                    visibleChars += text.Length;
                     yield return new TextDelta(text);
                 }
 
@@ -348,12 +372,27 @@ public class AiClientService : IAiClientService
                 foreach (var reasoning in ExtractReasoning(
                     nonStreamingContents, response.RawRepresentation, attemptRawExtraction: true))
                 {
+                    if (reasoning is ReasoningDelta buffered) reasoningChars += buffered.Text.Length;
                     yield return reasoning;
                 }
             }
 
             if (response.AdditionalProperties is { } respProps && respProps.ContainsKey(GuardrailMarker.AdditionalPropertyKey))
                 protectedRoute = true;
+
+            // A marked round that only emitted tool calls is the recoverable classifier ERROR the reset above
+            // exists for; one that also emitted prose put protected output in front of the user.
+            if (protectedRoute && visibleChars > visibleBeforeRound)
+                protectedContributedText = true;
+
+            // Seen once, now that it rode in this round's request. Nothing else drops it — the carryover
+            // filters match tool content only — so an unswapped picture is re-sent on every remaining round.
+            var consumedImages = ToolLoopImageMessages.Consume(workingMessages);
+            if (consumedImages > 0)
+            {
+                _logger.LogDebug("Round {Round}: {Count} tool image(s) consumed and replaced by placeholders",
+                    round + 1, consumedImages);
+            }
 
             if (!string.IsNullOrWhiteSpace(response.ModelId))
                 lastModelId = response.ModelId;
@@ -391,12 +430,17 @@ public class AiClientService : IAiClientService
 
             if (toolCalls.Count > 0 && toolHandler is not null)
             {
+                // An agent step's outcome IS this call, so a wordless turn after it is an ending rather than
+                // the no-answer failure the re-ask below exists for.
+                declaredStepOutcome |= toolCalls.Any(
+                    c => string.Equals(c.Name, AgentStepTools.EmitStepResultToolName, StringComparison.Ordinal));
+
                 // Yielded before the dispatch (which awaits real tool execution and can throw) so
                 // consumers know a fresh model turn is coming even if the dispatch itself fails.
                 yield return new ToolRoundCompleted();
                 var appendedFrom = workingMessages.Count;
                 var stopRequested = await DispatchToolCallsAsync(
-                    toolCalls, response, workingMessages, toolHandler, round);
+                    toolCalls, response, workingMessages, toolHandler, round, provider.ProviderType);
                 // Materialized, not deferred: the next iteration's compaction REASSIGNS workingMessages, so
                 // a lazy Skip() would enumerate a list this round never appended to. Capped here because a
                 // step executor carries this slice into the NEXT step and pays for it for the rest of the run.
@@ -407,15 +451,47 @@ public class AiClientService : IAiClientService
                     // No wrap-up round: that one is for round exhaustion, and spending a provider round-trip
                     // on a turn a gate already stopped is the delay this arm exists to remove.
                     _logger.LogInformation("Round {Round}: a tool handler stopped the loop; finishing the exchange", round + 1);
-                    yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, lastModelId);
+                    yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
+                        protectedRoute || protectedContributedText, lastModelId);
                     yield break;
                 }
                 // Continue the loop to get the AI's response after tool execution
                 continue;
             }
 
+            if (visibleChars == 0 && !declaredStepOutcome)
+            {
+                // Recoverable far more often than not, and the alternative is a routine with no answer.
+                _logger.LogWarning(
+                    "Round {Round}: no tool calls and no visible text (finishReason={FinishReason}, reasoningChars={ReasoningChars}, contentTypes=[{ContentTypes}]); re-asking once without tools",
+                    round + 1, response.FinishReason, reasoningChars, string.Join(", ", contentTypes));
+
+                var retry = await RunToolRoundWrapUpAsync(
+                    chatClient, providerHandler, provider, workingMessages, contextBudget, timeout,
+                    protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId,
+                    EmptyAnswerNudge, cancellationToken);
+
+                if (!string.IsNullOrEmpty(retry.Text))
+                {
+                    yield return new TextDelta(retry.Text);
+                }
+
+                yield return BuildFinishedItem(
+                    provider, retry.HasUsage, retry.AggregatedInput, retry.AggregatedOutput,
+                    retry.ProtectedRoute || protectedContributedText, retry.ModelId);
+
+                // A throw, not a flag, so a Planned step cannot accept the half answer as its output.
+                if (retry.Truncated)
+                {
+                    throw new LlmTruncatedException(provider.Name, retry.Text?.Length ?? 0);
+                }
+
+                yield break;
+            }
+
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
-            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput, protectedRoute, lastModelId);
+            yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
+                protectedRoute || protectedContributedText, lastModelId);
             yield break;
         }
 
@@ -423,7 +499,8 @@ public class AiClientService : IAiClientService
 
         var wrapUp = await RunToolRoundWrapUpAsync(
             chatClient, providerHandler, provider, workingMessages, contextBudget, timeout,
-            protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId, cancellationToken);
+            protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId,
+            ToolRoundsExhaustedNudge, cancellationToken);
 
         if (!string.IsNullOrEmpty(wrapUp.Text))
         {
@@ -433,8 +510,8 @@ public class AiClientService : IAiClientService
         // Before the throw below, not instead of it: this carries the aggregated usage and the flags, and
         // the tokenizing decorator flushes its pending detokenize buffer on it.
         yield return BuildFinishedItem(
-            provider, wrapUp.HasUsage, wrapUp.AggregatedInput, wrapUp.AggregatedOutput, wrapUp.ProtectedRoute,
-            wrapUp.ModelId, toolRoundsExhausted: true);
+            provider, wrapUp.HasUsage, wrapUp.AggregatedInput, wrapUp.AggregatedOutput,
+            wrapUp.ProtectedRoute || protectedContributedText, wrapUp.ModelId, toolRoundsExhausted: true);
 
         // A throw, not a flag, so a Planned step cannot accept the half answer as its output.
         if (wrapUp.Truncated)
@@ -477,7 +554,7 @@ public class AiClientService : IAiClientService
         }
         catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out at stream start (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+            _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out at stream start (round {Round}) after {Seconds}s", provider.ProviderType, round + 1, timeout.TotalSeconds);
             if (enumerator != null) await enumerator.DisposeAsync();
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
@@ -487,7 +564,7 @@ public class AiClientService : IAiClientService
             // says true for essentially any 400, so a context overflow arrives here dressed as a
             // tool-support problem. The retry itself is unchanged either way.
             LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
-            _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled during streaming, retrying without tools", provider.Name);
+            _logger.LogWarning(ex, "Provider {ProviderType} returned an error with tools enabled during streaming, retrying without tools", provider.ProviderType);
             options = providerHandler.CreateChatOptions(provider, hasTools: false);
             useTools = false;
             if (enumerator != null) await enumerator.DisposeAsync();
@@ -503,7 +580,7 @@ public class AiClientService : IAiClientService
             }
             catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out on tool-disabled retry after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                 if (enumerator != null) await enumerator.DisposeAsync();
                 throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
             }
@@ -541,7 +618,7 @@ public class AiClientService : IAiClientService
             }
             catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out (round {Round}) after {Seconds}s", provider.Name, round + 1, timeout.TotalSeconds);
+                _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out (round {Round}) after {Seconds}s", provider.ProviderType, round + 1, timeout.TotalSeconds);
                 throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
             }
             catch (Exception ex) when (useTools && round == 0 && IsToolNotSupportedError(ex))
@@ -549,7 +626,7 @@ public class AiClientService : IAiClientService
                 // Same ordering as the streaming path above, for the same reason: name the real cause
                 // before the tool-support line. Diagnosis only; the retry below is untouched.
                 LogContextLengthRejection(ex, provider, round, workingMessages.Count, contextBudget);
-                _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
+                _logger.LogWarning(ex, "Provider {ProviderType} returned an error with tools enabled, retrying without tools", provider.ProviderType);
                 options = providerHandler.CreateChatOptions(provider, hasTools: false);
                 useTools = false;
                 try
@@ -559,7 +636,7 @@ public class AiClientService : IAiClientService
                 }
                 catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderName} timed out on tool-disabled retry after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                    _logger.LogWarning("GetChatCompletionWithToolsAsync: provider {ProviderType} timed out on tool-disabled retry after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                     throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
                 }
             }
@@ -583,7 +660,8 @@ public class AiClientService : IAiClientService
         ChatResponse response,
         List<Microsoft.Extensions.AI.ChatMessage> workingMessages,
         ToolCallHandler toolHandler,
-        int round)
+        int round,
+        AiProviderType providerType)
     {
         _logger.LogInformation("Round {Round}: {ToolCallCount} tool call(s) detected: {ToolNames}",
             round + 1, toolCalls.Count, string.Join(", ", toolCalls.Select(t => t.Name)));
@@ -611,39 +689,62 @@ public class AiClientService : IAiClientService
         var stop = new ToolLoopStopSignal();
         var dispatch = new ToolDispatchContext(round + 1, stop);
 
-        foreach (var toolCall in toolCalls)
+        // Set here and not in the calling iterator: an AsyncLocal write does not survive the `yield return`
+        // sitting immediately before this call.
+        var images = new ToolLoopImageChannel(providerType);
+        var previousImages = ToolLoopImageChannel.Current;
+        ToolLoopImageChannel.Current = images;
+        try
         {
-            // Arguments that didn't parse leave every parameter missing, so dispatching makes the tool
-            // reject its own empty input — a verdict the model rereads as being about the arguments it
-            // believes it sent, and reissues the identical call until the rounds run out.
-            if (toolCall.Exception is not null)
+            foreach (var toolCall in toolCalls)
             {
-                _logger.LogWarning("Tool {ToolName} arguments could not be parsed; skipping dispatch", toolCall.Name);
-                _logger.SensitiveDebug("Tool {ToolName} argument parse error: {Error}",
-                    toolCall.Name, toolCall.Exception.Message);
-                workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(
-                    ChatRole.Tool,
-                    [new FunctionResultContent(toolCall.CallId, MalformedToolArgumentsResult)]));
-                continue;
-            }
+                // Arguments that didn't parse leave every parameter missing, so dispatching makes the tool
+                // reject its own empty input — a verdict the model rereads as being about the arguments it
+                // believes it sent, and reissues the identical call until the rounds run out.
+                if (toolCall.Exception is not null)
+                {
+                    _logger.LogWarning("Tool {ToolName} arguments could not be parsed; skipping dispatch", toolCall.Name);
+                    _logger.SensitiveDebug("Tool {ToolName} argument parse error: {Error}",
+                        toolCall.Name, toolCall.Exception.Message);
+                    workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(
+                        ChatRole.Tool,
+                        [new FunctionResultContent(toolCall.CallId, MalformedToolArgumentsResult)]));
+                    continue;
+                }
 
-            // No CallId on this line. It is copied verbatim out of provider JSON and nothing in this
-            // process validates it — the premise AgentTimelineScope.SanitizeCallId is built on — so a
-            // provider or proxy that echoes model text into it would put free text in a release support
-            // log through a plain LogDebug (level is runtime-configurable, so it is not a gate). The id
-            // is still available in DEBUG on the SensitiveDebug line a few lines up, which logs it
-            // alongside the args for the same call.
-            _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
-            // Never broken out of on a stop: the round's remaining calls must still be answered, or the
-            // captured slice carries a FunctionCallContent with no matching result.
-            var result = await toolHandler(toolCall, dispatch);
-            var resultPreview = result?.ToString() ?? "<null>";
-            _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
-                toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
-            var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
-                ChatRole.Tool,
-                [new FunctionResultContent(toolCall.CallId, result)]);
-            workingMessages.Add(resultMessage);
+                // No CallId on this line. It is copied verbatim out of provider JSON and nothing in this
+                // process validates it — the premise AgentTimelineScope.SanitizeCallId is built on — so a
+                // provider or proxy that echoes model text into it would put free text in a release support
+                // log through a plain LogDebug (level is runtime-configurable, so it is not a gate). The id
+                // is still available in DEBUG on the SensitiveDebug line a few lines up, which logs it
+                // alongside the args for the same call.
+                _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
+                // Never broken out of on a stop: the round's remaining calls must still be answered, or the
+                // captured slice carries a FunctionCallContent with no matching result.
+                var result = await toolHandler(toolCall, dispatch);
+                var resultPreview = result?.ToString() ?? "<null>";
+                _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
+                    toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
+                var resultMessage = new Microsoft.Extensions.AI.ChatMessage(
+                    ChatRole.Tool,
+                    [new FunctionResultContent(toolCall.CallId, result)]);
+                workingMessages.Add(resultMessage);
+            }
+        }
+        finally
+        {
+            ToolLoopImageChannel.Current = previousImages;
+        }
+
+        // After the round's LAST result, never between two: a provider requires a round's tool results to
+        // follow the assistant message contiguously and rejects a user message wedged between them.
+        var delivered = images.Drain();
+        foreach (var image in delivered)
+            workingMessages.Add(ToolLoopImageMessages.Build(image));
+        if (delivered.Count > 0)
+        {
+            _logger.LogInformation("Round {Round}: {Count} tool image(s) appended for the next request",
+                round + 1, delivered.Count);
         }
 
         _logger.LogDebug("Round {Round} complete, continuing with {MessageCount} working messages",
@@ -671,6 +772,7 @@ public class AiClientService : IAiClientService
         long aggregatedOutput,
         bool hasUsage,
         string? modelId,
+        string nudge,
         CancellationToken cancellationToken)
     {
         string? wrapUpText = null;
@@ -688,12 +790,8 @@ public class AiClientService : IAiClientService
                     .ConfigureAwait(false);
             }
 
-            // The model has no other way to learn its tool-round budget just ran out — without this nudge
-            // it would still try another tool call, into a request that no longer offers any tools.
-            workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(ChatRole.User,
-                "You have reached the maximum number of tool-calling rounds allowed for this turn. Do not "
-                + "attempt another tool call — answer now with your best final response based on everything "
-                + "you have gathered so far."));
+            // Tools are off for this call, so only words can stop the model reaching for one again.
+            workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, nudge));
 
             var wrapUpOptions = providerHandler.CreateChatOptions(provider, hasTools: false);
             try
@@ -722,16 +820,16 @@ public class AiClientService : IAiClientService
                 }
                 // Recorded, not thrown: the catch below would swallow a throw here.
                 wrapUpTruncated = wrapUpResponse.FinishReason == Microsoft.Extensions.AI.ChatFinishReason.Length;
-                _logger.LogWarning("Tool-round wrap-up call produced {TextLen} chars of final text", wrapUpText?.Length ?? 0);
+                _logger.LogWarning("Wrap-up call produced {TextLen} chars of final text", wrapUpText?.Length ?? 0);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Tool-round wrap-up call failed for provider {ProviderName}", provider.Name);
+                _logger.LogWarning(ex, "Tool-round wrap-up call failed for provider {ProviderType}", provider.ProviderType);
             }
         }
         else
         {
-            _logger.LogWarning("Skipping tool-round wrap-up call: turn already cancelled");
+            _logger.LogWarning("Skipping wrap-up call: turn already cancelled");
         }
 
         return new WrapUpOutcome(
@@ -788,7 +886,7 @@ public class AiClientService : IAiClientService
                 }
                 catch (Exception ex) when (useTools && IsToolNotSupportedError(ex))
                 {
-                    _logger.LogWarning(ex, "Provider {ProviderName} returned an error with tools enabled, retrying without tools", provider.Name);
+                    _logger.LogWarning(ex, "Provider {ProviderType} returned an error with tools enabled, retrying without tools", provider.ProviderType);
                     options = handler.CreateChatOptions(provider, hasTools: false);
                     return await chatClient.GetResponseAsync(messages, options, linkedCts.Token);
                 }
@@ -796,7 +894,7 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            _logger.LogWarning("GetChatResponseAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            _logger.LogWarning("GetChatResponseAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
     }
@@ -848,7 +946,7 @@ public class AiClientService : IAiClientService
 
             if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {
-                var friendlyMessage = "Token limit reached.";
+                var friendlyMessage = LocalizationSource.Instance["Msg_CreditLimit_Reached"];
                 try
                 {
                     using var errDoc = System.Text.Json.JsonDocument.Parse(responseJson);
@@ -857,12 +955,14 @@ public class AiClientService : IAiClientService
                     {
                         var resetsAt = resetsAtProp.GetDateTime();
                         var remaining = resetsAt - DateTime.UtcNow;
-                        if (remaining.TotalMinutes > 60)
-                            friendlyMessage = $"Token limit reached. Resets in {remaining.Hours}h {remaining.Minutes}m.";
+                        if (remaining.TotalHours >= 24)
+                            friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInDays"], remaining.Days, remaining.Hours);
+                        else if (remaining.TotalMinutes > 60)
+                            friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInHours"], (int)remaining.TotalHours, remaining.Minutes);
                         else if (remaining.TotalMinutes > 1)
-                            friendlyMessage = $"Token limit reached. Resets in {(int)remaining.TotalMinutes} minutes.";
+                            friendlyMessage = string.Format(LocalizationSource.Instance["Msg_CreditLimit_ResetsInMinutes"], (int)remaining.TotalMinutes);
                         else
-                            friendlyMessage = "Token limit reached. Resets shortly.";
+                            friendlyMessage = LocalizationSource.Instance["Msg_CreditLimit_ResetsShortly"];
                     }
                 }
                 catch { }
@@ -998,12 +1098,12 @@ public class AiClientService : IAiClientService
         }
         catch (TaskCanceledException) when (timeoutCts.Token.IsCancellationRequested)
         {
-            _logger.LogWarning("SendRequestAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+            _logger.LogWarning("SendRequestAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SendRequestAsync: provider {ProviderName} threw an exception", provider.Name);
+            _logger.LogError(ex, "SendRequestAsync: provider {ProviderType} threw an exception", provider.ProviderType);
             throw;
         }
     }
@@ -1045,7 +1145,7 @@ public class AiClientService : IAiClientService
             }
             catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                 throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
             }
 
@@ -1058,7 +1158,7 @@ public class AiClientService : IAiClientService
                 }
                 catch (OperationCanceledException) when (timeoutCts.Token.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                 {
-                    _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderName} timed out mid-stream after {Seconds}s", provider.Name, timeout.TotalSeconds);
+                    _logger.LogWarning("StreamChatCompletionAsync: provider {ProviderType} timed out mid-stream after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
                     throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
                 }
 

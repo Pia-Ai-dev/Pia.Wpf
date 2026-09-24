@@ -178,10 +178,10 @@ public unsafe partial class WindowTrackingService : IWindowTrackingService
         _trackedProcessName = GetProcessName(handle);
         var className = GetWindowClassName(handle);
 
-        _logger.LogInformation(
-            "Tracked window via {Source}: handle={Handle}, process='{Process}', class='{ClassName}'",
-            source, handle, _trackedProcessName, className);
-        _logger.SensitiveDebug("Tracked window title: '{Title}'", _trackedWindowTitle);
+        _logger.LogInformation("Tracked window via {Source}: handle={Handle}", source, handle);
+        _logger.SensitiveDebug(
+            "Tracked window detail: process='{Process}', class='{ClassName}', title='{Title}'",
+            _trackedProcessName, className, _trackedWindowTitle);
     }
 
     private string? GetWindowTitle(IntPtr hWnd)

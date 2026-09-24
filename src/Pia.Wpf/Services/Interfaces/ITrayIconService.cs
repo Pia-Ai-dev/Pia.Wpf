@@ -8,6 +8,9 @@ public interface ITrayIconService
     void UpdateHotkey(WindowMode mode, KeyboardShortcut? shortcut);
     void UpdateFastPathHotkey(KeyboardShortcut? shortcut);
 
+    /// <summary>False when Windows refused the combination; the previously registered one is kept in that case.</summary>
+    bool UpdateScreenCaptureHotkey(KeyboardShortcut? shortcut);
+
     /// <summary>Tears down the windows and the tray registration. Front-loaded here because App.OnExit is
     /// async void and races process death.</summary>
     void PrepareForExit();

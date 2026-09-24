@@ -63,6 +63,8 @@
         <CheckBox Content="{loc:Str Settings_AssistantSuggestions}"
                   IsChecked="{Binding SuggestionsEnabled}"
                   IsEnabled="{Binding Policy[AssistantSuggestionsEnabled]}"
+                  ToolTipService.ShowOnDisabled="True"
+                  ToolTip="{Binding Policy.Reason[AssistantSuggestionsEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_SuggestionsEnabled"/>
         <TextBlock Text="{loc:Str Settings_AssistantSuggestions_Description}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -96,6 +98,8 @@
         <CheckBox Content="{loc:Str Settings_AssistantFileToolsEnabled}"
                   IsChecked="{Binding FileToolsEnabled}"
                   IsEnabled="{Binding Policy[AssistantFileToolsEnabled]}"
+                  ToolTipService.ShowOnDisabled="True"
+                  ToolTip="{Binding Policy.Reason[AssistantFileToolsEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_FileToolsEnabled"
                   Margin="0,10,0,0"/>
         <CheckBox Content="{loc:Str Settings_AssistantGitToolsEnabled}"
@@ -121,6 +125,8 @@
                   IsEditable="True"
                   Text="{Binding DefaultWorkingDirectory, UpdateSourceTrigger=LostFocus}"
                   IsEnabled="{Binding Policy[AssistantDefaultWorkingDirectory]}"
+                  ToolTipService.ShowOnDisabled="True"
+                  ToolTip="{Binding Policy.Reason[AssistantDefaultWorkingDirectory]}"
                   ItemsSource="{Binding AvailableWorkingDirectories}"
                   AutomationProperties.AutomationId="Settings_Assistant_DefaultWorkingDirectory"/>
         <TextBlock Text="{loc:Str Settings_Assistant_DefaultWorkingDirectory_Description}"
@@ -137,6 +143,8 @@
         <CheckBox Content="{loc:Str Settings_AssistantChatHistoryToolsEnabled}"
                   IsChecked="{Binding ChatHistoryToolsEnabled}"
                   IsEnabled="{Binding Policy[AssistantChatHistoryToolsEnabled]}"
+                  ToolTipService.ShowOnDisabled="True"
+                  ToolTip="{Binding Policy.Reason[AssistantChatHistoryToolsEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryToolsEnabled"/>
       </StackPanel>
 
@@ -151,6 +159,8 @@
                 IsSnapToTickEnabled="True"
                 Value="{Binding RetentionSliderDays, Mode=TwoWay}"
                 IsEnabled="{Binding Policy[ChatHistoryRetentionDays]}"
+                ToolTipService.ShowOnDisabled="True"
+                ToolTip="{Binding Policy.Reason[ChatHistoryRetentionDays]}"
                 AutomationProperties.AutomationId="Settings_Assistant_ChatHistoryRetentionDays"
                 VerticalAlignment="Center"/>
         <TextBlock Text="{Binding RetentionDaysDisplay}"
@@ -161,6 +171,8 @@
         <CheckBox Content="{loc:Str Settings_Chat_AutoTitle}"
                   IsChecked="{Binding ChatAutoTitleEnabled}"
                   IsEnabled="{Binding Policy[ChatAutoTitleEnabled]}"
+                  ToolTipService.ShowOnDisabled="True"
+                  ToolTip="{Binding Policy.Reason[ChatAutoTitleEnabled]}"
                   AutomationProperties.AutomationId="Settings_Assistant_ChatAutoTitleEnabled"/>
         <TextBlock Text="{loc:Str Settings_Chat_AutoTitle_Hint}"
                    Style="{StaticResource PiaSettingsDescriptionStyle}"
@@ -205,9 +217,11 @@
             <StackPanel Margin="0,0,0,20">
               <!-- The ScrollViewer re-roots at ToolPermissionsVm, but this switch lives on the parent VM and
                    must stay ONE property with ONE save path, so it binds up past the re-root. -->
-              <CheckBox Content="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
-                        IsChecked="{Binding DataContext.AgentRunAutoApproveBuiltInWrites, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
-                        AutomationProperties.AutomationId="Settings_Assistant_ToolPermissions_AutoApproveBuiltInWrites"/>
+              <CheckBox IsChecked="{Binding DataContext.AgentRunAutoApproveBuiltInWrites, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+                        AutomationProperties.Name="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
+                        AutomationProperties.AutomationId="Settings_Assistant_ToolPermissions_AutoApproveBuiltInWrites">
+                <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}" TextWrapping="Wrap"/>
+              </CheckBox>
               <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          Margin="22,4,0,0"/>
@@ -306,6 +320,99 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
 
+            <!-- Screen capture allowlist: the windows a run nobody is watching may look at. -->
+            <StackPanel Margin="0,20,0,0"
+                        Visibility="{Binding HasScreenCaptureAllowlistStore, Converter={StaticResource BooleanToVisibilityConverter}}">
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <TextBlock Text="{loc:Str Settings_ToolPermissions_ScreenAllowlist_Title}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                           Margin="0"
+                           VerticalAlignment="Center"/>
+                <shared:PiaHelpHint Text="{loc:Str Settings_ToolPermissions_ScreenAllowlist_Description}"
+                                    IconSize="14"
+                                    AutomationProperties.AutomationId="Settings_ToolPermissions_ScreenAllowlist_Help"/>
+              </StackPanel>
+
+              <ui:Button Margin="0,0,0,8"
+                         Appearance="Secondary"
+                         HorizontalAlignment="Left"
+                         Command="{Binding PickScreenCaptureAllowlistWindowCommand}"
+                         Visibility="{Binding CanPickAllowlistWindow, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         AutomationProperties.AutomationId="Settings_ToolPermissions_ScreenAllowlist_Pick">
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="WindowApps24" FontSize="14" Margin="0,0,6,0"/>
+                  <TextBlock Text="{loc:Str Settings_ToolPermissions_ScreenAllowlist_Pick}"/>
+                </StackPanel>
+              </ui:Button>
+
+              <Grid Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <ui:TextBox Grid.Column="0"
+                            Margin="0,0,8,0"
+                            Text="{Binding NewAllowlistProcessName, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="{loc:Str Settings_ToolPermissions_ScreenAllowlist_ProcessPlaceholder}"
+                            AutomationProperties.AutomationId="Settings_ToolPermissions_ScreenAllowlist_Process"/>
+                <ui:TextBox Grid.Column="1"
+                            Margin="0,0,8,0"
+                            Text="{Binding NewAllowlistTitleContains, UpdateSourceTrigger=PropertyChanged}"
+                            PlaceholderText="{loc:Str Settings_ToolPermissions_ScreenAllowlist_TitlePlaceholder}"
+                            AutomationProperties.AutomationId="Settings_ToolPermissions_ScreenAllowlist_TitleContains"/>
+                <ui:Button Grid.Column="2"
+                           Appearance="Primary"
+                           Content="{loc:Str Settings_ToolPermissions_ScreenAllowlist_Add}"
+                           Command="{Binding AddScreenCaptureAllowlistEntryCommand}"
+                           AutomationProperties.AutomationId="Settings_ToolPermissions_ScreenAllowlist_Add"/>
+              </Grid>
+
+              <TextBlock Text="{loc:Str Settings_ToolPermissions_ScreenAllowlist_Empty}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         Visibility="{Binding HasScreenCaptureAllowlistEntries, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+
+              <ItemsControl ItemsSource="{Binding ScreenCaptureAllowlist}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Border Style="{StaticResource PiaSettingsCardStyle}"
+                            Padding="14,12"
+                            Margin="0,0,0,8">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding ProcessName}"
+                                     FontWeight="SemiBold"
+                                     Foreground="{DynamicResource TextDefaultBrush}"/>
+                          <TextBlock FontSize="11"
+                                     Margin="0,2,0,0"
+                                     Foreground="{DynamicResource TextMutedBrush}">
+                            <Run Text="{loc:Str Settings_ToolPermissions_ScreenAllowlist_TitleContains}"/>
+                            <Run Text=" "/>
+                            <Run Text="{Binding TitleDisplay, Mode=OneWay}"/>
+                          </TextBlock>
+                        </StackPanel>
+
+                        <ui:Button Grid.Column="1"
+                                   Content="{loc:Str Settings_ToolPermissions_ScreenAllowlist_Remove}"
+                                   Appearance="Secondary"
+                                   Foreground="{DynamicResource PiaDangerBrush}"
+                                   VerticalAlignment="Center"
+                                   AutomationProperties.AutomationId="{Binding Id, StringFormat='Settings_ToolPermissions_ScreenAllowlist_Remove_{0}'}"
+                                   Command="{Binding DataContext.RemoveScreenCaptureAllowlistEntryCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                   CommandParameter="{Binding}"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
             <!-- Pre-approval catalogue. The toggles bind to the row's own state, never to a command through an
                  ancestor, because the ancestor inside the group template is the INNER ItemsControl. -->
             <ui:CardExpander IsExpanded="False"
@@ -374,6 +481,12 @@
         </ScrollViewer>
       </TabItem>
 
+      <!-- MCP servers tab: the local server catalogue, next to the grants those servers' tools land in -->
+      <TabItem Header="{loc:Str Settings_Tab_McpServers}" Style="{DynamicResource SettingsInnerTabItemStyle}"
+               AutomationProperties.AutomationId="Settings_Assistant_Tab_McpServers">
+        <local:McpServersView DataContext="{Binding McpServersVm}"/>
+      </TabItem>
+
       <!-- Meeting tab (beta) -->
       <TabItem Style="{DynamicResource SettingsInnerTabItemStyle}"
                AutomationProperties.AutomationId="Settings_Assistant_Tab_Meeting">
@@ -401,6 +514,8 @@
               <CheckBox Content="{loc:Str Settings_Diarization_Enable}"
                         IsChecked="{Binding EnableMeetingDiarization}"
                         IsEnabled="{Binding Policy[EnableMeetingDiarization]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[EnableMeetingDiarization]}"
                         AutomationProperties.AutomationId="Settings_Assistant_EnableMeetingDiarization"
                         Margin="0,4,0,0"/>
               <TextBlock Text="{loc:Str Settings_Diarization_Enable_Description}"
@@ -445,6 +560,8 @@
                       IsSnapToTickEnabled="True"
                       Value="{Binding SpeakerEmbeddingThreshold, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[SpeakerEmbeddingThreshold]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[SpeakerEmbeddingThreshold]}"
                       AutomationProperties.AutomationId="Settings_Assistant_SpeakerEmbeddingThreshold"
                       VerticalAlignment="Center"/>
               <TextBlock Text="{Binding SpeakerEmbeddingThresholdDisplay}"
@@ -468,6 +585,8 @@
                       IsSnapToTickEnabled="True"
                       Value="{Binding MeetingMaxSpeakers, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[MeetingMaxSpeakers]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[MeetingMaxSpeakers]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MeetingMaxSpeakers"
                       VerticalAlignment="Center"/>
               <TextBlock Text="{Binding MeetingMaxSpeakersDisplay}"
@@ -491,6 +610,8 @@
                       IsSnapToTickEnabled="True"
                       Value="{Binding MeetingMinSpeechSeconds, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[MeetingMinSpeechSeconds]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[MeetingMinSpeechSeconds]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MeetingMinSpeechSeconds"
                       VerticalAlignment="Center"/>
               <TextBlock Text="{Binding MeetingMinSpeechDisplay}"
@@ -514,6 +635,8 @@
               <ComboBox ItemsSource="{Binding MeetingBrowserSelections}"
                         SelectedItem="{Binding MeetingBrowserSelection}"
                         IsEnabled="{Binding Policy[MeetingBrowserSelection]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[MeetingBrowserSelection]}"
                         AutomationProperties.AutomationId="Settings_Assistant_MeetingBrowser"
                         Width="400"
                         HorizontalAlignment="Left">
@@ -526,6 +649,8 @@
               <CheckBox Content="{loc:Str Settings_MeetingBrowser_ShowWindow}"
                         IsChecked="{Binding MeetingAttendeeShowBrowserWindow}"
                         IsEnabled="{Binding Policy[MeetingAttendeeShowBrowserWindow]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[MeetingAttendeeShowBrowserWindow]}"
                         AutomationProperties.AutomationId="Settings_Assistant_MeetingAttendeeShowBrowserWindow"
                         Margin="0,8,0,0"/>
               <TextBlock Text="{loc:Str Settings_MeetingBrowser_ShowWindow_Description}"
@@ -554,6 +679,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding AgentMaxSteps, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[AgentMaxSteps]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[AgentMaxSteps]}"
                       AutomationProperties.AutomationId="Settings_Assistant_AgentMaxSteps"/>
               <TextBlock Text="{Binding AgentMaxStepsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -570,6 +697,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding MaxToolRoundsPerStep, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[MaxToolRoundsPerStep]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[MaxToolRoundsPerStep]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MaxToolRoundsPerStep"/>
               <TextBlock Text="{Binding MaxToolRoundsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -586,6 +715,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding AgentWallClockMinutes, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[AgentWallClockMinutes]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[AgentWallClockMinutes]}"
                       AutomationProperties.AutomationId="Settings_Assistant_AgentWallClockMinutes"/>
               <TextBlock Text="{Binding AgentWallClockDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -602,6 +733,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding AgentMaxReplans, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[AgentMaxReplans]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[AgentMaxReplans]}"
                       AutomationProperties.AutomationId="Settings_Assistant_AgentMaxReplans"/>
               <TextBlock Text="{Binding AgentMaxReplansDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -618,9 +751,28 @@
               <CheckBox Content="{loc:Str Settings_Agent_PlanReasoningTurn}"
                         IsChecked="{Binding AgentPlanReasoningTurnEnabled}"
                         IsEnabled="{Binding Policy[AgentPlanReasoningTurnEnabled]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[AgentPlanReasoningTurnEnabled]}"
                         AutomationProperties.AutomationId="Settings_Assistant_AgentPlanReasoningTurnEnabled"
                         Margin="0,8,0,0"/>
               <TextBlock Text="{loc:Str Settings_Agent_PlanReasoningTurn_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
+            <TextBlock Text="{loc:Str Settings_Agent_NewChatMode_Section_Header}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,12,0,0"/>
+            <StackPanel Margin="0,0,0,20">
+              <CheckBox Content="{loc:Str Settings_Agent_NewChatAgentMode}"
+                        IsChecked="{Binding AssistantNewChatAgentMode}"
+                        IsEnabled="{Binding Policy[AssistantNewChatAgentMode]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[AssistantNewChatAgentMode]}"
+                        AutomationProperties.AutomationId="Settings_Assistant_AssistantNewChatAgentMode"
+                        Margin="0,8,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Agent_NewChatAgentMode_Description}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"
                          TextWrapping="Wrap"
                          Margin="22,4,0,0"/>
@@ -635,6 +787,8 @@
               <CheckBox Content="{loc:Str Settings_Agent_AutoApproveBuiltInWrites}"
                         IsChecked="{Binding AgentRunAutoApproveBuiltInWrites}"
                         IsEnabled="{Binding Policy[AgentRunAutoApproveBuiltInWrites]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[AgentRunAutoApproveBuiltInWrites]}"
                         AutomationProperties.AutomationId="Settings_Assistant_Agent_AutoApproveBuiltInWrites"
                         Margin="0,8,0,0"/>
               <TextBlock Text="{loc:Str Settings_Agent_AutoApproveBuiltInWrites_Description}"
@@ -703,6 +857,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding ScheduledMaxSteps, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[ScheduledMaxSteps]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[ScheduledMaxSteps]}"
                       AutomationProperties.AutomationId="Settings_Assistant_ScheduledMaxSteps"/>
               <TextBlock Text="{Binding ScheduledMaxStepsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -716,6 +872,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding ScheduledWallClockMinutes, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[ScheduledWallClockMinutes]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[ScheduledWallClockMinutes]}"
                       AutomationProperties.AutomationId="Settings_Assistant_ScheduledWallClockMinutes"/>
               <TextBlock Text="{Binding ScheduledWallClockDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -729,6 +887,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding ScheduledMaxReplans, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[ScheduledMaxReplans]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[ScheduledMaxReplans]}"
                       AutomationProperties.AutomationId="Settings_Assistant_ScheduledMaxReplans"/>
               <TextBlock Text="{Binding ScheduledMaxReplansDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>
@@ -745,6 +905,8 @@
                       TickFrequency="1" IsSnapToTickEnabled="True"
                       Value="{Binding MaxParallelBackgroundRuns, Mode=TwoWay}"
                       IsEnabled="{Binding Policy[MaxParallelBackgroundRuns]}"
+                      ToolTipService.ShowOnDisabled="True"
+                      ToolTip="{Binding Policy.Reason[MaxParallelBackgroundRuns]}"
                       AutomationProperties.AutomationId="Settings_Assistant_MaxParallelBackgroundRuns"/>
               <TextBlock Text="{Binding MaxParallelBackgroundRunsDisplay}"
                          Style="{StaticResource PiaSettingsDescriptionStyle}"/>

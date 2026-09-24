@@ -6,9 +6,16 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Pia.ViewModels.Models;
 
+/// <summary>
+/// Edit model behind the inline template editor. Mirrors <see cref="PersonaEditModel"/>, including the
+/// AI-assist "draft from a description" command.
+/// </summary>
 public partial class TemplateEditModel : ObservableValidator
 {
     private readonly ITextOptimizationService? _textOptimizationService;
+
+    // Preserved across edit so sync conflict-resolution and creation order stay stable.
+    private DateTime _createdAt = DateTime.UtcNow;
 
     [ObservableProperty]
     private Guid _id;
@@ -17,6 +24,10 @@ public partial class TemplateEditModel : ObservableValidator
     [NotifyPropertyChangedFor(nameof(CanSave))]
     [ObservableProperty]
     private string _name = string.Empty;
+
+    /// <summary>One-line summary shown on the master row.</summary>
+    [ObservableProperty]
+    private string _description = string.Empty;
 
     [Required(ErrorMessage = "Style description is required")]
     [ObservableProperty]
@@ -33,7 +44,7 @@ public partial class TemplateEditModel : ObservableValidator
     {
     }
 
-    public TemplateEditModel(ITextOptimizationService textOptimizationService)
+    public TemplateEditModel(ITextOptimizationService? textOptimizationService)
     {
         _textOptimizationService = textOptimizationService;
     }
@@ -43,13 +54,13 @@ public partial class TemplateEditModel : ObservableValidator
     [RelayCommand]
     private async Task GeneratePromptAsync()
     {
-        if (string.IsNullOrWhiteSpace(StyleDescription))
+        if (string.IsNullOrWhiteSpace(StyleDescription) || _textOptimizationService is null)
             return;
 
         IsGeneratingPrompt = true;
         try
         {
-            GeneratedPrompt = await _textOptimizationService!.GeneratePromptAsync(StyleDescription);
+            ApplyDraft(await _textOptimizationService.GenerateTemplateDraftAsync(StyleDescription));
         }
         finally
         {
@@ -57,15 +68,27 @@ public partial class TemplateEditModel : ObservableValidator
         }
     }
 
+    /// <summary>Shared by both draft doors. Name and description only fill when still blank, so re-drafting
+    /// never clobbers them; the prompt is what the user asked for and always lands.</summary>
+    public void ApplyDraft(TemplateDraft draft)
+    {
+        if (string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(draft.Name)) Name = draft.Name!;
+        if (string.IsNullOrWhiteSpace(Description) && !string.IsNullOrWhiteSpace(draft.Description)) Description = draft.Description!;
+        if (!string.IsNullOrWhiteSpace(draft.Prompt)) GeneratedPrompt = draft.Prompt!;
+    }
+
     public static TemplateEditModel FromTemplate(OptimizationTemplate template, ITextOptimizationService? textOptimizationService = null)
     {
-        return new TemplateEditModel(textOptimizationService!)
+        var model = new TemplateEditModel(textOptimizationService)
         {
             Id = template.Id,
             Name = template.Name,
+            Description = template.Description ?? string.Empty,
             StyleDescription = template.StyleDescription ?? string.Empty,
-            GeneratedPrompt = template.Prompt
+            GeneratedPrompt = template.Prompt,
         };
+        model._createdAt = template.CreatedAt;
+        return model;
     }
 
     public OptimizationTemplate ToTemplate()
@@ -73,10 +96,13 @@ public partial class TemplateEditModel : ObservableValidator
         return new OptimizationTemplate
         {
             Id = Id,
-            Name = Name,
-            Prompt = GeneratedPrompt,
-            StyleDescription = StyleDescription,
-            IsBuiltIn = false
+            Name = Name.Trim(),
+            Prompt = GeneratedPrompt.Trim(),
+            Description = string.IsNullOrWhiteSpace(Description) ? null : Description.Trim(),
+            StyleDescription = string.IsNullOrWhiteSpace(StyleDescription) ? null : StyleDescription.Trim(),
+            IsBuiltIn = false,
+            CreatedAt = _createdAt,
+            ModifiedAt = DateTime.UtcNow,
         };
     }
 }

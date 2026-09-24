@@ -63,6 +63,7 @@
   <data name="Optimize_Optimize" xml:space="preserve"><value>Optimize</value></data>
   <data name="Optimize_Original" xml:space="preserve"><value>Original</value></data>
   <data name="Optimize_Optimized" xml:space="preserve"><value>Optimized</value></data>
+  <data name="Optimize_AiGeneratedHint" xml:space="preserve"><value>AI-generated text — please check it before you use it.</value></data>
   <data name="Optimize_Clear_Tooltip" xml:space="preserve"><value>Clear</value></data>
   <data name="Optimize_Template_Tooltip" xml:space="preserve"><value>Template</value></data>
   <data name="Optimize_Language_Tooltip" xml:space="preserve"><value>Output language</value></data>
@@ -77,6 +78,10 @@
   <!-- Assistant View -->
   <data name="Assistant_EmptyState" xml:space="preserve"><value>Start a conversation with Pia</value></data>
   <data name="Assistant_OpenWorkingDirectory_Tooltip" xml:space="preserve"><value>Open this folder in Explorer</value></data>
+  <data name="Assistant_ElevatedSession_Hint" xml:space="preserve"><value>Pia is running as administrator. File tools, agent runs and MCP servers inherit those rights, so restart Pia without elevation unless you need it.</value></data>
+  <data name="Assistant_ElevatedSession_Dismiss_Tooltip" xml:space="preserve"><value>Hide this notice for this session</value></data>
+  <data name="Assistant_AnsweredDirectly_Label" xml:space="preserve"><value>Answered directly</value></data>
+  <data name="Assistant_AnsweredDirectly_Tooltip" xml:space="preserve"><value>You sent this in Agent mode, but it needed no plan — Pia answered it in one turn.</value></data>
   <data name="Assistant_ProtectedRoute_Label" xml:space="preserve"><value>Protected</value></data>
   <data name="Assistant_ProtectedRoute_Tooltip" xml:space="preserve"><value>This answer was handled by a protected model.</value></data>
   <data name="Assistant_Suggestion_Memory_Start1" xml:space="preserve"><value>Remember that I'm allergic to peanuts</value></data>
@@ -114,6 +119,9 @@
   <data name="Assistant_ToolCallCount" xml:space="preserve"><value>Tool calls: {0}</value></data>
   <data name="Assistant_NewChat_Tooltip" xml:space="preserve"><value>New chat</value></data>
   <data name="Assistant_ExpandComposer_Tooltip" xml:space="preserve"><value>Expand the input</value></data>
+  <data name="Assistant_LoadOlderMessages" xml:space="preserve"><value>Show older messages ({0})</value></data>
+  <data name="Assistant_LoadOlderMessages_Tooltip" xml:space="preserve"><value>Adds more of the earlier conversation to the view</value></data>
+  <data name="Assistant_CollapseComposer_Tooltip" xml:space="preserve"><value>Shrink the input</value></data>
   <data name="Assistant_ExpandMessage" xml:space="preserve"><value>Show more</value></data>
   <data name="Assistant_CollapseMessage" xml:space="preserve"><value>Show less</value></data>
   <data name="Assistant_DeleteChat_Tooltip" xml:space="preserve"><value>Delete this chat</value></data>
@@ -212,6 +220,7 @@
   <data name="History_Loading" xml:space="preserve"><value>Loading sessions...</value></data>
   <data name="History_NoSessions" xml:space="preserve"><value>No sessions found</value></data>
   <data name="History_LoadMore" xml:space="preserve"><value>Load More</value></data>
+  <data name="History_Group_Favorites" xml:space="preserve"><value>Favorites</value></data>
   <data name="History_Group_Today" xml:space="preserve"><value>Today</value></data>
   <data name="History_Group_Yesterday" xml:space="preserve"><value>Yesterday</value></data>
   <data name="History_Group_ThisWeek" xml:space="preserve"><value>This week</value></data>
@@ -240,6 +249,8 @@
   <data name="AssistantHistory_EmptyState" xml:space="preserve"><value>No chats yet</value></data>
   <data name="AssistantHistory_EmptyStateHint" xml:space="preserve"><value>Start a chat in Assistant mode to build history</value></data>
   <data name="AssistantHistory_Resume" xml:space="preserve"><value>Resume this chat</value></data>
+  <data name="AssistantHistory_Favorite" xml:space="preserve"><value>Add to favorites</value></data>
+  <data name="AssistantHistory_Unfavorite" xml:space="preserve"><value>Remove from favorites</value></data>
   <data name="AssistantHistory_Rename" xml:space="preserve"><value>Rename</value></data>
   <data name="AssistantHistory_RenamePrompt" xml:space="preserve"><value>What should this chat be called?</value></data>
   <data name="AssistantHistory_Nav" xml:space="preserve"><value>Chat history</value></data>
@@ -485,6 +496,8 @@
   <data name="Settings_StartMinimized_Description" xml:space="preserve"><value>Application will start hidden in system tray on launch</value></data>
   <data name="Settings_AutoCaptureSelectedText" xml:space="preserve"><value>Auto-paste selected text on hotkey</value></data>
   <data name="Settings_AutoCaptureSelectedText_Description" xml:space="preserve"><value>When you press a Pia hotkey, automatically copy the text selected in the active app and paste it into the input. The clipboard is restored afterwards.</value></data>
+  <data name="Settings_AutoUpdateEnabled" xml:space="preserve"><value>Check for updates automatically</value></data>
+  <data name="Settings_AutoUpdateEnabled_Description" xml:space="preserve"><value>Pia looks for a new version in the background, downloads it, and then offers to restart and update. Turn this off to stay on the installed version.</value></data>
   <data name="Settings_Diarization_Section" xml:space="preserve"><value>Speaker separation (meetings)</value></data>
   <data name="Settings_Diarization_Enable" xml:space="preserve"><value>Identify individual speakers in meetings</value></data>
   <data name="Settings_Diarization_Enable_Description" xml:space="preserve"><value>When Pia attends a meeting, group the transcript into separate bubbles per speaker. Requires a one-time download of a small speaker-recognition model. Changes apply to the next meeting you join.</value></data>
@@ -509,7 +522,7 @@
   <data name="Settings_MeetingBrowser_Section" xml:space="preserve"><value>Meeting browser</value></data>
   <data name="Settings_MeetingBrowser_Description" xml:space="preserve"><value>Which browser Pia drives to join meetings. Bundled Chromium is downloaded once and is the most reliable choice. System Chrome and System Edge reuse an installed browser but may be affected by browser updates or enterprise policy; if the chosen browser is unavailable, Pia falls back to bundled Chromium. Use system default detects your default browser and uses it when it is Chrome or Edge, otherwise falls back to bundled.</value></data>
   <data name="Settings_MeetingBrowser_ShowWindow" xml:space="preserve"><value>Show the meeting browser window</value></data>
-  <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>When off (default), the browser joins hidden and the meeting plays silently. When on, the browser window is shown on screen and the meeting is audible.</value></data>
+  <data name="Settings_MeetingBrowser_ShowWindow_Description" xml:space="preserve"><value>When off (default), the browser joins hidden. When on, the browser window is shown on screen. The meeting plays silently either way, so it never echoes on this device.</value></data>
   <data name="Settings_AssistantSuggestions" xml:space="preserve"><value>Show follow-up suggestions</value></data>
   <data name="Settings_AssistantSuggestions_Description" xml:space="preserve"><value>After each assistant reply, generate 2–4 follow-up question chips. Adds a small extra request per turn.</value></data>
   <data name="Settings_AssistantFilesFolder" xml:space="preserve"><value>Assistant files folder</value></data>
@@ -592,6 +605,7 @@
   <data name="Tts_Download" xml:space="preserve"><value>Download</value></data>
   <data name="Tts_Select" xml:space="preserve"><value>Select</value></data>
   <data name="Tts_Selected" xml:space="preserve"><value>Selected</value></data>
+  <data name="Tts_Delete" xml:space="preserve"><value>Remove from this device</value></data>
   <!-- Sync Settings -->
   <data name="Sync_Title" xml:space="preserve"><value>Cloud Sync</value></data>
   <data name="Sync_Description" xml:space="preserve"><value>Sync your templates, providers, settings, and history across devices</value></data>
@@ -681,6 +695,7 @@
   <data name="Dialog_ProviderEdit_MaxOutputTokens" xml:space="preserve"><value>Max output tokens (reserved for the reply)</value></data>
   <data name="Dialog_ProviderEdit_ContextBudgetHint" xml:space="preserve"><value>The context window switches compaction on for long agent runs; 0 turns it off. Max output tokens is held back for the model’s reply, so leaving it at 0 reserves nothing.</value></data>
   <data name="Dialog_ProviderEdit_WebSearch" xml:space="preserve"><value>Enable web search</value></data>
+  <data name="Dialog_ProviderEdit_PromptCache" xml:space="preserve"><value>Cache the prompt prefix (5 min)</value></data>
   <data name="Dialog_ProviderEdit_MistralAgentId" xml:space="preserve"><value>Mistral Agent ID</value></data>
   <data name="Dialog_TemplateEdit_Title" xml:space="preserve"><value>Edit Template</value></data>
   <data name="Dialog_TemplateEdit_Name" xml:space="preserve"><value>Template Name *</value></data>
@@ -705,6 +720,7 @@
   <data name="Dialog_PersonaEdit_OutputFormatHint" xml:space="preserve"><value>How replies should be formatted (length, prose vs. lists, code). Leave blank for the default.</value></data>
   <data name="Dialog_PersonaEdit_Archetype" xml:space="preserve"><value>Archetype</value></data>
   <data name="Dialog_PersonaEdit_ModelType" xml:space="preserve"><value>Model type</value></data>
+  <data name="Dialog_PersonaEdit_ModelTypePrivateHint" xml:space="preserve"><value>Only has an effect if your cloud provider offers a private model.</value></data>
   <data name="Dialog_PersonaEdit_Expertise" xml:space="preserve"><value>Expertise</value></data>
   <data name="Dialog_PersonaEdit_ExpertiseHint" xml:space="preserve"><value>Comma-separated domain tags</value></data>
   <data name="Dialog_PersonaEdit_Emoji" xml:space="preserve"><value>Emoji</value></data>
@@ -833,6 +849,7 @@
   <data name="ActionCard_AutoApprovedForSession" xml:space="preserve"><value>Auto-approved · you allowed {0} for this session</value></data>
   <data name="ActionCard_AutoApprovedByAutonomy" xml:space="preserve"><value>Auto-approved · agent autonomy is on for this kind of tool</value></data>
   <data name="ActionCard_AutoApprovedByRunGrant" xml:space="preserve"><value>Auto-approved · this run was granted {0}</value></data>
+  <data name="ActionCard_AutoApprovedScratch" xml:space="preserve"><value>Auto-approved · a working note in the scratch folder, which is never published</value></data>
   <data name="ActionCard_Manage" xml:space="preserve"><value>Manage</value></data>
   <data name="Settings_Tab_ToolPermissions" xml:space="preserve"><value>Tool access</value></data>
   <data name="Settings_ToolPermissions_Page_Title" xml:space="preserve"><value>What runs without asking</value></data>
@@ -841,6 +858,16 @@
   <data name="Settings_ToolPermissions_Autonomy_Covers" xml:space="preserve"><value>Covered classes: notes and memory, todos, reminders, scheduled jobs, files.</value></data>
   <data name="Settings_ToolPermissions_Session_Title" xml:space="preserve"><value>Allowed until Pia closes</value></data>
   <data name="Settings_ToolPermissions_Session_Description" xml:space="preserve"><value>Tools you allowed for this session. Nothing here is saved — all of it disappears when Pia restarts. Forget one to be asked again on the next call.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Title" xml:space="preserve"><value>Screen capture while you are away</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Description" xml:space="preserve"><value>Windows a routine or background run may capture. Name the program and, optionally, text the window title must contain. A run nobody is watching can only capture a window on this list, and only when exactly one open window matches the entry. It can never capture a whole monitor.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Empty" xml:space="preserve"><value>No windows are allowed yet. Runs you are not watching cannot capture the screen until you add one.</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_ProcessPlaceholder" xml:space="preserve"><value>Program, e.g. outlook</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_TitlePlaceholder" xml:space="preserve"><value>Title contains (optional)</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Add" xml:space="preserve"><value>Add</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Pick" xml:space="preserve"><value>Choose from open windows...</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_Remove" xml:space="preserve"><value>Remove</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_TitleContains" xml:space="preserve"><value>Title contains:</value></data>
+  <data name="Settings_ToolPermissions_ScreenAllowlist_AnyTitle" xml:space="preserve"><value>any window title</value></data>
   <data name="Settings_ToolPermissions_Title" xml:space="preserve"><value>Always-allowed tools</value></data>
   <data name="Settings_ToolPermissions_Description" xml:space="preserve"><value>Tools you have granted standing approval to run without confirmation. Revoke a grant to be prompted again on the next call.</value></data>
   <data name="ToolPermissions_Empty" xml:space="preserve"><value>No tools are always allowed. When you choose "Always allow" on a tool, it appears here.</value></data>
@@ -868,6 +895,7 @@
   <data name="ActionCard_Action_Update" xml:space="preserve"><value>Update</value></data>
   <data name="ActionCard_Action_Delete" xml:space="preserve"><value>Delete</value></data>
   <data name="ActionCard_Action_Complete" xml:space="preserve"><value>Complete</value></data>
+  <data name="ActionCard_Action_Start" xml:space="preserve"><value>Start</value></data>
   <data name="ActionCard_Action_Write" xml:space="preserve"><value>Write</value></data>
   <data name="ActionCard_Status_Accepted" xml:space="preserve"><value>{0} - Done</value></data>
   <data name="ActionCard_Status_Declined" xml:space="preserve"><value>{0} - Declined</value></data>
@@ -883,6 +911,9 @@
   <data name="ActionCard_Action_Switch" xml:space="preserve"><value>Switch</value></data>
   <data name="ActionCard_Action_Restore" xml:space="preserve"><value>Restore</value></data>
   <data name="ActionCard_Action_Stash" xml:space="preserve"><value>Stash</value></data>
+  <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Screen</value></data>
+  <data name="ActionCard_Title_Format" xml:space="preserve"><value>{0} {1}</value></data>
+  <data name="ActionCard_Action_Capture" xml:space="preserve"><value>Capture</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copy to Clipboard</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Type</value></data>
@@ -1010,6 +1041,14 @@
   <data name="Agent_Warn_Continue" xml:space="preserve"><value>Continue</value></data>
   <data name="Agent_Warn_ChooseProvider" xml:space="preserve"><value>Choose provider…</value></data>
   <data name="Agent_Warn_StayInChat" xml:space="preserve"><value>Stay in Chat</value></data>
+  <data name="Agent_Context_Body" xml:space="preserve"><value>This agent run starts from this conversation. How much of it should the planner see?</value></data>
+  <data name="Agent_Context_Summary" xml:space="preserve"><value>Send a summary</value></data>
+  <data name="Agent_Context_Verbatim" xml:space="preserve"><value>Send the conversation</value></data>
+  <data name="Agent_Context_Off" xml:space="preserve"><value>Send nothing</value></data>
+  <data name="Agent_Context_Settled_Summary" xml:space="preserve"><value>Agent runs in this chat get a summary of the conversation.</value></data>
+  <data name="Agent_Context_Settled_Verbatim" xml:space="preserve"><value>Agent runs in this chat get the conversation.</value></data>
+  <data name="Agent_Context_Settled_Off" xml:space="preserve"><value>Agent runs in this chat get only the goal you type.</value></data>
+  <data name="Agent_Context_Change" xml:space="preserve"><value>Change</value></data>
   <data name="Run_StoppedAtBudget" xml:space="preserve"><value>Stopped at budget</value></data>
   <data name="Run_Unverified" xml:space="preserve"><value>Result not verified</value></data>
   <data name="Run_EndedEarly" xml:space="preserve"><value>Ended early</value></data>
@@ -1027,6 +1066,7 @@
   <data name="Run_State_WaitingForChildren" xml:space="preserve"><value>Delegating</value></data>
   <data name="Run_Activity_Planning" xml:space="preserve"><value>Building a plan…</value></data>
   <data name="Run_Activity_Working" xml:space="preserve"><value>Working…</value></data>
+  <data name="Run_Activity_SingleTurnFallback" xml:space="preserve"><value>Could not build a plan — working through the goal in one turn</value></data>
   <data name="Run_Activity_Verifying" xml:space="preserve"><value>Checking the work…</value></data>
   <data name="Run_Activity_WaitingAtBudget" xml:space="preserve"><value>Stopped at budget — continue?</value></data>
   <data name="Run_Activity_WaitingForChildren" xml:space="preserve"><value>Waiting for the sub-agents to finish…</value></data>
@@ -1087,6 +1127,8 @@
   <!-- Batch 03: the per-run tool-decision trace. Eleven persisted decision ordinals collapse to five
        user-facing categories; anything a build does not recognise renders as Unknown. -->
   <data name="Run_Timeline_Header" xml:space="preserve"><value>Tool activity</value></data>
+  <data name="Run_ToolActivity_Waiting" xml:space="preserve"><value>Waiting for the model…</value></data>
+  <data name="Run_ToolActivity_AfterTool" xml:space="preserve"><value>{0} tool calls · last: {1}</value></data>
   <data name="Run_Timeline_Empty" xml:space="preserve"><value>No tool decisions were recorded for this run.</value></data>
   <data name="Run_Children_Header" xml:space="preserve"><value>Sub-agents</value></data>
   <data name="Run_Children_Count" xml:space="preserve"><value>{0} of {1} finished</value></data>
@@ -1138,6 +1180,9 @@
   <data name="Settings_Agent_MaxReplans_Label" xml:space="preserve"><value>Re-plans on failure</value></data>
   <data name="Settings_Agent_MaxReplans_Value" xml:space="preserve"><value>{0} re-plans</value></data>
   <data name="Settings_Agent_MaxReplans_Description" xml:space="preserve"><value>How many times a run may revise its plan after a step fails.</value></data>
+  <data name="Settings_Agent_NewChatMode_Section_Header" xml:space="preserve"><value>New chats</value></data>
+  <data name="Settings_Agent_NewChatAgentMode" xml:space="preserve"><value>Start new chats in Agent mode</value></data>
+  <data name="Settings_Agent_NewChatAgentMode_Description" xml:space="preserve"><value>A new chat opens on Agent instead of Chat. The Chat/Agent lever itself belongs to each chat, so switching it for one conversation never changes what the next one starts on.</value></data>
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Think before planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Adds a short tool-free thinking turn before the plan is created, so the model can reason at the effort you configured. Helps on providers that switch reasoning off while tools are attached — and doubles the cost of the planning turn.</value></data>
@@ -1238,11 +1283,15 @@
   <data name="Routines_Field_Persona_Default" xml:space="preserve"><value>Use the active persona</value></data>
   <data name="Routines_Field_Persona_Missing" xml:space="preserve"><value>No longer available</value></data>
   <data name="Routines_Field_Persona_Hint" xml:space="preserve"><value>Kept on this device only, so your other devices are unaffected.</value></data>
+  <data name="Routines_Field_WorkingDir" xml:space="preserve"><value>Working folder</value></data>
+  <data name="Routines_Field_WorkingDir_Hint" xml:space="preserve"><value>Files this routine reads and writes stay in this folder. Stored on this device only.</value></data>
+  <data name="Routines_Field_WorkingDir_Tooltip" xml:space="preserve"><value>Choose the working folder</value></data>
+  <data name="Routines_Detail_WorkingDir" xml:space="preserve"><value>Working folder</value></data>
   <data name="Routines_Field_Effort" xml:space="preserve"><value>Reasoning effort</value></data>
   <data name="Routines_Field_Effort_Default" xml:space="preserve"><value>Use the persona's setting</value></data>
   <data name="Routines_Field_Effort_Hint" xml:space="preserve"><value>Overrides the persona's own reasoning effort for this routine's runs.</value></data>
-  <data name="Routines_Field_Tools" xml:space="preserve"><value>Tools this routine may use</value></data>
-  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Tick a tool and this routine&#x27;s runs may use it without asking.</value></data>
+  <data name="Routines_Field_Tools" xml:space="preserve"><value>Changes this routine may make on its own</value></data>
+  <data name="Routines_Field_Tools_Hint" xml:space="preserve"><value>Optional. Reading needs no permission — only tools that change something are listed. Tick one and this routine&#x27;s runs may do it without asking.</value></data>
   <data name="Routines_Field_Tools_AgentDefault" xml:space="preserve"><value>With nothing ticked, an agent routine may still use write_file. Ticking any tool replaces that default rather than adding to it.</value></data>
   <data name="Routines_Field_Tools_Empty" xml:space="preserve"><value>No plugin on this device offers any tools.</value></data>
   <data name="Routines_Field_Tools_Missing" xml:space="preserve"><value>No longer available</value></data>
@@ -1250,7 +1299,7 @@
   <data name="Routines_Field_Tools_Missing_Notice" xml:space="preserve"><value>Some tools this routine names are no longer available on this device.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Agent" xml:space="preserve"><value>Nothing ticked — runs may still use write_file.</value></data>
   <data name="Routines_Field_Tools_Summary_None_Research" xml:space="preserve"><value>Nothing ticked — runs only read and report.</value></data>
-  <data name="Routines_Detail_Tools" xml:space="preserve"><value>Tools</value></data>
+  <data name="Routines_Detail_Tools" xml:space="preserve"><value>May change without asking</value></data>
   <data name="Routines_Detail_Tools_AgentDefault" xml:space="preserve"><value>write_file only — the default for an agent routine.</value></data>
   <data name="Routines_Detail_Tools_None" xml:space="preserve"><value>None — this routine only reads and reports.</value></data>
   <data name="Routines_Effort_None" xml:space="preserve"><value>No reasoning</value></data>
@@ -1405,6 +1454,7 @@
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Draft with AI</value></data>
   <data name="Routines_Draft_Working" xml:space="preserve"><value>Drafting…</value></data>
   <data name="Routines_Draft_Failed" xml:space="preserve"><value>Drafting failed. Check that an AI provider is set up, then try again.</value></data>
+  <data name="Routines_Draft_NothingToFill" xml:space="preserve"><value>Nothing to fill in — the name and the instruction are already set. Clear a field to let the draft write it.</value></data>
   <data name="Routines_Field_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Routines_Field_Goal" xml:space="preserve"><value>Goal *</value></data>
   <data name="Routines_Field_Goal_SlotHint" xml:space="preserve"><value>The highlighted words above come from the field you filled in — edit the field to change them, or write over the whole instruction here.</value></data>
@@ -1416,6 +1466,7 @@
   <data name="Settings_ScheduledJobs_Recurrence_Weekly" xml:space="preserve"><value>Weekly</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Monthly" xml:space="preserve"><value>Monthly</value></data>
   <data name="Settings_ScheduledJobs_Recurrence_Yearly" xml:space="preserve"><value>Yearly</value></data>
+  <data name="Settings_ScheduledJobs_Recurrence_Manual" xml:space="preserve"><value>Manual only</value></data>
   <data name="AssignmentConsent_Title" xml:space="preserve"><value>Send to your Pia server</value></data>
   <data name="AssignmentConsent_Skill_Label" xml:space="preserve"><value>Skill</value></data>
   <data name="AssignmentConsent_Mode_Label" xml:space="preserve"><value>Mode:</value></data>
@@ -1495,6 +1546,8 @@
   <data name="AssistantHistory_ImportFormat_Pia" xml:space="preserve"><value>Pia archive</value></data>
   <data name="AssistantHistory_ImportFormat_OpenWebUi" xml:space="preserve"><value>Open WebUI export</value></data>
   <data name="AssistantHistory_LoadMore" xml:space="preserve"><value>Load more</value></data>
+  <data name="AssistantHistory_LoadOlderMessages" xml:space="preserve"><value>Show older messages ({0})</value></data>
+  <data name="AssistantHistory_LoadOlderMessages_Tooltip" xml:space="preserve"><value>Adds more of the earlier conversation to the preview</value></data>
   <data name="Settings_ExportDiagnostics" xml:space="preserve">
     <value>Diagnostics</value>
   </data>
@@ -1559,4 +1612,102 @@
   <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>The text is sent as shown; PII tokenization is off in your privacy settings.</value></data>
   <data name="About_AiFeedback_Title" xml:space="preserve"><value>AI feedback and complaints</value></data>
   <data name="About_AiFeedback_Text" xml:space="preserve"><value>Concerns about Pia's AI behaviour go to the address below. Answers from Pia Cloud can also be reported right beneath the answer.</value></data>
+  <data name="ScreenCapturePicker_Title" xml:space="preserve"><value>Capture screen</value></data>
+  <data name="ScreenCapturePicker_Capture" xml:space="preserve"><value>Capture</value></data>
+  <data name="ScreenCapturePicker_Hint" xml:space="preserve"><value>Pick a display or a window. The picture is attached to your message and only sent when you send it. Pia's own windows are never listed.</value></data>
+  <data name="ScreenCapturePicker_Monitors" xml:space="preserve"><value>Displays</value></data>
+  <data name="ScreenCapturePicker_Windows" xml:space="preserve"><value>Windows</value></data>
+  <data name="ScreenCapturePicker_Loading" xml:space="preserve"><value>Looking for displays and windows...</value></data>
+  <data name="ScreenCapturePicker_Empty" xml:space="preserve"><value>Nothing to capture - no display or window is available.</value></data>
+  <data name="ScreenCapturePicker_MonitorLabel" xml:space="preserve"><value>Display {0}</value></data>
+  <data name="ScreenCapturePicker_PrimaryDisplay" xml:space="preserve"><value>Primary</value></data>
+  <data name="ScreenCapturePicker_PickTitle" xml:space="preserve"><value>Choose a window</value></data>
+  <data name="ScreenCapturePicker_Use" xml:space="preserve"><value>Use</value></data>
+  <data name="ScreenCapturePicker_PickHint" xml:space="preserve"><value>Pick an open window. Nothing is captured now - Pia only fills in the program name and the window title below, and you can shorten the title afterwards. Pia's own windows are never listed.</value></data>
+  <data name="Assistant_CaptureScreen_Tooltip" xml:space="preserve"><value>Capture screen</value></data>
+  <data name="Assistant_CaptureScreen_Unavailable_Tooltip" xml:space="preserve"><value>Screen capture is only available with the PiaCloud provider</value></data>
+  <data name="Settings_Hotkey_ScreenCapture" xml:space="preserve"><value>Capture screen</value></data>
+  <data name="Settings_Hotkey_ScreenCapture_Description" xml:space="preserve"><value>Opens the Assistant and offers a display or window to attach as an image</value></data>
+  <data name="Templates_Duplicate" xml:space="preserve"><value>Duplicate</value></data>
+  <data name="Templates_Empty" xml:space="preserve"><value>No templates yet.</value></data>
+  <data name="Templates_EmptyHint" xml:space="preserve"><value>Add one to rewrite your text in a style you choose.</value></data>
+  <data name="Templates_Placeholder" xml:space="preserve"><value>Select a template to see what it does.</value></data>
+  <data name="Templates_PlaceholderHint" xml:space="preserve"><value>Or add a new one to rewrite your text in a style you choose.</value></data>
+  <data name="Dialog_TemplateEdit_Description" xml:space="preserve"><value>Description</value></data>
+  <data name="AdvancedCreation_Title_Template" xml:space="preserve"><value>Design a template</value></data>
+  <data name="AdvancedCreation_Title_Persona" xml:space="preserve"><value>Design a persona</value></data>
+  <data name="AdvancedCreation_Title_Routine" xml:space="preserve"><value>Design a routine</value></data>
+  <data name="AdvancedCreation_Opening_Template" xml:space="preserve"><value>What should this template do to your text?</value></data>
+  <data name="AdvancedCreation_Opening_Persona" xml:space="preserve"><value>What should this persona be like?</value></data>
+  <data name="AdvancedCreation_Opening_Routine" xml:space="preserve"><value>What should this routine do for you?</value></data>
+  <data name="AdvancedCreation_OpeningHint" xml:space="preserve"><value>One sentence is enough — Pia will ask about the rest.</value></data>
+  <data name="AdvancedCreation_Persona" xml:space="preserve"><value>Persona for this interview</value></data>
+  <data name="AdvancedCreation_Persona_Hint" xml:space="preserve"><value>Picks the model that answers every turn, the closing draft included. Choose a persona routed to a private model to keep the whole interview there. It selects the model, not the voice the draft is written in.</value></data>
+  <data name="AdvancedCreation_Start" xml:space="preserve"><value>Start</value></data>
+  <data name="AdvancedCreation_Send" xml:space="preserve"><value>Send</value></data>
+  <data name="AdvancedCreation_Skip" xml:space="preserve"><value>Skip</value></data>
+  <data name="AdvancedCreation_Thinking" xml:space="preserve"><value>Thinking…</value></data>
+  <data name="AdvancedCreation_Done" xml:space="preserve"><value>Ready. Use this draft to fill in the editor — you can still change everything.</value></data>
+  <data name="AdvancedCreation_Use" xml:space="preserve"><value>Use this draft</value></data>
+  <data name="AdvancedCreation_Retry" xml:space="preserve"><value>Try again</value></data>
+  <data name="AdvancedCreation_Error_BadReply" xml:space="preserve"><value>That reply could not be read. Trying again usually works.</value></data>
+  <data name="AdvancedCreation_Error_Failed" xml:space="preserve"><value>Designing this failed. Check the provider and try again.</value></data>
+  <data name="AdvancedCreation_DiscardPrompt" xml:space="preserve"><value>Discard this design and close?</value></data>
+  <data name="AdvancedCreation_Discard" xml:space="preserve"><value>Discard</value></data>
+  <data name="AdvancedCreation_KeepEditing" xml:space="preserve"><value>Keep going</value></data>
+  <data name="AdvancedCreation_Advanced" xml:space="preserve"><value>Advanced…</value></data>
+  <data name="Settings_Tab_McpServers" xml:space="preserve"><value>MCP servers</value></data>
+  <data name="McpServers_Title" xml:space="preserve"><value>MCP servers</value></data>
+  <data name="McpServers_Subtitle" xml:space="preserve"><value>Connect MCP servers that run on this computer. Their tool names are prefixed with the server name, so they never clash with Pia's own tools.</value></data>
+  <data name="McpServers_Add" xml:space="preserve"><value>Add server</value></data>
+  <data name="McpServers_Empty" xml:space="preserve"><value>No MCP servers yet</value></data>
+  <data name="McpServers_EmptyHint" xml:space="preserve"><value>Add a server to give the assistant tools from outside Pia.</value></data>
+  <data name="McpServers_Name" xml:space="preserve"><value>Name</value></data>
+  <data name="McpServers_Command" xml:space="preserve"><value>Command</value></data>
+  <data name="McpServers_Arguments" xml:space="preserve"><value>Arguments</value></data>
+  <data name="McpServers_ArgumentsHint" xml:space="preserve"><value>One per line.</value></data>
+  <data name="McpServers_Environment" xml:space="preserve"><value>Environment variables</value></data>
+  <data name="McpServers_EnvironmentHint" xml:space="preserve"><value>One KEY=value per line. Values are stored encrypted for your Windows account.</value></data>
+  <data name="McpServers_WorkingDirectory" xml:space="preserve"><value>Working directory</value></data>
+  <data name="McpServers_WorkingDirectoryHint" xml:space="preserve"><value>Optional. The folder the server starts in.</value></data>
+  <data name="McpServers_PasteJson" xml:space="preserve"><value>Paste a configuration</value></data>
+  <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Paste an mcpServers entry from another client to fill the fields in.</value></data>
+  <data name="McpServers_ApplyJson" xml:space="preserve"><value>Fill in from JSON</value></data>
+  <data name="McpServers_JsonApplied" xml:space="preserve"><value>Configuration read.</value></data>
+  <data name="McpServers_TestConnection" xml:space="preserve"><value>Test connection</value></data>
+  <data name="McpServers_TestSucceeded" xml:space="preserve"><value>Connected. {0} tool(s) available.</value></data>
+  <data name="McpServers_TestFailed" xml:space="preserve"><value>Could not connect: {0}</value></data>
+  <data name="McpServers_Tools" xml:space="preserve"><value>Available tools</value></data>
+  <data name="McpServers_ToolsHint" xml:space="preserve"><value>Only ticked tools are offered to the assistant.</value></data>
+  <data name="McpServers_ToolsUntested" xml:space="preserve"><value>Test the connection to list this server's tools.</value></data>
+  <data name="McpServers_SelectAll" xml:space="preserve"><value>All</value></data>
+  <data name="McpServers_SelectNone" xml:space="preserve"><value>None</value></data>
+  <data name="McpServers_Destructive" xml:space="preserve"><value>may delete</value></data>
+  <data name="McpServers_ToolPrefix" xml:space="preserve"><value>Tool prefix</value></data>
+  <data name="McpServers_Status_Running" xml:space="preserve"><value>Running · {0} tool(s)</value></data>
+  <data name="McpServers_Status_Disabled" xml:space="preserve"><value>Disabled</value></data>
+  <data name="McpServers_Status_Failed" xml:space="preserve"><value>Not running</value></data>
+  <data name="McpServers_DeleteTitle" xml:space="preserve"><value>Remove MCP server</value></data>
+  <data name="McpServers_DeleteMessage" xml:space="preserve"><value>Remove "{0}"? Its tools stop being available to the assistant.</value></data>
+  <data name="McpServers_Saved" xml:space="preserve"><value>{0} saved.</value></data>
+  <data name="McpServers_Error_InvalidJson" xml:space="preserve"><value>That is not valid JSON.</value></data>
+  <data name="McpServers_Error_NoServerObject" xml:space="preserve"><value>No server configuration found. Expected a command, or an mcpServers entry.</value></data>
+  <data name="McpServers_Error_MultipleServers" xml:space="preserve"><value>That holds more than one server. Add them one at a time.</value></data>
+  <data name="McpServers_Error_MissingCommand" xml:space="preserve"><value>No command specified.</value></data>
+  <data name="McpServers_Error_RemoteTransport" xml:space="preserve"><value>Remote servers are not supported — only servers Pia starts on this computer.</value></data>
+  <data name="McpServers_Error_BadArgs" xml:space="preserve"><value>args must be a list of strings.</value></data>
+  <data name="McpServers_Error_BadEnv" xml:space="preserve"><value>env must be an object of text values.</value></data>
+  <data name="McpServers_Status_FailedWithReason" xml:space="preserve"><value>Not running: {0}</value></data>
+  <data name="McpServers_Placeholder" xml:space="preserve"><value>No server selected</value></data>
+  <data name="McpServers_PlaceholderHint" xml:space="preserve"><value>Pick a server on the left to see its command and the tools it offers.</value></data>
+  <data name="McpServers_Badge_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="McpServers_Status_Starting" xml:space="preserve"><value>Starting…</value></data>
+  <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Stopping…</value></data>
+  <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} of {1} tool(s) offered</value></data>
+  <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} tool(s) allowed</value></data>
+  <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>This server is not running. These are the tools it was allowed when it last ran.</value></data>
+  <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Start this server, or use Test connection, to list its tools.</value></data>
+  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
+  <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
+  <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Locked by your organization: this setting is enforced by Pia policy and cannot be changed here.</value></data>
 </root>

@@ -32,7 +32,10 @@ public enum ActionCardCategory
     Scheduled,
 
     /// <summary>The built-in background-assignment tools (plugin <c>assignments</c>).</summary>
-    Assignment
+    Assignment,
+
+    /// <summary>The built-in screen tools (plugin <c>screen</c>).</summary>
+    Screen
 }
 
 public record ActionCardDetail(string Label, string Value);

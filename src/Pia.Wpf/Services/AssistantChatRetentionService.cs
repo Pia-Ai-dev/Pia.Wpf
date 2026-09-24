@@ -73,6 +73,22 @@ public class AssistantChatRetentionService : BackgroundService
             var days = settings.GetChatHistoryRetentionDays();
             var cutoff = DateTime.UtcNow - TimeSpan.FromDays(days);
 
+            // "Delete chats not opened for N days" is a fact about the conversation, not about this machine,
+            // and the delete is account-wide. A chat read on another device still looks untouched here until
+            // its date arrives — and an old chat never comes down an incremental pull, whose `since` is the
+            // local max UpdatedAt — so the dates are confirmed one by one before anything is deleted.
+            if (settings.SyncEnabled)
+            {
+                var candidates = await _chatService.GetChatIdsAccessedBeforeAsync(cutoff, ct);
+                if (!await _syncService.RefreshAccessDatesAsync(candidates, ct))
+                {
+                    _logger.LogInformation(
+                        "Assistant chat retention skipped: {Count} chat(s) could not be confirmed against the server",
+                        candidates.Count);
+                    return;
+                }
+            }
+
             var evicted = await _chatService.EvictOlderThanAsync(cutoff, ct);
             if (evicted.Count > 0)
             {

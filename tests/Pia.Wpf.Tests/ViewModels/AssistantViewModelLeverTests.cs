@@ -31,6 +31,9 @@ public class AssistantViewModelLeverTests
             System.Threading.SynchronizationContext.SetSynchronizationContext(new System.Threading.SynchronizationContext());
 
         _settings.GetSettingsAsync().Returns(new AppSettings());
+        // The real manager never hands back null here, and a command that writes to the session it gets would
+        // null-ref against a bare substitute.
+        _manager.GetOrCreateActiveForNewChat().Returns(SessionWithTranscript());
 
         var meeting = new MeetingAttendeeViewModel(
             Substitute.For<IMeetingAttendeeService>(),
@@ -114,7 +117,7 @@ public class AssistantViewModelLeverTests
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.Received(1).StartTurnAsync(
-            Arg.Any<ChatSession>(), "plan my week", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: true);
+            Arg.Any<ChatSession>(), "plan my week", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: true);
     }
 
     [Fact]
@@ -128,7 +131,7 @@ public class AssistantViewModelLeverTests
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.Received(1).StartTurnAsync(
-            Arg.Any<ChatSession>(), "just chat", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: false);
+            Arg.Any<ChatSession>(), "just chat", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: false);
     }
 
     [Fact]
@@ -144,33 +147,53 @@ public class AssistantViewModelLeverTests
         await vm.SendMessageCommand.ExecuteAsync(null);
 
         await _manager.Received(1).StartTurnAsync(
-            Arg.Any<ChatSession>(), "hello", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: false);
+            Arg.Any<ChatSession>(), "hello", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: false);
     }
 
-    // ---- Persistence: persist-on-change, seed guard, reopen restore ------------------------------
+    // ---- Per-chat lever: written to the chat, never to settings ---------------------------------
 
+    /// <summary>The whole point of the lever being per-chat: one curious flip must not arm every chat the
+    /// user opens afterwards, so it lands on the session and settings are never written.</summary>
     [Fact]
-    public async Task ToggleOn_PersistsGlobalDefault()
+    public async Task ToggleOn_ArmsTheChat_AndSavesNothing()
     {
         var vm = CreateSut();
+        var session = SessionWithTranscript();
+        _manager.ActiveSession.Returns(session);
         _settings.ClearReceivedCalls();
 
         vm.AgentModeEnabled = true;
         await Task.Yield();
 
-        await _settings.Received().SaveSettingsAsync(Arg.Is<AppSettings>(s => s.AssistantAgentModeDefault));
+        Assert.True(session.AgentModeEnabled);
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
     [Fact]
-    public void Seed_FromSettings_DoesNotRePersist()
+    public void Seed_AdoptsTheChatsOwnLever_OverTheNewChatDefault()
     {
         var vm = CreateSut();
-        _settings.ClearReceivedCalls();
+        var session = SessionWithTranscript();
+        session.AgentModeEnabled = true;
 
-        // Mirrors the reopen-restore seed path via the internal seam.
-        vm.SeedAgentModeFromSettings(new AppSettings { AssistantAgentModeDefault = true });
+        vm.SeedAgentMode(session, new AppSettings { AssistantNewChatAgentMode = false });
 
         Assert.True(vm.AgentModeEnabled);
+    }
+
+    /// <summary>A chat whose lever was never touched is what the new-chat setting is for.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Seed_AnUntouchedChat_TakesTheNewChatDefault(bool startOnAgent)
+    {
+        var vm = CreateSut();
+        var session = SessionWithTranscript();
+        _settings.ClearReceivedCalls();
+
+        vm.SeedAgentMode(session, new AppSettings { AssistantNewChatAgentMode = startOnAgent });
+
+        Assert.Equal(startOnAgent, vm.AgentModeEnabled);
         _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
@@ -239,7 +262,7 @@ public class AssistantViewModelLeverTests
         // Restoring the lever at startup is not a switch the user just made.
         var vm = CreateSut();
 
-        vm.SeedAgentModeFromSettings(new AppSettings { AssistantAgentModeDefault = true });
+        vm.SeedAgentMode(SessionWithTranscript(), new AppSettings { AssistantNewChatAgentMode = true });
 
         Assert.True(vm.AgentModeEnabled);
         Assert.False(vm.AgentModeHintVisible);
@@ -269,7 +292,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("   ", "reason"));
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     // ---- Weak-provider banner surfaces but never blocks ------------------------------------------
@@ -325,13 +348,9 @@ public class AssistantViewModelLeverTests
         Assert.False(vm.AgentModeEnabled);
     }
 
-    /// <summary>
-    /// The fall-back is a COMPOSER decision, so it must not rewrite the user's saved default. It used to: a
-    /// run finishing wrote AssistantAgentModeDefault=false, and the next new chat — which inherits the lever —
-    /// opened in Chat mode, where Run in background is not even rendered.
-    /// </summary>
+    /// <summary>The same settle folds the run card, so the answer is what the eye lands on.</summary>
     [Fact]
-    public void ARunSettling_DoesNotRewriteTheSavedDefault()
+    public void ARunSettling_FoldsTheRunCard()
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
         var runId = Guid.NewGuid();
@@ -342,9 +361,28 @@ public class AssistantViewModelLeverTests
         var vm = CreateSut(runs);
         vm.SyncRunProgress(runId);
         vm.AgentModeEnabled = true;
+        Assert.True(vm.ActiveRunProgress!.IsCardExpanded);
 
-        // AFTER the user-intent write above, which legitimately persists — clearing before it would make the
-        // assertion pass on the setup call rather than on the settle.
+        run.State = AgentRunState.Completed;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
+
+        Assert.False(vm.AgentModeEnabled);
+        Assert.False(vm.ActiveRunProgress!.IsCardExpanded);
+    }
+
+    /// <summary>The fall-back is a COMPOSER decision, so nothing about it may reach settings.</summary>
+    [Fact]
+    public void ARunSettling_SavesNothing()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [] };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        vm.SyncRunProgress(runId);
+        vm.AgentModeEnabled = true;
         _settings.ClearReceivedCalls();
 
         run.State = AgentRunState.Completed;
@@ -354,8 +392,8 @@ public class AssistantViewModelLeverTests
         _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
-    /// <summary>The guard covers the persist alone. The rest of the handler still runs, or the fall-back would
-    /// leave an Agent-mode hint on screen for a mode the composer is no longer in.</summary>
+    /// <summary>The fall-back must still clear the hint, or one stays on screen for a mode the composer is no
+    /// longer in.</summary>
     [Fact]
     public void ARunSettling_StillClearsTheAgentModeHint()
     {
@@ -377,9 +415,9 @@ public class AssistantViewModelLeverTests
         Assert.False(vm.WeakProviderWarningVisible);
     }
 
-    /// <summary>The guard is armed for one write and disarmed again: the click AFTER a settle still persists.</summary>
+    /// <summary>A settle is not sticky: the click AFTER one still arms the chat.</summary>
     [Fact]
-    public void AClickAfterASettle_StillPersists()
+    public void AClickAfterASettle_StillArmsTheChat()
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
         var runId = Guid.NewGuid();
@@ -388,6 +426,8 @@ public class AssistantViewModelLeverTests
         runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
 
         var vm = CreateSut(runs);
+        var session = SessionWithTranscript();
+        _manager.ActiveSession.Returns(session);
         vm.SyncRunProgress(runId);
         vm.AgentModeEnabled = true;
         run.State = AgentRunState.Completed;
@@ -396,7 +436,8 @@ public class AssistantViewModelLeverTests
 
         vm.AgentModeEnabled = true;
 
-        _settings.Received().SaveSettingsAsync(Arg.Is<AppSettings>(s => s.AssistantAgentModeDefault));
+        Assert.True(session.AgentModeEnabled);
+        _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
     [Fact]
@@ -514,7 +555,7 @@ public class AssistantViewModelLeverTests
     {
         var vm = CreateSut();
         vm.InputText = "meanwhile, what is the weather";
-        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
+        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
             Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
 
         await vm.SendMessageCommand.ExecuteAsync(null);
@@ -527,7 +568,7 @@ public class AssistantViewModelLeverTests
     {
         var vm = CreateSut();
         vm.InputText = "hello";
-        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(),
+        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
             Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
 
         await vm.SendMessageCommand.ExecuteAsync(null);
@@ -614,7 +655,7 @@ public class AssistantViewModelLeverTests
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
         Assert.Equal(2, vm.Messages.Count);   // not truncated either
     }
 
@@ -629,7 +670,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -645,7 +686,7 @@ public class AssistantViewModelLeverTests
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
         Assert.Equal(2, vm.Messages.Count);   // not truncated either
     }
 
@@ -661,7 +702,7 @@ public class AssistantViewModelLeverTests
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _manager.Received(1).StartTurnAsync(
-            session, "summarize the repo", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -677,7 +718,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
 
         await _manager.DidNotReceive().StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
     [Fact]
@@ -691,7 +732,7 @@ public class AssistantViewModelLeverTests
         await vm.SwitchToAgentCommand.ExecuteAsync(new AgentModeSuggestion("plan my week", "multi-step task"));
 
         await _manager.Received(1).StartTurnAsync(
-            session, "plan my week", Arg.Any<ImageAttachment?>(), Arg.Any<string?>(), planned: true);
+            session, "plan my week", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), planned: true);
     }
 
     // ---- Dispose is unsubscribe-only, so it has to unsubscribe every session event ----

@@ -124,4 +124,97 @@ public sealed class FilesToolHandlerScratchTests : IDisposable
         var read = await CallAsync("read_file", new Dictionary<string, object?> { ["path"] = ".scratch/notes.md" });
         Assert.Contains("carried across the step", read);
     }
+
+    /// <summary>A working note raises no chip: paired with the deliverable's it reads as two links for one
+    /// piece of work, and the scratch half dies with the workspace.</summary>
+    [Fact]
+    public async Task AScratchWrite_RaisesNoFileChip_WhileARealOneStillDoes()
+    {
+        var touched = new List<string>();
+        var previous = TaskAmbient.Current;
+        TaskAmbient.Current = new TaskContext(Guid.NewGuid(), null, t => touched.Add(t.AbsolutePath));
+        try
+        {
+            await WriteAsync(".scratch/notes.md", "working notes");
+            Assert.Empty(touched);
+
+            // Read it back by explicit path: still no chip, and still not an error.
+            await CallAsync("read_file", new Dictionary<string, object?> { ["path"] = ".scratch/notes.md" });
+            Assert.Empty(touched);
+
+            await WriteAsync("report.md", "the deliverable");
+            Assert.Equal(Path.Combine(_root, "report.md"), Assert.Single(touched));
+        }
+        finally
+        {
+            TaskAmbient.Current = previous;
+        }
+    }
+
+    /// <summary>Root-level only, exactly like the list/search carve-out: a <c>docs/.scratch</c> is the user's.</summary>
+    [Fact]
+    public async Task ANestedScratchFolder_StillRaisesAChip()
+    {
+        var touched = new List<string>();
+        var previous = TaskAmbient.Current;
+        TaskAmbient.Current = new TaskContext(Guid.NewGuid(), null, t => touched.Add(t.AbsolutePath));
+        try
+        {
+            await WriteAsync("docs/.scratch/notes.md", "the user's own folder");
+            Assert.Single(touched);
+        }
+        finally
+        {
+            TaskAmbient.Current = previous;
+        }
+    }
+
+    private async Task WriteAsync(string relPath, string content)
+    {
+        var call = new FunctionCallContent("c1", "write_file", new Dictionary<string, object?>
+        {
+            ["path"] = relPath,
+            ["content"] = content,
+        });
+        var (_, pending) = await _handler.HandleToolCallAsync(call, TestContext.Current.CancellationToken);
+        Assert.NotNull(pending);
+        await pending!.Execute();
+    }
+
+    /// <summary>The producer half of the gate contract. Per tool, because <c>edit_file</c> reaches the write
+    /// prepare by delegation and <c>delete_file</c> has its own.</summary>
+    [Theory]
+    [InlineData("write_file")]
+    [InlineData("edit_file")]
+    [InlineData("delete_file")]
+    public async Task EachWriteTool_ReportsAScratchPathTheGateArmRecognises(string tool)
+    {
+        Write(".scratch/notes.md", "old");
+
+        var args = new Dictionary<string, object?> { ["path"] = ".scratch/notes.md" };
+        if (tool == "write_file") args["content"] = "new";
+        if (tool == "edit_file") { args["old_string"] = "old"; args["new_string"] = "new"; }
+
+        var (_, pending) = await _handler.HandleToolCallAsync(
+            new FunctionCallContent("c1", tool, args), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(pending);
+        Assert.True(RunScratchFolder.IsGateAutoApprovable(ToolClass.Files, pending!.TargetPath));
+    }
+
+    /// <summary>The same three tools on a real deliverable still reach the gate as an ordinary write.</summary>
+    [Fact]
+    public async Task ADeliverablePath_IsNotReportedAsScratch()
+    {
+        var (_, pending) = await _handler.HandleToolCallAsync(
+            new FunctionCallContent("c1", "write_file", new Dictionary<string, object?>
+            {
+                ["path"] = "report.md",
+                ["content"] = "the deliverable",
+            }),
+            TestContext.Current.CancellationToken);
+
+        Assert.NotNull(pending);
+        Assert.False(RunScratchFolder.IsGateAutoApprovable(ToolClass.Files, pending!.TargetPath));
+    }
 }

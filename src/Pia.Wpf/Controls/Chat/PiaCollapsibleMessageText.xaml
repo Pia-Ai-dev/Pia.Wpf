@@ -7,16 +7,46 @@
              x:Name="Root">
   <StackPanel>
     <Border x:Name="TextClip" ClipToBounds="True">
-      <!-- The inner StackPanel hands the text infinite height, so its DesiredSize stays the full one and
-           the clip's MaxHeight cannot hide the overflow the toggle is offered on. -->
-      <StackPanel>
-        <!-- The style's LineHeight only binds the line box under BlockLineHeight; on the default strategy
-             the font's natural box wins and the fold cuts through a row of glyphs. -->
-        <TextBlock x:Name="Body"
+      <Grid>
+        <!-- Hidden twin. A RichTextBox fills whatever width it is offered, so the bubble would always be
+             its widest; this is what knows the text's real extent, and MeasureOverride sizes and clips the
+             box to it. -->
+        <TextBlock x:Name="Sizer"
+                   Visibility="Hidden"
                    LineStackingStrategy="BlockLineHeight"
                    behaviors:AtCommandHighlightBehavior.Text="{Binding Text, ElementName=Root}"
                    Style="{StaticResource UserBubbleTextStyle}" />
-      </StackPanel>
+        <RichTextBox x:Name="Body"
+                     Style="{x:Null}"
+                     IsReadOnly="True"
+                     IsReadOnlyCaretVisible="False"
+                     IsUndoEnabled="False"
+                     IsDocumentEnabled="False"
+                     BorderThickness="0"
+                     Background="Transparent"
+                     Padding="0"
+                     MinWidth="0"
+                     MinHeight="0"
+                     FontSize="{Binding FontSize, ElementName=Sizer}"
+                     Foreground="{DynamicResource UserBubbleFgBrush}"
+                     SelectionBrush="{DynamicResource UserBubbleSelectionBrush}"
+                     HorizontalScrollBarVisibility="Disabled"
+                     VerticalScrollBarVisibility="Disabled"
+                     VerticalAlignment="Top"
+                     AutomationProperties.AutomationId="{Binding TextAutomationId, ElementName=Root}"
+                     behaviors:AtCommandHighlightBehavior.Text="{Binding Text, ElementName=Root}">
+          <RichTextBox.ContextMenu>
+            <ContextMenu>
+              <MenuItem Command="ApplicationCommands.Copy" />
+            </ContextMenu>
+          </RichTextBox.ContextMenu>
+          <FlowDocument x:Name="BodyDocument"
+                        PagePadding="0"
+                        LineStackingStrategy="BlockLineHeight">
+            <Paragraph Margin="0" />
+          </FlowDocument>
+        </RichTextBox>
+      </Grid>
     </Border>
 
     <ui:Button x:Name="Toggle"
@@ -25,7 +55,7 @@
                Padding="0"
                Margin="0,6,0,0"
                HorizontalAlignment="Right"
-               Foreground="White"
+               Foreground="{DynamicResource UserBubbleFgBrush}"
                Cursor="Hand"
                AutomationProperties.AutomationId="{Binding ToggleAutomationId, ElementName=Root}"
                Visibility="{Binding IsOverflowing, ElementName=Root, Converter={StaticResource BooleanToVisibilityConverter}}">

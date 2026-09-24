@@ -88,6 +88,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 LastAccessedAt = stubTime,
                 WindowMode = WindowMode.Assistant.ToString(),
                 ProviderId = request.Provider.Id,
+                WorkingDirectory = request.WorkingSubpath,
                 Messages = [],
             }, ct);
 
@@ -127,9 +128,10 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var provider = RunPinResolver.ApplyEffort(
                 request.Provider, request.ReasoningEffort, persona.ReasoningEffort);
 
-            // Headless path — no user to click the chip, so never eligible.
+            // Headless path — no user to click the chip, so never eligible. Unattended too, and this leg has
+            // no park at all: a question here is booked as a completed run and the goal waits a whole period.
             var turnSetup = _promptComposer.PrepareTurn(persona, provider, [], tokenizationEnabled,
-                suggestAgentModeEligible: false);
+                suggestAgentModeEligible: false, unattended: true);
 
             _logger.LogInformation(
                 "Background turn {ChatId}: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, grantedWrites={GrantedWrites}",
@@ -138,7 +140,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, turnSetup.SystemPrompt),
-                new(ChatRole.User, request.Prompt),
+                new(ChatRole.User, AssistantPromptComposer.AppendTimeNote(request.Prompt)),
             };
 
             var grantedWrites = new HashSet<string>(request.GrantedWriteTools, StringComparer.OrdinalIgnoreCase);
@@ -155,7 +157,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // The file tools key per-run state against this id; without it headless writes all shared
             // Guid.Empty. The run's id when bookkeeping created one, else the chat's.
             var previousTask = TaskAmbient.Current;
-            TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, WorkingSubpath: null, OnFileTouched: null, ChatId: chatId,
+            TaskAmbient.Current = new TaskContext(run?.Id ?? chatId, request.WorkingSubpath, OnFileTouched: null, ChatId: chatId,
                 UnattendedGranter: AssignmentGranter.ForUnattendedRun(
                     request.Trigger, request.TriggerRef, run?.Id ?? chatId));
 
@@ -196,7 +198,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
             if (string.IsNullOrWhiteSpace(visible))
             {
-                _logger.LogWarning("Background turn {ChatId} produced empty content", chatId);
+                _logger.LogWarning(
+                    "Background turn {ChatId} produced empty content (thinkingChars={ThinkingChars}, model={Model}, tokens={Tokens})",
+                    chatId, thinking?.Length ?? 0, model, tokens);
                 if (run is not null)
                 {
                     try
@@ -225,6 +229,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 LastAccessedAt = now,
                 WindowMode = WindowMode.Assistant.ToString(),
                 ProviderId = request.Provider.Id,
+                WorkingDirectory = request.WorkingSubpath,
                 Messages =
                 [
                     new SyncAssistantChatMessage
@@ -580,7 +585,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             CanPark: approvals?.CanPark == true,
             // Riding on the same store and for the same reason: read ambiently it would tell a CHILD run that
             // somebody is watching it. A null store is false, i.e. delete-like stays a hard denial.
-            IsTopLevelUserRun: approvals?.IsTopLevelUserRun == true));
+            IsTopLevelUserRun: approvals?.IsTopLevelUserRun == true,
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pending.TargetPath)));
 
         return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
     }
@@ -745,6 +751,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 LastAccessedAt = now,
                 WindowMode = WindowMode.Assistant.ToString(),
                 ProviderId = request.Provider.Id,
+                WorkingDirectory = request.WorkingSubpath,
                 Messages =
                 [
                     new SyncAssistantChatMessage

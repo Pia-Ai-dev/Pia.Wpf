@@ -35,6 +35,9 @@ public class NamingConventionTests
             "Planner", "Orchestrator", "Coordinator", "Verifier", "Launcher", "Executor", "Context",
             "Provisioner", "Session", "Sessions", "Resampler", "Reconciler", "Pool", "Throttle", "Cache",
             "Lease", "Recorder", "Numbering", "Downloader", "Relay",
+            // An audit trail and a user-facing state signal are named for what they are; "…LogService" would
+            // name the layer instead of the thing.
+            "Log", "Indicator",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)

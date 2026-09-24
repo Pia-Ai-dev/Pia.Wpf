@@ -36,11 +36,15 @@ public sealed class AgentVerifierTests : IDisposable
     private static AiProvider Provider() => new() { Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
     private static Persona Persona() => new() { Name = "Pia", SystemPrompt = "sys" };
 
+    /// <summary>Two steps deliberately: a lone step naming no artifact is the shape AgentVerifier skips
+    /// outright, so a one-step context here would assert against a turn that never runs.</summary>
     private static RunContext Ctx()
     {
         var c = new RunContext("build a thing", RunProfile.Interactive);
         c.RecordStep(new AgentStep { Ordinal = 0, Title = "A", Intent = "ia" },
             new StepTurnResult(true, false, null, "step result text", null, Guid.NewGuid(), Guid.NewGuid()));
+        c.RecordStep(new AgentStep { Ordinal = 1, Title = "B", Intent = "ib" },
+            new StepTurnResult(true, false, null, "second step result text", null, Guid.NewGuid(), Guid.NewGuid()));
         return c;
     }
 

@@ -1,7 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
@@ -65,7 +64,12 @@ public partial class WindowManagerService : IWindowManagerService
 
             existing.Window.Show();
             existing.Window.Visibility = Visibility.Visible;
-            existing.Window.WindowState = WindowState.Normal;
+
+            // Only a minimized window needs its state changed. Forcing Normal unconditionally un-maximized
+            // a window that was already up — every in-window navigation (a Flow card's "open chat") calls here.
+            if (existing.Window.WindowState == WindowState.Minimized)
+                existing.Window.WindowState = existing.RestoreState;
+
             existing.Window.Topmost = true;
             existing.Window.Activate();
             existing.Window.Focus();
@@ -101,12 +105,8 @@ public partial class WindowManagerService : IWindowManagerService
 
             _logger.LogTrace("Window {Mode} StateChanged to {State}", mode, window.WindowState);
 
-            if (window.WindowState == WindowState.Minimized)
-            {
-                window.Dispatcher.BeginInvoke(
-                    () => HideWindow(mode),
-                    DispatcherPriority.ContextIdle);
-            }
+            if (window.WindowState != WindowState.Minimized)
+                managed.RestoreState = window.WindowState;
         };
 
         if (_windows.Values.Any(w => w != managed && w.Window.Visibility == Visibility.Visible))
@@ -199,6 +199,17 @@ public partial class WindowManagerService : IWindowManagerService
         }
     }
 
+    public void ShowAssistantScreenCapturePicker()
+    {
+        ShowWindow(WindowMode.Assistant);
+
+        if (!_windows.TryGetValue(WindowMode.Assistant, out var managed))
+            return;
+
+        var navigationService = managed.Scope.ServiceProvider.GetRequiredService<INavigationService>();
+        navigationService.NavigateTo<AssistantViewModel, ScreenCapturePickerRequest>(new ScreenCapturePickerRequest());
+    }
+
     public void ShowAssistantChat(Guid chatId)
     {
         // Reuse the single assistant window (ShowWindow activates/focuses it), then
@@ -284,16 +295,8 @@ public partial class WindowManagerService : IWindowManagerService
 
         window.Visibility = Visibility.Hidden;
 
-        if (window.WindowState != WindowState.Normal)
-        {
-            window.Dispatcher.BeginInvoke(
-                () =>
-                {
-                    if (window.Visibility == Visibility.Hidden)
-                        window.WindowState = WindowState.Normal;
-                },
-                DispatcherPriority.ContextIdle);
-        }
+        // Leave Minimized alone — WPF forwards a WindowState change to Win32 only while the window is visible,
+        // so clearing it here would move the property but not WS_MINIMIZE and the next show comes back iconic.
 
         WindowVisibilityChanged?.Invoke(this, EventArgs.Empty);
 
@@ -327,6 +330,12 @@ public partial class WindowManagerService : IWindowManagerService
     {
         return _windows.TryGetValue(mode, out var managed)
             && managed.Window.Visibility == Visibility.Visible;
+    }
+
+    public bool IsMinimized(WindowMode mode)
+    {
+        return _windows.TryGetValue(mode, out var managed)
+            && managed.Window.WindowState == WindowState.Minimized;
     }
 
     public bool IsInForeground(WindowMode mode)

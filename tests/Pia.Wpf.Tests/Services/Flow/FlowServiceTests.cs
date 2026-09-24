@@ -300,4 +300,112 @@ public class FlowServiceTests
         Assert.False(service.Snapshot[0].Durable);
         Assert.DoesNotContain(item.Id, persistence.Store.Keys);
     }
+    private static FlowItemDraft Persistent(FlowSource source, FlowSeverity severity, string key) => new()
+    {
+        Severity = severity,
+        Source = source,
+        Title = key,
+        Lifetime = FlowLifetime.Persistent,
+        DedupKey = key,
+        RequestDurable = true,
+    };
+
+    [Fact]
+    public void Sweep_RemovesPersistentPastItsRetentionAge()
+    {
+        var service = Create(out var persistence);
+        var item = service.Publish(Persistent(FlowSource.ScheduledJob, FlowSeverity.Success, "job-1"));
+
+        Assert.True(service.Sweep(item.CreatedAt + TimeSpan.FromDays(7) + TimeSpan.FromSeconds(1)));
+        Assert.Empty(service.Snapshot);
+        Assert.DoesNotContain(item.Id, persistence.Store.Keys);
+    }
+
+    [Fact]
+    public void Sweep_BeforeRetentionAge_KeepsPersistent()
+    {
+        var service = Create(out _);
+        var item = service.Publish(Persistent(FlowSource.ScheduledJob, FlowSeverity.Success, "job-1"));
+
+        Assert.False(service.Sweep(item.CreatedAt + TimeSpan.FromDays(7) - TimeSpan.FromSeconds(1)));
+        Assert.Single(service.Snapshot);
+    }
+
+    [Fact]
+    public void Sweep_NeverRemovesActionRequired()
+    {
+        var service = Create(out _);
+        var item = service.Publish(Persistent(FlowSource.AgentRun, FlowSeverity.ActionRequired, "run-1"));
+
+        Assert.False(service.Sweep(item.CreatedAt + TimeSpan.FromDays(3650)));
+        Assert.Single(service.Snapshot);
+    }
+
+    [Fact]
+    public void Sweep_RemovesReminder_TheOneActionRequiredCarveOut()
+    {
+        var service = Create(out _);
+        var item = service.Publish(Persistent(FlowSource.Reminder, FlowSeverity.ActionRequired, "rem-1"));
+
+        Assert.False(service.Sweep(item.CreatedAt + TimeSpan.FromDays(30) - TimeSpan.FromSeconds(1)));
+        Assert.True(service.Sweep(item.CreatedAt + TimeSpan.FromDays(30) + TimeSpan.FromSeconds(1)));
+        Assert.Empty(service.Snapshot);
+    }
+
+    [Fact]
+    public void Sweep_NeverRemovesTodoDeadline()
+    {
+        var service = Create(out _);
+        var item = service.Publish(EntityBacked("todo-1"));
+
+        Assert.False(service.Sweep(item.CreatedAt + TimeSpan.FromDays(3650)));
+        Assert.Single(service.Snapshot);
+    }
+
+    [Fact]
+    public async Task LoadAsync_DropsRowsPastRetention_AndDeletesThem()
+    {
+        var persistence = new FakeFlowPersistenceStore();
+        var stale = Row(FlowSource.BackgroundChat, FlowSeverity.Success, DateTimeOffset.Now - TimeSpan.FromDays(15));
+        var fresh = Row(FlowSource.BackgroundChat, FlowSeverity.Success, DateTimeOffset.Now - TimeSpan.FromDays(13));
+        persistence.Store[stale.Id] = stale;
+        persistence.Store[fresh.Id] = fresh;
+
+        var service = new FlowService(persistence, NullLogger<FlowService>.Instance);
+        await service.LoadAsync();
+
+        Assert.Single(service.Snapshot);
+        Assert.Equal(fresh.Id, service.Snapshot[0].Id);
+        Assert.DoesNotContain(stale.Id, persistence.Store.Keys);
+    }
+
+    [Fact]
+    public async Task LoadAsync_EvictsPastCapacity()
+    {
+        var persistence = new FakeFlowPersistenceStore();
+        for (var i = 0; i < FlowService.Capacity + 5; i++)
+        {
+            var row = Row(FlowSource.BackgroundChat, FlowSeverity.Success, DateTimeOffset.Now - TimeSpan.FromDays(1));
+            row.IsRead = true; // only read non-protected items are evictable
+            persistence.Store[row.Id] = row;
+        }
+
+        var service = new FlowService(persistence, NullLogger<FlowService>.Instance);
+        await service.LoadAsync();
+
+        Assert.Equal(FlowService.Capacity, service.Snapshot.Count);
+    }
+
+    private static FlowItem Row(FlowSource source, FlowSeverity severity, DateTimeOffset createdAt) => new()
+    {
+        Id = Guid.NewGuid(),
+        CreatedAt = createdAt,
+        Severity = severity,
+        Source = source,
+        Title = "t",
+        Body = string.Empty,
+        DedupKey = Guid.NewGuid().ToString(),
+        Lifetime = FlowLifetime.Persistent,
+        Durable = true,
+    };
 }

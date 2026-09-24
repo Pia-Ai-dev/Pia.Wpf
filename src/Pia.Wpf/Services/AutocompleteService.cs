@@ -7,7 +7,7 @@ namespace Pia.Services;
 
 public class AutocompleteService : IAutocompleteService
 {
-    // Always-available domains. Files and Assignment are appended dynamically (see
+    // Always-available domains. Files and Assignment are spliced in dynamically (see
     // GetTier1Suggestions), because tagging either restricts the turn's toolset to that
     // domain's tools — which the plugin host doesn't register with no sandbox folder set,
     // or with no server-offered assignment surface, leaving an empty toolset.
@@ -33,6 +33,13 @@ public class AutocompleteService : IAutocompleteService
     // int.MaxValue just means "no additional cap on the service side." The popup list is
     // UI-virtualized, so rendering a full 500-item result stays cheap.
     private const int AllFileResults = int.MaxValue;
+
+    // browse_index re-reads every vault record from disk, and the picker asks once per 100 ms keystroke
+    // pause, so the listing is held briefly. Staleness costs a topic created seconds ago.
+    private static readonly TimeSpan MemoryEntryTtl = TimeSpan.FromSeconds(5);
+
+    private IReadOnlyList<(string Label, Guid? Id)>? _memoryEntries;
+    private DateTime _memoryEntriesAt;
 
     private readonly IMemoryService _memoryService;
     private readonly ITodoService _todoService;
@@ -68,9 +75,10 @@ public class AutocompleteService : IAutocompleteService
 
     private IReadOnlyList<AutocompleteSuggestion> GetTier1Suggestions(string? filter)
     {
+        // Files leads so the popup's index-0 default preselects it on a bare @.
         IEnumerable<AutocompleteSuggestion> tier1 = BaseTier1Suggestions;
         if (_filesToolHandler.IsAvailable)
-            tier1 = tier1.Append(FilesTier1Suggestion);
+            tier1 = tier1.Prepend(FilesTier1Suggestion);
         if (_assignmentSurface.Surface.Available)
             tier1 = tier1.Append(AssignmentTier1Suggestion);
 
@@ -97,20 +105,54 @@ public class AutocompleteService : IAutocompleteService
 
     private async Task<IReadOnlyList<AutocompleteSuggestion>> GetMemorySuggestionsAsync(string? filter)
     {
-        var summaries = await _memoryService.GetMemorySummariesAsync();
-        return summaries
-            .Where(s => string.IsNullOrEmpty(filter) ||
-                        s.Label.Contains(filter, StringComparison.OrdinalIgnoreCase))
+        var entries = await GetMemoryEntriesAsync();
+        return entries
+            .Where(e => string.IsNullOrEmpty(filter) ||
+                        e.Label.Contains(filter, StringComparison.OrdinalIgnoreCase))
             .Take(MaxResults)
-            .Select(s => new AutocompleteSuggestion
+            .Select(e => new AutocompleteSuggestion
             {
-                DisplayText = s.Label,
+                DisplayText = e.Label,
                 Icon = SymbolRegular.BrainCircuit24,
                 Domain = AtCommandDomain.Memory,
-                ItemId = s.Id,
+                ItemId = e.Id,
                 IsTier1 = false
             })
             .ToArray();
+    }
+
+    // The vault is what recall and read_topic read, so its topics and records are what the picker has to
+    // offer. The legacy Memories table is unioned in behind them: the first-run wizard still writes the
+    // profile there and the migration into the vault is a one-shot.
+    private async Task<IReadOnlyList<(string Label, Guid? Id)>> GetMemoryEntriesAsync()
+    {
+        if (_memoryEntries is { } cached && DateTime.UtcNow - _memoryEntriesAt < MemoryEntryTtl)
+            return cached;
+
+        var entries = new List<(string Label, Guid? Id)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (await _memoryService.BrowseIndexAsync() is { } index)
+        {
+            foreach (var entry in index.Categories.SelectMany(c => c.Entries))
+            {
+                if (!string.IsNullOrWhiteSpace(entry.Title) && seen.Add(entry.Title))
+                    entries.Add((entry.Title, null));
+            }
+        }
+
+        if (await _memoryService.GetMemorySummariesAsync() is { } summaries)
+        {
+            foreach (var summary in summaries)
+            {
+                if (!string.IsNullOrWhiteSpace(summary.Label) && seen.Add(summary.Label))
+                    entries.Add((summary.Label, summary.Id));
+            }
+        }
+
+        _memoryEntries = entries;
+        _memoryEntriesAt = DateTime.UtcNow;
+        return entries;
     }
 
     private async Task<IReadOnlyList<AutocompleteSuggestion>> GetTodoSuggestionsAsync(string? filter)

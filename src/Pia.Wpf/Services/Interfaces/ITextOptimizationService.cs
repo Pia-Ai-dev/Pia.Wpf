@@ -17,6 +17,14 @@ public interface ITextOptimizationService
     Task<string> GeneratePromptAsync(string styleDescription, Guid? providerId = null);
 
     /// <summary>
+    /// Drafts a template's name, description and prompt from a short style description.
+    /// <paramref name="providerId"/> null ⇒ Optimize-mode default. A Pia Cloud provider answers through
+    /// its dedicated prompt endpoint, which returns a prompt and nothing else, so only
+    /// <see cref="TemplateDraft.Prompt"/> is filled there.
+    /// </summary>
+    Task<TemplateDraft> GenerateTemplateDraftAsync(string styleDescription, Guid? providerId = null);
+
+    /// <summary>
     /// Drafts a persona's fields (name, tagline, system prompt, emoji, accent colour, expertise)
     /// from a short free-text description. <paramref name="providerId"/> null ⇒ Assistant-mode default.
     /// </summary>

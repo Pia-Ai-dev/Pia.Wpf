@@ -1,4 +1,5 @@
 using Pia.Models;
+using Pia.Services.Screen;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 
@@ -7,7 +8,6 @@ namespace Pia.Services.Interfaces;
 public interface IDialogService
 {
     Task<bool> ShowProviderEditDialogAsync(ProviderEditModel provider, IProviderService providerService);
-    Task<bool> ShowTemplateEditDialogAsync(TemplateEditModel template);
     Task<bool> ShowTodoEditDialogAsync(TodoEditModel todo);
     Task<bool> ShowMeetingSaveDialogAsync(MeetingSaveEditModel meeting);
     /// <summary>True when the user chose Send; the report itself is built by <see cref="IAiFeedbackService"/>.</summary>
@@ -33,6 +33,14 @@ public interface IDialogService
     /// <summary>True once the user affirmed the selection; the caller then awaits
     /// <see cref="AssignmentConsentViewModel.SendAsync"/> and surfaces its <c>ResultMessage</c>.</summary>
     Task<bool> ShowAssignmentConsentDialogAsync(AssignmentConsentViewModel viewModel);
+
+    /// <summary>True when the user pressed Capture; the caller then awaits
+    /// <see cref="ScreenCapturePickerViewModel.CaptureSelectedAsync"/> for the frame.</summary>
+    Task<bool> ShowScreenCapturePickerDialogAsync(ScreenCapturePickerViewModel viewModel);
+
+    /// <summary>The window the user named, or null when they backed out. Nothing is captured — the same
+    /// picker is used only to spell a window that is already open.</summary>
+    Task<CaptureTarget?> ShowScreenCaptureWindowPickerAsync();
 
     /// <summary>
     /// Shows the Memory-vault help as a modal dialog overlay (rather than an inline card that reflows

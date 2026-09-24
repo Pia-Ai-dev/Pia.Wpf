@@ -477,6 +477,8 @@ public class RoutineBlueprintCatalogTests
             localization,
             Substitute.For<IPluginService>(),
             Substitute.For<IBrowserProvisioner>(),
+            Substitute.For<IWorkingDirectoryService>(),
+            Substitute.For<ISettingsService>(),
             NullLogger<RoutinesViewModel>.Instance);
     }
 

@@ -41,6 +41,21 @@ internal static class ReasoningEffortMapping
         };
     }
 
+    // Anthropic's ladder is the only one here with a rung above high, so XHigh survives. None returns null
+    // and the caller disables thinking instead — effort alone never turns it off. Not gated on tools.
+    public static string? ToAnthropic(ReasoningEffort? effort)
+    {
+        if (effort is null or ReasoningEffort.None) return null;
+
+        return effort switch
+        {
+            ReasoningEffort.Minimal or ReasoningEffort.Low => "low",
+            ReasoningEffort.Medium => "medium",
+            ReasoningEffort.XHigh => "xhigh",
+            _ => "high",
+        };
+    }
+
     // Omit the parameter when tools are present, when effort is unset, or when
     // effort is None — not all models accept "none" as a valid value.
     private static bool ShouldSend(ReasoningEffort? effort, bool hasTools)

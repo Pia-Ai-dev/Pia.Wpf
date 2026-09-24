@@ -1,0 +1,66 @@
+name: Prune Releases
+
+# Every push to main cuts a release, so the list runs to dozens of entries carrying ~1.1 GB of
+# assets each. Weekly, drop the ones that are both old and superseded. The updater is unaffected:
+# Velopack reads only the newest release's releases.win.json, and pia-ai.de serves its own copies.
+# See scripts/Prune-Releases.ps1 for why the tags stay.
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only print the plan'
+        type: boolean
+        required: false
+        default: true
+      keep_minimum:
+        description: 'Newest stable releases to keep regardless of age'
+        required: false
+        default: '5'
+      max_age_days:
+        description: 'Keep anything published within this many days'
+        required: false
+        default: '90'
+
+permissions:
+  contents: write
+
+# Deliberately NOT the release-${{ github.ref }} group Build and Release uses. A group holds one
+# running plus one pending run and cancels the pending one when a third arrives, so sharing it
+# would let a Monday prune cancel a queued release build - a push to main that silently never
+# ships. Racing a publish is harmless anyway: the newest release is protected three times over
+# (isLatest, newest-N, inside the window) and drafts are skipped.
+concurrency:
+  group: prune-releases
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prune releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A scheduled run sends no inputs, so every one of these is empty then - hence the
+          # fallbacks, and hence DRY_RUN defaulting to a real prune rather than to a no-op.
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          KEEP_MINIMUM: ${{ inputs.keep_minimum || 5 }}
+          MAX_AGE_DAYS: ${{ inputs.max_age_days || 90 }}
+        run: |
+          # A hashtable, not an array: array splatting binds positionally and lands the repo name
+          # in -KeepMinimum.
+          $params = @{
+            Repo        = $env:REPO
+            KeepMinimum = [int]$env:KEEP_MINIMUM
+            MaxAgeDays  = [int]$env:MAX_AGE_DAYS
+            Apply       = ($env:DRY_RUN -ne 'true')
+          }
+          ./scripts/Prune-Releases.ps1 @params

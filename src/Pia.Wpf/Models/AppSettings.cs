@@ -68,9 +68,10 @@ public class AppSettings
     public Dictionary<Guid, double> TodoColumnWidths { get; set; } = new();
     public bool HasCompletedFirstRunWizard { get; set; } = false;
     public UserOperatingMode? UserOperatingMode { get; set; }
-    public KeyboardShortcut OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
+    public KeyboardShortcut? OptimizeHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltO();
     public KeyboardShortcut? AssistantHotkey { get; set; } = KeyboardShortcut.DefaultCtrlAltP();
     public KeyboardShortcut? FastPathHotkey { get; set; }
+    public KeyboardShortcut? ScreenCaptureHotkey { get; set; }
     public bool AutoCaptureSelectedText { get; set; } = true;
     public TargetLanguage? TargetLanguage { get; set; }
     public TargetSpeechLanguage TargetSpeechLanguage { get; set; } = TargetSpeechLanguage.Auto;
@@ -120,7 +121,7 @@ public class AppSettings
 
     // TTS settings
     public bool TtsEnabled { get; set; } = false;
-    public string TtsVoiceModelKey { get; set; } = "en_US-lessac-medium";
+    public string TtsVoiceModelKey { get; set; } = "en_GB-alba-medium";
 
     // Meeting attendee / live transcription settings
 
@@ -167,9 +168,10 @@ public class AppSettings
     // the plain microphone on its own when unavailable. Local-only (no SyncSettings mirror).
     public bool MicEchoCancellation { get; set; } = true;
 
-    // The escape hatch for a meeting where attribution is visibly wrong: a confidently mislabelled
-    // transcript is worse than an unlabelled one. Local-only (no SyncSettings mirror).
-    public bool MeetingSuppressSpeakerLabels { get; set; } = false;
+    // Attribution derives a voice embedding per participant, so it stays opt-in. Also the escape hatch
+    // for a meeting where it is visibly wrong: a confidently mislabelled transcript is worse than an
+    // unlabelled one. Local-only (no SyncSettings mirror).
+    public bool MeetingSuppressSpeakerLabels { get; set; } = true;
     public float SpeakerEmbeddingThreshold { get; set; } = 0.50f;
     // Caps how many distinct speakers diarization may create in one meeting; 0 = no limit. Local-only.
     public int MeetingMaxSpeakers { get; set; } = 0;
@@ -215,7 +217,9 @@ public class AppSettings
     public bool AssistantSuggestionsEnabled { get; set; } = false;
 
     /// <summary>Global last-used Chat/Agent lever default (R15). Not per-chat, not per-mode. false = Chat.</summary>
-    public bool AssistantAgentModeDefault { get; set; } = false;
+    // Whether a NEW chat starts on Agent rather than Chat. Deliberately explicit: the lever itself is
+    // per-chat and never writes here, so trying Agent once cannot silently arm every later chat.
+    public bool AssistantNewChatAgentMode { get; set; } = false;
 
     /// <summary>Set by the confirm dialog's "don't ask again"; device-local (never in the sync projection).</summary>
     public bool AssistantBackgroundRunConfirmSuppressed { get; set; } = false;
@@ -237,9 +241,14 @@ public class AppSettings
     // reasoning effort as soon as tools are attached (AzureOpenAI / Ollama / Mistral — see
     // IAiProviderHandler.DropsReasoningEffortWithTools) is split into TWO provider turns: a tool-FREE
     // free-form reasoning turn at the configured effort, then the constrained emit_plan turn seeded with
-    // that analysis. Default OFF: it doubles the plan-turn cost, and the plan turn already costs ≥2 rounds
-    // (§16 R6). Global, not per-provider — the same answer applies to interactive, detached and scheduled runs.
+    // that analysis. Default OFF: it doubles the plan-turn cost. Global, not per-provider — the same answer
+    // applies to interactive, detached and scheduled runs.
     public bool AgentPlanReasoningTurnEnabled { get; set; } = false;
+
+    // One tool-less classification turn in front of the plan turn, so a goal that needs no plan is answered
+    // as an ordinary chat turn. Costs ~2-3s on real agent work and saves the whole spine on the rest. Here
+    // to be turned OFF: how often the classifier misroutes real agent work is not yet measured.
+    public bool AssistantAgentTriageEnabled { get; set; } = true;
 
     // Batch 04 — per-run autonomy policy default. When true, the preset auto-approves Pia's OWN write tools by
     // CLASS — memory, todo, reminder, scheduling and files — so the caller does not stop at a card for every

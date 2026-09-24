@@ -1025,7 +1025,8 @@ public class PolicyServiceTests : IDisposable
     [
         nameof(AppSettings.AssistantHotkey),
         nameof(AppSettings.FastPathHotkey),
-        nameof(AppSettings.OptimizeHotkey)
+        nameof(AppSettings.OptimizeHotkey),
+        nameof(AppSettings.ScreenCaptureHotkey)
     ];
 
     private const string ReferenceTypedEnforceDocument = """
@@ -1041,7 +1042,8 @@ public class PolicyServiceTests : IDisposable
         "todoColumnWidths": { "55555555-5555-5555-5555-555555555555": 240.0 },
         "assistantHotkey": { "modifiers": "Control, Alt", "key": "J", "virtualKeyCode": 74 },
         "fastPathHotkey": { "modifiers": "Control, Shift", "key": "K", "virtualKeyCode": 75 },
-        "optimizeHotkey": { "modifiers": "Alt", "key": "L", "virtualKeyCode": 76 }
+        "optimizeHotkey": { "modifiers": "Alt", "key": "L", "virtualKeyCode": 76 },
+        "screenCaptureHotkey": { "modifiers": "Control, Shift", "key": "S", "virtualKeyCode": 83 }
       }
     }
     """;

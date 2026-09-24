@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -15,7 +16,9 @@ internal static class AssistantViewModelBuilder
 {
     // Must be called ON the STA thread: the ctor builds ChatTitleChipViewModel, which throws when
     // SynchronizationContext.Current is null. Never touch InputText or force layout — both arm timers or handlers.
-    internal static AssistantViewModel Create()
+    internal static AssistantViewModel Create(
+        ILogger<AssistantViewModel>? logger = null,
+        IElevationService? elevation = null)
     {
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings());
@@ -47,7 +50,7 @@ internal static class AssistantViewModelBuilder
             new InlineUiDispatcher());
 
         return new AssistantViewModel(
-            NullLogger<AssistantViewModel>.Instance,
+            logger ?? NullLogger<AssistantViewModel>.Instance,
             Substitute.For<IAiClientService>(),
             Substitute.For<IProviderService>(),
             Substitute.For<IPersonaService>(),
@@ -78,6 +81,7 @@ internal static class AssistantViewModelBuilder
             Substitute.For<IMarkdownExportService>(),
             Substitute.For<IDialogService>(),
             new InlineUiDispatcher(),
-            Substitute.For<IToolPermissionService>());
+            Substitute.For<IToolPermissionService>(),
+            elevation: elevation);
     }
 }

@@ -1,7 +1,16 @@
 using Microsoft.Extensions.AI;
+using Pia.Services.Plugins;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Interfaces;
+
+/// <summary>What a locally added server is doing right now. <paramref name="DiscoveredTools"/> is everything
+/// it reported; <paramref name="ActiveTools"/> is what survived the allowlist, already prefixed.</summary>
+public sealed record LocalMcpStatus(
+    bool IsRunning,
+    IReadOnlyList<McpProbeTool> DiscoveredTools,
+    IReadOnlyList<string> ActiveTools,
+    string? Error);
 
 /// <summary>One grantable tool as a pre-approval surface sees it — before any call, so with no
 /// <c>PluginToolCall</c> to read the route or the server's hint off.</summary>
@@ -23,13 +32,15 @@ public interface IPluginService
     /// destructive hint; the route is carried for other consumers.</summary>
     IReadOnlyList<ToolCatalogEntry> GetToolCatalog();
 
-    /// <summary>
-    /// True if <paramref name="toolName"/> routes to an MCP handler. MCP tools return an immediate
-    /// result and so bypass the unattended write-gate; they are disabled for headless/scheduled runs
-    /// this milestone. The gate fix for MCP writes is Phase 2.
-    /// </summary>
+    /// <summary>True if <paramref name="toolName"/> routes to an MCP handler — what classifies a call as
+    /// External for <c>ToolAutonomy.Resolve</c>.</summary>
     bool IsMcpTool(string toolName);
-    string GetCombinedSystemPromptAdditions();
+
+    /// <summary>
+    /// A handler owning any tool named in <paramref name="excludedToolNames"/> is skipped whole: a turn that
+    /// withholds a tool family must not carry prose telling the model to use it.
+    /// </summary>
+    string GetCombinedSystemPromptAdditions(IReadOnlySet<string>? excludedToolNames = null);
     Task<(object? Result, PluginToolCall? PendingAction)?> RouteToolCallAsync(
         FunctionCallContent toolCall, CancellationToken ct = default);
     Task InitializePersistedPluginsAsync();
@@ -39,4 +50,18 @@ public interface IPluginService
     void ClearPreferenceChangesAfterSuccessfulPush();
     IReadOnlyList<SyncPlugin> GetAllPluginConfigs();
     Task ShutdownAllAsync();
+
+    /// <summary>MCP servers the user added on this machine, as opposed to the ones an admin pushes down
+    /// sync. Their tool names are prefixed, so they can never collide with a built-in.</summary>
+    IReadOnlyList<SyncPlugin> GetLocalMcpPlugins();
+    LocalMcpDefinition? GetLocalMcpDefinition(Guid pluginId);
+    LocalMcpStatus GetLocalMcpStatus(Guid pluginId);
+
+    /// <summary>Starts the server, lists its tools and shuts it back down, without touching the catalogue.</summary>
+    Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default);
+
+    /// <summary>Adds or replaces a local server, restarting its process. Returns the id, minted when
+    /// <paramref name="pluginId"/> is null.</summary>
+    Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default);
+    Task RemoveLocalMcpAsync(Guid pluginId);
 }

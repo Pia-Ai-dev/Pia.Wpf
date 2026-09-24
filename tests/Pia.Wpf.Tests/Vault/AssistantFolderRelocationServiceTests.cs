@@ -20,6 +20,7 @@ public class AssistantFolderRelocationServiceTests : IDisposable
 {
     private readonly string _profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private readonly string _baseDir;
+    private readonly string _dbDir;
     private readonly string _old;
     private readonly string _new;
     private readonly AppSettings _settings = new();
@@ -36,6 +37,8 @@ public class AssistantFolderRelocationServiceTests : IDisposable
         _baseDir = Path.Combine(_profile, "pia-reloc-" + Guid.NewGuid().ToString("N"));
         _old = Path.Combine(_baseDir, "old");
         _new = Path.Combine(_baseDir, "new");
+        _dbDir = Path.Combine(Path.GetTempPath(), "PiaReloc_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_dbDir);
         Directory.CreateDirectory(Path.Combine(_old, "Vault", "memory"));
         File.WriteAllText(Path.Combine(_old, "Vault", "memory", "m.md"), "---\nid: 1\n---\nhi");
         File.WriteAllText(Path.Combine(_old, "doc.txt"), "hello");
@@ -47,14 +50,15 @@ public class AssistantFolderRelocationServiceTests : IDisposable
         _paths = new VaultPathProvider(AssistantWorkspace.VaultRootFor(_old));
         _watcher = new VaultWatcher(_indexer, _paths, NullLogger<VaultWatcher>.Instance);
 
-        // AutoIngestService is sealed/concrete, so a REAL instance over a temp-db state store and a
-        // recording ingest stub — the history.db lives at _baseDir root so the move never touches it.
+        // AutoIngestService is sealed/concrete, so a REAL instance over a recording ingest stub. Its
+        // state db sits outside _baseDir: the move must not see it, and a stuck handle must not strand
+        // a directory in the user profile.
         var providers = Substitute.For<IProviderService>();
         providers.GetDefaultProviderAsync().Returns(
             new AiProvider { Name = "stub", Endpoint = "http://localhost" });
         _autoIngest = new AutoIngestService(
             _ingest,
-            new IngestStateStore($"Data Source={Path.Combine(_baseDir, "history.db")}"),
+            new IngestStateStore($"Data Source={Path.Combine(_dbDir, "history.db")}"),
             new VaultStore(_paths.VaultRoot, new MarkdownVaultParser()),
             providers,
             _settingsService,
@@ -71,6 +75,7 @@ public class AssistantFolderRelocationServiceTests : IDisposable
         _autoIngest.Dispose();
         _watcher.Dispose();
         TempPath.Remove(_baseDir);
+        TempPath.Remove(_dbDir);
     }
 
     /// <summary>Records ingest calls; always succeeds touching one topic page.</summary>

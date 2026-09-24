@@ -77,4 +77,35 @@ public class ToolPermissionServiceDeleteLikeTests
     {
         Assert.False(ToolPermissionService.IsPresumedExternalDeleteLike(toolName));
     }
+
+    /// <summary>Each name is an arm of its handler's dispatch switch that returns a result and no pending
+    /// action, so no grant tier is ever consulted for it.</summary>
+    [Theory]
+    [InlineData("read_file")]
+    [InlineData("search_files")]
+    [InlineData("browse_index")]
+    [InlineData("read_chat")]
+    [InlineData("query_todos")]
+    [InlineData("git_status")]
+    [InlineData("git_diff")]
+    [InlineData("READ_FILE")]
+    public void IsReadOnlyBuiltIn_TrueForToolsThatNeverReachTheGate(string toolName)
+    {
+        Assert.True(ToolPermissionService.IsReadOnlyBuiltIn(toolName));
+    }
+
+    /// <summary>The write half, plus an MCP name we cannot classify: both must stay grantable.</summary>
+    [Theory]
+    [InlineData("write_file")]
+    [InlineData("delete_file")]
+    [InlineData("git_commit")]
+    [InlineData("remember")]
+    [InlineData("create_todo")]
+    [InlineData("screen_capture")]
+    [InlineData("some_mcp_read_tool")]
+    [InlineData(null)]
+    public void IsReadOnlyBuiltIn_FalseForEverythingElse(string? toolName)
+    {
+        Assert.False(ToolPermissionService.IsReadOnlyBuiltIn(toolName));
+    }
 }

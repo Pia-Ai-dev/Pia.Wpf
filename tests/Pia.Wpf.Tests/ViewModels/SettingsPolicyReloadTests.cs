@@ -7,6 +7,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Screen;
 using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
@@ -80,17 +81,18 @@ public class SettingsPolicyReloadTests : IDisposable
         OptimizeSettingsViewModel Optimize,
         PersonaSettingsViewModel Persona,
         PrivacySettingsViewModel Privacy,
-        ProvidersSettingsViewModel Providers)
+        ProvidersSettingsViewModel Providers,
+        TemplatesSettingsViewModel Templates)
     {
         public IEnumerable<IDisposable> All =>
-            [Account, Assistant, General, Meeting, Optimize, Persona, Privacy, Providers];
+            [Account, Assistant, General, Meeting, Optimize, Persona, Privacy, Providers, Templates];
 
         public IEnumerable<PolicyLock> AllLocks =>
             [Account.Policy, Assistant.Policy, General.Policy, Meeting.Policy, Optimize.Policy,
-             Persona.Policy, Privacy.Policy, Providers.Policy];
+             Persona.Policy, Privacy.Policy, Providers.Policy, Templates.Policy];
     }
 
-    /// <summary>All eight share one settings service and one policy service, exactly as
+    /// <summary>All nine share one settings service and one policy service, exactly as
     /// <see cref="SettingsViewModel"/> wires them, so one raise exercises every handler.</summary>
     private static Suite CreateSuite()
     {
@@ -113,10 +115,12 @@ public class SettingsPolicyReloadTests : IDisposable
             null!, logger, Substitute.For<IProviderService>(), settings, dialogs, snackbar,
             Substitute.For<IAuthService>(), localization, policy);
 
-        var optimize = new OptimizeSettingsViewModel(
-            providers, logger, Substitute.For<ITemplateService>(), settings,
-            Substitute.For<ITextOptimizationService>(), dialogs, snackbar, localization, policy,
-            Substitute.For<IAuthService>());
+        var templates = new TemplatesSettingsViewModel(
+            logger, Substitute.For<ITemplateService>(), settings,
+            Substitute.For<ITextOptimizationService>(), snackbar, localization,
+            Substitute.For<IAuthService>(), policy, Substitute.For<IAdvancedCreationLauncher>());
+
+        var optimize = new OptimizeSettingsViewModel(providers, templates, logger, settings, policy);
 
         var persona = new PersonaSettingsViewModel(
             logger, Substitute.For<IPersonaService>(), Substitute.For<IProviderService>(),
@@ -129,7 +133,7 @@ public class SettingsPolicyReloadTests : IDisposable
             providers, persona,
             new ToolPermissionsSettingsViewModel(
                 Substitute.For<IToolPermissionService>(), Substitute.For<IPluginService>(), logger),
-            meeting, logger, settings, Substitute.For<IAssistantChatService>(), dialogs, localization,
+            SettingsSubViewModels.McpVm(), meeting, logger, settings, Substitute.For<IAssistantChatService>(), dialogs, localization,
             Substitute.For<IAssistantFolderRelocationService>(),
             Substitute.For<Pia.Services.IWorkingDirectoryService>(), policy);
 
@@ -153,7 +157,7 @@ public class SettingsPolicyReloadTests : IDisposable
                 NullLogger<E2EEOnboardingViewModel>.Instance));
 
         return new Suite(settings, policy, localization, account, assistant, general, meeting, optimize,
-            persona, privacy, providers);
+            persona, privacy, providers, templates);
     }
 
     private static void MutateEverySurface(AppSettings stored)
@@ -167,7 +171,10 @@ public class SettingsPolicyReloadTests : IDisposable
         stored.Privacy.TokenizationEnabled = true;
         stored.UseSameProviderForAllModes = false;
         stored.AllowProviderManagement = false;
+        stored.DefaultTemplateId = MutatedTemplateId;
     }
+
+    private static readonly Guid MutatedTemplateId = new("8f1d6c2a-3b47-4e58-9a01-2c5d7e9f0b31");
 
     [Fact]
     public void SettingsChanged_ReloadsEverySettingsViewModel()
@@ -184,6 +191,7 @@ public class SettingsPolicyReloadTests : IDisposable
         Assert.False(suite.Privacy.TokenizationEnabled);
         Assert.True(suite.Providers.UseSameProviderForAllModes);
         Assert.True(suite.Providers.CanManageProviders);
+        Assert.NotEqual(MutatedTemplateId, suite.Templates.DefaultTemplateId);
 
         MutateEverySurface(suite.Settings.Stored);
         suite.Settings.RaiseSettingsChanged();
@@ -197,6 +205,7 @@ public class SettingsPolicyReloadTests : IDisposable
         Assert.True(suite.Privacy.TokenizationEnabled);
         Assert.False(suite.Providers.UseSameProviderForAllModes);
         Assert.False(suite.Providers.CanManageProviders);
+        Assert.Equal(MutatedTemplateId, suite.Templates.DefaultTemplateId);
     }
 
     [Fact]
@@ -284,7 +293,7 @@ public class SettingsPolicyReloadTests : IDisposable
 
         // Non-vacuity: the hook is live before the dispose, so the unchanged count below is the unsubscribe.
         suite.Policy.LocksChanged += Raise.EventWith(EventArgs.Empty);
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
 
         foreach (var vm in suite.All)
             vm.Dispose();
@@ -293,7 +302,7 @@ public class SettingsPolicyReloadTests : IDisposable
         suite.Settings.RaiseSettingsChanged();
         suite.Policy.LocksChanged += Raise.EventWith(EventArgs.Empty);
 
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
         Assert.False(suite.Account.TrustSelfSignedCertificates);
         Assert.NotEqual(7, suite.Assistant.AgentMaxSteps);
         Assert.False(suite.General.AutoCaptureSelectedText);
@@ -347,7 +356,7 @@ public class SettingsPolicyReloadTests : IDisposable
         }
     }
 
-    /// <summary>Reflected rather than listed: a ninth settings VM inherits the PolicyLock behaviour for
+    /// <summary>Reflected rather than listed: a tenth settings VM inherits the PolicyLock behaviour for
     /// free but not the unsubscribe, and its handler would outlive its window.</summary>
     [Fact]
     public void EverySettingsViewModelHoldingAPolicyLock_IsDisposable()
@@ -357,7 +366,7 @@ public class SettingsPolicyReloadTests : IDisposable
                 ?.PropertyType == typeof(PolicyLock))
             .ToList();
 
-        Assert.Equal(8, holders.Count);
+        Assert.Equal(9, holders.Count);
 
         var leaking = holders.Where(t => !typeof(IDisposable).IsAssignableFrom(t))
             .Select(t => t.Name).ToArray();
@@ -370,13 +379,13 @@ public class SettingsPolicyReloadTests : IDisposable
     }
 
     /// <summary>Meeting and Privacy are constructed as locals and reachable only through another sub-VM, so
-    /// only the real graph proves the window's one Dispose reaches all eight.</summary>
+    /// only the real graph proves the window's one Dispose reaches all nine.</summary>
     private sealed record Page(SettingsViewModel Root, FakeSettingsService Settings, IPolicyService Policy)
     {
         public IEnumerable<PolicyLock> AllLocks =>
             [Root.AccountVm.Policy, Root.AssistantVm.Policy, Root.AssistantVm.MeetingVm.Policy,
              Root.GeneralVm.Policy, Root.GeneralVm.PrivacyVm.Policy, Root.OptimizeVm.Policy,
-             Root.PersonasVm.Policy, Root.ProvidersVm.Policy];
+             Root.PersonasVm.Policy, Root.ProvidersVm.Policy, Root.TemplatesVm.Policy];
     }
 
     private static Page CreatePage()
@@ -425,7 +434,9 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<IToolPermissionService>(),
             Substitute.For<IAssistantFolderRelocationService>(),
             Substitute.For<Pia.Services.IWorkingDirectoryService>(),
-            Substitute.For<IDiagnosticsExportService>());
+            Substitute.For<IDiagnosticsExportService>(),
+            EmptyScreenCaptureAllowlist(),
+            Substitute.For<IAdvancedCreationLauncher>());
 
         return new Page(root, settings, policy);
     }
@@ -450,7 +461,7 @@ public class SettingsPolicyReloadTests : IDisposable
 
         // Non-vacuity: every handler is live before the dispose, so the unchanged values below are the
         // unsubscribe and not a subscription that was never made.
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
         Assert.True(root.AccountVm.TrustSelfSignedCertificates);
         Assert.Equal(7, root.AssistantVm.AgentMaxSteps);
         Assert.Equal(5, root.AssistantVm.MeetingVm.MeetingMaxSpeakers);
@@ -477,7 +488,7 @@ public class SettingsPolicyReloadTests : IDisposable
         page.Settings.RaiseSettingsChanged();
         page.Policy.LocksChanged += Raise.EventWith(EventArgs.Empty);
 
-        Assert.Equal(8, indexerRaises);
+        Assert.Equal(9, indexerRaises);
         Assert.True(root.AccountVm.TrustSelfSignedCertificates);
         Assert.Equal(7, root.AssistantVm.AgentMaxSteps);
         Assert.Equal(5, root.AssistantVm.MeetingVm.MeetingMaxSpeakers);
@@ -487,6 +498,14 @@ public class SettingsPolicyReloadTests : IDisposable
         Assert.False(root.PersonasVm.CanManagePersonas);
         Assert.False(root.ProvidersVm.UseSameProviderForAllModes);
         Assert.False(root.ProvidersVm.CanManageProviders);
+    }
+
+    /// <summary>An unstubbed <c>ListAsync</c> hands back a null Task, which the allowlist load would await.</summary>
+    private static IScreenCaptureAllowlistStore EmptyScreenCaptureAllowlist()
+    {
+        var store = Substitute.For<IScreenCaptureAllowlistStore>();
+        store.ListAsync().Returns(Task.FromResult<IReadOnlyList<ScreenCaptureAllowlistEntry>>([]));
+        return store;
     }
 
     /// <summary>What the reload's safety rests on: with the read warm, a ViewModel's save writes

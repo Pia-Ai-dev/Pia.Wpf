@@ -133,6 +133,13 @@
                 Margin="0,0,0,16" />
     </StackPanel>
 
+    <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=PromptCache}">
+      <CheckBox Content="{loc:Str Dialog_ProviderEdit_PromptCache}"
+                IsChecked="{Binding EnablePromptCache}"
+                AutomationProperties.AutomationId="ProviderEdit_PromptCache"
+                Margin="0,0,0,16" />
+    </StackPanel>
+
     <StackPanel Visibility="{Binding ProviderType, Converter={StaticResource ProviderTypeToVisibilityConverter}, ConverterParameter=MistralAgentId}">
       <TextBlock Text="{loc:Str Dialog_ProviderEdit_MistralAgentId}"
                  FontWeight="SemiBold"

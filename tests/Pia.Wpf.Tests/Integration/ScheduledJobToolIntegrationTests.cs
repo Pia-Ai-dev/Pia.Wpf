@@ -75,7 +75,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         var providerSvc = new StubProviderService();
         var l10n = new StubLocalization();
         var toolHandler = new ScheduledJobToolHandler(
-            jobs, providerSvc, l10n, NullLogger<ScheduledJobToolHandler>.Instance);
+            jobs, providerSvc, bg, l10n, NullLogger<ScheduledJobToolHandler>.Instance);
 
         var createCall = new FunctionCallContent("call1", "create_scheduled_research",
             new Dictionary<string, object?>
@@ -185,7 +185,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
         public Task<AiProvider?> GetDefaultProviderForModeAsync(WindowMode mode) => Task.FromResult<AiProvider?>(null);
         public Task<AiProvider> AddProviderAsync(AiProvider provider, string? apiKey) => throw new NotImplementedException();
         public Task UpdateProviderAsync(AiProvider provider, string? newApiKey = null) => throw new NotImplementedException();
-        public Task DeleteProviderAsync(Guid id) => throw new NotImplementedException();
+        public Task DeleteProviderAsync(Guid id, bool trackForSync = true) => throw new NotImplementedException();
         public string? GetDecryptedApiKey(AiProvider provider) => null;
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider) => throw new NotImplementedException();
         public Task<TestConnectionResult> TestConnectionAsync(AiProvider provider, string? plainApiKey) => throw new NotImplementedException();

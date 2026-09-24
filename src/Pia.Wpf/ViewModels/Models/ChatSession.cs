@@ -55,6 +55,28 @@ public sealed class ChatSession : IDisposable
     /// </summary>
     public string? WorkingDirectory { get; internal set; }
 
+    /// <summary>Mirrors the chat row; null means the user was never asked, which raises the composer's
+    /// context banner.</summary>
+    public AgentContextMode? AgentContextMode { get; internal set; }
+
+    /// <summary>The Chat/Agent lever for THIS chat; null until the lever is first set, which is what makes
+    /// <see cref="AppSettings.AssistantNewChatAgentMode"/> the answer for an untouched chat. In-memory: it
+    /// arms the next send rather than describing the chat, and a settled run resets it anyway.</summary>
+    public bool? AgentModeEnabled { get; internal set; }
+
+    /// <summary>Raised when something OTHER than the composer moves the lever — today, triage answering an
+    /// Agent send directly (marshaled to the UI thread by the manager).</summary>
+    public event EventHandler<bool>? AgentModeChanged;
+
+    /// <summary>Sets <see cref="AgentModeEnabled"/> and notifies (no-op when unchanged).</summary>
+    public void SetAgentMode(bool enabled)
+    {
+        if (AgentModeEnabled == enabled)
+            return;
+        AgentModeEnabled = enabled;
+        AgentModeChanged?.Invoke(this, enabled);
+    }
+
     public string? Title { get; internal set; }
     public ObservableCollection<AssistantMessage> Messages { get; } = new();
     public ChatState State { get; private set; } = ChatState.Idle;
@@ -388,17 +410,17 @@ public sealed class ChatSession : IDisposable
                 if (msg == assistantMessage)
                     continue;
 
-                var hasInjection = !string.IsNullOrEmpty(injectedFileContext) || !string.IsNullOrEmpty(regenerationInstruction);
-                if (msg == userMessage && (atCommands.Count > 0 || hasInjection))
+                if (msg == userMessage)
                 {
                     // Swap the @-command tokens for the items they name (when present), then append any
-                    // @Files content the manager read at setup and/or a styled-regeneration instruction so
-                    // the model sees them inline. Injection is ephemeral — msg.Content (the persisted/
-                    // displayed text) is unchanged, so history never bloats and the user's bubble stays clean.
+                    // @Files content the manager read at setup, a styled-regeneration instruction, and the
+                    // turn's time note so the model sees them inline. Injection is ephemeral — msg.Content
+                    // (the persisted/displayed text) is unchanged, so history never bloats and the user's
+                    // bubble stays clean.
                     var stripped = atCommands.Count > 0 ? AtCommandParser.SubstituteCommands(msg.Content) : msg.Content;
                     var parts = new[] { stripped, injectedFileContext, regenerationInstruction }
                         .Where(p => !string.IsNullOrEmpty(p));
-                    var visible = string.Join("\n\n", parts);
+                    var visible = AssistantPromptComposer.AppendTimeNote(string.Join("\n\n", parts));
                     // ToChatMessage(overrideText) preserves an image attachment — the prior text-only
                     // ChatMessage construction here silently dropped it.
                     chatMessages.Add(msg.ToChatMessage(visible));
@@ -505,7 +527,8 @@ public sealed class ChatSession : IDisposable
         {
             _logger.LogError(ex, "Failed to get AI response");
             if (string.IsNullOrEmpty(assistantMessage.Content))
-                assistantMessage.Content = $"Error: {ex.Message}";
+                assistantMessage.Content =
+                    _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message);
             SetState(ChatState.Error);
             RunFailed?.Invoke(this, new RunFailedEventArgs
             {
@@ -581,7 +604,7 @@ public sealed class ChatSession : IDisposable
         // Planned step off its own per-step persona attribution.
         Guid? personaId = null,
         // The persona's model-routing hint (metadata.pia_persona_type). Sourced the same way as
-        // personaId; a Planned step passes nothing and routes on the mode default.
+        // personaId: the interactive turn off the AssistantTurnSetup, a Planned step off its spec.
         string? personaModelType = null,
         // Where this turn's tool call/result messages accumulate, so the NEXT step can be built on them.
         // Only a Planned step passes one — the interactive turn has no next step and would grow it forever.
@@ -754,6 +777,7 @@ public sealed class ChatSession : IDisposable
         {
             IsStreaming = true,
             Persona = spec.Persona,
+            StatusText = _localizationService["Msg_Assistant_StatusThinking"],
         };
         Messages.Add(assistantMessage);
 
@@ -822,7 +846,7 @@ public sealed class ChatSession : IDisposable
             usage = await RunModelExchangeAsync(assistantMessage, chatMessages, spec.Provider,
                 spec.Tools, spec.SupportsTools, spec.WebSearchActive, spec.TokenizationEnabled, ct,
                 AgentContextBudget.From(spec.Provider), spec.Policy, spec.Timeline, spec.Persona.Id,
-                toolExchangeSink: StepToolExchangeSink(assistantMessage.Id));
+                spec.ModelType, toolExchangeSink: StepToolExchangeSink(assistantMessage.Id));
             succeeded = true;
             exchangeCompleted = true;
         }
@@ -868,7 +892,8 @@ public sealed class ChatSession : IDisposable
             _logger.LogError(ex, "Agent step failed to get AI response");
             error = ex.Message;
             if (string.IsNullOrEmpty(assistantMessage.Content))
-                assistantMessage.Content = $"Error: {ex.Message}";
+                assistantMessage.Content =
+                    _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message);
         }
         finally
         {
@@ -1026,7 +1051,8 @@ public sealed class ChatSession : IDisposable
         }
 
         // The ONLY place a user steering note may ride — a ChatRole.User message, never System.
-        chatMessages.Add(new ChatMessage(ChatRole.User, ctx.AppendNudge(instruction)));
+        chatMessages.Add(new ChatMessage(ChatRole.User,
+            AssistantPromptComposer.AppendTimeNote(ctx.AppendNudge(instruction))));
 
         // Cleared before compaction, and by construction — _stepToolExchanges holds the full results and the
         // next step must still be able to be the one that gets them verbatim.
@@ -1401,7 +1427,8 @@ public sealed class ChatSession : IDisposable
             CanPark: false,
             // Only the park reads it, and this surface never parks. False keeps the input honest about
             // what it is answering rather than about what happens to be reachable from here.
-            IsTopLevelUserRun: false));
+            IsTopLevelUserRun: false,
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
 
         return new ToolGateResolution(
             pluginId, tool, toolClass, askedAt, verdict, DateTime.UtcNow);

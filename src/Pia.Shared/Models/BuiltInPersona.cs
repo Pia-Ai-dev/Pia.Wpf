@@ -18,6 +18,7 @@ namespace Pia.Shared.Models;
 /// <param name="Emoji">Single emoji for the chip.</param>
 /// <param name="AccentColor">Hex <c>#RRGGBB</c> for the chip/attribution.</param>
 /// <param name="ToolScope">0 = none, 1 = read-only (reserved), 2 = full.</param>
+/// <param name="ModelType">Model-routing hint; <c>null</c> ⇒ the client's default type.</param>
 public record BuiltInPersona(
     string Id,
     string Name,
@@ -29,4 +30,5 @@ public record BuiltInPersona(
     IReadOnlyList<string> Expertise,
     string? Emoji,
     string? AccentColor,
-    int ToolScope);
+    int ToolScope,
+    string? ModelType = null);

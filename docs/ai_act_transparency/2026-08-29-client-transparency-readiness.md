@@ -33,7 +33,7 @@ Anzeigenamen (Standard `"{0}'s assistant"`), keinen Hinweis auf KI oder Transkri
 | **M6** | Fußzeile nennt für BYOK-Provider `Anbieter · Modell`, wobei das Modell aus der Antwort (`ChatResponse.ModelId`) stammt und erst dann auf die Konfiguration zurückfällt; unabhängig von Usage-Daten. Pia Cloud wird als „Pia Cloud" genannt (Entscheidung Owner 29.08.2026, der Proxy wählt das Modell). Anbieter wird je Nachricht persistiert (`ProviderName`, SQLite-Spalte + Sync-DTO, additiv). `Models/AnswerProvenance.cs`. |
 | **M2** | Maschinenlesbare Kennzeichnung aller Dateien, die Modellausgabe enthalten (§ 3): HTML-Export, Markdown-Chat-Export, Vault-Quellen (`pia-meeting/v1`, `pia-direct-transcript/v1`) und Pia-verwaltete Vault-Seiten (`VaultFrontmatter`). Sichtbar: HTML-Fußzeile „AI-generated content · Pia x.y · Anbieter · Modell", Markdown-Zeile `*AI-generated · Anbieter · Modell*` unter jeder Antwort. |
 | **M3** | Sichtbarer Hinweis „KI-generierte Stimme" im Voice-Overlay während der Wiedergabe und als Badge an der Antwort, deren Vorlesen läuft. Negativbefund zur Dateimarkierung in § 4. |
-| **M8** Client | Daumen hoch/runter an **Pia-Cloud-Antworten** (`AssistantMessage.IsRateable`); Daumen runter öffnet „Antwort melden" (Freitext, Antworttext optional, PII-tokenisiert wie Prompts) und sendet an `POST /api/ai-feedback` (`Services/AiFeedbackService.cs`). BYOK-Antworten haben keine Buttons — das Modell ist das des Nutzers. About-Seite nennt `entwicklung@neo42.de` als Interimsadresse für KI-Anliegen. Server-Seite: [Handoff](2026-08-29-ai-feedback-server-handoff.md). |
+| **M8** Client | Daumen hoch/runter an **Pia-Cloud-Antworten** (`AssistantMessage.IsRateable`); Daumen runter öffnet „Antwort melden" (Freitext, Antworttext optional, PII-tokenisiert wie Prompts) und sendet an `POST /api/ai-feedback` (`Services/AiFeedbackService.cs`). BYOK-Antworten haben keine Buttons — das Modell ist das des Nutzers. About-Seite nennt `piasupport@pia-ai.de` als Kontakt für KI-Anliegen. Server-Seite: [Handoff](2026-08-29-ai-feedback-server-handoff.md). |
 
 ## 3. Kennzeichnungskonvention
 
@@ -90,7 +90,7 @@ Dokumentation.
 Gemeldet werden **nur Pia-Cloud-Antworten**: Dort hat neo42 das Modell gewählt und betrieben. Bei BYOK
 ist das Modell das des Nutzers; eine Meldung an neo42 hätte keinen Adressaten, der etwas ändern könnte.
 Der allgemeine Kontakt für Anliegen zum KI-System (Anbieterpflicht, unabhängig vom Modell) steht in der
-About-Seite: **`entwicklung@neo42.de`**, Interimsadresse bis ein eigener Alias existiert.
+About-Seite: **`piasupport@pia-ai.de`**.
 
 | Szenario | Weg |
 |---|---|

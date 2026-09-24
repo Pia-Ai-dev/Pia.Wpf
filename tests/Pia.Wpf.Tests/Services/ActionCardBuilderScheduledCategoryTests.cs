@@ -18,6 +18,11 @@ public class ActionCardBuilderScheduledCategoryTests
             .Returns(ci => $"{ci.ArgAt<string>(0)}({string.Join(",", ci.ArgAt<object[]>(1))})");
 
         var tokenMap = Substitute.For<ITokenMapService>();
+        // The title is composed through a format string so the verb/noun order can differ by language;
+        // compose it here or every card title in these tests collapses to the bare key.
+        localization.Format("ActionCard_Title_Format", Arg.Any<object[]>())
+            .Returns(ci => string.Join(" ", ci.ArgAt<object[]>(1)));
+
         return new ActionCardBuilder(localization, tokenMap);
     }
 
@@ -33,6 +38,16 @@ public class ActionCardBuilderScheduledCategoryTests
         Assert.Equal(ActionCardCategory.Scheduled, card.Category);
         Assert.NotEqual("ActionCard_Category_Mcp", card.Title);
         Assert.Equal("ActionCard_Action_Create ActionCard_Category_Scheduled", card.Title);
+    }
+
+    /// <summary>Found live: an unmapped tool name falls into the default Create arm, so the card asking to START
+    /// a routine was headed "create scheduled job" over a body that said start.</summary>
+    [Fact]
+    public void RunRoutineCard_SaysStart_NotCreate()
+    {
+        var card = CreateBuilder().Build(Call("run_routine"), detokenize: false);
+
+        Assert.Equal("ActionCard_Action_Start ActionCard_Category_Scheduled", card.Title);
     }
 
     /// <summary>Its arguments are themselves a grant list, and both tiers are still offered — the Tool access row
@@ -144,6 +159,6 @@ public class ActionCardBuilderScheduledCategoryTests
             ToolGateSurface.Interactive, toolName, toolClass,
             ServerDeclaredDestructive: false, IsAllowlisted: false, HasSessionGrant: !standing,
             HasStandingGrant: standing, IsNamedGrant: false, HasNamedDenial: false, Policy: null, CanPark: false,
-            IsTopLevelUserRun: false));
+            IsTopLevelUserRun: false, IsScratchTarget: false));
     }
 }

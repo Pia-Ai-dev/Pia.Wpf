@@ -86,8 +86,8 @@ public class AssistantHistoryViewModelImportTests
     }
 
     /// <summary>
-    /// History opens on the last 30 days. A migration's chats are older than that, so without widening
-    /// the filter the import writes hundreds of rows and the list shows none of them.
+    /// A migration's chats are older than a date range the user narrowed by hand, so without widening
+    /// it the import writes hundreds of rows and the list shows none of them.
     /// </summary>
     [Fact]
     public async Task RevealingAnImport_WidensADateFilterThatWouldHideIt()
@@ -207,6 +207,26 @@ public class AssistantHistoryViewModelImportTests
         Assert.DoesNotContain(
             _chatService.ReceivedCalls(),
             c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SearchAsync));
+        sut.Dispose();
+    }
+
+    /// <summary>
+    /// An unset start date is unbounded, not a value waiting to be filled in — pulling it down to the
+    /// archive's oldest chat would hide every local chat older than that.
+    /// </summary>
+    [Fact]
+    public async Task RevealingAnImport_LeavesAnUnsetStartDateUnbounded()
+    {
+        var sut = CreateSut();
+
+        await sut.RevealImportedChatsAsync(new ChatImportResult
+        {
+            Format = ChatArchiveFormat.OpenWebUi,
+            Imported = 573,
+            OldestUpdatedAt = DateTime.UtcNow.AddDays(-400),
+        });
+
+        Assert.Null(sut.FilterStartDate);
         sut.Dispose();
     }
 

@@ -1439,4 +1439,87 @@ public sealed class AgentRunOrchestratorTests
         var chat = await h.Chats.GetAsync(run.ChatId, ct);
         Assert.Empty(chat?.Messages ?? []);
     }
+    // ---- collecting an un-isolated run's working notes -------------------------------------------------
+
+    /// <summary>The degrade writes <c>.scratch/</c> into the user's own folder, so somebody has to collect it.</summary>
+    [Fact]
+    public async Task AnUnisolatedRun_CollectsItsWorkingNotes_AtTheTerminalSettle()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase);
+
+        // No WorkspaceRoot on the executor: this is the provisioning degrade.
+        await h.BuildOrchestrator(planner, verifier: null, workspaces).RunAsync(
+            run, new RecordingExecutor(_ => Ok()), Persona(), Provider(),
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentRunState.Completed,
+            (await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
+        Assert.Single(workspaces.ScratchCleanups);
+    }
+
+    /// <summary>An isolated run's notes leave with the workspace, so a second collector would be a second owner.</summary>
+    [Fact]
+    public async Task AnIsolatedRun_LeavesItsNotesToTheWorkspaceTeardown()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase)
+        {
+            PromoteResult = new RunPromotionResult(RunWorkspaceMode.Copy, 1, 0, 0, null),
+        };
+
+        await h.BuildOrchestrator(planner, verifier: null, workspaces).RunAsync(
+            run, new RecordingExecutor(_ => Ok()) { WorkspaceRoot = h.RunsBase }, Persona(), Provider(),
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal([run.Id], workspaces.TornDown);   // non-vacuity: the workspace arm really ran
+        Assert.Empty(workspaces.ScratchCleanups);
+    }
+
+    /// <summary>A failed run leaves the same notes behind, and promotion never reaches its arm.</summary>
+    [Fact]
+    public async Task AFailedUnisolatedRun_StillCollectsItsNotes()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase);
+        var profile = new RunProfile(MaxSteps: 8, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(5));
+
+        await h.BuildOrchestrator(planner, verifier: null, workspaces).RunAsync(
+            run, new RecordingExecutor(_ => Fail("boom")), Persona(), Provider(),
+            profile, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Failed, final!.State);
+        Assert.Empty(workspaces.Promoted);            // non-vacuity: this is not the clean path
+        Assert.Single(workspaces.ScratchCleanups);
+    }
+
+    /// <summary>A park is not terminal: the run is going to resume and still needs what it wrote.</summary>
+    [Fact]
+    public async Task AParkedRun_KeepsItsWorkingNotes()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var profile = new RunProfile(MaxSteps: 2, MaxReplans: 2, WallClock: TimeSpan.FromMinutes(20));
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2"), ("C", "s3")), false));
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase);
+
+        await h.BuildOrchestrator(planner, verifier: null, workspaces).RunAsync(
+            run, new RecordingExecutor(_ => Ok()), Persona(), Provider(),
+            profile, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentRunState.WaitingForInput,
+            (await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
+        Assert.Empty(workspaces.ScratchCleanups);
+    }
 }

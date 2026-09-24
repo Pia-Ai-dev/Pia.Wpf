@@ -31,9 +31,9 @@ public class OptimizeViewParseTests
 
         // A cross-VM hop: ProvidersVm exposes the shared ProvidersSettingsViewModel, so the walk crosses types.
         Assert.Contains(bindings, b => b.Contains("=ProvidersVm.GoToProvidersTabCommand [OptimizeSettingsViewModel]"));
-        // Templates is the templates ItemsControl's ItemsSource itself — proves the walk reached the
-        // boundary right before the excluded, item-scoped DataTemplate content.
-        Assert.Contains(bindings, b => b.Contains("=Templates [OptimizeSettingsViewModel]"));
+        // The nested TemplatesView has no parse test of its own; this path only resolves against
+        // TemplatesSettingsViewModel if the re-root above it was understood.
+        Assert.Contains(bindings, b => b.Contains("=AddTemplateCommand [TemplatesSettingsViewModel]"));
 
         var unresolved = bindings.Where(b => b.EndsWith("UNRESOLVED", StringComparison.Ordinal)).ToArray();
         Assert.True(unresolved.Length == 0,

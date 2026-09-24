@@ -126,4 +126,8 @@ public class ScheduledJob
     /// join has to carry its own. Device-local, like <see cref="MeetingUrl"/>.
     /// </summary>
     public DateTime? MeetingConsentAckAt { get; set; }
+
+    /// <summary>Folder this routine's run works in, relative to the assistant-files sandbox (forward
+    /// slashes); null = the sandbox root. Device-local — a peer's path would name nothing here.</summary>
+    public string? WorkingDirectory { get; set; }
 }

@@ -217,6 +217,34 @@ public class SyncMapperAssistantChatTests
     }
 
     [Fact]
+    public void AssistantChat_Favorite_RoundTrips_Plaintext()
+    {
+        var mapper = PlainMapper();
+        var original = SampleChat();
+        original.IsFavorite = true;
+
+        var wire = mapper.ToSyncAssistantChat(original, UserId);
+        Assert.True(wire.IsFavorite);
+
+        Assert.True(mapper.FromSyncAssistantChat(wire, UserId).IsFavorite);
+    }
+
+    [Fact]
+    public void AssistantChat_E2EE_FavoriteRidesInsideCiphertext()
+    {
+        // The server strips top-level keys it does not know from an encrypted document, so a plaintext
+        // isFavorite would come back false on every pull and silently unstar the chat.
+        var mapper = E2EEMapper();
+        var original = SampleChat();
+        original.IsFavorite = true;
+
+        var wire = mapper.ToSyncAssistantChat(original, UserId);
+        Assert.False(wire.IsFavorite);
+
+        Assert.True(mapper.FromSyncAssistantChat(wire, UserId).IsFavorite);
+    }
+
+    [Fact]
     public void FromSync_Throws_WhenCiphertextArrives_ButE2EEInactive()
     {
         // Wire has ciphertext but this client has no UMK / E2EE off. Silently

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -23,8 +24,14 @@ public partial class MarkdownMessageControl : UserControl
     /// </summary>
     public event EventHandler<string>? WikiLinkNavigate;
 
+    private const string PiiMenuId = "PiiMenu_Open";
+
     private readonly DispatcherTimer _debounceTimer;
     private string? _pendingMarkdown;
+
+    /// <summary>Routed, so the one shared context menu reaches whichever message it was opened over.</summary>
+    public static readonly RoutedUICommand AddToPiiCommand =
+        new("Add to PII list", nameof(AddToPiiCommand), typeof(MarkdownMessageControl));
 
     public static readonly DependencyProperty MarkdownTextProperty =
         DependencyProperty.Register(
@@ -67,6 +74,13 @@ public partial class MarkdownMessageControl : UserControl
         set => SetValue(AutomationIdSuffixProperty, value);
     }
 
+    static MarkdownMessageControl()
+    {
+        CommandManager.RegisterClassCommandBinding(
+            typeof(MarkdownMessageControl),
+            new CommandBinding(AddToPiiCommand, OnAddToPiiExecuted, OnCanAddToPii));
+    }
+
     public MarkdownMessageControl()
     {
         InitializeComponent();
@@ -81,7 +95,26 @@ public partial class MarkdownMessageControl : UserControl
 
         PreviewMouseWheel += OnPreviewMouseWheel;
 
-        RenderMarkdown(string.Empty);
+        if (MarkdownViewer.ContextMenu is { } menu)
+        {
+            menu.Closed -= OnSharedMenuClosed;
+            menu.Closed += OnSharedMenuClosed;
+        }
+    }
+
+    // The shared menu outlives every message, so a PlacementTarget left set roots one for good.
+    private static void OnSharedMenuClosed(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu menu) return;
+
+        // Deferred: WPF closes the menu BEFORE it invokes the clicked item's command, which reads PlacementTarget.
+        // By then a reopen may own a newer one, hence IsOpen.
+        menu.Dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            new Action(() =>
+            {
+                if (!menu.IsOpen) menu.PlacementTarget = null;
+            }));
     }
 
     private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -152,23 +185,28 @@ public partial class MarkdownMessageControl : UserControl
 
     private void MarkdownViewer_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        var selectedText = GetSelectedText();
-        var hasSelection = !string.IsNullOrWhiteSpace(selectedText);
-
-        MarkdownViewer.ContextMenu!.Tag = selectedText;
-        AddToPiiMenu.IsEnabled = hasSelection;
+        if (PiiSubmenu(MarkdownViewer.ContextMenu) is { } submenu)
+            submenu.IsEnabled = !MarkdownViewer.Selection.IsEmpty;
     }
 
-    private void AddToPii_Click(object sender, RoutedEventArgs e)
+    private static MenuItem? PiiSubmenu(ItemsControl? menu) =>
+        menu?.Items.OfType<MenuItem>()
+            .FirstOrDefault(item => AutomationProperties.GetAutomationId(item) == PiiMenuId);
+
+    private static void OnCanAddToPii(object sender, CanExecuteRoutedEventArgs e)
     {
-        if (sender is not MenuItem menuItem) return;
+        // Not GetSelectedText: the shared menu's items requery this on ordinary input events, and that copies.
+        e.CanExecute = sender is MarkdownMessageControl control && !control.MarkdownViewer.Selection.IsEmpty;
+    }
 
-        var category = menuItem.Tag as string ?? "Custom";
-        var selectedText = MarkdownViewer.ContextMenu?.Tag as string ?? string.Empty;
+    private static void OnAddToPiiExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (sender is not MarkdownMessageControl control) return;
 
-        if (string.IsNullOrWhiteSpace(selectedText)) return;
+        var keyword = control.GetSelectedText();
+        if (string.IsNullOrWhiteSpace(keyword)) return;
 
-        AddToPiiRequested?.Invoke(this, new PiiKeywordRequest(selectedText, category));
+        control.AddToPiiRequested?.Invoke(control, new PiiKeywordRequest(keyword, e.Parameter as string ?? "Custom"));
     }
 
     private void OnRequestNavigate(object sender, RequestNavigateEventArgs e)

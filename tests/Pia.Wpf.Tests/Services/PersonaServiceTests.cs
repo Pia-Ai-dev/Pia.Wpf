@@ -44,6 +44,26 @@ public class PersonaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeletePersonaAsync_WhenApplyingASyncTombstone_DoesNotEnqueueItForPush()
+    {
+        var persona = await AddUserPersonaAsync();
+
+        await _service.DeletePersonaAsync(persona.Id, trackForSync: false);
+
+        Assert.DoesNotContain(persona.Id, _deleteTracker.GetPendingDeletes().GetValueOrDefault("personas", []));
+        Assert.DoesNotContain(await _service.GetPersonasAsync(), p => p.Id == persona.Id);
+    }
+
+    [Fact]
+    public async Task DeletePersonaAsync_WhenTheUserDeletes_EnqueuesItForPush()
+    {
+        var persona = await AddUserPersonaAsync();
+
+        await _service.DeletePersonaAsync(persona.Id);
+
+        Assert.Contains(persona.Id, _deleteTracker.GetPendingDeletes()["personas"]);
+    }
+    [Fact]
     public async Task GetPersonasAsync_MergesBuiltInsFirstThenUser()
     {
         var user = await AddUserPersonaAsync();
@@ -124,12 +144,18 @@ public class PersonaServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task BuiltInPersonas_HaveTheDefaultModelType()
+    public async Task BuiltInPersonas_CarryTheirCatalogModelType()
     {
         var builtIns = (await _service.GetPersonasAsync()).Where(p => p.IsBuiltIn).ToList();
 
-        Assert.NotEmpty(builtIns);
-        Assert.All(builtIns, p => Assert.Equal(Persona.DefaultModelType, p.ModelType));
+        Assert.Equal(BuiltInPersonas.All.Count, builtIns.Count);
+        Assert.Equal("fast", builtIns.Single(p => p.Id == BuiltInPersonas.PiaPersonalId).ModelType);
+        Assert.Equal("fast", builtIns.Single(p => p.Id == BuiltInPersonas.ExplainItSimplyId).ModelType);
+        Assert.Equal("code", builtIns.Single(p => p.Id == BuiltInPersonas.ExperiencedCoderId).ModelType);
+
+        Guid[] routed = [BuiltInPersonas.PiaPersonalId, BuiltInPersonas.ExplainItSimplyId, BuiltInPersonas.ExperiencedCoderId];
+        Assert.All(builtIns.Where(p => !routed.Contains(p.Id)),
+            p => Assert.Equal(Persona.DefaultModelType, p.ModelType));
     }
 
     [Fact]

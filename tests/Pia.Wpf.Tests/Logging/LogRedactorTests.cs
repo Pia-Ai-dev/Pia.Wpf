@@ -432,4 +432,15 @@ public class LogRedactorTests
         destination.WriteByte(0x21);
         Assert.True(destination.CanWrite);
     }
+
+    /// <summary>The sink tokenises the roots as it writes, so the export must still strip the chain under one.</summary>
+    [Fact]
+    public void AnAlreadyTokenisedRoot_StillLosesItsDirectoryChain()
+    {
+        var output = Run(Record("INFO", @"read %APPDATA%\Pia\Playground\ClientX\notes.md"));
+
+        Assert.Contains(@"%APPDATA%\<path>\notes.md", output);
+        Assert.DoesNotContain("Playground", output);
+        Assert.DoesNotContain("ClientX", output);
+    }
 }

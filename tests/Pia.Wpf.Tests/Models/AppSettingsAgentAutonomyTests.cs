@@ -62,6 +62,8 @@ public class AppSettingsAgentAutonomyTests
         // A preset must not blanket-approve starting a background assignment: that is the one write that
         // sends decrypted records off the device, and only a named grant may authorize it unattended.
         Assert.False(policy.Covers(ToolClass.Assignment));
+        // Reading the screen is authorized by a grant or by a human's answer, never by a class switch.
+        Assert.False(policy.Covers(ToolClass.Screen));
         Assert.Equal(5, policy.AutoApproveClasses.Count);
     }
 }

@@ -73,6 +73,7 @@
       <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
       <converters:InverseNullToVisibilityConverter x:Key="InverseNullToVisibilityConverter" />
       <converters:MultiplyConverter x:Key="MultiplyConverter" />
+      <converters:OlderMessagesLabelConverter x:Key="OlderMessagesLabelConverter" />
       <converters:SpeakerToDisplayNameConverter x:Key="SpeakerToDisplayNameConverter" />
       <converters:DateTimeOffsetToShortTimeConverter x:Key="DateTimeOffsetToShortTimeConverter" />
       <converters:UtcToLocalDateTimeConverter x:Key="UtcToLocalDateTimeConverter" />

@@ -192,15 +192,17 @@ public class FilesToolHandlerReadTests : IDisposable
         Assert.Contains("1|fn main", result);
     }
 
+    /// <summary>Outside a tool loop there is no channel to hand pixels over on, so the image branch says
+    /// that rather than falling back to the shared text refusal.</summary>
     [Fact]
-    public async Task Read_ImageExtension_ReturnsAttachGuidance()
+    public async Task Read_ImageExtension_WithNoToolLoop_SaysThePictureCannotBeDelivered()
     {
         var full = Path.Combine(_root, "pic.png");
         File.WriteAllBytes(full, new byte[] { 0x89, 0x50, 0x4E, 0x47 });
 
         var result = (string)(await ReadAsync("pic.png"))!;
 
-        Assert.Contains("attach the image instead", result);
+        Assert.Contains("cannot receive a picture", result);
     }
 
     [Fact]

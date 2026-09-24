@@ -29,6 +29,7 @@
             <StackPanel Orientation="Horizontal">
               <TextBlock Text="{loc:Str Nav_Optimize}" />
               <TextBlock Text="{Binding OptimizeHotkeyHint, StringFormat=' ({0})'}"
+                         Visibility="{Binding OptimizeHotkeyHint, Converter={StaticResource NullToVisibilityConverter}}"
                          Opacity="0.5" />
             </StackPanel>
           </Button>
@@ -52,6 +53,7 @@
             <StackPanel Orientation="Horizontal">
               <TextBlock Text="{loc:Str Nav_Assistant}" />
               <TextBlock Text="{Binding AssistantHotkeyHint, StringFormat=' ({0})'}"
+                         Visibility="{Binding AssistantHotkeyHint, Converter={StaticResource NullToVisibilityConverter}}"
                          Opacity="0.5" />
             </StackPanel>
           </Button>

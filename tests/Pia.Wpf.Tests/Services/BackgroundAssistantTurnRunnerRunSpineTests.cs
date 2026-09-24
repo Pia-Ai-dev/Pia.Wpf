@@ -42,7 +42,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         settings.GetSettingsAsync().Returns(new AppSettings());
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: false, WebSearchActive: false));
         titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((string?)null);
@@ -84,7 +84,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         chats.SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
         var runs = new ThrowingAgentRunService(throwOnCreate: false);
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: false, WebSearchActive: false));
 
         var runner = BuildRunner(chats, runs, new UsageDetails { InputTokenCount = 3, OutputTokenCount = 1 }, composer: composer);
@@ -92,7 +92,26 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
 
         composer.DidNotReceive().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>());
+            Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task AScheduledTurn_IsComposedAsUnattended()
+    {
+        // This leg cannot park, and any non-empty reply books the run complete — so a turn composed as an
+        // ordinary chat turn answered a fired routine with a question about its own schedule.
+        var chats = Substitute.For<IAssistantChatService>();
+        chats.SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var composer = Substitute.For<IAssistantPromptComposer>();
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: false, WebSearchActive: false));
+
+        var runner = BuildRunner(chats, new ThrowingAgentRunService(throwOnCreate: false), composer: composer);
+        await runner.RunAsync(new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        composer.Received(1).PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: true);
     }
 
     [Fact]

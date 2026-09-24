@@ -410,6 +410,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             LastAccessedAt = now,
             WindowMode = WindowMode.Assistant.ToString(),
             ProviderId = provider.Id,
+            // Stamped here or nowhere: the run row carries no folder, so this is the only record of the one
+            // the caller asked for — and the executor reads it back to confine an unisolated run's steps.
+            WorkingDirectory = req.WorkingSubpath,
             Messages = [],
         }, ct).ConfigureAwait(false);
 
@@ -995,7 +998,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // Idempotent by construction: a readable metadata document returns the same
             // root, the same mode and the same provisionedAtUtc, which is what keeps the promote set
             // from becoming "everything the workspace contains" after a park → resume.
-            return (await _workspaces.ProvisionAsync(run.Id, workingSubpath: null, ct).ConfigureAwait(false))?.Root;
+            // The subpath is read anyway for the one case that is NOT idempotent: a workspace whose directory
+            // vanished while the run was parked provisions afresh here, and at the base root it would promote
+            // the run's work to a folder nobody chose.
+            var chat = await _chatService.GetAsync(run.ChatId, ct).ConfigureAwait(false);
+            return (await _workspaces.ProvisionAsync(run.Id, chat?.WorkingDirectory, ct).ConfigureAwait(false))?.Root;
         }
 
         return SafeFolderPath.Canonicalize(

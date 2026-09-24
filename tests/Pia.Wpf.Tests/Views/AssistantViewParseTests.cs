@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation;
 using System.Windows.Documents;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -589,6 +590,67 @@ public class AssistantViewParseTests
 
     // Store-less: the trailing-optional IAgentTimelineService is omitted so nothing reads a database. Must be
     // called ON the STA thread — the VM captures SynchronizationContext.Current for its collection mutations.
+    /// <summary>
+    /// A headless step writes its reply only when it ends, so the transcript sits still for the whole step.
+    /// The live line fills that gap, and it must appear only while a FOREIGN run is writing this chat — a
+    /// session driving its own live run streams its step message and would show two spinners.
+    /// </summary>
+    [Fact]
+    public void LiveRunActivity_Parses_AndNeedsBothAForeignRunAndSomethingToSay()
+    {
+        AssistantViewModel? vm = null;
+        AssistantView? view = null;
+        RunProgressViewModel? runVm = null;
+        UIElement? line = null;
+        bool found;
+        var reachableIds = Array.Empty<string>();
+        Visibility? idle, runOnly, both;
+        try
+        {
+            WpfStaHost.Run(() =>
+            {
+                vm = AssistantViewModelBuilder.Create();
+                runVm = CreateRunProgressViewModel();
+                vm.ActiveRunProgress = runVm;
+                view = new AssistantView { DataContext = vm };
+                return 0;
+            });
+            WpfStaHost.Pump();
+
+            (found, idle) = WpfStaHost.Run(() =>
+            {
+                line = view!.FindName("LiveRunActivity") as UIElement;
+                return (line is not null, line?.Visibility);
+            });
+
+            WpfStaHost.Run(() => { vm!.ForeignRunActive = true; return 0; });
+            WpfStaHost.Pump();
+            runOnly = WpfStaHost.Run(() => line?.Visibility);
+
+            WpfStaHost.Run(() => { runVm!.ToolActivity = "3 tool calls · last: web_search"; return 0; });
+            WpfStaHost.Pump();
+            both = WpfStaHost.Run(() => line?.Visibility);
+
+            reachableIds = WpfStaHost.Run(() => FindTextBlocks((DependencyObject)line!)
+                .Select(AutomationProperties.GetAutomationId)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .ToArray());
+        }
+        finally
+        {
+            WpfStaHost.Run(() => { vm?.Dispose(); runVm?.Dispose(); return 0; });
+        }
+
+        Assert.True(found, "AssistantView no longer contains the LiveRunActivity line.");
+        Assert.Equal(Visibility.Collapsed, idle);
+        // A foreign run with no tool line yet says nothing, so an empty strip must not take layout.
+        Assert.Equal(Visibility.Collapsed, runOnly);
+        Assert.Equal(Visibility.Visible, both);
+        // On the TEXT BLOCKS, not on the panel: a layout Grid is outside UIA's control view, so an id
+        // there resolves 0 elements in a live walkthrough however visible the line is.
+        Assert.Contains("Assistant_LiveRunActivity_Step", reachableIds);
+        Assert.Contains("Assistant_LiveRunActivity_Tools", reachableIds);
+    }
     private static RunProgressViewModel CreateRunProgressViewModel()
     {
         var loc = Substitute.For<ILocalizationService>();

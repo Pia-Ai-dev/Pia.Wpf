@@ -27,7 +27,7 @@ public interface ITodoService
     Task ImportAsync(TodoItem item);
     Task CompleteAsync(Guid id);
     Task UncompleteAsync(Guid id);
-    Task DeleteAsync(Guid id);
+    Task DeleteAsync(Guid id, bool trackForSync = true);
     Task LinkReminderAsync(Guid todoId, Guid reminderId);
     Task UnlinkReminderAsync(Guid todoId);
     Task CleanupOldCompletedAsync(int olderThanDays = 30);

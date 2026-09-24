@@ -7,19 +7,11 @@ namespace Pia.Services.MeetingAttendee;
 /// lobby, if any, until admitted); <see cref="WaitForEndAsync"/> blocks until the meeting ends
 /// (the in-call UI disappears) or the supplied token cancels; <see cref="LeaveAsync"/> performs an
 /// explicit hang-up; <see cref="IAsyncDisposable.DisposeAsync"/> tears the browser down. The
-/// orchestrator (Unit 4) owns one instance for the duration of one attended meeting and disposes it
+/// orchestrator owns one instance for the duration of one attended meeting and disposes it
 /// through its stop/dispose chain — mirroring how <c>LiveMeetingService</c> owns its audio sources.
 /// </summary>
 public interface IMeetingSession : IAsyncDisposable
 {
-    /// <summary>
-    /// The OS process id of the launched browser's root process, or <c>null</c> if it could not be
-    /// determined. Used by the per-process loopback audio source (Unit 3) to target this browser's
-    /// audio render session via <c>INCLUDE_TARGET_PROCESS_TREE</c>. The default (endpoint loopback)
-    /// audio path does not need it.
-    /// </summary>
-    int? BrowserProcessId { get; }
-
     /// <summary>
     /// Raised when the session reaches the meeting lobby (waiting for a host to admit the bot). The
     /// orchestrator surfaces this as an <c>InLobby</c> state. May never fire if the bot is admitted
@@ -64,9 +56,9 @@ public interface IMeetingSession : IAsyncDisposable
     /// <summary>
     /// Starts the <b>silent in-browser audio capture</b>: taps the meeting's remote audio inside the
     /// page (Web Audio) and mutes it from the speakers, so the meeting is captured for transcription
-    /// without being audible on the device. This is the mechanism behind the "hidden ⇒ silent"
-    /// contract — the previous per-process WASAPI loopback only <i>captured</i> the browser audio (a
-    /// tap) and never silenced the speakers.
+    /// without being audible on the device — whether or not its window is on screen. The previous
+    /// per-process WASAPI loopback only <i>captured</i> the browser audio (a tap) and never silenced
+    /// the speakers.
     ///
     /// <para><paramref name="onFormat"/> is invoked once with the source PCM <c>(sampleRate, channels)</c>
     /// before any audio; <paramref name="onPcm"/> is then invoked repeatedly with little-endian

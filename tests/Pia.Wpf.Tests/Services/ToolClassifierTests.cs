@@ -25,6 +25,8 @@ public class ToolClassifierTests
     // A built-in scheduling plugin, once classified as an external MCP tool.
     [InlineData("scheduled-research", ToolClass.Scheduling)]
     [InlineData("ingest", ToolClass.Ingest)]
+    [InlineData("assignments", ToolClass.Assignment)]
+    [InlineData("screen", ToolClass.Screen)]
     public void EveryBuiltInPluginNameMapsToANamedClass(string pluginName, ToolClass expected)
     {
         Assert.Equal(expected, ToolClassifier.Classify(pluginName, isExternalRoute: false));

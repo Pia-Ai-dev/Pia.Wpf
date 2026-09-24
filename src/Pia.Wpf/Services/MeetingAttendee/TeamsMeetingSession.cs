@@ -24,8 +24,8 @@ namespace Pia.Services.MeetingAttendee;
 /// prompt). At the Chromium level audio <b>output</b> is left untouched (we never pass
 /// <c>--mute-audio</c> or a fake playback device), so the meeting still renders and can be captured.
 ///
-/// <para>On the <b>hidden (silent) path</b> the meeting must not be audible on the device — otherwise
-/// the user attending the same call on the same machine gets an echo. Silence is achieved
+/// <para>The meeting must not be audible on the device — otherwise the user attending the same call
+/// on the same machine gets an echo — and that holds for the on-screen window too. Silence is achieved
 /// <i>in-page</i> (not by muting Chromium, which would also kill capture): an init script wraps
 /// <c>RTCPeerConnection</c> to collect the inbound audio tracks, and <see cref="StartAudioCaptureAsync"/>
 /// taps them through Web Audio while muting the page's media elements. See those members and
@@ -134,6 +134,20 @@ public sealed class TeamsMeetingSession : IMeetingSession
           return el ? el.outerHTML : '';
         }
         """;
+    /// <summary>
+    /// Reads the prejoin name box's own validation verdict: Teams sets <c>aria-invalid</c> and points
+    /// <c>aria-describedby</c> at the message. Empty string = accepted.
+    /// </summary>
+    private const string NameRejectionScript = """
+        (el) => {
+          if (el.getAttribute('aria-invalid') !== 'true') return '';
+          const id = el.getAttribute('aria-describedby');
+          const msg = id ? document.getElementById(id) : null;
+          const text = msg && msg.innerText ? msg.innerText.trim() : '';
+          return text || 'no reason given';
+        }
+        """;
+
     /// <summary>Fluent UI (Northstar) modal backdrop that can layer over the prejoin screen.</summary>
     private const string DialogOverlaySelector = ".ui-dialog__overlay";
     /// <summary>
@@ -204,12 +218,12 @@ public sealed class TeamsMeetingSession : IMeetingSession
         }
         """;
 
-    // ---- Silent in-browser audio capture (hidden path) -------------------------------------------
+    // ---- Silent in-browser audio capture ---------------------------------------------------------
     /// <summary>Name of the Playwright function the page calls to ship PCM/format to the host.</summary>
     private const string AudioBindingName = "__piaAudioSink";
 
     /// <summary>
-    /// Init script (added to the context BEFORE the first navigation, hidden path only) that wraps
+    /// Init script (added to the context BEFORE the first navigation) that wraps
     /// <c>RTCPeerConnection</c> so every inbound (remote) audio track is collected into
     /// <c>window.__piaRemoteTracks</c> as Teams negotiates the call. It must run before Teams creates
     /// its peer connection, hence the init script. It does NOT mute anything and does NOT start capture
@@ -357,6 +371,8 @@ public sealed class TeamsMeetingSession : IMeetingSession
     // ---- Timeouts (ms) ----------------------------------------------------------------------
     private const float ContinueOnWebTimeoutMs = 30_000;
     private const float NameInputTimeoutMs = 15_000;
+    /// <summary>How long the name box may still read "invalid" after filling before we believe it.</summary>
+    private const int NameValidationTimeoutMs = 2_000;
     private const float JoinNowWaitTimeoutMs = 30_000;
     /// <summary>Pause between candidate-selector rounds in <see cref="WaitForFirstAsync"/>.</summary>
     private const int SelectorRetryDelayMs = 250;
@@ -403,8 +419,6 @@ public sealed class TeamsMeetingSession : IMeetingSession
     // poll never starves the roster read. Not disposed: its AvailableWaitHandle is never accessed, so it
     // allocates no unmanaged handle, and skipping Dispose sidesteps a teardown race with an in-flight read.
     private readonly SemaphoreSlim _pageGate = new(1, 1);
-
-    public int? BrowserProcessId => _browserProcessId;
 
     public event EventHandler? EnteredLobby;
 
@@ -477,6 +491,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
         var (nameInput, nameSelector) = await WaitForFirstAsync(page, NameInputSelectors, NameInputTimeoutMs)
             .ConfigureAwait(false);
         await nameInput.FillAsync(displayName).ConfigureAwait(false);
+        await EnsureNameAcceptedAsync(nameInput, displayName).ConfigureAwait(false);
 
         var (joinNow, joinSelector) = await WaitForFirstAsync(page, JoinNowSelectors, JoinNowWaitTimeoutMs)
             .ConfigureAwait(false);
@@ -922,7 +937,7 @@ public sealed class TeamsMeetingSession : IMeetingSession
             args.Add("--window-position=-32000,-32000");
             args.Add("--window-size=1280,720");
         }
-        // else: no off-screen args — let the window open on-screen and the meeting be audible.
+        // else: no off-screen args — the window opens on-screen; the in-page tap still keeps it silent.
 
         return [.. args];
     }
@@ -970,14 +985,12 @@ public sealed class TeamsMeetingSession : IMeetingSession
             Locale = BrowserLocale,
         }).ConfigureAwait(false);
 
-        // Hidden ⇒ silent path: arm the RTCPeerConnection track-collection hook BEFORE the first
-        // navigation so it is in place when Teams creates its peer connection. The actual tap + speaker
-        // muting starts later in StartAudioCaptureAsync (so a failed capture never mutes the meeting).
-        // The on-screen path leaves audio fully audible and skips this entirely.
-        if (!_launchSpec.ShowWindow)
-        {
-            await _context.AddInitScriptAsync(AudioHookInitScript).ConfigureAwait(false);
-        }
+        // Arm the RTCPeerConnection track-collection hook BEFORE the first navigation so it is in place
+        // when Teams creates its peer connection. The actual tap + speaker muting starts later in
+        // StartAudioCaptureAsync (so a failed capture never mutes the meeting). Armed for the on-screen
+        // window too: the tap is per-page, and an audible window echoes into whatever else is playing
+        // the same meeting.
+        await _context.AddInitScriptAsync(AudioHookInitScript).ConfigureAwait(false);
 
         _page = await _context.NewPageAsync().ConfigureAwait(false);
     }
@@ -996,13 +1009,10 @@ public sealed class TeamsMeetingSession : IMeetingSession
     /// Picks this session's browser root PID from the chrome.exe processes that appeared after
     /// launch.
     ///
-    /// TODO (UNVERIFIED): a single Chromium launch spawns many chrome.exe processes (browser root,
-    /// renderers, GPU, audio service). The per-process loopback source (Unit 3) keys off the ROOT
-    /// via INCLUDE_TARGET_PROCESS_TREE, so we want the root here. Without WMI/NtQueryInformationProcess
-    /// we cannot read the parent PID cheaply, so we use the documented heuristic "earliest StartTime
-    /// among the newly-spawned matching processes" (the parent spawns before its children). The
-    /// default audio path (endpoint loopback) does not use this value, so an approximate PID is
-    /// acceptable for the first shot; it must be validated before the per-process path ships.
+    /// A single Chromium launch spawns many chrome.exe processes (browser root, renderers, GPU, audio
+    /// service) and callers want the root. Without WMI/NtQueryInformationProcess we cannot read the
+    /// parent PID cheaply, so we use the heuristic "earliest StartTime among the newly-spawned matching
+    /// processes" (the parent spawns before its children).
     /// </summary>
     private int? ResolveBrowserProcessId(string[] preExistingPids)
     {
@@ -1111,6 +1121,45 @@ public sealed class TeamsMeetingSession : IMeetingSession
         if (modulePath is null)
             return false;
         return string.Equals(modulePath, matchExecutablePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Confirms Teams accepted the prejoin name before we try to join on it. The box takes letters,
+    /// digits, single spaces and <c>- ' . _ @</c> only; anything else leaves "Join now" disabled.
+    /// </summary>
+    private async Task EnsureNameAcceptedAsync(ILocator nameInput, string displayName)
+    {
+        // FillAsync sets the React-controlled box in one shot, which it has been seen to swallow part
+        // of; retyping keystroke-by-keystroke is the reliable second attempt.
+        var typed = await nameInput.InputValueAsync().ConfigureAwait(false);
+        if (!string.Equals(typed, displayName, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("Prejoin name box kept {Kept} of {Sent} characters; retyping",
+                typed.Length, displayName.Length);
+            await nameInput.ClearAsync().ConfigureAwait(false);
+            await nameInput.PressSequentiallyAsync(displayName).ConfigureAwait(false);
+
+            // A truncated name can still validate, so joining on it would drop the AI disclosure
+            // silently — refuse instead.
+            typed = await nameInput.InputValueAsync().ConfigureAwait(false);
+            if (!string.Equals(typed, displayName, StringComparison.Ordinal))
+                throw new InvalidOperationException("The Teams prejoin box would not take the assistant's full display name.");
+        }
+
+        var deadline = Environment.TickCount64 + NameValidationTimeoutMs;
+        string reason;
+        do
+        {
+            reason = await nameInput.EvaluateAsync<string>(NameRejectionScript).ConfigureAwait(false) ?? string.Empty;
+            if (reason.Length == 0) return;
+            await Task.Delay(SelectorRetryDelayMs).ConfigureAwait(false);
+        }
+        while (Environment.TickCount64 < deadline);
+
+        // Teams leaves "Join now" disabled on a rejected name, so without this the join would only fail
+        // two minutes later as an admission timeout — and be retried, forever, by the scheduler.
+        _logger.SensitiveDebug("Teams rejected the prejoin display name {DisplayName}", displayName);
+        throw new InvalidOperationException($"Teams rejected the assistant's display name: {reason}");
     }
 
     /// <summary>

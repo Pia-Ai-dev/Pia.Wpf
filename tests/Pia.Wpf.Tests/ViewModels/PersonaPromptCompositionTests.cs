@@ -24,7 +24,7 @@ public class PersonaPromptCompositionTests
 
         Assert.Contains("You are a senior software engineer.", block);
         // The substrate date line is preserved below the identity.
-        Assert.Contains("The current date and time is", block);
+        Assert.Contains("The current date is", block);
         // The old hardcoded identity is gone.
         Assert.DoesNotContain("You are Pia, a helpful personal assistant.", block);
     }
@@ -209,6 +209,20 @@ public class PersonaPromptCompositionTests
 
         Assert.Contains("files in the assistant files folder", hint);
         Assert.Contains("read_file", hint);
+    }
+
+    [Fact]
+    public void BuildAtCommandHint_MemoryWithTitle_PointsAtTheKnowledgeLoopNotAnIdLookup()
+    {
+        var hint = AssistantPromptComposer.BuildAtCommandHint(
+        [
+            new AtCommand { Domain = AtCommandDomain.Memory, ItemTitle = "Acme Corp" }
+        ]);
+
+        Assert.Contains("Acme Corp", hint);
+        Assert.Contains("read_topic", hint);
+        // A vault page has no ID to resolve — the picker offers titles, and recall returns references.
+        Assert.DoesNotContain("obtain its ID", hint);
     }
 
     [Fact]

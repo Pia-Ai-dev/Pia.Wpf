@@ -1,7 +1,9 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Interfaces;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -362,8 +364,12 @@ public class AgentContextCompactorTests
 
     // The shape AssistantMessage.ToChatMessage builds: one fused ChatMessage, which is the unit the pin protects —
     // there is no such thing as a bare image message on either executor path.
-    private static ChatMessage ImageTurn(ChatRole role, string text) =>
-        new(role, [new TextContent(text), new DataContent(Jpeg(), "image/jpeg")]);
+    private static ChatMessage ImageTurn(ChatRole role, string text, int images = 1)
+    {
+        var contents = new List<AIContent> { new TextContent(text) };
+        for (var i = 0; i < images; i++) contents.Add(new DataContent(Jpeg(), "image/jpeg"));
+        return new ChatMessage(role, contents);
+    }
 
     [Fact]
     public async Task ImageAttachment_MidList_IsPinnedRatherThanEvicted()
@@ -464,6 +470,78 @@ public class AgentContextCompactorTests
         Assert.Same(withImage[^1], withImageResult[^1]);
         Assert.Contains("Execute step 9", withImageResult[^1].Text);
         Assert.Contains(withImageResult[^1].Contents, c => c is DataContent);
+    }
+
+    [Fact]
+    public async Task PinAdmission_ChargesEveryImageOnTheTurn_NotJustTheFirst()
+    {
+        // The differential: at 8000/2000 the allowance floors at one ImageTokenCharge, so a one-image turn is
+        // admitted and a two-image turn is refused. Charged per TURN they would both be admitted, and the
+        // second picture would ride the request unpaid for — the direction that overflows the window.
+        var budget = AgentContextBudget.From(Provider(8_000, 2_000));
+
+        static List<ChatMessage> Fixture(ChatMessage image)
+        {
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, "You are Pia, an agent."),
+                new(ChatRole.User, "THE GOAL: explain the screenshots."),
+            };
+            for (var i = 1; i <= 6; i++)
+                messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+            messages.Add(image);
+            for (var i = 7; i <= 12; i++)
+                messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+            messages.Add(new ChatMessage(ChatRole.User, "Execute step 13"));
+            return messages;
+        }
+
+        var one = Fixture(ImageTurn(ChatRole.User, "one screenshot"));
+        var oneResult = await AgentContextCompactor.CompactAsync(
+            one, budget, Logger, TestContext.Current.CancellationToken);
+        var onePinned = oneResult.Where(m => m.Contents.OfType<DataContent>().Any()).ToList();
+        Assert.Single(onePinned);
+
+        var two = Fixture(ImageTurn(ChatRole.User, "two screenshots", images: 2));
+        var twoResult = await AgentContextCompactor.CompactAsync(
+            two, budget, Logger, TestContext.Current.CancellationToken);
+
+        // Refused, so it falls back into the compacted range — where the library's bytes/4 evicts it. Losing the
+        // pictures and keeping a request that fits beats pinning 7000 tokens and declining to compact at all.
+        var twoPinned = twoResult.Where(m => m.Contents.OfType<DataContent>().Any()).ToList();
+        Assert.Empty(twoPinned);
+    }
+
+    [Fact]
+    public async Task AFourImageGoal_OnASmallConfiguredWindow_LeavesNoInputBudget()
+    {
+        // The head pin is charged UNCONDITIONALLY — it ships by definition, so there is nothing to admit or
+        // refuse. Four images on it pin 14 000 tokens before any history is counted; on a user-configured 8000
+        // window that trips the early return and sends the request as-is. No image cap can protect this: a
+        // mandatory pin cannot be shrunk.
+        var messages = AgentStepShapedMessages();
+        messages[1] = ImageTurn(ChatRole.User, messages[1].Text!, images: 4);
+        var logger = new CapturingLogger<AgentContextCompactorTests>();
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), logger, TestContext.Current.CancellationToken);
+
+        Assert.Equal(messages.Count, result.Count);
+
+        // The pin cannot deliver an outcome here, so the warning IS the deliverable: it is the only thing
+        // that tells a user reading pia-*.log why a send became a provider 400.
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains("leaves no input budget", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("of 8000", warning.Message, StringComparison.Ordinal);
+
+        // Charged per image, not per image-bearing turn: one would pin 3500 and leave budget, so the
+        // warning would not fire at all.
+        var pinned = int.Parse(
+            System.Text.RegularExpressions.Regex.Match(warning.Message, @"pinned (\d+) tokens").Groups[1].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(
+            pinned >= 4 * AgentContextCompactor.ImageTokenCharge,
+            $"four images must be charged four times, but the pin came to {pinned} tokens");
     }
 
     [Fact]
@@ -586,5 +664,74 @@ public class AgentContextCompactorTests
         var system = Assert.Single(result, m => m.Role == ChatRole.System);
         Assert.Same(messages[0], system);
         Assert.Same(messages[0], result[0]);
+    }
+
+    private static ChatMessage ToolImageTurn(string callId = "call-1") =>
+        ToolLoopImageMessages.Build(new ToolLoopImage(callId, Jpeg(), "image/jpeg", 4, 4, "a tool's screen capture"));
+
+    [Fact]
+    public async Task AToolImageMessage_IsNotTakenForTheStepInstruction()
+    {
+        var messages = AgentStepShapedMessages(priorSteps: 12);
+        var instruction = messages[^1];
+        var image = ToolImageTurn();
+        messages.Add(image);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.True(
+            result.Count < messages.Count,
+            $"this fixture must be over budget or it proves nothing, but {messages.Count} messages came back as {result.Count}");
+
+        Assert.Same(instruction, result[^1]);
+        Assert.Same(image, result[^2]);
+    }
+
+    [Fact]
+    public async Task AConsumedPlaceholder_IsNotTakenForTheStepInstruction()
+    {
+        var messages = AgentStepShapedMessages(priorSteps: 12);
+        var instruction = messages[^1];
+        messages.Add(ToolImageTurn());
+        ToolLoopImageMessages.Consume(messages);
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        Assert.Same(instruction, result[^1]);
+    }
+
+    /// <summary>Compaction is the second path that could wedge a user message between two tool results — the
+    /// shape a provider rejects outright.</summary>
+    [Fact]
+    public async Task NoUserMessage_EverLandsBetweenTwoToolResults()
+    {
+        var messages = new List<ChatMessage>
+        {
+            new(ChatRole.System, "You are Pia, an agent."),
+            new(ChatRole.User, "THE GOAL: read the screen."),
+        };
+        for (var i = 1; i <= 10; i++)
+            messages.Add(new ChatMessage(ChatRole.Assistant, $"step {i} reply: {Bulk(500)}"));
+        messages.Add(new ChatMessage(ChatRole.User, "Execute step 11"));
+        messages.Add(new ChatMessage(ChatRole.Assistant, [
+            new FunctionCallContent("call-1", "screen_capture", null),
+            new FunctionCallContent("call-2", "read_file", null)]));
+        messages.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call-1", "captured")]));
+        messages.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent("call-2", "read")]));
+        messages.Add(ToolImageTurn());
+
+        var result = await AgentContextCompactor.CompactAsync(
+            messages, AgentContextBudget.From(Provider(8_000, 2_000)), Logger, TestContext.Current.CancellationToken);
+
+        var roles = result.Select(m => m.Role).ToList();
+        var firstTool = roles.IndexOf(ChatRole.Tool);
+        var lastTool = roles.LastIndexOf(ChatRole.Tool);
+        Assert.True(lastTool > firstTool && firstTool >= 0,
+            "the fixture must keep two tool results or the span below proves nothing");
+
+        for (var i = firstTool; i <= lastTool; i++)
+            Assert.NotEqual(ChatRole.User, roles[i]);
     }
 }

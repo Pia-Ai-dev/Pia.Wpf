@@ -2,8 +2,8 @@ namespace Pia.Services.Consent;
 
 /// <summary>
 /// Persists consent evidence so a grant can still be proven after the session ends
-/// (Art. 7 GDPR Nachweispflicht). Write-only in v1: there is no reader, no expiry stamp and no cleanup
-/// worker — retention is a v2 concern.
+/// (Art. 7 GDPR Nachweispflicht). Write-only: there is no reader and no expiry stamp, and a session ages
+/// out on its file dates alone — see <see cref="ConsentRetention"/>.
 ///
 /// <para>Both methods THROW on failure. That is the contract, not an oversight: the defect this store
 /// exists to fix was a silent success path that persisted nothing at all. The caller audits the failure
@@ -21,8 +21,9 @@ public interface IConsentEvidenceStore
     Task SaveGrantAsync(string sessionId, ConsentEvidence evidence, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Appends a revocation record BESIDE the grant evidence. The grant evidence is never modified or
-    /// deleted: withdrawing consent ends the processing, it does not erase the proof that consent existed.
+    /// Appends a revocation record BESIDE the grant evidence. The grant evidence is never modified, and it is
+    /// only ever removed by the retention window: withdrawing consent ends the processing, it does not erase
+    /// the proof that consent existed.
     /// </summary>
     /// <param name="sessionId">Session the revoked grant belongs to.</param>
     /// <param name="speakerLabel">The label whose consent was withdrawn.</param>

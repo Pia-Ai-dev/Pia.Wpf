@@ -70,7 +70,7 @@ Token, `429` bei Rate-Limit. Der Client unterscheidet nur 2xx/nicht-2xx.
    `CreatedAt`, `Status` [new/triaged/closed], `ExtensionJson`). Getrennt vom Audit-Log — das ist die
    „gesonderte Erfassung" aus M8. Inhalte sind Nutzerinhalte: Zugriff nur für die Admin-Rolle.
 3. **Benachrichtigung** je Eingang mit `rating: "down"` an `Feedback:NotifyAddress`, Standard
-   **`entwicklung@neo42.de`** (Interimsadresse, Owner 29.08.2026). Inhalt der Mail: Id, Zeitpunkt, Modell,
+   **`piasupport@pia-ai.de`**. Inhalt der Mail: Id, Zeitpunkt, Modell,
    Kommentar, Hinweis auf Tokenisierung — den Antworttext nur per Link/Admin-Ansicht, nicht in der Mail.
    Daumen hoch nur zählen, nicht mailen.
 4. **Self-hosted:** `Feedback:ForwardToProvider` (bool, Standard `true`) leitet eine Kopie an
@@ -86,6 +86,4 @@ Token, `429` bei Rate-Limit. Der Client unterscheidet nur 2xx/nicht-2xx.
 
 - Ob der Server die Meldung mit dem tatsächlichen Upstream-Modell anreichert (Join über `messageId` auf
   `TokenUsageLog`, falls dort die Nachrichten-Id geführt wird — heute vermutlich nicht).
-- Eigener Alias statt `entwicklung@neo42.de`, sobald der Beschwerdeweg nach außen ausgewiesen wird
-  (er steht seit 29.08.2026 in der About-Seite des Clients).
 - Digest statt Einzelmail, wenn das Volumen es verlangt.

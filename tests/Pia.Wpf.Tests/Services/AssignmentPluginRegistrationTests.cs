@@ -82,6 +82,8 @@ public sealed class AssignmentPluginRegistrationTests : IDisposable
             Substitute.For<IGitToolHandler>(),
             Substitute.For<IChatHistoryToolHandler>(),
             handler,
+            Substitute.For<IScreenCaptureToolHandler>(),
+            Substitute.For<IHelpToolHandler>(),
             cache,
             Substitute.For<ISettingsService>(),
             NullLogger<PluginService>.Instance,

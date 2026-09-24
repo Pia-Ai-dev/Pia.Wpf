@@ -1,91 +1,26 @@
-# Pia 1.4
-
-## Shortcuts
-
-- Holding a global shortcut no longer flips its window open and shut. The
-  Optimize window reopened and closed for as long as Ctrl+Alt+O was held.
-- The Assistant window can be tucked away with its own shortcut, the way the
-  Optimize window already could — but only when nothing is typed, attached or
-  still running.
+# Pia next
 
 ## Assistant
 
-- Opening a chat from the history or the picker shows its newest message,
-  wherever you had scrolled to in the chat before it.
-- A long draft no longer fills the window. The input stays a few lines tall
-  and offers to grow, and goes back once the message is sent.
-- A long message you have sent no longer fills the window either. Its bubble
-  shows five lines and offers "Show more"; the answer to it stays in view.
-- A chat can be given a name of your own. Pick it in the history, next to
-  Resume, and it is what the history shows from then on — useful above all
-  with automatic titles switched off.
-- The same rename sits in the chat picker at the top of the Assistant: hover a
-  row, click the pencil, type and press Enter. The list stays open around you.
-- A chat also keeps the name it has. Every save used to write the first
-  message back over it, so an automatic title lasted until the next reply.
+- Imported Open WebUI chats read as answers again. The model's thinking came
+  over as raw markup in the middle of the reply; it now sits behind the same
+  collapsible heading Pia uses for its own reasoning. Importing the same file
+  again repairs the conversations you already brought over.
+- Pia warns you when it is running as administrator. A notice at the top of
+  the chat explains that file tools, agent runs and MCP servers inherit those
+  rights, and suggests restarting without them. Dismissing it lasts for that
+  session only.
+- An agent run's steps now use the model your persona asks for. A step assigned
+  to a coding persona reached the server without saying so and was answered by
+  whatever model your group has set as its default, so picking a persona for its
+  model only worked in ordinary chat.
 
-## Notifications
+## Privacy
 
-- The ✕ on a message that slides in at the top left now closes it while the
-  flow rail is open. The click went to the rail instead.
-
-## Todo
-
-- The Closed column stays open once you open it. Adding or removing a task
-  collapsed it again.
-
-## Connection
-
-- Losing your internet connection now says so, in your language, and says the
-  message can be sent again. It used to land in the chat as an English socket
-  error that stayed in the transcript.
-
-## Optimize
-
-- Text too long for Pia Cloud's optimizer is turned down with a sentence that
-  names your length and the limit, instead of an English server message.
-
-## Files
-
-- PDFs can be dropped on the Assistant and on Optimize. Their text is read the
-  way a Word or Excel file's already is; a scanned PDF says it holds no text
-  rather than failing silently.
-- A file Pia turns down for its size now says what the limit is, instead of
-  only that the file was too large.
-
-## Settings
-
-- Turning a built-in plugin off in Settings → Plugins now sticks. The switch
-  was kept for the session only, so every restart brought the plugin back on.
-- A setting your administrator supplies a default for can now be changed to
-  any value, including the one Pia itself ships. Picking that value read as
-  "never touched it", so the administrator's default came back on the next
-  save — most visibly, the interface language could not be set to English
-  under a German default.
-- The Edit and Delete buttons on your own Optimize templates are fully
-  visible again. They sat past the edge of the card and could not be
-  clicked.
-
-## Navigation
-
-- Navigation labels are readable in the dark theme again. They were drawn in
-  black on the dark sidebar.
-- The appearance switch at the bottom of the sidebar now says "Appearance"
-  and explains itself on hover, instead of showing only the name of the theme
-  it is currently on.
-- A Help entry sits next to it and opens the Pia desktop guide in your
-  browser, in the language the interface is set to.
-
-## Routines
-
-- A failed run now says why. The run list under a routine shows the reason
-  beneath "Failed" — a server or provider message word for word — and
-  opening the chat of a failed chat-mode routine shows the request and the
-  failure instead of an empty chat.
-- A failure Pia Cloud reports mid-answer no longer ends as "The model returned
-  no answer." Its actual message reaches the routine's run, the agent run's
-  failure card and an interactive chat alike, so a timeout or an upstream
-  error reads as what it was.
+- The "Protected" shield now appears on every answer a protected model helped
+  write, not only the ones whose last request went there. An agent step asks the
+  server several times as it works, so a step answered under the shield and then
+  finishing normally used to show nothing.
 
 ## Transcription
 
@@ -98,16 +33,3 @@
 - Nemotron does leave very short answers out of the finished transcript — a
   bare "ja" or "hm". Parakeet TDT v3 stays the better pick for a meeting you
   intend to summarise, and is still the faster of the two.
-- Stopping a live or meeting transcription keeps what you just said. Audio the
-  microphone had already handed over could be dropped while the recogniser shut
-  down, cutting the last words off the transcript.
-- Saving a transcript to a file now opens in the working folder of the chat you
-  are in, rather than Pia's own meetings folder, and the suggested name leads
-  with the date — 2026-09-03_meeting.md. Saving a second transcript on the same
-  day asks before it overwrites.
-
-## Performance
-
-- Leaving a screen and coming back no longer leaves the old copy behind in
-  memory. A long session that moves between the chat and the other views used
-  to climb into the gigabytes; it now stays flat.

@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Scheduling;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Xunit;
@@ -61,6 +62,8 @@ public class RoutinesViewModelTests
         new(TodoPlugin, "todo", "create_todo", "Create a todo", IsExternalRoute: false, ServerDeclaredDestructive: false),
         new(FilesPlugin, "files", "write_file", "Write a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
         new(FilesPlugin, "files", "delete_file", "Delete a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
+        // Never grantable: the call returns a result and no gate is consulted. Here so the filter is testable.
+        new(FilesPlugin, "files", "read_file", "Read a file", IsExternalRoute: false, ServerDeclaredDestructive: false),
         new(McpPlugin, "some-mcp-server", "create_todo", "Create a todo", IsExternalRoute: true, ServerDeclaredDestructive: false),
     ];
 
@@ -74,7 +77,10 @@ public class RoutinesViewModelTests
         IDialogService Dialogs,
         IWindowManagerService Windows,
         IPluginService Plugins,
-        ITextOptimizationService Drafting);
+        IWorkingDirectoryService WorkingDirectories,
+        ISettingsService Settings,
+        ITextOptimizationService Drafting,
+        IAdvancedCreationLauncher Advanced);
 
     private static Sut CreateSut(params ScheduledJob[] jobs) => CreateSut(runs: null, jobs);
 
@@ -113,11 +119,23 @@ public class RoutinesViewModelTests
         plugins.GetToolCatalog().Returns(ToolCatalog());
 
         var drafting = Substitute.For<ITextOptimizationService>();
+        var advanced = Substitute.For<IAdvancedCreationLauncher>();
+
+        // Returns null the way the real service does with no sandbox configured, so a create sends no folder
+        // unless the test asks for one.
+        var workingDirectories = Substitute.For<IWorkingDirectoryService>();
+        workingDirectories.EnsureSubfolder(Arg.Any<string?>()).Returns((string?)null);
+
+        // RefreshAsync reads the default folder off the settings, so an unstubbed null would fail the whole load.
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
 
         var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
-            plugins, Substitute.For<IBrowserProvisioner>(), NullLogger<RoutinesViewModel>.Instance, drafting);
+            plugins, Substitute.For<IBrowserProvisioner>(), workingDirectories, settings,
+            NullLogger<RoutinesViewModel>.Instance, drafting, advanced);
 
-        return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins, drafting);
+        return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins,
+            workingDirectories, settings, drafting, advanced);
     }
 
     private static RoutineDraft Draft(
@@ -395,6 +413,42 @@ public class RoutinesViewModelTests
         Assert.Empty(TickedTools(sut.Vm));
     }
 
+    /// <summary>Ticking a read-only tool would authorize nothing — reads never reach the gate — so the picker
+    /// does not offer the choice at all.</summary>
+    [Fact]
+    public void ThePicker_LeavesOutAReadOnlyBuiltIn()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        var offered = sut.Vm.EditToolGroups.SelectMany(g => g.Tools).Select(t => t.ToolName).ToArray();
+
+        Assert.DoesNotContain("read_file", offered);
+        Assert.Contains("write_file", offered);
+    }
+
+    /// <summary>The same filter on the other side: a tool the picker cannot show must not be proposed to the
+    /// model either, or the draft would tick a row that does not exist.</summary>
+    [Fact]
+    public async Task ADraft_IsNotOfferedAReadOnlyBuiltIn()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        IReadOnlyList<RoutineDraftTool> offered = [];
+        sut.Drafting.GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(ci =>
+            {
+                offered = (IReadOnlyList<RoutineDraftTool>)ci[1];
+                return Draft(tools: ["write_file"]);
+            });
+        sut.Vm.EditDescription = "anything";
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(offered, t => t.Name == "read_file");
+        Assert.Contains(offered, t => t.Name == "write_file");
+    }
+
     /// <summary>A grant has a blank state, so nothing ticked is the only case the draft may fill — a tick the
     /// user made, or a card that deliberately grants nothing, both stand.</summary>
     [Fact]
@@ -425,6 +479,72 @@ public class RoutinesViewModelTests
         await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
 
         Assert.Empty(TickedTools(sut.Vm));
+    }
+
+    // ---- the interview door ---------------------------------------------------------------------
+
+    /// <summary>The interview reaches the same fields as the one-shot draft, so a name the catalogue does not
+    /// offer must be dropped on this path too — it is the one that can otherwise reach a stored grant.</summary>
+    [Fact]
+    public async Task AnInterviewDraft_DropsAToolThisDeviceDoesNotOffer()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns("""{"name":"Digest","goal":"Summarise.","tools":["create_todo","post_to_slack"]}""");
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(["create_todo"], TickedTools(sut.Vm));
+    }
+
+    [Fact]
+    public async Task AnInterviewDraft_FillsTheSameFieldsAsTheOneShotDraft()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns("""{"name":"Digest","goal":"Summarise the week.","recurrence":"weekly","dayOfWeek":"Friday","timeOfDay":"17:00"}""");
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("Digest", sut.Vm.EditName);
+        Assert.Contains("Summarise the week.", sut.Vm.EditQuery);
+        Assert.Equal(RecurrenceType.Weekly, sut.Vm.EditRecurrence);
+        Assert.Equal(DayOfWeek.Friday, sut.Vm.EditDayOfWeek);
+        Assert.Equal("17:00", sut.Vm.EditTimeOfDay);
+    }
+
+    /// <summary>Closing the overlay without finishing must leave the editor exactly as it was.</summary>
+    [Fact]
+    public async Task AnAbandonedInterview_ChangesNothing()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Mine";
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns((string?)null);
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal("Mine", sut.Vm.EditName);
+        Assert.False(sut.Vm.IsDrafting);
+    }
+
+    /// <summary>The web-search guard is appended on this path too: a routine whose provider cannot search
+    /// would otherwise answer from memory.</summary>
+    [Fact]
+    public async Task AnInterviewDraft_AppendsTheWebSearchGuard()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Advanced.LaunchAsync(Arg.Any<AdvancedCreationMode>(), Arg.Any<Guid?>(), Arg.Any<string?>())
+            .Returns("""{"name":"News","goal":"Report the news.","needsWebSearch":true}""");
+
+        await sut.Vm.AdvancedDraftCommand.ExecuteAsync(null);
+
+        Assert.NotEqual("Report the news.", sut.Vm.EditQuery);
+        Assert.StartsWith("Report the news.", sut.Vm.EditQuery);
     }
 
     // ---- the slot value inside the goal ---------------------------------------------------------
@@ -600,6 +720,13 @@ public class RoutinesViewModelTests
         NextFireAt = DateTime.Now.AddHours(4),
         Status = status,
     };
+
+    private static ScheduledJob JobWith(string? workingDirectory)
+    {
+        var job = NewJob();
+        job.WorkingDirectory = workingDirectory;
+        return job;
+    }
 
     /// <summary>Nothing else loads this view: the list and the provider ComboBox bind collections only
     /// <c>RefreshAsync</c> fills, so without the navigation hook the view renders "no routines yet" forever —
@@ -922,6 +1049,49 @@ public class RoutinesViewModelTests
         Assert.NotEqual(DateTime.Now.DayOfWeek, sut.Vm.EditDayOfWeek);
     }
 
+    /// <summary>A manual routine has no time field to type into, so requiring one would make it unsaveable.</summary>
+    [Fact]
+    public async Task AManualRoutine_SavesWithNoTimeOfDay()
+    {
+        var sut = CreateSut();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Template";
+        sut.Vm.EditQuery = "Do the quarterly write-up.";
+        sut.Vm.EditRecurrence = RecurrenceType.Manual;
+        sut.Vm.EditTimeOfDay = string.Empty;
+
+        Assert.False(sut.Vm.EditorWantsTimeOfDay);
+        Assert.True(sut.Vm.CanSave);
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).CreateAsync("Template", "Do the quarterly write-up.", RecurrenceType.Manual,
+            Arg.Any<TimeOnly>(), dayOfWeek: null, dayOfMonth: null, month: null,
+            specificDate: null, providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
+            kind: Arg.Any<ScheduledJobKind>(), quietOnSuccess: Arg.Any<bool>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>());
+    }
+
+    /// <summary>A manual routine parks at the year-9999 sentinel, which is nobody's intended default for the
+    /// recurrence they may switch to next.</summary>
+    [Fact]
+    public async Task EditingAManualRoutine_SeedsTheDayPickersFromToday()
+    {
+        var job = NewJob();
+        job.Recurrence = RecurrenceType.Manual;
+        job.DayOfWeek = null;
+        job.NextFireAt = RecurrenceCalculator.Never;
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.Equal(DateTime.Now.DayOfWeek, sut.Vm.EditDayOfWeek);
+        Assert.Equal(DateTime.Now.Day, sut.Vm.EditDayOfMonth);
+    }
+
     /// <summary>The editor is ONE panel for create and edit, so the quiet checkbox has to reach BOTH service
     /// calls or a ticked box silently creates notifying jobs.</summary>
     [Fact]
@@ -969,7 +1139,9 @@ public class RoutinesViewModelTests
             // The editor sends these on every save, so the matcher has to name them — NSubstitute matches on
             // the whole argument list.
             quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
-            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
     }
 
     /// <summary>
@@ -986,7 +1158,9 @@ public class RoutinesViewModelTests
                 Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
                 Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<DateTime?>(),
                 Arg.Any<ScheduledJobKind?>(), Arg.Any<bool?>(), Arg.Any<Guid?>(),
-                Arg.Any<ReasoningEffort?>(), Arg.Any<bool>()))
+                Arg.Any<ReasoningEffort?>(), Arg.Any<bool>(),
+                meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+                workingDirectory: Arg.Any<string?>()))
             .Do(_ => throw new InvalidOperationException("db"));
         await sut.Vm.RefreshAsync();
         sut.Vm.SelectedJob = sut.Vm.Jobs[0];
@@ -1131,6 +1305,10 @@ public class RoutinesViewModelTests
         var runs = Substitute.For<IAgentRunService>();
         runs.GetFiringsForTriggerAsync(Arg.Any<Guid>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(Array.Empty<ScheduledFiringOutcome>());
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var workingDirectories = Substitute.For<IWorkingDirectoryService>();
+        workingDirectories.EnsureSubfolder(Arg.Any<string?>()).Returns((string?)null);
 
         // Installed only for the constructor: the VM captures this instance, and the comparison against
         // SynchronizationContext.Current then fails for every later call, exactly as it does under WPF.
@@ -1143,6 +1321,7 @@ public class RoutinesViewModelTests
             vm = new RoutinesViewModel(jobs, Substitute.For<IScheduledJobRunner>(), providers, personas, runs,
                 Substitute.For<IDialogService>(), Substitute.For<IWindowManagerService>(), Localizer(),
                 Substitute.For<IPluginService>(), Substitute.For<IBrowserProvisioner>(),
+                workingDirectories, settings,
                 NullLogger<RoutinesViewModel>.Instance);
         }
         finally
@@ -1695,7 +1874,9 @@ public class RoutinesViewModelTests
             Arg.Any<RecurrenceType?>(), Arg.Any<TimeOnly?>(), Arg.Any<DayOfWeek?>(), Arg.Any<int?>(),
             Arg.Any<int?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<DateTime?>(),
             Arg.Any<ScheduledJobKind?>(), Arg.Any<bool?>(),
-            personaId: persona.Id, reasoningEffort: ReasoningEffort.High, clearReasoningEffort: false);
+            personaId: persona.Id, reasoningEffort: ReasoningEffort.High, clearReasoningEffort: false,
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
     }
 
     /// <summary>Guid.Empty, not null: null means "leave unchanged", so the default row used to save as a no-op.
@@ -1726,7 +1907,9 @@ public class RoutinesViewModelTests
             Arg.Any<int?>(), providerId: Guid.Empty, grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
             specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
             quietOnSuccess: Arg.Any<bool?>(), personaId: Guid.Empty,
-            reasoningEffort: null, clearReasoningEffort: true);
+            reasoningEffort: null, clearReasoningEffort: true,
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
     }
 
     /// <summary>A pin whose persona is gone must stay visible and survive an unrelated edit — falling back to
@@ -1761,7 +1944,9 @@ public class RoutinesViewModelTests
             providerId: Arg.Any<Guid?>(), grantedTools: Arg.Any<IReadOnlyCollection<string>>(),
             specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
             quietOnSuccess: Arg.Any<bool?>(), personaId: pinned,
-            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
     }
 
     /// <summary>The synthetic row belongs to one job. Left behind, the next routine's editor offers a stranger's
@@ -2039,7 +2224,9 @@ public class RoutinesViewModelTests
             providerId: Arg.Any<Guid?>(), grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.Count == 0),
             specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
             quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
-            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
     }
 
     /// <summary>The collapsed header is the only line most users read, so it has to track a tick.</summary>
@@ -2069,7 +2256,9 @@ public class RoutinesViewModelTests
             grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.SequenceEqual(new[] { "write_file" })),
             specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
             quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
-            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
     }
 
     /// <summary>A grant is stored by NAME, so two plugins exposing one name are one grant. Rows that disagreed
@@ -2116,7 +2305,40 @@ public class RoutinesViewModelTests
                 g => g.SequenceEqual(new[] { "write_file", "create_todo" })),
             specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
             quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
-            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
+    }
+
+    /// <summary>The opposite of the unavailable case below, and the reason the two are told apart: a stored
+    /// read-only grant authorized nothing when it was made either, so it is dropped rather than filed as
+    /// missing — "not offered on this device" would say the routine lost a capability it never had.</summary>
+    [Fact]
+    public async Task AStoredReadOnlyGrant_IsDroppedSilently_NotShownAsUnavailable()
+    {
+        var job = NewJob();
+        job.GrantedTools = ["read_file", "write_file"];
+        var sut = CreateSut(job);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.False(sut.Vm.HasEditMissingTools);
+        Assert.DoesNotContain(sut.Vm.EditToolGroups.SelectMany(g => g.Tools), t => t.ToolName == "read_file");
+        Assert.Equal(["write_file"], TickedTools(sut.Vm));
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received(1).UpdateAsync(job.Id, name: Arg.Any<string>(), query: Arg.Any<string>(),
+            recurrence: Arg.Any<RecurrenceType?>(), timeOfDay: Arg.Any<TimeOnly?>(),
+            dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(), month: Arg.Any<int?>(),
+            providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.SequenceEqual(new[] { "write_file" })),
+            specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
+            quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
     }
 
     /// <summary>Same contract as an unresolvable persona pin: a grant nothing here provides is shown and kept,
@@ -2146,7 +2368,9 @@ public class RoutinesViewModelTests
             grantedTools: Arg.Is<IReadOnlyCollection<string>>(g => g.Contains("jira_create_issue")),
             specificDate: Arg.Any<DateTime?>(), kind: Arg.Any<ScheduledJobKind?>(),
             quietOnSuccess: Arg.Any<bool?>(), personaId: Arg.Any<Guid?>(),
-            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>());
+            reasoningEffort: Arg.Any<ReasoningEffort?>(), clearReasoningEffort: Arg.Any<bool>(),
+            meetingUrl: Arg.Any<string?>(), meetingConsentAckAt: Arg.Any<DateTime?>(),
+            workingDirectory: Arg.Any<string?>());
 
         sut.Vm.StartEditCommand.Execute(null);
         Row(sut.Vm, "jira_create_issue").IsSelected = false;
@@ -2244,5 +2468,159 @@ public class RoutinesViewModelTests
         await sut.Vm.RefreshAsync();
 
         Assert.Equal("Routines_Detail_Tools_None", sut.Vm.Jobs[0].ToolsSummary);
+    }
+
+    // ---- working directory ----------------------------------------------------------------------
+
+    [Fact]
+    public async Task StartCreate_SeedsTheWorkingDirectoryFromTheDefaultSetting()
+    {
+        var sut = CreateSut();
+        sut.WorkingDirectories.EnsureSubfolder("Playground").Returns("Playground");
+        await sut.Vm.RefreshAsync();
+
+        sut.Vm.StartCreateCommand.Execute(null);
+
+        Assert.Equal("Playground", sut.Vm.EditWorkingDirectory);
+    }
+
+    [Fact]
+    public async Task StartEdit_SeedsTheWorkingDirectoryFromTheStoredRow()
+    {
+        var sut = CreateSut();
+        sut.Jobs.GetAllAsync().Returns([JobWith(workingDirectory: "Reports/Weekly")]);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.Equal("Reports/Weekly", sut.Vm.EditWorkingDirectory);
+    }
+
+    /// <summary>A routine that predates the column must not be re-anchored by an unrelated edit.</summary>
+    [Fact]
+    public async Task StartEdit_OnARowWithNoFolder_StaysAtTheSandboxRoot()
+    {
+        var sut = CreateSut();
+        sut.Jobs.GetAllAsync().Returns([JobWith(workingDirectory: null)]);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        sut.Vm.StartEditCommand.Execute(null);
+
+        Assert.Null(sut.Vm.EditWorkingDirectory);
+    }
+
+    [Fact]
+    public async Task SaveAsync_OnCreate_PassesTheChosenFolder()
+    {
+        var sut = CreateSut();
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "R";
+        sut.Vm.EditQuery = "q";
+        sut.Vm.EditWorkingDirectory = "Reports";
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received().CreateAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+            Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(),
+            Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<ScheduledJobKind>(),
+            Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<DateTime?>(), "Reports");
+    }
+
+    /// <summary>Empty is the CLEAR sentinel on update; null would silently leave the old folder in place.</summary>
+    [Fact]
+    public async Task SaveAsync_OnUpdate_ClearingTheFolderSendsEmptyNotNull()
+    {
+        var sut = CreateSut();
+        sut.Jobs.GetAllAsync().Returns([JobWith(workingDirectory: "Reports")]);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+        sut.Vm.EditWorkingDirectory = null;
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received().UpdateAsync(
+            Arg.Any<Guid>(), workingDirectory: string.Empty,
+            name: Arg.Any<string>(), query: Arg.Any<string>(), recurrence: Arg.Any<RecurrenceType?>(),
+            timeOfDay: Arg.Any<TimeOnly?>(), dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(),
+            month: Arg.Any<int?>(), providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Any<IReadOnlyCollection<string>?>(), specificDate: Arg.Any<DateTime?>(),
+            kind: Arg.Any<ScheduledJobKind?>(), quietOnSuccess: Arg.Any<bool?>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>(),
+            clearReasoningEffort: Arg.Any<bool>(), meetingUrl: Arg.Any<string?>(),
+            meetingConsentAckAt: Arg.Any<DateTime?>());
+    }
+
+    /// <summary>A meeting files a vault source, not chat files, so the seeded folder must not follow it.</summary>
+    [Fact]
+    public async Task SaveAsync_OnCreate_SendsNoFolderForAMeeting()
+    {
+        var sut = CreateSut();
+        sut.WorkingDirectories.EnsureSubfolder("Playground").Returns("Playground");
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditName = "Standup";
+        sut.Vm.EditKind = ScheduledJobKind.MeetingAttendance;
+        sut.Vm.EditMeetingUrl = "https://teams.microsoft.com/l/meetup-join/x";
+        sut.Vm.EditMeetingConsent = true;
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received().CreateAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<RecurrenceType>(), Arg.Any<TimeOnly>(),
+            Arg.Any<DayOfWeek?>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<DateTime?>(),
+            Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<string>?>(), Arg.Any<ScheduledJobKind>(),
+            Arg.Any<bool>(), Arg.Any<Guid?>(), Arg.Any<ReasoningEffort?>(), Arg.Any<string?>(),
+            Arg.Any<string?>(), Arg.Any<DateTime?>(), null);
+    }
+
+    [Fact]
+    public async Task SaveAsync_OnUpdate_SwitchingToAMeetingClearsTheFolder()
+    {
+        var sut = CreateSut();
+        sut.Jobs.GetAllAsync().Returns([JobWith(workingDirectory: "Reports")]);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+        sut.Vm.StartEditCommand.Execute(null);
+        sut.Vm.EditKind = ScheduledJobKind.MeetingAttendance;
+        sut.Vm.EditMeetingUrl = "https://teams.microsoft.com/l/meetup-join/x";
+        sut.Vm.EditMeetingConsent = true;
+
+        await sut.Vm.SaveCommand.ExecuteAsync(null);
+
+        await sut.Jobs.Received().UpdateAsync(
+            Arg.Any<Guid>(), workingDirectory: string.Empty,
+            name: Arg.Any<string>(), query: Arg.Any<string>(), recurrence: Arg.Any<RecurrenceType?>(),
+            timeOfDay: Arg.Any<TimeOnly?>(), dayOfWeek: Arg.Any<DayOfWeek?>(), dayOfMonth: Arg.Any<int?>(),
+            month: Arg.Any<int?>(), providerId: Arg.Any<Guid?>(),
+            grantedTools: Arg.Any<IReadOnlyCollection<string>?>(), specificDate: Arg.Any<DateTime?>(),
+            kind: Arg.Any<ScheduledJobKind?>(), quietOnSuccess: Arg.Any<bool?>(),
+            personaId: Arg.Any<Guid?>(), reasoningEffort: Arg.Any<ReasoningEffort?>(),
+            clearReasoningEffort: Arg.Any<bool>(), meetingUrl: Arg.Any<string?>(),
+            meetingConsentAckAt: Arg.Any<DateTime?>());
+    }
+
+    /// <summary>The folder is not one of the fields the AI draft fills, so touching it must not spend the
+    /// latch that lets a draft still set the schedule.</summary>
+    [Fact]
+    public async Task ChangingTheWorkingDirectory_DoesNotBlockTheDraftFromSettingTheSchedule()
+    {
+        var sut = CreateSut();
+        await sut.Vm.RefreshAsync();
+        sut.Vm.StartCreateCommand.Execute(null);
+        sut.Vm.EditWorkingDirectory = "Reports";
+        sut.Vm.EditDescription = "weekly report";
+        sut.Drafting
+            .GenerateRoutineDraftAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<RoutineDraftTool>>(), Arg.Any<Guid?>())
+            .Returns(Draft(recurrence: RecurrenceType.Weekly));
+
+        await sut.Vm.GenerateDraftCommand.ExecuteAsync(null);
+
+        Assert.Equal(RecurrenceType.Weekly, sut.Vm.EditRecurrence);
     }
 }

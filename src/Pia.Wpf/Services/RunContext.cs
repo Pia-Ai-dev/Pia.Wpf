@@ -208,6 +208,10 @@ public sealed class RunContext
     /// <summary>Replaces (never appends to) <see cref="Clarifications"/> — the persisted column already accumulates, so appending here would double-list.</summary>
     public void SetClarifications(IReadOnlyList<string> answers) => Clarifications = answers;
 
+    /// <summary>The fenced excerpt of the chat this run started from, or null when it recorded no mode. Plan
+    /// and re-plan only — verify stays on the executed steps, so it checks artifacts and not conversation.</summary>
+    public string? ConversationDigest { get; set; }
+
     private const string ClarificationFenceOpen =
         "--- The user has since answered your clarifying question(s); plan with these as given ---";
 

@@ -1,5 +1,6 @@
 using Pia.Models;
 using Pia.Services.LiveTranscription;
+using Pia.Services.Tts;
 
 namespace Pia.Services.Assets;
 
@@ -19,6 +20,7 @@ public static class RuntimeAssetCatalog
 {
     public const string ModelsPrefix = "models/";
     public const string EmbeddingsPrefix = "embeddings/";
+    public const string TtsVoicesPrefix = "tts/";
 
     public static RuntimeAsset SileroVad { get; } = new(
         ModelsPrefix + "silero_vad.onnx", LiveTranscriptionModels.SileroVadUrl);
@@ -33,6 +35,9 @@ public static class RuntimeAssetCatalog
     public static RuntimeAsset Parakeet { get; } = Bundle(LiveTranscriptionModels.ParakeetBundleUrl);
 
     public static RuntimeAsset Nemotron { get; } = Bundle(LiveTranscriptionModels.NemotronBundleUrl);
+
+    public static RuntimeAsset PiperVoice(string voiceKey) =>
+        Bundle(TtsVoicesPrefix, TtsVoiceCatalog.BundleUrl(voiceKey));
 
     // The ONNX is renamed on the way in — EmbeddingService looks for the model under the model's own
     // name, and "model.onnx" would collide with anything else mirrored under the same prefix.
@@ -60,10 +65,13 @@ public static class RuntimeAssetCatalog
         Whisper(WhisperModelSize.Large),
         Parakeet,
         Nemotron,
+        .. TtsVoiceCatalog.Curated.Select(v => PiperVoice(v.Key)),
     ];
 
     // A sherpa bundle keeps its released archive name: mirroring the archive rather than the extracted
     // tree is what lets the client's extract step stay identical on both paths.
-    private static RuntimeAsset Bundle(string upstreamUrl) =>
-        new(ModelsPrefix + upstreamUrl[(upstreamUrl.LastIndexOf('/') + 1)..], upstreamUrl);
+    private static RuntimeAsset Bundle(string upstreamUrl) => Bundle(ModelsPrefix, upstreamUrl);
+
+    private static RuntimeAsset Bundle(string prefix, string upstreamUrl) =>
+        new(prefix + upstreamUrl[(upstreamUrl.LastIndexOf('/') + 1)..], upstreamUrl);
 }

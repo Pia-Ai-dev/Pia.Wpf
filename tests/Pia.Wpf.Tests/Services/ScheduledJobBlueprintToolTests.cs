@@ -37,7 +37,7 @@ public class ScheduledJobBlueprintToolTests
         });
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]!);
 
-        return new ScheduledJobToolHandler(jobs.Service, providers, loc,
+        return new ScheduledJobToolHandler(jobs.Service, providers, Substitute.For<IScheduledJobRunner>(), loc,
             NullLogger<ScheduledJobToolHandler>.Instance);
     }
 

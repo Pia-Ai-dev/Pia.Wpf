@@ -37,16 +37,30 @@ public static class PiaPaths
     /// <summary>Where a virtual-file drop (a mail dragged out of Outlook) writes the file it had to materialise.</summary>
     public static string DropCacheDirectory => Path.Combine(LocalDataDirectory, "DropCache");
 
+    /// <summary>One JSONL line per screen capture. Routed, so a walkthrough against a throwaway profile does not
+    /// leave rows in the user's real trail.</summary>
+    public static string ScreenCaptureAuditDirectory => Path.Combine(LocalDataDirectory, "ScreenCaptureAudit");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);
+
+    // Redaction keys for the log sink, not data paths: the REAL profile roots, which an override still sits under.
+    public static string RoamingProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+    public static string LocalProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+    public static string UserProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     // Downloaded artifacts and audit trails, always on the real profile — see the class summary. Exposed as
     // individual leaves rather than one shared root so a future *data* path cannot reach for "the real root"
     // and silently lose its override.
     public static string ModelsDirectory => Path.Combine(RealLocalRoot, "Models");
 
-    public static string PiperDirectory => Path.Combine(RealLocalRoot, "Piper");
+    public static string TtsDirectory => Path.Combine(RealLocalRoot, "Tts");
+
+    /// <summary>The pre-sherpa tree: piper.exe plus rhasspy voices the current engine cannot load.</summary>
+    public static string LegacyPiperDirectory => Path.Combine(RealLocalRoot, "Piper");
 
     public static string BrowsersDirectory => Path.Combine(RealLocalRoot, "Browsers");
 

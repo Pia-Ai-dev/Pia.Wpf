@@ -25,6 +25,8 @@ public class AiProviderHandlerReasoningEffortFlagTests
         // Reasoning injected by a DelegatingHandler, unconditionally — already boosted under tools.
         [typeof(OpenRouterProviderHandler)] = false,
         [typeof(VLlmProviderHandler)] = false,
+        // Effort rides in output_config, outside the tools array, so a tool-carrying turn keeps its level.
+        [typeof(AnthropicProviderHandler)] = false,
         // Never send any reasoning field at all — a second turn could not recover anything.
         [typeof(OpenAiCompatibleProviderHandler)] = false,
         [typeof(PiaCloudProviderHandler)] = false,

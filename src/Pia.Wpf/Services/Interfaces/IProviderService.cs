@@ -11,7 +11,7 @@ public interface IProviderService
     Task<AiProvider?> GetDefaultProviderForModeAsync(WindowMode mode);
     Task<AiProvider> AddProviderAsync(AiProvider provider, string? apiKey);
     Task UpdateProviderAsync(AiProvider provider, string? newApiKey = null);
-    Task DeleteProviderAsync(Guid id);
+    Task DeleteProviderAsync(Guid id, bool trackForSync = true);
     string? GetDecryptedApiKey(AiProvider provider);
     Task<TestConnectionResult> TestConnectionAsync(AiProvider provider);
     Task<TestConnectionResult> TestConnectionAsync(AiProvider provider, string? plainApiKey);

@@ -31,9 +31,10 @@ public class ToolAutonomyTests
         bool sessionGrant = false,
         bool serverDeclaredDestructive = false,
         bool namedDenial = false,
-        bool topLevelUserRun = false)
+        bool topLevelUserRun = false,
+        bool scratchTarget = false)
         => new(surface, toolName, toolClass, serverDeclaredDestructive, allowlisted, sessionGrant, standingGrant,
-               namedGrant, namedDenial, policy, canPark, topLevelUserRun);
+               namedGrant, namedDenial, policy, canPark, topLevelUserRun, scratchTarget);
 
     /// <summary>Nested loops in one Fact, not a ~3.5k-case Theory, to keep the cross product out of the suite total.</summary>
     [Fact]
@@ -53,11 +54,13 @@ public class ToolAutonomyTests
         foreach (var sessionGrant in new[] { false, true })
         foreach (var namedDenial in new[] { false, true })
         foreach (var topLevelUserRun in new[] { false, true })
+        foreach (var scratchTarget in new[] { false, true })
         {
             var verdict = ToolAutonomy.Resolve(Input(
                 surface, name, toolClass, policy,
                 allowlisted: allowlisted, standingGrant: granted, namedGrant: named, canPark: canPark,
-                sessionGrant: sessionGrant, namedDenial: namedDenial, topLevelUserRun: topLevelUserRun));
+                sessionGrant: sessionGrant, namedDenial: namedDenial, topLevelUserRun: topLevelUserRun,
+                scratchTarget: scratchTarget));
 
             // A policy may never be the reason a delete-like tool ran; a grant the user typed still may.
             var policyBroken = verdict.Decision == ToolGateDecision.AutoApprovedPolicy;
@@ -73,12 +76,19 @@ public class ToolAutonomyTests
             // The denial tier is a REFUSE-only arm: a declined tool never auto-runs, whatever else is granted.
             var denialBroken = namedDenial && verdict.Outcome == ToolGateOutcome.AutoRun;
 
-            if (policyBroken || parkBroken || denialBroken)
+            // The scratch folder is the ONE exception to "a delete-like tool needs an explicit grant", and
+            // it is bounded here rather than left to the arm: Files class, never voice, and never without
+            // the fact itself. Anything else reaching this decision is the arm leaking.
+            var scratchBroken = verdict.Decision == ToolGateDecision.AutoApprovedScratch
+                && (!scratchTarget || toolClass != ToolClass.Files || surface == ToolGateSurface.Voice);
+
+            if (policyBroken || parkBroken || denialBroken || scratchBroken)
             {
                 violations.Add(
                     $"{surface}/{toolClass}/{name}/policy={(policy is null ? "none" : string.Join('+', policy.AutoApproveClasses))}"
                     + $"/granted={granted}/allowlisted={allowlisted}/named={named}/canPark={canPark}"
                     + $"/session={sessionGrant}/denied={namedDenial}/topLevel={topLevelUserRun}"
+                    + $"/scratch={scratchTarget}"
                     + $" => {verdict.Outcome} {verdict.Decision}");
             }
 
@@ -193,9 +203,10 @@ public class ToolAutonomyTests
 
     // ------------------------------------------------- THE SESSION TIER, at the resolver
 
-    /// <summary>The tier covers these names too now. The only two exceptions are the arm's OWN surface pins —
-    /// voice (no card, no transcript) and an unattended EXTERNAL call (server-defined name, unseen arguments) —
-    /// so this is an equivalence, not a one-way check: a pin that stopped holding fails it as loudly.</summary>
+    /// <summary>The tier covers these names too now. The only exceptions are the arm's OWN surface pins —
+    /// voice (no card, no transcript), and an unattended EXTERNAL (server-defined name, unseen arguments) or
+    /// SCREEN call (the grant cannot say which run minted it) — so this is an equivalence, not a one-way check:
+    /// a pin that stopped holding fails it as loudly.</summary>
     [Fact]
     public void SessionGrant_CoversADeleteLikeOrWorkDiscardingTool_ExceptWhereTheArmPinsTheSurface()
     {
@@ -210,7 +221,8 @@ public class ToolAutonomyTests
                 surface, name, toolClass, policy: null, sessionGrant: true, canPark: canPark));
 
             var pinned = surface == ToolGateSurface.Voice
-                         || (surface == ToolGateSurface.Unattended && toolClass == ToolClass.External);
+                         || (surface == ToolGateSurface.Unattended
+                             && toolClass is ToolClass.External or ToolClass.Screen);
 
             if ((verdict.Decision == ToolGateDecision.AutoApprovedSessionGrant) == pinned)
                 violations.Add($"{surface}/{toolClass}/{name}/canPark={canPark} => {verdict.Outcome} {verdict.Decision}");
@@ -638,5 +650,244 @@ public class ToolAutonomyTests
             Assert.Equal(ToolGateOutcome.AutoRun, honoured.Outcome);
             Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, honoured.Decision);
         }
+    }
+
+    // ------------------------------------------------- SCREEN, one row per surface
+
+    /// <summary>A restored envelope may name any class, so leaving Screen out of the settings preset is not
+    /// enough — the policy arm itself has to refuse it.</summary>
+    [Fact]
+    public void Screen_NoPolicyEverCoversIt_OnAnySurface()
+    {
+        var violations = new List<string>();
+
+        foreach (var surface in AllSurfaces)
+        foreach (var policy in new[] { new RunAutonomyPolicy([ToolClass.Screen]), EveryClassPolicy })
+        foreach (var canPark in new[] { false, true })
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                surface, "screen_capture", ToolClass.Screen, policy, canPark: canPark));
+
+            if (verdict.Decision == ToolGateDecision.AutoApprovedPolicy
+                || verdict.Outcome == ToolGateOutcome.AutoRun)
+                violations.Add($"{surface}/canPark={canPark} => {verdict.Outcome} {verdict.Decision}");
+        }
+
+        Assert.Empty(violations);
+
+        // Non-vacuity control: the arm still authorizes a class the preset does name.
+        var covered = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files, new RunAutonomyPolicy([ToolClass.Files])));
+        Assert.Equal(ToolGateDecision.AutoApprovedPolicy, covered.Decision);
+    }
+
+    /// <summary>The session store keys a grant by tool alone, so a grant minted in this run is indistinguishable
+    /// from one minted an hour ago on another chat. Unattended, it therefore buys a capture nothing.</summary>
+    [Fact]
+    public void Screen_Unattended_ASessionGrantAuthorisesNothing()
+    {
+        var parked = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, sessionGrant: true, canPark: true));
+        Assert.Equal(ToolGateOutcome.Park, parked.Outcome);
+        Assert.Equal(ToolGateDecision.ParkedForApproval, parked.Decision);
+
+        var refused = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, sessionGrant: true));
+        var ungranted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen));
+        Assert.Equal(ToolGateOutcome.Refuse, refused.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, refused.Decision);
+        Assert.Equal(ungranted, refused);
+
+        // Interactively the same grant is honoured — the pin is on the unattended surface, not the class.
+        var interactive = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "screen_capture", ToolClass.Screen, sessionGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, interactive.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, interactive.Decision);
+    }
+
+    [Fact]
+    public void Screen_Unattended_StandingAndNamedGrantsStillRun()
+    {
+        foreach (var canPark in new[] { false, true })
+        {
+            var standing = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen,
+                standingGrant: true, canPark: canPark));
+            Assert.Equal(ToolGateOutcome.AutoRun, standing.Outcome);
+            Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+
+            var named = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen,
+                namedGrant: true, canPark: canPark));
+            Assert.Equal(ToolGateOutcome.AutoRun, named.Outcome);
+            Assert.Equal(ToolGateDecision.GrantedByName, named.Decision);
+        }
+    }
+
+    /// <summary>Parking is a question, not an approval: the answer arrives on resume as a named grant, which is
+    /// a pre-existing grant by the time the capture runs.</summary>
+    [Fact]
+    public void Screen_Unattended_Ungranted_ParksOnlyWhenItMay()
+    {
+        foreach (var topLevel in new[] { false, true })
+        {
+            var parked = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen,
+                canPark: true, topLevelUserRun: topLevel));
+            Assert.Equal(ToolGateOutcome.Park, parked.Outcome);
+            Assert.Equal(ToolGateDecision.ParkedForApproval, parked.Decision);
+
+            var refused = ToolAutonomy.Resolve(Input(
+                ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, topLevelUserRun: topLevel));
+            Assert.Equal(ToolGateOutcome.Refuse, refused.Outcome);
+            Assert.Equal(ToolGateDecision.DeniedNotGranted, refused.Decision);
+        }
+    }
+
+    [Fact]
+    public void Screen_Interactive_PromptsWithoutAGrant_RunsOnAStandingOne()
+    {
+        var prompt = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "screen_capture", ToolClass.Screen));
+        Assert.Equal(ToolGateOutcome.Prompt, prompt.Outcome);
+
+        var standing = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "screen_capture", ToolClass.Screen, standingGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, standing.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+    }
+
+    /// <summary>"Pia, look at my screen" is an attended action, so voice takes the ordinary tiers rather than
+    /// Assignment's refuse-at-every-tier arm.</summary>
+    [Fact]
+    public void Screen_Voice_FollowsTheTiers_NotTheAssignmentRefusal()
+    {
+        var standing = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen, standingGrant: true));
+        Assert.Equal(ToolGateOutcome.AutoRun, standing.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, standing.Decision);
+
+        // Contrast: the same tier on the class voice refuses outright.
+        var assignment = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "start_assignment", ToolClass.Assignment, standingGrant: true));
+        Assert.Equal(ToolGateOutcome.Refuse, assignment.Outcome);
+
+        var ungranted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen));
+        Assert.Equal(ToolGateOutcome.Refuse, ungranted.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, ungranted.Decision);
+
+        var session = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen, sessionGrant: true));
+        Assert.NotEqual(ToolGateDecision.AutoApprovedSessionGrant, session.Decision);
+
+        var byPolicy = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "screen_capture", ToolClass.Screen, EveryClassPolicy));
+        Assert.Equal(ToolGateOutcome.Refuse, byPolicy.Outcome);
+    }
+
+    [Fact]
+    public void Screen_NamedDenial_OutranksEveryGrant()
+    {
+        var denied = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "screen_capture", ToolClass.Screen, EveryClassPolicy,
+            standingGrant: true, namedGrant: true, sessionGrant: true, namedDenial: true, canPark: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, denied.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedForRun, denied.Decision);
+    }
+
+    /// <summary>The enum's fourth member, so the row is not blank: an unrouted gate refuses like an unattended
+    /// one that cannot park.</summary>
+    [Fact]
+    public void Screen_UnknownSurface_RefusesWhenUngranted()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unknown, "screen_capture", ToolClass.Screen, canPark: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedNotGranted, verdict.Decision);
+    }
+    // ---- the scratch arm -----------------------------------------------------------------------------
+
+    /// <summary>Both non-voice surfaces, and DELETE included: nothing under <c>.scratch/</c> is promoted.</summary>
+    [Theory]
+    [InlineData(ToolGateSurface.Interactive, "write_file")]
+    [InlineData(ToolGateSurface.Interactive, "edit_file")]
+    [InlineData(ToolGateSurface.Interactive, "delete_file")]
+    [InlineData(ToolGateSurface.Unattended, "write_file")]
+    [InlineData(ToolGateSurface.Unattended, "delete_file")]
+    public void AScratchTarget_AutoRunsWithoutAskingAnybody(ToolGateSurface surface, string tool)
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            surface, tool, ToolClass.Files, canPark: true, scratchTarget: true));
+
+        Assert.Equal(ToolGateOutcome.AutoRun, verdict.Outcome);
+        Assert.Equal(ToolGateDecision.AutoApprovedScratch, verdict.Decision);
+    }
+
+    /// <summary>The same calls minus the one fact still stop: the arm is what changed the answer.</summary>
+    [Fact]
+    public void WithoutTheScratchTarget_TheSameCallStillStops()
+    {
+        Assert.Equal(ToolGateOutcome.Prompt, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "write_file", ToolClass.Files)).Outcome);
+        Assert.Equal(ToolGateOutcome.Park, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files, canPark: true)).Outcome);
+    }
+
+    /// <summary>Every other class's TargetPath means something this arm never reasoned about.</summary>
+    [Fact]
+    public void TheScratchArm_IsFilesClassOnly()
+    {
+        foreach (var toolClass in AllClasses.Where(c => c != ToolClass.Files))
+        foreach (var surface in AllSurfaces)
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                surface, "write_file", toolClass, canPark: true, scratchTarget: true));
+
+            Assert.NotEqual(ToolGateDecision.AutoApprovedScratch, verdict.Decision);
+        }
+    }
+
+    /// <summary>Voice has no card and no visible transcript, so nothing there could show what ran.</summary>
+    [Fact]
+    public void TheScratchArm_NeverAuthorizesVoice()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Voice, "write_file", ToolClass.Files, scratchTarget: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+    }
+
+    /// <summary>A person's "no" for this run outranks the folder — the denial tier is still first.</summary>
+    [Fact]
+    public void APerRunDenial_StillBeatsTheScratchArm()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files,
+            canPark: true, namedDenial: true, scratchTarget: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+        Assert.Equal(ToolGateDecision.DeniedForRun, verdict.Decision);
+    }
+
+    /// <summary>A call several authorities cover is audited as the one the user chose — a timeline naming the
+    /// folder instead would send them looking for the wrong thing to revoke.</summary>
+    [Fact]
+    public void AGrantKeepsItsAttribution_WhenTheTargetIsAlsoScratch()
+    {
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "write_file", ToolClass.Files,
+            standingGrant: true, scratchTarget: true)).Decision);
+
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, "write_file", ToolClass.Files,
+            sessionGrant: true, scratchTarget: true)).Decision);
+
+        Assert.Equal(ToolGateDecision.AutoApprovedPolicy, ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "write_file", ToolClass.Files,
+            policy: new RunAutonomyPolicy([ToolClass.Files]), scratchTarget: true)).Decision);
     }
 }

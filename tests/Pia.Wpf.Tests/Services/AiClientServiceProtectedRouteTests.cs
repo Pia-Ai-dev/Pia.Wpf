@@ -12,11 +12,11 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// Regression: the "Protected" badge must reflect the round that produced the FINAL answer, not latch on a
-/// transient intermediate round. A guardrail classifier ERROR fail-closes one tool round to the protected
-/// model (marker set); if the classifier recovers and the final answer comes from the normal model, the
-/// badge must NOT stick. The route is re-decided by the server every tool round, so the client resets the
-/// flag per round.
+/// Regression: the "Protected" badge means a protected model wrote part of what the user reads. A guardrail
+/// classifier ERROR that fail-closes one tool round and then recovers produced no prose, so it must NOT
+/// stick; a round that answered in prose under the protected route must, even when a later round routes
+/// normally. The server re-decides the route every tool round, so the client resets per round and latches
+/// only on a marked round that emitted visible text.
 /// </summary>
 public class AiClientServiceProtectedRouteTests
 {
@@ -39,6 +39,20 @@ public class AiClientServiceProtectedRouteTests
         chatClient.GetStreamingResponseAsync(
                 Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => ToolCallOnly(), _ => FinalProtectedAnswer());
+
+        var finished = await RunSingleTurnAsync(chatClient);
+        Assert.True(finished.Protected);
+    }
+
+    /// <summary>An agent step assembles its answer over several rounds. Prose a protected round already put
+    /// in front of the user stays protected, even when the round that ends the step routes normally.</summary>
+    [Fact]
+    public async Task ProtectedBadge_IsSet_WhenAnEarlierRoundAnsweredInProseFromTheProtectedModel()
+    {
+        var chatClient = Substitute.For<IChatClient>();
+        chatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ProtectedProseThenToolCall(), _ => FinalCleanAnswer());
 
         var finished = await RunSingleTurnAsync(chatClient);
         Assert.True(finished.Protected);
@@ -91,6 +105,23 @@ public class AiClientServiceProtectedRouteTests
         }
 
         return Assert.Single(items.OfType<Finished>());
+    }
+
+    // Round 0: protected AND visibly answering, then a tool call → the prose is already on screen.
+    private static async IAsyncEnumerable<ChatResponseUpdate> ProtectedProseThenToolCall()
+    {
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            AdditionalProperties = new AdditionalPropertiesDictionary { [GuardrailMarker.AdditionalPropertyKey] = true },
+        };
+        yield return new ChatResponseUpdate { Role = ChatRole.Assistant, Contents = [new TextContent("protected prose")] };
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents = [new FunctionCallContent("call-1", "some_tool", new Dictionary<string, object?>())],
+        };
+        await Task.Yield();
     }
 
     // Round 0: fail-closed to the protected model (marker), then asks for a tool call → forces a 2nd round.

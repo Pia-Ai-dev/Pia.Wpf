@@ -17,6 +17,23 @@
         </DataTrigger>
       </Style.Triggers>
     </Style>
+
+    <!-- Unlike the other actions, a set star has to stay readable without hover — it is the only thing
+         telling the user which chats are starred. -->
+    <Style x:Key="PiaChatRowFavoriteHost" TargetType="Border">
+      <Setter Property="Opacity" Value="0"/>
+      <Setter Property="IsHitTestVisible" Value="False"/>
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsMouseOver, ElementName=ContentRoot}" Value="True">
+          <Setter Property="Opacity" Value="1"/>
+          <Setter Property="IsHitTestVisible" Value="True"/>
+        </DataTrigger>
+        <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+          <Setter Property="Opacity" Value="1"/>
+          <Setter Property="IsHitTestVisible" Value="True"/>
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </UserControl.Resources>
 
   <!-- Presentation-only row body: time | title | state badge | date. The badge
@@ -34,6 +51,7 @@
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="48"/>
         <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="Auto"/>
       </Grid.ColumnDefinitions>
@@ -54,10 +72,49 @@
                    TextWrapping="NoWrap"/>
       </StackPanel>
 
-      <ah:PiaChatStateBadge Grid.Column="2" Margin="8,0,0,0"/>
+      <Border x:Name="FavoriteHost"
+              Grid.Column="2"
+              Margin="6,0,0,0"
+              Style="{StaticResource PiaChatRowFavoriteHost}"
+              Visibility="{Binding FavoriteCommand,
+                           RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}},
+                           Converter={StaticResource NullToVisibilityConverter}}">
+        <Button Padding="3"
+                Command="{Binding FavoriteCommand,
+                          RelativeSource={RelativeSource AncestorType={x:Type ah:PiaAssistantChatRowContent}}}"
+                CommandParameter="{Binding}"
+                AutomationProperties.AutomationId="{Binding Id, StringFormat='AssistantChat_Favorite_{0}'}">
+          <Button.Style>
+            <Style TargetType="Button" BasedOn="{StaticResource UnstyledButton}">
+              <Setter Property="ToolTip" Value="{loc:Str AssistantHistory_Favorite}"/>
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                  <Setter Property="ToolTip" Value="{loc:Str AssistantHistory_Unfavorite}"/>
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </Button.Style>
+          <ui:SymbolIcon FontSize="14">
+            <ui:SymbolIcon.Style>
+              <Style TargetType="ui:SymbolIcon">
+                <Setter Property="Symbol" Value="Star24"/>
+                <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                    <Setter Property="Filled" Value="True"/>
+                    <Setter Property="Foreground" Value="{DynamicResource PiaAccentBrush}"/>
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:SymbolIcon.Style>
+          </ui:SymbolIcon>
+        </Button>
+      </Border>
 
-      <!-- Date + hover actions share column 3; on hover the date fades out and the actions fade in. -->
-      <Grid Grid.Column="3" Margin="10,0,0,0">
+      <ah:PiaChatStateBadge Grid.Column="3" Margin="8,0,0,0"/>
+
+      <!-- Date + hover actions share column 4; on hover the date fades out and the actions fade in. -->
+      <Grid Grid.Column="4" Margin="10,0,0,0">
         <TextBlock x:Name="DateText"
                    Text="{Binding UpdatedAt, Converter={StaticResource UtcToLocalDateTimeConverter}, StringFormat='{}{0:MM-dd}'}"
                    FontSize="10.5"

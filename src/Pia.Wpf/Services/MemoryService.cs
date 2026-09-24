@@ -218,17 +218,19 @@ public class MemoryService : IMemoryService
         _logger.LogInformation("Appended entry to memory object {Id}", id);
     }
 
-    public async Task DeleteObjectAsync(Guid id)
+    public async Task DeleteObjectAsync(Guid id, bool trackForSync = true)
     {
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM Memories WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
 
-        await command.ExecuteNonQueryAsync();
-        _deleteTracker.TrackDeletion("memories", id);
+        var removed = await command.ExecuteNonQueryAsync();
+        if (trackForSync)
+            _deleteTracker.TrackDeletion("memories", id);
 
-        _logger.LogInformation("Deleted memory object {Id}", id);
+        if (removed > 0)
+            _logger.LogInformation("Deleted memory object {Id}", id);
     }
 
     public async Task<IReadOnlyList<MemoryObject>> GetObjectsByTypeAsync(string type)

@@ -89,7 +89,7 @@ public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>
         TemplatesChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task DeleteTemplateAsync(Guid id)
+    public async Task DeleteTemplateAsync(Guid id, bool trackForSync = true)
     {
         await GetTemplatesAsync();
         var template = _mergedTemplates!.FirstOrDefault(t => t.Id == id);
@@ -101,7 +101,8 @@ public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>
 
         _mergedTemplates!.Remove(template);
         await SaveCustomTemplatesAsync();
-        _deleteTracker.TrackDeletion("templates", id);
+        if (trackForSync)
+            _deleteTracker.TrackDeletion("templates", id);
         TemplatesChanged?.Invoke(this, EventArgs.Empty);
     }
 

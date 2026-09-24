@@ -10,6 +10,7 @@ using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Operators;
+using Pia.Services.Screen;
 using Pia.Shared.Operators;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
@@ -477,6 +478,48 @@ public class LocalizationTests
             $"every assignment start-result key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
+    /// <summary>The refusal message comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryCaptureFailureKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<CaptureFailureReason>()
+            .Select(ScreenCaptureFailureText.KeyFor)
+            .Where(key => key is not null)
+            .Select(key => key!)
+            .Distinct()
+            .ToList();
+
+        // One message per refusal, less the None arm — a capture that worked shows no line at all.
+        Assert.Equal(Enum.GetValues<CaptureFailureReason>().Length - 1, keys.Count);
+
+        // Pinned literally as well, so deleting an arm shrinks coverage loudly instead of silently.
+        string[] expected =
+        [
+            "Msg_Screen_TargetGone",
+            "Msg_Screen_Minimized",
+            "Msg_Screen_Cloaked",
+            "Msg_Screen_EmptyBounds",
+            "Msg_Screen_SelfTarget",
+            "Msg_Screen_SelfExclusionFailed",
+            "Msg_Screen_UniformFrame",
+            "Msg_Screen_Timeout",
+            "Msg_Screen_NativeError",
+            "Msg_Screen_SelfBlackout",
+        ];
+        Assert.Equal(expected.Order(), keys.Order());
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(MessageStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every capture-refusal key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
     [Fact]
     public void EnumConverterKeys_MustExistInResources()
     {
@@ -560,12 +603,16 @@ public class LocalizationTests
     }
 
     /// <summary>Optimize's length refusal is formatted with the text length and, when the server reports
-    /// one, the cap. A locale that drops or invents a placeholder throws at render time.</summary>
+    /// one, the cap, and the unattended-capture notice with the target and a count. A locale that drops or
+    /// invents a placeholder throws at render time.</summary>
     [Theory]
     [InlineData("Msg_Optimize_TextTooLong", 2)]
     [InlineData("Msg_Optimize_TextTooLongNoLimit", 1)]
     [InlineData("Msg_Assistant_Offline", 0)]
     [InlineData("Msg_Assistant_OfflineTitle", 0)]
+    [InlineData("Msg_ScreenCapture_UnattendedNotice", 2)]
+    [InlineData("Tool_Screen_Desc_CaptureWindow", 1)]
+    [InlineData("Tool_Screen_Desc_CaptureMonitor", 1)]
     public void AFailureMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
     {
         var placeholder = new Regex(@"\{(\d+)");
@@ -612,7 +659,8 @@ public class LocalizationTests
     [InlineData("Msg_File_DuplicateAttachment", 1)]
     [InlineData("Msg_File_Empty", 1)]
     [InlineData("Msg_File_Truncated", 1)]
-    [InlineData("Msg_File_OneImageOnly", 1)]
+    [InlineData("Msg_File_ImageLimit", 2)]
+    [InlineData("Msg_File_ImageBudget", 1)]
     [InlineData("Msg_File_DropFailed", 1)]
     [InlineData("Msg_File_DropNoFile", 0)]
     public void AFileDropMessageKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
@@ -628,5 +676,65 @@ public class LocalizationTests
             Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),
                 indexes);
         }
+    }
+
+    /// <summary>The action-card title is a verb and a noun; German puts the verb last, so the order has to
+    /// live in the resx rather than in the builder's concatenation.</summary>
+    [Theory]
+    [InlineData("", 0, 1)]
+    [InlineData("de", 1, 0)]
+    [InlineData("fr", 0, 1)]
+    public void ActionCardTitleFormat_OrdersTheVerbAndNounPerLanguage(string culture, int first, int second)
+    {
+        var info = culture.Length == 0 ? CultureInfo.InvariantCulture : new CultureInfo(culture);
+        var value = ViewStrings.ResourceManager.GetString("ActionCard_Title_Format", info);
+
+        Assert.False(string.IsNullOrWhiteSpace(value),
+            $"ActionCard_Title_Format is missing for '{culture}'");
+        Assert.True(
+            value!.IndexOf("{" + first, StringComparison.Ordinal)
+                < value.IndexOf("{" + second, StringComparison.Ordinal),
+            $"ActionCard_Title_Format for '{culture}' is '{value}', expected {{{first}}} before {{{second}}}");
+    }
+
+    /// <summary>Reordered into second place, the German verb is mid-phrase and therefore lowercase — otherwise
+    /// the card reads "Bildschirm Aufnehmen".</summary>
+    [Fact]
+    public void GermanActionCardVerbs_AreLowercase_BecauseTheyComeSecond()
+    {
+        var german = new CultureInfo("de");
+        var verbs = GetAllResourceKeys()
+            .Where(static k => k.StartsWith("ActionCard_Action_", StringComparison.Ordinal))
+            .Order()
+            .ToArray();
+
+        Assert.NotEmpty(verbs);
+
+        foreach (var key in verbs)
+        {
+            var value = ViewStrings.ResourceManager.GetString(key, german);
+            Assert.False(string.IsNullOrWhiteSpace(value), $"{key} is missing for de");
+            Assert.True(char.IsLower(value![0]),
+                $"{key} for de is '{value}'; it follows the noun, so it must start lowercase");
+        }
+    }
+
+    /// <summary>The composed title, end to end, in the language that reported the bug: the builder's format
+    /// call plus the resx values have to produce "Bildschirm aufnehmen", never "Aufnehmen Bildschirm".</summary>
+    [Theory]
+    [InlineData("de", "ActionCard_Action_Capture", "ActionCard_Category_Screen", "Bildschirm aufnehmen")]
+    [InlineData("de", "ActionCard_Action_Create", "ActionCard_Category_Todo", "Aufgabe erstellen")]
+    [InlineData("de", "ActionCard_Action_Delete", "ActionCard_Category_File", "Datei löschen")]
+    [InlineData("", "ActionCard_Action_Capture", "ActionCard_Category_Screen", "Capture Screen")]
+    [InlineData("fr", "ActionCard_Action_Capture", "ActionCard_Category_Screen", "Capturer Écran")]
+    public void ActionCardTitle_ComposesInTheRightOrder(
+        string culture, string actionKey, string categoryKey, string expected)
+    {
+        var info = culture.Length == 0 ? CultureInfo.InvariantCulture : new CultureInfo(culture);
+        var format = ViewStrings.ResourceManager.GetString("ActionCard_Title_Format", info)!;
+        var action = ViewStrings.ResourceManager.GetString(actionKey, info)!;
+        var category = ViewStrings.ResourceManager.GetString(categoryKey, info)!;
+
+        Assert.Equal(expected, string.Format(CultureInfo.InvariantCulture, format, action, category));
     }
 }
