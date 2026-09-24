@@ -318,6 +318,85 @@ public sealed class OpenWebUiChatConverterTests
         Assert.Equal(["one", "two"], chat.Messages.Select(m => m.Content));
     }
 
+    private const string ReasoningBlock = """
+        <details type="reasoning" done="true" duration="4">
+        <summary>Thought for 4 seconds</summary>
+        &gt; **Weighing the options**
+        &gt;
+        &gt; The user didn&#x27;t name a store, so I&#x27;ll ask.
+        </details>
+        """;
+
+    // A raw literal in a CRLF source file would carry line endings no export ever has.
+    private static string AssistantSaying(string content) =>
+        SingleChat().Replace(
+            "\"content\": \"Gut, danke.\"",
+            $"\"content\": {JsonSerializer.Serialize(content.ReplaceLineEndings("\n"))}",
+            StringComparison.Ordinal);
+
+    [Fact]
+    public void Routes_InlinedReasoning_IntoThinkingContent()
+    {
+        var chat = Assert.Single(
+            OpenWebUiChatConverter.Convert(Parse(AssistantSaying(ReasoningBlock + "\n\nGut, danke."))).Chats);
+
+        var answer = chat.Messages[1];
+        Assert.Equal("Gut, danke.", answer.Content);
+        Assert.Equal(
+            "**Weighing the options**\n\nThe user didn't name a store, so I'll ask.",
+            answer.ThinkingContent);
+    }
+
+    [Fact]
+    public void Joins_EveryReasoningBlock_BecauseATurnHasOnePerToolRound()
+    {
+        var second = ReasoningBlock.Replace("Weighing the options", "Second pass", StringComparison.Ordinal);
+        var json = AssistantSaying($"{ReasoningBlock}\nEin Satz.\n{second}\n\nGut, danke.");
+
+        var answer = Assert.Single(OpenWebUiChatConverter.Convert(Parse(json)).Chats).Messages[1];
+
+        Assert.Equal("Ein Satz.\n\nGut, danke.", answer.Content);
+        Assert.StartsWith("**Weighing the options**", answer.ThinkingContent, StringComparison.Ordinal);
+        Assert.Contains("**Second pass**", answer.ThinkingContent, StringComparison.Ordinal);
+    }
+
+    /// <summary>Open WebUI also renders citations this way, and a prose answer can quote the tag itself.</summary>
+    [Theory]
+    [InlineData("<details>\n<summary>Reference Websites</summary>\n1: [NVIDIA](https://nvidia.com)\n</details>")]
+    [InlineData("Einklappbar:\n\n```markdown\n<details>\n<summary>Branding</summary>\ntext\n</details>\n```")]
+    public void Leaves_ADetailsBlockThatIsNotReasoning_Alone(string body)
+    {
+        var answer = Assert.Single(OpenWebUiChatConverter.Convert(Parse(AssistantSaying(body))).Chats).Messages[1];
+
+        Assert.Equal(body, answer.Content);
+        Assert.Null(answer.ThinkingContent);
+    }
+
+    [Fact]
+    public void Leaves_AUserMessage_Alone_EvenWhenItQuotesAReasoningBlock()
+    {
+        var json = SingleChat().Replace(
+            "\"content\": \"Wie geht es dir?\"",
+            $"\"content\": {JsonSerializer.Serialize(ReasoningBlock.ReplaceLineEndings("\n"))}",
+            StringComparison.Ordinal);
+
+        var prompt = Assert.Single(OpenWebUiChatConverter.Convert(Parse(json)).Chats).Messages[0];
+
+        Assert.StartsWith("<details", prompt.Content, StringComparison.Ordinal);
+        Assert.Null(prompt.ThinkingContent);
+    }
+
+    /// <summary>A turn cut off mid-answer is all reasoning; dropping it would lose the turn entirely.</summary>
+    [Fact]
+    public void Keeps_AMessageThatIsNothingButReasoning()
+    {
+        var chat = Assert.Single(OpenWebUiChatConverter.Convert(Parse(AssistantSaying(ReasoningBlock))).Chats);
+
+        Assert.Equal(2, chat.Messages.Count);
+        Assert.Equal(string.Empty, chat.Messages[1].Content);
+        Assert.StartsWith("**Weighing the options**", chat.Messages[1].ThinkingContent, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;

@@ -24,6 +24,10 @@ public class ReminderService : IReminderService
     public async Task<Reminder> CreateAsync(string description, RecurrenceType recurrence, TimeOnly timeOfDay,
         DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null, DateTime? specificDate = null)
     {
+        // Manual belongs to routines, which have a run-now door; a reminder that never fires is just lost.
+        if (recurrence == RecurrenceType.Manual)
+            throw new ArgumentOutOfRangeException(nameof(recurrence), recurrence, "A reminder cannot be manual.");
+
         var reminder = new Reminder
         {
             Description = description,
@@ -115,6 +119,9 @@ public class ReminderService : IReminderService
     public async Task UpdateAsync(Guid id, string? description = null, RecurrenceType? recurrence = null,
         TimeOnly? timeOfDay = null, DayOfWeek? dayOfWeek = null, int? dayOfMonth = null, int? month = null)
     {
+        if (recurrence == RecurrenceType.Manual)
+            throw new ArgumentOutOfRangeException(nameof(recurrence), recurrence, "A reminder cannot be manual.");
+
         var existing = await GetAsync(id)
             ?? throw new InvalidOperationException($"Reminder {id} not found");
 

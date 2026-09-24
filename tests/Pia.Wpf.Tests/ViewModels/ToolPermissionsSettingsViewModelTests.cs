@@ -4,6 +4,7 @@ using Pia.Localization;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.Screen;
 using Pia.Shared.Models;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
@@ -24,7 +25,8 @@ public class ToolPermissionsSettingsViewModelTests
 
     private static (ToolPermissionsSettingsViewModel sut, IToolPermissionService permissions, IPluginService plugins) Create(
         IReadOnlyList<ToolGrant>? grants = null,
-        IReadOnlyList<SyncPlugin>? configs = null)
+        IReadOnlyList<SyncPlugin>? configs = null,
+        IScreenCaptureAllowlistStore? allowlist = null)
     {
         var permissions = Substitute.For<IToolPermissionService>();
         permissions.List().Returns(grants ?? []);
@@ -32,8 +34,119 @@ public class ToolPermissionsSettingsViewModelTests
         var plugins = Substitute.For<IPluginService>();
         plugins.GetAllPluginConfigs().Returns(configs ?? []);
 
-        var sut = new ToolPermissionsSettingsViewModel(permissions, plugins, NullLogger<SettingsViewModel>.Instance);
+        var sut = new ToolPermissionsSettingsViewModel(
+            permissions, plugins, NullLogger<SettingsViewModel>.Instance, allowlist);
         return (sut, permissions, plugins);
+    }
+
+    private static IScreenCaptureAllowlistStore AllowlistWith(params ScreenCaptureAllowlistEntry[] entries)
+    {
+        var store = Substitute.For<IScreenCaptureAllowlistStore>();
+        store.ListAsync().Returns(Task.FromResult<IReadOnlyList<ScreenCaptureAllowlistEntry>>(entries));
+        return store;
+    }
+
+    private static ScreenCaptureAllowlistEntry Entry(string process, string title = "") =>
+        new(Guid.NewGuid(), process, title, DateTimeOffset.UtcNow);
+
+    [Fact]
+    public async Task WithoutAStore_TheAllowlistSectionIsHidden()
+    {
+        var (sut, _, _) = Create();
+
+        await sut.Initialization;
+
+        Assert.False(sut.HasScreenCaptureAllowlistStore);
+        Assert.Empty(sut.ScreenCaptureAllowlist);
+    }
+
+    [Fact]
+    public async Task WithAStore_EntriesLoad_AfterInitialization()
+    {
+        var (sut, _, _) = Create(allowlist: AllowlistWith(Entry("outlook", "Inbox"), Entry("excel")));
+
+        await sut.Initialization;
+
+        Assert.True(sut.HasScreenCaptureAllowlistStore);
+        Assert.True(sut.HasScreenCaptureAllowlistEntries);
+        Assert.Equal(2, sut.ScreenCaptureAllowlist.Count);
+        Assert.Equal("outlook", sut.ScreenCaptureAllowlist[0].ProcessName);
+        Assert.Equal("Inbox", sut.ScreenCaptureAllowlist[0].TitleDisplay);
+    }
+
+    /// <summary>TargetNullValue does not fire on an empty string, so the fallback label is projected in the VM.</summary>
+    [Fact]
+    public async Task ABlankPattern_RendersTheAnyTitleLabel()
+    {
+        var (sut, _, _) = Create(allowlist: AllowlistWith(Entry("excel")));
+
+        await sut.Initialization;
+
+        var row = Assert.Single(sut.ScreenCaptureAllowlist);
+        Assert.NotEqual(string.Empty, row.TitleDisplay);
+    }
+
+    [Fact]
+    public async Task AddCommand_CallsTheStore_AndClearsTheInputs()
+    {
+        var store = AllowlistWith();
+        store.AddAsync("outlook", "Inbox").Returns(Task.FromResult<ScreenCaptureAllowlistEntry?>(Entry("outlook", "Inbox")));
+        var (sut, _, _) = Create(allowlist: store);
+        await sut.Initialization;
+
+        sut.NewAllowlistProcessName = "outlook";
+        sut.NewAllowlistTitleContains = "Inbox";
+        await sut.AddScreenCaptureAllowlistEntryCommand.ExecuteAsync(null);
+
+        await store.Received(1).AddAsync("outlook", "Inbox");
+        Assert.Equal(string.Empty, sut.NewAllowlistProcessName);
+        Assert.Equal(string.Empty, sut.NewAllowlistTitleContains);
+    }
+
+    [Fact]
+    public async Task AddCommand_WithARejectedEntry_KeepsTheInputs()
+    {
+        var store = AllowlistWith();
+        store.AddAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Task.FromResult<ScreenCaptureAllowlistEntry?>(null));
+        var (sut, _, _) = Create(allowlist: store);
+        await sut.Initialization;
+
+        sut.NewAllowlistProcessName = "   ";
+        await sut.AddScreenCaptureAllowlistEntryCommand.ExecuteAsync(null);
+
+        Assert.Equal("   ", sut.NewAllowlistProcessName);
+    }
+
+    [Fact]
+    public async Task RemoveCommand_CallsTheStore_WithTheRowsId()
+    {
+        var entry = Entry("outlook");
+        var store = AllowlistWith(entry);
+        var (sut, _, _) = Create(allowlist: store);
+        await sut.Initialization;
+
+        await sut.RemoveScreenCaptureAllowlistEntryCommand.ExecuteAsync(sut.ScreenCaptureAllowlist[0]);
+
+        await store.Received(1).RemoveAsync(entry.Id);
+    }
+
+    [Fact]
+    public async Task StoreChanged_Reloads()
+    {
+        var store = AllowlistWith(Entry("outlook"));
+        var (sut, _, _) = Create(allowlist: store);
+        await sut.Initialization;
+        Assert.Single(sut.ScreenCaptureAllowlist);
+
+        store.ListAsync().Returns(
+            Task.FromResult<IReadOnlyList<ScreenCaptureAllowlistEntry>>([Entry("outlook"), Entry("excel")]));
+        store.Changed += Raise.Event<EventHandler>(store, EventArgs.Empty);
+
+        for (var attempt = 0; attempt < 100 && sut.ScreenCaptureAllowlist.Count != 2; attempt++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, sut.ScreenCaptureAllowlist.Count);
     }
 
     [Fact]
@@ -439,6 +552,60 @@ public class ToolPermissionsSettingsViewModelTests
 
         Assert.Equal(RealisticCatalog().Count, sut.ToolCatalog.SelectMany(g => g.Tools).Count());
     }
+
+    // ---- naming an allowlist window from the picker ---------------------------------------------
+
+    [Fact]
+    public async Task PickingAWindow_FillsBothFields()
+    {
+        var dialogs = Substitute.For<IDialogService>();
+        dialogs.ShowScreenCaptureWindowPickerAsync().Returns(Window("outlook", "Inbox - Ada - Outlook"));
+        var sut = CreateWithDialogs(dialogs);
+
+        await sut.PickScreenCaptureAllowlistWindowCommand.ExecuteAsync(null);
+
+        Assert.True(sut.CanPickAllowlistWindow);
+        Assert.Equal("outlook", sut.NewAllowlistProcessName);
+        Assert.Equal("Inbox - Ada - Outlook", sut.NewAllowlistTitleContains);
+    }
+
+    [Fact]
+    public async Task BackingOutOfThePicker_LeavesWhatWasTyped()
+    {
+        var dialogs = Substitute.For<IDialogService>();
+        dialogs.ShowScreenCaptureWindowPickerAsync().Returns((CaptureTarget?)null);
+        var sut = CreateWithDialogs(dialogs);
+        sut.NewAllowlistProcessName = "outlook";
+        sut.NewAllowlistTitleContains = "Inbox";
+
+        await sut.PickScreenCaptureAllowlistWindowCommand.ExecuteAsync(null);
+
+        Assert.Equal("outlook", sut.NewAllowlistProcessName);
+        Assert.Equal("Inbox", sut.NewAllowlistTitleContains);
+    }
+
+    [Fact]
+    public void WithoutADialogService_ThePickerIsNotOffered()
+    {
+        var (sut, _, _) = Create(allowlist: AllowlistWith());
+
+        Assert.False(sut.CanPickAllowlistWindow);
+    }
+
+    private static ToolPermissionsSettingsViewModel CreateWithDialogs(IDialogService dialogs)
+    {
+        var permissions = Substitute.For<IToolPermissionService>();
+        permissions.List().Returns([]);
+        var plugins = Substitute.For<IPluginService>();
+        plugins.GetAllPluginConfigs().Returns([]);
+
+        return new ToolPermissionsSettingsViewModel(
+            permissions, plugins, NullLogger<SettingsViewModel>.Instance, AllowlistWith(), dialogs);
+    }
+
+    private static CaptureTarget Window(string processName, string title) => new(
+        CaptureTargetKind.Window, 11, string.Empty, new PixelRect(0, 0, 800, 600),
+        processName, title, false, false);
 
     /// <summary>Queues posted work for the test thread to drain, standing in for the WPF dispatcher.</summary>
     private sealed class QueueingSynchronizationContext : SynchronizationContext

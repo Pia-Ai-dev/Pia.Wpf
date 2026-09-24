@@ -16,6 +16,7 @@ using Pia.Services;
 using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
 using Pia.Services.Operators;
+using Pia.Services.Screen;
 using Pia.Shared.Models;
 using Pia.ViewModels.Models;
 
@@ -79,6 +80,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly ITimelineWatcher? _timelineWatcher;
     private readonly IAssignmentSurfaceCache? _assignmentSurfaceCache;
     private readonly Func<AssignmentConsentViewModel>? _assignmentConsentFactory;
+    private readonly IScreenCaptureService? _screenCapture;
+    private readonly IScreenCaptureAuditLog? _screenCaptureAudit;
+    private readonly IScreenCaptureIndicator? _screenCaptureIndicator;
     private AssignmentSurface _assignmentSurface = AssignmentSurface.Hidden;
     private bool _disposed;
     private bool _tokenizationEnabled;
@@ -92,10 +96,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private string _inputText = string.Empty;
 
-    [ObservableProperty]
-    private ImageAttachment? _pendingAttachment;
+    public ObservableCollection<ImageAttachment> PendingAttachments { get; } = new();
 
-    /// <summary>Text and mail files staged as chips, kept apart from the single image attachment.</summary>
+    public const int MaxPendingImages = 4;
+
+    /// <summary>The real gate: four images at ImageAttachmentProcessor.ThresholdBytes each is 14 MB.</summary>
+    public const long MaxPendingImageBytes = 12L * 1024 * 1024;
+
+    public bool HasPendingAttachments => PendingAttachments.Count > 0;
+
+    /// <summary>Text and mail files staged as chips, kept apart from the image attachments.</summary>
     public ObservableCollection<PendingFileAttachment> PendingFiles { get; } = new();
 
     public bool HasPendingFiles => PendingFiles.Count > 0;
@@ -135,6 +145,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     internal TimeSpan GoalTooShortHintDebounce { get; set; } = TimeSpan.FromSeconds(1);
 
     private int _goalHintGeneration;
+
+    /// <summary>Set once at construction: elevation cannot change while the process runs.</summary>
+    [ObservableProperty]
+    private bool _isElevatedSessionHintVisible;
+
+    /// <summary>Dismissal is deliberately session-only, so the next elevated launch warns again.</summary>
+    [RelayCommand]
+    private void DismissElevatedSessionHint() => IsElevatedSessionHintVisible = false;
 
     /// <summary>Says what agent mode changes about a send; shown when the lever is flipped to Agent and
     /// yields to the goal-too-short hint, which shares this spot in the composer.</summary>
@@ -200,22 +218,30 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private bool _isLoadingPersonas;
 
-    /// <summary>The Chat/Agent lever state (R15). false = Chat, true = Agent (Planned run). Persisted
-    /// as a global last-used default in <see cref="AppSettings.AssistantAgentModeDefault"/>.</summary>
+    /// <summary>The Chat/Agent lever state. false = Chat, true = Agent (Planned run). Per-chat: it is held
+    /// on the active <see cref="ChatSession"/>, never written back to settings.</summary>
     [ObservableProperty]
     private bool _agentModeEnabled;
 
-    /// <summary>Guards the settings-seed of <see cref="AgentModeEnabled"/> so seeding never re-persists
-    /// (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
+    /// <summary>Guards the seed of <see cref="AgentModeEnabled"/> so activating a chat is not mistaken for
+    /// the user flipping the lever (mirrors <see cref="_isLoadingPersonas"/> for the persona seed).</summary>
     private bool _isLoadingAgentMode;
 
-    /// <summary>
-    /// Guards the run-settled fall-back to Chat so it changes the composer without rewriting the user's saved
-    /// default. A flag of its own rather than <see cref="_isLoadingAgentMode"/>: that one returns over the
-    /// WHOLE handler, and mid-session that would also strand the Agent-mode hint line and the Weak-provider
-    /// adorner the fall-back has to clear.
-    /// </summary>
-    private bool _isSettlingAgentMode;
+    /// <summary>The active chat's recorded agent-context choice; null means never asked.</summary>
+    [ObservableProperty]
+    private AgentContextMode? _activeAgentContextMode;
+
+    /// <summary>The context banner is up and unanswered, which blocks Send and Run-in-background — <c>Off</c>
+    /// has to be a click. Flipping the lever to Chat clears it, so the banner needs no button for that.</summary>
+    [ObservableProperty]
+    private bool _agentContextChoicePending;
+
+    /// <summary>The one-line statement of what a settled choice is doing, so the state never acts invisibly.</summary>
+    [ObservableProperty]
+    private bool _agentContextSettledVisible;
+
+    [ObservableProperty]
+    private string _agentContextSettledLabel = string.Empty;
 
     /// <summary>The run-progress view-model for the active session's live/selected run (§15.1); null when
     /// the active chat has no run to surface. New'd on the UI thread, disposed on session swap (not DI'd).</summary>
@@ -231,6 +257,26 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>Points at the active session's message list; re-pointed on active-session swap.</summary>
     [ObservableProperty]
     private ObservableCollection<AssistantMessage> _messages = new();
+
+    /// <summary>What the transcript list is bound to — the tail of <see cref="Messages"/>, which stays whole
+    /// because it is also the model's context, the export and in-chat search.</summary>
+    public ObservableCollection<AssistantMessage> VisibleMessages { get; } = [];
+
+    private bool _hasOlderMessages;
+
+    public bool HasOlderMessages
+    {
+        get => _hasOlderMessages;
+        private set => SetProperty(ref _hasOlderMessages, value);
+    }
+
+    private int _olderMessageCount;
+
+    public int OlderMessageCount
+    {
+        get => _olderMessageCount;
+        private set => SetProperty(ref _olderMessageCount, value);
+    }
 
     /// <summary>Proxied from the active session's <see cref="ChatState"/> (drives the chip badge).</summary>
     [ObservableProperty]
@@ -266,6 +312,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IRelayCommand<AttachedFileRef> RevealAttachedFileCommand { get; }
     public IAsyncRelayCommand ToggleMeetingAttendeeCommand { get; }
     public IAsyncRelayCommand ToggleDirectTranscriptionCommand { get; }
+    public IAsyncRelayCommand CaptureScreenCommand { get; }
 
     public AssistantViewModel(
         ILogger<AssistantViewModel> logger,
@@ -340,7 +387,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IAgentToolExchangeStore? toolCalls = null,
         // Trailing and defaulted, same discipline; null => the composer offers no save-to-working-directory
         // button and an attachment chip stays name-only.
-        IAttachedFileStore? attachedFileStore = null)
+        IAttachedFileStore? attachedFileStore = null,
+        // Trailing and defaulted, same discipline; null ⇒ the composer offers no screen-capture button and
+        // no provider read is made for one.
+        IScreenCaptureService? screenCapture = null,
+        IScreenCaptureAuditLog? screenCaptureAudit = null,
+        IScreenCaptureIndicator? screenCaptureIndicator = null,
+        // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
+        IElevationService? elevation = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -388,6 +442,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _volatileWork = volatileWork;
         _starterSuggestions = starterSuggestions;
         _aiFeedback = aiFeedback;
+        _screenCapture = screenCapture;
+        _screenCaptureAudit = screenCaptureAudit;
+        _screenCaptureIndicator = screenCaptureIndicator;
+        IsElevatedSessionHintVisible = elevation?.IsElevated ?? false;
 
         SendMessageCommand = new AsyncRelayCommand(ExecuteSendMessage, CanExecuteSendMessage);
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
@@ -410,7 +468,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         HandleDropFailedCommand = new RelayCommand<string>(ExecuteHandleDropFailed);
         HandleImageAttachedCommand = new AsyncRelayCommand<string>(ExecuteHandleImageAttached);
         HandleImagePastedCommand = new AsyncRelayCommand<BitmapSource>(ExecuteHandleImagePasted);
-        RemoveAttachmentCommand = new RelayCommand(() => PendingAttachment = null);
+        RemoveAttachmentCommand = new RelayCommand<ImageAttachment>(attachment =>
+        {
+            if (attachment is not null) PendingAttachments.Remove(attachment);
+        });
         RemovePendingFileCommand = new RelayCommand<PendingFileAttachment>(file =>
         {
             if (file is not null) PendingFiles.Remove(file);
@@ -422,12 +483,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             file => AttachedFileOpener.Reveal(file, _attachedFileStore));
         ToggleMeetingAttendeeCommand = new AsyncRelayCommand(ExecuteToggleMeetingAttendee);
         ToggleDirectTranscriptionCommand = new AsyncRelayCommand(ExecuteToggleDirectTranscription);
+        CaptureScreenCommand = new AsyncRelayCommand(ExecuteCaptureScreen, CanCaptureScreen);
 
         _ttsService.IsPlayingChanged += OnTtsPlayingChanged;
         _personaService.PersonasChanged += OnPersonasChanged;
         _personaService.ManagedPersonaWithdrawn += OnManagedPersonaWithdrawn;
         PropertyChanged += OnPropertyChanged;
+        // The field initializer's collection never goes through OnMessagesChanged, so an un-started chat
+        // would mutate outside the window until the first session attach re-points it.
+        Messages.CollectionChanged += OnMessagesCollectionChanged;
         PendingFiles.CollectionChanged += OnPendingFilesChanged;
+        PendingAttachments.CollectionChanged += OnPendingAttachmentsChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
         MeetingAttendee.SummarizeRequested += OnMeetingAttendeeSummarizeRequested;
         MeetingAttendee.OpenSettingsRequested += OnMeetingAttendeeOpenSettingsRequested;
@@ -451,6 +517,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _chatSessionManager.ActiveChanged += OnActiveSessionChanged;
         _chatSessionManager.SessionTitleChanged += OnSessionTitleChanged;
         _chatSessionManager.SessionStateChanged += OnManagerSessionStateChanged;
+
+        _providerService.ProvidersChanged += OnProvidersChangedForScreenCapture;
+        _settingsService.SettingsChanged += OnSettingsChangedForScreenCapture;
+        StartScreenCaptureAvailabilityRefresh();
 
         // Always mirror a live session so send/cancel never null-ref on a fresh
         // window. GetOrCreateActiveForNewChat raises ActiveChanged → AttachToActiveSession.
@@ -520,6 +590,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.RunFailed -= OnActiveSessionRunFailed;
             prev.ActiveRunChanged -= OnActiveRunChanged;
             prev.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            prev.AgentModeChanged -= OnSessionAgentModeChanged;
             prev.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
 
@@ -530,6 +601,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.RunFailed += OnActiveSessionRunFailed;
         session.ActiveRunChanged += OnActiveRunChanged;
         session.ForeignRunActiveChanged += OnForeignRunActiveChanged;
+        session.AgentModeChanged += OnSessionAgentModeChanged;
         session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
@@ -539,11 +611,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // sending it into the wrong conversation is the worse failure, and it is a file they can re-drop.
         if (switchedChat)
         {
-            PendingAttachment = null;
+            PendingAttachments.Clear();
             PendingFiles.Clear();
+            SeedAgentModeOnChatLoadAsync(session).SafeFireAndForget(_logger);
         }
 
-        Messages = session.Messages;            // re-points the ItemsControl (OnMessagesChanged swaps CollectionChanged)
+        ActiveAgentContextMode = session.AgentContextMode;
+        Messages = session.Messages;            // OnMessagesChanged swaps CollectionChanged and rebuilds the window
         HasMessages = session.Messages.Count > 0;
         IsStreaming = session.IsStreaming;
         ActiveState = session.State;
@@ -551,6 +625,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         ChatTitleChip.SetWorkingDirectory(session.WorkingDirectory);
         // Scope the @Files autocomplete to this chat's dir (it runs outside any turn).
         _filesToolHandler.ActiveUiWorkingSubpath = session.WorkingDirectory;
+        // After HasMessages, which is half of what the trigger reads.
+        RefreshAgentContextBanner();
     }
 
     // The session raises ActiveRunChanged on the UI thread (its Planned branch runs there), but marshal
@@ -566,6 +642,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnPlanApprovalParkActiveChanged(object? sender, bool active) =>
         _uiDispatcher.Post(() => PlanApprovalParkActive = active);
 
+    // Unguarded, like the run-settled fall-back: the write back to the session is a no-op at the same value,
+    // and the rest of the handler is what clears the Agent-mode hint and the weak-provider adorner for a
+    // mode the composer has just left.
+    private void OnSessionAgentModeChanged(object? sender, bool enabled) =>
+        _uiDispatcher.Post(() => AgentModeEnabled = enabled);
+
     // Internal so the lever facts can attach the panel to a stubbed run without a whole ChatSession.
     internal void SyncRunProgress(Guid? runId)
     {
@@ -574,6 +656,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (_runProgress is not null)
         {
             _runProgress.RunSettled -= OnRunProgressSettled;
+            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
             _runProgress.Dispose(); // unsubscribes the prior RunChanged handler
         }
         _runProgress = runId is { } id
@@ -582,35 +665,82 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 _navigationService, _toolCalls)
             : null;
         if (_runProgress is not null)
+        {
             _runProgress.RunSettled += OnRunProgressSettled;
+            _runProgress.PropertyChanged += OnRunProgressPropertyChanged;
+        }
         ActiveRunProgress = _runProgress;
+        RefreshAgentContextBanner();
+    }
+
+    // Not RunSettled: that event arms itself on a non-terminal State CHANGE, and Planning is the field's
+    // default — so a run that fails while planning never raises it, and the offer the gate below suppressed
+    // would stay suppressed for the rest of the chat.
+    private void OnRunProgressPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(RunProgressViewModel.State))
+            RefreshAgentContextBanner();
     }
 
     // A finished run must not silently arm the NEXT send as a fresh run: the lever falls back to Chat so a
     // follow-up message lands in the conversation instead of replacing the settled header with a new one.
-    // It is a COMPOSER decision, not the user's: without the guard the fall-back wrote
-    // AssistantAgentModeDefault=false, so finishing a run silently changed a preference nobody touched — and
-    // the next new chat inherited it.
-    private void OnRunProgressSettled()
-    {
-        if (!AgentModeEnabled)
-            return;
-
-        _isSettlingAgentMode = true;
-        try { AgentModeEnabled = false; }
-        finally { _isSettlingAgentMode = false; }
-    }
+    private void OnRunProgressSettled() => AgentModeEnabled = false;
 
     partial void OnMessagesChanged(ObservableCollection<AssistantMessage>? oldValue, ObservableCollection<AssistantMessage> newValue)
     {
         if (oldValue is not null)
             oldValue.CollectionChanged -= OnMessagesCollectionChanged;
         newValue.CollectionChanged += OnMessagesCollectionChanged;
+        RebuildMessageWindow();
     }
 
     private void OnMessagesCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
         HasMessages = Messages.Count > 0;
+
+        switch (e.Action)
+        {
+            // The tail is always in the window, so an append needs no index arithmetic; anything else
+            // landing mid-transcript is rare enough to be worth a rebuild rather than a second code path.
+            case System.Collections.Specialized.NotifyCollectionChangedAction.Add
+                when e.NewItems is not null && e.NewStartingIndex + e.NewItems.Count == Messages.Count:
+                foreach (AssistantMessage message in e.NewItems)
+                    VisibleMessages.Add(message);
+                break;
+
+            // A removal below the window leaves it alone; one inside it — regenerating truncates back to the
+            // prompt — would otherwise leave a near-empty transcript with the rest hidden behind the button.
+            case System.Collections.Specialized.NotifyCollectionChangedAction.Remove when e.OldItems is not null:
+                foreach (AssistantMessage message in e.OldItems)
+                    VisibleMessages.Remove(message);
+                MessageWindow.TopUp(VisibleMessages, Messages);
+                break;
+
+            default:
+                RebuildMessageWindow();
+                return;
+        }
+
+        UpdateOlderMessageCount();
+    }
+
+    private void RebuildMessageWindow()
+    {
+        MessageWindow.Reset(VisibleMessages, Messages);
+        UpdateOlderMessageCount();
+    }
+
+    private void UpdateOlderMessageCount()
+    {
+        OlderMessageCount = Messages.Count - VisibleMessages.Count;
+        HasOlderMessages = OlderMessageCount > 0;
+    }
+
+    [RelayCommand]
+    private void LoadOlderMessages()
+    {
+        MessageWindow.PrependOlder(VisibleMessages, Messages);
+        UpdateOlderMessageCount();
     }
 
     private void OnActiveSessionStateChanged(object? sender, ChatStateChangedEventArgs e)
@@ -623,7 +753,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // path and live transitions set ActiveState, so this stays in sync).
     partial void OnActiveStateChanged(ChatState value) => ChatTitleChip.SetState(value);
 
-    partial void OnHasMessagesChanged(bool value) => DeleteCurrentChatCommand.NotifyCanExecuteChanged();
+    partial void OnHasMessagesChanged(bool value)
+    {
+        DeleteCurrentChatCommand.NotifyCanExecuteChanged();
+        RefreshAgentContextBanner();
+    }
+
+    partial void OnIsStreamingChanged(bool value) => RefreshAgentContextBanner();
 
     // Sync-void fire-and-forget: followups + TTS for the active session only.
     private void OnActiveSessionTurnCompleted(object? sender, TurnCompletedEventArgs e)
@@ -711,6 +847,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             await SpeakMessageAsync(assistantMessage);
     }
 
+    // Deliberately does NOT re-seed the lever: the sync pull loop raises this on every cycle, and a re-seed
+    // there undoes the run-settled fall-back to Chat minutes after it happened.
     private void OnPersonasChanged(object? sender, EventArgs e) =>
         LoadPersonasAsync().SafeFireAndForget(_logger);
 
@@ -727,7 +865,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnManagedPersonaWithdrawn(object? sender, ManagedPersonaWithdrawnEventArgs e) =>
         _pendingWithdrawnPersona = e;
 
-    private async Task LoadPersonasAsync()
+    private async Task LoadPersonasAsync(bool seedAgentMode = false)
     {
         try
         {
@@ -748,8 +886,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
                 ActivePersona = AvailablePersonas.FirstOrDefault(p => p.Id == active.Id) ?? active;
 
-                // Seed the Chat/Agent lever from the persisted global default (R15).
-                SeedAgentModeFromSettings(settings);
+                // The lever is per-chat, so the startup seed needs the chat as well as the default.
+                if (seedAgentMode && _chatSessionManager.ActiveSession is { } leverSession)
+                    SeedAgentMode(leverSession, settings);
 
                 // Inside the posted lambda so the snackbar is raised on the UI thread, and after
                 // ActivePersona so the notice names the fallback the user is actually now on.
@@ -802,14 +941,20 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(6));
     }
 
-    /// <summary>Seeds the Chat/Agent lever from the persisted global default (R15), guarded so the
-    /// seed itself never re-persists via <see cref="OnAgentModeEnabledChanged"/>. Internal seam so the
-    /// seed-guard + reopen-restore can be exercised without spinning the whole persona-load path.</summary>
-    internal void SeedAgentModeFromSettings(AppSettings settings)
+    /// <summary>Adopts the lever of the chat being activated, falling back to the new-chat default for a
+    /// chat whose lever was never touched. Guarded so the switch does not read as the user flipping it.
+    /// Internal seam so the guard can be exercised without the whole activation path.</summary>
+    internal void SeedAgentMode(ChatSession session, AppSettings settings)
     {
         _isLoadingAgentMode = true;
-        try { AgentModeEnabled = settings.AssistantAgentModeDefault; }
+        try { AgentModeEnabled = session.AgentModeEnabled ?? settings.AssistantNewChatAgentMode; }
         finally { _isLoadingAgentMode = false; }
+    }
+
+    private async Task SeedAgentModeOnChatLoadAsync(ChatSession session)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        await _uiDispatcher.PostAsync(() => SeedAgentMode(session, settings));
     }
 
     partial void OnActivePersonaChanged(Persona? value)
@@ -829,12 +974,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     partial void OnAgentModeEnabledChanged(bool value)
     {
+        // ABOVE the seed guard: a regular agent user never toggles the lever — the seed is what turns the
+        // mode on for them — so a trigger that only fired on a toggle would never fire at all.
+        RefreshAgentContextBanner();
         if (_isLoadingAgentMode)
             return;
-        // Everything BELOW still runs on a settle: the fall-back has to clear the hint and the adorner, it
-        // just must not save. Only the persist is gated.
-        if (!_isSettlingAgentMode)
-            PersistAgentModeDefaultAsync(value).SafeFireAndForget(_logger);
+        // The lever belongs to THIS chat, so nothing here reaches settings: one curious flip must not arm
+        // every chat the user opens afterwards.
+        if (_chatSessionManager.ActiveSession is { } session)
+            session.AgentModeEnabled = value;
         // Warning-first (§14.4): surface the subtle Weak-provider adorner when flipping to Agent.
         if (value)
         {
@@ -896,14 +1044,6 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _weakProviderWarningVisible;
 
-    private async Task PersistAgentModeDefaultAsync(bool enabled)
-    {
-        var settings = await _settingsService.GetSettingsAsync();
-        settings.AssistantAgentModeDefault = enabled;
-        await _settingsService.SaveSettingsAsync(settings);
-        _logger.LogInformation("Assistant agent-mode default set to {Enabled}", enabled);
-    }
-
     // A collection mutation notifies the collection, never this VM, so the name filter below cannot see
     // one: without this Send stays disabled and no hint explains it.
     private void OnPendingFilesChanged(
@@ -916,12 +1056,22 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         DropFailureMessage = null;
     }
 
+    // Same blind spot as OnPendingFilesChanged: the [ObservableProperty] this collection replaced re-raised
+    // CanExecute for free, so without this Send stays disabled with an image attached.
+    private void OnPendingAttachmentsChanged(
+        object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasPendingAttachments));
+        SendMessageCommand.NotifyCanExecuteChanged();
+        RunInBackgroundCommand.NotifyCanExecuteChanged();
+    }
+
     private void OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(InputText)) DropFailureMessage = null;
 
-        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming) or nameof(PendingAttachment)
-            or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive))
+        if (e.PropertyName is nameof(InputText) or nameof(IsStreaming)
+            or nameof(ForeignRunActive) or nameof(PlanApprovalParkActive) or nameof(AgentContextChoicePending))
         {
             SendMessageCommand.NotifyCanExecuteChanged();
             RunInBackgroundCommand.NotifyCanExecuteChanged();
@@ -936,6 +1086,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (e.PropertyName is nameof(IsStreaming) or nameof(IsVoiceModeActive))
         {
             EnterVoiceModeCommand.NotifyCanExecuteChanged();
+        }
+
+        if (e.PropertyName is nameof(IsScreenCaptureAvailable))
+        {
+            CaptureScreenCommand.NotifyCanExecuteChanged();
         }
 
         // A turn is under way, so the explanation of what a send would do has been answered.
@@ -1024,7 +1179,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // (sensitive) transcript.
         IsDirectTranscriptionVisible = false;
         StartFreshChat();
-        PendingAttachment = null;
+        PendingAttachments.Clear();
         InputText = prompt;
         SendMessageCommand.Execute(null);
     }
@@ -1039,8 +1194,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IsMeetingAttendeeVisible = false;
         StartFreshChat();
         // Drop any image left pending in the composer behind the overlay so the summary turn carries only
-        // the prompt (StartFreshChat clears InputText but not PendingAttachment).
-        PendingAttachment = null;
+        // the prompt (StartFreshChat clears InputText but not the staged images).
+        PendingAttachments.Clear();
         InputText = prompt;
         SendMessageCommand.Execute(null);
     }
@@ -1072,12 +1227,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // headless executor that is mid-run — the live full replace deletes the run's step rows, and the run's
     // own model context never sees the typed message, so the transcript would be garbled even without loss.
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive
-        && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachment is not null || PendingFiles.Count > 0);
+        !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive && !AgentContextChoicePending
+        && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachments.Count > 0 || PendingFiles.Count > 0);
 
     /// <summary>Nothing typed, attached or in flight — the hotkey may tuck the window away.</summary>
     public bool CanDismissWithHotkey =>
-        string.IsNullOrWhiteSpace(InputText) && PendingAttachment is null && PendingFiles.Count == 0
+        string.IsNullOrWhiteSpace(InputText) && PendingAttachments.Count == 0 && PendingFiles.Count == 0
         && !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive;
 
     // Factored out so the gate below and the hint that explains it cannot drift out of sync.
@@ -1136,10 +1291,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     private async Task ExecuteSendMessage()
     {
+        // The provider is read again here because it can change between attaching a picture and sending it,
+        // and the picture may be a grab of the whole screen.
+        if (PendingAttachments.Count > 0 && !await AssistantProviderTakesImagesAsync())
+        {
+            WarnImageProviderUnsupported();
+            return;
+        }
+
         var userText = InputText.Trim();
         InputText = string.Empty;
-        var attachment = PendingAttachment;
-        PendingAttachment = null;
+        var attachments = PendingAttachments.ToArray();
+        PendingAttachments.Clear();
         // Captured above the Clear, and read again at the planned line below.
         var files = PendingFiles.ToArray();
         var attachedFileContext = files.Length > 0
@@ -1164,15 +1327,15 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten (Step 4-compatible).
         var accepted = await _chatSessionManager.StartTurnAsync(
-            session, userText, attachment, planned: planned, attachedFileContext: attachedFileContext,
-            attachedFiles: attachedFiles);
+            session, userText, attachments, planned: planned,
+            attachedFileContext: attachedFileContext, attachedFiles: attachedFiles);
 
         // A refused send consumed nothing, so put the composer back rather than dropping what was typed —
         // reachable in the window between a plan-approval park releasing the session and the flag landing.
         if (!accepted)
         {
             InputText = userText;
-            PendingAttachment = attachment;
+            foreach (var attachment in attachments) PendingAttachments.Add(attachment);
             foreach (var file in files) PendingFiles.Add(file);
         }
     }
@@ -1415,19 +1578,17 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private string? GetActiveWorkingDirectory() => _chatSessionManager.ActiveSession?.WorkingDirectory;
 
     /// <summary>
-    /// Re-points the active chat's working dir from the picker — but ONLY while that chat is
-    /// un-started (no messages yet). Once a chat has begun a turn its folder is fixed; the
-    /// picker then only chooses where the next "+ New Chat" opens. Unlike
-    /// <see cref="ChatSession.ProviderId"/> (which persists only as a turn side-effect), a
-    /// working-dir change can happen with no turn, so this triggers an explicit persist.
+    /// Re-points the active chat's working dir from the empty state's picker — the only one that
+    /// aims this chat, and it is gone by the first message. The guard stays anyway: a started chat
+    /// keeps the folder its turns ran in. Unlike <see cref="ChatSession.ProviderId"/> (which persists
+    /// only as a turn side-effect), a working-dir change can happen with no turn, so this triggers an
+    /// explicit persist.
     /// </summary>
     private void SetActiveWorkingDirectory(string? relativePath)
     {
         var session = _chatSessionManager.ActiveSession;
         if (session is null) return;
 
-        // A started chat (turn in progress or with history) keeps its folder. The pill still
-        // reflects the pick for the next new chat; we just don't re-point this one.
         if (session.Messages.Count > 0) return;
 
         session.SetWorkingDirectory(relativePath);
@@ -1490,13 +1651,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var prior = Messages[idx - 1];
         if (prior.Role != ChatRole.User) return;
-        if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachment is null
+        if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachments.Count == 0
             && string.IsNullOrEmpty(prior.AttachedFileContext)) return;
 
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
-        var attachment = prior.Attachment;
+        var attachments = prior.Attachments.ToArray();
         var attachedFileContext = prior.AttachedFileContext;
         // Captured before the removal below, which takes the answer a styled instruction has to quote.
         var previousAnswer = message.Content;
@@ -1509,7 +1670,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
         await _chatSessionManager.StartTurnAsync(
-            session, prompt, attachment, RegenerateInstructions.For(style, previousAnswer),
+            session, prompt, attachments, RegenerateInstructions.For(style, previousAnswer),
             attachedFileContext: attachedFileContext);
     }
 
@@ -1691,6 +1852,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
     }
 
+    internal void ReportActivated(TimeSpan elapsed) =>
+        _logger.LogInformation(
+            "Assistant view activated in {ElapsedMs} ms with {MessageCount} messages",
+            (long)elapsed.TotalMilliseconds, Messages.Count);
+
+    internal void ReportTranscriptBuilt(TimeSpan elapsed) =>
+        _logger.LogInformation(
+            "Assistant transcript built in {ElapsedMs} ms showing {VisibleCount} of {MessageCount} messages",
+            (long)elapsed.TotalMilliseconds, VisibleMessages.Count, Messages.Count);
+
     public void OnNavigatedTo(object? parameter)
     {
         // Non-Guid synchronous setup (string / selection params). Guid-activation
@@ -1720,7 +1891,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         try
         {
-            await LoadPersonasAsync();
+            await LoadPersonasAsync(seedAgentMode: true);
 
             var settings = await _settingsService.GetSettingsAsync();
             IsTtsEnabled = settings.TtsEnabled;
@@ -1761,6 +1932,12 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load TTS settings");
+        }
+
+        // Last, so a window the hotkey just created has settled before a dialog opens on top of it.
+        if (parameter is ScreenCapturePickerRequest)
+        {
+            await OpenScreenCapturePickerFromHotkeyAsync();
         }
     }
 
@@ -1834,7 +2011,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             PendingFiles.Add(file);
 
         if (result.ImagePaths.Count > 0)
-            await AttachFirstImageAsync(result.ImagePaths);
+            await AttachImagesAsync(result.ImagePaths);
     }
 
     /// <summary>Copies a staged file into the chat's working directory so it survives the send and stays
@@ -1882,24 +2059,29 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
     }
 
-    private async Task AttachFirstImageAsync(IReadOnlyList<string> imagePaths)
+    private async Task AttachImagesAsync(IReadOnlyList<string> imagePaths)
     {
-        // Gated on the attach really happening: the vision-provider and size refusals below leave nothing
-        // attached, and "kept X" would then name a file the user never got.
-        var attached = await ExecuteHandleImageAttached(imagePaths[0]);
-        if (!attached || imagePaths.Count == 1) return;
+        // The provider gate answers for the whole drop, so it is read once and says so once; every refusal
+        // inside the loop is per-file and names the file it left out.
+        if (!await AssistantProviderTakesImagesAsync())
+        {
+            WarnImageProviderUnsupported();
+            return;
+        }
 
-        _snackbarService.Show(
-            _localizationService["Msg_Warning"],
-            _localizationService.Format("Msg_File_OneImageOnly", System.IO.Path.GetFileName(imagePaths[0])),
-            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+        foreach (var path in imagePaths)
+            await AdmitImageAsync(
+                () => ImageAttachmentProcessor.TryPrepare(path, _logger),
+                System.IO.Path.GetFileName(path), path);
     }
 
     private async Task<bool> ExecuteHandleImageAttached(string? filePath)
     {
         if (string.IsNullOrEmpty(filePath)) return false;
         if (IsStreaming) return false;
-        return await PrepareImageAttachmentAsync(() => ImageAttachmentProcessor.TryPrepare(filePath, _logger));
+        return await PrepareImageAttachmentAsync(
+            () => ImageAttachmentProcessor.TryPrepare(filePath, _logger),
+            System.IO.Path.GetFileName(filePath), filePath) is not null;
     }
 
     private async Task ExecuteHandleImagePasted(BitmapSource? source)
@@ -1911,33 +2093,219 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // cross-thread access exception (Clipboard.GetImage runs on the UI thread).
         if (source.CanFreeze && !source.IsFrozen) source.Freeze();
 
-        await PrepareImageAttachmentAsync(() => ImageAttachmentProcessor.TryPrepare(source, _logger));
+        await PrepareImageAttachmentAsync(
+            () => ImageAttachmentProcessor.TryPrepare(source, _logger),
+            _localizationService["Msg_File_PastedImageName"]);
     }
 
-    private async Task<bool> PrepareImageAttachmentAsync(Func<ImageAttachment?> prepare)
+    /// <summary>Refused rather than assumed on a failed read: the picture may be the user's whole desktop.</summary>
+    private async Task<bool> AssistantProviderTakesImagesAsync()
     {
-        var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
-        if (provider?.ProviderType != AiProviderType.PiaCloud)
+        try
         {
-            _snackbarService.Show(
-                _localizationService["Msg_Warning"],
-                _localizationService["Msg_File_ImageProviderUnsupported"],
-                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+            return provider?.ProviderType == AiProviderType.PiaCloud;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Could not resolve the Assistant provider for an image ({Type})", ex.GetType().Name);
             return false;
+        }
+    }
+
+    private void WarnImageProviderUnsupported() =>
+        _snackbarService.Show(
+            _localizationService["Msg_Warning"],
+            _localizationService["Msg_File_ImageProviderUnsupported"],
+            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+
+    /// <summary>Returns the admitted attachment so a caller cannot read back "whatever is last" — with a
+    /// collection, the one just added is not identifiable any other way.</summary>
+    private async Task<ImageAttachment?> PrepareImageAttachmentAsync(
+        Func<ImageAttachment?> prepare, string displayName, string? sourcePath = null)
+    {
+        if (!await AssistantProviderTakesImagesAsync())
+        {
+            WarnImageProviderUnsupported();
+            return null;
+        }
+
+        return await AdmitImageAsync(prepare, displayName, sourcePath);
+    }
+
+    private async Task<ImageAttachment?> AdmitImageAsync(
+        Func<ImageAttachment?> prepare, string displayName, string? sourcePath)
+    {
+        // Count and dedup are checked before the encode so a refused image costs no JPEG work; the byte
+        // budget cannot be, because the size is not known until the quality ladder settles.
+        if (PendingAttachments.Count >= MaxPendingImages)
+        {
+            WarnImageAttach(_localizationService.Format("Msg_File_ImageLimit", MaxPendingImages, displayName));
+            return null;
+        }
+
+        if (sourcePath is not null && PendingAttachments.Any(
+                a => string.Equals(a.SourcePath, sourcePath, StringComparison.OrdinalIgnoreCase)))
+        {
+            WarnImageAttach(_localizationService.Format("Msg_File_DuplicateAttachment", displayName));
+            return null;
         }
 
         var attachment = await Task.Run(prepare);
         if (attachment is null)
         {
-            _snackbarService.Show(
-                _localizationService["Msg_Warning"],
-                _localizationService["Msg_File_ImageTooLarge"],
-                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
-            return false;
+            WarnImageAttach(_localizationService["Msg_File_ImageTooLarge"]);
+            return null;
         }
 
-        PendingAttachment = attachment;
-        return true;
+        var staged = PendingAttachments.Sum(a => (long)a.JpegBytes.Length);
+        if (staged + attachment.JpegBytes.Length > MaxPendingImageBytes)
+        {
+            WarnImageAttach(_localizationService.Format("Msg_File_ImageBudget", displayName));
+            return null;
+        }
+
+        PendingAttachments.Add(attachment);
+        return attachment;
+    }
+
+    private void WarnImageAttach(string message) =>
+        _snackbarService.Show(
+            _localizationService["Msg_Warning"], message,
+            Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+
+    /// <summary>False when the default Assistant provider cannot read a picture, so the button says why
+    /// instead of refusing after the user has chosen a window.</summary>
+    [ObservableProperty]
+    private bool _isScreenCaptureAvailable;
+
+    /// <summary>Completes when the last provider check has landed; tests await it instead of racing the ctor.</summary>
+    internal Task PendingScreenCaptureAvailabilityRefresh { get; private set; } = Task.CompletedTask;
+
+    // Deliberately not gated on IsStreaming: the grab lands in the composer for the next turn, which is
+    // typed ahead the same way, and the send gate still holds it back.
+    private bool CanCaptureScreen() => _screenCapture is not null && IsScreenCaptureAvailable;
+
+    private void OnProvidersChangedForScreenCapture(object? sender, EventArgs e) =>
+        StartScreenCaptureAvailabilityRefresh();
+
+    private void OnSettingsChangedForScreenCapture(object? sender, AppSettings settings) =>
+        StartScreenCaptureAvailabilityRefresh();
+
+    private void StartScreenCaptureAvailabilityRefresh()
+    {
+        PendingScreenCaptureAvailabilityRefresh = RefreshScreenCaptureAvailabilityAsync();
+        PendingScreenCaptureAvailabilityRefresh.SafeFireAndForget(_logger);
+    }
+
+    private async Task RefreshScreenCaptureAvailabilityAsync()
+    {
+        // Without a capture service there is no button to enable, and no provider read to account for.
+        if (_screenCapture is null) return;
+
+        var available = await AssistantProviderTakesImagesAsync();
+
+        await _uiDispatcher.PostAsync(() =>
+        {
+            if (_disposed) return;
+            IsScreenCaptureAvailable = available;
+            CaptureScreenCommand.NotifyCanExecuteChanged();
+        });
+    }
+
+    private async Task ExecuteCaptureScreen()
+    {
+        if (_screenCapture is null) return;
+
+        var picker = new ScreenCapturePickerViewModel(
+            _screenCapture, _localizationService, _loggerFactory.CreateLogger<ScreenCapturePickerViewModel>());
+        try
+        {
+            picker.InitializeAsync().SafeFireAndForget(_logger);
+            if (!await _dialogService.ShowScreenCapturePickerDialogAsync(picker)) return;
+
+            var result = await picker.CaptureSelectedAsync();
+            if (result is null) return;
+
+            if (!result.IsSuccess)
+            {
+                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Process} {Reason}",
+                    result.Target.Kind, result.Target.ProcessName, result.Reason);
+                _snackbarService.Show(
+                    _localizationService["Msg_Warning"],
+                    _localizationService[ScreenCaptureFailureText.KeyFor(result.Reason)!],
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(6));
+                return;
+            }
+
+            var attached = await PrepareImageAttachmentAsync(
+                () => ImageAttachmentProcessor.TryPrepare(result.Bitmap!, _logger),
+                _localizationService["Msg_File_ScreenCaptureName"]);
+            if (attached is null) return;
+
+            RecordScreenCapture(result, attached);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Screen capture from the picker failed ({Type})", ex.GetType().Name);
+            _logger.SensitiveDebug("Screen capture failure: {Error}", ex);
+            _snackbarService.Show(
+                _localizationService["Msg_Error"],
+                _localizationService["Msg_Screen_NativeError"],
+                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(6));
+        }
+        finally
+        {
+            picker.Cancel();
+        }
+    }
+
+    /// <summary>The hotkey has to say why nothing opened; the availability check may still be in flight on a
+    /// window it just created.</summary>
+    internal async Task OpenScreenCapturePickerFromHotkeyAsync()
+    {
+        if (_screenCapture is null || CaptureScreenCommand.IsRunning) return;
+
+        try
+        {
+            await PendingScreenCaptureAvailabilityRefresh;
+
+            if (!IsScreenCaptureAvailable)
+            {
+                _snackbarService.Show(
+                    _localizationService["Msg_Warning"],
+                    _localizationService["Msg_File_ImageProviderUnsupported"],
+                    Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                return;
+            }
+
+            // ExecuteAsync does not consult CanExecute, and two presses can both park on the await above.
+            if (CaptureScreenCommand.IsRunning) return;
+            await CaptureScreenCommand.ExecuteAsync(null);
+        }
+        catch (Exception ex)
+        {
+            // The navigation task is discarded upstream, so nothing else would ever observe this.
+            _logger.LogError("Screen capture from the hotkey failed ({Type})", ex.GetType().Name);
+        }
+    }
+
+    private void RecordScreenCapture(CaptureResult result, ImageAttachment attachment)
+    {
+        var target = result.Target;
+        var kind = target.Kind == CaptureTargetKind.Monitor
+            ? ScreenCaptureTargetKinds.Monitor
+            : ScreenCaptureTargetKinds.Window;
+
+        var evt = new ScreenCaptureAuditEvent(
+            ScreenCaptureSurfaces.Picker, _chatSessionManager.ActiveSession?.Id, null,
+            kind, target.ProcessName, target.Title, attachment.Width, attachment.Height);
+
+        _screenCaptureAudit?.Record(evt);
+        _screenCaptureIndicator?.NotifyCapture(evt);
+        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Process} {Width}x{Height}",
+            kind, target.ProcessName, attachment.Width, attachment.Height);
+        _logger.SensitiveDebug("Picker capture window title: {Title}", target.Title);
     }
 
     private void ExecuteToggleTts()
@@ -2065,10 +2433,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (IsStreaming || ForeignRunActive || PlanApprovalParkActive)
             return;
 
-        AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
-        await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachment: null, planned: true);
+
+        // The documented exception to the banner: the chip is offered BECAUSE of the conversation, so the
+        // conversation is its context by construction. Recorded BEFORE the lever flips, or the trigger arms
+        // and the banner flashes behind a run that is already starting. StartTurnAsync awaits its own persist
+        // before creating the run, so this rides that write.
+        session.AgentContextMode = AgentContextMode.Summary;
+        ActiveAgentContextMode = AgentContextMode.Summary;
+
+        AgentModeEnabled = true; // persists + evaluates the warning via OnAgentModeEnabledChanged
+        await _chatSessionManager.StartTurnAsync(session, suggestion.Goal, attachments: null, planned: true);
     }
 
     /// <summary>Warning-first evaluation (§14.4): shows the subtle adorner/banner when the active provider
@@ -2113,6 +2489,65 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     [RelayCommand]
     private void StayInChat() => AgentModeEnabled = false;
+
+    /// <summary>Persisted before any run can be created, so the orchestrator reads the choice off the chat
+    /// row rather than from this view model.</summary>
+    [RelayCommand]
+    private void SetAgentContext(string? mode)
+    {
+        if (AgentContextModes.Parse(mode) is not { } parsed)
+            return;
+
+        var session = _chatSessionManager.ActiveSession;
+        if (session is null)
+            return;
+
+        session.AgentContextMode = parsed;
+        ActiveAgentContextMode = parsed;
+        RefreshAgentContextBanner();
+        _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
+        _logger.LogInformation("Chat {ChatId} agent context set to {Mode}", session.Id, parsed);
+    }
+
+    /// <summary>Re-opens the offer. Blocks sending again by design — changing the answer means choosing one.</summary>
+    [RelayCommand]
+    private void ChangeAgentContext()
+    {
+        var session = _chatSessionManager.ActiveSession;
+        if (session is null)
+            return;
+
+        session.AgentContextMode = null;
+        ActiveAgentContextMode = null;
+        RefreshAgentContextBanner();
+        _chatSessionManager.PersistAsync(session).SafeFireAndForget(_logger);
+    }
+
+    // A run already attached to this chat is past the point the offer decides, and a parked one is waiting
+    // for an answer the composer types — which the offer's send gate would refuse. Terminal states let the
+    // offer return, so the NEXT run in the chat still gets asked.
+    private bool RunNotYetSettled =>
+        _runProgress is { State: not (RunProgressState.Completed or RunProgressState.TruncatedCompleted
+            or RunProgressState.Failed) };
+
+    /// <summary>Evaluated on the lever toggle AND on chat load: agent mode is frequently already on without
+    /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>
+    private void RefreshAgentContextBanner()
+    {
+        var applicable = AgentModeEnabled && HasMessages && !IsStreaming && !RunNotYetSettled;
+        AgentContextChoicePending = applicable && ActiveAgentContextMode is null;
+        AgentContextSettledVisible = applicable && ActiveAgentContextMode is not null;
+
+        if (ActiveAgentContextMode is { } settled)
+        {
+            AgentContextSettledLabel = _localizationService[settled switch
+            {
+                AgentContextMode.Summary => "Agent_Context_Settled_Summary",
+                AgentContextMode.Verbatim => "Agent_Context_Settled_Verbatim",
+                _ => "Agent_Context_Settled_Off",
+            }];
+        }
+    }
 
     private async Task SpeakMessageAsync(AssistantMessage message)
     {
@@ -2215,7 +2650,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         chatMessages.AddRange(Messages.Select(m => m.ToChatMessage()));
 
-        chatMessages.Add(new ChatMessage(ChatRole.User, userText));
+        chatMessages.Add(new ChatMessage(ChatRole.User, AssistantPromptComposer.AppendTimeNote(userText)));
 
         var rawBuffer = new StringBuilder();
         var lastVisibleLength = 0;
@@ -2282,7 +2717,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         if (assistantMessage.Suggestions.Count > 0) return;
 
-        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderName}", provider.Name);
+        _logger.LogInformation("Generating follow-up suggestions for provider {ProviderType}", provider.ProviderType);
 
         IReadOnlyList<string> picks;
         try
@@ -2368,7 +2803,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 // reach the speaker, and the refusal below is already spoken back as a remedy.
                 CanPark: false,
                 // A voice turn belongs to no run, so there is no run row to answer this from.
-                IsTopLevelUserRun: false));
+                IsTopLevelUserRun: false,
+                // The honest lookup, like HasSessionGrant above: Resolve's scratch arm excludes voice, and the
+                // reason stays there rather than being hardcoded into a false here.
+                IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
 
             if (verdict.Outcome != ToolGateOutcome.AutoRun)
             {
@@ -2445,6 +2883,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _ttsService.IsPlayingChanged -= OnTtsPlayingChanged;
         _personaService.PersonasChanged -= OnPersonasChanged;
         _personaService.ManagedPersonaWithdrawn -= OnManagedPersonaWithdrawn;
+        _providerService.ProvidersChanged -= OnProvidersChangedForScreenCapture;
+        _settingsService.SettingsChanged -= OnSettingsChangedForScreenCapture;
         PropertyChanged -= OnPropertyChanged;
         _goalHintGeneration++;
         _agentHintGeneration++;
@@ -2463,11 +2903,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.RunFailed -= OnActiveSessionRunFailed;
             session.ActiveRunChanged -= OnActiveRunChanged;
             session.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
+            session.AgentModeChanged -= OnSessionAgentModeChanged;
             session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
-        _runProgress?.Dispose(); // unsubscribes the last RunChanged handler off the singleton
+        if (_runProgress is not null)
+        {
+            _runProgress.RunSettled -= OnRunProgressSettled;
+            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
+            _runProgress.Dispose(); // unsubscribes the last RunChanged handler off the singleton
+        }
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
         PendingFiles.CollectionChanged -= OnPendingFilesChanged;
+        PendingAttachments.CollectionChanged -= OnPendingAttachmentsChanged;
 
         ChatTitleChip.Dispose();
 

@@ -183,6 +183,13 @@
                        FontWeight="{Binding State, Converter={StaticResource RunStateToLeadWeightConverter}}"
                        Foreground="{Binding State, Converter={StaticResource RunStateToBrushConverter}}"
                        Visibility="{Binding HasCurrentActivity, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+            <!-- Tool progress under the step title. A headless step writes nothing to the transcript, so
+                 without this the band is silent for the whole step. -->
+            <TextBlock Text="{Binding ToolActivity}" Margin="0,2,0,0"
+                       FontSize="{StaticResource RunMetaSize}"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{Binding State, Converter={StaticResource RunStateToSubLineBrushConverter}}"
+                       Visibility="{Binding HasToolActivity, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Sub-line: state, plan position, elapsed. The full token figure hangs off it as a tooltip rather
                  than taking a slot beside the actions — it is the number a reader wants least often. -->
             <TextBlock Text="{Binding SubLine}" Margin="0,2,0,0"

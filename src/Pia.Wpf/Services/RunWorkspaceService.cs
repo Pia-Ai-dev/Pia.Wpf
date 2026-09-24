@@ -639,7 +639,7 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         // panel offer to publish a workspace that was already promoted. Promotion is once per workspace (B7).
         if (!gone)
             _logger.LogWarning(
-                "Run {RunId} workspace directory survived teardown in {Mode} mode; the next startup sweep removes it",
+                "Run {RunId} workspace directory survived teardown in {Mode} mode; it is left for a later sweep to retry",
                 runId, meta?.ParsedMode ?? RunWorkspaceMode.None);
 
         // Last, so a crash between the two leaves a metadata document the orphan sweep can still act on.
@@ -659,6 +659,80 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         }
 
         TryDeleteFile(MetadataPathFor(runId));
+    }
+
+    public async Task CleanScratchAsync(string? workingSubpath, DateTime runStartedUtc, CancellationToken ct)
+    {
+        // A default timestamp would make every file "written during the run", including the user's own.
+        if (runStartedUtc == default)
+            return;
+
+        try
+        {
+            var (sourceRoot, _) = await ResolveSourceRootAsync(workingSubpath).ConfigureAwait(false);
+            if (sourceRoot is null)
+                return;
+
+            var scratch = Path.Combine(sourceRoot, RunScratchFolder.Name);
+            if (!Directory.Exists(scratch))
+                return;
+
+            var cutoff = runStartedUtc.Kind == DateTimeKind.Utc
+                ? runStartedUtc
+                : DateTime.SpecifyKind(runStartedUtc, DateTimeKind.Utc);
+
+            var removed = await Task.Run(() => DeleteScratchWrittenSince(scratch, cutoff, ct), ct).ConfigureAwait(false);
+
+            // Counts only — a path here would name the user's folder in a release log.
+            if (removed > 0)
+                _logger.LogInformation("Cleaned {Count} working-note file(s) left by an un-isolated run", removed);
+        }
+        catch (Exception ex)
+        {
+            // Bookkeeping must never fail a run (guardrail 1), and this one runs on the terminal path.
+            _logger.LogWarning(ex, "Scratch cleanup failed");
+        }
+    }
+
+    /// <summary>Deletes files last written at or after <paramref name="cutoff"/>, then the directories that
+    /// leaves empty, deepest first, up to and including <paramref name="scratch"/> itself.</summary>
+    private static int DeleteScratchWrittenSince(string scratch, DateTime cutoff, CancellationToken ct)
+    {
+        var removed = 0;
+        foreach (var file in Directory.EnumerateFiles(scratch, "*", SearchOption.AllDirectories))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (File.GetLastWriteTimeUtc(file) < cutoff)
+                    continue;
+
+                File.Delete(file);
+                removed++;
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(scratch, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(d => d.Length))
+        {
+            TryDeleteEmptyDirectory(dir);
+        }
+
+        TryDeleteEmptyDirectory(scratch);
+        return removed;
+    }
+
+    private static void TryDeleteEmptyDirectory(string dir)
+    {
+        try
+        {
+            if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                Directory.Delete(dir);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     public async Task SweepOrphanMetadataAsync(CancellationToken ct)
@@ -739,7 +813,16 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
             if (!_runner.IsGitInstalled)
                 return null; // F1
 
-            var toplevel = await RunGitAsync(sourceRoot, ["rev-parse", "--show-toplevel"], GitCommandKind.ReadOnly, ct)
+            // RunGitAsync ceilings discovery at the source root's parent, so the probe below can only ever
+            // report the source root itself — which makes a plain existence test an exact substitute for it,
+            // and keeps a non-repo working folder (the normal case) off the subprocess path entirely. A
+            // submodule or linked worktree makes `.git` a file, so both shapes count.
+            var dotGit = Path.Combine(sourceRoot, ".git");
+            if (!Directory.Exists(dotGit) && !File.Exists(dotGit))
+                return null; // F2, without the subprocess
+
+            var toplevel = await RunGitAsync(
+                sourceRoot, ["rev-parse", "--show-toplevel"], GitCommandKind.ReadOnly, ct, ProbeTimeout)
                 .ConfigureAwait(false);
             if (!toplevel.Succeeded || string.IsNullOrWhiteSpace(toplevel.StandardOutput))
                 return null; // F2/F3/F4
@@ -763,7 +846,8 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
                 return null; // F6
             }
 
-            var head = await RunGitAsync(canonicalTop, ["rev-parse", "--verify", "HEAD"], GitCommandKind.ReadOnly, ct)
+            var head = await RunGitAsync(
+                canonicalTop, ["rev-parse", "--verify", "HEAD"], GitCommandKind.ReadOnly, ct, ProbeTimeout)
                 .ConfigureAwait(false);
             if (!head.Succeeded)
             {
@@ -1108,12 +1192,20 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         return (canonicalFolder, canonicalFolder);
     }
 
+    /// <summary>The budget for a question git answers from one directory read. Well above the ~4 s a cold
+    /// git start has been seen to cost, since overrunning it silently declines worktree mode — but far below
+    /// the default 30 s, which is sized for `worktree add` and stalls the run panel with nothing on screen.
+    /// </summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(10);
+
     private Task<GitProcessResult> RunGitAsync(
-        string workingDirectory, IReadOnlyList<string> args, GitCommandKind kind, CancellationToken ct)
+        string workingDirectory, IReadOnlyList<string> args, GitCommandKind kind, CancellationToken ct,
+        TimeSpan? timeout = null)
         // Ceiling = the parent of the working directory, mirroring GitToolHandler: upward .git discovery may
         // reach the working directory itself but never cross above it, so provisioning can never bind a
         // repository the user keeps further up their profile.
-        => _runner.RunAsync(new GitProcessRequest(workingDirectory, args, kind, TryParentOf(workingDirectory)), ct);
+        => _runner.RunAsync(
+            new GitProcessRequest(workingDirectory, args, kind, TryParentOf(workingDirectory), timeout), ct);
 
     private static string? TryParentOf(string path)
     {
@@ -1174,12 +1266,38 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     {
         try
         {
-            if (Directory.Exists(dir))
+            if (!Directory.Exists(dir)) return;
+            try
+            {
                 Directory.Delete(dir, recursive: true);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Git writes loose objects read-only and Windows refuses to delete a read-only entry, so a
+                // workspace the model ran the git tools in is undeletable until the attribute is cleared.
+                ClearReadOnlyAttributes(dir);
+                Directory.Delete(dir, recursive: true);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to delete a run workspace directory");
+        }
+    }
+
+    private static void ClearReadOnlyAttributes(string root)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(root, "*", SearchOption.AllDirectories).Append(root))
+        {
+            try
+            {
+                var attributes = File.GetAttributes(entry);
+                if ((attributes & FileAttributes.ReadOnly) != 0)
+                    File.SetAttributes(entry, attributes & ~FileAttributes.ReadOnly);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
         }
     }
 

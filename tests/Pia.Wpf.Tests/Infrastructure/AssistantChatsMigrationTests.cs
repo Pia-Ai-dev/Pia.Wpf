@@ -7,9 +7,8 @@ using Xunit;
 namespace Pia.Tests.Infrastructure;
 
 /// <summary>
-/// Verifies the PRAGMA-detect migration that adds <c>AssistantChats.WorkingDirectory</c> to
-/// databases that predate the column: the column is added without data loss, and a pre-existing
-/// row survives with a null WorkingDirectory.
+/// Verifies the PRAGMA-detect migrations that add columns to an <c>AssistantChats</c> table predating
+/// them: the column arrives without data loss and a pre-existing row keeps its values.
 /// </summary>
 public class AssistantChatsMigrationTests : IDisposable
 {
@@ -94,5 +93,58 @@ public class AssistantChatsMigrationTests : IDisposable
         Assert.True(reader.Read());
         Assert.Equal("pre-migration", reader.GetString(0));
         Assert.True(reader.IsDBNull(1));
+    }
+
+    [Fact]
+    public void MigrateSchema_AddsIsFavorite_DefaultingExistingRowsToNotStarred()
+    {
+        var chatId = Guid.NewGuid().ToString();
+        var now = DateTime.UtcNow.ToString("O");
+
+        using (var seed = new SqliteConnection($"Data Source={_dbPath}"))
+        {
+            seed.Open();
+            using (var create = seed.CreateCommand())
+            {
+                create.CommandText = """
+                    CREATE TABLE AssistantChats (
+                        Id              TEXT PRIMARY KEY,
+                        SchemaVersion   INTEGER NOT NULL DEFAULT 1,
+                        Title           TEXT,
+                        CreatedAt       TEXT NOT NULL,
+                        UpdatedAt       TEXT NOT NULL,
+                        LastAccessedAt  TEXT NOT NULL,
+                        WindowMode      TEXT NOT NULL,
+                        ProviderId      TEXT,
+                        ExtraJson       TEXT
+                    );
+                    """;
+                create.ExecuteNonQuery();
+            }
+            using (var insert = seed.CreateCommand())
+            {
+                insert.CommandText = """
+                    INSERT INTO AssistantChats (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode)
+                    VALUES (@Id, 1, 'pre-migration', @Now, @Now, @Now, 'Assistant')
+                    """;
+                insert.Parameters.AddWithValue("@Id", chatId);
+                insert.Parameters.AddWithValue("@Now", now);
+                insert.ExecuteNonQuery();
+            }
+        }
+        SqlitePool.ClearFor($"Data Source={_dbPath}");
+
+        using var ctx = new SqliteContext(_dbPath);
+        var conn = ctx.GetConnection();
+
+        // NOT NULL DEFAULT 0, so the pre-existing row reads as un-starred rather than as a null the
+        // reader would have to special-case.
+        using var select = conn.CreateCommand();
+        select.CommandText = "SELECT Title, IsFavorite FROM AssistantChats WHERE Id = @Id";
+        select.Parameters.AddWithValue("@Id", chatId);
+        using var reader = select.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal("pre-migration", reader.GetString(0));
+        Assert.Equal(0, reader.GetInt32(1));
     }
 }

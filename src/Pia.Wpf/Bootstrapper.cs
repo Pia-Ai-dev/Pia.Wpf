@@ -89,6 +89,13 @@ public static class Bootstrapper
         // reflect-invoke ConfigureServices against the real, un-redirected profile.
         var logRetention = LogFileRetention.Sweep(PiaPaths.LogsDirectory, LogFileRetention.DefaultRetainedDays);
 
+        // The load-bearing consent sweep: an install that only runs an hour a day never reaches the daily
+        // timer in ConsentRetentionBackgroundService, and its data would age out on nobody's clock.
+        var consentRetention = Services.Consent.ConsentRetention.Sweep(
+            PiaPaths.ConsentEvidenceDirectory,
+            PiaPaths.ConsentAuditDirectory,
+            Services.Consent.ConsentRetention.DefaultRetainedDays);
+
         var services = new ServiceCollection();
         ConfigureServices(services);
 
@@ -111,6 +118,8 @@ public static class Bootstrapper
         bootstrapLogger.LogInformation(
             "Log retention: kept {Kept}, deleted {Deleted}, skipped {Skipped}, cutoff {Cutoff:yyyy-MM-dd}",
             logRetention.Kept, logRetention.Deleted, logRetention.Skipped, logRetention.Cutoff);
+
+        Services.Consent.ConsentRetention.LogOutcome(bootstrapLogger, consentRetention);
 
         var envServerUrl = Environment.GetEnvironmentVariable(ServerUrlEnvVar);
 #if DEBUG
@@ -376,6 +385,11 @@ public static class Bootstrapper
             builder.AddDebug();
             builder.SetMinimumLevel(IsDevMode ? LogLevel.Debug : LogLevel.Information);
 
+            // None, not Warning. At Warning the framework's own lines stop, but its "HTTP {method} {uri}"
+            // SCOPE stays alive and ScopeRenderingLoggerProvider then stamps the full URL onto every Pia
+            // line inside it - measured. HttpLoggingHandler already reports the same requests, SafeUrl-wrapped.
+            builder.AddFilter("System.Net.Http.HttpClient", LogLevel.None);
+
             var logDirectory = PiaPaths.LogsDirectory;
             Directory.CreateDirectory(logDirectory);
 
@@ -405,10 +419,17 @@ public static class Bootstrapper
             // compile-time erasure of the Sensitive* family — 17-trust-model.md §4).
             //
             // ORDER: scope OUTSIDE cap, so the scope prefix is inside the capped text and survives truncation
-            // (which keeps the head) — a capped line still says which run it belongs to.
+            // (which keeps the head) — a capped line still says which run it belongs to. Tokenising sits between
+            // them: it rewrites the profile roots so no account name reaches the file a user attaches to support.
             builder.Services.AddSingleton<ILoggerProvider>(_ => new ScopeRenderingLoggerProvider(
-                new LogMessageCapLoggerProvider(
-                    new FileLoggerProvider(Path.Combine(logDirectory, "pia.log"), fileOptions))));
+                new PathTokenisingLoggerProvider(
+                    new LogMessageCapLoggerProvider(
+                        new FileLoggerProvider(Path.Combine(logDirectory, "pia.log"), fileOptions)),
+                    [
+                        new(PiaPaths.LocalProfileRoot, "%LOCALAPPDATA%"),
+                        new(PiaPaths.RoamingProfileRoot, "%APPDATA%"),
+                        new(PiaPaths.UserProfileRoot, "%USERPROFILE%"),
+                    ])));
         });
 
         // Infrastructure
@@ -481,6 +502,7 @@ public static class Bootstrapper
         services.AddSingleton<IAiProviderHandler, OpenRouterProviderHandler>();
         services.AddSingleton<IAiProviderHandler, OpenAiCompatibleProviderHandler>();
         services.AddSingleton<IAiProviderHandler, VLlmProviderHandler>();
+        services.AddSingleton<IAiProviderHandler, AnthropicProviderHandler>();
         services.AddSingleton<IAiProviderHandler, PiaCloudProviderHandler>();
         services.AddSingleton<AiProviderHandlerResolver>();
 
@@ -563,6 +585,9 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Helpers.IGitProcessRunner, Pia.Helpers.GitProcessRunner>();
         services.AddSingleton<IGitToolHandler, GitToolHandler>();
         services.AddSingleton<IChatHistoryToolHandler, ChatHistoryToolHandler>();
+        services.AddSingleton<Pia.Services.Help.HelpSearchService>();
+        services.AddSingleton<Pia.Services.Help.HelpSettingsResolver>();
+        services.AddSingleton<IHelpToolHandler, HelpToolHandler>();
         services.AddSingleton<IWorkingDirectoryService, WorkingDirectoryService>();
         services.AddSingleton<IAttachedFileStore, AttachedFileStore>();
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
@@ -610,6 +635,7 @@ public static class Bootstrapper
         // is NOT registered — ChatSessionManager new's it on the UI thread bound to the session.
         services.AddTransient<IAgentPlanner, AgentPlanner>();
         services.AddTransient<IAgentVerifier, AgentVerifier>();
+        services.AddTransient<IGoalTriageService, GoalTriageService>();
         services.AddTransient<AgentRunOrchestrator>();
         services.AddTransient<HeadlessTurnExecutor>();
         // Batch 07 G6: per-step persona/provider/prompt resolution and the assignable-persona roster.
@@ -657,6 +683,15 @@ public static class Bootstrapper
         services.AddSingleton<IMarkdownExportService, MarkdownExportService>();
         services.AddSingleton<IAiFeedbackService, AiFeedbackService>();
         services.AddSingleton<IWindowTrackingService, WindowTrackingService>();
+        services.AddSingleton<IScreenCaptureService, Services.Screen.GdiScreenCaptureService>();
+        // Same shape as the consent trail: nothing touches the disk until the first capture is recorded.
+        services.AddSingleton<IScreenCaptureAuditLog>(sp =>
+            Services.Screen.ScreenCaptureAuditLog.CreateForSession(
+                sp.GetRequiredService<ILogger<Services.Screen.ScreenCaptureAuditLog>>()));
+        services.AddSingleton<IScreenCaptureAllowlistStore, Services.Screen.ScreenCaptureAllowlistStore>();
+        services.AddSingleton<IScreenCaptureIndicator, Services.Screen.ScreenCaptureIndicator>();
+        services.AddSingleton<IScreenCaptureToolHandler, ScreenCaptureToolHandler>();
+        services.AddSingleton<IScreenTextSnapshotService, Services.Screen.UiaTextSnapshotService>();
         services.AddSingleton<INativeHotkeyServiceFactory, NativeHotkeyServiceFactory>();
         services.AddSingleton<ISelectedTextService, SelectedTextService>();
         services.AddSingleton<IFastPathOptimizer, FastPathOptimizerService>();
@@ -838,6 +873,7 @@ public static class Bootstrapper
         services.AddSingleton<Services.Flow.IFlowPersistenceStore, Services.Flow.FlowPersistenceStore>();
         services.AddSingleton<Services.Flow.IFlowService, Services.Flow.FlowService>();
         services.AddSingleton<Services.Interfaces.IThemeService, Services.ThemeService>();
+        services.AddSingleton<Services.Interfaces.IElevationService, Services.ElevationService>();
         services.AddSingleton<ILocalizationService, LocalizationService>();
 
         // The single place Application.Current.Dispatcher is read for a ViewModel marshal (Batch 12).
@@ -887,6 +923,7 @@ public static class Bootstrapper
         // separately-constructed service would not share.
         services.AddSingleton<IScheduledJobRunner>(sp => sp.GetRequiredService<ScheduledJobBackgroundService>());
         services.AddSingleton<AssistantChatRetentionService>();
+        services.AddSingleton<Services.Consent.ConsentRetentionBackgroundService>();
         services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
 
         // Background assignments — the one plane where content leaves the encrypted side. The consent log is a
@@ -939,6 +976,8 @@ public static class Bootstrapper
         services.AddScoped<Navigation.INavigationService, Navigation.NavigationService>();
         services.AddScoped<IDialogService, DialogService>();
         services.AddScoped<ITextOptimizationService, TextOptimizationService>();
+        services.AddScoped<IAdvancedCreationService, AdvancedCreationService>();
+        services.AddScoped<IAdvancedCreationLauncher, Views.Overlays.AdvancedCreationLauncher>();
         services.AddScoped<IVoiceInputService, VoiceInputService>();
 
         // Services - Transient (no shared state)

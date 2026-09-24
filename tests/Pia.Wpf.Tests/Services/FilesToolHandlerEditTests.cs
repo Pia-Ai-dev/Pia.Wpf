@@ -211,4 +211,19 @@ public class FilesToolHandlerEditTests : IDisposable
         Assert.Equal("edit_file", pending!.ToolName);
         Assert.Equal("alpha\nbeta\n", File.ReadAllText(full)); // nothing written before approval
     }
+
+    [Fact]
+    public async Task EditFile_OnAPng_IsRefused_WithTheWriteSideReason()
+    {
+        var full = Path.Combine(_root, "diagram.png");
+        File.WriteAllBytes(full, [0x89, (byte)'P', (byte)'N', (byte)'G']);
+
+        var (result, pending) = await Edit("diagram.png", "anything", "else");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        var error = Prop<string?>(result!, "error")!;
+        Assert.Contains("read-only here", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("attach the image", error, StringComparison.OrdinalIgnoreCase);
+    }
 }

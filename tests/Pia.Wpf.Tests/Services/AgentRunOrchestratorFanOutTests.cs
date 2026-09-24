@@ -896,4 +896,36 @@ public sealed class AgentRunOrchestratorFanOutTests
         var ledger = JsonDocument.Parse(final.LedgerJson!).RootElement;
         Assert.True(ledger.GetProperty("inputTokens").GetInt64() >= 200);
     }
+    /// <summary>
+    /// An un-isolated fan-out shares ONE real folder, so a child collecting <c>.scratch/</c> at its own settle
+    /// would delete notes its still-running siblings are writing. The parent's settle is the only one that may.
+    /// </summary>
+    [Fact]
+    public async Task AnUnisolatedChild_NeverCollectsTheSharedWorkingNotes()
+    {
+        using var h = new Harness();
+        var parent = await h.NewRunAsync("parent");
+        var child = await h.NewRunAsync("child", parentRunId: parent.Id);
+        var workspaces = new FakeRunWorkspaceService(h.RunsBase);
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", null)), false));
+
+        // No WorkspaceRoot: the degrade, where the child writes into the user's folder beside its parent.
+        await h.BuildOrchestrator(planner, workspaces: workspaces).RunAsync(
+            child, new RecordingExecutor(), Persona(), Provider(),
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Empty(workspaces.ScratchCleanups);
+
+        // Non-vacuity: the same shape with no parent does collect, so the child guard is what stopped it.
+        var lone = await h.NewRunAsync("lone");
+        var lonePlanner = new FakePlanner();
+        lonePlanner.Plans.Enqueue(new PlanResult(MakeSteps(("a", null)), false));
+
+        await h.BuildOrchestrator(lonePlanner, workspaces: workspaces).RunAsync(
+            lone, new RecordingExecutor(), Persona(), Provider(),
+            RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Single(workspaces.ScratchCleanups);
+    }
 }

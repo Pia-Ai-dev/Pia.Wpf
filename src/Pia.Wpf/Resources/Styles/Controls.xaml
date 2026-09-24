@@ -162,4 +162,10 @@
                      Duration="0:0:1.1" />
   </Storyboard>
 
+  <!-- WPF-UI's ToolTip style justifies its text, which in a 260px-wide tooltip stretches a wrapped
+       sentence into gappy columns. Ours is the derived style, so this setter wins over that one. -->
+  <Style TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}">
+    <Setter Property="TextBlock.TextAlignment" Value="Left" />
+  </Style>
+
 </ResourceDictionary>

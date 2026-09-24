@@ -1,6 +1,6 @@
 using System.IO;
 using System.Text;
-using Pia.Services.LiveTranscription;
+using Pia.Services.Assets;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
 
@@ -40,7 +40,7 @@ public sealed class BundleExtractionTests : IDisposable
 
         var target = Path.Combine(_tmpDir, "out");
         Directory.CreateDirectory(target);
-        LiveTranscriptionModels.ExtractTarBz2(archive, target);
+        SherpaBundle.ExtractTarBz2(archive, target);
         return target;
     }
 

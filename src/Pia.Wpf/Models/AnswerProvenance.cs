@@ -27,6 +27,7 @@ public static class AnswerProvenance
         AiProviderType.OpenRouter => "OpenRouter",
         AiProviderType.Mistral => "Mistral",
         AiProviderType.VLlm => "vLLM",
+        AiProviderType.Anthropic => "Anthropic",
         // The type says nothing about who runs the endpoint; the user's own name for it does.
         AiProviderType.OpenAICompatible => string.IsNullOrWhiteSpace(provider.Name) ? "OpenAI-compatible" : provider.Name,
         _ => provider.ProviderType.ToString(),

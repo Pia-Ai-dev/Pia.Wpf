@@ -73,7 +73,10 @@
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>At most {0} files can be attached to one message — "{1}" was skipped.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>"{0}" is too large to attach — the limit is {1}.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>The attached files already fill this message — "{0}" was skipped.</value></data>
-  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Only one image can be attached — kept "{0}".</value></data>
+  <data name="Msg_File_ImageLimit" xml:space="preserve"><value>At most {0} images can be attached — "{1}" was left out.</value></data>
+  <data name="Msg_File_ImageBudget" xml:space="preserve"><value>The attached images are already at the size limit — "{0}" was left out.</value></data>
+  <data name="Msg_File_PastedImageName" xml:space="preserve"><value>Pasted image</value></data>
+  <data name="Msg_File_ScreenCaptureName" xml:space="preserve"><value>Screen capture</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>Couldn't take "{0}" from the app you dragged it from. Save it as a file and drag that instead.</value></data>
   <data name="Msg_File_DropNoFile" xml:space="preserve"><value>That app hands over no file to drag — only its own internal reference. Save the item as a file first, then drag that.</value></data>
   <data name="FileDrop_Overlay_Hint_MeetingInvite" xml:space="preserve"><value>Drop the meeting invite to fill in the link</value></data>
@@ -123,6 +126,13 @@
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Searching past chats...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Searching memory...</value></data>
   <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Starting a background assignment...</value></data>
+  <data name="Msg_Assistant_StatusStartingRoutine" xml:space="preserve"><value>Starting the routine...</value></data>
+  <data name="Msg_Assistant_StatusCapturingScreen" xml:space="preserve"><value>Capturing the screen...</value></data>
+  <data name="Msg_Assistant_StatusListingScreenTargets" xml:space="preserve"><value>Listing windows and monitors...</value></data>
+  <data name="Msg_Assistant_ScreenCaptured" xml:space="preserve"><value>Screen captured</value></data>
+  <data name="Msg_ScreenCapture_UnattendedNotice" xml:space="preserve"><value>Pia captured {0} while nobody was watching ({1} capture(s) in this run). Details are in the capture audit log.</value></data>
+  <data name="Msg_ScreenCapture_MonitorLabel" xml:space="preserve"><value>a monitor</value></data>
+  <data name="Msg_ScreenCapture_UnnamedProgramLabel" xml:space="preserve"><value>a program</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Thinking...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Updating memory...</value></data>
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Updating reminder...</value></data>
@@ -138,6 +148,7 @@
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Show all chats…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>No chats yet.</value></data>
   <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Working folder for this chat</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip_NextChat" xml:space="preserve"><value>Working folder for the next new chat</value></data>
   <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>All files</value></data>
   <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>No subfolders here.</value></data>
   <data name="AssistantChat_WorkingDir_NewFolder_Tooltip" xml:space="preserve"><value>New folder</value></data>
@@ -267,6 +278,10 @@
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Voice download failed: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Voice {0} downloaded successfully.</value></data>
   <data name="Msg_Settings_VoiceSetFailed" xml:space="preserve"><value>Failed to set voice: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleteFailed" xml:space="preserve"><value>Failed to remove voice: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleted" xml:space="preserve"><value>Voice {0} removed from this device.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Message" xml:space="preserve"><value>Remove the voice {0} from this device? You can download it again at any time.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Title" xml:space="preserve"><value>Remove voice</value></data>
 
   <!-- Todo messages -->
   <data name="Msg_Todo_AddFailed" xml:space="preserve"><value>Failed to add todo: {0}</value></data>
@@ -416,6 +431,14 @@ Changes will be applied.</value></data>
   <data name="Tool_Assignment_Detail_PromptLength" xml:space="preserve"><value>Prompt: {0} characters</value></data>
   <data name="Tool_Assignment_Detail_Skill" xml:space="preserve"><value>Skill</value></data>
   <data name="Tool_Assignment_Skill_Unset" xml:space="preserve"><value>not chosen — the user picks</value></data>
+  <data name="Tool_Screen_Desc_CaptureWindow" xml:space="preserve"><value>Capture a picture of the {0} window</value></data>
+  <data name="Tool_Screen_Desc_CaptureMonitor" xml:space="preserve"><value>Capture a picture of display {0}</value></data>
+  <data name="Tool_Screen_Detail_Target" xml:space="preserve"><value>Target</value></data>
+  <data name="Tool_Screen_Detail_Program" xml:space="preserve"><value>Program</value></data>
+  <data name="Tool_Screen_Detail_Display" xml:space="preserve"><value>Display</value></data>
+  <data name="Tool_Screen_Detail_Size" xml:space="preserve"><value>Size</value></data>
+  <data name="Tool_Screen_Target_Window" xml:space="preserve"><value>Window</value></data>
+  <data name="Tool_Screen_Target_Monitor" xml:space="preserve"><value>Whole display</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Query</value></data>
   <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Type</value></data>
@@ -435,6 +458,12 @@ Changes will be applied.</value></data>
   <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Created scheduled research {0}, next run {1}</value></data>
   <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Updated scheduled research {0}</value></data>
   <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Deleted scheduled research {0}</value></data>
+  <data name="Tool_Routine_Desc_Run" xml:space="preserve"><value>Start routine {0} now</value></data>
+  <data name="Tool_Routine_Detail_Run" xml:space="preserve"><value>It runs as its own {0} run in {1}, and answers in a new chat.</value></data>
+  <data name="Tool_Routine_Exec_Started" xml:space="preserve"><value>Started routine {0}. It is running on its own; its answer arrives as a new chat.</value></data>
+  <data name="Tool_Routine_Exec_NotOwner" xml:space="preserve"><value>Routine {0} is scheduled by another device, and only that device may run it.</value></data>
+  <data name="Tool_Routine_Exec_AlreadyRunning" xml:space="preserve"><value>A run of routine {0} is already in progress.</value></data>
+  <data name="Tool_Routine_Exec_NotFound" xml:space="preserve"><value>Routine {0} no longer exists.</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Search past research findings</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Get a research entry by ID</value></data>
@@ -484,4 +513,21 @@ Changes will be applied.</value></data>
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Thank you</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Your feedback was sent to the Pia Cloud team.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>The feedback could not be sent. Check your Pia Cloud connection and try again.</value></data>
+  <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>That window or display is no longer available.</value></data>
+  <data name="Msg_Screen_Minimized" xml:space="preserve"><value>The window is minimized. Restore it first — Pia will not move windows on its own.</value></data>
+  <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>The window is hidden by Windows (another virtual desktop or a suspended app).</value></data>
+  <data name="Msg_Screen_EmptyBounds" xml:space="preserve"><value>The window has no visible area to capture.</value></data>
+  <data name="Msg_Screen_SelfTarget" xml:space="preserve"><value>Pia does not capture its own windows.</value></data>
+  <data name="Msg_Screen_SelfExclusionFailed" xml:space="preserve"><value>Pia could not hide its own window from the capture, so nothing was captured.</value></data>
+  <data name="Msg_Screen_UniformFrame" xml:space="preserve"><value>The capture came back blank. The app may block screen capture — or Pia's own window covers most of that display; move it aside and try again.</value></data>
+  <data name="Msg_Screen_Timeout" xml:space="preserve"><value>The window did not respond in time, so nothing was captured.</value></data>
+  <data name="Msg_Screen_NativeError" xml:space="preserve"><value>Windows refused the capture. Check the log for details.</value></data>
+  <data name="Msg_Screen_SelfBlackout" xml:space="preserve"><value>This version of Windows can only hide Pia from a capture by painting it black, and Pia covers that display. Move or minimize the Pia window and try again.</value></data>
+  <data name="Msg_Settings_HotkeyUnavailable" xml:space="preserve"><value>Windows refused this shortcut - another program probably uses it. Choose a different combination.</value></data>
+  <data name="Msg_CreditLimit_Reached" xml:space="preserve"><value>Credit limit reached.</value></data>
+  <data name="Msg_CreditLimit_ResetsInDays" xml:space="preserve"><value>Credit limit reached. Resets in {0}d {1}h.</value></data>
+  <data name="Msg_CreditLimit_ResetsInHours" xml:space="preserve"><value>Credit limit reached. Resets in {0}h {1}m.</value></data>
+  <data name="Msg_CreditLimit_ResetsInMinutes" xml:space="preserve"><value>Credit limit reached. Resets in {0} minutes.</value></data>
+  <data name="Msg_CreditLimit_ResetsShortly" xml:space="preserve"><value>Credit limit reached. Resets shortly.</value></data>
+  <data name="Msg_PiaCloud_AuthRequired" xml:space="preserve"><value>Authentication required. Please log in to Pia Cloud.</value></data>
 </root>

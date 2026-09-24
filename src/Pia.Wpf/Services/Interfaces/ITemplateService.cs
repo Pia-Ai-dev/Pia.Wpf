@@ -10,6 +10,6 @@ public interface ITemplateService
     Task<OptimizationTemplate?> GetTemplateAsync(Guid id);
     Task<OptimizationTemplate> AddTemplateAsync(OptimizationTemplate template);
     Task UpdateTemplateAsync(OptimizationTemplate template);
-    Task DeleteTemplateAsync(Guid id);
+    Task DeleteTemplateAsync(Guid id, bool trackForSync = true);
     Task<string> GeneratePromptAsync(string styleDescription);
 }

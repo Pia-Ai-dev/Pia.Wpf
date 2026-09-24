@@ -6,6 +6,7 @@ using Pia.Models;
 using Pia.Paths;
 using Pia.Services.Diagnostics;
 using Pia.Services.Interfaces;
+using Pia.Services.Tts;
 using Pia.ViewModels.Models;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -115,6 +116,9 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     private bool _autoCaptureSelectedText;
 
     [ObservableProperty]
+    private bool _autoUpdateEnabled = true;
+
+    [ObservableProperty]
     private WindowMode _defaultWindowMode;
 
     // Hotkeys
@@ -127,9 +131,14 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     [ObservableProperty]
     private string _fastPathHotkeyDisplayText = "";
 
-    private KeyboardShortcut _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
+    [ObservableProperty]
+    private string _screenCaptureHotkeyDisplayText = "";
+
+    private KeyboardShortcut? _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
     private KeyboardShortcut? _assistantHotkey = KeyboardShortcut.DefaultCtrlAltP();
     private KeyboardShortcut? _fastPathHotkey;
+    private KeyboardShortcut? _screenCaptureHotkey;
+    private const string ScreenCaptureHotkeyKey = "ScreenCapture";
 
     // Speech
     [ObservableProperty]
@@ -148,7 +157,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     private ObservableCollection<TtsVoice> _ttsVoices = new();
 
     [ObservableProperty]
-    private string _selectedVoiceKey = "en_US-lessac-medium";
+    private string _selectedVoiceKey = TtsVoiceCatalog.DefaultVoiceKey;
 
     // Inner tab index
     [ObservableProperty]
@@ -192,6 +201,11 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     partial void OnAutoCaptureSelectedTextChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnAutoUpdateEnabledChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -247,19 +261,28 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         StartMinimized = settings.StartMinimized;
         LaunchAtStartup = settings.LaunchAtStartup;
         AutoCaptureSelectedText = settings.AutoCaptureSelectedText;
+        AutoUpdateEnabled = settings.AutoUpdateEnabled;
         DefaultWindowMode = settings.DefaultWindowMode;
         SttBackend = settings.SttBackend;
         WhisperModel = settings.WhisperModel;
         TargetSpeechLanguage = settings.TargetSpeechLanguage;
 
         _optimizeHotkey = settings.OptimizeHotkey;
-        OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
+        OptimizeHotkeyDisplayText =
+            _optimizeHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
         _assistantHotkey = settings.AssistantHotkey;
         AssistantHotkeyDisplayText = _assistantHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
         _fastPathHotkey = settings.FastPathHotkey;
         FastPathHotkeyDisplayText = _fastPathHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
+        _screenCaptureHotkey = settings.ScreenCaptureHotkey;
+        ScreenCaptureHotkeyDisplayText =
+            _screenCaptureHotkey?.DisplayText ?? _localizationService["Msg_Settings_HotkeyNotSet"];
 
-        SelectedVoiceKey = settings.TtsVoiceModelKey;
+        // The picker lists curated voices only, so a saved retired key would bind to no item — this
+        // page can load before TtsService has cleared it.
+        SelectedVoiceKey = TtsVoiceCatalog.IsRetired(settings.TtsVoiceModelKey)
+            ? TtsVoiceCatalog.DefaultVoiceKey
+            : settings.TtsVoiceModelKey;
     }
 
     [RelayCommand]
@@ -303,12 +326,52 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     [RelayCommand]
+    private async Task CaptureScreenCaptureHotkeyAsync()
+    {
+        var shortcut = await _dialogService.ShowHotkeyCaptureDialogAsync();
+        if (shortcut is null || HasInternalConflict(shortcut, ScreenCaptureHotkeyKey))
+            return;
+
+        // Register before saving: a combination Windows refuses must not be persisted as if it worked.
+        if (!_trayIconService.UpdateScreenCaptureHotkey(shortcut))
+        {
+            _snackbarService.Show(
+                _localizationService["Msg_Settings_Conflict"],
+                _localizationService["Msg_Settings_HotkeyUnavailable"],
+                Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        _screenCaptureHotkey = shortcut;
+        ScreenCaptureHotkeyDisplayText = shortcut.DisplayText;
+        await SaveSettingsAsync();
+    }
+
+    [RelayCommand]
+    private async Task ClearScreenCaptureHotkeyAsync()
+    {
+        _screenCaptureHotkey = null;
+        ScreenCaptureHotkeyDisplayText = _localizationService["Msg_Settings_HotkeyNotSet"];
+        await SaveSettingsAsync();
+        _trayIconService.UpdateScreenCaptureHotkey(null);
+    }
+
+    [RelayCommand]
     private async Task ClearOptimizeHotkeyAsync()
     {
         _optimizeHotkey = KeyboardShortcut.DefaultCtrlAltO();
         OptimizeHotkeyDisplayText = _optimizeHotkey.DisplayText;
         await SaveSettingsAsync();
         _trayIconService.UpdateHotkey(WindowMode.Optimize, _optimizeHotkey);
+    }
+
+    [RelayCommand]
+    private async Task RemoveOptimizeHotkeyAsync()
+    {
+        _optimizeHotkey = null;
+        OptimizeHotkeyDisplayText = _localizationService["Msg_Settings_HotkeyNotSet"];
+        await SaveSettingsAsync();
+        _trayIconService.UpdateHotkey(WindowMode.Optimize, null);
     }
 
     [RelayCommand]
@@ -341,7 +404,8 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         {
             { WindowMode.Optimize.ToString(), _optimizeHotkey },
             { WindowMode.Assistant.ToString(), _assistantHotkey },
-            { "FastPath", _fastPathHotkey }
+            { "FastPath", _fastPathHotkey },
+            { ScreenCaptureHotkeyKey, _screenCaptureHotkey }
         };
 
         foreach (var (name, existing) in allHotkeys)
@@ -447,7 +511,13 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
 
             await _ttsService.DownloadVoiceAsync(voice.Key, progress);
             voice.IsDownloaded = true;
-            _snackbarService.Show(_localizationService["Msg_Success"], _localizationService.Format("Msg_Settings_VoiceDownloaded", voice.DisplayName), Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+
+            // A voice you just waited out a 67 MB download for is the one you meant to use, and its own
+            // "Now using…" snackbar says so — so the download-finished one would only be noise.
+            if (Policy[nameof(AppSettings.TtsVoiceModelKey)])
+                await SelectVoiceAsync(voice);
+            else
+                _snackbarService.Show(_localizationService["Msg_Success"], _localizationService.Format("Msg_Settings_VoiceDownloaded", voice.DisplayName), Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
         }
         catch (Exception ex)
         {
@@ -481,6 +551,46 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         {
             _logger.LogError(ex, "Failed to set voice {VoiceKey}", voice.Key);
             _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Settings_VoiceSetFailed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteVoiceAsync(TtsVoice? voice)
+    {
+        if (voice is null || !voice.IsDownloaded || voice.IsDownloading)
+            return;
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["Msg_Settings_VoiceDelete_Title"],
+            _localizationService.Format("Msg_Settings_VoiceDelete_Message", voice.DisplayName));
+
+        if (!confirmed)
+            return;
+
+        try
+        {
+            await _ttsService.DeleteVoiceAsync(voice.Key);
+            var wasSelected = voice.IsSelected;
+            voice.IsDownloaded = false;
+            voice.IsSelected = false;
+
+            _snackbarService.Show(_localizationService["Msg_Success"], _localizationService.Format("Msg_Settings_VoiceDeleted", voice.DisplayName), Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+
+            // Deleting the voice in use would otherwise leave Read aloud mute with another voice on disk.
+            if (wasSelected && Policy[nameof(AppSettings.TtsVoiceModelKey)]
+                && TtsVoices.FirstOrDefault(v => v.IsDownloaded) is { } replacement)
+            {
+                await SelectVoiceAsync(replacement);
+            }
+            else if (wasSelected)
+            {
+                SelectedVoiceKey = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete voice {VoiceKey}", voice.Key);
+            _snackbarService.Show(_localizationService["Msg_Error"], _localizationService.Format("Msg_Settings_VoiceDeleteFailed", ex.Message), Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(3));
         }
     }
 
@@ -631,6 +741,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         settings.StartMinimized = StartMinimized;
         settings.LaunchAtStartup = LaunchAtStartup;
         settings.AutoCaptureSelectedText = AutoCaptureSelectedText;
+        settings.AutoUpdateEnabled = AutoUpdateEnabled;
         settings.DefaultWindowMode = DefaultWindowMode;
         settings.SttBackend = SttBackend;
         settings.WhisperModel = WhisperModel;
@@ -638,6 +749,7 @@ public partial class GeneralSettingsViewModel : UiThreadViewModel, IDisposable
         settings.OptimizeHotkey = _optimizeHotkey;
         settings.AssistantHotkey = _assistantHotkey;
         settings.FastPathHotkey = _fastPathHotkey;
+        settings.ScreenCaptureHotkey = _screenCaptureHotkey;
         await _settingsService.SaveSettingsAsync(settings);
     }
 

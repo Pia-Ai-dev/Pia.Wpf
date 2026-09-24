@@ -504,4 +504,29 @@ public class FilesToolHandlerWriteTests : IDisposable
         Assert.True(Prop<bool>(result!, "success"), Prop<string?>(result!, "error"));
         Assert.Equal(["2", "alpha", "beta"], File.ReadAllLines(Path.Combine(_root, "fresh.txt")));
     }
+
+    // ---- images are not writable ----
+
+    [Fact]
+    public async Task WriteFile_OnAPng_IsRefused_AndLeavesTheBytesAlone()
+    {
+        var full = Path.Combine(_root, "diagram.png");
+        var original = new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A };
+        File.WriteAllBytes(full, original);
+
+        var result = await WriteRejection("diagram.png", "text over an image");
+
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("read-only here", Prop<string?>(result!, "error")!, StringComparison.Ordinal);
+        Assert.Equal(original, File.ReadAllBytes(full));
+    }
+
+    [Fact]
+    public async Task WriteFile_OnANewPng_IsRefused_BeforeTheFileIsCreated()
+    {
+        var result = await WriteRejection("fresh.jpeg", "not a jpeg");
+
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.False(File.Exists(Path.Combine(_root, "fresh.jpeg")));
+    }
 }

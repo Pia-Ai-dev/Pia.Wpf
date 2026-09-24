@@ -83,7 +83,10 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        SetCurrentProcessExplicitAppUserModelID("Pia.App");
+        SetCurrentProcessExplicitAppUserModelID(Helpers.ToastAppIdentity.Aumid);
+
+        // Before the first toast: the toolkit derives the notification header from the process name.
+        Helpers.ToastAppIdentity.Ensure();
 
         // A class handler, not a style: the resource lookup for an implicit ScrollBar style would have to
         // beat WPF-UI's, and ThemeService already swaps entries in Application.Resources.MergedDictionaries.
@@ -261,6 +264,10 @@ public partial class App : Application
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StartAsync(CancellationToken.None);
 
+        var consentRetentionService = Bootstrapper.ServiceProvider
+            .GetRequiredService<Services.Consent.ConsentRetentionBackgroundService>();
+        await consentRetentionService.StartAsync(CancellationToken.None);
+
         var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
         await todoDeadlineService.StartAsync(CancellationToken.None);
 
@@ -429,6 +436,10 @@ public partial class App : Application
 
         var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
         await chatRetentionService.StopAsync(CancellationToken.None);
+
+        var consentRetentionService = Bootstrapper.ServiceProvider
+            .GetRequiredService<Services.Consent.ConsentRetentionBackgroundService>();
+        await consentRetentionService.StopAsync(CancellationToken.None);
 
         var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
         await todoDeadlineService.StopAsync(CancellationToken.None);

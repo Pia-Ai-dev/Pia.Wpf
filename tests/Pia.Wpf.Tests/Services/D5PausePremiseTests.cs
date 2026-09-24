@@ -539,7 +539,7 @@ public sealed class D5PausePremiseTests : IDisposable
                 : Drive());
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -737,7 +737,8 @@ public sealed class D5PausePremiseTests : IDisposable
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -750,11 +751,12 @@ public sealed class D5PausePremiseTests : IDisposable
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
             bool clearReasoningEffort = false,
-            string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         public Task<bool> IsOwnedByThisDeviceAsync(Guid id) => Task.FromResult(true);
         public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(true);
-        public Task DeleteAsync(Guid id) => throw new NotImplementedException();
+        public Task DeleteAsync(Guid id, bool trackForSync = true) => throw new NotImplementedException();
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) => throw new NotImplementedException();

@@ -19,11 +19,17 @@ public class ViewAutomationIdTests
 
     // DataTemplates only, and only ones the markup sets locally: expanding ControlTemplates too would drag in
     // Wpf.Ui's ScrollBar arrows and ComboBox toggles and bury the signal.
-    private static readonly DependencyProperty[] DeclaredTemplates =
+    private static readonly DependencyProperty[] TemplateProperties =
     [
         ItemsControl.ItemTemplateProperty,
         ContentControl.ContentTemplateProperty,
         HeaderedContentControl.HeaderTemplateProperty,
+    ];
+
+    private static readonly DependencyProperty[] TemplateSelectorProperties =
+    [
+        ItemsControl.ItemTemplateSelectorProperty,
+        ContentControl.ContentTemplateSelectorProperty,
     ];
 
     /// <summary>Most-specific first: the property a script would drive is the one that names the control.</summary>
@@ -40,21 +46,25 @@ public class ViewAutomationIdTests
     // part of a covered view later extracted into its own UserControl cannot drop out of coverage silently.
     // The playbook's "Known gaps" section is the single source of truth for what still has no row here.
     [Theory]
-    [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 25, 4, "")]
-    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 35, 5, "PersonaGlyph,PersonasView,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 35, 5, "")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 48, 6, "McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
-    [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 6, 4, "")]
-    [InlineData(typeof(Pia.Views.AssistantView), 26, 6,
+    [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 4, 0, "TemplatesView")]
+    [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 13, 0, "PiaEmptyState")]
+    [InlineData(typeof(Pia.Views.AssistantView), 34, 7,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
-        "PiaChatQuickSwitcher,PiaChatTitleChip,PiaCollapsibleMessageText,PiaPersonaAvatar,RunProgressPanel," +
-        "TodoPanelControl,VoiceModeOverlay")]
+        "PiaChatQuickSwitcher,PiaChatTitleChip,PiaCollapsibleMessageText,PiaPersonaAvatar," +
+        "PiaWorkingDirectoryPicker,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]
     [InlineData(typeof(Pia.Views.AssistantHistoryView), 10, 1,
         "PiaAssistantChatInspector,PiaAssistantChatRowContent,PiaEmptyState,PiaHelpHint")]
-    [InlineData(typeof(Pia.Views.RoutinesView), 21, 1, "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar")]
-    [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 25, 2, "PersonaGlyph,PiaEmptyState")]
+    [InlineData(typeof(Pia.Views.RoutinesView), 36, 1,
+        "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar,PiaWorkingDirectoryPicker")]
+    [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 26, 2, "PersonaGlyph,PiaEmptyState")]
+    [InlineData(typeof(Pia.Views.SettingsViews.McpServersView), 18, 2, "PiaEmptyState,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
+    [InlineData(typeof(Pia.Views.Dialogs.Overlay.AdvancedCreationOverlayPanel), 12, 5, "PersonaGlyph")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultHeader), 5, 0, "PiaHelpHint")]
     [InlineData(typeof(Pia.Controls.Vault.PiaVaultSearchBar), 1, 0, "")]
@@ -73,7 +83,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Reminders.PiaReminderRow), 4, 4, "PiaReminderStatusChip")]
     [InlineData(typeof(Pia.Controls.Reminders.PiaReminderGroupCard), 5, 5, "PiaReminderStatusChip")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryGroupCard), 1, 1, "")]
-    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatRowContent), 6, 6, "PiaChatStateBadge")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatRowContent), 7, 7, "PiaChatStateBadge")]
     [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatGroupCard), 1, 1, "PiaAssistantChatRowContent")]
     [InlineData(typeof(Pia.Views.TodoView), 9, 5, "PiaTodoHeader,PiaTodoSearchBar")]
     [InlineData(typeof(Pia.Views.TodoPanelControl), 6, 1, "")]
@@ -82,7 +92,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 23, 10, "PiaPersonaAvatar")]
     [InlineData(typeof(Pia.Controls.Chat.PiaFileChip), 3, 3, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaAttachedFileChip), 2, 2, "")]
-    [InlineData(typeof(Pia.Controls.Chat.PiaCollapsibleMessageText), 1, 1, "")]
+    [InlineData(typeof(Pia.Controls.Chat.PiaCollapsibleMessageText), 2, 2, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSourceChip), 1, 1, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaChipOverflowPanel), 1, 1, "")]
     [InlineData(typeof(Pia.Views.AssignmentsView), 4, 2, "PiaEmptyState,PiaHelpHint")]
@@ -92,7 +102,8 @@ public class ViewAutomationIdTests
     // the four ids below are the set's own two plus that card's two.
     [InlineData(typeof(Pia.Controls.Cards.FileChangeSetCard), 4, 4, "")]
     [InlineData(typeof(Pia.Controls.Flow.FlowView), 10, 10, "CardDecisionBar,PiaChatStateBadge")]
-    [InlineData(typeof(Pia.Controls.Assistant.PiaChatTitleChip), 11, 2, "PiaAssistantChatRowContent")]
+    [InlineData(typeof(Pia.Controls.Assistant.PiaChatTitleChip), 6, 1, "PiaAssistantChatRowContent,PiaWorkingDirectoryPicker")]
+    [InlineData(typeof(Pia.Controls.Shared.PiaWorkingDirectoryPicker), 5, 5, "")]
     [InlineData(typeof(Pia.Views.VoiceModeOverlay), 3, 0, "RecordingIndicator")]
     [InlineData(typeof(Pia.Views.DirectTranscriptionOverlay), 16, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Controls.Chat.PiaSuggestionChips), 1, 1, "")]
@@ -103,8 +114,8 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Controls.History.PiaHistoryInspector), 6, 0, "PiaHistoryInspectorHeader")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryInspectorHeader), 1, 0, "")]
     [InlineData(typeof(Pia.Controls.History.PiaHistoryStatusBar), 1, 0, "")]
-    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatInspector), 7, 2,
-        "PiaAssistantMessage,PiaPersonaAvatar")]
+    [InlineData(typeof(Pia.Controls.AssistantHistory.PiaAssistantChatInspector), 8, 2,
+        "PiaAssistantMessage,PiaCollapsibleMessageText,PiaPersonaAvatar")]
     // Pia.Views.OptimizeView is the Optimize hotkey window, not the same-named settings view above.
     [InlineData(typeof(Pia.Views.OptimizeView), 12, 0, "TodoPanelControl")]
     [InlineData(typeof(Pia.Views.SettingsViews.PluginsView), 2, 1, "")]
@@ -115,6 +126,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.WizardSteps.ProviderSetupStep), 7, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.AccountSetupStep), 10, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.WizardSteps.E2EESetupStep), 5, 0, "")]
+    [InlineData(typeof(Pia.Views.Dialogs.ScreenCapturePickerView), 3, 2, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {
@@ -190,19 +202,35 @@ public class ViewAutomationIdTests
         if (element is ButtonBase or ComboBox or TextBoxBase or PasswordBox or Slider or Expander or TabItem)
             controls.Add(new Inspected(element.GetType().FullName!, Identity(element), Id(element), inItemTemplate));
 
-        // ReadLocalValue, so a template inherited from a default Wpf.Ui style is not expanded.
-        foreach (var property in DeclaredTemplates)
+        foreach (var (template, isItemTemplate) in DeclaredTemplates(element))
         {
-            if (element.ReadLocalValue(property) is not DataTemplate template) continue;
             if (!open.Add(template)) continue;
             if (template.LoadContent() is DependencyObject content)
-                Collect(content, content, controls, nested, open, depth + 1,
-                    inItemTemplate || property == ItemsControl.ItemTemplateProperty);
+                Collect(content, content, controls, nested, open, depth + 1, inItemTemplate || isItemTemplate);
             open.Remove(template);
         }
 
         foreach (var child in LogicalTreeHelper.GetChildren(element).OfType<DependencyObject>())
             Collect(child, root, controls, nested, open, depth, inItemTemplate);
+    }
+
+    // ReadLocalValue, so a template inherited from a default Wpf.Ui style is not expanded. A selector is expanded
+    // through every DataTemplate property it exposes: SelectTemplate needs a real item and walks one branch.
+    private static IEnumerable<(DataTemplate Template, bool IsItemTemplate)> DeclaredTemplates(DependencyObject element)
+    {
+        foreach (var property in TemplateProperties)
+            if (element.ReadLocalValue(property) is DataTemplate template)
+                yield return (template, property == ItemsControl.ItemTemplateProperty);
+
+        foreach (var property in TemplateSelectorProperties)
+        {
+            if (element.ReadLocalValue(property) is not DataTemplateSelector selector) continue;
+            foreach (var template in selector.GetType().GetProperties()
+                         .Where(p => p.PropertyType == typeof(DataTemplate))
+                         .Select(p => p.GetValue(selector))
+                         .OfType<DataTemplate>())
+                yield return (template, property == ItemsControl.ItemTemplateSelectorProperty);
+        }
     }
 
     /// <summary>A per-item id is a Binding that evaluates to "" without an item, so the LOCAL VALUE is read -

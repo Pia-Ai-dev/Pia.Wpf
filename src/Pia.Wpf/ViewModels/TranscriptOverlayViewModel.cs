@@ -47,15 +47,15 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     // collision guard already stops two identities sharing a display string.
     private readonly SpeakerDisplayNumbering _displayNumbering = new();
 
-    // Per-utterance retention so adaptive reassignments can rebuild bubbles retroactively.
-    // Comfortably above MaxBubbles; the rebuild trims to MaxBubbles at the end.
-    private const int JournalCap = 1000;
+    // Every utterance of the session. Exports render from here: Bubbles is a rolling display
+    // window and drops the start of a long meeting.
     private readonly List<UtteranceEntry> _journal = [];
 
     // A re-cluster pass runs inside the diarizer call for the segment that triggered it, so its
     // correction arrives BEFORE that segment's utterance — which only appears once transcription
     // finishes, seconds later. Dropping such a correction leaves the bubble on the stale pre-pass
     // label for good, so it is parked here and applied when the utterance lands.
+    private const int PendingReassignmentCap = 1000;
     private readonly Dictionary<long, string?> _pendingReassignments = [];
 
     protected readonly ISettingsService _settingsService;
@@ -236,7 +236,6 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
                     Label = label,
                     SegmentId = utterance.SegmentId,
                 });
-                if (_journal.Count > JournalCap) _journal.RemoveAt(0);
 
                 var bubble = GetOrCreateBubble(utterance.Speaker, utterance.Timestamp, label, createIfMissing: true);
                 bubble!.Append(utterance.Text, utterance.Timestamp, utterance.SegmentId);
@@ -249,34 +248,33 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         });
     }
 
-    /// <summary>
-    /// Reuses the most recently appended bubble when it's the same speaker, the same per-speaker
-    /// label, and still inside the rolling window. Otherwise creates a fresh bubble (when
-    /// <paramref name="createIfMissing"/> is true) and appends it to <see cref="Bubbles"/>. Using the
-    /// *last* bubble — instead of per-speaker tracking — keeps the conversation in chronological
-    /// order: an interleaved "Them" turn always splits the prior "You" stream into two visual bubbles.
-    ///
-    /// <para>The label is part of the merge key (ordinal equality): two distinct
-    /// <paramref name="speakerLabel"/>s in the same window produce two separate, separately-colored
-    /// bubbles. An unlabeled segment (too short to diarize — "ja", "genau", laughter) inherits the
-    /// in-window run's label instead of splitting it and rendering as the generic placeholder; with
-    /// no labeled predecessor in-window it keeps the placeholder. The journal keeps the truthful
-    /// null, so a rebuild re-derives the same inheritance.</para>
-    /// </summary>
+    /// <summary>Grows the live transcript per <see cref="TranscriptGrouping.ShouldReuse"/>. Merging into
+    /// the *last* bubble rather than a per-speaker one is what keeps the conversation chronological.</summary>
     internal TranscriptBubble? GetOrCreateBubble(
-        TranscriptSpeaker speaker, DateTimeOffset timestamp, string? speakerLabel, bool createIfMissing)
+        TranscriptSpeaker speaker, DateTimeOffset timestamp, string? speakerLabel, bool createIfMissing) =>
+        GetOrCreateBubble(Bubbles, _displayNumbering, speaker, timestamp, speakerLabel, createIfMissing);
+
+    private TranscriptBubble? GetOrCreateBubble(
+        IList<TranscriptBubble> target,
+        SpeakerDisplayNumbering numbering,
+        TranscriptSpeaker speaker,
+        DateTimeOffset timestamp,
+        string? speakerLabel,
+        bool createIfMissing)
     {
-        var last = Bubbles.Count > 0 ? Bubbles[^1] : null;
+        var last = target.Count > 0 ? target[^1] : null;
         if (TranscriptGrouping.ShouldReuse(last, speaker, timestamp, speakerLabel)) return last;
 
         if (!createIfMissing) return null;
 
         var bubble = new TranscriptBubble(
-            speaker, timestamp, speakerLabel: speakerLabel, displayLabel: ResolveDisplayLabel(speakerLabel))
+            speaker, timestamp,
+            speakerLabel: speakerLabel,
+            displayLabel: numbering.Resolve(speakerLabel, SuppressSpeakerLabels))
         {
             ColorIndex = GetOrAssignSpeakerColorIndex(speakerLabel),
         };
-        Bubbles.Add(bubble);
+        target.Add(bubble);
         return bubble;
     }
 
@@ -361,22 +359,41 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         });
     }
 
+    /// <summary>Replays the journal through the same <see cref="GetOrCreateBubble"/> + Append path the
+    /// incremental one uses, so replay-vs-incremental equivalence holds by construction.</summary>
+    private void ReplayJournalInto(IList<TranscriptBubble> target, SpeakerDisplayNumbering numbering)
+    {
+        foreach (var entry in _journal)
+        {
+            var bubble = GetOrCreateBubble(
+                target, numbering, entry.Speaker, entry.Timestamp, entry.Label, createIfMissing: true);
+            bubble!.Append(entry.Text, entry.Timestamp, entry.SegmentId);
+        }
+    }
+
+    /// <summary>The whole session as bubbles — what every export renders, since <see cref="Bubbles"/>
+    /// is a display window that has already dropped the start of a long meeting.</summary>
+    internal List<TranscriptBubble> BuildFullTranscript()
+    {
+        var full = new List<TranscriptBubble>();
+        ReplayJournalInto(full, new SpeakerDisplayNumbering());
+        return full;
+    }
+
     /// <summary>
-    /// Replays the journal through the SAME incremental path (<see cref="GetOrCreateBubble"/> +
-    /// Append), so rebuild-vs-incremental equivalence holds by construction. Neither the palette map
-    /// nor the display numbering is reset — a rebuild runs several times a minute, and re-deriving
-    /// either renumbers or recolours speakers the pass never touched. Trims in a loop (TrimIfNeeded
-    /// removes at most one batch per call).
+    /// Rebuilds off-collection and copies back only the tail, so a reassignment batch costs
+    /// <see cref="MaxBubbles"/> collection-changed notifications however long the meeting has run.
     /// </summary>
     private void RebuildBubblesFromJournal()
     {
+        // Numbering is not reset: a rebuild runs several times a minute, and re-deriving it would
+        // renumber speakers the pass never touched.
+        var rebuilt = new List<TranscriptBubble>();
+        ReplayJournalInto(rebuilt, _displayNumbering);
+
         Bubbles.Clear();
-        foreach (var entry in _journal)
-        {
-            var bubble = GetOrCreateBubble(entry.Speaker, entry.Timestamp, entry.Label, createIfMissing: true);
-            bubble!.Append(entry.Text, entry.Timestamp, entry.SegmentId);
-        }
-        while (Bubbles.Count > MaxBubbles) Bubbles.RemoveAt(0);
+        for (var i = Math.Max(0, rebuilt.Count - MaxBubbles); i < rebuilt.Count; i++)
+            Bubbles.Add(rebuilt[i]);
     }
 
     /// <summary>
@@ -385,9 +402,9 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     /// </summary>
     private void TrimPendingReassignments()
     {
-        if (_pendingReassignments.Count <= JournalCap) return;
+        if (_pendingReassignments.Count <= PendingReassignmentCap) return;
         // Materialize before removing: iterating the live key view while mutating it is undefined.
-        var dead = _pendingReassignments.Keys.Order().Take(_pendingReassignments.Count - JournalCap).ToArray();
+        var dead = _pendingReassignments.Keys.Order().Take(_pendingReassignments.Count - PendingReassignmentCap).ToArray();
         foreach (var id in dead) _pendingReassignments.Remove(id);
     }
 
@@ -561,11 +578,12 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
             return;
         }
 
+        var transcript = BuildFullTranscript();
         // The end timestamp is not tracked by either service; the last bubble is the practical session end.
-        var sessionEnd = Bubbles.Count > 0 ? Bubbles[^1].EndTimestamp : _sessionStart;
+        var sessionEnd = transcript.Count > 0 ? transcript[^1].EndTimestamp : _sessionStart;
         var markdown = MeetingVaultMarkdown.Render(
             model.ToMetadata(sessionEnd, MeetingSourceKind),
-            DirectTranscriptMarkdown.RenderBody(_localizationService[TitleKey], [.. Bubbles], CounterpartName));
+            DirectTranscriptMarkdown.RenderBody(_localizationService[TitleKey], transcript, CounterpartName));
 
         var write = await _memoryService.CreateSourceAsync(reference, markdown);
         if (!write.Success)
@@ -628,7 +646,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         sb.Append("# ").Append(_localizationService[TitleKey])
           .Append(" — ").Append(_sessionStart.LocalDateTime.ToString("yyyy-MM-dd HH:mm")).AppendLine();
         sb.AppendLine();
-        foreach (var bubble in Bubbles)
+        foreach (var bubble in BuildFullTranscript())
         {
             var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.DisplayLabel, CounterpartName);
             sb.Append("**").Append(label).Append("** _")

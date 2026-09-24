@@ -50,7 +50,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         // One Arg.Any<> short would leave the trailing parameter at its default, miss the call and hand
         // the awaited send a null Task.
         _manager.StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
 
         // StartFreshChat calls SetWorkingDirectory on whatever this returns.
@@ -323,7 +323,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
 
         await _manager.Received(1).StartTurnAsync(
             Arg.Any<ChatSession>(), "summarize the attached report for the team",
-            Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             planned: false,
             attachedFileContext: Arg.Is<string?>(s => s != null && s.Contains("notes.txt")),
             attachedFiles: Arg.Any<IReadOnlyList<AttachedFileRef>?>());
@@ -348,7 +348,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     {
         var vm = CreateSut();
         _manager.StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
         var chip = Chip();
         vm.InputText = "summarize this";
@@ -376,14 +376,14 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     {
         var vm = CreateSut();
         vm.PendingFiles.Add(Chip());
-        vm.PendingAttachment = Attachment();
+        vm.PendingAttachments.Add(Attachment());
 
         Activate(Session());
         Activate(Session());
 
         // Staged for the chat the user left; carrying it over would send it into the wrong conversation.
         Assert.Empty(vm.PendingFiles);
-        Assert.Null(vm.PendingAttachment);
+        Assert.Empty(vm.PendingAttachments);
     }
 
     [Fact]
@@ -394,11 +394,11 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         Activate(session);
 
         vm.PendingFiles.Add(Chip());
-        vm.PendingAttachment = Attachment();
+        vm.PendingAttachments.Add(Attachment());
         Activate(session);
 
         Assert.Single(vm.PendingFiles);
-        Assert.NotNull(vm.PendingAttachment);
+        Assert.Single(vm.PendingAttachments);
     }
 
     private void Activate(ChatSession session) =>
@@ -481,13 +481,12 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         // No provider at all, so the vision gate refuses before anything is staged.
         await vm.HandleFilesDroppedCommand.ExecuteAsync(new[] { first, second });
 
-        Assert.Null(vm.PendingAttachment);
+        Assert.Empty(vm.PendingAttachments);
         _ = _localization.Received(1)["Msg_File_ImageProviderUnsupported"];
-        _localization.DidNotReceive().Format("Msg_File_OneImageOnly", Arg.Any<object[]>());
     }
 
     [Fact]
-    public async Task TwoImagesKeptByAVisionProvider_NameTheOneThatWasKept()
+    public async Task TwoImagesKeptByAVisionProvider_BothLand()
     {
         var vm = CreateSut();
         _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant).Returns(new AiProvider
@@ -501,10 +500,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
 
         await vm.HandleFilesDroppedCommand.ExecuteAsync(new[] { first, second });
 
-        Assert.NotNull(vm.PendingAttachment);
-        _localization.Received(1).Format(
-            "Msg_File_OneImageOnly",
-            Arg.Is<object[]>(args => args.Length == 1 && (string)args[0] == "a.png"));
+        Assert.Equal(2, vm.PendingAttachments.Count);
     }
 
     /// <summary>A drop that produced no chip has to say so where the user is looking. The corner snackbar is
@@ -656,7 +652,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     {
         var vm = CreateSut();
         _manager.StartTurnAsync(
-            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<ImageAttachment?>(), Arg.Any<string?>(),
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
         var chip = Chip();
         chip.SavedRelativePath = "Playground/notes.txt";
@@ -667,5 +663,194 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
 
         Assert.Same(chip, Assert.Single(vm.PendingFiles));
         Assert.True(vm.PendingFiles[0].IsSaved);
+    }
+
+    // ---- The image strip -------------------------------------------------------------------------
+
+    private void UseVisionProvider() =>
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant).Returns(new AiProvider
+        {
+            Name = "Cloud",
+            Endpoint = "https://example.invalid",
+            ProviderType = AiProviderType.PiaCloud,
+        });
+
+    [Fact]
+    public async Task Attach_FourImages_AllLandInTheStrip()
+    {
+        UseVisionProvider();
+        var vm = CreateSut();
+
+        for (var i = 0; i < 4; i++)
+            await vm.HandleImageAttachedCommand.ExecuteAsync(WritePng($"i{i}.png"));
+
+        Assert.Equal(4, vm.PendingAttachments.Count);
+    }
+
+    [Fact]
+    public async Task Attach_FifthImage_IsRefusedAndNamed()
+    {
+        UseVisionProvider();
+        var vm = CreateSut();
+        for (var i = 0; i < 4; i++)
+            await vm.HandleImageAttachedCommand.ExecuteAsync(WritePng($"i{i}.png"));
+
+        await vm.HandleImageAttachedCommand.ExecuteAsync(WritePng("fifth.png"));
+
+        Assert.Equal(4, vm.PendingAttachments.Count);
+        _localization.Received(1).Format(
+            "Msg_File_ImageLimit",
+            Arg.Is<object[]>(a => a.Length == 2 && (int)a[0] == 4 && (string)a[1] == "fifth.png"));
+    }
+
+    [Fact]
+    public async Task Attach_OverTheByteBudget_IsRefusedAndNamed()
+    {
+        UseVisionProvider();
+        var vm = CreateSut();
+        // Staged directly: a synthetic PNG cannot be encoded large enough to reach the budget, and the
+        // arm under test only reads JpegBytes.Length.
+        vm.PendingAttachments.Add(Attachment(new byte[AssistantViewModel.MaxPendingImageBytes]));
+
+        await vm.HandleImageAttachedCommand.ExecuteAsync(WritePng("over.png"));
+
+        Assert.Single(vm.PendingAttachments);
+        _localization.Received(1).Format(
+            "Msg_File_ImageBudget",
+            Arg.Is<object[]>(a => a.Length == 1 && (string)a[0] == "over.png"));
+    }
+
+    [Fact]
+    public async Task Attach_SecondImageSeparately_DoesNotReplaceTheFirst()
+    {
+        UseVisionProvider();
+        var vm = CreateSut();
+
+        await vm.HandleImageAttachedCommand.ExecuteAsync(WritePng("a.png"));
+        var first = vm.PendingAttachments[0];
+        await vm.HandleImageAttachedCommand.ExecuteAsync(WritePng("b.png"));
+
+        Assert.Equal(2, vm.PendingAttachments.Count);
+        Assert.Same(first, vm.PendingAttachments[0]);
+    }
+
+    [Fact]
+    public async Task Attach_TheSameFileTwice_IsRefusedAsADuplicate()
+    {
+        UseVisionProvider();
+        var vm = CreateSut();
+        var path = WritePng("same.png");
+
+        await vm.HandleImageAttachedCommand.ExecuteAsync(path);
+        await vm.HandleImageAttachedCommand.ExecuteAsync(path);
+
+        Assert.Single(vm.PendingAttachments);
+        _localization.Received(1).Format(
+            "Msg_File_DuplicateAttachment",
+            Arg.Is<object[]>(a => a.Length == 1 && (string)a[0] == "same.png"));
+    }
+
+    /// <summary>A paste has no SourcePath, so the dedup arm must never collide two of them on null.</summary>
+    [Fact]
+    public async Task Paste_TwoImages_BothLand()
+    {
+        UseVisionProvider();
+        var vm = CreateSut();
+
+        await vm.HandleImagePastedCommand.ExecuteAsync(Pixel());
+        await vm.HandleImagePastedCommand.ExecuteAsync(Pixel());
+
+        Assert.Equal(2, vm.PendingAttachments.Count);
+    }
+
+    [Fact]
+    public async Task Send_PassesEveryAttachmentToStartTurn()
+    {
+        var vm = CreateSut();
+        UseVisionProvider();
+        var first = Attachment();
+        var second = Attachment();
+        vm.PendingAttachments.Add(first);
+        vm.PendingAttachments.Add(second);
+        vm.InputText = "what is in these";
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        await _manager.Received(1).StartTurnAsync(
+            Arg.Any<ChatSession>(), "what is in these",
+            Arg.Is<IReadOnlyList<ImageAttachment>?>(a => a != null && a.Count == 2
+                && ReferenceEquals(a[0], first) && ReferenceEquals(a[1], second)),
+            Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(),
+            Arg.Any<IReadOnlyList<AttachedFileRef>?>());
+        Assert.Empty(vm.PendingAttachments);
+    }
+
+    [Fact]
+    public async Task RefusedSend_RestoresEveryAttachment()
+    {
+        var vm = CreateSut();
+        UseVisionProvider();
+        _manager.StartTurnAsync(
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
+        var first = Attachment();
+        var second = Attachment();
+        vm.PendingAttachments.Add(first);
+        vm.PendingAttachments.Add(second);
+        vm.InputText = "what is in these";
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, vm.PendingAttachments.Count);
+        Assert.Same(first, vm.PendingAttachments[0]);
+        Assert.Same(second, vm.PendingAttachments[1]);
+    }
+
+    [Fact]
+    public void RemoveAttachment_RemovesOnlyTheOneClicked()
+    {
+        var vm = CreateSut();
+        var first = Attachment();
+        var second = Attachment();
+        vm.PendingAttachments.Add(first);
+        vm.PendingAttachments.Add(second);
+
+        vm.RemoveAttachmentCommand.Execute(first);
+
+        Assert.Same(second, Assert.Single(vm.PendingAttachments));
+    }
+
+    /// <summary>The [ObservableProperty] this collection replaced re-raised CanExecute for free; a collection
+    /// mutation notifies the collection, never the VM.</summary>
+    [Fact]
+    public void AttachingAnImage_EnablesSend()
+    {
+        var vm = CreateSut();
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+
+        vm.PendingAttachments.Add(Attachment());
+
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    private static ImageAttachment Attachment(byte[] jpegBytes)
+    {
+        var bitmap = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Bgra32, null);
+        bitmap.Freeze();
+        return new ImageAttachment
+        {
+            JpegBytes = jpegBytes,
+            MimeType = "image/jpeg",
+            Width = 1,
+            Height = 1,
+            Thumbnail = bitmap,
+        };
+    }
+
+    private static BitmapSource Pixel()
+    {
+        var pixel = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgr24, null, new byte[4], 4);
+        pixel.Freeze();
+        return pixel;
     }
 }

@@ -344,6 +344,8 @@ public class AuthService : IAuthService
         settings.SyncUserDisplayName = login.User.DisplayName;
         settings.SyncProvider = provider;
         settings.SyncDeviceId ??= Guid.NewGuid().ToString();
+        // A marker surviving from an earlier connection would suppress this account's history upload.
+        settings.AssistantChatsBackfilledAt = null;
         if (reportedMetadata)
             settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);

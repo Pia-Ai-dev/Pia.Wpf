@@ -4,68 +4,134 @@
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   xmlns:loc="clr-namespace:Pia.Localization"
-                  Title="{loc:Str Todo_EditTitle}"
-                  PrimaryButtonText="{loc:Str Common_Save}"
-                  CloseButtonText="{loc:Str Common_Cancel}"
-                  DefaultButton="Primary"
-                  IsPrimaryButtonEnabled="True"
-                  DialogMaxWidth="520"
-                  DialogMaxHeight="560">
+                  Title="{Binding Title}"
+                  DialogMaxWidth="640"
+                  DialogMaxHeight="680">
   <ui:ContentDialog.Resources>
+    <!-- Reading has no Save. The primary button is dropped by having no text, which only works while it
+         is not the default button — DefaultButton keeps its button on screen, blank. -->
     <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
-           TargetType="{x:Type local:TodoEditContentDialog}" />
+           TargetType="{x:Type local:TodoEditContentDialog}">
+      <Setter Property="CloseButtonText" Value="{loc:Str Common_Close}" />
+      <Setter Property="DefaultButton" Value="Close" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding IsEditing}" Value="True">
+          <Setter Property="PrimaryButtonText" Value="{loc:Str Common_Save}" />
+          <Setter Property="CloseButtonText" Value="{loc:Str Common_Cancel}" />
+          <Setter Property="DefaultButton" Value="Primary" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
   </ui:ContentDialog.Resources>
 
-  <StackPanel Margin="0,8,0,0" Width="420">
-    <TextBlock Text="{loc:Str Todo_TitleLabel}"
-               FontSize="12"
-               Foreground="{DynamicResource TextMutedBrush}"
-               Margin="0,0,0,4" />
-    <ui:TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
-                PlaceholderText="{loc:Str Todo_TitlePlaceholder}"
-                PlaceholderEnabled="True"
-                AutomationProperties.AutomationId="TodoEdit_Title"
-                Margin="0,0,0,12" />
+  <Grid Margin="0,8,0,0" Width="540">
 
-    <TextBlock Text="{loc:Str Todo_NotesLabel}"
-               FontSize="12"
-               Foreground="{DynamicResource TextMutedBrush}"
-               Margin="0,0,0,4" />
-    <ui:TextBox Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
-                PlaceholderText="{loc:Str Todo_NotesPlaceholder}"
-                PlaceholderEnabled="True"
-                AcceptsReturn="True"
-                TextWrapping="Wrap"
-                MinHeight="80"
-                MaxHeight="160"
-                VerticalScrollBarVisibility="Auto"
-                AutomationProperties.AutomationId="TodoEdit_Notes"
-                Margin="0,0,0,12" />
+    <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+      <ui:Button Command="{Binding BeginEditCommand}"
+                 Appearance="Secondary"
+                 HorizontalAlignment="Right"
+                 Margin="0,0,0,8"
+                 AutomationProperties.Name="{loc:Str Todo_Edit}"
+                 AutomationProperties.AutomationId="TodoRead_BeginEdit"
+                 ToolTip="{loc:Str Todo_Edit}">
+        <StackPanel Orientation="Horizontal">
+          <ui:SymbolIcon Symbol="Edit24" FontSize="14" Margin="0,0,6,0" />
+          <TextBlock Text="{loc:Str Common_Edit}" />
+        </StackPanel>
+      </ui:Button>
 
-    <Grid Margin="0,0,0,4">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
+      <TextBlock Text="{loc:Str Todo_NotesLabel}"
+                 FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Margin="0,0,0,4" />
+      <TextBlock Text="{Binding Notes}"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource TextDefaultBrush}"
+                 Visibility="{Binding HasNotes, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 Margin="0,0,0,16" />
+      <TextBlock Text="{loc:Str Todo_NotesPlaceholder}"
+                 FontStyle="Italic"
+                 Foreground="{DynamicResource TextGhostBrush}"
+                 Visibility="{Binding HasNotes, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                 Margin="0,0,0,16" />
 
-      <StackPanel Grid.Column="0" Margin="0,0,6,0">
-        <TextBlock Text="{loc:Str Todo_PriorityLabel}"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextMutedBrush}"
-                   Margin="0,0,0,4" />
-        <ComboBox ItemsSource="{Binding Priorities}"
-                  SelectedItem="{Binding Priority}"
-                  AutomationProperties.AutomationId="TodoEdit_Priority" />
-      </StackPanel>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-      <StackPanel Grid.Column="1" Margin="6,0,0,0">
-        <TextBlock Text="{loc:Str Todo_DueDateLabel}"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextMutedBrush}"
-                   Margin="0,0,0,4" />
-        <DatePicker SelectedDate="{Binding DueDate}"
-                    AutomationProperties.AutomationId="TodoEdit_DueDate" />
-      </StackPanel>
-    </Grid>
-  </StackPanel>
+        <StackPanel Grid.Column="0" Margin="0,0,6,0">
+          <TextBlock Text="{loc:Str Todo_PriorityLabel}"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     Margin="0,0,0,4" />
+          <TextBlock Text="{Binding Priority}"
+                     Foreground="{DynamicResource TextDefaultBrush}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Margin="6,0,0,0">
+          <TextBlock Text="{loc:Str Todo_DueDateLabel}"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     Margin="0,0,0,4" />
+          <TextBlock Text="{Binding DueDateLabel}"
+                     Foreground="{DynamicResource TextDefaultBrush}" />
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+
+    <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}">
+      <TextBlock Text="{loc:Str Todo_TitleLabel}"
+                 FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Margin="0,0,0,4" />
+      <ui:TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                  PlaceholderText="{loc:Str Todo_TitlePlaceholder}"
+                  PlaceholderEnabled="True"
+                  AutomationProperties.AutomationId="TodoEdit_Title"
+                  Margin="0,0,0,12" />
+
+      <TextBlock Text="{loc:Str Todo_NotesLabel}"
+                 FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Margin="0,0,0,4" />
+      <ui:TextBox Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
+                  PlaceholderText="{loc:Str Todo_NotesPlaceholder}"
+                  PlaceholderEnabled="True"
+                  AcceptsReturn="True"
+                  TextWrapping="Wrap"
+                  MinHeight="140"
+                  MaxHeight="320"
+                  VerticalScrollBarVisibility="Auto"
+                  AutomationProperties.AutomationId="TodoEdit_Notes"
+                  Margin="0,0,0,12" />
+
+      <Grid Margin="0,0,0,4">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" Margin="0,0,6,0">
+          <TextBlock Text="{loc:Str Todo_PriorityLabel}"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     Margin="0,0,0,4" />
+          <ComboBox ItemsSource="{Binding Priorities}"
+                    SelectedItem="{Binding Priority}"
+                    AutomationProperties.AutomationId="TodoEdit_Priority" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Margin="6,0,0,0">
+          <TextBlock Text="{loc:Str Todo_DueDateLabel}"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     Margin="0,0,0,4" />
+          <DatePicker SelectedDate="{Binding DueDate}"
+                      AutomationProperties.AutomationId="TodoEdit_DueDate" />
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+  </Grid>
 </ui:ContentDialog>

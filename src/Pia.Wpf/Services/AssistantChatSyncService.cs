@@ -35,13 +35,31 @@ public sealed class AssistantChatSyncService : BackgroundService
     private readonly ILogger<AssistantChatSyncService> _logger;
 
     // Channel is a wakeup signal only; the actual per-chat coalescing lives in
-    // _desired so a stale Upsert is overwritten by a later Delete for the same ID.
-    private readonly Channel<byte> _signal = Channel.CreateUnbounded<byte>(
-        new UnboundedChannelOptions { SingleReader = true });
+    // _desired so a stale Upsert is overwritten by a later Delete for the same ID. One pending
+    // wakeup is therefore enough, and dropping the rest keeps a session that never signs in — where
+    // nothing reads this — from buffering a token per chat change.
+    private readonly Channel<byte> _signal = Channel.CreateBounded<byte>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
     private readonly object _stateLock = new();
     private readonly Dictionary<Guid, OpKind> _desired = new();
 
+    /// <summary>Set by the upsert path on a 429 so the backfill can abandon a pass the server has already
+    /// closed the window on, instead of spending the rest of the catalogue on rejections. Unsynchronized
+    /// because every upsert — backfill or ordinary — runs on the worker's single loop thread.</summary>
+    private bool _rateLimited;
+
+    /// <summary>True while the rate limiter has cut a backfill pass short and chats are still owed.</summary>
+    private volatile bool _backfillPaced;
+
+    private readonly TimeSpan _startupDelay;
+
+    /// <summary>The server's sync policy refills over a one-minute window, so nudging faster than this only
+    /// buys more rejections.</summary>
+    private readonly TimeSpan _backfillRetryInterval;
+
+    /// <summary>The two overrides exist so a test can drive the whole worker loop in milliseconds; nothing
+    /// in the app passes them.</summary>
     public AssistantChatSyncService(
         IAssistantChatService chatService,
         ICloudCapabilityService capabilities,
@@ -50,7 +68,9 @@ public sealed class AssistantChatSyncService : BackgroundService
         IHttpClientFactory httpClientFactory,
         SyncMapper mapper,
         ISyncClientService syncClient,
-        ILogger<AssistantChatSyncService> logger)
+        ILogger<AssistantChatSyncService> logger,
+        TimeSpan? startupDelayOverride = null,
+        TimeSpan? backfillRetryIntervalOverride = null)
     {
         _chatService = chatService;
         _capabilities = capabilities;
@@ -60,17 +80,21 @@ public sealed class AssistantChatSyncService : BackgroundService
         _mapper = mapper;
         _syncClient = syncClient;
         _logger = logger;
+        _startupDelay = startupDelayOverride ?? TimeSpan.FromSeconds(5);
+        _backfillRetryInterval = backfillRetryIntervalOverride ?? TimeSpan.FromMinutes(1);
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _chatService.ChatsChanged += OnChatsChanged;
+        _chatService.ChatAccessed += OnChatAccessed;
         return base.StartAsync(cancellationToken);
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
         _chatService.ChatsChanged -= OnChatsChanged;
+        _chatService.ChatAccessed -= OnChatAccessed;
         return base.StopAsync(cancellationToken);
     }
 
@@ -90,6 +114,12 @@ public sealed class AssistantChatSyncService : BackgroundService
         EnqueueOp(e.Id, kind);
     }
 
+    // Retention deletes globally (an evicted chat is deleted from the server, and that tombstone reaches
+    // every device), so a chat someone still reads here must keep the server's access date alive or another
+    // device evicts it out from under them. The store only raises this on a day change, and PUT is the only
+    // write the API has.
+    private void OnChatAccessed(object? sender, Guid chatId) => EnqueueOp(chatId, OpKind.Upsert);
+
     private void EnqueueOp(Guid id, OpKind kind)
     {
         lock (_stateLock)
@@ -106,33 +136,79 @@ public sealed class AssistantChatSyncService : BackgroundService
 
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
+            await Task.Delay(_startupDelay, stoppingToken);
 
-        var supported = await _capabilities.ChatsSupportedAsync(stoppingToken);
-        if (!supported)
-        {
-            _logger.LogInformation("Assistant chat cloud sync disabled (capability off)");
-            return;
-        }
+            if (!await RunStartupCycleAsync(stoppingToken)) return;
 
-        await RunStartupPullAsync(stoppingToken);
-        await RunStartupPushAsync(stoppingToken);
+            // A pass gets one rate-limit window, so without a nudge the remainder waits for the next launch
+            // — weeks, on a catalogue of any size. The callback does nothing but wake the loop below, which
+            // keeps every push on this one thread.
+            using Timer? backfillNudge = _backfillPaced
+                ? new Timer(
+                    _ => { if (_backfillPaced) _signal.Writer.TryWrite(0); },
+                    null, _backfillRetryInterval, _backfillRetryInterval)
+                : null;
 
-        try
-        {
             await foreach (var _ in _signal.Reader.ReadAllAsync(stoppingToken))
             {
                 await DrainAsync(stoppingToken);
+
+                if (_backfillPaced)
+                    _backfillPaced = await RunStartupPushAsync(stoppingToken);
             }
         }
         catch (OperationCanceledException)
         {
             // Normal shutdown.
+        }
+    }
+
+    /// <summary>False when the capability is off, i.e. there is nothing to drain this session.</summary>
+    private async Task<bool> RunStartupCycleAsync(CancellationToken ct)
+    {
+        // Probing before sign-in would beacon /api/capabilities from every signed-out install, and
+        // nothing can be pushed without a token anyway.
+        if (!await SyncPermittedAsync())
+        {
+            _logger.LogInformation("Assistant chat cloud sync idle until sign-in");
+            await WaitForSignInAsync(ct);
+        }
+
+        if (!await _capabilities.ChatsSupportedAsync(ct))
+        {
+            _logger.LogInformation("Assistant chat cloud sync disabled (capability off)");
+            return false;
+        }
+
+        await RunStartupPullAsync(ct);
+        _backfillPaced = await RunStartupPushAsync(ct);
+        return true;
+    }
+
+    private async Task<bool> SyncPermittedAsync() =>
+        _authService.IsLoggedIn && (await _settingsService.GetSettingsAsync()).SyncEnabled;
+
+    private async Task WaitForSignInAsync(CancellationToken ct)
+    {
+        var signedIn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnLoginStateChanged(object? sender, bool loggedIn)
+        {
+            if (loggedIn) signedIn.TrySetResult();
+        }
+
+        _authService.LoginStateChanged += OnLoginStateChanged;
+        try
+        {
+            // Re-check after subscribing, or a sign-in racing the check above parks the worker
+            // until the next launch.
+            if (await SyncPermittedAsync()) return;
+
+            using var cancellation = ct.Register(() => signedIn.TrySetCanceled(ct));
+            await signedIn.Task;
+        }
+        finally
+        {
+            _authService.LoginStateChanged -= OnLoginStateChanged;
         }
     }
 
@@ -165,29 +241,26 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
     }
 
-    private async Task ProcessOpAsync(SyncOp op, CancellationToken ct)
+    /// <summary>False when the op did not reach the server, which is what holds the backfill gate open.</summary>
+    private async Task<bool> ProcessOpAsync(SyncOp op, CancellationToken ct)
     {
         if (op.Kind == OpKind.Delete)
-        {
-            await SendDeleteAsync(op.ChatId, ct);
-            return;
-        }
+            return await SendDeleteAsync(op.ChatId, ct);
 
         var chat = await _chatService.GetAsync(op.ChatId, ct);
         if (chat is null)
         {
             // Was deleted locally between enqueue and processing; treat as delete.
-            await SendDeleteAsync(op.ChatId, ct);
-            return;
+            return await SendDeleteAsync(op.ChatId, ct);
         }
 
-        await SendUpsertAsync(chat, retried: false, ct);
+        return await SendUpsertAsync(chat, retried: false, ct);
     }
 
-    private async Task SendUpsertAsync(SyncAssistantChat chat, bool retried, CancellationToken ct)
+    private async Task<bool> SendUpsertAsync(SyncAssistantChat chat, bool retried, CancellationToken ct)
     {
         var (client, baseUrl, userId) = await BuildClientAsync(ct);
-        if (client is null || baseUrl is null) return;
+        if (client is null || baseUrl is null) return false;
 
         var url = $"{baseUrl}/api/v1/chats/{chat.Id}";
         using (client)
@@ -201,7 +274,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                 _logger.LogInformation(
                     "Pushed chat {ChatId} to cloud (status {Status})",
                     chat.Id, (int)response.StatusCode);
-                return;
+                return true;
             }
 
             if (response.StatusCode == HttpStatusCode.Conflict && !retried)
@@ -215,8 +288,7 @@ public sealed class AssistantChatSyncService : BackgroundService
                     var merged = MergeForConflict(serverChat, chat);
                     _logger.LogInformation(
                         "Cloud upsert 409 for chat {ChatId}; merging and retrying", chat.Id);
-                    await SendUpsertAsync(merged, retried: true, ct);
-                    return;
+                    return await SendUpsertAsync(merged, retried: true, ct);
                 }
             }
 
@@ -239,20 +311,112 @@ public sealed class AssistantChatSyncService : BackgroundService
                         "Server requires E2EE for this account; chat {ChatId} not pushed, onboarding required",
                         chat.Id);
                     _syncClient.NotifyE2EEOnboardingRequired();
-                    return;
+                    return false;
                 }
             }
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                _rateLimited = true;
 
             _logger.LogInformation(
                 "Cloud upsert for chat {ChatId} returned status {Status}",
                 chat.Id, (int)response.StatusCode);
+            return false;
         }
     }
 
-    private async Task SendDeleteAsync(Guid chatId, CancellationToken ct)
+    /// <summary>
+    /// Confirms each chat retention is about to delete against the server's access date, raising the local
+    /// one where the server is ahead. Returns false when a candidate could not be checked — eviction deletes
+    /// account-wide, so a device that cannot reach the server has no standing to delete for the account.
+    /// Call only when the account syncs; with sync off the local dates are already authoritative.
+    /// </summary>
+    public async Task<bool> RefreshAccessDatesAsync(IReadOnlyList<Guid> chatIds, CancellationToken ct)
+    {
+        if (chatIds.Count == 0) return true;
+
+        var (client, baseUrl, _) = await BuildClientAsync(ct);
+        if (client is null || baseUrl is null)
+        {
+            // Sync is on but there is no token yet — at five seconds after launch that is the normal state.
+            _logger.LogInformation("Cannot confirm chat access dates: no signed-in client yet");
+            return false;
+        }
+
+        using (client)
+        {
+            foreach (var chatId in chatIds)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                string body;
+                try
+                {
+                    using var response = await client.GetAsync($"{baseUrl}/api/v1/chats/{chatId}", ct);
+
+                    // Never pushed, or already a tombstone — either way the server holds nothing that should
+                    // keep this chat, so the local date stands.
+                    if (response.StatusCode == HttpStatusCode.NotFound) continue;
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation(
+                            "Cannot confirm chat {ChatId} before eviction: status {Status}",
+                            chatId, (int)response.StatusCode);
+                        return false;
+                    }
+
+                    body = await response.Content.ReadAsStringAsync(ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // One unreachable candidate aborts the pass: continuing would evict the rest on exactly
+                    // the unconfirmed local dates this check exists to distrust.
+                    _logger.LogWarning(ex, "Cannot confirm chat {ChatId} before eviction", chatId);
+                    return false;
+                }
+
+                // A 200 whose date is missing or unparseable is not a confirmation: proceeding would evict on
+                // the local date this whole check exists to distrust.
+                if (!TryReadLastAccessed(body, out var remote))
+                {
+                    _logger.LogInformation(
+                        "Cannot confirm chat {ChatId} before eviction: the server's answer carried no access date",
+                        chatId);
+                    return false;
+                }
+
+                await _chatService.ApplyRemoteAccessDateAsync(chatId, remote, ct);
+            }
+        }
+
+        _logger.LogInformation(
+            "Confirmed {Count} chat(s) against the server before eviction", chatIds.Count);
+        return true;
+    }
+
+    /// <summary>`lastAccessedAt` is top-level plaintext even under E2EE, so this never needs the payload.</summary>
+    private static bool TryReadLastAccessed(string body, out DateTime lastAccessedUtc)
+    {
+        lastAccessedUtc = default;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("lastAccessedAt", out var value)) return false;
+            if (!value.TryGetDateTime(out var parsed)) return false;
+            lastAccessedUtc = parsed.ToUniversalTime();
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> SendDeleteAsync(Guid chatId, CancellationToken ct)
     {
         var (client, baseUrl, _) = await BuildClientAsync(ct);
-        if (client is null || baseUrl is null) return;
+        if (client is null || baseUrl is null) return false;
 
         var url = $"{baseUrl}/api/v1/chats/{chatId}";
         using (client)
@@ -263,6 +427,8 @@ public sealed class AssistantChatSyncService : BackgroundService
             _logger.LogInformation(
                 "Cloud delete for chat {ChatId} returned status {Status}",
                 chatId, (int)response.StatusCode);
+            // Already gone server-side is the desired end state, so it does not hold the gate open.
+            return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound;
         }
     }
 
@@ -273,34 +439,70 @@ public sealed class AssistantChatSyncService : BackgroundService
     /// connection (gated by <c>AssistantChatsBackfilledAt</c>, cleared on logout)
     /// and only after the startup pull, so freshly pulled chats are reconciled by
     /// the upsert path's normal 409-merge rather than overwriting remote state.
+    /// <br/>
+    /// Returns true when the rate limiter is the only thing standing between this pass and a finished
+    /// backfill, i.e. when another pass a minute from now is worth running. Every other unfinished outcome
+    /// returns false: retrying a rejected sign-in or a missing E2EE onboarding once a minute fixes nothing.
     /// </summary>
-    private async Task RunStartupPushAsync(CancellationToken ct)
+    private async Task<bool> RunStartupPushAsync(CancellationToken ct)
     {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
-            if (settings.AssistantChatsBackfilledAt is not null) return;
+            if (settings.AssistantChatsBackfilledAt is not null) return false;
 
-            var ids = await _chatService.GetAllIdsAsync(ct);
+            // Only what the server has not already accepted. A pass the rate limiter closes down banks its
+            // successes, so the next launch resumes from the remainder instead of replaying the catalogue.
+            var ids = await _chatService.GetUnbackfilledIdsAsync(ct);
+            var allPushed = true;
+            var pushed = 0;
+            _rateLimited = false;
             foreach (var id in ids)
             {
                 ct.ThrowIfCancellationRequested();
                 // Reuses the normal op path: fetches the full chat (with messages)
                 // and handles 409 conflicts via merge-and-retry.
-                await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct);
+                if (await ProcessOpAsync(new SyncOp(id, OpKind.Upsert), ct))
+                {
+                    await _chatService.MarkBackfilledAsync(id, ct);
+                    pushed++;
+                    continue;
+                }
+
+                allPushed = false;
+
+                // Every remaining push in this pass would be rejected too, and the handler does not wait out
+                // a Retry-After this long — so firing them spends the catalogue on nothing.
+                if (_rateLimited)
+                {
+                    _logger.LogInformation(
+                        "Startup backfill pass stopped by the server's rate limit: pushed {Pushed}, {Remaining} chat(s) still owed",
+                        pushed, ids.Count - pushed);
+                    return true;
+                }
             }
 
             // If any push hit 403 e2ee_required, the account is E2EE-enabled server-side but
             // this device hasn't onboarded — the chats went out plaintext and were rejected.
-            // Do NOT mark the backfill complete: leaving the gate unset re-runs the full
-            // backfill on the next launch (after onboarding, the pushes succeed encrypted).
+            // Do NOT mark the backfill complete: leaving the gate unset re-runs the outstanding
+            // chats on the next launch (after onboarding, the pushes succeed encrypted).
             // Marking it done here would strand those chats in the cloud until logout/login.
             if (_syncClient.IsE2EEOnboardingRequired)
             {
                 _logger.LogWarning(
                     "Startup backfill deferred: E2EE onboarding required; {Count} chat(s) not yet uploaded, will retry on next launch after onboarding",
                     ids.Count);
-                return;
+                return false;
+            }
+
+            // Same reasoning for every other failure: marking a backfill done that the server never
+            // accepted strands those chats local-only for good, because only a logout reopens the gate.
+            if (!allPushed)
+            {
+                _logger.LogWarning(
+                    "Startup backfill incomplete: pushed {Pushed}, {Remaining} chat(s) still owed; the gate stays unset so the next launch resumes",
+                    pushed, ids.Count - pushed);
+                return false;
             }
 
             // Re-read so we don't clobber any settings written meanwhile.
@@ -310,6 +512,7 @@ public sealed class AssistantChatSyncService : BackgroundService
 
             _logger.LogInformation(
                 "Startup backfill pushed {Count} pre-existing chat(s) to cloud", ids.Count);
+            return false;
         }
         catch (OperationCanceledException)
         {
@@ -318,8 +521,9 @@ public sealed class AssistantChatSyncService : BackgroundService
         catch (Exception ex)
         {
             // Leave AssistantChatsBackfilledAt unset so the next launch retries the
-            // full backfill; pre-existing chats stay local-only until then.
+            // outstanding chats; they stay local-only until then.
             _logger.LogWarning(ex, "Startup backfill push failed; will retry next launch");
+            return false;
         }
     }
 
@@ -524,14 +728,14 @@ public sealed class AssistantChatSyncService : BackgroundService
         var serverUrl = settings.ServerUrl?.TrimEnd('/');
         if (string.IsNullOrEmpty(serverUrl)) return (null, null, null);
 
+        // Release writes a ServerUrl on every launch, so this is the only thing keeping a signed-out
+        // client off the network — and with no SyncUserId the mapper cannot even encrypt the payload.
         var token = await _authService.GetAccessTokenAsync();
+        if (!settings.SyncEnabled || string.IsNullOrEmpty(token)) return (null, null, null);
 
         var client = _httpClientFactory.CreateClient();
-        if (!string.IsNullOrEmpty(token))
-        {
-            client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", token);
-        }
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", token);
         client.Timeout = TimeSpan.FromSeconds(60);
         return (client, serverUrl, settings.SyncUserId);
     }
@@ -591,6 +795,12 @@ public sealed class AssistantChatSyncService : BackgroundService
                 ? local.LastAccessedAt : server.LastAccessedAt,
             WindowMode = local.WindowMode,
             ProviderId = local.ProviderId ?? server.ProviderId,
+            // Local wins outright, like WindowMode above: null here means the user re-opened the offer, so
+            // coalescing to the server's value would answer it behind their back.
+            AgentContextMode = local.AgentContextMode,
+            // Local wins too, and local is the STORED value here (the op re-reads the chat), not a stale
+            // session snapshot — so this carries the star the user just set instead of dropping it.
+            IsFavorite = local.IsFavorite,
             Messages = [.. server.Messages, .. appended],
             ExtensionData = server.ExtensionData,
         };

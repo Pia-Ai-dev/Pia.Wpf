@@ -172,9 +172,11 @@
 
     <Grid Grid.Row="2" Margin="24,0,24,20">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="420"/>
+        <!-- Both star-sized: a fixed list column left the detail pane with almost nothing on a narrow
+             window and the whole surplus of a wide one. -->
+        <ColumnDefinition Width="*" MinWidth="300" MaxWidth="440"/>
         <ColumnDefinition Width="14"/>
-        <ColumnDefinition Width="*"/>
+        <ColumnDefinition Width="2*"/>
       </Grid.ColumnDefinitions>
 
       <Grid Grid.Column="0">
@@ -288,34 +290,26 @@
                         HorizontalScrollBarVisibility="Disabled"
                         Visibility="{Binding ShowsCatalog, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel Margin="0,0,10,0">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
-                  <TextBlock Text="{loc:Str Routines_Blueprints_Header}"
-                             Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
-                  <TextBlock Text="{loc:Str Routines_Blueprints_Hint}"
-                             Style="{StaticResource PiaSettingsDescriptionStyle}"
-                             TextWrapping="Wrap"/>
-                </StackPanel>
-                <ui:Button Grid.Column="1"
-                           Appearance="Transparent"
-                           VerticalAlignment="Top"
-                           Content="{loc:Str Routines_Catalog_StartBlank}"
-                           Margin="8,0,0,0"
-                           AutomationProperties.AutomationId="Routines_StartBlank"
-                           Command="{Binding StartCreateCommand}"/>
-                <ui:Button Grid.Column="2"
-                           Appearance="Transparent"
-                           VerticalAlignment="Top"
-                           Content="{loc:Str Routines_Catalog_Close}"
-                           Margin="8,0,0,0"
-                           AutomationProperties.AutomationId="Routines_CatalogClose"
-                           Command="{Binding CloseCatalogCommand}"/>
-              </Grid>
+              <!-- Buttons on their own row: as Auto columns beside the text, the two German labels took the
+                   whole width and left the hint wrapping one word per line. -->
+              <StackPanel>
+                <TextBlock Text="{loc:Str Routines_Blueprints_Header}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                <TextBlock Text="{loc:Str Routines_Blueprints_Hint}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"
+                           TextWrapping="Wrap"/>
+                <WrapPanel HorizontalAlignment="Right" Margin="0,6,0,0">
+                  <ui:Button Appearance="Transparent"
+                             Content="{loc:Str Routines_Catalog_StartBlank}"
+                             Margin="0,0,8,0"
+                             AutomationProperties.AutomationId="Routines_StartBlank"
+                             Command="{Binding StartCreateCommand}"/>
+                  <ui:Button Appearance="Transparent"
+                             Content="{loc:Str Routines_Catalog_Close}"
+                             AutomationProperties.AutomationId="Routines_CatalogClose"
+                             Command="{Binding CloseCatalogCommand}"/>
+                </WrapPanel>
+              </StackPanel>
 
               <routines:PiaRoutinesSearchBar Query="{Binding SearchQuery, Mode=TwoWay}"
                                              Margin="0,12,0,0"/>
@@ -430,7 +424,9 @@
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         Visibility="{Binding ShowsDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <StackPanel Margin="0,0,10,0">
+            <!-- Capped: a goal or a failure reason stretched the full width of a maximized window reads as
+                 one endless line. -->
+            <StackPanel Margin="0,0,10,0" MaxWidth="760" HorizontalAlignment="Left">
               <Border Style="{StaticResource RoutineStatusPillStyle}"
                       DataContext="{Binding SelectedJob}"
                       HorizontalAlignment="Left">
@@ -446,15 +442,17 @@
                 <TextBlock Text="{Binding SelectedJob.KindLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
                 <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
                 <TextBlock Text="{Binding SelectedJob.RecurrenceLabel}" Style="{StaticResource PiaMetaTextStyle}"/>
-                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"/>
+                <TextBlock Style="{StaticResource PiaMetaSeparatorStyle}"
+                           Visibility="{Binding SelectedJob.FiresOnSchedule, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 <TextBlock Text="{Binding SelectedJob.TimeOfDay, StringFormat=HH\\:mm}"
-                           Style="{StaticResource PiaMetaTextStyle}"/>
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           Visibility="{Binding SelectedJob.FiresOnSchedule, Converter={StaticResource BooleanToVisibilityConverter}}"/>
               </StackPanel>
 
               <TextBlock Text="{loc:Str Routines_Detail_NextRun}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
                          Margin="0,18,0,6"/>
-              <TextBlock Text="{Binding SelectedJob.NextFireAt, StringFormat=g}"
+              <TextBlock Text="{Binding SelectedJob.NextRunLabel}"
                          Style="{StaticResource PiaDetailValueStyle}"
                          AutomationProperties.AutomationId="Routines_Detail_NextRun"/>
 
@@ -500,6 +498,15 @@
               <TextBlock Text="{Binding SelectedJob.EffortLabel}"
                          Style="{StaticResource PiaDetailValueStyle}"
                          Visibility="{Binding SelectedJob.HasEffortPin, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+              <TextBlock Text="{loc:Str Routines_Detail_WorkingDir}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"
+                         Visibility="{Binding SelectedJob.HasWorkingDirectory, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <TextBlock Text="{Binding SelectedJob.WorkingDirectoryLabel}"
+                         Style="{StaticResource PiaDetailValueStyle}"
+                         Visibility="{Binding SelectedJob.HasWorkingDirectory, Converter={StaticResource BooleanToVisibilityConverter}}"
+                         AutomationProperties.AutomationId="Routines_Detail_WorkingDir"/>
 
               <TextBlock Text="{loc:Str Routines_Detail_RecentRuns}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"
@@ -549,23 +556,24 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+              <!-- Wraps: four localized labels overflow the detail card at the default window width. -->
+              <WrapPanel Orientation="Horizontal" Margin="0,20,0,0">
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_Edit}"
                            Icon="{ui:SymbolIcon Edit24}"
                            Appearance="Secondary"
-                           Margin="0,0,8,0"
+                           Margin="0,0,8,8"
                            AutomationProperties.AutomationId="Routines_Edit"
                            Command="{Binding StartEditCommand}"/>
                 <ui:Button Content="{Binding SelectedJob.ToggleLabel}"
                            Icon="{ui:SymbolIcon Power24}"
                            Appearance="Secondary"
-                           Margin="0,0,8,0"
+                           Margin="0,0,8,8"
                            AutomationProperties.AutomationId="Routines_Toggle"
                            Command="{Binding ToggleEnabledCommand}"/>
                 <ui:Button Content="{loc:Str Settings_ScheduledJobs_RunNow}"
                            Icon="{ui:SymbolIcon Play24}"
                            Appearance="Secondary"
-                           Margin="0,0,8,0"
+                           Margin="0,0,8,8"
                            IsEnabled="{Binding SelectedJob.CanRunNow}"
                            AutomationProperties.AutomationId="Routines_RunNow"
                            Command="{Binding RunNowCommand}"/>
@@ -573,16 +581,17 @@
                            Icon="{ui:SymbolIcon Delete24}"
                            Appearance="Secondary"
                            Foreground="{DynamicResource PiaDangerBrush}"
+                           Margin="0,0,8,8"
                            AutomationProperties.AutomationId="Routines_Delete"
                            Command="{Binding DeleteCommand}"/>
-              </StackPanel>
+              </WrapPanel>
             </StackPanel>
           </ScrollViewer>
 
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         IsVisibleChanged="EditorPane_IsVisibleChanged"
                         Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <StackPanel Margin="0,0,10,0">
+            <StackPanel Margin="0,0,10,0" MaxWidth="760" HorizontalAlignment="Left">
 
               <!-- Save is bound to CanSave rather than gated by CanExecute, so the reason has to be visible
                    here. A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
@@ -607,24 +616,34 @@
                           IsReadOnly="{Binding IsDrafting}"
                           AutomationProperties.AutomationId="Routines_Draft_Description"
                           Margin="0,0,0,8"/>
-              <ui:Button Command="{Binding GenerateDraftCommand}"
-                         IsEnabled="{Binding IsDrafting, Converter={StaticResource InverseBooleanConverter}}"
-                         AutomationProperties.AutomationId="Routines_Draft_Generate"
-                         HorizontalAlignment="Left"
-                         Margin="0,0,0,16">
-                <Grid>
-                  <StackPanel Orientation="Horizontal"
-                              Visibility="{Binding IsDrafting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
-                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
-                    <TextBlock Text="{loc:Str Routines_Draft_Button}"/>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <ui:Button Command="{Binding GenerateDraftCommand}"
+                           IsEnabled="{Binding IsDrafting, Converter={StaticResource InverseBooleanConverter}}"
+                           AutomationProperties.AutomationId="Routines_Draft_Generate"
+                           Margin="0,0,8,0">
+                  <Grid>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsDrafting, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                      <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Routines_Draft_Button}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsDrafting, Converter={StaticResource BooleanToVisibilityConverter}}">
+                      <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
+                      <TextBlock Text="{loc:Str Routines_Draft_Working}"/>
+                    </StackPanel>
+                  </Grid>
+                </ui:Button>
+                <ui:Button Command="{Binding AdvancedDraftCommand}"
+                           IsEnabled="{Binding IsDrafting, Converter={StaticResource InverseBooleanConverter}}"
+                           Appearance="Secondary"
+                           AutomationProperties.AutomationId="Routines_Draft_Advanced">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Chat24" FontSize="16" Margin="0,0,8,0"/>
+                    <TextBlock Text="{loc:Str AdvancedCreation_Advanced}"/>
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal"
-                              Visibility="{Binding IsDrafting, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"/>
-                    <TextBlock Text="{loc:Str Routines_Draft_Working}"/>
-                  </StackPanel>
-                </Grid>
-              </ui:Button>
+                </ui:Button>
+              </StackPanel>
 
               <TextBlock Text="{loc:Str Routines_Field_Name}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
@@ -735,10 +754,9 @@
                           Margin="0,0,0,8"/>
               </StackPanel>
 
-              <!-- Time on the left because it is the only one of the pair that always shows; the recurrence
-                   detail sits on the right, under the Repeats picker it belongs to. Each detail field is shown
-                   only for the recurrences that read it — without them the calculator substitutes today's day
-                   on every recompute and the job walks. Only Yearly shows two, which is why they stack. -->
+              <!-- Each field is shown only for the recurrences that read it — without that the calculator
+                   substitutes today's day on every recompute and the job walks. Only Yearly shows two, which
+                   is why they stack. -->
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>
@@ -746,7 +764,8 @@
                   <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" VerticalAlignment="Top">
+                <StackPanel Grid.Column="0" VerticalAlignment="Top"
+                            Visibility="{Binding EditorWantsTimeOfDay, Converter={StaticResource BooleanToVisibilityConverter}}">
                   <TextBlock Text="{loc:Str Routines_Field_Time}"
                              Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
                   <ui:TextBox Text="{Binding EditTimeOfDay, UpdateSourceTrigger=PropertyChanged}"
@@ -858,6 +877,61 @@
                                Style="{StaticResource PiaSettingsDescriptionStyle}"
                                TextWrapping="Wrap"
                                Margin="0,0,0,4"/>
+                  </StackPanel>
+
+                  <StackPanel Grid.Column="2">
+                    <TextBlock Text="{loc:Str Routines_Field_WorkingDir}"
+                               Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+                    <ui:Button x:Name="RoutineWorkingDirButton"
+                               Appearance="Secondary"
+                               HorizontalAlignment="Stretch"
+                               HorizontalContentAlignment="Left"
+                               Margin="0,2,0,4"
+                               Cursor="Hand"
+                               IsEnabled="{Binding EditorPinsEnabled}"
+                               Click="RoutineWorkingDirButton_Click"
+                               AutomationProperties.AutomationId="Routines_Field_WorkingDir"
+                               ToolTip="{loc:Str Routines_Field_WorkingDir_Tooltip}">
+                      <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Folder24" FontSize="15" Margin="0,0,8,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock Text="{Binding EditWorkingDirectoryDisplay}"
+                                   FontSize="13"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </ui:Button>
+                    <TextBlock Text="{loc:Str Routines_Field_WorkingDir_Hint}"
+                               Style="{StaticResource PiaSettingsDescriptionStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,4"/>
+
+                    <Popup x:Name="RoutineWorkingDirPopup"
+                           IsOpen="{Binding IsWorkingDirPickerOpen, Mode=TwoWay}"
+                           PlacementTarget="{Binding ElementName=RoutineWorkingDirButton}"
+                           Placement="Bottom"
+                           StaysOpen="False"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade"
+                           Opened="RoutineWorkingDirPopup_Opened"
+                           Closed="RoutineWorkingDirPopup_Closed">
+                      <Border Background="{DynamicResource SurfaceBrush}"
+                              BorderBrush="{DynamicResource BorderBrush_}"
+                              BorderThickness="1"
+                              CornerRadius="{StaticResource LargeRadius}"
+                              Padding="6"
+                              MinWidth="320"
+                              MaxWidth="380"
+                              MaxHeight="360"
+                              DataContext="{Binding WorkingDirectoryPicker}">
+                        <Border.Effect>
+                          <DropShadowEffect Color="#0F1729" BlurRadius="18" Opacity="0.16" ShadowDepth="4"/>
+                        </Border.Effect>
+                        <shared:PiaWorkingDirectoryPicker x:Name="RoutineWorkingDirPicker"
+                                                          AutomationIdPrefix="Routines_WorkingDir"
+                                                          CloseRequested="RoutineWorkingDirPicker_CloseRequested"/>
+                      </Border>
+                    </Popup>
                   </StackPanel>
                 </Grid>
 

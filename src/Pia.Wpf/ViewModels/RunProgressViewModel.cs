@@ -128,8 +128,25 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         var terminal = value is RunProgressState.Completed or RunProgressState.TruncatedCompleted
             or RunProgressState.Failed;
-        if (terminal && _wasLive) RunSettled?.Invoke();
+        if (terminal && _wasLive)
+        {
+            RunSettled?.Invoke();
+            // Not Failed: the failure note and its fix action sit in the body the chevron folds.
+            if (value != RunProgressState.Failed) IsCardExpanded = false;
+        }
         _wasLive = !terminal;
+
+        // Running, not Planning too: a planning turn records nothing under a step, so opening there would
+        // flash "nothing was recorded" before the first step starts.
+        if (!_autoExpandedTimeline && value == RunProgressState.Running)
+        {
+            _autoExpandedTimeline = true;
+            // The FIELD, so this does not become a second store read: a live run is primed once and the
+            // watcher keeps it current from there, which is the invariant that keeps ~500 appends off the
+            // projection path. Notified by hand because the setter is what the generator wires to the view.
+            _isTimelineExpanded = true;
+            OnPropertyChanged(nameof(IsTimelineExpanded));
+        }
     }
 
     /// <summary>True while a resume is being launched — gates the Continue button against a double-click
@@ -375,9 +392,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// The current-activity line (design D1): the running step's title while Running, or a "building a
-    /// plan" note while Planning; null (line hidden) otherwise. The live per-tool micro-status
-    /// (<c>StatusText</c>) stays on the adjacent streaming transcript by design — this panel is
-    /// plan-level, the transcript is token-level. Step title is SENSITIVE — bound to UI only, never logged.
+    /// plan" note while Planning; null (line hidden) otherwise. Tool-level progress lives beside it in
+    /// <see cref="ToolActivity"/> — a headless step streams nothing, so the transcript cannot carry it.
+    /// Step title is SENSITIVE — bound to UI only, never logged.
     /// </summary>
     [ObservableProperty]
     private string? _currentActivity;
@@ -473,12 +490,25 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     public ObservableCollection<TimelineRowViewModel> Timeline { get; } = [];
 
-    /// <summary>The band's chevron: folds everything below the signal band. Default open.</summary>
+    /// <summary>The band's chevron: folds everything below the signal band. Open until the run completes.</summary>
     [ObservableProperty]
     private bool _isCardExpanded = true;
 
     [ObservableProperty]
     private bool _isTimelineExpanded;
+
+    /// <summary>The tool-level counterpart to <see cref="CurrentActivity"/>'s step title, for the stretch where
+    /// a headless step writes nothing to the chat. Shared with the transcript's live bubble so the two surfaces
+    /// cannot disagree. Tool NAMES only — never an argument (the timeline's metadata-only rule).</summary>
+    [NotifyPropertyChangedFor(nameof(HasToolActivity))]
+    [ObservableProperty]
+    private string? _toolActivity;
+
+    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity);
+
+    /// <summary>The band opens itself once, when the run starts executing; re-opening it later would overrule
+    /// a user who closed it mid-run.</summary>
+    private bool _autoExpandedTimeline;
 
     [ObservableProperty]
     private bool _isTimelineTruncated;
@@ -647,6 +677,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private readonly List<AgentTimelineEvent> _timelineEvents = [];
     private Guid? _liveParkRowId;
 
+    // The two halves of one approval, under the same UI-thread contract as _timelineEvents: the park row that
+    // has since been answered, and the replay row that answers it.
+    private readonly HashSet<Guid> _answeredParkRowIds = [];
+    private readonly HashSet<Guid> _userApprovedRowIds = [];
+
     private void OnTimelineAppended(Guid runId)
     {
         if (runId != _runId || _timelineService is null || _settledTraceRead) return;
@@ -736,6 +771,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // Captured on the construction (UI) thread; may be null in a headless test → run inline.
         _uiContext = SynchronizationContext.Current ?? new SynchronizationContext();
         _runService.RunChanged += OnRunChanged;
+        _elapsedTimer = new System.Threading.Timer(
+            _ => OnElapsedTick(), null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         if (_themeService is not null)
             _themeService.ThemeChanged += OnThemeChanged;
         RefreshAsync().SafeFireAndForget(_logger); // initial projection
@@ -1086,7 +1123,11 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         ShowProgressSegments = Steps.Count > 0
             && State is RunProgressState.Running or RunProgressState.WaitingForChildren;
         ApplyStepWindow();
+        SyncElapsedTimer();
         SubLine = ComposeSubLine();
+        // Here and not on the state change: a step advance leaves State on Running, and the next timeline row
+        // only lands once step N+1's first call RETURNS — so the line would carry step N's tally until then.
+        RefreshToolActivity();
     }
 
     /// <summary>
@@ -1133,7 +1174,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 // "step 3 of 4" beside a spinner would claim work this run is not doing.
                 parts.Add(StateName);
                 if (ChildrenNote is { } childrenNote) parts.Add(childrenNote);
-                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(WallClockMs)));
+                if (DisplayElapsedMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(DisplayElapsedMs)));
                 break;
 
             case RunProgressState.Paused:
@@ -1149,7 +1190,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 parts.Add(StateName);
                 if (CurrentStepOrdinal > 0 && total > 0)
                     parts.Add(_localization.Format("Run_Sub_Step", CurrentStepOrdinal, total));
-                if (WallClockMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(WallClockMs)));
+                if (DisplayElapsedMs > 0) parts.Add(_localization.Format("Run_Sub_Elapsed", FormatDuration(DisplayElapsedMs)));
                 break;
         }
 
@@ -1416,6 +1457,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private string? ComputeActivity(AgentRun run) => run.State switch
     {
         AgentRunState.Planning => _localization["Run_Activity_Planning"],
+        // A run with NO plan at all is the degrade: planning produced nothing usable and the goal is being
+        // worked as one turn. Said plainly, because the step list below is empty and silence there reads as
+        // a stuck run rather than as a decision.
+        AgentRunState.Running when run.Plan.Count == 0 => _localization["Run_Activity_SingleTurnFallback"],
         AgentRunState.Running =>
             run.Plan.FirstOrDefault(s => s.Status == AgentStepStatus.Running)?.Title
             ?? _localization["Run_Activity_Working"],
@@ -1828,8 +1873,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                     .Where(r => r.Kind != AgentTimelineEventKind.TraceTruncated)
                     .Reverse());
                 _liveParkRowId = LiveParkRowId(_timelineEvents, IsToolApprovalPause ? ApprovalToolName : null);
+                PairApprovals();
                 RenderTimelineRows();
-                ApplyDecisionSummary(_timelineEvents);
+                ApplyDecisionSummary(VisibleTimelineEvents().ToList());
+                RefreshToolActivity();
                 HasNoTimeline = !readFailed && Timeline.Count == 0;
             }
             finally
@@ -1848,8 +1895,9 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     private void RenderTimelineRows()
     {
         Timeline.Clear();
-        var exceptions = _timelineEvents.Where(e => SeverityForKey(RowLabelKey(e)) != RunDecisionSeverity.Routine).ToList();
-        var routine = _timelineEvents.Where(e => SeverityForKey(RowLabelKey(e)) == RunDecisionSeverity.Routine).ToList();
+        var visible = VisibleTimelineEvents().ToList();
+        var exceptions = visible.Where(e => SeverityForKey(RowLabelKey(e)) != RunDecisionSeverity.Routine).ToList();
+        var routine = visible.Where(e => SeverityForKey(RowLabelKey(e)) == RunDecisionSeverity.Routine).ToList();
 
         for (var i = 0; i < exceptions.Count; i++)
             Timeline.Add(Project(exceptions[i], showGroupSeparator: false));
@@ -1899,8 +1947,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (parkRowId == _liveParkRowId) return;
 
         _liveParkRowId = parkRowId;
+        // Re-paired, not just re-rendered: which park row is live decides which one may be folded away.
+        PairApprovals();
         RenderTimelineRows();
-        ApplyDecisionSummary(_timelineEvents);
+        ApplyDecisionSummary(VisibleTimelineEvents().ToList());
     }
 
     /// <summary>
@@ -1961,7 +2011,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // panel's point of view the call ran without anyone being asked, which is what this category says.
         ToolGateDecision.AutoApprovedStandingGrant or ToolGateDecision.AutoApprovedPolicy
             or ToolGateDecision.GrantedByName or ToolGateDecision.AutoApprovedAllowlist
-            or ToolGateDecision.AutoApprovedSessionGrant
+            or ToolGateDecision.AutoApprovedSessionGrant or ToolGateDecision.AutoApprovedScratch
             => "Run_Timeline_Decision_AutoApproved",
         // ...and ApprovedForSession with the other card answers: a person said yes to this row.
         ToolGateDecision.ApprovedOnce or ToolGateDecision.ApprovedAlways
@@ -1983,9 +2033,76 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>A wrapper over <see cref="DecisionLabelKey"/>, never a second switch: a park row the run is no
     /// longer stopped on is history, not a pending question.</summary>
     private string RowLabelKey(AgentTimelineEvent row) =>
-        row.Decision == ToolGateDecision.ParkedForApproval && row.Id != _liveParkRowId
-            ? "Run_Timeline_Decision_NotExecuted"
-            : DecisionLabelKey(row.Decision);
+        _userApprovedRowIds.Contains(row.Id)
+            ? "Run_Timeline_Decision_Approved"
+            : row.Decision == ToolGateDecision.ParkedForApproval && row.Id != _liveParkRowId
+                ? "Run_Timeline_Decision_NotExecuted"
+                : DecisionLabelKey(row.Decision);
+
+    /// <summary>
+    /// One line naming what the run is doing, for the stretch where a headless step writes nothing to the
+    /// chat. A timeline row is written only once a call has RETURNED, so the tool it names is the one that
+    /// just finished — the wording says "last", never "running".
+    /// </summary>
+    private void RefreshToolActivity()
+    {
+        var ordinal = State == RunProgressState.Running ? CurrentStepOrdinal : 0;
+        if (ordinal <= 0 || ordinal > Steps.Count)
+        {
+            ToolActivity = null;
+            return;
+        }
+
+        var stepId = Steps[ordinal - 1].StepId;
+        var calls = _timelineEvents
+            .Where(e => e.StepId == stepId && e.Kind == AgentTimelineEventKind.ToolCall)
+            .ToList();
+
+        // _timelineEvents is newest-first, so the head is the latest call of the step the run is on.
+        ToolActivity = calls.Count == 0
+            ? _localization["Run_ToolActivity_Waiting"]
+            : _localization.Format("Run_ToolActivity_AfterTool", calls.Count, calls[0].ToolName);
+    }
+
+    /// <summary>
+    /// The rows a reader should see: an answered park is folded into the replay that answers it, so one
+    /// approval counts once. The DB keeps both — this is a projection, not a delete.
+    /// </summary>
+    private IEnumerable<AgentTimelineEvent> VisibleTimelineEvents() =>
+        _timelineEvents.Where(e => !_answeredParkRowIds.Contains(e.Id));
+
+    /// <summary>
+    /// An approval spans two rows — the park, and the replay that answers it as a grant — and pairing them is
+    /// the only way to tell that grant apart from a scheduled job's envelope, which resolves the same with
+    /// nobody asked. Matched per (step, tool), not per call id: one park row covers every same-tool call.
+    /// </summary>
+    private void PairApprovals()
+    {
+        _answeredParkRowIds.Clear();
+        _userApprovedRowIds.Clear();
+
+        // _timelineEvents is newest-first; a park can only be answered by a replay that came AFTER it.
+        var parks = new Dictionary<(Guid? StepId, string Tool), AgentTimelineEvent>();
+        for (var i = _timelineEvents.Count - 1; i >= 0; i--)
+        {
+            var row = _timelineEvents[i];
+            var key = (row.StepId, row.ToolName ?? string.Empty);
+            if (row.Decision == ToolGateDecision.ParkedForApproval)
+            {
+                parks[key] = row;
+            }
+            else if (row.Decision == ToolGateDecision.GrantedByName && parks.TryGetValue(key, out var park))
+            {
+                _answeredParkRowIds.Add(park.Id);
+                _userApprovedRowIds.Add(row.Id);
+            }
+        }
+
+        // The row the run is stopped on is unanswered by definition; folding it away would erase the one
+        // question the user is being asked.
+        if (_liveParkRowId is { } live)
+            _answeredParkRowIds.Remove(live);
+    }
 
     /// <summary>
     /// THE park row a parked run is stopped on: the highest-Seq park row whose tool matches the pause envelope.
@@ -2271,10 +2388,54 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         return string.Join(" · ", parts);
     }
 
+    // The plan turn raises NO run events for its whole 12-42s, so an elapsed time read off the persisted
+    // ledger sits frozen beside a static skeleton and the card reads as hung. This is what moves.
+    private readonly System.Threading.Timer _elapsedTimer;
+    private static readonly TimeSpan ElapsedTick = TimeSpan.FromSeconds(1);
+
+    /// <summary>Ledger elapsed at the last projection, and when that projection landed. A tick adds the
+    /// time since to the base, so the figure resyncs to the persisted one whenever a real event arrives.
+    /// <para>
+    /// <see cref="DisplayElapsedMs"/> is written to equal <see cref="WallClockMs"/> at projection time and
+    /// only diverges on a tick — folding the delta into a computed property instead would move the number a
+    /// few milliseconds during the projection itself, which is enough to change how it rounds.
+    /// </para></summary>
+    private long _elapsedBaseMs;
+    private DateTime _elapsedBaseAt;
+    private long _displayElapsedMs;
+
+    private long DisplayElapsedMs => _displayElapsedMs;
+
+    /// <summary>Only while the RUN is working. A run parked on the user must not tick: that would count
+    /// their think time as latency, which is the reading the whole analysis warns against.</summary>
+    private bool IsClockRunning => State is RunProgressState.Planning or RunProgressState.Running
+        or RunProgressState.WaitingForChildren;
+
+    // Only the sub-line is recomposed: it is the one surface carrying a number that moves without an event.
+    // Internal so the advance can be driven without a Dispatcher to pump the timer.
+    internal void AdvanceElapsedClock()
+    {
+        if (!IsClockRunning) return;
+        _displayElapsedMs = _elapsedBaseMs + (long)(DateTime.UtcNow - _elapsedBaseAt).TotalMilliseconds;
+        SubLine = ComposeSubLine();
+    }
+
+    private void OnElapsedTick() => _uiContext.Post(_ => AdvanceElapsedClock(), null);
+
+    private void SyncElapsedTimer()
+    {
+        _elapsedBaseMs = WallClockMs;
+        _elapsedBaseAt = DateTime.UtcNow;
+        _displayElapsedMs = WallClockMs;
+        if (IsClockRunning) _elapsedTimer.Change(ElapsedTick, ElapsedTick);
+        else _elapsedTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        _elapsedTimer.Dispose();
         _runService.RunChanged -= OnRunChanged;
         if (_timelineWatcher is not null)
             _timelineWatcher.TimelineAppended -= OnTimelineAppended;

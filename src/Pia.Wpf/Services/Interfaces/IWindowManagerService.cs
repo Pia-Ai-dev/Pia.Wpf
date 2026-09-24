@@ -16,6 +16,9 @@ public interface IWindowManagerService
     void ShowWindowWithSelection(WindowMode mode, string capturedText);
     void ShowAssistantChat(Guid chatId);
 
+    /// <summary>Shows the Assistant window and opens the screen-capture picker in it.</summary>
+    void ShowAssistantScreenCapturePicker();
+
     /// <summary>
     /// Opens the chat hosting the agent run <paramref name="runId"/>. A stale run (chat cascaded away)
     /// is retracted from Flow with a brief toast instead of dereferencing a missing chat (R17). Sync
@@ -27,6 +30,9 @@ public interface IWindowManagerService
     void HideAllWindows();
     void CloseAndDisposeAll();
     bool IsVisible(WindowMode mode);
+
+    /// <summary>Shown but iconic: still in the taskbar, so a toggle must restore it rather than hide it.</summary>
+    bool IsMinimized(WindowMode mode);
     bool IsInForeground(WindowMode mode);
     bool CanDismissWithHotkey(WindowMode mode);
 

@@ -196,15 +196,30 @@ public sealed class FlowService : IFlowService, IDisposable
             return Task.CompletedTask;
         }
 
+        // Purge before the first Changed, so a rail the user last saw a month ago never flashes up stale.
+        var now = DateTimeOffset.Now;
+        var stale = loaded.Where(i => IsPastRetention(i, now)).ToList();
+        var fresh = loaded.Where(i => !IsPastRetention(i, now)).ToList();
+
+        List<FlowItem> evicted;
         lock (_gate)
         {
-            foreach (var item in loaded)
+            foreach (var item in fresh)
             {
                 if (item.DedupKey is not null && _items.Any(i => i.DedupKey == item.DedupKey))
                     continue;
                 _items.Add(item);
             }
+
+            // A store that grew past Capacity through the protected-items branch would otherwise reload over it.
+            evicted = EvictIfNeeded(null);
         }
+
+        foreach (var item in stale.Concat(evicted))
+            DeleteThroughIfDurable(item);
+
+        if (stale.Count > 0)
+            _logger.LogInformation("Flow purged {Count} item(s) past their retention age at load", stale.Count);
 
         if (loaded.Count > 0)
             RaiseChanged();
@@ -212,29 +227,33 @@ public sealed class FlowService : IFlowService, IDisposable
     }
 
     /// <summary>
-    /// Removes transient items whose lifetime has elapsed as of <paramref name="now"/>. Public and
-    /// pure so expiry is deterministically testable without a wall clock. Returns true if anything changed.
+    /// Removes transient items whose lifetime has elapsed and persistent items past their
+    /// <see cref="FlowRetention"/> age, as of <paramref name="now"/>. Public and pure so both are
+    /// deterministically testable without a wall clock. Returns true if anything changed.
     /// </summary>
     public bool Sweep(DateTimeOffset now)
     {
-        List<FlowItem> expired;
+        List<FlowItem> removed;
         lock (_gate)
         {
-            expired = _items
-                .Where(i => !i.Lifetime.IsPersistent && i.Lifetime.Duration is { } d && i.CreatedAt + d <= now)
-                .ToList();
-            if (expired.Count == 0)
+            removed = _items.Where(i => IsTransientExpired(i, now) || IsPastRetention(i, now)).ToList();
+            if (removed.Count == 0)
                 return false;
-            foreach (var item in expired)
+            foreach (var item in removed)
                 _items.Remove(item);
         }
 
-        // Transient items are never durable, but delete-through anyway to stay safe.
-        foreach (var item in expired)
+        foreach (var item in removed)
             DeleteThroughIfDurable(item);
         RaiseChanged();
         return true;
     }
+
+    private static bool IsTransientExpired(FlowItem item, DateTimeOffset now) =>
+        !item.Lifetime.IsPersistent && item.Lifetime.Duration is { } d && item.CreatedAt + d <= now;
+
+    private static bool IsPastRetention(FlowItem item, DateTimeOffset now) =>
+        FlowRetention.MaxAgeFor(item.Source, item.Severity) is { } max && item.CreatedAt + max <= now;
 
     /// <summary>Durable ⇒ persistent AND entity-backed (non-null DedupKey) AND re-derivable/no action (design §6).</summary>
     private static bool ComputeDurable(FlowItemDraft draft) =>
@@ -244,7 +263,7 @@ public sealed class FlowService : IFlowService, IDisposable
         && (draft.Action is null || draft.Action.IsReDerivable);
 
     /// <summary>Caller holds <see cref="_gate"/>. Returns items removed for capacity (to be delete-through'd).</summary>
-    private List<FlowItem> EvictIfNeeded(FlowItem justPublished)
+    private List<FlowItem> EvictIfNeeded(FlowItem? justPublished)
     {
         var evicted = new List<FlowItem>();
         while (_items.Count > Capacity)

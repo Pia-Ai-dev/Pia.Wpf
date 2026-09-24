@@ -24,6 +24,7 @@ public class SyncManagedPersona
     public string? OutputFormat { get; set; }
     public List<string>? Expertise { get; set; }
     public string? Archetype { get; set; }
+    public string? ModelType { get; set; }            // persona-type routing key, as on SyncPersona
     public string? Emoji { get; set; }
     public string? AccentColor { get; set; }
     public int ToolScope { get; set; } = 2;

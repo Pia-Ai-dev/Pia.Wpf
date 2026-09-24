@@ -30,7 +30,7 @@ Pia sits in your system tray and activates instantly with a global hotkey. Selec
 
 ### Key Features
 
-- **Multiple AI providers** &mdash; Pia Cloud, OpenAI, Azure OpenAI, OpenRouter, Mistral, Ollama, or any OpenAI-compatible API
+- **Multiple AI providers** &mdash; Pia Cloud, OpenAI, Anthropic, Azure OpenAI, OpenRouter, Mistral, Ollama, or any OpenAI-compatible API
 - **Speech-to-text** &mdash; Dictate instead of typing, powered by local Whisper transcription (no data leaves your machine)
 - **Text-to-speech** &mdash; Listen to responses with offline Piper TTS &mdash; multiple downloadable voice models, no cloud required
 - **Voice mode** &mdash; Hands-free voice conversation overlay: speak your request, hear the answer
@@ -54,8 +54,36 @@ In Assistant mode, Pia has access to built-in tools that it uses automatically d
 | **Memory** | Store and recall personal facts, contacts, preferences, and notes &mdash; with semantic search via embeddings |
 | **Todos** | Create tasks with priorities (Low/Medium/High), due dates, and notes &mdash; query, update, complete, or delete them |
 | **Reminders** | Schedule one-time or recurring reminders (Daily, Weekly, Monthly, Yearly) with natural language parsing &mdash; background notifications keep you on track |
+| **Files** | Read, summarize, update and delete text files &mdash; only inside a sandbox folder you configure |
+| **Git** | Local git operations on the working directory (status, log, diff, branch, show, init, add, commit, switch, restore, stash) &mdash; no network operations |
+| **Screen** | Look at one window or one display as a picture, on request |
+| **Vault ingest** | Compile raw documents from the vault's `sources` folder into recallable topic pages |
+| **Chat history** | Search and read your past conversations with the assistant |
+| **Routines** | Schedule recurring jobs whose answers arrive as chats |
+| **Assignments** | Follow background work the Pia server runs remotely on records you select |
+| **MCP plugins** | Any tool exposed by a Model Context Protocol server you connect |
 
-All tool actions require your confirmation before executing, so you stay in control.
+Each group can be switched off entirely in Settings.
+
+### How tool permissions work
+
+Looking something up runs as part of the conversation. Anything that **changes** something &mdash; a
+file, a commit, a reminder &mdash; and anything that **captures your screen** passes a permission gate
+first. What the gate does depends on where the request came from:
+
+| Situation | Behaviour |
+|-----------|-----------|
+| **You are in the chat** | An action card shows what is about to happen. Allow once, always allow, or decline |
+| **Voice mode** | Writes are refused &mdash; there is no card to answer, so Pia tells you what to do instead |
+| **Unattended run** (scheduled or background) | Writes are refused unless you granted that tool beforehand &mdash; nobody is watching |
+
+"Always allow" is a standing grant you can withdraw in Settings at any time. Screen capture and
+background assignments are never covered by a general grant &mdash; they always need one of their own.
+Every decision is recorded together with the permission that allowed it, so a run's timeline shows
+exactly why each action was able to run.
+
+One exception worth naming: **vault ingest** runs inline and shows no card. It writes only inside your
+vault's own memory folder, turning documents you put in `sources` into topic pages.
 
 ---
 
@@ -111,6 +139,7 @@ Pia works with multiple AI backends &mdash; pick what suits you:
 | **OpenAI** | Paste your API key in Settings (custom endpoint/model optional) |
 | **Azure OpenAI** | Enter endpoint, deployment name, and API key |
 | **OpenRouter** | API key (defaults to `https://openrouter.ai/api/v1`) |
+| **Anthropic** | Paste your API key in Settings |
 | **Mistral** | API key (defaults to `https://api.mistral.ai/v1`) |
 | **Ollama** | Point to your local Ollama instance &mdash; no API key needed, fully offline |
 | **OpenAI-compatible** | Any OpenAI-compatible endpoint (LM Studio, vLLM, and similar) |
@@ -169,7 +198,23 @@ Pia.Wpf.slnx
 | `%AppData%/Pia/` | settings.json, templates.json, providers.json |
 | `%LocalAppData%/Pia/` | history.db (SQLite), Whisper models |
 
-All data stays local. Cloud sync is opt-in and requires setting up the companion server; end-to-end encryption can be enabled on top, protected by a printable recovery code.
+**Your data is stored locally.** Nothing in the tables above is uploaded on its own, and Pia builds
+no analytics or usage profile. The only call it makes without being asked is the update check; every
+external host the app can contact is listed in `docs/external_endpoints/`. Two things do leave the
+machine on purpose, and both are your choice:
+
+- **Your prompts go to the AI provider you picked.** That is inherent to using a cloud model &mdash;
+  pick Ollama or another local endpoint and nothing leaves the machine at all. Speech-to-text and
+  text-to-speech run on your machine either way &mdash; no audio is uploaded, whichever provider you
+  use.
+- **Cloud sync is opt-in** and needs a companion server (ours, or one you host). End-to-end
+  encryption can be enabled on top, protected by a printable recovery code &mdash; with it on, the
+  server stores ciphertext it cannot read.
+
+Rating an answer sends that one message to the Pia server, and only when you press the button; the
+answer text is included only if you tick the box. The rating buttons appear only for Pia Cloud
+answers &mdash; when you use your own provider key there is nobody for a report to reach, so Pia does
+not show them.
 
 ---
 
@@ -214,3 +259,23 @@ dotnet clean
 - `var` for apparent types, expression-bodied members preferred
 - PascalCase for public members, `_camelCase` for private fields
 - All business logic in ViewModels, never in code-behind
+
+---
+
+## License
+
+Copyright &copy; 2026 Pia-Ai-dev
+
+This program is free software: you can redistribute it and/or modify it under the terms of the **GNU
+Lesser General Public License, version 3**, as published by the Free Software Foundation.
+
+It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
+implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General
+Public License for more details.
+
+LGPL-3.0 incorporates the terms of the GNU General Public License, version 3: [`LICENSE`](LICENSE)
+holds the former and [`GPL-3.0.txt`](GPL-3.0.txt) the latter.
+
+Licences for the models and components Pia downloads at runtime &mdash; speech models and
+text-to-speech voices among them &mdash; are listed in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

@@ -15,7 +15,7 @@ Schlagzeile · `Enabler` wenig eigener Wert, entsperrt ein High.
 
 | # | Frage | Antwort | Folge |
 |---|---|---|---|
-| **G1** | Welche Adresse und welcher Transport für KI-Beschwerden je Szenario? | **Nur Pia-Cloud-Antworten**, `POST /api/ai-feedback`; Interimsadresse `entwicklung@neo42.de` (Owner 29.08.2026) | Schritt 10 gebaut; Schritt 11 per Handoff |
+| **G1** | Welche Adresse und welcher Transport für KI-Beschwerden je Szenario? | **Nur Pia-Cloud-Antworten**, `POST /api/ai-feedback`; `piasupport@pia-ai.de` | Schritt 10 gebaut; Schritt 11 per Handoff |
 | **G2** | Welche Optimize-Templates fallen unter die Ausnahme Art. 50 Abs. 2 Satz 2? | **offen** — Rechtsfrage, Zuarbeit Origin § 5 | Schritt 12 ist reine Dokumentation, ändert keinen Code |
 | **G3** | Pia Cloud als „Pia Cloud" oder mit Upstream-Modell nennen? | **„Pia Cloud"** (Owner 29.08.2026) | Schritt 2 fertig wie gebaut |
 

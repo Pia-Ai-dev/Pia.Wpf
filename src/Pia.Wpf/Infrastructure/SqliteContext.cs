@@ -356,7 +356,10 @@ public class SqliteContext : IDisposable
                 -- Meeting-attendance jobs. Device-local, and for MeetingUrl also privacy-load-bearing: a
                 -- Teams join link is a bearer token for the meeting, so it never reaches the wire.
                 MeetingUrl TEXT NULL,
-                MeetingConsentAckAt TEXT NULL
+                MeetingConsentAckAt TEXT NULL,
+                -- Sandbox-relative folder the run works in; NULL = the sandbox root. Device-local like the
+                -- pins above: the folder tree belongs to this machine.
+                WorkingDirectory TEXT NULL
             );
 
             CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_NextFireAt ON ScheduledJobs(NextFireAt, Status);
@@ -425,7 +428,10 @@ public class SqliteContext : IDisposable
                 WindowMode      TEXT NOT NULL,
                 ProviderId      TEXT,
                 WorkingDirectory TEXT,
-                ExtraJson       TEXT
+                AgentContextMode TEXT,
+                IsFavorite      INTEGER NOT NULL DEFAULT 0,
+                ExtraJson       TEXT,
+                BackfilledAt    TEXT
             );
 
             CREATE INDEX IF NOT EXISTS IX_AssistantChats_UpdatedAt
@@ -768,6 +774,7 @@ public class SqliteContext : IDisposable
         var hasJobBlueprintKey = false;
         var hasJobMeetingUrl = false;
         var hasJobMeetingConsentAckAt = false;
+        var hasJobWorkingDirectory = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(ScheduledJobs)";
@@ -784,6 +791,7 @@ public class SqliteContext : IDisposable
                 else if (col == "BlueprintKey") hasJobBlueprintKey = true;
                 else if (col == "MeetingUrl") hasJobMeetingUrl = true;
                 else if (col == "MeetingConsentAckAt") hasJobMeetingConsentAckAt = true;
+                else if (col == "WorkingDirectory") hasJobWorkingDirectory = true;
             }
         }
         if (!hasJobUpdatedAt)
@@ -845,6 +853,12 @@ public class SqliteContext : IDisposable
             addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN MeetingConsentAckAt TEXT NULL";
             addCol.ExecuteNonQuery();
         }
+        if (!hasJobWorkingDirectory)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE ScheduledJobs ADD COLUMN WorkingDirectory TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
 
         // The research view was removed; research results are now assistant chats. Drop the
         // legacy standalone research store (data was never user-facing outside that view).
@@ -860,6 +874,22 @@ public class SqliteContext : IDisposable
                 CREATE INDEX IF NOT EXISTS IX_ScheduledJobs_OwnerDeviceId ON ScheduledJobs(OwnerDeviceId);
                 """;
             idx.ExecuteNonQuery();
+        }
+
+        // Per-chat record of the first-sync backfill, so a pass the server rate-limits still banks its progress.
+        var hasChatBackfilledAt = false;
+        using (var p = _connection!.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AssistantChats)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+                if (r.GetString(1) == "BackfilledAt") hasChatBackfilledAt = true;
+        }
+        if (!hasChatBackfilledAt)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN BackfilledAt TEXT";
+            addCol.ExecuteNonQuery();
         }
 
         // Persona attribution snapshot on assistant messages.
@@ -1052,23 +1082,41 @@ public class SqliteContext : IDisposable
             }
         }
 
-        // Per-chat working directory (relative to the assistant-files sandbox root), added after
-        // AssistantChats shipped. Fresh tables already include the column via CREATE TABLE above,
-        // so the PRAGMA check short-circuits and no ALTER is issued.
+        // Per-chat working directory (relative to the assistant-files sandbox root), the per-chat
+        // agent-context choice and the favourite flag, all added after AssistantChats shipped. Fresh tables
+        // already include them via CREATE TABLE above, so the PRAGMA check short-circuits and no ALTER is
+        // issued.
         var hasWorkingDirectory = false;
+        var hasAgentContextMode = false;
+        var hasIsFavorite = false;
         using (var p = _connection!.CreateCommand())
         {
             p.CommandText = "PRAGMA table_info(AssistantChats)";
             using var r = p.ExecuteReader();
             while (r.Read())
             {
-                if (r.GetString(1) == "WorkingDirectory") { hasWorkingDirectory = true; break; }
+                var col = r.GetString(1);
+                if (col == "WorkingDirectory") hasWorkingDirectory = true;
+                else if (col == "AgentContextMode") hasAgentContextMode = true;
+                else if (col == "IsFavorite") hasIsFavorite = true;
             }
         }
         if (!hasWorkingDirectory)
         {
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN WorkingDirectory TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasAgentContextMode)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN AgentContextMode TEXT";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasIsFavorite)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AssistantChats ADD COLUMN IsFavorite INTEGER NOT NULL DEFAULT 0";
             addCol.ExecuteNonQuery();
         }
 

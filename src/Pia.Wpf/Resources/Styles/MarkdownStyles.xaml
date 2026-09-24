@@ -1,5 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:controls="clr-namespace:Pia.Controls"
+                    xmlns:loc="clr-namespace:Pia.Localization">
 
     <!-- FlowDocument style for assistant messages.
          PiaMarkdownRenderer assigns Tag values to elements that match these triggers:
@@ -127,5 +129,36 @@
             </Style>
         </Style.Resources>
     </Style>
+
+    <!-- One menu for the whole app: declared inline it costs eight MenuItems per rendered transcript message.
+         Sharing it leaves PlacementTarget as the only thing that says which message a command was opened over. -->
+    <ContextMenu x:Key="MarkdownMessageContextMenu">
+        <MenuItem Command="ApplicationCommands.Copy"
+                  CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+        <Separator />
+        <MenuItem Header="{loc:Str Assistant_AddToPiiList}" AutomationProperties.AutomationId="PiiMenu_Open">
+            <MenuItem Header="{loc:Str PiiCategory_Person}" AutomationProperties.AutomationId="PiiMenu_Person"
+                      Command="{x:Static controls:MarkdownMessageControl.AddToPiiCommand}" CommandParameter="Person"
+                      CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="{loc:Str PiiCategory_Nickname}" AutomationProperties.AutomationId="PiiMenu_Nickname"
+                      Command="{x:Static controls:MarkdownMessageControl.AddToPiiCommand}" CommandParameter="Nickname"
+                      CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="{loc:Str PiiCategory_Email}" AutomationProperties.AutomationId="PiiMenu_Email"
+                      Command="{x:Static controls:MarkdownMessageControl.AddToPiiCommand}" CommandParameter="Email"
+                      CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="{loc:Str PiiCategory_Phone}" AutomationProperties.AutomationId="PiiMenu_Phone"
+                      Command="{x:Static controls:MarkdownMessageControl.AddToPiiCommand}" CommandParameter="Phone"
+                      CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="{loc:Str PiiCategory_Address}" AutomationProperties.AutomationId="PiiMenu_Address"
+                      Command="{x:Static controls:MarkdownMessageControl.AddToPiiCommand}" CommandParameter="Address"
+                      CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="{loc:Str PiiCategory_Date}" AutomationProperties.AutomationId="PiiMenu_Date"
+                      Command="{x:Static controls:MarkdownMessageControl.AddToPiiCommand}" CommandParameter="Date"
+                      CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+            <MenuItem Header="{loc:Str PiiCategory_Custom}" AutomationProperties.AutomationId="PiiMenu_Custom"
+                      Command="{x:Static controls:MarkdownMessageControl.AddToPiiCommand}" CommandParameter="Custom"
+                      CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+        </MenuItem>
+    </ContextMenu>
 
 </ResourceDictionary>

@@ -71,7 +71,7 @@ public class AssistantViewModelOverlayHostingTests
         var vm = CreateSut();
         await vm.ToggleDirectTranscriptionCommand.ExecuteAsync(null);
         vm.ActivePersona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
-        vm.PendingAttachment = NewAttachment();
+        vm.PendingAttachments.Add(NewAttachment());
 
         // A transcript must exist for the command to be enabled (CanSummarize: not running + bubbles > 0).
         vm.DirectTranscription.AddUtterance(
@@ -83,7 +83,7 @@ public class AssistantViewModelOverlayHostingTests
         // The chat is where the summary streams, so the overlay must get out of the way, and the summary
         // must not carry over an unrelated screenshot the user had queued.
         Assert.False(vm.IsDirectTranscriptionVisible);
-        Assert.Null(vm.PendingAttachment);
+        Assert.Empty(vm.PendingAttachments);
     }
 
     [Fact]

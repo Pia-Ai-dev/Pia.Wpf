@@ -241,11 +241,47 @@ public class BuiltInPluginHandler : IPluginToolHandler
             isAvailable: () => handler.IsAvailable);
     }
 
+    /// <summary>Factory: creates adapter wrapping IHelpToolHandler - inline-only, and always available:
+    /// a user who cannot ask what Pia does is exactly the user who needs to.</summary>
+    public static BuiltInPluginHandler FromHelpHandler(
+        IHelpToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) => (await handler.HandleToolCallAsync(toolCall, ct), (PluginToolCall?)null),
+            _ => throw new InvalidOperationException("The help plugin has no pending actions."),
+            GetSystemPromptFromConfig(config.ConfigJson));
+    }
+
     /// <summary>Factory: creates adapter wrapping IAssignmentToolHandler. Availability is the server surface,
     /// not a setting, so both the tools and the prompt vanish when there is no server, no token or no skill.
     /// The reads run inline; a start returns a pending action the user affirms in the consent dialog.</summary>
     public static BuiltInPluginHandler FromAssignmentHandler(
         IAssignmentToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) =>
+            {
+                var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
+                if (pending is null) return (result, null);
+                return (null, new PluginToolCall(
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details,
+                    pending.Execute, DiffPreview: null, TargetPath: null));
+            },
+            async pluginCall => await pluginCall.Execute(),
+            GetSystemPromptFromConfig(config.ConfigJson),
+            isAvailable: () => handler.IsAvailable);
+    }
+
+    /// <summary>Factory: creates adapter wrapping IScreenCaptureToolHandler. Both tools are read-shaped to the
+    /// model; a capture returns a pending action so the user approves the picture before it is taken.</summary>
+    public static BuiltInPluginHandler FromScreenCaptureHandler(
+        IScreenCaptureToolHandler handler, SyncPlugin config)
     {
         return new BuiltInPluginHandler(
             config.Id,

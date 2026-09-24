@@ -6,7 +6,7 @@ namespace Pia.Services.Plugins;
 /// Hardcoded defaults for built-in plugins. Used on first launch or offline when no server data is cached. The
 /// GUIDs are well-known and stable, but they do NOT all match server seed data: only memory/todo/reminder
 /// (...001-...003) are seeded server-side. scheduled-research (...004), files (...006), ingest (...007), git
-/// (...008), chat-history (...009) and assignments (...00A) are client-only built-ins with no server plugin
+/// (...008), chat-history (...009), assignments (...00A), screen (...00B) and help (...00C) are client-only built-ins with no server plugin
 /// row — the server's sync push tolerates a preference referencing such an unknown plugin id by skipping it, so toggling a client-only
 /// built-in cannot wedge preference sync (SyncService.PushAsync in the Pia server repo).
 /// </summary>
@@ -25,11 +25,13 @@ public static class BuiltInPluginDefaults
     public static readonly Guid GitPluginId = new("10000000-0000-0000-0000-000000000008");
     public static readonly Guid ChatHistoryPluginId = new("10000000-0000-0000-0000-000000000009");
     public static readonly Guid AssignmentsPluginId = new("10000000-0000-0000-0000-00000000000A");
+    public static readonly Guid ScreenPluginId = new("10000000-0000-0000-0000-00000000000B");
+    public static readonly Guid HelpPluginId = new("10000000-0000-0000-0000-00000000000C");
 
     public static readonly HashSet<Guid> PreloadedPluginIds = [
         MemoryPluginId, TodoPluginId, ReminderPluginId,
         ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId, IngestPluginId, GitPluginId,
-        ChatHistoryPluginId, AssignmentsPluginId];
+        ChatHistoryPluginId, AssignmentsPluginId, ScreenPluginId, HelpPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -78,7 +80,7 @@ public static class BuiltInPluginDefaults
             IsPreloaded = true,
             IsActive = true,
             Version = "1.0.0",
-            ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones. For a routine of a familiar kind, check list_routine_blueprints first and create it with create_routine_from_blueprint rather than writing the prompt freehand."}""",
+            ConfigJson = """{"handlerId":"scheduled-research","defaultEnabled":true,"systemPromptAddition":"You can schedule recurring research jobs that run on a cron schedule. Use create_scheduled_research to set one up, query_scheduled_research to list them, update_scheduled_research and delete_scheduled_research to manage existing ones. For a routine of a familiar kind, check list_routine_blueprints first and create it with create_routine_from_blueprint rather than writing the prompt freehand. A routine may also be created with recurrence Manual: it never fires by itself and is a saved template the user starts on request. When the user asks to run or start a routine, call run_routine — it fires the routine with its own working folder, persona and tool grants, which a chat turn does not have, so never carry out a routine's instructions yourself instead. It runs detached: say that it started and that its answer arrives as a new chat."}""",
             UpdatedAt = new DateTime(2026, 5, 2, 0, 0, 0, DateTimeKind.Utc)
         },
         [FilesPluginId] = new SyncPlugin
@@ -140,6 +142,30 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"assignments","defaultEnabled":true,"systemPromptAddition":"The user can hand work to background assignments — the Pia server running a skill remotely over records the user picks, outside this chat. Tools: query_assignments lists their runs, newest first; get_assignment(assignment_id) reports one run's progress; start_assignment(skill, prompt) asks for a new run — in a chat it does not start until the user confirms it in a dialog and picks the records themselves, but in a background run that has been granted this tool it starts at once with no records attached, so never call it speculatively. A finished run's answer does NOT come back through these tools: it arrives as a new chat in the user's history, so point them there rather than promising to fetch it. You may propose what a run should do, but you never choose which records are sent — either the user selects those in the confirmation dialog or none are sent at all."}""",
             UpdatedAt = new DateTime(2026, 8, 26, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [ScreenPluginId] = new SyncPlugin
+        {
+            Id = ScreenPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "screen",
+            Description = "Let the assistant look at the user's screen: one window or one display as a picture, on request and with approval.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"screen","defaultEnabled":true,"systemPromptAddition":"You can look at the user's screen when a question needs it. Tools: screen_list_targets() lists the open windows and the displays; screen_capture(target, match) takes one picture — target is \"window\" (match = the program name such as outlook, or a fragment of the window title; it must match exactly one open window) or \"monitor\" (match = a display name such as DISPLAY1, or omit it for the main display). The picture arrives as the message AFTER the tool result, so read it from there before you describe or use it. Every capture asks the user for approval unless they granted it in Settings, pictures are only possible on the Pia Cloud provider, and a run nobody is watching may only capture a window the user listed in advance — when the tool refuses, tell the user why and do not retry. Never capture speculatively: call it when the user asks you to look, or when you cannot answer without seeing the screen."}""",
+            UpdatedAt = new DateTime(2026, 9, 8, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [HelpPluginId] = new SyncPlugin
+        {
+            Id = HelpPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "help",
+            Description = "Answer questions about Pia itself from the bundled user guide and this install's settings.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"help","defaultEnabled":true,"systemPromptAddition":"You run inside Pia, a Windows desktop app. For any question about Pia itself - a feature, a setting, a screen, or what you can and cannot do - call pia_help instead of guessing or searching the web. When the answer depends on this install's configuration, also call pia_settings, and quote the settings path it returns verbatim: it is already in the user's language."}""",
+            UpdatedAt = new DateTime(2026, 9, 20, 0, 0, 0, DateTimeKind.Utc)
         },
     };
 }

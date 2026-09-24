@@ -63,7 +63,7 @@ public sealed class HeadlessTurnExecutorTests
 
         var plugins = Substitute.For<IPluginService>();
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -118,7 +118,7 @@ public sealed class HeadlessTurnExecutorTests
         // The headless path never offers Agent mode — suggestAgentModeEligible is always false.
         composer.DidNotReceive().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>());
+            suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
 
         // Exactly one accumulated chat: goal + 3 assistant replies.
         var ids = await chats.GetAllIdsAsync(TestContext.Current.CancellationToken);
@@ -199,7 +199,7 @@ public sealed class HeadlessTurnExecutorTests
             })));
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool> { mcpTool, normalTool }, SupportsTools: true, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -288,7 +288,7 @@ public sealed class HeadlessTurnExecutorTests
             })));
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -367,7 +367,7 @@ public sealed class HeadlessTurnExecutorTests
                 () => Task.FromResult<object?>("ok"))));
 
         var composer = Substitute.For<IAssistantPromptComposer>();
-        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", new List<AITool>(), SupportsTools: true, WebSearchActive: false));
         var personas = Substitute.For<IPersonaService>();
         personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
@@ -453,9 +453,12 @@ public sealed class HeadlessTurnExecutorTests
         {
             _inner = inner;
             _inner.ChatsChanged += (s, e) => ChatsChanged?.Invoke(s, e);
+            _inner.ChatAccessed += (s, id) => ChatAccessed?.Invoke(s, id);
         }
 
         public event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
+
+        public event EventHandler<Guid>? ChatAccessed;
 
         /// <summary>Every full-chat replace, whichever save seam issued it — the per-step write cost.</summary>
         public int SaveCalls { get; private set; }
@@ -498,6 +501,18 @@ public sealed class HeadlessTurnExecutorTests
             return _inner.SetTitleAsync(chatId, title, ct);
         }
 
+        public Task<bool> SetFavoriteAsync(Guid chatId, bool isFavorite, CancellationToken ct = default) =>
+            _inner.SetFavoriteAsync(chatId, isFavorite, ct);
+
+        public Task<IReadOnlyList<SyncAssistantChat>> GetFavoritesAsync(
+            string? searchText = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null,
+            Guid? providerId = null,
+            int limit = 100,
+            CancellationToken ct = default) =>
+            _inner.GetFavoritesAsync(searchText, fromDate, toDate, providerId, limit, ct);
+
         public int GetCalls { get; private set; }
 
         public Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
@@ -520,10 +535,17 @@ public sealed class HeadlessTurnExecutorTests
         public Task DeleteAsync(Guid id, CancellationToken ct = default) => _inner.DeleteAsync(id, ct);
         public Task DeleteFromRemoteAsync(Guid id, CancellationToken ct = default) => _inner.DeleteFromRemoteAsync(id, ct);
         public Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default) => _inner.TouchLastAccessedAsync(id, ct);
+        public Task<IReadOnlyList<Guid>> GetChatIdsAccessedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default) => _inner.GetChatIdsAccessedBeforeAsync(cutoffUtc, ct);
+        public Task ApplyRemoteAccessDateAsync(Guid id, DateTime lastAccessedUtc, CancellationToken ct = default) => _inner.ApplyRemoteAccessDateAsync(id, lastAccessedUtc, ct);
         public Task<IReadOnlyList<Guid>> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default) => _inner.EvictOlderThanAsync(cutoffUtc, ct);
         public Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default) => _inner.DeleteAllAsync(ct);
         public Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default) => _inner.GetMaxUpdatedAtAsync(ct);
         public Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken ct = default) => _inner.GetAllIdsAsync(ct);
+
+        public Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default)
+            => _inner.GetUnbackfilledIdsAsync(ct);
+
+        public Task MarkBackfilledAsync(Guid id, CancellationToken ct = default) => _inner.MarkBackfilledAsync(id, ct);
     }
 
     /// <summary>Everything a headless run needs, wired to one temp SQLite file.</summary>
@@ -588,7 +610,7 @@ public sealed class HeadlessTurnExecutorTests
             // A prompt that NAMES the persona it was composed from, so a fixture can tell whose system message a
             // given step actually sent; a single-persona fixture still sees a constant string.
             Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                    Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+                    Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
                 .Returns(ci => new AssistantTurnSetup(
                     "system for " + ci.ArgAt<Persona>(0).Name,
                     SupportsTools ? new List<AITool> { AIFunctionFactory.Create(() => string.Empty, "noop") } : null,
@@ -684,6 +706,65 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal($"routine:{jobId}", granter);
     }
 
+    [Fact]
+    public async Task AStepExchange_CarriesTheChatsWorkingSubpathOnTheAmbient()
+    {
+        // The context member alone only reaches the planner and the verifier. THIS is what the file tools
+        // read, and it is what decided the folder a run's write_file landed in.
+        using var h = new DurabilityHarness();
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await h.Chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "t",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), WorkingDirectory = "projects/alpha",
+            Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await h.Runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "the goal"),
+            TestContext.Current.CancellationToken);
+
+        string? subpath = null;
+        h.OnTurn = _ => subpath = TaskAmbient.Current?.WorkingSubpath;
+
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(
+            run,
+            new AgentStep { Id = Guid.NewGuid(), Ordinal = 0, Title = "s", Intent = "i", Status = AgentStepStatus.Pending },
+            ctx, ct);
+
+        Assert.Equal("projects/alpha", subpath);
+    }
+
+    /// <summary>
+    /// A step can finish without prose — an emit_step_result claim needs none — and the row that used to be
+    /// written for it rendered in the transcript as an avatar with nothing beside it, permanently.
+    /// </summary>
+    [Fact]
+    public async Task AStepThatProducesNoVisibleText_WritesNoChatRow()
+    {
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(_ => DriveText(++h.Turns == 2 ? "   " : "reply " + h.Turns));
+
+        await h.Orchestrator(new FakePlanner(Steps(2))).RunAsync(run, h.NewExecutor(), h.Persona, h.Provider,
+            new RunProfile(MaxSteps: 2, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20)),
+            TestContext.Current.CancellationToken);
+
+        var chat = await h.Chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(chat!.Messages, m => string.IsNullOrWhiteSpace(m.Content));
+        // The step that DID speak still lands, so the guard skips a row rather than the persist.
+        Assert.Contains(chat.Messages, m => m.Content == "reply 1");
+    }
     private static List<AgentStep> Steps(int count)
     {
         var steps = new List<AgentStep>();
@@ -944,10 +1025,11 @@ public sealed class HeadlessTurnExecutorTests
     }
 
     [Fact]
-    public async Task BeginRunAsync_DoesNotInheritTheChatsWorkingSubpath_ParityWithLive()
+    public async Task BeginRunAsync_UnisolatedRun_InheritsTheChatsWorkingSubpath()
     {
-        // Unlike LiveTurnExecutor, a headless run must NOT inherit the chat's working subpath: every step runs with
-        // WorkingSubpath null, so its writes land at the base root even when the chat row carries one.
+        // Same rule as LiveTurnExecutor: an unisolated run's steps are confined to the folder the chat row
+        // names — a scheduled job's, or the one an approved plan's chat was pointed at. Writing at the base
+        // root instead put the deliverable in a folder nobody chose.
         using var h = new DurabilityHarness();
         var chatId = Guid.NewGuid();
         var now = DateTime.UtcNow;
@@ -962,13 +1044,13 @@ public sealed class HeadlessTurnExecutorTests
             new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "the goal"),
             TestContext.Current.CancellationToken);
 
-        var ctx = new RunContext("the goal", RunProfile.Interactive) { WorkingSubpath = "projects/alpha" };
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
         var executor = h.NewExecutor();
         executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
 
         await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
 
-        Assert.Null(ctx.WorkingSubpath);
+        Assert.Equal("projects/alpha", ctx.WorkingSubpath);
     }
 
     // The value Initialize was given must reach RunContext, because the verifier runs on the orchestrator thread —
@@ -989,6 +1071,36 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Null(ctx.WorkingSubpath);
     }
 
+    [Fact]
+    public async Task BeginRunAsync_IsolatedRun_DoesNotNarrowASecondTime()
+    {
+        // The workspace root IS the already-narrowed root (provisioned FROM <folder>\<subpath>), so carrying
+        // the subpath too would send the file tools at <runRoot>\<subpath>, which does not exist.
+        using var h = new DurabilityHarness();
+        var chatId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        await h.Chats.SaveAsync(new SyncAssistantChat
+        {
+            Id = chatId, SchemaVersion = 1, Title = "t",
+            CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
+            WindowMode = WindowMode.Assistant.ToString(), WorkingDirectory = "projects/alpha",
+            Messages = [],
+        }, TestContext.Current.CancellationToken);
+        var run = await h.Runs.CreateAsync(
+            new AgentRunCreateRequest(chatId, RunShape.Planned, AgentRunTrigger.User, Goal: "the goal"),
+            TestContext.Current.CancellationToken);
+
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(
+            Path.Combine(Path.GetTempPath(), "PiaTests_workspace_" + Guid.NewGuid().ToString("N")),
+            ["write_file"], h.Provider);
+
+        await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
+        Assert.Null(ctx.WorkingSubpath);
+    }
+
     // The composed prompt must name the root the run's file tools actually resolve against, or an
     // unattended run is told to work in a folder it cannot reach.
     [Fact]
@@ -1005,7 +1117,7 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(workspaceRoot));
+            Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(workspaceRoot), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1026,7 +1138,7 @@ public sealed class HeadlessTurnExecutorTests
 
             h.Composer.Received().PrepareTurn(
                 Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-                Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(folder));
+                Arg.Any<bool>(), environmentRoot: SafeFolderPath.NormalizeWorkspaceRoot(folder), unattended: Arg.Any<bool>());
         }
         finally
         {
@@ -1047,7 +1159,7 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            Arg.Any<bool>(), environmentRoot: null);
+            Arg.Any<bool>(), environmentRoot: null, unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1066,7 +1178,25 @@ public sealed class HeadlessTurnExecutorTests
 
         h.Composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
-            Arg.Any<bool>(), environmentRoot: null);
+            Arg.Any<bool>(), environmentRoot: null, unattended: Arg.Any<bool>());
+    }
+
+    [Fact]
+    public async Task BeginRunAsync_ComposesTheRunAsUnattended()
+    {
+        // A headless run has nobody watching, so the prompt must say so and the routine tools must stay out —
+        // asking in prose reaches no one, and a run must not be talked into rescheduling itself.
+        using var h = new DurabilityHarness();
+        var run = await h.NewRunAsync("the goal");
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+
+        await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+
+        h.Composer.Received().PrepareTurn(
+            Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(),
+            Arg.Any<bool>(), Arg.Any<string?>(), unattended: true);
     }
 
     // ---- the run's chat write merges the persisted rows INSIDE the store's gate hold ----
@@ -1859,7 +1989,7 @@ public sealed class HeadlessTurnExecutorTests
         var ct = TestContext.Current.CancellationToken;
 
         h.Composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+                Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(_ => new AssistantTurnSetup(
                 "system",
                 [.. toolNames.Select(n => (AITool)AIFunctionFactory.Create(() => string.Empty, n))],

@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Shared;
 
 namespace Pia.ViewModels.Models;
 
@@ -60,6 +61,7 @@ public partial class PersonaEditModel : ObservableValidator
     private string _archetype = "custom";
 
     /// <summary>Free-form model-routing hint; blank falls back to <see cref="Persona.DefaultModelType"/>.</summary>
+    [NotifyPropertyChangedFor(nameof(IsPrivateModelType))]
     [ObservableProperty]
     private string _modelType = Persona.DefaultModelType;
 
@@ -94,8 +96,11 @@ public partial class PersonaEditModel : ObservableValidator
     public string[] ArchetypeOptions { get; } =
         ["assistant", "analyst", "creative", "visionary", "explainer", "custom"];
 
-    /// <summary>Suggestions for the editable model-type combo — a routing hint, not a closed vocabulary.</summary>
-    public string[] ModelTypeOptions { get; } = ["general", "fast", "code"];
+    /// <summary>The routing hint that only lands if the cloud provider offers a private model.</summary>
+    public const string PrivateModelType = "private";
+
+    /// <summary>Suggestions for the editable model-type combo, shared with the server's admin pages.</summary>
+    public IReadOnlyList<string> ModelTypeOptions { get; } = PersonaTypes.Suggested;
 
     public PersonaToolScope[] ToolScopeOptions { get; } = Enum.GetValues<PersonaToolScope>();
 
@@ -138,6 +143,10 @@ public partial class PersonaEditModel : ObservableValidator
     public IReadOnlyList<ReasoningEffortChoice> ReasoningEffortOptions => EffortChoices;
 
     public bool CanSave => !string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(SystemPrompt);
+
+    /// <summary>Drives the editor's "needs a private model on the provider side" hint.</summary>
+    public bool IsPrivateModelType =>
+        string.Equals(ModelType?.Trim(), PrivateModelType, StringComparison.OrdinalIgnoreCase);
 
     public PersonaEditModel()
     {
@@ -186,25 +195,28 @@ public partial class PersonaEditModel : ObservableValidator
         IsGenerating = true;
         try
         {
-            var draft = await _textOptimizationService.GeneratePersonaDraftAsync(Description, SelectedProvider?.Id);
-
-            // Only fill fields the user hasn't already set, so re-drafting (or drafting after some
-            // manual edits) never clobbers their input — "prefill the unset values".
-            if (string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(draft.Name)) Name = draft.Name!;
-            if (string.IsNullOrWhiteSpace(Tagline) && !string.IsNullOrWhiteSpace(draft.Tagline)) Tagline = draft.Tagline!;
-            if (string.IsNullOrWhiteSpace(SystemPrompt) && !string.IsNullOrWhiteSpace(draft.SystemPrompt)) SystemPrompt = draft.SystemPrompt!;
-            if (string.IsNullOrWhiteSpace(Guardrails) && !string.IsNullOrWhiteSpace(draft.Guardrails)) Guardrails = draft.Guardrails!;
-            if (string.IsNullOrWhiteSpace(OutputFormat) && !string.IsNullOrWhiteSpace(draft.OutputFormat)) OutputFormat = draft.OutputFormat!;
-            if (string.IsNullOrWhiteSpace(Emoji) && !string.IsNullOrWhiteSpace(draft.Emoji)) Emoji = draft.Emoji!;
-            if (string.IsNullOrWhiteSpace(AccentColor) && !string.IsNullOrWhiteSpace(draft.AccentColor)) AccentColor = draft.AccentColor!;
-            if (string.IsNullOrWhiteSpace(Expertise) && draft.Expertise is { Count: > 0 }) Expertise = string.Join(", ", draft.Expertise);
-            if (IsUnsetArchetype(Archetype) && !string.IsNullOrWhiteSpace(draft.Archetype) && ArchetypeOptions.Contains(draft.Archetype))
-                Archetype = draft.Archetype!;
+            ApplyDraft(await _textOptimizationService.GeneratePersonaDraftAsync(Description, SelectedProvider?.Id));
         }
         finally
         {
             IsGenerating = false;
         }
+    }
+
+    /// <summary>Shared by both draft doors. Only fills fields the user hasn't already set, so re-drafting
+    /// (or drafting after some manual edits) never clobbers their input.</summary>
+    public void ApplyDraft(PersonaDraft draft)
+    {
+        if (string.IsNullOrWhiteSpace(Name) && !string.IsNullOrWhiteSpace(draft.Name)) Name = draft.Name!;
+        if (string.IsNullOrWhiteSpace(Tagline) && !string.IsNullOrWhiteSpace(draft.Tagline)) Tagline = draft.Tagline!;
+        if (string.IsNullOrWhiteSpace(SystemPrompt) && !string.IsNullOrWhiteSpace(draft.SystemPrompt)) SystemPrompt = draft.SystemPrompt!;
+        if (string.IsNullOrWhiteSpace(Guardrails) && !string.IsNullOrWhiteSpace(draft.Guardrails)) Guardrails = draft.Guardrails!;
+        if (string.IsNullOrWhiteSpace(OutputFormat) && !string.IsNullOrWhiteSpace(draft.OutputFormat)) OutputFormat = draft.OutputFormat!;
+        if (string.IsNullOrWhiteSpace(Emoji) && !string.IsNullOrWhiteSpace(draft.Emoji)) Emoji = draft.Emoji!;
+        if (string.IsNullOrWhiteSpace(AccentColor) && !string.IsNullOrWhiteSpace(draft.AccentColor)) AccentColor = draft.AccentColor!;
+        if (string.IsNullOrWhiteSpace(Expertise) && draft.Expertise is { Count: > 0 }) Expertise = string.Join(", ", draft.Expertise);
+        if (IsUnsetArchetype(Archetype) && !string.IsNullOrWhiteSpace(draft.Archetype) && ArchetypeOptions.Contains(draft.Archetype))
+            Archetype = draft.Archetype!;
     }
 
     // The "custom" default (and blank) count as unset for draft-prefill purposes.

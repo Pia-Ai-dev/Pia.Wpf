@@ -1,6 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -12,17 +14,26 @@ public class TextOptimizationService : ITextOptimizationService
     private readonly IProviderService _providerService;
     private readonly IHistoryService _historyService;
     private readonly IAiClientService _aiClientService;
+    private readonly IPersonaService _personaService;
+    private readonly ISettingsService _settingsService;
+    private readonly ILogger<TextOptimizationService> _logger;
 
     public TextOptimizationService(
         ITemplateService templateService,
         IProviderService providerService,
         IHistoryService historyService,
-        IAiClientService aiClientService)
+        IAiClientService aiClientService,
+        IPersonaService personaService,
+        ISettingsService settingsService,
+        ILogger<TextOptimizationService> logger)
     {
         _templateService = templateService;
         _providerService = providerService;
         _historyService = historyService;
         _aiClientService = aiClientService;
+        _personaService = personaService;
+        _settingsService = settingsService;
+        _logger = logger;
     }
 
     public async Task<OptimizationSession> OptimizeTextAsync(
@@ -137,11 +148,55 @@ Provide only the generated prompt, no additional explanation.";
         return completion.Text;
     }
 
+    public async Task<TemplateDraft> GenerateTemplateDraftAsync(string styleDescription, Guid? providerId = null)
+    {
+        var persona = await AssistantPersonaAsync();
+        var provider = await ResolveDraftProviderAsync(providerId, persona, WindowMode.Optimize, "template");
+
+        if (provider is null)
+            throw new InvalidOperationException("No AI provider configured");
+
+        // The cloud endpoint returns a bare prompt, so there is no name or description to be had.
+        if (provider.ProviderType == AiProviderType.PiaCloud)
+        {
+            _logger.LogInformation("Template draft took the Pia Cloud prompt route, which carries no persona");
+            var cloudPrompt = await _aiClientService.GeneratePromptViaPiaCloudAsync(styleDescription);
+            return new TemplateDraft(null, null, string.IsNullOrWhiteSpace(cloudPrompt) ? null : cloudPrompt.Trim());
+        }
+
+        var draftPrompt = $@"You are designing a text-optimization template: one instruction an assistant will be given together with a piece of the user's text, to rewrite that text in a particular style. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
+- ""name"": a short display name for the template (max 40 characters)
+- ""description"": a one-line summary of what this template does (max 120 characters)
+- ""prompt"": the instruction itself, 2-4 sentences, written in the second person as a command. It must capture the tone, the sentence structure and complexity, the vocabulary level, and any formatting or structural pattern the style description asks for. Write it so it applies to ANY input text, not to one example.
+
+Write every value in the same language as the style description below.
+
+Style description:
+{styleDescription}";
+
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(Microsoft.Extensions.AI.ChatRole.System,
+                "You produce only the requested output. Do not reason, think, or explain."),
+            new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
+        };
+
+        // Retried once for the same reason the routine draft is: an upstream error frame is dropped
+        // rather than thrown, so a failed turn is indistinguishable from a silent one here.
+        var raw = await CollectTextAsync(messages, provider, persona);
+        if (string.IsNullOrWhiteSpace(raw))
+            raw = await CollectTextAsync(messages, provider, persona);
+
+        if (string.IsNullOrWhiteSpace(raw))
+            throw new InvalidOperationException("The model returned no template draft.");
+
+        return DraftParsing.ParseTemplateDraft(raw);
+    }
+
     public async Task<PersonaDraft> GeneratePersonaDraftAsync(string description, Guid? providerId = null)
     {
-        var provider = providerId.HasValue
-            ? await _providerService.GetProviderAsync(providerId.Value)
-            : await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+        var persona = await AssistantPersonaAsync();
+        var provider = await ResolveDraftProviderAsync(providerId, persona, WindowMode.Assistant, "persona");
 
         if (provider is null)
             throw new InvalidOperationException("No AI provider configured");
@@ -160,11 +215,8 @@ Provide only the generated prompt, no additional explanation.";
 Description:
 {description}";
 
-        // Route through the same streaming chat path that Assistant conversations use. Pia Cloud's
-        // /api/ai/chat only returns the expected shape on the streaming path (its non-streaming
-        // response shape is unsupported here), and this is the proven path for every provider. The
-        // system message keeps reasoning models from wrapping the JSON in think/commentary, which
-        // would defeat the extraction in ParsePersonaDraft.
+        // Streamed because Pia Cloud only returns the expected shape there; the system message keeps a
+        // reasoning model from wrapping the JSON in commentary the parser would then have to dig out.
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
             new(Microsoft.Extensions.AI.ChatRole.System,
@@ -172,15 +224,7 @@ Description:
             new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
         };
 
-        var buffer = new StringBuilder();
-        await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
-            messages, provider, tools: null, toolHandler: null, mode: nameof(WindowMode.Assistant)))
-        {
-            if (item is TextDelta delta)
-                buffer.Append(delta.Text);
-        }
-
-        return ParsePersonaDraft(buffer.ToString());
+        return DraftParsing.ParsePersonaDraft(await CollectTextAsync(messages, provider, persona));
     }
 
     public async Task<RoutineDraft> GenerateRoutineDraftAsync(
@@ -188,9 +232,8 @@ Description:
         IReadOnlyList<RoutineDraftTool> availableTools,
         Guid? providerId = null)
     {
-        var provider = providerId.HasValue
-            ? await _providerService.GetProviderAsync(providerId.Value)
-            : await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+        var persona = await AssistantPersonaAsync();
+        var provider = await ResolveDraftProviderAsync(providerId, persona, WindowMode.Assistant, "routine");
 
         if (provider is null)
             throw new InvalidOperationException("No AI provider configured");
@@ -200,7 +243,9 @@ Description:
             : "- \"tools\": the tools this routine cannot be carried out without, as an array of names copied "
               + "EXACTLY from the list below. Most routines need none, because reading and reporting needs no "
               + "grant at all — return an empty array unless the goal has to CHANGE something. Never invent a "
-              + "name that is not on the list.\n\nTools available on this device:\n"
+              + "name that is not on the list.\n\nTools available on this device that need a grant. Reading "
+              + "and searching — files, notes, chats, todos, git history — is always possible and is "
+              + "deliberately not listed:\n"
               + string.Join("\n", availableTools.Select(t => string.IsNullOrWhiteSpace(t.Description)
                   ? $"- {t.Name}"
                   : $"- {t.Name}: {t.Description}"))
@@ -208,8 +253,8 @@ Description:
 
         var draftPrompt = $@"You are designing a scheduled routine: one instruction an assistant will carry out on its own, on a schedule, with nobody there to answer a follow-up question. Return ONLY a JSON object (no prose, no code fences) with exactly these keys:
 - ""name"": a short display name for the routine (max 40 characters)
-- ""goal"": the instruction the assistant will be given every time it runs, written in the second person as a command. Two to three sentences, at most 300 characters. Say what to look at, what shape the answer takes, and how long it may be. Do not tell it to remember anything from a previous run — each run is a fresh conversation with no memory of the last one.
-- ""recurrence"": exactly one of ""once"", ""daily"", ""weekly"", ""monthly"", ""yearly""
+- ""goal"": the instruction the assistant will be given every time it runs, written in the second person as a command. Say what to look at, what shape the answer takes, and how long it may be. When the task has more than one part, set the parts out as a numbered list in the order they should happen, one short line each, so the run follows that order instead of working it out again. Be specific rather than brief: nobody is there to fill a gap. At most 1000 characters. Do not tell it to remember anything from a previous run — each run is a fresh conversation with no memory of the last one.
+- ""recurrence"": exactly one of ""once"", ""daily"", ""weekly"", ""monthly"", ""yearly"", ""manual"" — ""manual"" when the description asks for a template the user starts by hand rather than anything on a schedule
 - ""dayOfWeek"": the English weekday name when the recurrence is weekly, otherwise an empty string
 - ""timeOfDay"": the time of day to run, as ""HH:mm"" on a 24-hour clock
 - ""effort"": how much reasoning it needs — exactly one of ""minimal"", ""low"", ""medium"", ""high""
@@ -230,120 +275,73 @@ Description:
             new(Microsoft.Extensions.AI.ChatRole.User, draftPrompt),
         };
 
+        // Retried once because the stream comes back empty often enough to look like a dead button: an
+        // upstream error frame is dropped rather than thrown, so a failed turn is indistinguishable from
+        // a silent one here.
+        var raw = await CollectTextAsync(messages, provider, persona);
+        if (string.IsNullOrWhiteSpace(raw))
+            raw = await CollectTextAsync(messages, provider, persona);
+
+        if (string.IsNullOrWhiteSpace(raw))
+            throw new InvalidOperationException("The model returned no routine draft.");
+
+        return DraftParsing.ParseRoutineDraft(raw);
+    }
+
+    /// <summary>A one-shot draft has no picker of its own, so it runs as whoever the Assistant is set to.</summary>
+    private async Task<Persona?> AssistantPersonaAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        return await _personaService.ResolveActiveAsync(
+            WindowMode.Assistant, settings?.UserOperatingMode ?? UserOperatingMode.Personal);
+    }
+
+    /// <summary>Same rungs as a headless run: the caller's explicit pin, then the persona's own provider,
+    /// then the mode default.</summary>
+    private async Task<AiProvider?> ResolveDraftProviderAsync(
+        Guid? providerId, Persona? persona, WindowMode modeDefault, string subject)
+    {
+        AiProvider? provider = null;
+        var rung = "mode default";
+        if (providerId.HasValue)
+        {
+            provider = await _providerService.GetProviderAsync(providerId.Value);
+            if (provider is not null) rung = "caller pin";
+        }
+
+        if (provider is null && persona?.PreferredProviderId is Guid preferred)
+        {
+            provider = await _providerService.GetProviderAsync(preferred);
+            if (provider is not null) rung = "persona pin";
+        }
+
+        provider ??= await _providerService.GetDefaultProviderForModeAsync(modeDefault);
+        if (provider is null)
+            return null;
+
+        _logger.LogInformation("One-shot {Subject} draft provider: {Rung}, persona={HasPersona}",
+            subject, rung, persona is not null);
+        _logger.SensitiveDebug("One-shot draft persona: {Persona}", persona?.Name);
+
+        return RunPinResolver.ApplyEffort(provider, jobPin: null, persona?.ReasoningEffort);
+    }
+
+    private async Task<string> CollectTextAsync(
+        List<Microsoft.Extensions.AI.ChatMessage> messages, AiProvider provider, Persona? persona)
+    {
         var buffer = new StringBuilder();
         await foreach (var item in _aiClientService.GetChatCompletionWithToolsAsync(
-            messages, provider, tools: null, toolHandler: null, mode: nameof(WindowMode.Assistant)))
+            messages, provider, tools: null, toolHandler: null, mode: nameof(WindowMode.Assistant),
+            managedPersonaId: persona?.Id,
+            // Blank is never sent: every read path normalizes it to the default routing hint.
+            personaModelType: persona is null
+                ? null
+                : string.IsNullOrWhiteSpace(persona.ModelType) ? Persona.DefaultModelType : persona.ModelType))
         {
             if (item is TextDelta delta)
                 buffer.Append(delta.Text);
         }
 
-        return ParseRoutineDraft(buffer.ToString());
-    }
-
-    private static RoutineDraft ParseRoutineDraft(string raw)
-    {
-        var json = ExtractJsonObject(raw);
-        if (json is null)
-            return RawGoal(raw);
-
-        try
-        {
-            var dto = JsonSerializer.Deserialize<RoutineDraftDto>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (dto is null)
-                return RawGoal(raw);
-
-            return new RoutineDraft(
-                Clean(dto.Name),
-                Clean(dto.Goal),
-                Enum.TryParse<RecurrenceType>(dto.Recurrence, ignoreCase: true, out var recurrence) ? recurrence : null,
-                Enum.TryParse<DayOfWeek>(dto.DayOfWeek, ignoreCase: true, out var day) ? day : null,
-                TimeOnly.TryParseExact(dto.TimeOfDay, "HH\\:mm", out var time) ? time : null,
-                Enum.TryParse<ReasoningEffort>(dto.Effort, ignoreCase: true, out var effort) ? effort : null,
-                dto.NeedsWebSearch,
-                dto.Tools?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList());
-        }
-        catch (JsonException)
-        {
-            return RawGoal(raw);
-        }
-
-        static RoutineDraft RawGoal(string text) =>
-            new(null, text.Trim(), null, null, null, null, false, null);
-
-        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    private static PersonaDraft ParsePersonaDraft(string raw)
-    {
-        var json = ExtractJsonObject(raw);
-        if (json is null)
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-
-        try
-        {
-            var dto = JsonSerializer.Deserialize<PersonaDraftDto>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (dto is null)
-                return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-
-            return new PersonaDraft(
-                Clean(dto.Name),
-                Clean(dto.Tagline),
-                Clean(dto.SystemPrompt),
-                Clean(dto.Guardrails),
-                Clean(dto.OutputFormat),
-                Clean(dto.Archetype),
-                Clean(dto.Emoji),
-                Clean(dto.AccentColor),
-                dto.Expertise?.Where(e => !string.IsNullOrWhiteSpace(e)).Select(e => e.Trim()).ToList());
-        }
-        catch (JsonException)
-        {
-            // Model didn't return valid JSON — fall back to using the raw text as the system prompt.
-            return new PersonaDraft(null, null, raw.Trim(), null, null, null, null, null, null);
-        }
-
-        static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    }
-
-    // Extracts the first {...} object from a model response, tolerating code fences / surrounding prose.
-    private static string? ExtractJsonObject(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start < 0 || end <= start) return null;
-        return text.Substring(start, end - start + 1);
-    }
-
-    private sealed class RoutineDraftDto
-    {
-        public string? Name { get; set; }
-        public string? Goal { get; set; }
-        public string? Recurrence { get; set; }
-        public string? DayOfWeek { get; set; }
-        public string? TimeOfDay { get; set; }
-        public string? Effort { get; set; }
-        public bool NeedsWebSearch { get; set; }
-        public List<string>? Tools { get; set; }
-    }
-
-    private sealed class PersonaDraftDto
-    {
-        public string? Name { get; set; }
-        public string? Tagline { get; set; }
-        public string? SystemPrompt { get; set; }
-        public string? Guardrails { get; set; }
-        public string? OutputFormat { get; set; }
-        public string? Archetype { get; set; }
-        public string? Emoji { get; set; }
-        public string? AccentColor { get; set; }
-        public List<string>? Expertise { get; set; }
+        return buffer.ToString();
     }
 }

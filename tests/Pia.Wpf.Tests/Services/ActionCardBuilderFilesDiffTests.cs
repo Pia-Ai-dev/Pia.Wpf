@@ -20,6 +20,11 @@ public class ActionCardBuilderFilesDiffTests
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>()).Returns(ci => (string)ci[0]!);
 
         tokenMap ??= Substitute.For<ITokenMapService>();
+        // The title is composed through a format string so the verb/noun order can differ by language;
+        // compose it here or every card title in these tests collapses to the bare key.
+        loc.Format("ActionCard_Title_Format", Arg.Any<object[]>())
+            .Returns(ci => string.Join(" ", ci.ArgAt<object[]>(1)));
+
         return new ActionCardBuilder(loc, tokenMap);
     }
 

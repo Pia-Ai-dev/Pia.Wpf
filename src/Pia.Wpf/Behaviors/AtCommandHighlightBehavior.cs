@@ -2,16 +2,12 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using System.Windows.Media;
 using Pia.Emoji;
 
 namespace Pia.Behaviors;
 
-/// <summary>
-/// Attached behavior for TextBlock that highlights @-commands with a distinct style.
-/// Replaces plain text binding with styled Inlines. Non-command text is run through
-/// <see cref="EmojiInlineBuilder"/> so emoji render in color inline with the message.
-/// </summary>
+/// <summary>Builds a message's text into a TextBlock's Inlines, with @-commands as pills and emoji in
+/// color.</summary>
 public static partial class AtCommandHighlightBehavior
 {
     public static readonly DependencyProperty TextProperty =
@@ -29,10 +25,14 @@ public static partial class AtCommandHighlightBehavior
 
     private static void OnTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        if (d is not TextBlock textBlock) return;
+        if (d is not Control and not TextBlock) return;
+
+        var host = (FrameworkElement)d;
+        var inlines = Target(host);
+        if (inlines is null) return;
 
         var text = e.NewValue as string;
-        textBlock.Inlines.Clear();
+        inlines.Clear();
 
         if (string.IsNullOrEmpty(text))
             return;
@@ -41,70 +41,61 @@ public static partial class AtCommandHighlightBehavior
 
         if (matches.Count == 0)
         {
-            AddText(textBlock.Inlines, text);
+            AddText(inlines, text);
             return;
         }
 
         int lastIndex = 0;
         foreach (Match match in matches)
         {
-            // Add text before the match
             if (match.Index > lastIndex)
             {
-                AddText(textBlock.Inlines, text[lastIndex..match.Index]);
+                AddText(inlines, text[lastIndex..match.Index]);
             }
 
-            // Add the @-command with highlight styling
-            var commandRun = new Run(match.Groups[1].Value)
+            var label = new TextBlock
             {
-                Foreground = GetCommandForeground(textBlock),
-                FontWeight = FontWeights.SemiBold
+                Text = match.Groups[1].Value,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = TextElement.GetFontSize(host)
             };
-
-            // Wrap in a border-like effect using an InlineUIContainer with a small Border
             var border = new Border
             {
-                Background = GetCommandBackground(textBlock),
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(4, 1, 4, 1),
                 Margin = new Thickness(0, 0, 2, 0),
-                Child = new TextBlock
-                {
-                    Text = match.Groups[1].Value,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = GetCommandForeground(textBlock),
-                    FontSize = textBlock.FontSize
-                }
+                Child = label
             };
 
-            textBlock.Inlines.Add(new InlineUIContainer(border) { BaselineAlignment = BaselineAlignment.Center });
+            // Resource references, not resolved brushes: the inlines are built before the bubble is in the
+            // tree, and they have to follow a theme switch afterwards.
+            label.SetResourceReference(TextBlock.ForegroundProperty, "UserBubbleFgBrush");
+            border.SetResourceReference(Border.BackgroundProperty, "UserBubbleChipBgBrush");
+
+            inlines.Add(new InlineUIContainer(border) { BaselineAlignment = BaselineAlignment.Center });
 
             lastIndex = match.Index + match.Length;
         }
 
-        // Add remaining text after last match
         if (lastIndex < text.Length)
         {
-            AddText(textBlock.Inlines, text[lastIndex..]);
+            AddText(inlines, text[lastIndex..]);
         }
     }
+
+    // A RichTextBox target fills the paragraph its markup already declares — the document carries the line
+    // metrics, and rebuilding it here would drop them.
+    private static InlineCollection? Target(FrameworkElement host) => host switch
+    {
+        TextBlock textBlock => textBlock.Inlines,
+        RichTextBox { Document.Blocks.FirstBlock: Paragraph paragraph } => paragraph.Inlines,
+        _ => null,
+    };
 
     /// <summary>Adds a plain-text span as inlines, with any emoji rendered in color.</summary>
     private static void AddText(InlineCollection target, string text)
     {
         foreach (var inline in EmojiInlineBuilder.Build(text))
             target.Add(inline);
-    }
-
-    private static Brush GetCommandForeground(FrameworkElement element)
-    {
-        // Keep white to match the user bubble's existing text color
-        return Brushes.White;
-    }
-
-    private static Brush GetCommandBackground(FrameworkElement element)
-    {
-        // Semi-transparent white pill on the blue bubble — visible in both light and dark themes
-        return new SolidColorBrush(Color.FromArgb(50, 255, 255, 255));
     }
 }

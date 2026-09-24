@@ -217,6 +217,20 @@ walks the redirected `files\Vault`, and `park` reads the log for each park's
 **round count** between the park line and `WaitingForInput` — zero is the pass, and that, not the
 wall-clock delta, is the discriminator.
 
+### The routines variant
+
+`setup-profile.mjs <root> routines <providerName>` is `seed` with the same both-modes provider pin as
+`park`, but auto-approve left **on** — a fired routine has nobody to approve its writes, so a park is a
+hang rather than a scenario. It drives the routine working-directory walkthrough; results in
+[`docs/routines/2026-09-08-routine-working-directory-e2e.md`](../../docs/routines/2026-09-08-routine-working-directory-e2e.md).
+
+The eight fixture folders beside the empty `Playground` are what makes a narrowed run falsifiable: ask
+the routine to list its root and the un-narrowed answer names `Inventory` and `Support` while the
+narrowed one cannot. A pass that only checks "a file appeared" does not tell those apart.
+
+All three seed modes pin `uiLanguage: 0`. The profile is **copied** from your real one, and a German
+install turns every name-based selector and every `optionText` into a German string.
+
 ### How this profile differs from the fixture one
 
 `Invoke-UiScripts.ps1` writes a **fixture** `settings.json` from scratch. This one **copies** your

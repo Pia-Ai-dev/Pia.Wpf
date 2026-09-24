@@ -1,8 +1,8 @@
-using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
 using Pia.Services.Interfaces;
+using Pia.Services.Search;
 using Pia.Shared.Models;
 
 namespace Pia.Services;
@@ -68,6 +68,8 @@ public class AssistantChatService : IAssistantChatService, IDisposable
 
     public event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
+    public event EventHandler<Guid>? ChatAccessed;
+
     public AssistantChatService(SqliteContext context, IAgentRunService runService)
     {
         _connectionString = context.ConnectionString;
@@ -111,20 +113,20 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         ChatsChanged?.Invoke(this, new AssistantChatChangedEventArgs { Id = id, Kind = kind });
 
     public Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
-        SaveCoreAsync(chat, raiseEvent: true, preserveNewerLastAccessed: false, ct);
+        SaveCoreAsync(chat, raiseEvent: true, fromRemote: false, ct);
 
     public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) =>
         // Remote LastAccessedAt is day-truncated on the wire; never let it regress a
         // more precise local value or retention could evict up to a day early.
-        SaveCoreAsync(chat, raiseEvent: false, preserveNewerLastAccessed: true, ct);
+        SaveCoreAsync(chat, raiseEvent: false, fromRemote: true, ct);
 
-    private async Task SaveCoreAsync(SyncAssistantChat chat, bool raiseEvent, bool preserveNewerLastAccessed, CancellationToken ct)
+    private async Task SaveCoreAsync(SyncAssistantChat chat, bool raiseEvent, bool fromRemote, CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
             if (_disposed) return;
-            await SaveUnderGateAsync(chat, chat.Messages, preserveNewerLastAccessed, ct);
+            await SaveUnderGateAsync(chat, chat.Messages, fromRemote, ct);
         }
         finally
         {
@@ -175,7 +177,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                     messages = [.. merged.OrderBy(m => m.Timestamp)];
             }
 
-            await SaveUnderGateAsync(chat, messages, preserveNewerLastAccessed: false, ct);
+            await SaveUnderGateAsync(chat, messages, fromRemote: false, ct);
         }
         finally
         {
@@ -194,7 +196,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
     private async Task SaveUnderGateAsync(
         SyncAssistantChat chat,
         IReadOnlyList<SyncAssistantChatMessage> messages,
-        bool preserveNewerLastAccessed,
+        bool fromRemote,
         CancellationToken ct)
     {
         var connection = Connection();
@@ -205,14 +207,18 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             upsertChat.Transaction = transaction;
             // Timestamps are stored as fixed-width ISO-8601 UTC ("O"), so SQLite's
             // lexicographic max() is chronological.
-            var lastAccessedSet = preserveNewerLastAccessed
+            var lastAccessedSet = fromRemote
                 ? "max(LastAccessedAt, excluded.LastAccessedAt)"
                 : "excluded.LastAccessedAt";
+            // Only the wire owns the star. A local writer's DTO routinely predates a SetFavoriteAsync on the
+            // same chat — the live session holds one for as long as the chat is open — so letting it write
+            // this column un-stars a chat on the next message sent.
+            var isFavoriteSet = fromRemote ? "excluded.IsFavorite" : "AssistantChats.IsFavorite";
             upsertChat.CommandText = $"""
                 INSERT INTO AssistantChats
-                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson)
+                    (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson)
                 VALUES
-                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @ExtraJson)
+                    (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @AgentContextMode, @IsFavorite, @ExtraJson)
                 ON CONFLICT(Id) DO UPDATE SET
                     SchemaVersion = excluded.SchemaVersion,
                     Title = excluded.Title,
@@ -221,6 +227,8 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                     WindowMode = excluded.WindowMode,
                     ProviderId = excluded.ProviderId,
                     WorkingDirectory = excluded.WorkingDirectory,
+                    AgentContextMode = excluded.AgentContextMode,
+                    IsFavorite = {isFavoriteSet},
                     ExtraJson = excluded.ExtraJson
                 """;
             upsertChat.Parameters.AddWithValue("@Id", chat.Id.ToString());
@@ -232,6 +240,8 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             upsertChat.Parameters.AddWithValue("@WindowMode", chat.WindowMode);
             upsertChat.Parameters.AddWithValue("@ProviderId", (object?)chat.ProviderId?.ToString() ?? DBNull.Value);
             upsertChat.Parameters.AddWithValue("@WorkingDirectory", (object?)chat.WorkingDirectory ?? DBNull.Value);
+            upsertChat.Parameters.AddWithValue("@AgentContextMode", (object?)chat.AgentContextMode ?? DBNull.Value);
+            upsertChat.Parameters.AddWithValue("@IsFavorite", chat.IsFavorite ? 1 : 0);
             upsertChat.Parameters.AddWithValue("@ExtraJson", (object?)SerializeExtensionData(chat.ExtensionData) ?? DBNull.Value);
             await upsertChat.ExecuteNonQueryAsync(ct);
         }
@@ -330,6 +340,72 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         return true;
     }
 
+    public async Task<bool> SetFavoriteAsync(Guid chatId, bool isFavorite, CancellationToken ct = default)
+    {
+        bool updated;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return false;
+
+            var connection = Connection();
+            using var update = connection.CreateCommand();
+            // UpdatedAt moves so the other device's since= pull sees the star at all — the same reason
+            // SetTitleAsync bumps it. The FTS row indexes title and body, neither of which changed.
+            update.CommandText =
+                "UPDATE AssistantChats SET IsFavorite = @IsFavorite, UpdatedAt = @Now WHERE Id = @Id";
+            update.Parameters.AddWithValue("@IsFavorite", isFavorite ? 1 : 0);
+            update.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            update.Parameters.AddWithValue("@Id", chatId.ToString());
+            updated = await update.ExecuteNonQueryAsync(ct) > 0;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        if (updated) OnChatsChanged(chatId, AssistantChatChangeKind.Upserted);
+        return updated;
+    }
+
+    public async Task<IReadOnlyList<SyncAssistantChat>> GetFavoritesAsync(
+        string? searchText = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        Guid? providerId = null,
+        int limit = 100,
+        CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return Array.Empty<SyncAssistantChat>();
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            var whereClause = BuildSearchWhere(command, searchText, fromDate, toDate, providerId, favoritesOnly: true);
+
+            command.CommandText = $"""
+                SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson
+                FROM AssistantChats
+                {whereClause}
+                ORDER BY UpdatedAt DESC
+                LIMIT @Limit
+                """;
+            command.Parameters.AddWithValue("@Limit", limit);
+
+            var chats = new List<SyncAssistantChat>();
+            using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                chats.Add(MapChat(reader));
+            return chats.AsReadOnly();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
@@ -343,7 +419,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             using (var getChat = connection.CreateCommand())
             {
                 getChat.CommandText = """
-                    SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson
+                    SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson
                     FROM AssistantChats WHERE Id = @Id
                     """;
                 getChat.Parameters.AddWithValue("@Id", id.ToString());
@@ -523,9 +599,12 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         string? searchText,
         DateTime? fromDate,
         DateTime? toDate,
-        Guid? providerId)
+        Guid? providerId,
+        bool favoritesOnly = false)
     {
         var conditions = new List<string>();
+
+        if (favoritesOnly) conditions.Add("IsFavorite = 1");
 
         // Hide message-less chats from the history list. A failed/empty headless turn leaves a
         // stub AssistantChats row up front (the FK target its AgentRun needs — §16 R1) that never
@@ -579,7 +658,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         var whereClause = BuildSearchWhere(command, searchText, fromDate, toDate, providerId);
 
         command.CommandText = $"""
-            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, ExtraJson
+            SELECT Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson
             FROM AssistantChats
             {whereClause}
             ORDER BY UpdatedAt DESC
@@ -647,15 +726,20 @@ public class AssistantChatService : IAssistantChatService, IDisposable
 
     public async Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
+        DateTime? previous;
+
         await _gate.WaitAsync(ct);
         try
         {
             if (_disposed) return;
 
             var connection = Connection();
+            previous = await ReadLastAccessedUnderGateAsync(connection, id, ct);
+
             using var command = connection.CreateCommand();
             command.CommandText = "UPDATE AssistantChats SET LastAccessedAt = @Now WHERE Id = @Id";
-            command.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("@Now", now.ToString("O"));
             command.Parameters.AddWithValue("@Id", id.ToString());
             await command.ExecuteNonQueryAsync(ct);
         }
@@ -663,6 +747,78 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         {
             _gate.Release();
         }
+
+        // Outside the gate, same as ChatsChanged: the sync worker re-enters this service to read the chat.
+        // Day granularity because that is what the wire carries (SyncMapper truncates to .Date), so a second
+        // open on the same day would push a byte-identical value.
+        if (previous is { } stamp && stamp.Date < now.Date)
+            ChatAccessed?.Invoke(this, id);
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetChatIdsAccessedBeforeAsync(
+        DateTime cutoffUtc, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return Array.Empty<Guid>();
+            return await SelectAccessedBeforeUnderGateAsync(cutoffUtc, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<IReadOnlyList<Guid>> SelectAccessedBeforeUnderGateAsync(
+        DateTime cutoffUtc, CancellationToken ct)
+    {
+        var connection = Connection();
+        using var select = connection.CreateCommand();
+        // A starred chat is exempt: retention deletes account-wide, so ageing one out would destroy the
+        // very chat the user marked to keep.
+        select.CommandText = "SELECT Id FROM AssistantChats WHERE LastAccessedAt < @Cutoff AND IsFavorite = 0";
+        select.Parameters.AddWithValue("@Cutoff", cutoffUtc.ToString("O"));
+
+        var ids = new List<Guid>();
+        using var reader = await select.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            ids.Add(Guid.Parse(reader.GetString(0)));
+        return ids;
+    }
+
+    public async Task ApplyRemoteAccessDateAsync(
+        Guid id, DateTime lastAccessedUtc, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return;
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE AssistantChats SET LastAccessedAt = @Remote
+                WHERE Id = @Id AND LastAccessedAt < @Remote
+                """;
+            command.Parameters.AddWithValue("@Remote", lastAccessedUtc.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("@Id", id.ToString());
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private static async Task<DateTime?> ReadLastAccessedUnderGateAsync(
+        SqliteConnection connection, Guid id, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT LastAccessedAt FROM AssistantChats WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", id.ToString());
+        var value = await command.ExecuteScalarAsync(ct);
+        return value is string text ? DateTime.Parse(text).ToUniversalTime() : null;
     }
 
     public async Task<IReadOnlyList<Guid>> DeleteAllAsync(CancellationToken ct = default)
@@ -757,15 +913,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         {
             if (_disposed) return Array.Empty<Guid>();
 
-            var connection = Connection();
-            using var select = connection.CreateCommand();
-            select.CommandText = "SELECT Id FROM AssistantChats WHERE LastAccessedAt < @Cutoff";
-            select.Parameters.AddWithValue("@Cutoff", cutoffUtc.ToString("O"));
-
-            evictedIds = [];
-            using var reader = await select.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct))
-                evictedIds.Add(Guid.Parse(reader.GetString(0)));
+            evictedIds = [.. await SelectAccessedBeforeUnderGateAsync(cutoffUtc, ct)];
         }
         finally
         {
@@ -866,6 +1014,52 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                     ids.Add(id);
             }
             return ids.AsReadOnly();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return Array.Empty<Guid>();
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT Id FROM AssistantChats WHERE BackfilledAt IS NULL";
+
+            var ids = new List<Guid>();
+            using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                if (Guid.TryParse(reader.GetString(0), out var id))
+                    ids.Add(id);
+            }
+            return ids.AsReadOnly();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task MarkBackfilledAsync(Guid id, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return;
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE AssistantChats SET BackfilledAt = $at WHERE Id = $id";
+            command.Parameters.AddWithValue("$at", DateTime.UtcNow.ToString("O"));
+            command.Parameters.AddWithValue("$id", id.ToString());
+            await command.ExecuteNonQueryAsync(ct);
         }
         finally
         {
@@ -1000,7 +1194,9 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             WindowMode = reader.GetString(6),
             ProviderId = reader.IsDBNull(7) ? null : Guid.Parse(reader.GetString(7)),
             WorkingDirectory = reader.IsDBNull(8) ? null : reader.GetString(8),
-            ExtensionData = reader.IsDBNull(9) ? null : DeserializeExtensionData(reader.GetString(9)),
+            AgentContextMode = reader.IsDBNull(9) ? null : reader.GetString(9),
+            IsFavorite = !reader.IsDBNull(10) && reader.GetInt32(10) != 0,
+            ExtensionData = reader.IsDBNull(11) ? null : DeserializeExtensionData(reader.GetString(11)),
         };
     }
 
@@ -1045,32 +1241,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
-    private static string BuildFtsQuery(string searchText)
-    {
-        // Per-token prefix match: "hello wor" -> hello* wor*. Quoting each
-        // token (phrase query) requires an exact-token match, so partially
-        // typed words never matched — strip FTS5 operator chars and append *.
-        var tokens = searchText
-            .Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(SanitizeFtsToken)
-            .Where(t => t.Length > 0)
-            .Select(t => t + "*");
-        return string.Join(' ', tokens);
-    }
-
-    private static string SanitizeFtsToken(string token)
-    {
-        // Lowercase, then keep only letters/digits. Lowercasing neutralises
-        // FTS5's uppercase boolean operators (AND/OR/NOT) — without it,
-        // a user typing "OR" produces "OR*" which is a syntax error.
-        var sb = new StringBuilder(token.Length);
-        foreach (var ch in token)
-        {
-            if (char.IsLetterOrDigit(ch))
-                sb.Append(char.ToLowerInvariant(ch));
-        }
-        return sb.ToString();
-    }
+    private static string BuildFtsQuery(string searchText) => FtsQueryBuilder.PrefixAnd(searchText);
 
     /// <summary>
     /// Takes the gate and sets <c>_disposed</c> BEFORE closing the handle (FlowPersistenceStore's ordering),

@@ -18,6 +18,11 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     /// </summary>
     public static readonly Guid PiaCloudProviderId = new("00000000-0000-0000-0000-000000000001");
 
+    private const string AnthropicApiVersion = "2023-06-01";
+
+    // Anthropic's list pages at 20 by default, which already truncates the catalogue; 1000 is its maximum.
+    private const int AnthropicModelPageSize = 1000;
+
     public event EventHandler? ProvidersChanged;
 
     protected override string FileName => "providers.json";
@@ -251,7 +256,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         ProvidersChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task DeleteProviderAsync(Guid id)
+    public async Task DeleteProviderAsync(Guid id, bool trackForSync = true)
     {
         if (id == PiaCloudProviderId)
             throw new InvalidOperationException("The built-in Pia Cloud provider cannot be deleted.");
@@ -263,7 +268,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         providers.Remove(provider);
         await SaveAsync(providers);
-        _deleteTracker.TrackDeletion("providers", id);
+        if (trackForSync)
+            _deleteTracker.TrackDeletion("providers", id);
         ProvidersChanged?.Invoke(this, EventArgs.Empty);
 
         // Clean up any mode defaults pointing to deleted provider
@@ -398,7 +404,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Tool calling probe failed for provider {ProviderName}, assuming not supported", provider.Name);
+            _logger.LogWarning(ex, "Tool calling probe failed for provider {ProviderType}, assuming not supported", provider.ProviderType);
             supportsToolCalling = false;
         }
 
@@ -410,7 +416,7 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Streaming probe failed for provider {ProviderName}, assuming not supported", provider.Name);
+            _logger.LogWarning(ex, "Streaming probe failed for provider {ProviderType}, assuming not supported", provider.ProviderType);
             supportsStreaming = false;
         }
 
@@ -445,22 +451,18 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
         var key = await ResolveFetchKeyAsync(apiKey, providerId);
         if (!string.IsNullOrEmpty(key))
-            httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        {
+            if (providerType == AiProviderType.Anthropic)
+                httpClient.DefaultRequestHeaders.Add("x-api-key", key);
+            else
+                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        }
 
-        string requestUrl;
-        if (providerType == AiProviderType.Ollama)
-        {
-            // Ollama's model list is at /api/tags, outside the /v1 compat path
-            var baseUrl = endpoint.TrimEnd('/');
-            if (baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
-                baseUrl = baseUrl[..^3];
-            requestUrl = $"{baseUrl}/api/tags";
-        }
-        else
-        {
-            // OpenAI and OpenAI-compatible endpoints
-            requestUrl = $"{endpoint.TrimEnd('/')}/models";
-        }
+        // Every /v1 call without it is a 400.
+        if (providerType == AiProviderType.Anthropic)
+            httpClient.DefaultRequestHeaders.Add("anthropic-version", AnthropicApiVersion);
+
+        var requestUrl = BuildModelsUrl(endpoint, providerType);
 
         _logger.LogInformation("Fetching models from {Url} for provider type {ProviderType}",
             SafeUrl.Format(requestUrl), providerType);
@@ -501,6 +503,30 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
         models.Sort(StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation("Fetched {Count} models from {Url}", models.Count, SafeUrl.Format(requestUrl));
         return models;
+    }
+
+    internal static string BuildModelsUrl(string endpoint, AiProviderType providerType)
+    {
+        var baseUrl = endpoint.TrimEnd('/');
+
+        if (providerType == AiProviderType.Ollama)
+        {
+            // Ollama's model list is at /api/tags, outside the /v1 compat path
+            if (baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+                baseUrl = baseUrl[..^3];
+            return $"{baseUrl}/api/tags";
+        }
+
+        if (providerType == AiProviderType.Anthropic)
+        {
+            // The stored endpoint carries no /v1 because the SDK appends its own, so add it here.
+            if (baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+                baseUrl = baseUrl[..^3].TrimEnd('/');
+            return $"{baseUrl}/v1/models?limit={AnthropicModelPageSize}";
+        }
+
+        // OpenAI and OpenAI-compatible endpoints
+        return $"{baseUrl}/models";
     }
 
     /// <summary>

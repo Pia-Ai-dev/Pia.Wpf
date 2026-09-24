@@ -15,7 +15,8 @@ public sealed class ChatChipGroupViewModel
 /// <summary>A single chat entry within a <see cref="ChatChipGroupViewModel"/>.
 /// <paramref name="State"/> is a snapshot (read once at build time) driving the inline
 /// row state badge; it does not update live while the flyout is open.</summary>
-public sealed record ChatChipItemViewModel(Guid Id, string Title, DateTime UpdatedAt, ChatState State);
+public sealed record ChatChipItemViewModel(
+    Guid Id, string Title, DateTime UpdatedAt, ChatState State, bool IsFavorite = false);
 
 /// <summary>What a row's inline rename hands its host: the row it belongs to and the name typed into it.
 /// The name cannot ride on <paramref name="Row"/> — the item VMs are immutable snapshots.</summary>

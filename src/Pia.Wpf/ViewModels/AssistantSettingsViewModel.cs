@@ -37,9 +37,10 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
     public ProvidersSettingsViewModel ProvidersVm { get; }
     public PersonaSettingsViewModel PersonasVm { get; }
     public ToolPermissionsSettingsViewModel ToolPermissionsVm { get; }
+    public McpServersSettingsViewModel McpServersVm { get; }
     public MeetingSettingsViewModel MeetingVm { get; }
 
-    /// <summary>Index of the inner tab pill (0 = General, 1 = Personas, 2 = Tool access, 3 = Meeting, 4 = Agent runs).</summary>
+    /// <summary>Index of the inner tab pill — see <see cref="AssistantSettingsInnerTab"/>.</summary>
     [ObservableProperty]
     private int _selectedInnerTabIndex;
 
@@ -50,6 +51,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         ProvidersSettingsViewModel providersVm,
         PersonaSettingsViewModel personasVm,
         ToolPermissionsSettingsViewModel toolPermissionsVm,
+        McpServersSettingsViewModel mcpServersVm,
         MeetingSettingsViewModel meetingVm,
         ILogger<SettingsViewModel> logger,
         ISettingsService settingsService,
@@ -68,6 +70,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         ProvidersVm = providersVm;
         PersonasVm = personasVm;
         ToolPermissionsVm = toolPermissionsVm;
+        McpServersVm = mcpServersVm;
         MeetingVm = meetingVm;
         _logger = logger;
         _settingsService = settingsService;
@@ -414,6 +417,16 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    // What a chat whose lever was never touched starts on. The lever itself is per-chat and never
+    // writes back, so this is the only place the answer can be changed.
+    [ObservableProperty]
+    private bool _assistantNewChatAgentMode;
+
+    partial void OnAssistantNewChatAgentModeChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     // Batch 04 autonomy default: when on, an agent run carries a policy that auto-approves Pia's OWN write
     // tools BY CLASS (memory / todo / reminder / scheduling / files) so the run does not stop at a card for
     // every write. Never covers a delete-like tool, never Git, never an external (MCP) tool. Global and
@@ -546,6 +559,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
         MaxToolRoundsPerStep = Math.Clamp(settings.MaxToolRoundsPerStep, RunProfile.MinToolRounds, RunProfile.MaxToolRoundsCap);
         AgentPlanReasoningTurnEnabled = settings.AgentPlanReasoningTurnEnabled;
+        AssistantNewChatAgentMode = settings.AssistantNewChatAgentMode;
         AgentRunAutoApproveBuiltInWrites = settings.AgentRunAutoApproveBuiltInWrites;
 
         ScheduledMaxSteps = Math.Clamp(settings.ScheduledMaxSteps, RunProfile.MinSteps, RunProfile.MaxStepsCap);
@@ -684,6 +698,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         settings.AgentWallClockMinutes = AgentWallClockMinutes;
         settings.MaxToolRoundsPerStep = MaxToolRoundsPerStep;
         settings.AgentPlanReasoningTurnEnabled = AgentPlanReasoningTurnEnabled;
+        settings.AssistantNewChatAgentMode = AssistantNewChatAgentMode;
         settings.AgentRunAutoApproveBuiltInWrites = AgentRunAutoApproveBuiltInWrites;
         settings.ScheduledMaxSteps = ScheduledMaxSteps;
         settings.ScheduledMaxReplans = ScheduledMaxReplans;

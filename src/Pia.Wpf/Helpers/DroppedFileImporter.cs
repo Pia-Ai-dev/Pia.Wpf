@@ -14,16 +14,33 @@ namespace Pia.Helpers;
 /// </summary>
 public static class DroppedFileImporter
 {
+    /// <param name="onProblem">Takes the localized message instead of the snackbar, which a caller rendering
+    /// behind the dialog backdrop needs: a snackbar raised there is never seen. Supplying it makes
+    /// <paramref name="snackbarService"/> unused, so such a caller may pass null.</param>
     public static async Task<string?> TryImportAsync(
         IReadOnlyList<string> paths,
         ILogger logger,
-        ISnackbarService snackbarService,
+        ISnackbarService? snackbarService,
         ILocalizationService localizationService,
+        Action<string>? onProblem = null,
         CancellationToken ct = default)
     {
         if (paths.Count == 0) return null;
 
         var combined = new StringBuilder();
+
+        void Report(string message, ControlAppearance appearance)
+        {
+            if (onProblem is not null)
+            {
+                onProblem(message);
+                return;
+            }
+
+            var title = appearance == ControlAppearance.Danger ? "Msg_Error" : "Msg_Warning";
+            snackbarService?.Show(
+                localizationService[title], message, appearance, null, TimeSpan.FromSeconds(4));
+        }
 
         foreach (var path in paths)
         {
@@ -52,10 +69,7 @@ public static class DroppedFileImporter
                     // Image / Audio / Unsupported. Images become vision attachments on the
                     // assistant path only; here nothing is inserted, so say so.
                     logger.LogInformation("File drop rejected for kind {Kind}", kind);
-                    snackbarService.Show(
-                        localizationService["Msg_Warning"],
-                        localizationService.Format("Msg_File_Unsupported", fileName),
-                        ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                    Report(localizationService.Format("Msg_File_Unsupported", fileName), ControlAppearance.Caution);
                     continue;
             }
 
@@ -67,23 +81,18 @@ public static class DroppedFileImporter
                     combined.Append(result.Text);
                     break;
                 case DroppedFileReader.ReadStatus.TooLarge:
-                    snackbarService.Show(
-                        localizationService["Msg_Warning"],
+                    Report(
                         localizationService.Format("Msg_File_TooLarge", fileName, DroppedFileReader.FormatLimit(result.LimitBytes)),
-                        ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                        ControlAppearance.Caution);
                     break;
                 case DroppedFileReader.ReadStatus.Failed when result.Error == DroppedFileReader.NoTextLayer:
-                    snackbarService.Show(
-                        localizationService["Msg_Warning"],
-                        localizationService.Format("Msg_File_PdfNoText", fileName),
-                        ControlAppearance.Caution, null, TimeSpan.FromSeconds(4));
+                    Report(localizationService.Format("Msg_File_PdfNoText", fileName), ControlAppearance.Caution);
                     break;
                 case DroppedFileReader.ReadStatus.Failed:
                     logger.LogError("File drop read failed for {Kind}: {Error}", kind, result.Error);
-                    snackbarService.Show(
-                        localizationService["Msg_Error"],
+                    Report(
                         localizationService.Format("Msg_File_ReadFailed", fileName, result.Error ?? string.Empty),
-                        ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+                        ControlAppearance.Danger);
                     break;
             }
         }

@@ -40,6 +40,10 @@ public sealed record BackgroundTurnRequest
 
     /// <summary>Effort pin for this turn; outranks the resolved persona's own.</summary>
     public ReasoningEffort? ReasoningEffort { get; init; }
+
+    /// <summary>Folder this turn works in, relative to the assistant-files sandbox (forward slashes);
+    /// null = the sandbox root.</summary>
+    public string? WorkingSubpath { get; init; }
 }
 
 /// <summary>Outcome of a background turn. <see cref="ChatId"/> is allocated even on failure.</summary>

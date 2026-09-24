@@ -91,12 +91,34 @@ public class AssistantMessageFileRefsTests
     [Fact]
     public void ToChatMessage_WithOverrideText_PreservesImageAttachment()
     {
-        var msg = new AssistantMessage(ChatRole.User, "displayed prompt") { Attachment = NewAttachment() };
+        var msg = new AssistantMessage(ChatRole.User, "displayed prompt") { Attachments = { NewAttachment() } };
 
         var chat = msg.ToChatMessage("ai-visible text");
 
         // The fix: the override-text path must keep the image (the prior text-only path dropped it).
         Assert.Contains(chat.Contents, c => c is DataContent);
         Assert.Contains(chat.Contents, c => c is TextContent t && t.Text == "ai-visible text");
+    }
+
+    /// <summary>Text first, then the images in order — the shape PiaCloudChatClient emits and the one the
+    /// compactor's image pin was measured on.</summary>
+    [Fact]
+    public void ToChatMessage_EmitsOneDataContentPerImage_AfterTheText()
+    {
+        var msg = new AssistantMessage(ChatRole.User, "what is in these");
+        var first = NewAttachment();
+        var second = NewAttachment();
+        var third = NewAttachment();
+        msg.Attachments.Add(first);
+        msg.Attachments.Add(second);
+        msg.Attachments.Add(third);
+
+        var chat = msg.ToChatMessage();
+
+        Assert.IsType<TextContent>(chat.Contents[0]);
+        Assert.Equal(3, chat.Contents.OfType<DataContent>().Count());
+        Assert.Equal(
+            [first.MimeType, second.MimeType, third.MimeType],
+            chat.Contents.Skip(1).Cast<DataContent>().Select(d => d.MediaType));
     }
 }

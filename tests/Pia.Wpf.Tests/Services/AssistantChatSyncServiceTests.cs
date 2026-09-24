@@ -35,8 +35,10 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
         });
         _auth.GetAccessTokenAsync().Returns("test-token");
+        _auth.IsLoggedIn.Returns(true);
     }
 
     [Fact]
@@ -75,6 +77,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             LastChatPullETag = "\"v1\"",
         });
         _handler.SetGetSequence("/api/v1/chats", (HttpStatusCode.NotModified, "", null));
@@ -95,6 +98,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             LastChatPullETag = "\"v1\"",
         });
         _handler.SetGetSequence("/api/v1/chats",
@@ -122,6 +126,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
         });
         _handler.SetGetSequence("/api/v1/chats",
             (HttpStatusCode.OK, @"{""chats"":[],""deleted"":[],""hasMore"":true,""nextCursor"":""abc""}", "\"v3\""),
@@ -140,6 +145,7 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             LastChatPullETag = "W/\"v4\"",
         });
         _handler.SetGetSequence("/api/v1/chats",
@@ -153,6 +159,28 @@ public class AssistantChatSyncServiceTests
         Assert.True(ifNoneMatch.IsWeak);
     }
 
+    /// <summary>The merge builds a fresh chat field by field, so a field it forgets is silently dropped —
+    /// here that would push the star away the moment two devices raced.</summary>
+    [Fact]
+    public async Task SendUpsert_Returns409_MergeKeepsTheLocalFavorite()
+    {
+        var chat = SampleChat();
+        chat.IsFavorite = true;
+
+        var serverBody = $$"""
+            {"id":"{{chat.Id}}","schemaVersion":1,"title":"Sample","createdAt":"2026-05-01T10:00:00Z",
+             "updatedAt":"2026-05-01T10:05:00Z","lastAccessedAt":"2026-05-01T10:05:00Z",
+             "windowMode":"Assistant","isFavorite":false,"messages":[]}
+            """;
+        // The same 409 answers the retry, which is what leaves the MERGED body as the last PUT.
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Conflict, serverBody);
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Contains("\"isFavorite\":true", _handler.LastPutBody);
+    }
+
     [Fact]
     public async Task SendUpsert_Returns404_InvalidatesCapability()
     {
@@ -163,6 +191,47 @@ public class AssistantChatSyncServiceTests
         await InvokeSendUpsertAsync(sut, chat);
 
         _capabilities.Received(1).Invalidate();
+    }
+
+    // Retention on ANY device deletes the chat from the server, and the tombstone comes back down to the
+    // rest — so reading a chat here has to refresh the server's access date or a second device evicts it.
+    [Fact]
+    public async Task ChatAccessed_PushesTheChatSoTheServerCopyStopsAgeing()
+    {
+        var chat = SampleChat();
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            _chatService.ChatAccessed += Raise.Event<EventHandler<Guid>>(_chatService, chat.Id);
+            await InvokeDrainAsync(sut);
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+    }
+
+    [Fact]
+    public async Task ChatAccessed_AfterStop_IsNoLongerPushed()
+    {
+        var chat = SampleChat();
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        await sut.StopAsync(TestContext.Current.CancellationToken);
+
+        _chatService.ChatAccessed += Raise.Event<EventHandler<Guid>>(_chatService, chat.Id);
+        await InvokeDrainAsync(sut);
+
+        Assert.DoesNotContain(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
     }
 
     [Fact]
@@ -207,7 +276,7 @@ public class AssistantChatSyncServiceTests
     public async Task StartupPush_BackfillsAllLocalChats_AndSetsFlag()
     {
         var chat = SampleChat();
-        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { chat.Id }.AsReadOnly());
         _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created,
@@ -229,17 +298,303 @@ public class AssistantChatSyncServiceTests
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
+            SyncEnabled = true,
             AssistantChatsBackfilledAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
         });
 
         var sut = CreateSut(NewPlainMapper());
         await InvokeRunStartupPushAsync(sut);
 
-        await _chatService.DidNotReceive().GetAllIdsAsync(Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>());
         await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
     }
 
+    // Everything below the sign-in line: Release writes a ServerUrl on every launch, so without these
+    // guards a signed-out install pushes chat content unauthenticated — and unencrypted, since the
+    // mapper only enciphers when there is a SyncUserId.
+    [Fact]
+    public async Task SendUpsert_WhenSignedOut_SendsNothing()
+    {
+        SignOut();
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
+    public async Task StartupPull_WhenSignedOut_SendsNothing()
+    {
+        SignOut();
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPullAsync(sut);
+
+        Assert.Empty(_handler.RequestsByUri);
+    }
+
+    // Marking a backfill done that the server never accepted strands those chats local-only for good:
+    // only a logout reopens the gate, and nobody logs out to fix a sync they cannot see.
+    [Fact]
+    public async Task StartupPush_WhenSignedOut_SendsNothingAndLeavesTheGateUnset()
+    {
+        SignOut();
+        var chat = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        Assert.Empty(_handler.RequestsByUri);
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    [Fact]
+    public async Task StartupPush_WhenAPushIsRejected_LeavesTheGateUnset()
+    {
+        var chat = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Unauthorized, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    // The server's sync policy permits 30 requests a minute, so a catalogue-sized backfill spends the rest
+    // of the pass on rejections and arrives at the next launch with nothing banked.
+    [Fact]
+    public async Task StartupPush_StopsThePass_OnTheFirstRateLimit()
+    {
+        var first = SampleChat();
+        var second = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { first.Id, second.Id }.AsReadOnly());
+        _chatService.GetAsync(first.Id, Arg.Any<CancellationToken>()).Returns(first);
+        _chatService.GetAsync(second.Id, Arg.Any<CancellationToken>()).Returns(second);
+        _handler.SetPut("/api/v1/chats/" + first.Id, HttpStatusCode.TooManyRequests, "");
+        _handler.SetPut("/api/v1/chats/" + second.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        Assert.DoesNotContain(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + second.Id));
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    // Without this a pass the limiter cuts short banks nothing, so the next launch replays the whole
+    // catalogue and trips the same limit at the same place — forever.
+    [Fact]
+    public async Task StartupPush_MarksTheChatsItManaged_BeforeTheRateLimitStopsIt()
+    {
+        var pushed = SampleChat();
+        var rejected = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { pushed.Id, rejected.Id }.AsReadOnly());
+        _chatService.GetAsync(pushed.Id, Arg.Any<CancellationToken>()).Returns(pushed);
+        _chatService.GetAsync(rejected.Id, Arg.Any<CancellationToken>()).Returns(rejected);
+        _handler.SetPut("/api/v1/chats/" + pushed.Id, HttpStatusCode.Created, "{}");
+        _handler.SetPut("/api/v1/chats/" + rejected.Id, HttpStatusCode.TooManyRequests, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        await _chatService.Received(1).MarkBackfilledAsync(pushed.Id, Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().MarkBackfilledAsync(rejected.Id, Arg.Any<CancellationToken>());
+    }
+
+    // The nudge exists for exactly one condition: the server said "not now". Arming it for a rejected
+    // sign-in or a missing E2EE onboarding would retry something broken every minute, forever.
+    [Fact]
+    public async Task StartupPush_AsksForAnotherPass_OnlyWhenTheRateLimitStoppedIt()
+    {
+        var chat = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
+
+        Assert.True(await InvokeRunStartupPushAsync(CreateSut(NewPlainMapper())));
+    }
+
+    [Fact]
+    public async Task StartupPush_AsksForNoFurtherPass_WhenThePushWasRejectedOutright()
+    {
+        var chat = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Unauthorized, "");
+
+        Assert.False(await InvokeRunStartupPushAsync(CreateSut(NewPlainMapper())));
+    }
+
+    // The whole point of banking progress: a second pass must start from what is still owed, not from
+    // the top, or the nudge just replays the same prefix every minute.
+    [Fact]
+    public async Task StartupPush_SecondPass_PushesOnlyTheRemainder()
+    {
+        var first = SampleChat();
+        var second = SampleChat();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>()).Returns(
+            new List<Guid> { first.Id, second.Id }.AsReadOnly(),
+            new List<Guid> { second.Id }.AsReadOnly());
+        _chatService.GetAsync(first.Id, Arg.Any<CancellationToken>()).Returns(first);
+        _chatService.GetAsync(second.Id, Arg.Any<CancellationToken>()).Returns(second);
+        _handler.SetPut("/api/v1/chats/" + first.Id, HttpStatusCode.Created, "{}");
+        _handler.SetPut("/api/v1/chats/" + second.Id, HttpStatusCode.TooManyRequests, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        Assert.True(await InvokeRunStartupPushAsync(sut));
+        await InvokeRunStartupPushAsync(sut);
+
+        await _chatService.Received(1).GetAsync(first.Id, Arg.Any<CancellationToken>());
+        await _chatService.Received(2).GetAsync(second.Id, Arg.Any<CancellationToken>());
+    }
+
+    // The wiring the two assertions above cannot see: timer -> channel -> loop body -> another pass.
+    // Without it the remainder waits for the next launch, which on a real catalogue is weeks.
+    [Fact]
+    public async Task TheNudge_RunsAnotherBackfillPass_WithoutWaitingForTheNextLaunch()
+    {
+        var chat = SampleChat();
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
+
+        var sut = new AssistantChatSyncService(
+            _chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
+            Substitute.For<ISyncClientService>(), NullLogger<AssistantChatSyncService>.Instance,
+            startupDelayOverride: TimeSpan.Zero, backfillRetryIntervalOverride: TimeSpan.FromMilliseconds(20));
+
+        int Passes() => _chatService.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.GetUnbackfilledIdsAsync));
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            // Three passes means at least two nudges landed; one would prove nothing but the startup pass.
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline && Passes() < 3)
+                await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(Passes() >= 3, $"only {Passes()} backfill pass(es) ran; the nudge never fired");
+    }
+
+    // A chat deleted locally between the id sweep and its push is already in its desired end state,
+    // so the server answering 404 must not hold the gate open forever.
+    [Fact]
+    public async Task StartupPush_WhenAChatVanishedLocally_StillClosesTheGate()
+    {
+        var id = Guid.NewGuid();
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { id }.AsReadOnly());
+        _chatService.GetAsync(id, Arg.Any<CancellationToken>()).Returns((SyncAssistantChat?)null);
+        _handler.SetDelete("/api/v1/chats/" + id, HttpStatusCode.NotFound, "");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeRunStartupPushAsync(sut);
+
+        await _settings.Received(1).SaveSettingsAsync(
+            Arg.Is<AppSettings>(s => s.AssistantChatsBackfilledAt != null));
+    }
+
+    // The capability probe is unauthenticated, so probing before sign-in beacons the server from
+    // every signed-out install.
+    [Fact]
+    public async Task StartupCycle_WhenSignedOut_WaitsInsteadOfProbingTheServer()
+    {
+        SignOut();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var sut = CreateSut(NewPlainMapper());
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeRunStartupCycleAsync(sut, cts.Token));
+
+        await _capabilities.DidNotReceive().ChatsSupportedAsync(Arg.Any<CancellationToken>());
+        Assert.Empty(_handler.RequestsByUri);
+    }
+
+    [Fact]
+    public async Task StartupCycle_WhenSignedIn_ProbesAndRunsThePullAndPush()
+    {
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid>().AsReadOnly());
+
+        var sut = CreateSut(NewPlainMapper());
+        var proceeded = await InvokeRunStartupCycleAsync(sut, CancellationToken.None);
+
+        Assert.True(proceeded);
+        await _capabilities.Received(1).ChatsSupportedAsync(Arg.Any<CancellationToken>());
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.Contains("/api/v1/chats"));
+        await _settings.Received(1).SaveSettingsAsync(
+            Arg.Is<AppSettings>(s => s.AssistantChatsBackfilledAt != null));
+    }
+
+    // Signing in mid-session has to start the worker; otherwise the first sync waits for a relaunch.
+    [Fact]
+    public async Task WaitForSignIn_ReturnsOnceTheUserSignsIn()
+    {
+        var settings = new AppSettings { ServerUrl = ServerUrl };
+        _settings.GetSettingsAsync().Returns(settings);
+        _auth.IsLoggedIn.Returns(false);
+
+        var sut = CreateSut(NewPlainMapper());
+        var waiting = InvokeWaitForSignInAsync(sut, CancellationToken.None);
+        Assert.False(waiting.IsCompleted);
+
+        settings.SyncEnabled = true;
+        settings.SyncUserId = UserId;
+        _auth.IsLoggedIn.Returns(true);
+        _auth.LoginStateChanged += Raise.Event<EventHandler<bool>>(_auth, true);
+
+        await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
     // ===== Helpers =====
+
+    private void SignOut()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings { ServerUrl = ServerUrl });
+        _auth.GetAccessTokenAsync().Returns((string?)null);
+        _auth.IsLoggedIn.Returns(false);
+    }
+
+    private static Task<bool> InvokeRunStartupCycleAsync(AssistantChatSyncService sut, CancellationToken ct)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("RunStartupCycleAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (Task<bool>)m.Invoke(sut, [ct])!;
+    }
+
+    private static Task InvokeWaitForSignInAsync(AssistantChatSyncService sut, CancellationToken ct)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("WaitForSignInAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (Task)m.Invoke(sut, [ct])!;
+    }
 
     private AssistantChatSyncService CreateSut(SyncMapper mapper) =>
         new(_chatService, _capabilities, _auth, _settings, _clientFactory, mapper,
@@ -312,10 +667,18 @@ public class AssistantChatSyncServiceTests
         return (Task)m.Invoke(sut, [chat, false, CancellationToken.None])!;
     }
 
-    private static Task InvokeRunStartupPushAsync(AssistantChatSyncService sut)
+    /// <summary>The result is what arms the once-a-minute nudge, so it is worth asserting on.</summary>
+    private static Task<bool> InvokeRunStartupPushAsync(AssistantChatSyncService sut)
     {
         var m = typeof(AssistantChatSyncService)
             .GetMethod("RunStartupPushAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (Task<bool>)m.Invoke(sut, [CancellationToken.None])!;
+    }
+
+    private static Task InvokeDrainAsync(AssistantChatSyncService sut)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("DrainAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
         return (Task)m.Invoke(sut, [CancellationToken.None])!;
     }
 

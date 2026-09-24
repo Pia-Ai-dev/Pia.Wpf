@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using Wpf.Ui.Controls;
 
 namespace Pia.Views.Controls;
 
@@ -22,6 +23,19 @@ public class OverlayDialogPanel : ContentControl
         DependencyProperty.Register(nameof(MaxPanelWidth), typeof(double), typeof(OverlayDialogPanel),
             new PropertyMetadata(480.0));
 
+    /// <summary>The panel measures to its content, so a dialog that opens on an empty text box collapses to
+    /// this. Raise it for one that should open at a usable size rather than grow into one as it is typed in —
+    /// but keep it inside MainWindow's 600px MinWidth: the body scroller is vertical only, so a panel wider
+    /// than the window is clipped with no way to reach the button row.</summary>
+    public static readonly DependencyProperty MinPanelWidthProperty =
+        DependencyProperty.Register(nameof(MinPanelWidth), typeof(double), typeof(OverlayDialogPanel),
+            new PropertyMetadata(320.0));
+
+    /// <summary>Unbounded by default, so a panel that already fits keeps growing as it did.</summary>
+    public static readonly DependencyProperty MaxPanelHeightProperty =
+        DependencyProperty.Register(nameof(MaxPanelHeight), typeof(double), typeof(OverlayDialogPanel),
+            new PropertyMetadata(double.PositiveInfinity));
+
     public static readonly DependencyProperty PrimaryButtonTextProperty =
         DependencyProperty.Register(nameof(PrimaryButtonText), typeof(string), typeof(OverlayDialogPanel),
             new PropertyMetadata(null));
@@ -38,12 +52,40 @@ public class OverlayDialogPanel : ContentControl
         DependencyProperty.Register(nameof(IsPrimaryButtonEnabled), typeof(bool), typeof(OverlayDialogPanel),
             new PropertyMetadata(true));
 
+    public static readonly DependencyProperty IsSecondaryButtonEnabledProperty =
+        DependencyProperty.Register(nameof(IsSecondaryButtonEnabled), typeof(bool), typeof(OverlayDialogPanel),
+            new PropertyMetadata(true));
+
+    public static readonly DependencyProperty PrimaryButtonIconProperty =
+        DependencyProperty.Register(nameof(PrimaryButtonIcon), typeof(IconElement), typeof(OverlayDialogPanel),
+            new PropertyMetadata(null));
+
+    public static readonly DependencyProperty SecondaryButtonIconProperty =
+        DependencyProperty.Register(nameof(SecondaryButtonIcon), typeof(IconElement), typeof(OverlayDialogPanel),
+            new PropertyMetadata(null));
+
+    public static readonly DependencyProperty CloseButtonIconProperty =
+        DependencyProperty.Register(nameof(CloseButtonIcon), typeof(IconElement), typeof(OverlayDialogPanel),
+            new PropertyMetadata(null));
+
     public event Action<object>? ResultChosen;
 
     public double MaxPanelWidth
     {
         get => (double)GetValue(MaxPanelWidthProperty);
         set => SetValue(MaxPanelWidthProperty, value);
+    }
+
+    public double MinPanelWidth
+    {
+        get => (double)GetValue(MinPanelWidthProperty);
+        set => SetValue(MinPanelWidthProperty, value);
+    }
+
+    public double MaxPanelHeight
+    {
+        get => (double)GetValue(MaxPanelHeightProperty);
+        set => SetValue(MaxPanelHeightProperty, value);
     }
 
     public string? PrimaryButtonText
@@ -68,6 +110,30 @@ public class OverlayDialogPanel : ContentControl
     {
         get => (bool)GetValue(IsPrimaryButtonEnabledProperty);
         set => SetValue(IsPrimaryButtonEnabledProperty, value);
+    }
+
+    public bool IsSecondaryButtonEnabled
+    {
+        get => (bool)GetValue(IsSecondaryButtonEnabledProperty);
+        set => SetValue(IsSecondaryButtonEnabledProperty, value);
+    }
+
+    public IconElement? PrimaryButtonIcon
+    {
+        get => (IconElement?)GetValue(PrimaryButtonIconProperty);
+        set => SetValue(PrimaryButtonIconProperty, value);
+    }
+
+    public IconElement? SecondaryButtonIcon
+    {
+        get => (IconElement?)GetValue(SecondaryButtonIconProperty);
+        set => SetValue(SecondaryButtonIconProperty, value);
+    }
+
+    public IconElement? CloseButtonIcon
+    {
+        get => (IconElement?)GetValue(CloseButtonIconProperty);
+        set => SetValue(CloseButtonIconProperty, value);
     }
 
     static OverlayDialogPanel()

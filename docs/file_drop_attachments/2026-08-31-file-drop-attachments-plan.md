@@ -304,7 +304,7 @@ Eine Datei zur Individualpaketierung wurde soeben im Application Package Center 
 
 Name: neo42_Pia_Ver1.4.15.0_Rev0.zip
 Größe: 242.86 MB
-Uploader: holger.sundermann@neo42.de
+Uploader: max.mustermann@example.com
 </attached_file>
 ```
 
@@ -1258,12 +1258,12 @@ All measured against the real file. Two traps in those two lines:
 Against `artifacts/sample.eml`:
 
 ```
-Subject  "Maik Behring hat Folgendes gepostet: Es ist 23:17 Uhr und ich hänge gerade noch über Benchmarks. Der Grund: Für… 💡"
+Subject  "Ein Kontakt hat Folgendes gepostet: Es ist 23:17 Uhr und ich hänge gerade noch über Benchmarks. Der Grund: Für… 💡"
 From     "LinkedIn <updates-noreply@linkedin.com>"
-To       ["Marco Altmann <marco.altmann@googlemail.com>"]
+To       ["Max Mustermann <max.mustermann@example.com>"]
 Cc       []
 Date     2026-08-31T20:12:28.000+00:00, and Offset == TimeSpan.Zero
-Body     ~7,994 chars, starts "Maik Behringhat einen Beitrag geteilt:"
+Body     ~7,994 chars, starts "Ein Kontakthat einen Beitrag geteilt:"
 Attach   []
 Fallback false
 ```

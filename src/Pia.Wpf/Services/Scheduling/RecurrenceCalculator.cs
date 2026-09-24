@@ -4,6 +4,10 @@ namespace Pia.Services.Scheduling;
 
 public class RecurrenceCalculator : IRecurrenceCalculator
 {
+    /// <summary>The next-fire instant of a <see cref="RecurrenceType.Manual"/> job: far enough out that no
+    /// due query reaches it, and a symbol the guard, the converter and the tests can compare against.</summary>
+    public static readonly DateTime Never = new(9999, 1, 1);
+
     public DateTime ComputeNextFireAt(
         RecurrenceType recurrence,
         TimeOnly timeOfDay,
@@ -24,6 +28,8 @@ public class RecurrenceCalculator : IRecurrenceCalculator
             RecurrenceType.Weekly => ComputeNextWeekly(now, timeOfDay, dayOfWeek ?? now.DayOfWeek),
             RecurrenceType.Monthly => ComputeNextMonthly(now, timeOfDay, dayOfMonth ?? now.Day),
             RecurrenceType.Yearly => ComputeNextYearly(now, timeOfDay, month ?? now.Month, dayOfMonth ?? now.Day),
+            // Explicit, never the arm below: that one clamps forward to tomorrow, which would arm the job.
+            RecurrenceType.Manual => Never,
             _ => todayAtTime > now ? todayAtTime : todayAtTime.AddDays(1)
         };
     }

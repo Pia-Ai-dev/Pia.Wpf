@@ -92,6 +92,33 @@ public class ToolPermissionService : IToolPermissionService
         => IsDeleteLike(toolName) && !BuiltInDestructiveTools.Contains(toolName!);
 
     /// <summary>
+    /// Built-in tools that answer from a result and never raise a pending action, so no grant tier is ever
+    /// consulted for them. Each name is taken from its handler's dispatch switch — the arms that return
+    /// <c>(result, null)</c> — so this stays a fact about the code rather than a guess from the name.
+    /// </summary>
+    private static readonly HashSet<string> ReadOnlyBuiltInTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "read_file", "list_files", "find_files", "search_files",
+        "recall", "browse_index", "read_topic", "read_source",
+        "search_chats", "read_chat",
+        "query_todos", "list_columns",
+        "query_reminders",
+        "query_scheduled_research", "list_routine_blueprints",
+        "query_assignments", "get_assignment",
+        "git_status", "git_log", "git_diff", "git_branch", "git_show",
+        "pia_help", "pia_settings",
+    };
+
+    /// <summary>
+    /// A built-in tool that reads and reports. Granting one authorizes nothing — the call never reaches
+    /// <see cref="ToolAutonomy.Resolve"/> — so a surface that collects grants leaves these out rather than
+    /// inviting a choice that does nothing. Deliberately NOT applied to an external/MCP route, whose effect
+    /// is server-defined and which the gate does hold.
+    /// </summary>
+    public static bool IsReadOnlyBuiltIn(string? toolName)
+        => toolName is not null && ReadOnlyBuiltInTools.Contains(toolName);
+
+    /// <summary>
     /// Tools that SET UP LATER UNATTENDED WORK — calling one commits some future run to act with nobody
     /// looking. For the scheduled-job trio the arguments are literally a grant list: their <c>grantedTools</c>
     /// CSV becomes <c>ScheduledJob.GrantedTools</c> and reaches <see cref="ToolAutonomy.Resolve"/> as a NAMED
@@ -102,13 +129,15 @@ public class ToolPermissionService : IToolPermissionService
     /// changes. <c>create_routine_from_blueprint</c> is here despite taking no grant argument: the blueprint
     /// owns the grants, but the job it creates still exercises them unattended, which is what the caution is
     /// about. <c>start_assignment</c> too: granted, it lets a later background run send a model-authored
-    /// prompt to the server with nobody there to confirm it.</remarks>
+    /// prompt to the server with nobody there to confirm it. <c>run_routine</c> authors no grant either, but
+    /// it fires a routine that already holds one.</remarks>
     private static readonly HashSet<string> AuthorityAuthoringTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "create_scheduled_research",
         "update_scheduled_research",
         "create_routine_from_blueprint",
-        "start_assignment"
+        "start_assignment",
+        "run_routine"
     };
 
     /// <summary>True for a tool that commits a later unattended run to act — see

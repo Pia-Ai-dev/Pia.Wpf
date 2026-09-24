@@ -23,6 +23,9 @@ public static class BuiltInPersonas
     private const int ToolScopeNone = 0;
     private const int ToolScopeFull = 2;
 
+    private const string ModelTypeFast = "fast";
+    private const string ModelTypeCode = "code";
+
     // Named constructions, not a banned-word list: the words models overuse turn over every model
     // generation, and the personas answer in the user's language, where an English word list is dead
     // weight. Each persona embeds this and trims it where it fights the job (see Marketing Writer).
@@ -69,7 +72,7 @@ public static class BuiltInPersonas
             [],
             "🟣",
             "#7C4DFF",
-            ToolScopeFull),
+            ToolScopeFull, ModelType: ModelTypeFast),
 
         new(
             "0000000A-0000-0000-0000-000000000002",
@@ -106,7 +109,7 @@ public static class BuiltInPersonas
             ["Software Engineering", "Backend", "Frontend", "Systems", "Security", "Performance"],
             "💻",
             "#00C853",
-            ToolScopeFull),
+            ToolScopeFull, ModelType: ModelTypeCode),
 
         new(
             "0000000A-0000-0000-0000-000000000004",
@@ -203,7 +206,7 @@ public static class BuiltInPersonas
             ["Explaining", "Teaching", "Plain Language"],
             "🧒",
             "#FF6D00",
-            ToolScopeNone)
+            ToolScopeNone, ModelType: ModelTypeFast)
     ];
 
     /// <summary>Stable key → id, so a deployment can name a built-in without pasting its Guid.</summary>

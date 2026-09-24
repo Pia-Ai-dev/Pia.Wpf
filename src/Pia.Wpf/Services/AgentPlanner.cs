@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
@@ -156,7 +157,8 @@ public sealed class AgentPlanner : IAgentPlanner
     public sealed record PlanStepArg(
         [property: Description("Short imperative title")] string Title,
         [property: Description("What this step should accomplish")] string Intent,
-        [property: Description("The file(s) this step will produce, named relative to the working folder — never a rooted path like \"/Project/README.md\". Every name listed must exist when the step finishes, so name several only when it writes all of them. Never offer alternatives (\"A or B\", \"e.g. A\"). Omit when the step produces nothing checkable.")] string? ExpectedArtifact = null,
+        [property: Description("The file(s) this step will produce, named relative to the working folder — never a rooted path like \"/Project/README.md\". Every name listed must exist when the step finishes, so name several only when it writes all of them. Never offer alternatives (\"A or B\", \"e.g. A\"). Omit when the step produces nothing checkable.")]
+        [property: JsonConverter(typeof(ArtifactListConverter))] string? ExpectedArtifact = null,
         // Matched by NAME against the roster the system message listed (07 D2). A name, not a Guid: models do
         // not reproduce GUIDs reliably and one mistyped nibble is an unresolvable id for a step the model DID
         // mean to assign. Not an index either: an off-by-one silently assigns the WRONG persona, whereas a
@@ -167,6 +169,73 @@ public sealed class AgentPlanner : IAgentPlanner
         // more still-pending steps is delegated to sibling child runs and awaited (07 D11), so this number is
         // load-bearing, not a record of intent. A group of ONE is not a fan-out and runs in-process.
         [property: Description("Optional: steps that can run at the same time, independently, share one number")] int? ParallelGroup = null);
+
+    /// <summary>
+    /// Reads <c>expectedArtifact</c> whether the model sent a string or an array of them. The schema says
+    /// string, but the instruction beside it asks a multi-file step to name every file, so an array is what a
+    /// compliant model sends — and one of those used to throw away the entire plan. Joined with ", ", which is
+    /// already a separator <c>AgentVerifier.FileCandidates</c> splits a declaration on.
+    /// </summary>
+    private sealed class ArtifactListConverter : JsonConverter<string?>
+    {
+        public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+                return reader.TokenType == JsonTokenType.Null ? null : reader.GetString();
+
+            var names = new List<string>();
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                if (reader.TokenType == JsonTokenType.String && reader.GetString() is { Length: > 0 } name)
+                    names.Add(name);
+                else
+                    reader.Skip();
+            }
+            return names.Count == 0 ? null : string.Join(", ", names);
+        }
+
+        public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
+    }
+
+    /// <summary>
+    /// Per-step re-read after the whole-object parse threw: keeps the steps that ARE readable instead of
+    /// losing the plan to one malformed sibling. Null when nothing survives, which lands on the same degrade
+    /// as before. Counts only — a step's text is the user's goal restated, so it never reaches a log line.
+    /// </summary>
+    private PlanStepArg[]? SalvageSteps(IDictionary<string, object?>? arguments)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(arguments ?? new Dictionary<string, object?>());
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("steps", out var steps) || steps.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var kept = new List<PlanStepArg>();
+            var dropped = 0;
+            foreach (var element in steps.EnumerateArray())
+            {
+                try
+                {
+                    if (element.Deserialize<PlanStepArg>(PlanJson) is { } step) kept.Add(step);
+                    else dropped++;
+                }
+                catch (JsonException) { dropped++; }
+            }
+
+            if (kept.Count == 0) return null;
+            _logger.LogInformation(
+                "Salvaged {Kept} readable step(s) from emit_plan, dropped {Dropped} unreadable one(s)",
+                kept.Count, dropped);
+            return [.. kept];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Salvaging the readable steps of emit_plan failed");
+            return null;
+        }
+    }
 
     /// <summary>The captured <c>emit_plan</c> arguments; unrecognized members are skipped rather than throwing.</summary>
     private sealed record EmitPlanArgs(PlanStepArg[]? Steps, bool CannotGround = false, string? Question = null);
@@ -199,7 +268,7 @@ public sealed class AgentPlanner : IAgentPlanner
         // Nothing would surface a child's question, so the shape it cannot call is better than the prompt line
         // asking it not to — which it is also given, below.
         var planTool = ctx.IsDelegated ? EmitRevisedPlanTool : EmitPlanTool;
-        var turn = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: false, analysis, roster, grounding, ctx.IsDelegated), provider, planTool, ct).ConfigureAwait(false);
+        var turn = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: false, analysis, roster, grounding, ctx.IsDelegated, ctx.ConversationDigest), provider, planTool, ct).ConfigureAwait(false);
         usage = AgentTurnUsage.Sum(usage, turn.Usage);
 
         // Checked before both `Steps is null` and ValidatePlan: a decline is not silence (the model did call
@@ -211,7 +280,7 @@ public sealed class AgentPlanner : IAgentPlanner
         {
             // The firm retry REUSES the one analysis: the retry exists because the model wrote prose
             // instead of calling emit_plan, which a second reasoning turn would not fix and would pay for.
-            var retried = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: true, analysis, roster, grounding, ctx.IsDelegated), provider, planTool, ct).ConfigureAwait(false); // R10 retry once
+            var retried = await TryCaptureAsync(BuildPlanMessages(answeredGoal, persona, firm: true, analysis, roster, grounding, ctx.IsDelegated, ctx.ConversationDigest), provider, planTool, ct).ConfigureAwait(false); // R10 retry once
             usage = AgentTurnUsage.Sum(usage, retried.Usage); // I1: the retry's rounds were paid for too
             // A decline on the retry still counts as declined, not as a plan to fabricate.
             if (retried.CannotGround)
@@ -600,7 +669,7 @@ public sealed class AgentPlanner : IAgentPlanner
         PlanStepArg[]? captured = null;
         var cannotGround = false;
         string? question = null;
-        ToolCallHandler toolHandler = (call, _) =>
+        ToolCallHandler toolHandler = (call, dispatch) =>
         {
             if (string.Equals(call.Name, "emit_plan", StringComparison.Ordinal))
             {
@@ -616,8 +685,13 @@ public sealed class AgentPlanner : IAgentPlanner
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to parse emit_plan arguments");
+                    // One unreadable member used to discard every step beside it, and the run degraded to a
+                    // single turn over a plan the model had actually produced.
+                    captured = SalvageSteps(call.Arguments);
                 }
-                // Short ack — the tool loop appends this as a FunctionResult and does one more round (R6).
+                // The plan is the whole point of this turn: the loop appends this ack as the call
+                // result and ends there, instead of paying a round whose reply nothing reads.
+                dispatch.Stop?.RequestStop();
                 return Task.FromResult<object?>("Plan received.");
             }
             return Task.FromResult<object?>("Only emit_plan is available here.");
@@ -779,7 +853,7 @@ public sealed class AgentPlanner : IAgentPlanner
 
     private static List<ChatMessage> BuildPlanMessages(
         string goal, Persona persona, bool firm, string? analysis, IReadOnlyList<Persona> roster,
-        string? grounding = null, bool delegated = false)
+        string? grounding = null, bool delegated = false, string? conversation = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine(persona.SystemPrompt);
@@ -813,6 +887,13 @@ public sealed class AgentPlanner : IAgentPlanner
         var user = analysis is null
             ? goal
             : $"{goal}\n\n--- Your analysis of this goal (use it; do not restate it) ---\n{analysis}\n--- end of analysis ---";
+
+        // The conversation digest rides the USER message for the same reason, and it is the strongest case of
+        // the three: it IS the user's own transcript, so in the System prompt it would ship past
+        // TokenizeMessages verbatim with tokenization ON. Before the grounding listing, so the goal and the
+        // conversation that produced it read together.
+        if (conversation is not null)
+            user = $"{user}\n\n{conversation}";
 
         // T2-17a: the grounding digest goes on the USER message for the SAME reason, and it is the stronger
         // case of the two — these are FILE NAMES out of the user's own assistant folder, so in the System
@@ -853,9 +934,15 @@ public sealed class AgentPlanner : IAgentPlanner
             // and intents come off the PERSISTED step row, which since D3 can hold raw user keystrokes typed
             // into the run panel, and TokenizeMessages rewrites ChatRole.User text ONLY — so in the System
             // prompt they shipped past the tokenizer with tokenization ON.
-            new(ChatRole.User, ctx.AppendNudge(ctx.Goal + BuildCompletedSteps(ctx))),
+            // The conversation digest sits between the goal and the completed-step listing for the same
+            // tokenizer reason the listing itself is here rather than in the System prompt.
+            new(ChatRole.User, ctx.AppendNudge(ctx.Goal + BuildConversation(ctx) + BuildCompletedSteps(ctx))),
         };
     }
+
+    /// <summary>The digest as a block to concatenate, or <c>""</c> when the chat recorded no context mode.</summary>
+    private static string BuildConversation(RunContext ctx) =>
+        ctx.ConversationDigest is { } digest ? $"\n\n{digest}" : string.Empty;
 
     /// <summary>
     /// The "Completed so far" listing as a USER-message block — see the F11 note at the call site for why it

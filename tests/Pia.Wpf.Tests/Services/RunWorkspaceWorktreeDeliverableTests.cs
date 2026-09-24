@@ -38,6 +38,9 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
         Directory.CreateDirectory(_source);
         Directory.CreateDirectory(_runsBase);
         File.WriteAllText(Path.Combine(_source, "a.md"), "x");
+        // The gate declines before it runs git when the source root carries no `.git`, so without this the
+        // armed responder below is never asked and every row here silently measures copy mode instead.
+        Directory.CreateDirectory(Path.Combine(_source, ".git"));
 
         _runner.Responder = req =>
         {

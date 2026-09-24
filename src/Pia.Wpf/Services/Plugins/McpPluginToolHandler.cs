@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,10 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     private readonly ILogger _logger;
     private readonly string _command;
     private readonly string[] _args;
+    private readonly IReadOnlyDictionary<string, string>? _env;
+    private readonly string? _workingDirectory;
+    private readonly string? _toolPrefix;
+    private readonly IReadOnlyList<string>? _allowedTools;
 
     private McpClient? _client;
     private StdioClientTransport? _transport;
@@ -24,13 +29,25 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     public Guid PluginId { get; }
     public string PluginName { get; private set; }
 
+    /// <summary>Every tool the server reported, before the allowlist — the edit surface has to offer the
+    /// ones currently withheld.</summary>
+    public IReadOnlyList<McpProbeTool> DiscoveredTools { get; private set; } = [];
+
+    /// <summary>Why the last start failed. A failed start still leaves a registered handler, so without this
+    /// a dead server is indistinguishable from one that reported no tools.</summary>
+    public string? LastError { get; private set; }
+
     public McpPluginToolHandler(
         Guid pluginId,
         string pluginName,
         string command,
         string[] args,
         string? systemPromptAddition,
-        ILogger logger)
+        ILogger logger,
+        IReadOnlyDictionary<string, string>? env = null,
+        string? workingDirectory = null,
+        string? toolPrefix = null,
+        IReadOnlyList<string>? allowedTools = null)
     {
         PluginId = pluginId;
         PluginName = pluginName;
@@ -38,6 +55,10 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _args = args;
         _systemPromptAddition = systemPromptAddition;
         _logger = logger;
+        _env = env;
+        _workingDirectory = workingDirectory;
+        _toolPrefix = string.IsNullOrWhiteSpace(toolPrefix) ? null : toolPrefix;
+        _allowedTools = allowedTools;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -45,23 +66,25 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _logger.LogInformation("MCP plugin {Name}: starting", PluginName);
         _logger.SensitiveDebug("MCP plugin {Name} command: '{Command} {Args}'",
             PluginName, _command, string.Join(" ", _args));
+        if (_env is { Count: > 0 })
+            _logger.LogInformation("MCP plugin {Name}: {Count} environment variable(s) set: {Names}",
+                PluginName, _env.Count, string.Join(", ", _env.Keys));
         try
         {
-            _transport = new StdioClientTransport(new StdioClientTransportOptions
-            {
-                Name = PluginName,
-                Command = _command,
-                Arguments = _args
-            });
+            _transport = new StdioClientTransport(BuildTransportOptions(PluginName, _command, _args, _env, _workingDirectory));
 
             _client = await McpClient.CreateAsync(_transport, cancellationToken: ct);
-            _tools = await _client.ListToolsAsync(cancellationToken: ct);
+            var discovered = await _client.ListToolsAsync(cancellationToken: ct);
+            DiscoveredTools = [.. discovered.Select(t => new McpProbeTool(
+                t.Name, t.Description, IsServerDeclaredDestructive(t.ProtocolTool.Annotations)))];
+            _tools = Project(discovered, _allowedTools, _toolPrefix);
+            LastError = null;
 
-            _logger.LogInformation("MCP plugin {Name} initialized with {ToolCount} tools: {Tools}",
-                PluginName, _tools.Count,
+            _logger.LogInformation("MCP plugin {Name} initialized with {ToolCount} of {Discovered} tools: {Tools}",
+                PluginName, _tools.Count, discovered.Count,
                 string.Join(", ", _tools.Select(t => t.Name)));
 
-            if (_tools.Count == 0)
+            if (discovered.Count == 0)
                 _logger.LogWarning("MCP plugin {Name} initialized but reported 0 tools — process may have failed silently", PluginName);
         }
         catch (Exception ex)
@@ -70,8 +93,52 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             _logger.SensitiveDebug("Failed plugin {Name} command was: '{Command} {Args}'",
                 PluginName, _command, string.Join(" ", _args));
             _tools = [];
+            LastError = ex.Message;
         }
     }
+
+    internal static StdioClientTransportOptions BuildTransportOptions(
+        string name,
+        string command,
+        IEnumerable<string> args,
+        IReadOnlyDictionary<string, string>? env,
+        string? workingDirectory)
+    {
+        var options = new StdioClientTransportOptions
+        {
+            Name = name,
+            Command = command,
+            Arguments = [.. args]
+        };
+
+        if (env is { Count: > 0 })
+            options.EnvironmentVariables = env.ToDictionary(e => e.Key, e => (string?)e.Value);
+
+        if (!string.IsNullOrWhiteSpace(workingDirectory) && Directory.Exists(workingDirectory))
+            options.WorkingDirectory = workingDirectory;
+
+        return options;
+    }
+
+    /// <summary>A null allowlist is "every tool"; an empty one is "none", which is a server the user has
+    /// deliberately muted rather than a missing setting.</summary>
+    internal static bool IsExposed(string toolName, IReadOnlyList<string>? allowedTools) =>
+        allowedTools is null || allowedTools.Contains(toolName, StringComparer.Ordinal);
+
+    /// <summary>The prefix is what keeps a local server's <c>read_file</c> off the built-in of the same name.
+    /// <c>WithName</c> leaves the wire call on the server's own name.</summary>
+    internal static string ExposedName(string toolName, string? toolPrefix) =>
+        string.IsNullOrEmpty(toolPrefix) ? toolName : $"{toolPrefix}__{toolName}";
+
+    /// <summary>The single filter: <see cref="GetTools"/> feeds both tool routing and the grant catalogue, so a
+    /// withheld tool is unreachable and uncatalogued without a second list to keep in step.</summary>
+    internal static IList<McpClientTool> Project(
+        IEnumerable<McpClientTool> discovered,
+        IReadOnlyList<string>? allowedTools,
+        string? toolPrefix) =>
+        [.. discovered
+            .Where(tool => IsExposed(tool.Name, allowedTools))
+            .Select(tool => toolPrefix is null ? tool : tool.WithName(ExposedName(tool.Name, toolPrefix)))];
 
     public IList<AITool> GetTools()
     {
@@ -193,6 +260,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _transport = null;
 
         _tools = [];
+        DiscoveredTools = [];
     }
 
     public void ApplyServerMetadata(SyncPlugin plugin)

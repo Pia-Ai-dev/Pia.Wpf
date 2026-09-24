@@ -1,5 +1,9 @@
+using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Screen;
+using Pia.ViewModels;
 using Pia.ViewModels.Models;
 using Pia.Views.Controls;
 using Pia.Views.Dialogs;
@@ -18,19 +22,25 @@ public class DialogService : IDialogService
     private readonly IOutputService _outputService;
     private readonly IAudioRecordingService _audioRecordingService;
     private readonly ILocalizationService _localizationService;
+    private readonly IScreenCaptureService _screenCapture;
+    private readonly ILoggerFactory _loggerFactory;
 
     public DialogService(
         IContentDialogService contentDialogService,
         IDialogOverlayService overlayService,
         IOutputService outputService,
         IAudioRecordingService audioRecordingService,
-        ILocalizationService localizationService)
+        ILocalizationService localizationService,
+        IScreenCaptureService screenCapture,
+        ILoggerFactory loggerFactory)
     {
         _contentDialogService = contentDialogService;
         _overlayService = overlayService;
         _outputService = outputService;
         _audioRecordingService = audioRecordingService;
         _localizationService = localizationService;
+        _screenCapture = screenCapture;
+        _loggerFactory = loggerFactory;
     }
 
     public async Task<bool> ShowProviderEditDialogAsync(ProviderEditModel provider, IProviderService providerService)
@@ -38,15 +48,6 @@ public class DialogService : IDialogService
         var dialogHost = _contentDialogService.GetDialogHostEx()
             ?? throw new InvalidOperationException("No dialog host available");
         var dialog = new ProviderEditContentDialog(dialogHost, provider, providerService);
-        var result = await dialog.ShowAsync();
-        return result == ContentDialogResult.Primary;
-    }
-
-    public async Task<bool> ShowTemplateEditDialogAsync(TemplateEditModel template)
-    {
-        var dialogHost = _contentDialogService.GetDialogHostEx()
-            ?? throw new InvalidOperationException("No dialog host available");
-        var dialog = new TemplateEditContentDialog(dialogHost, template);
         var result = await dialog.ShowAsync();
         return result == ContentDialogResult.Primary;
     }
@@ -99,6 +100,37 @@ public class DialogService : IDialogService
         var dialog = new AssignmentConsentContentDialog(dialogHost, viewModel);
         var result = await dialog.ShowAsync();
         return result == ContentDialogResult.Primary;
+    }
+
+    public async Task<bool> ShowScreenCapturePickerDialogAsync(ViewModels.ScreenCapturePickerViewModel viewModel)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new ScreenCapturePickerContentDialog(dialogHost, viewModel);
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
+    }
+
+    public async Task<CaptureTarget?> ShowScreenCaptureWindowPickerAsync()
+    {
+        var picker = new ScreenCapturePickerViewModel(
+            _screenCapture, _localizationService,
+            _loggerFactory.CreateLogger<ScreenCapturePickerViewModel>())
+        {
+            NamesAWindow = true,
+        };
+
+        try
+        {
+            picker.InitializeAsync().SafeFireAndForget(_loggerFactory.CreateLogger<DialogService>());
+            return await ShowScreenCapturePickerDialogAsync(picker)
+                ? picker.SelectedTarget?.Target
+                : null;
+        }
+        finally
+        {
+            picker.Cancel();
+        }
     }
 
     public async Task<bool> ShowConfirmationDialogAsync(string title, string message)

@@ -177,9 +177,9 @@ public class PolicyLiveLockBindingTests : IDisposable
         // The button lives in the TTS voice ItemTemplate, so the item has to exist before layout.
         _viewModel.TtsVoices.Add(new TtsVoice
         {
-            Key = "en_US-lessac-medium",
-            DisplayName = "Lessac",
-            Language = "en_US",
+            Key = "en_GB-alba-medium",
+            DisplayName = "Alba",
+            Language = "en_GB",
             Quality = "medium",
             Gender = "F",
             SizeBytes = 1,

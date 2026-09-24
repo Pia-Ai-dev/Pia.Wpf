@@ -112,4 +112,16 @@ public class RecurrenceCalculatorTests
             null, null, dayOfMonth: 29, month: 2, now);
         Assert.Equal(new DateTime(2026, 2, 28, 0, 0, 0), result);
     }
+
+    /// <summary>Without its own arm Manual would fall into the default one, which clamps to tomorrow and
+    /// arms a routine that is supposed to fire only on request.</summary>
+    [Fact]
+    public void Manual_ReturnsTheNeverSentinel_NotTomorrow()
+    {
+        var now = new DateTime(2026, 5, 2, 10, 0, 0);
+        var result = _calc.ComputeNextFireAt(
+            RecurrenceType.Manual, new TimeOnly(8, 0),
+            null, null, null, null, now);
+        Assert.Equal(RecurrenceCalculator.Never, result);
+    }
 }

@@ -14,17 +14,20 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
 {
     private readonly IScheduledJobService _jobs;
     private readonly IProviderService _providers;
+    private readonly IScheduledJobRunner _runner;
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<ScheduledJobToolHandler> _logger;
 
     public ScheduledJobToolHandler(
         IScheduledJobService jobs,
         IProviderService providers,
+        IScheduledJobRunner runner,
         ILocalizationService localizationService,
         ILogger<ScheduledJobToolHandler> logger)
     {
         _jobs = jobs;
         _providers = providers;
+        _runner = runner;
         _localizationService = localizationService;
         _logger = logger;
     }
@@ -34,12 +37,13 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         return
         [
             AIFunctionFactory.Create(CreateScheduledSchema, "create_scheduled_research",
-                $"Create a new scheduled research job that fires on a recurring schedule, runs the query as a background assistant turn, saves the result as a new assistant chat, and shows a toast when complete. Current date/time is {DateTime.Now:yyyy-MM-dd HH:mm} ({DateTime.Now:dddd}). " +
+                "Create a new scheduled research job that fires on a recurring schedule, runs the query as a background assistant turn, saves the result as a new assistant chat, and shows a toast when complete. Resolve a relative date or time against the current date and time given in the conversation. " +
                 "PRECONDITION: before calling, you must have explicit user-given values for name (display name) and query. The query is a self-contained prompt that will be run once at fire time, so craft it well (bake in any desired answer length/format). If the user does not give a query - but a name - suggest a query. " +
                 "If the user's request is ambiguous, do NOT call this tool. Ask a single clarifying question that requests the missing fields, then call once the user has answered. " +
                 "Parse the user's natural language request into structured fields. " +
                 "Examples: 'every weekday at 8am check Tesla stock news' -> create 5 separate Weekly jobs (Mon-Fri) since 'weekday' is not a single recurrence type. " +
                 "'every Monday research crypto trends' -> recurrence=Weekly, dayOfWeek=Monday, timeOfDay=08:00. " +
+                "recurrence=Manual makes a routine that never fires on its own — a saved template the user starts with run_routine; timeOfDay is then ignored. Use it when the user asks for a routine to run only on request, or on no schedule. " +
                 "The background turn may use read-only tools freely. Write tools are DENIED unless the user explicitly grants them: pass their EXACT tool names in grantedTools (comma-separated). Grantable write tools include: remember/forget (memory), create_todo/update_todo/complete_todo/delete_todo (todos), write_file/delete_file (files). Only grant writes the user clearly asked for. Presumed-destructive tool NAMES from EXTERNAL (MCP) plugins are stripped from the grant list at creation. " +
                 "providerName is optional - if omitted, the provider mapped to Assistant mode at fire time is used. " +
                 "KIND: 'research' (default) runs the query once at fire time and saves a summary as a chat; 'agent' runs a multi-step agent task that plans and can use granted write tools to actually carry out work. If the user has NOT made clear which of the two they want, do NOT call this tool - ask a single clarifying question (e.g. 'Should this just research and summarize, or actually carry out the task?') and call once they answer."),
@@ -52,6 +56,11 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
 
             AIFunctionFactory.Create(DeleteScheduledSchema, "delete_scheduled_research",
                 "Delete a scheduled research job by ID. Permanent."),
+
+            AIFunctionFactory.Create(RunRoutineSchema, "run_routine",
+                "Start a routine NOW, outside its schedule. This is the ONLY correct way to act on 'run it' / 'start it' for a routine: it fires the routine itself, with the working folder, persona, reasoning effort, tool grants and agent shape the routine stores. Never carry out a routine's instructions yourself instead of calling this - a chat turn has none of those. " +
+                "The routine runs detached: it gets its own run and its answer arrives as a new chat, not in this conversation, so report that it started rather than promising the result here. It runs the routine's stored goal verbatim - there is no way to vary it for one run, so if the user wants something different, update the routine or do the work in this chat instead. " +
+                "Identify the routine by the name the user used; an id from query_scheduled_research also works."),
 
             AIFunctionFactory.Create(ListBlueprintsSchema, "list_routine_blueprints",
                 "List the ready-made routine blueprints. Call this FIRST when the user asks for a recurring routine of a familiar kind (a daily digest, a morning brief, a weekly review, a competitor watch, meeting follow-ups): a blueprint ships a tested prompt, a schedule and the narrowest write grants for that job, so create_routine_from_blueprint beats writing a query freehand with create_scheduled_research. Returns each blueprint's key, what it does, whether it works on a fresh profile or reads the user's own data, whether it needs a provider that can search the web, its schedule, its write grants and its fillable slots."),
@@ -79,6 +88,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             "create_routine_from_blueprint" => await PrepareCreateFromBlueprint(args),
             "update_scheduled_research" => ((object?)null, await PrepareUpdateJob(args)),
             "delete_scheduled_research" => ((object?)null, await PrepareDeleteJob(args)),
+            "run_routine" => ((object?)null, await PrepareRunRoutine(args)),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (ScheduledJobToolCall?)null)
         };
 
@@ -438,6 +448,95 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
             });
     }
 
+    private async Task<ScheduledJobToolCall> PrepareRunRoutine(IDictionary<string, object?> args)
+    {
+        var reference = GetStringArg(args, "routine");
+        var (job, error) = await ResolveRoutineAsync(reference);
+        if (job is null)
+        {
+            _logger.LogWarning("run_routine could not resolve a routine");
+            _logger.SensitiveDebug("run_routine reference: {Reference}", reference);
+            return new ScheduledJobToolCall("run_routine", "Routine not found", null, null,
+                () => Task.FromResult<object?>(error));
+        }
+
+        // A meeting routine joins the call the moment it is dispatched, so it never runs off a chat request.
+        if (job.Kind == ScheduledJobKind.MeetingAttendance)
+            return new ScheduledJobToolCall("run_routine", "Meeting routine", null, null,
+                () => Task.FromResult<object?>(
+                    $"Error: '{job.Name}' is a meeting routine, and running it now would join the meeting immediately. Tell the user to start it from the Routines view if that is what they want."));
+
+        var folder = string.IsNullOrEmpty(job.WorkingDirectory)
+            ? "\\"
+            : "\\" + job.WorkingDirectory.Replace('/', '\\');
+
+        return new ScheduledJobToolCall(
+            ToolName: "run_routine",
+            Description: _localizationService.Format("Tool_Routine_Desc_Run", job.Name),
+            Details: _localizationService.Format("Tool_Routine_Detail_Run",
+                _localizationService[$"Settings_ScheduledJobs_Kind_{job.Kind}"], folder),
+            TargetJobId: job.Id,
+            Execute: async () =>
+            {
+                var outcome = await _runner.RunNowAsync(job.Id);
+                _logger.LogInformation("run_routine dispatched job {Id}: {Outcome}", job.Id, outcome);
+                return outcome switch
+                {
+                    ScheduledJobRunNowResult.Dispatched =>
+                        _localizationService.Format("Tool_Routine_Exec_Started", job.Name),
+                    ScheduledJobRunNowResult.NotOwner =>
+                        _localizationService.Format("Tool_Routine_Exec_NotOwner", job.Name),
+                    ScheduledJobRunNowResult.AlreadyRunning =>
+                        _localizationService.Format("Tool_Routine_Exec_AlreadyRunning", job.Name),
+                    _ => _localizationService.Format("Tool_Routine_Exec_NotFound", job.Name),
+                };
+            });
+    }
+
+    /// <summary>
+    /// Name first, id second: the @Routine chip inserts the routine's NAME, so an id-only lookup would send
+    /// the model back through query_scheduled_research. An exact match wins; a single substring match is
+    /// accepted; anything ambiguous is refused with the ids rather than guessed at.
+    /// </summary>
+    private async Task<(ScheduledJob? Job, string? Error)> ResolveRoutineAsync(string? reference)
+    {
+        var trimmed = reference?.Trim().Trim('"').Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return (null, "Error: run_routine needs the name or the id of a routine.");
+
+        if (Guid.TryParse(trimmed, out var id))
+        {
+            var byId = await _jobs.GetAsync(id);
+            return byId is not null
+                ? (byId, null)
+                : (null, $"Error: no routine with id {id}. Use query_scheduled_research to list them.");
+        }
+
+        var active = await _jobs.GetActiveAsync();
+        var matches = active
+            .Where(j => string.Equals(j.Name, trimmed, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matches.Count == 0)
+            matches = active
+                .Where(j => j.Name.Contains(trimmed, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+        if (matches.Count == 1)
+            return (matches[0], null);
+
+        if (matches.Count == 0)
+        {
+            var names = active.Count == 0
+                ? "there are none"
+                : string.Join(", ", active.Select(j => $"'{j.Name}'"));
+            return (null, $"Error: no routine named '{trimmed}'. Available routines: {names}.");
+        }
+
+        var ids = string.Join(", ", matches.Select(j => $"'{j.Name}' ({j.Id})"));
+        return (null, $"Error: '{trimmed}' matches {matches.Count} routines. Call run_routine again with one of these ids: {ids}.");
+    }
+
     private async Task<Guid?> ResolveProviderIdAsync(string? providerName)
     {
         if (string.IsNullOrWhiteSpace(providerName))
@@ -462,7 +561,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
     private static string CreateScheduledSchema(
         [Description("Short label for the job (e.g. 'Tesla stock briefing')")] string name,
         [Description("The research query to execute when the job fires")] string query,
-        [Description("Recurrence type: Once, Daily, Weekly, Monthly, Yearly")] string recurrence,
+        [Description("Recurrence type: Once, Daily, Weekly, Monthly, Yearly, or Manual for a routine that never fires on its own and is only started on request")] string recurrence,
         [Description("Time of day in HH:mm format (e.g. '08:00', '21:30')")] string timeOfDay,
         [Description("Day of week for Weekly recurrence (e.g. 'Monday')")] string? dayOfWeek = null,
         [Description("Day of month for Monthly/Yearly recurrence (1-31)")] string? dayOfMonth = null,
@@ -481,7 +580,7 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
         [Description("The ID of the scheduled job to update")] string id,
         [Description("New label/name (optional)")] string? name = null,
         [Description("New query (optional)")] string? query = null,
-        [Description("New recurrence type (optional): Once, Daily, Weekly, Monthly, Yearly")] string? recurrence = null,
+        [Description("New recurrence type (optional): Once, Daily, Weekly, Monthly, Yearly, Manual")] string? recurrence = null,
         [Description("New time of day in HH:mm format (optional)")] string? timeOfDay = null,
         [Description("New day of week (optional)")] string? dayOfWeek = null,
         [Description("New day of month (optional)")] string? dayOfMonth = null,
@@ -492,6 +591,10 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
     [Description("Delete a scheduled research job")]
     private static string DeleteScheduledSchema(
         [Description("The ID of the scheduled job to delete")] string id) => "";
+
+    [Description("Start a routine now, outside its schedule")]
+    private static string RunRoutineSchema(
+        [Description("The routine's name as the user refers to it, or its id from query_scheduled_research")] string routine) => "";
 
     [Description("List the ready-made routine blueprints and their slots")]
     private static string ListBlueprintsSchema() => "";

@@ -115,8 +115,25 @@ public static class AgentRunStates
 }
 
 /// <summary>
-/// Lifecycle status of a single step. Persisted as <c>int</c> — append-only, never reorder.
+/// How much of the chat a run started from it carries into its plan turn. Persisted as the member NAME, and
+/// nullable there: <c>null</c> means never asked and raises the banner, <see cref="Off"/> means declined.
 /// </summary>
+public enum AgentContextMode
+{
+    Off,
+    Verbatim,
+    Summary,
+}
+
+public static class AgentContextModes
+{
+    /// <summary>Reads the persisted member name back. An unrecognized value is <c>null</c>, not <c>Off</c> —
+    /// a mode written by a newer build must re-ask rather than silently mean "declined".</summary>
+    public static AgentContextMode? Parse(string? stored) =>
+        Enum.TryParse<AgentContextMode>(stored, ignoreCase: true, out var mode) ? mode : null;
+}
+
+/// <summary>Lifecycle status of a single step. Persisted as <c>int</c> — append-only, never reorder.</summary>
 public enum AgentStepStatus
 {
     Pending = 0,

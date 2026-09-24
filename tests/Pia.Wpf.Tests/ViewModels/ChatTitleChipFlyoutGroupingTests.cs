@@ -38,6 +38,9 @@ public class ChatTitleChipFlyoutGroupingTests
         // a synchronously-completed Task makes the fire-and-forget reload run inline.
         _chatService.SearchAsync().ReturnsForAnyArgs(
             Task.FromResult<IReadOnlyList<SyncAssistantChat>>(chats));
+        // Mirrors the real query: the same store, filtered to the starred rows.
+        _chatService.GetFavoritesAsync().ReturnsForAnyArgs(
+            Task.FromResult<IReadOnlyList<SyncAssistantChat>>([.. chats.Where(c => c.IsFavorite)]));
 
         return new ChatTitleChipViewModel(
             _chatService,
@@ -54,12 +57,28 @@ public class ChatTitleChipFlyoutGroupingTests
             () => _activeWorkingDir);
     }
 
-    private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null)
+    private SyncAssistantChat Chat(string title, DateTime updatedAt, ChatState? state = null, bool isFavorite = false)
     {
         var id = Guid.NewGuid();
         if (state is { } s)
             _states[id] = s;
-        return new SyncAssistantChat { Id = id, Title = title, UpdatedAt = updatedAt };
+        return new SyncAssistantChat { Id = id, Title = title, UpdatedAt = updatedAt, IsFavorite = isFavorite };
+    }
+
+    [Fact]
+    public void Flyout_GroupsFavoritesFirst_AndOutOfTheDateBuckets()
+    {
+        var sut = CreateSut([
+            Chat("today", DateTime.UtcNow),
+            Chat("starred", DateTime.UtcNow, isFavorite: true),
+        ]);
+
+        sut.IsFlyoutOpen = true;
+
+        Assert.Equal("History_Group_Favorites", sut.Groups[0].DisplayName);
+        Assert.Equal("starred", Assert.Single(sut.Groups[0].Items).Title);
+        // Appearing in both groups would need two item VMs for the one chat.
+        Assert.DoesNotContain(sut.Groups.Skip(1).SelectMany(g => g.Items), i => i.Title == "starred");
     }
 
     /// <summary>Re-creating the rows drops an inline rename someone is typing into one of them, and the
@@ -131,7 +150,7 @@ public class ChatTitleChipFlyoutGroupingTests
     }
 
     [Fact]
-    public void Picking_Folder_UpdatesPill_AndOffersRepointToActiveChat()
+    public void Picking_Folder_UpdatesThePill()
     {
         var sut = CreateSut([]);
         sut.IsFlyoutOpen = true;   // seeds the pending folder from the active chat (root here)
@@ -139,11 +158,96 @@ public class ChatTitleChipFlyoutGroupingTests
 
         sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
 
-        // The chip offers the re-point to its owner (which applies it only to an un-started
-        // chat) and reflects the pick on the pill.
-        Assert.Equal("projects", _capturedSetActiveDir);
         Assert.Equal("\\projects", sut.WorkingDirectoryDisplay);
         Assert.False(sut.IsWorkingDirectoryRoot);
+    }
+
+    [Fact]
+    public void ChipPicker_AimsTheNextNewChat_AndNeverRepointsTheOpenOne()
+    {
+        // The chip picker is the next-new-chat folder. The empty state owns the open chat, and is
+        // gone by its first message - so a pick here must not reach the active session at all.
+        _activeWorkingDir = "src/app";
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+        sut.IsPickerOpen = true;
+
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
+
+        Assert.Equal("<unset>", _capturedSetActiveDir);
+
+        // The pill is that next chat's folder, and NewChat opens there.
+        Assert.Equal("\\src\\app\\projects", sut.WorkingDirectoryDisplay);
+
+        // The empty state has its own pill and must stay on the folder the chat is really in:
+        // one shared property had it announce a folder @Files was not using.
+        Assert.Equal("\\src\\app", sut.ActiveWorkingDirectoryDisplay);
+
+        sut.NewChatCommand.Execute(null);
+        Assert.Equal("src/app/projects", _capturedNewChatDir);
+    }
+
+    [Fact]
+    public void InlinePicker_RepointsTheOpenChat()
+    {
+        // The other half of the same drill-down: the empty state edits the chat you are in.
+        _activeWorkingDir = "src/app";
+        var sut = CreateSut([]);
+        sut.IsInlinePickerOpen = true;
+
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
+
+        Assert.Equal("src/app/projects", _capturedSetActiveDir);
+        Assert.Equal("\\src\\app\\projects", sut.WorkingDirectoryDisplay);
+        Assert.Equal("\\src\\app\\projects", sut.ActiveWorkingDirectoryDisplay);
+    }
+
+    [Fact]
+    public void InlinePicker_CreatingAFolder_RepointsTheOpenChat()
+    {
+        // The reported shape: a folder made from the empty state's picker for the chat you are in. It was
+        // only highlighted, so the run that followed wrote into the folder the chat started in.
+        _activeWorkingDir = "src/app";
+        _workingDir.EnsureSubfolder("src/app/Shopping").Returns("src/app/Shopping");
+        var sut = CreateSut([]);
+        sut.IsInlinePickerOpen = true;
+
+        sut.WorkingDirectoryPicker.BeginCreateFolderCommand.Execute(null);
+        sut.WorkingDirectoryPicker.NewFolderName = "Shopping";
+        sut.WorkingDirectoryPicker.ConfirmCreateFolderCommand.Execute(null);
+
+        Assert.Equal("src/app/Shopping", _capturedSetActiveDir);
+        Assert.Equal("\\src\\app\\Shopping", sut.ActiveWorkingDirectoryDisplay);
+    }
+
+    [Fact]
+    public void InlinePickerOpen_SeedsFromActiveChat_NotTheLastNewChatPick()
+    {
+        // A "+ New Chat" pick in the flyout leaves the pending folder elsewhere; the empty state's
+        // in-place edit must still open on the folder the active chat is actually in.
+        _activeWorkingDir = "src/app";
+        var sut = CreateSut([]);
+        sut.IsFlyoutOpen = true;
+        sut.IsPickerOpen = true;
+        sut.WorkingDirectoryPicker.EnterCommand.Execute("projects");
+        sut.IsFlyoutOpen = false;
+
+        sut.IsInlinePickerOpen = true;
+
+        Assert.Equal("src/app", sut.WorkingDirectoryPicker.CurrentRelativePath);
+        Assert.Equal("\\src\\app", sut.WorkingDirectoryDisplay);
+    }
+
+    [Fact]
+    public void FlyoutClose_LeavesTheInlinePickerOpen()
+    {
+        var sut = CreateSut([]);
+        sut.IsInlinePickerOpen = true;
+
+        sut.IsFlyoutOpen = true;
+        sut.IsFlyoutOpen = false;
+
+        Assert.True(sut.IsInlinePickerOpen);
     }
 
     [Fact]

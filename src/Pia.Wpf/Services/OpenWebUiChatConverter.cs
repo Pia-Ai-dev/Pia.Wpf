@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -177,26 +178,56 @@ public static partial class OpenWebUiChatConverter
         if (element.TryGetProperty("files", out var files) && files.ValueKind == JsonValueKind.Array)
             tally.DroppedAttachments += files.GetArrayLength();
 
-        var content = ReadString(element, "content") ?? string.Empty;
-        if (BuildSourceFootnote(element) is { } footnote)
-            content = content.Length == 0 ? footnote.TrimStart() : content + footnote;
-
-        if (content.Length == 0)
-            return null;
-
         var role = string.Equals(ReadString(element, "role"), "user", StringComparison.OrdinalIgnoreCase)
             ? "user"
             : "assistant";
+
+        // A user quoting an answer back into a prompt owns that text; only an assistant turn can carry
+        // reasoning, and the user bubble has nowhere to show it.
+        var (content, thinking) = role == "user"
+            ? (ReadString(element, "content") ?? string.Empty, null)
+            : SplitReasoning(ReadString(element, "content") ?? string.Empty);
+
+        if (BuildSourceFootnote(element) is { } footnote)
+            content = content.Length == 0 ? footnote.TrimStart() : content + footnote;
+
+        if (content.Length == 0 && thinking is null)
+            return null;
 
         return new SyncAssistantChatMessage
         {
             Id = ReadIdentifier(element, "id") ?? Guid.NewGuid(),
             Role = role,
             Content = content,
+            ThinkingContent = thinking,
             Timestamp = ReadEpoch(element, "timestamp") ?? fallbackTimestamp,
             Tokens = ReadTokens(element),
             ModelName = ReadString(element, "model") ?? ReadString(element, "modelName"),
         };
+    }
+
+    /// <summary>
+    /// Open WebUI inlines the model's reasoning into the body as an entity-escaped, blockquoted
+    /// <c>&lt;details type="reasoning"&gt;</c> block, which Pia's markdown renderer would show as markup.
+    /// </summary>
+    private static (string Content, string? Thinking) SplitReasoning(string content)
+    {
+        if (!content.Contains("<details", StringComparison.OrdinalIgnoreCase))
+            return (content, null);
+
+        var traces = new List<string>();
+        var stripped = ReasoningDetails().Replace(content, match =>
+        {
+            var body = DetailsSummary().Replace(match.Groups[1].Value, string.Empty);
+            body = BlockQuoteMarker().Replace(WebUtility.HtmlDecode(body), string.Empty).Trim();
+            if (body.Length > 0)
+                traces.Add(body);
+            return string.Empty;
+        });
+
+        return traces.Count == 0
+            ? (content, null)
+            : (BlankLineRun().Replace(stripped, "\n\n").Trim(), string.Join("\n\n", traces));
     }
 
     /// <summary>
@@ -336,4 +367,17 @@ public static partial class OpenWebUiChatConverter
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRun();
+
+    // The body is entity-escaped, so a `</details>` the model wrote about cannot end the match early.
+    [GeneratedRegex("""<details\b[^>]*\btype="reasoning"[^>]*>([\s\S]*?)</details>""", RegexOptions.IgnoreCase)]
+    private static partial Regex ReasoningDetails();
+
+    [GeneratedRegex(@"<summary>[\s\S]*?</summary>", RegexOptions.IgnoreCase)]
+    private static partial Regex DetailsSummary();
+
+    [GeneratedRegex(@"^>[ \t]?", RegexOptions.Multiline)]
+    private static partial Regex BlockQuoteMarker();
+
+    [GeneratedRegex(@"(\r?\n){3,}")]
+    private static partial Regex BlankLineRun();
 }

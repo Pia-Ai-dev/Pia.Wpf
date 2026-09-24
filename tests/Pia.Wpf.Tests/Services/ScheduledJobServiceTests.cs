@@ -780,6 +780,169 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.True(rescheduled.NextFireAt > DateTime.Now);
     }
 
+    [Fact]
+    public async Task CreateAsync_RoundTripsTheWorkingDirectory()
+    {
+        var job = await _service.CreateAsync("TEST_Wd", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports/Weekly");
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("Reports/Weekly", fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task CreateAsync_NormalizesBackslashesAndEdgeSlashes()
+    {
+        var job = await _service.CreateAsync("TEST_WdNorm", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: @"\Reports\Weekly\");
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("Reports/Weekly", fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithNoWorkingDirectory_StoresNull()
+    {
+        var job = await _service.CreateAsync("TEST_WdNone", "q", RecurrenceType.Daily, new TimeOnly(8, 0));
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Null(fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NullLeavesTheWorkingDirectoryAlone()
+    {
+        var job = await _service.CreateAsync("TEST_WdKeep", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports");
+
+        await _service.UpdateAsync(job.Id, name: "TEST_WdKeep2");
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("Reports", fetched!.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_EmptyStringClearsToTheSandboxRoot()
+    {
+        var job = await _service.CreateAsync("TEST_WdClear", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports");
+
+        await _service.UpdateAsync(job.Id, workingDirectory: string.Empty);
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Null(fetched!.WorkingDirectory);
+    }
+
+    /// <summary>The folder is this machine's; a pull must not be able to null it, like the persona pin.</summary>
+    [Fact]
+    public async Task UpsertFromSyncAsync_LeavesTheWorkingDirectoryAlone()
+    {
+        var job = await _service.CreateAsync("TEST_WdSync", "q", RecurrenceType.Daily, new TimeOnly(8, 0),
+            workingDirectory: "Reports");
+
+        var fromPeer = await _service.GetAsync(job.Id);
+        fromPeer!.WorkingDirectory = null;
+        fromPeer.Name = "TEST_WdSyncRenamedByPeer";
+        await _service.UpsertFromSyncAsync(fromPeer);
+
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal("TEST_WdSyncRenamedByPeer", fetched!.Name);
+        Assert.Equal("Reports", fetched.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ManualJob_ParksAtTheNeverSentinel()
+    {
+        var job = await _service.CreateAsync("TEST_Manual", "q", RecurrenceType.Manual, new TimeOnly(8, 0));
+
+        Assert.Equal(RecurrenceCalculator.Never, job.NextFireAt);
+        var fetched = await _service.GetAsync(job.Id);
+        Assert.Equal(RecurrenceCalculator.Never, fetched!.NextFireAt);
+    }
+
+    [Fact]
+    public async Task GetDueJobsAsync_NeverReturnsAManualJob()
+    {
+        var manual = await _service.CreateAsync("TEST_ManualDue", "q", RecurrenceType.Manual, new TimeOnly(0, 0));
+        // Past the sentinel AND past every other job's fire time: the guard must hold without it.
+        await ForceNextFireAtAsync(manual.Id, DateTime.Now.AddDays(-1));
+
+        var due = await _service.GetDueJobsAsync();
+
+        Assert.DoesNotContain(due, j => j.Id == manual.Id);
+    }
+
+    [Fact]
+    public async Task MarkRunCompleteAsync_ManualJob_StaysActiveAtTheSentinel()
+    {
+        var job = await _service.CreateAsync("TEST_ManualRun", "q", RecurrenceType.Manual, new TimeOnly(8, 0));
+
+        await _service.MarkRunCompleteAsync(job.Id, Guid.NewGuid());
+
+        var settled = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, settled!.Status);
+        Assert.Equal(RecurrenceCalculator.Never, settled.NextFireAt);
+    }
+
+    [Fact]
+    public async Task MarkOccurrenceDispatchedAsync_ManualJob_IsNotSpent()
+    {
+        var job = await _service.CreateAsync("TEST_ManualDispatch", "q", RecurrenceType.Manual, new TimeOnly(8, 0));
+
+        await _service.MarkOccurrenceDispatchedAsync(job.Id);
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, after!.Status);
+        Assert.Equal(RecurrenceCalculator.Never, after.NextFireAt);
+    }
+
+    [Fact]
+    public async Task MarkRunFailedAsync_ManualJob_CountsStrikesButNeverRetires()
+    {
+        var job = await _service.CreateAsync("TEST_ManualFails", "q", RecurrenceType.Manual, new TimeOnly(8, 0));
+
+        for (var i = 0; i < 6; i++)
+            await _service.MarkRunFailedAsync(job.Id, "boom");
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Equal(ScheduledJobStatus.Active, after!.Status);
+        Assert.Equal(6, after.ConsecutiveFailures);
+        Assert.Equal(RecurrenceCalculator.Never, after.NextFireAt);
+    }
+
+    /// <summary>A manual routine arriving from a peer is armed by THIS device's computation, which is the only
+    /// place the import path sets NextFireAt. An existing row keeps its own — execution state is device-local,
+    /// which is why <c>GetDueJobsAsync</c> tests the recurrence as well as the instant.</summary>
+    [Fact]
+    public async Task UpsertFromSyncAsync_ImportedManualJob_ArrivesAtTheSentinel()
+    {
+        var imported = new ScheduledJob
+        {
+            Name = "TEST_ManualImported",
+            Query = "q",
+            Recurrence = RecurrenceType.Manual,
+            TimeOfDay = new TimeOnly(8, 0),
+            NextFireAt = DateTime.Now.AddMinutes(-5),
+        };
+
+        await _service.UpsertFromSyncAsync(imported);
+
+        var pulled = await _service.GetAsync(imported.Id);
+        Assert.Equal(RecurrenceCalculator.Never, pulled!.NextFireAt);
+    }
+
+    [Fact]
+    public async Task BackfillRecurrenceDays_SkipsAManualJob()
+    {
+        var job = await _service.CreateAsync("TEST_ManualBackfill", "q", RecurrenceType.Manual, new TimeOnly(9, 0));
+
+        Assert.Equal(0, await _service.BackfillRecurrenceDaysAsync());
+
+        var after = await _service.GetAsync(job.Id);
+        Assert.Null(after!.DayOfWeek);
+        Assert.Equal(RecurrenceCalculator.Never, after.NextFireAt);
+    }
+
     private async Task ForceOwnerAsync(Guid id, Guid owner)
     {
         var conn = _ctx.GetConnection();

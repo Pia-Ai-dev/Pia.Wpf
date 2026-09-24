@@ -28,6 +28,18 @@ public sealed partial class AssistantChatRowViewModel : ObservableObject
 
     public DateTime UpdatedAt => Chat.UpdatedAt;
 
+    public bool IsFavorite => Chat.IsFavorite;
+
+    /// <summary>Takes the store's own <see cref="UpdatedAt"/> bump with it: the row regroups and sorts on
+    /// that timestamp, so leaving it stale puts the row in the wrong bucket until the next load.</summary>
+    public void SetFavorite(bool isFavorite, DateTime updatedAt)
+    {
+        Chat.IsFavorite = isFavorite;
+        Chat.UpdatedAt = updatedAt;
+        OnPropertyChanged(nameof(IsFavorite));
+        OnPropertyChanged(nameof(UpdatedAt));
+    }
+
     [ObservableProperty]
     private ChatState _state;
 

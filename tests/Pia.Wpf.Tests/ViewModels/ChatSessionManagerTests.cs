@@ -32,6 +32,7 @@ public class ChatSessionManagerTests
     private readonly IFilesToolHandler _files = Substitute.For<IFilesToolHandler>();
     private readonly IAgentRunService _runService = Substitute.For<IAgentRunService>();
     private readonly IProviderCapabilityService _capability = Substitute.For<IProviderCapabilityService>();
+    private readonly IGoalTriageService _goalTriage = Substitute.For<IGoalTriageService>();
     private readonly IHeadlessRunLauncher _headlessLauncher = Substitute.For<IHeadlessRunLauncher>();
     private readonly IWindowManagerService _windowManager = Substitute.For<IWindowManagerService>();
     private readonly IAgentRunResumeService _resumeService = Substitute.For<IAgentRunResumeService>();
@@ -46,6 +47,8 @@ public class ChatSessionManagerTests
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
         _capability.GetPlanningCapabilityAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
             .Returns(PlanningCapability.Capable);
+        _goalTriage.ClassifyAsync(Arg.Any<string>(), Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
+            .Returns(GoalTriageVerdict.NeedsPlan);
     }
 
     /// <summary>
@@ -75,7 +78,7 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability, _goalTriage,
             _headlessLauncher, _windowManager, _executingRuns);
     }
 
@@ -99,7 +102,7 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability, _goalTriage,
             _headlessLauncher, _windowManager, _executingRuns,
             agentTimelineService: null, workspaces: workspaces);
     }
@@ -187,6 +190,105 @@ public class ChatSessionManagerTests
         Assert.Null(session);
     }
 
+    /// <summary>Everything a Planned send needs to get as far as creating its run row.</summary>
+    private void ArrangePlannedSend()
+    {
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>())
+            .Returns(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI });
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+        _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ci => Task.FromResult(new AgentRun
+            {
+                Id = Guid.NewGuid(),
+                ChatId = ci.Arg<AgentRunCreateRequest>().ChatId,
+                RunShape = RunShape.Planned,
+                State = AgentRunState.Planning,
+                Goal = ci.Arg<AgentRunCreateRequest>().Goal,
+            }));
+    }
+
+    private void TriageSays(GoalTriageVerdict verdict) =>
+        _goalTriage.ClassifyAsync(Arg.Any<string>(), Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
+            .Returns(verdict);
+
+    /// <summary>Triage runs in front of the run row, not inside the orchestrator, so a downgraded goal leaves
+    /// no phantom behind in run history.</summary>
+    [Fact]
+    public async Task AGoalTriagedToADirectAnswer_CreatesNoRun()
+    {
+        ArrangePlannedSend();
+        TriageSays(GoalTriageVerdict.AnswerDirectly);
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        await sut.StartTurnAsync(session, "what is this about?", null, planned: true);
+
+        await _runService.DidNotReceiveWithAnyArgs().CreateAsync(default!, Arg.Any<CancellationToken>());
+        Assert.Null(session.ActiveRunId);
+        // The lever still reads Agent, so an offer to switch to Agent would be nonsense.
+        _composer.Received().PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
+            Arg.Any<bool>(), suggestAgentModeEligible: false, Arg.Any<string?>(), unattended: Arg.Any<bool>());
+    }
+
+    /// <summary>The downgrade is silent, so the only sign the user gets is on the answer itself.</summary>
+    [Fact]
+    public async Task AGoalTriagedToADirectAnswer_MarksTheAnswer()
+    {
+        ArrangePlannedSend();
+        TriageSays(GoalTriageVerdict.AnswerDirectly);
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        await sut.StartTurnAsync(session, "what is this about?", null, planned: true);
+
+        var answer = session.Messages.Last(m => !m.IsUser);
+        Assert.True(answer.AnsweredDirectly);
+    }
+
+    [Fact]
+    public async Task AGoalTriagedAsNeedingAPlan_StillRuns()
+    {
+        ArrangePlannedSend();
+        TriageSays(GoalTriageVerdict.NeedsPlan);
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        await sut.StartTurnAsync(session, "research the three biggest EV networks and write it up", null, planned: true);
+
+        await _runService.ReceivedWithAnyArgs(1).CreateAsync(default!, Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>An ordinary Chat send must not spend a classification turn on a goal it was never going to
+    /// plan.</summary>
+    [Fact]
+    public async Task AChatSend_IsNeverTriaged()
+    {
+        ArrangePlannedSend();
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        await sut.StartTurnAsync(session, "hello", null);
+
+        await _goalTriage.DidNotReceiveWithAnyArgs().ClassifyAsync(default!, default!, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task WithTriageTurnedOff_AnAgentSendPlansAsBefore()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings { AssistantAgentTriageEnabled = false });
+        ArrangePlannedSend();
+        TriageSays(GoalTriageVerdict.AnswerDirectly);
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        await sut.StartTurnAsync(session, "what is this about?", null, planned: true);
+
+        await _goalTriage.DidNotReceiveWithAnyArgs().ClassifyAsync(default!, default!, Arg.Any<CancellationToken>());
+        await _runService.ReceivedWithAnyArgs(1).CreateAsync(default!, Arg.Any<CancellationToken>());
+    }
     /// <summary>
     /// Drive a real interactive Planned launch and hand back the <see cref="AgentRunCreateRequest"/> the
     /// manager built, so the persisted envelope can be inspected. Shared by the two facts below: they assert on
@@ -204,7 +306,7 @@ public class ChatSessionManagerTests
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
         var provider = new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
 
         AgentRunCreateRequest? captured = null;
@@ -609,7 +711,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -638,7 +740,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -667,7 +769,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -708,7 +810,7 @@ public class ChatSessionManagerTests
         _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(provider);
         _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
             .Returns(new Persona { Name = "Pia", SystemPrompt = "sys" });
-        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>())
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
             .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
         var runId = Guid.NewGuid();
         _runService.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
@@ -1326,7 +1428,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>());
+            Arg.Any<bool>(), suggestAgentModeEligible: true, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1348,7 +1450,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>());
+            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1373,7 +1475,7 @@ public class ChatSessionManagerTests
 
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>());
+            Arg.Any<bool>(), suggestAgentModeEligible: false, environmentRoot: Arg.Any<string?>(), unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1398,7 +1500,7 @@ public class ChatSessionManagerTests
         _files.Received().DescribeEffectiveRoot("notes");
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: root);
+            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: root, unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1425,7 +1527,7 @@ public class ChatSessionManagerTests
         _files.DidNotReceive().DescribeEffectiveRoot(Arg.Any<string?>());
         _composer.Received().PrepareTurn(
             Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(),
-            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: null);
+            Arg.Any<bool>(), Arg.Any<bool>(), environmentRoot: null, unattended: Arg.Any<bool>());
     }
 
     [Fact]
@@ -1791,7 +1893,7 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability, _goalTriage,
             _headlessLauncher, _windowManager, _executingRuns,
             steering: steering);
     }
@@ -1903,7 +2005,7 @@ public class ChatSessionManagerTests
             NullLoggerFactory.Instance,
             _chatService, _settings, _personas, _providers, _composer,
             _titleService, _cards, _plugins, _ai, _permissions, _loc,
-            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability,
+            () => _tokenMap, _notifier, _flow, _files, orchestrator, _runService, _capability, _goalTriage,
             _headlessLauncher, _windowManager, _executingRuns,
             resumeService: _resumeService);
     }
@@ -2087,7 +2189,7 @@ public class ChatSessionManagerTests
         AttachParkedRun(session, "needs-goal");
 
         await sut.StartTurnAsync(session, "the printed catalogue", null, regenerationInstruction: "make it shorter");
-        await sut.StartTurnAsync(session, "the printed catalogue", NewAttachment());
+        await sut.StartTurnAsync(session, "the printed catalogue", [NewAttachment()]);
 
         await _resumeService.DidNotReceive().ResumeAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());

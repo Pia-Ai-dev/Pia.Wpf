@@ -16,9 +16,8 @@
   **Sherpa bundles are mirrored as the .tar.bz2 archive, not as the extracted tree.** The client
   extracts identically on both paths, which is what keeps the mirror from needing its own code path.
 
-  **Not mirrored, and neither is an oversight.** Piper's engine and voices are fetched by PiperSharp
-  from URLs held inside that package, with no override hook. Chromium comes from Playwright's own
-  installer at a revision pinned to the package; mirroring it means reproducing its CDN layout per
+  **Chromium is the one thing not mirrored, and that is not an oversight.** It comes from Playwright's
+  own installer at a revision pinned to the package; mirroring it means reproducing its CDN layout per
   revision, which is a separate job (`ChromiumProvisioner.DownloadHostOverride` is the hook if it is
   ever wanted).
 
@@ -50,13 +49,19 @@
 
 .EXAMPLE
   pwsh scripts/Publish-RuntimeAssets.ps1 -Include Vad,Speaker,Embeddings
+
+.EXAMPLE
+  pwsh scripts/Publish-RuntimeAssets.ps1 -Include TtsVoices
 #>
 [CmdletBinding()]
 param(
+    # Every mirror-bearing group in the catalogue, which PublishSetCoverageTests pins: a group missing
+    # here publishes nothing and costs a silent fallback to upstream, the exact outcome this exists to
+    # prevent.
     [ArgumentCompletions('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                         'WhisperMedium', 'WhisperLarge', 'Parakeet')]
+                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices')]
     [string[]]$Include = @('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                           'WhisperMedium', 'WhisperLarge', 'Parakeet'),
+                           'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices'),
 
     [string]$StorageBase = 'https://storage.pia-ai.de',
     [string]$Prefix = 'assets',

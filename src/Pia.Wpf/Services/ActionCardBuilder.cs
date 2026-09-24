@@ -43,6 +43,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ToolClass.Git => ActionCardCategory.Git,
             ToolClass.Scheduling => ActionCardCategory.Scheduled,
             ToolClass.Assignment => ActionCardCategory.Assignment,
+            ToolClass.Screen => ActionCardCategory.Screen,
             // External, Unknown (a plugin name this build does not recognise, e.g. a renamed built-in) and
             // Ingest (which returns no pending action, so it never reaches a card) all render as the generic
             // external-tool card — today's shape for anything the builder cannot name.
@@ -150,6 +151,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         ToolGateDecision.AutoApprovedSessionGrant => "ActionCard_AutoApprovedForSession",
         ToolGateDecision.AutoApprovedPolicy => "ActionCard_AutoApprovedByAutonomy",
         ToolGateDecision.GrantedByName => "ActionCard_AutoApprovedByRunGrant",
+        ToolGateDecision.AutoApprovedScratch => "ActionCard_AutoApprovedScratch",
         _ => "ActionCard_AutoApproved",
     };
 
@@ -171,6 +173,9 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "read_chat" => _localizationService["Msg_Assistant_StatusReadingChat"],
         "query_assignments" or "get_assignment" => _localizationService["Msg_Assistant_StatusCheckingAssignments"],
         "start_assignment" => _localizationService["Msg_Assistant_StatusStartingAssignment"],
+        "run_routine" => _localizationService["Msg_Assistant_StatusStartingRoutine"],
+        "screen_capture" => _localizationService["Msg_Assistant_StatusCapturingScreen"],
+        "screen_list_targets" => _localizationService["Msg_Assistant_StatusListingScreenTargets"],
         var t when t.StartsWith("git_", StringComparison.Ordinal) => _localizationService["Msg_Assistant_StatusRunningGit"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
@@ -181,6 +186,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "todo" => _localizationService["Msg_Assistant_TodoUpdated"],
         "reminder" => _localizationService["Msg_Assistant_ReminderUpdated"],
         "git" => _localizationService["Msg_Assistant_GitUpdated"],
+        "screen" => _localizationService["Msg_Assistant_ScreenCaptured"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
 
@@ -200,6 +206,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ActionCardCategory.Git => "ActionCard_Category_Git",
             ActionCardCategory.Scheduled => "ActionCard_Category_Scheduled",
             ActionCardCategory.Assignment => "ActionCard_Category_Assignment",
+            ActionCardCategory.Screen => "ActionCard_Category_Screen",
             _ => "ActionCard_Category_Memory"
         };
 
@@ -212,6 +219,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             "forget" or "delete_todo" or "delete_reminder" or "delete_file"
                 or "delete_scheduled_research" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
+            "run_routine" => "ActionCard_Action_Start",
             "write_file" or "edit_file" => "ActionCard_Action_Write",
             "git_init" => "ActionCard_Action_Initialize",
             "git_add" => "ActionCard_Action_Stage",
@@ -219,10 +227,14 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             "git_switch" => "ActionCard_Action_Switch",
             "git_restore" => "ActionCard_Action_Restore",
             "git_stash" => "ActionCard_Action_Stash",
+            "screen_capture" => "ActionCard_Action_Capture",
             _ => "ActionCard_Action_Create"
         };
 
-        return $"{_localizationService[actionKey]} {_localizationService[categoryKey]}";
+        // Order is per-language: German puts the verb last, so the two halves go through a format string
+        // rather than being concatenated verb-first.
+        return _localizationService.Format(
+            "ActionCard_Title_Format", _localizationService[actionKey], _localizationService[categoryKey]);
     }
 
     private string Detokenize(string text, bool detokenize) =>

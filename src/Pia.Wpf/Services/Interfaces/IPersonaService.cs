@@ -42,7 +42,7 @@ public interface IPersonaService
     /// Deletes a user persona and tracks the deletion as <c>"personas"</c>. No-op for built-ins and for
     /// managed ids — a managed id never reaches the delete tracker (it must not enqueue a push tombstone).
     /// </summary>
-    Task DeletePersonaAsync(Guid id);
+    Task DeletePersonaAsync(Guid id, bool trackForSync = true);
 
     /// <summary>
     /// Resolves the active persona for a mode. Falls back to the <see cref="UserOperatingMode"/>-mapped

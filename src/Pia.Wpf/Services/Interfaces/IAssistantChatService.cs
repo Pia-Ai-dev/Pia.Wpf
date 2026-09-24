@@ -27,6 +27,13 @@ public interface IAssistantChatService
 {
     event EventHandler<AssistantChatChangedEventArgs>? ChatsChanged;
 
+    /// <summary>
+    /// Raised when <see cref="TouchLastAccessedAsync"/> moves a chat's access date to a new UTC day.
+    /// Deliberately not an <see cref="AssistantChatChangedEventArgs"/> kind: every ChatsChanged
+    /// subscriber treats an event as a content change, and the history list reloads on one.
+    /// </summary>
+    event EventHandler<Guid>? ChatAccessed;
+
     Task SaveAsync(SyncAssistantChat chat, CancellationToken ct = default);
 
     /// <summary>
@@ -74,6 +81,27 @@ public interface IAssistantChatService
     /// </summary>
     Task<bool> SetTitleAsync(Guid chatId, string title, CancellationToken ct = default);
 
+    /// <summary>
+    /// Star/unstar a chat: a targeted UPDATE plus <c>UpdatedAt</c>, following <see cref="SetTitleAsync"/>
+    /// rather than <see cref="GetAsync"/>→<see cref="SaveAsync"/>, which would replace the message rows from
+    /// a snapshot a headless run may have appended to since.
+    /// <returns><c>false</c> when the chat had already been deleted/evicted.</returns>
+    /// </summary>
+    Task<bool> SetFavoriteAsync(Guid chatId, bool isFavorite, CancellationToken ct = default);
+
+    /// <summary>
+    /// Starred chats matching the same filters as <see cref="SearchAsync"/>, newest first, but UNPAGED —
+    /// a favourite older than the loaded page would otherwise never reach the history view's favourites
+    /// group. Paging is an artifact; the filters are user intent, so those still apply.
+    /// </summary>
+    Task<IReadOnlyList<SyncAssistantChat>> GetFavoritesAsync(
+        string? searchText = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        Guid? providerId = null,
+        int limit = 100,
+        CancellationToken ct = default);
+
     Task<SyncAssistantChat?> GetAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>The chat's provider alone. <see cref="GetAsync"/> reads the whole transcript, which a caller
@@ -118,7 +146,24 @@ public interface IAssistantChatService
     /// </summary>
     Task DeleteFromRemoteAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Stamps the chat as accessed now, and raises <see cref="ChatAccessed"/> when that crosses into a
+    /// new UTC day — the granularity sync carries, and the only case where the server's copy would
+    /// otherwise keep ageing toward eviction on a chat someone is still reading.
+    /// </summary>
     Task TouchLastAccessedAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// What <see cref="EvictOlderThanAsync"/> would delete, so a caller can confirm the dates against the
+    /// server first — eviction deletes account-wide, and this device's dates may be behind another's.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetChatIdsAccessedBeforeAsync(DateTime cutoffUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Raises a chat's access date to one the server reported, never lowers it. Raises no event: this is a
+    /// remote-origin write, like <see cref="SaveFromRemoteAsync"/>.
+    /// </summary>
+    Task ApplyRemoteAccessDateAsync(Guid id, DateTime lastAccessedUtc, CancellationToken ct = default);
 
     Task<IReadOnlyList<Guid>> EvictOlderThanAsync(DateTime cutoffUtc, CancellationToken ct = default);
 
@@ -126,9 +171,12 @@ public interface IAssistantChatService
 
     Task<DateTime?> GetMaxUpdatedAtAsync(CancellationToken ct = default);
 
-    /// <summary>
-    /// All locally stored chat IDs. Used by the cloud-sync worker's one-time
-    /// startup backfill to push chats that predate cloud sign-in.
-    /// </summary>
+    /// <summary>All locally stored chat IDs.</summary>
     Task<IReadOnlyList<Guid>> GetAllIdsAsync(CancellationToken ct = default);
+
+    /// <summary>The chats the startup backfill still owes the server. A rate-limited pass banks what it
+    /// managed, so the next one resumes from the remainder instead of restarting the whole catalogue.</summary>
+    Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default);
+
+    Task MarkBackfilledAsync(Guid id, CancellationToken ct = default);
 }

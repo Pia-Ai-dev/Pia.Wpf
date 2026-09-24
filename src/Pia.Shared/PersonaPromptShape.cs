@@ -13,11 +13,17 @@ public static class PersonaPromptShape
             ? string.Empty
             : $"\n\n{guardrails.Trim()}";
 
+        // Date only: a minute here would move the cached prefix on every turn that crosses one, costing
+        // the whole conversation its prefix-cache hit. The minute rides BuildTimeNote instead.
         var dateLine = string.Create(
             formatProvider,
-            $"The current date and time is {now:yyyy-MM-dd HH:mm} ({now:dddd}).");
+            $"The current date is {now:yyyy-MM-dd} ({now:dddd}).");
 
         // Explicit \n, not a raw string: the bytes must not depend on the checkout's line endings.
         return $"{systemPrompt.Trim()}{guardrailBlock}\n{dateLine}";
     }
+
+    /// <summary>Belongs on the final user turn, never in the prefix — see the date line above.</summary>
+    public static string BuildTimeNote(DateTime now, IFormatProvider formatProvider) =>
+        string.Create(formatProvider, $"The current local time is {now:HH:mm}.");
 }

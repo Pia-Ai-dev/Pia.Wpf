@@ -111,7 +111,8 @@
                            CommandParameter="{Binding}"
                            Stats="{Binding Stats}"
                            PersonaName="{Binding Persona.Name}"
-                           IsProtectedRoute="{Binding IsProtectedRoute}">
+                           IsProtectedRoute="{Binding IsProtectedRoute}"
+                           AnsweredDirectly="{Binding AnsweredDirectly}">
       <chat:PiaAnswerToolbar.Style>
         <Style TargetType="chat:PiaAnswerToolbar">
           <Setter Property="Visibility" Value="Visible" />

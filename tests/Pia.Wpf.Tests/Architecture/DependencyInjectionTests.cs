@@ -124,6 +124,11 @@ public class DependencyInjectionTests
                 // DI could never have supplied.
                 if (paramType.IsValueType || paramType == typeof(string)) continue;
 
+                // Records are data carriers by definition, so one is an argument rather than a dependency.
+                // The compiler-synthesised <Clone>$ member is the only reliable IL-level record marker.
+                if (paramType.GetMethod("<Clone>$", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance) is not null)
+                    continue;
+
                 // The BCL's clock abstraction: registered in DI and substituted in tests like any interface,
                 // it just isn't spelled with an I.
                 if (paramType == typeof(TimeProvider)) continue;

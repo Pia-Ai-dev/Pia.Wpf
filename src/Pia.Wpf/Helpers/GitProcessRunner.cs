@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Pia.Helpers;
 
@@ -19,7 +20,8 @@ public sealed record GitProcessRequest(
     string WorkingDirectory,
     IReadOnlyList<string> Arguments,
     GitCommandKind Kind,
-    string? CeilingDirectory);
+    string? CeilingDirectory,
+    TimeSpan? Timeout = null);
 
 /// <summary>The outcome of a git invocation. <see cref="TimedOut"/> is set when the process was killed on timeout.</summary>
 public sealed record GitProcessResult(int ExitCode, string StandardOutput, string StandardError, bool TimedOut)
@@ -49,9 +51,9 @@ public interface IGitProcessRunner
 ///   pipe-buffer deadlock, timeout + <c>Kill(entireProcessTree)</c> + drain) — testable with <c>cmd.exe</c>.</item>
 /// </list>
 /// </summary>
-public sealed class GitProcessRunner : IGitProcessRunner
+public sealed class GitProcessRunner(ILogger<GitProcessRunner>? logger = null) : IGitProcessRunner
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
 
     // Upper bound on draining the (already-buffered) stdout/stderr reads. After a normal exit these
     // complete near-instantly; the bound only matters when Kill misses an orphaned descendant that
@@ -68,7 +70,22 @@ public sealed class GitProcessRunner : IGitProcessRunner
 
         var args = BuildArguments(request.Arguments);
         var env = BuildEnvironment(request.Kind, request.CeilingDirectory);
-        return await RunProcessAsync(exe, args, request.WorkingDirectory, env, Timeout, cancellationToken);
+        var timeout = request.Timeout ?? DefaultTimeout;
+
+        var started = Stopwatch.GetTimestamp();
+        var result = await RunProcessAsync(exe, args, request.WorkingDirectory, env, timeout, cancellationToken);
+
+        // A timeout is otherwise invisible to every caller: it arrives as a plain "did not succeed", which is
+        // indistinguishable from git answering no, and the only trace is a gap between two timestamps.
+        if (result.TimedOut)
+            logger?.LogWarning(
+                "git {Subcommand} timed out after {Elapsed}ms (budget {Budget}ms, exit {Exit})",
+                request.Arguments.Count > 0 ? request.Arguments[0] : "(none)",
+                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                (long)timeout.TotalMilliseconds,
+                result.ExitCode);
+
+        return result;
     }
 
     /// <summary>

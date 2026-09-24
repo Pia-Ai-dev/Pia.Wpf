@@ -8,6 +8,14 @@
   <Color x:Key="PiaAccentHoverColor">#FF1D4ED8</Color>
   <Color x:Key="PiaAccentSoftColor">#FFE7EFFE</Color>
 
+  <!-- Sent-message bubble. Light tints the accent instead of filling with it, so the transcript does not
+       out-shout every other surface; dark keeps the filled accent. -->
+  <Color x:Key="UserBubbleBgColor">#FFD7E7F5</Color>
+  <Color x:Key="UserBubbleBorderColor">#FFA8CCEA</Color>
+  <Color x:Key="UserBubbleFgColor">#FF0F1729</Color>
+  <Color x:Key="UserBubbleSelectionColor">#FF2563EB</Color>
+  <Color x:Key="UserBubbleChipBgColor">#380078D4</Color>
+
   <!-- Surfaces -->
   <Color x:Key="BgCanvasColor">#FFF4F6FA</Color>
   <Color x:Key="SurfaceColor">#FFFFFFFF</Color>
@@ -76,6 +84,12 @@
   <SolidColorBrush x:Key="PiaAccentBrush"       Color="{StaticResource PiaAccentColor}"/>
   <SolidColorBrush x:Key="PiaAccentHoverBrush"  Color="{StaticResource PiaAccentHoverColor}"/>
   <SolidColorBrush x:Key="PiaAccentSoftBrush"   Color="{StaticResource PiaAccentSoftColor}"/>
+
+  <SolidColorBrush x:Key="UserBubbleBgBrush"     Color="{StaticResource UserBubbleBgColor}"/>
+  <SolidColorBrush x:Key="UserBubbleBorderBrush" Color="{StaticResource UserBubbleBorderColor}"/>
+  <SolidColorBrush x:Key="UserBubbleFgBrush"     Color="{StaticResource UserBubbleFgColor}"/>
+  <SolidColorBrush x:Key="UserBubbleChipBgBrush" Color="{StaticResource UserBubbleChipBgColor}"/>
+  <SolidColorBrush x:Key="UserBubbleSelectionBrush" Color="{StaticResource UserBubbleSelectionColor}"/>
 
   <SolidColorBrush x:Key="BgCanvasBrush"        Color="{StaticResource BgCanvasColor}"/>
   <SolidColorBrush x:Key="SurfaceBrush"         Color="{StaticResource SurfaceColor}"/>

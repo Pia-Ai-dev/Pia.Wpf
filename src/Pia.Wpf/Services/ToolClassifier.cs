@@ -43,6 +43,7 @@ public static class ToolClassifier
         "scheduled-research" => ToolClass.Scheduling,
         "ingest" => ToolClass.Ingest,
         "assignments" => ToolClass.Assignment,
+        "screen" => ToolClass.Screen,
         _ => ToolClass.Unknown,
     };
 }

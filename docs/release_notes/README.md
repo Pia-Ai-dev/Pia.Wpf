@@ -73,3 +73,21 @@ checkout, so it costs seconds rather than a full signed build.
 
 Leaving `RELEASE.md` empty between edits is safe, and is the point: an unchanged or empty file
 downgrades to git-cliff rather than shipping the wrong notes.
+
+## Old releases are pruned
+
+`prune-releases.yml` runs weekly and deletes releases that are both older than 90 days and outside
+the newest five, so the list does not grow without bound at a release per push to `main`. The
+`Prune releases` step summary shows the keep/delete decision per tag, and a manual dispatch defaults
+to a dry run.
+
+Nothing downstream reads an old release. Velopack resolves the newest non-prerelease release and
+fetches only what its `releases.win.json` names — the current full, the current delta, the previous
+full — and pia-ai.de serves its own uploaded copies rather than linking a GitHub asset. **Tags are
+never deleted.** `changelog.yml` rebuilds all of `CHANGELOG.md` with git-cliff on every publish, and
+the release-notes diff base comes from `git describe --tags`, so dropping a tag would quietly
+rewrite history on the next release.
+
+To change the policy, edit the defaults in the workflow (or pass `-KeepMinimum` / `-MaxAgeDays` to
+`scripts/Prune-Releases.ps1`, which is the whole implementation and is safe to run locally — it
+deletes nothing without `-Apply`).

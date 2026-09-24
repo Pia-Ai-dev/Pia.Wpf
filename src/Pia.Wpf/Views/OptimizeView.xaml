@@ -367,6 +367,7 @@
               <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
 
               <Border Grid.Row="0"
@@ -393,7 +394,7 @@
                 </StackPanel>
               </Border>
 
-              <Grid Grid.Row="1" Margin="14,10,14,14">
+              <Grid Grid.Row="1" Margin="14,10,14,0">
                 <Border Background="{DynamicResource SurfaceMutedBrush}"
                         BorderBrush="{DynamicResource BorderBrush_}"
                         BorderThickness="1"
@@ -411,6 +412,25 @@
                              Foreground="{DynamicResource TextDefaultBrush}" />
                   </ScrollViewer>
                 </Border>
+              </Grid>
+
+              <Grid Grid.Row="2" Margin="14,8,14,12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="Info24"
+                               FontSize="12"
+                               Margin="0,0,5,0"
+                               VerticalAlignment="Top"
+                               Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Grid.Column="1"
+                           Text="{loc:Str Optimize_AiGeneratedHint}"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Top"
+                           Foreground="{DynamicResource TextMutedBrush}" />
               </Grid>
             </Grid>
           </Border>

@@ -485,6 +485,55 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task AgentTaskLeg_ForwardsTheRoutinesWorkingDirectoryAsTheRunWorkspaceSubpath()
+    {
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        job.Kind = ScheduledJobKind.AgentTask;
+        job.WorkingDirectory = "Reports/Weekly";
+        jobs.SeedDue(job);
+
+        HeadlessRunRequest? captured = null;
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Do<HeadlessRunRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(Guid.NewGuid(), Guid.NewGuid(), Task.CompletedTask));
+
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(new FakeRunner())),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            launcher, NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.NotNull(captured);
+        Assert.Equal("Reports/Weekly", captured!.WorkingSubpath);
+    }
+
+    [Fact]
+    public async Task ResearchLeg_ForwardsTheRoutinesWorkingDirectory()
+    {
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        job.Kind = ScheduledJobKind.Research;
+        job.WorkingDirectory = "Reports/Weekly";
+        jobs.SeedDue(job);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal("Reports/Weekly", runner.LastRequest!.WorkingSubpath);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_AgentTaskJob_GrantingNothing_LaunchesWithNullSoTheLauncherNarrowsIt()
     {
         // The agent leg is the OPPOSITE of the research leg here, and only null reaches the launcher's
@@ -1765,7 +1814,8 @@ public class ScheduledJobBackgroundServiceTests
             IReadOnlyCollection<string>? grantedTools = null,
             ScheduledJobKind kind = ScheduledJobKind.Research, bool quietOnSuccess = false,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
-            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? blueprintKey = null, string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ScheduledJob>> GetAllAsync() => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetActiveAsync() => throw new NotImplementedException();
@@ -1781,7 +1831,8 @@ public class ScheduledJobBackgroundServiceTests
             DateTime? specificDate = null, ScheduledJobKind? kind = null, bool? quietOnSuccess = null,
             Guid? personaId = null, ReasoningEffort? reasoningEffort = null,
             bool clearReasoningEffort = false,
-            string? meetingUrl = null, DateTime? meetingConsentAckAt = null) => throw new NotImplementedException();
+            string? meetingUrl = null, DateTime? meetingConsentAckAt = null,
+            string? workingDirectory = null) => throw new NotImplementedException();
 
         /// <summary>Drives the run-now owner refusal. True by default, which is the ordinary case (a job this
         /// device owns, or a legacy row with a null owner).</summary>
@@ -1791,7 +1842,7 @@ public class ScheduledJobBackgroundServiceTests
 
         public Task<bool> IsOwnedByThisDeviceAsync(ScheduledJob job) => Task.FromResult(OwnedByThisDevice);
 
-        public Task DeleteAsync(Guid id) => throw new NotImplementedException();
+        public Task DeleteAsync(Guid id, bool trackForSync = true) => throw new NotImplementedException();
         public Task DisableAsync(Guid id) => throw new NotImplementedException();
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) => throw new NotImplementedException();

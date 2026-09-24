@@ -189,21 +189,20 @@ public class WorkingDirectoryPickerViewModelTests
     }
 
     [Fact]
-    public void ConfirmCreateFolder_AtRoot_CreatesUnderRoot_RefreshesAndSelects()
+    public void ConfirmCreateFolder_AtRoot_CreatesUnderRoot_AndEntersIt()
     {
         var sut = CreateSut();
         sut.BeginCreateFolderCommand.Execute(null);
         sut.NewFolderName = "Reports";
         _service.EnsureSubfolder("Reports").Returns("Reports");
-        // The post-create refresh should now surface the new folder.
-        _service.ListSubfolders("").Returns(new[] { "docs", "projects", "Reports" });
+        _service.ListSubfolders("Reports").Returns([]);
 
         sut.ConfirmCreateFolderCommand.Execute(null);
 
         _service.Received().EnsureSubfolder("Reports");
         Assert.False(sut.IsCreatingFolder);
-        Assert.Equal("Reports", sut.LastCreatedFolder);
-        Assert.Contains("Reports", sut.Entries);
+        Assert.Equal("Reports", sut.CurrentRelativePath);
+        Assert.True(sut.IsEmpty);
     }
 
     [Fact]
@@ -218,7 +217,7 @@ public class WorkingDirectoryPickerViewModelTests
         sut.ConfirmCreateFolderCommand.Execute(null);
 
         _service.Received().EnsureSubfolder("projects/Sub");
-        Assert.Equal("Sub", sut.LastCreatedFolder);
+        Assert.Equal("projects/Sub", sut.CurrentRelativePath);
         Assert.False(sut.IsCreatingFolder);
     }
 
@@ -233,25 +232,25 @@ public class WorkingDirectoryPickerViewModelTests
         sut.ConfirmCreateFolderCommand.Execute(null);
 
         _service.Received().EnsureSubfolder("Spaced");
-        Assert.Equal("Spaced", sut.LastCreatedFolder);
+        Assert.Equal("Spaced", sut.CurrentRelativePath);
     }
 
     [Fact]
-    public void ConfirmCreateFolder_UsesOnDiskCasing_ForLastCreatedFolder()
+    public void ConfirmCreateFolder_EntersTheServicesPath_NotTheComposedOne()
     {
         var sut = CreateSut();
         sut.BeginCreateFolderCommand.Execute(null);
-        sut.NewFolderName = "reports"; // user types lowercase
-        // The service echoes the typed (lexical) casing, but the folder already exists on disk as
-        // "Reports"; the post-create refresh surfaces the on-disk name.
-        _service.EnsureSubfolder("reports").Returns("reports");
-        _service.ListSubfolders("").Returns(new[] { "docs", "projects", "Reports" });
+        sut.NewFolderName = "Reports";
+        // EnsureSubfolder is the one that validated containment, so its normalized answer is what the
+        // chat is pointed at — not the string this VM composed to ask with.
+        _service.EnsureSubfolder("Reports").Returns("archive/Reports");
+        var chosen = new List<string>();
+        sut.WorkingDirectoryChosen += (_, path) => chosen.Add(path);
 
         sut.ConfirmCreateFolderCommand.Execute(null);
 
-        // LastCreatedFolder must match the on-disk entry so the view's ordinal select/scroll hits.
-        Assert.Equal("Reports", sut.LastCreatedFolder);
-        Assert.Contains("Reports", sut.Entries);
+        Assert.Equal("archive/Reports", sut.CurrentRelativePath);
+        Assert.Equal(["archive/Reports"], chosen);
     }
 
     [Theory]
@@ -287,22 +286,39 @@ public class WorkingDirectoryPickerViewModelTests
         sut.ConfirmCreateFolderCommand.Execute(null);
 
         Assert.True(sut.IsCreatingFolder);
-        Assert.Null(sut.LastCreatedFolder);
+        Assert.Equal(string.Empty, sut.CurrentRelativePath);
     }
 
     [Fact]
-    public void ConfirmCreateFolder_DoesNotRepointWorkingDirectory()
+    public void ConfirmCreateFolder_ServiceRejects_DoesNotRepointWorkingDirectory()
     {
         var sut = CreateSut();
         var raised = false;
         sut.WorkingDirectoryChosen += (_, _) => raised = true;
+        sut.BeginCreateFolderCommand.Execute(null);
+        sut.NewFolderName = "Blocked";
+        _service.EnsureSubfolder("Blocked").Returns((string?)null);
+
+        sut.ConfirmCreateFolderCommand.Execute(null);
+
+        Assert.False(raised);
+    }
+
+    [Fact]
+    public void ConfirmCreateFolder_RepointsWorkingDirectoryToTheNewFolder()
+    {
+        // A folder made for this chat and then only highlighted read as chosen, and the chat kept
+        // writing into the old one.
+        var sut = CreateSut();
+        var chosen = new List<string>();
+        sut.WorkingDirectoryChosen += (_, path) => chosen.Add(path);
         sut.BeginCreateFolderCommand.Execute(null);
         sut.NewFolderName = "New";
         _service.EnsureSubfolder("New").Returns("New");
 
         sut.ConfirmCreateFolderCommand.Execute(null);
 
-        Assert.False(raised);
+        Assert.Equal(["New"], chosen);
     }
 
     [Fact]

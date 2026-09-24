@@ -70,7 +70,10 @@
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Es können höchstens {0} Dateien an eine Nachricht angehängt werden – „{1}“ wurde übersprungen.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>„{0}“ ist zu groß zum Anhängen – das Limit liegt bei {1}.</value></data>
   <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Die angehängten Dateien füllen diese Nachricht bereits – „{0}“ wurde übersprungen.</value></data>
-  <data name="Msg_File_OneImageOnly" xml:space="preserve"><value>Es kann nur ein Bild angehängt werden – „{0}“ wurde übernommen.</value></data>
+  <data name="Msg_File_ImageLimit" xml:space="preserve"><value>Es können höchstens {0} Bilder angehängt werden – „{1}“ wurde ausgelassen.</value></data>
+  <data name="Msg_File_ImageBudget" xml:space="preserve"><value>Die angehängten Bilder haben die Größengrenze erreicht – „{0}“ wurde ausgelassen.</value></data>
+  <data name="Msg_File_PastedImageName" xml:space="preserve"><value>Eingefügtes Bild</value></data>
+  <data name="Msg_File_ScreenCaptureName" xml:space="preserve"><value>Bildschirmaufnahme</value></data>
   <data name="Msg_File_DropFailed" xml:space="preserve"><value>„{0}“ konnte nicht aus der Quell-App übernommen werden. Speichern Sie das Element als Datei und ziehen Sie diese herüber.</value></data>
   <data name="Msg_File_DropNoFile" xml:space="preserve"><value>Diese App gibt keine Datei heraus, sondern nur ihren eigenen internen Verweis. Speichern Sie das Element zuerst als Datei und ziehen Sie diese herüber.</value></data>
   <data name="FileDrop_Overlay_Hint_MeetingInvite" xml:space="preserve"><value>Besprechungseinladung ablegen, um den Link zu übernehmen</value></data>
@@ -122,6 +125,13 @@
   <data name="Msg_Assistant_StatusSearchingChats" xml:space="preserve"><value>Frühere Chats werden durchsucht...</value></data>
   <data name="Msg_Assistant_StatusSearchingMemory" xml:space="preserve"><value>Gedächtnis wird durchsucht...</value></data>
   <data name="Msg_Assistant_StatusStartingAssignment" xml:space="preserve"><value>Hintergrundauftrag wird gestartet...</value></data>
+  <data name="Msg_Assistant_StatusStartingRoutine" xml:space="preserve"><value>Routine wird gestartet...</value></data>
+  <data name="Msg_Assistant_StatusCapturingScreen" xml:space="preserve"><value>Bildschirm wird aufgenommen...</value></data>
+  <data name="Msg_Assistant_StatusListingScreenTargets" xml:space="preserve"><value>Fenster und Bildschirme werden aufgelistet...</value></data>
+  <data name="Msg_Assistant_ScreenCaptured" xml:space="preserve"><value>Bildschirm aufgenommen</value></data>
+  <data name="Msg_ScreenCapture_UnattendedNotice" xml:space="preserve"><value>Pia hat {0} unbeaufsichtigt aufgenommen ({1} Aufnahme(n) in diesem Lauf). Details stehen im Aufnahmeprotokoll.</value></data>
+  <data name="Msg_ScreenCapture_MonitorLabel" xml:space="preserve"><value>einen Bildschirm</value></data>
+  <data name="Msg_ScreenCapture_UnnamedProgramLabel" xml:space="preserve"><value>ein Programm</value></data>
   <data name="Msg_Assistant_StatusThinking" xml:space="preserve"><value>Denke nach...</value></data>
   <data name="Msg_Assistant_StatusUpdatingMemory" xml:space="preserve"><value>Erinnerung wird aktualisiert...</value></data>
   <data name="Msg_Assistant_StatusUpdatingReminder" xml:space="preserve"><value>Erinnerung wird aktualisiert...</value></data>
@@ -137,6 +147,7 @@
   <data name="AssistantChat_Flyout_ShowAll" xml:space="preserve"><value>Alle Chats anzeigen…</value></data>
   <data name="AssistantChat_Flyout_Empty" xml:space="preserve"><value>Noch keine Chats.</value></data>
   <data name="AssistantChat_WorkingDir_Tooltip" xml:space="preserve"><value>Arbeitsordner für diesen Chat</value></data>
+  <data name="AssistantChat_WorkingDir_Tooltip_NextChat" xml:space="preserve"><value>Arbeitsordner für den nächsten neuen Chat</value></data>
   <data name="AssistantChat_WorkingDir_Root" xml:space="preserve"><value>Alle Dateien</value></data>
   <data name="AssistantChat_WorkingDir_PickerEmpty" xml:space="preserve"><value>Keine Unterordner hier.</value></data>
   <data name="AssistantChat_WorkingDir_NewFolder_Tooltip" xml:space="preserve"><value>Neuer Ordner</value></data>
@@ -263,6 +274,10 @@
   <data name="Msg_Settings_VoiceDownloadFailed" xml:space="preserve"><value>Stimmen-Download fehlgeschlagen: {0}</value></data>
   <data name="Msg_Settings_VoiceDownloaded" xml:space="preserve"><value>Stimme {0} erfolgreich heruntergeladen.</value></data>
   <data name="Msg_Settings_VoiceSetFailed" xml:space="preserve"><value>Stimme konnte nicht festgelegt werden: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleteFailed" xml:space="preserve"><value>Stimme konnte nicht entfernt werden: {0}</value></data>
+  <data name="Msg_Settings_VoiceDeleted" xml:space="preserve"><value>Stimme {0} wurde von diesem Gerät entfernt.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Message" xml:space="preserve"><value>Die Stimme {0} von diesem Gerät entfernen? Du kannst sie jederzeit erneut herunterladen.</value></data>
+  <data name="Msg_Settings_VoiceDelete_Title" xml:space="preserve"><value>Stimme entfernen</value></data>
   <!-- Todo messages -->
   <data name="Msg_Todo_AddFailed" xml:space="preserve"><value>Hinzufügen der Aufgabe fehlgeschlagen: {0}</value></data>
   <data name="Msg_Todo_Added" xml:space="preserve"><value>Hinzugefügt</value></data>
@@ -408,6 +423,14 @@
   <data name="Tool_Assignment_Detail_PromptLength" xml:space="preserve"><value>Anweisung: {0} Zeichen</value></data>
   <data name="Tool_Assignment_Detail_Skill" xml:space="preserve"><value>Fähigkeit</value></data>
   <data name="Tool_Assignment_Skill_Unset" xml:space="preserve"><value>nicht gewählt — der Nutzer entscheidet</value></data>
+  <data name="Tool_Screen_Desc_CaptureWindow" xml:space="preserve"><value>Ein Bild des Fensters von {0} aufnehmen</value></data>
+  <data name="Tool_Screen_Desc_CaptureMonitor" xml:space="preserve"><value>Ein Bild des Bildschirms {0} aufnehmen</value></data>
+  <data name="Tool_Screen_Detail_Target" xml:space="preserve"><value>Ziel</value></data>
+  <data name="Tool_Screen_Detail_Program" xml:space="preserve"><value>Programm</value></data>
+  <data name="Tool_Screen_Detail_Display" xml:space="preserve"><value>Bildschirm</value></data>
+  <data name="Tool_Screen_Detail_Size" xml:space="preserve"><value>Größe</value></data>
+  <data name="Tool_Screen_Target_Window" xml:space="preserve"><value>Fenster</value></data>
+  <data name="Tool_Screen_Target_Monitor" xml:space="preserve"><value>Ganzer Bildschirm</value></data>
   <data name="Tool_ScheduledResearch_Detail_Name" xml:space="preserve"><value>Name</value></data>
   <data name="Tool_ScheduledResearch_Detail_Query" xml:space="preserve"><value>Frage</value></data>
   <data name="Tool_ScheduledResearch_Detail_Kind" xml:space="preserve"><value>Typ</value></data>
@@ -427,6 +450,12 @@
   <data name="Tool_ScheduledResearch_Exec_Created" xml:space="preserve"><value>Geplante Recherche {0} erstellt, nächste Ausführung {1}</value></data>
   <data name="Tool_ScheduledResearch_Exec_Updated" xml:space="preserve"><value>Geplante Recherche {0} aktualisiert</value></data>
   <data name="Tool_ScheduledResearch_Exec_Deleted" xml:space="preserve"><value>Geplante Recherche {0} gelöscht</value></data>
+  <data name="Tool_Routine_Desc_Run" xml:space="preserve"><value>Routine {0} jetzt starten</value></data>
+  <data name="Tool_Routine_Detail_Run" xml:space="preserve"><value>Sie läuft als eigener {0}-Lauf in {1} und antwortet in einem neuen Chat.</value></data>
+  <data name="Tool_Routine_Exec_Started" xml:space="preserve"><value>Routine {0} gestartet. Sie läuft eigenständig; die Antwort erscheint als neuer Chat.</value></data>
+  <data name="Tool_Routine_Exec_NotOwner" xml:space="preserve"><value>Routine {0} wird von einem anderen Gerät geplant; nur dieses Gerät darf sie ausführen.</value></data>
+  <data name="Tool_Routine_Exec_AlreadyRunning" xml:space="preserve"><value>Ein Lauf der Routine {0} läuft bereits.</value></data>
+  <data name="Tool_Routine_Exec_NotFound" xml:space="preserve"><value>Routine {0} existiert nicht mehr.</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Frühere Rechercheergebnisse durchsuchen</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Rechercheeintrag per ID abrufen</value></data>
@@ -476,4 +505,21 @@
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Danke</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Ihr Feedback wurde an das Pia-Cloud-Team gesendet.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>Das Feedback konnte nicht gesendet werden. Prüfen Sie die Pia-Cloud-Verbindung und versuchen Sie es erneut.</value></data>
+  <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>Dieses Fenster oder dieser Bildschirm ist nicht mehr verfügbar.</value></data>
+  <data name="Msg_Screen_Minimized" xml:space="preserve"><value>Das Fenster ist minimiert. Bitte zuerst wiederherstellen — Pia verschiebt keine Fenster von selbst.</value></data>
+  <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>Das Fenster wird von Windows ausgeblendet (anderer virtueller Desktop oder angehaltene App).</value></data>
+  <data name="Msg_Screen_EmptyBounds" xml:space="preserve"><value>Das Fenster hat keinen sichtbaren Bereich zum Aufnehmen.</value></data>
+  <data name="Msg_Screen_SelfTarget" xml:space="preserve"><value>Pia nimmt ihre eigenen Fenster nicht auf.</value></data>
+  <data name="Msg_Screen_SelfExclusionFailed" xml:space="preserve"><value>Pia konnte ihr eigenes Fenster nicht aus der Aufnahme ausblenden, daher wurde nichts aufgenommen.</value></data>
+  <data name="Msg_Screen_UniformFrame" xml:space="preserve"><value>Die Aufnahme ist leer. Die App blockiert möglicherweise Bildschirmaufnahmen — oder Pias eigenes Fenster verdeckt den Großteil des Bildschirms; bitte beiseite schieben und erneut versuchen.</value></data>
+  <data name="Msg_Screen_Timeout" xml:space="preserve"><value>Das Fenster hat nicht rechtzeitig reagiert, daher wurde nichts aufgenommen.</value></data>
+  <data name="Msg_Screen_NativeError" xml:space="preserve"><value>Windows hat die Aufnahme verweigert. Details stehen im Protokoll.</value></data>
+  <data name="Msg_Screen_SelfBlackout" xml:space="preserve"><value>Diese Windows-Version kann Pia nur verbergen, indem sie es schwarz übermalt, und Pia verdeckt diesen Bildschirm. Bitte das Pia-Fenster verschieben oder minimieren und erneut versuchen.</value></data>
+  <data name="Msg_Settings_HotkeyUnavailable" xml:space="preserve"><value>Windows hat dieses Tastenkürzel abgelehnt - wahrscheinlich verwendet es ein anderes Programm. Bitte eine andere Kombination wählen.</value></data>
+  <data name="Msg_CreditLimit_Reached" xml:space="preserve"><value>Credit-Limit erreicht.</value></data>
+  <data name="Msg_CreditLimit_ResetsInDays" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} T {1} Std. zurückgesetzt.</value></data>
+  <data name="Msg_CreditLimit_ResetsInHours" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} Std. {1} Min. zurückgesetzt.</value></data>
+  <data name="Msg_CreditLimit_ResetsInMinutes" xml:space="preserve"><value>Credit-Limit erreicht. Wird in {0} Minuten zurückgesetzt.</value></data>
+  <data name="Msg_CreditLimit_ResetsShortly" xml:space="preserve"><value>Credit-Limit erreicht. Wird in Kürze zurückgesetzt.</value></data>
+  <data name="Msg_PiaCloud_AuthRequired" xml:space="preserve"><value>Anmeldung erforderlich. Bitte bei Pia Cloud anmelden.</value></data>
 </root>

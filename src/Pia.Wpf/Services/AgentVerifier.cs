@@ -59,6 +59,12 @@ public sealed class AgentVerifier : IAgentVerifier
 
     public async Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
     {
+        if (NothingToVerify(ctx))
+        {
+            _logger.LogInformation("Verifier skipped: one step, no artifact on either channel — nothing mechanical to judge.");
+            return VerdictResult.Accept;
+        }
+
         // Probe ONCE for both attempts (H1): the facts cannot change between them, and re-probing would
         // double the bounded filesystem work. Null = no block (nothing declared, no root, or a fault).
         var artifactFacts = await TryBuildArtifactFactsAsync(ctx, ct).ConfigureAwait(false);
@@ -87,6 +93,14 @@ public sealed class AgentVerifier : IAgentVerifier
         return new VerdictResult(args.Passed, reason, missing, usage);
     }
 
+    // A lone step that named no artifact leaves the critic nothing but the step's own summary of itself,
+    // so the turn can only restate it back — a full LLM round-trip to agree with the run.
+    private static bool NothingToVerify(RunContext ctx) =>
+        ctx.CompletedSteps.Count == 1
+        && ctx.SkippedTitles.Count == 0
+        && ctx.CompletedSteps[0] is { Succeeded: true } only
+        && BuildTarget(only) is { Declared: null, Reported: null };
+
     /// <summary>
     /// Runs one verify turn, capturing the final <c>emit_verdict</c> args (last-write-wins) while
     /// draining the whole stream; sums <see cref="Finished.Usage"/> across the drained items via the
@@ -97,7 +111,7 @@ public sealed class AgentVerifier : IAgentVerifier
         List<ChatMessage> messages, AiProvider provider, CancellationToken ct)
     {
         EmitVerdictArgs? captured = null;
-        ToolCallHandler toolHandler = (call, _) =>
+        ToolCallHandler toolHandler = (call, dispatch) =>
         {
             if (string.Equals(call.Name, "emit_verdict", StringComparison.Ordinal))
             {
@@ -110,6 +124,9 @@ public sealed class AgentVerifier : IAgentVerifier
                 {
                     _logger.LogWarning(ex, "Failed to parse emit_verdict arguments");
                 }
+                // The verdict is the whole point of this turn — ending here saves a round whose reply
+                // nothing reads.
+                dispatch.Stop?.RequestStop();
                 return Task.FromResult<object?>("Verdict received.");
             }
             return Task.FromResult<object?>("Only emit_verdict is available here.");

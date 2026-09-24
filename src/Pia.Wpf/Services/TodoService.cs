@@ -242,16 +242,18 @@ public class TodoService : ITodoService
         OnTodoChanged();
     }
 
-    public async Task DeleteAsync(Guid id)
+    public async Task DeleteAsync(Guid id, bool trackForSync = true)
     {
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM Todos WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id.ToString());
 
-        await command.ExecuteNonQueryAsync();
-        _deleteTracker.TrackDeletion("todos", id);
-        _logger.LogInformation("Deleted todo {Id}", id);
+        var removed = await command.ExecuteNonQueryAsync();
+        if (trackForSync)
+            _deleteTracker.TrackDeletion("todos", id);
+        if (removed > 0)
+            _logger.LogInformation("Deleted todo {Id}", id);
         OnTodoChanged();
     }
 

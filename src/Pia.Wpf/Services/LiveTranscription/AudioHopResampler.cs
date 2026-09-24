@@ -10,8 +10,8 @@ namespace Pia.Services.LiveTranscription;
 ///
 /// <para>This is the same NAudio chain <see cref="LoopbackAudioCaptureService"/> wires inline
 /// (<c>BufferedWaveProvider</c> → <c>ToMono()</c> → <c>WdlResamplingSampleProvider</c>); it is
-/// extracted here so the new <see cref="ProcessLoopbackAudioCaptureService"/> can reuse it and so the
-/// resample/downmix/hop behaviour can be verified by a unit test without a real audio device.</para>
+/// extracted here so the other capture sources can reuse it and so the resample/downmix/hop
+/// behaviour can be verified by a unit test without a real audio device.</para>
 ///
 /// <para>It is <b>stateful</b> (streaming resamplers must carry state across buffer boundaries) but
 /// device-free: construct it with the source format and feed buffers as they arrive. Not
