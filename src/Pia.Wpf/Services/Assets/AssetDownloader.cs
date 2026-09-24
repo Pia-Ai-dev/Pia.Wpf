@@ -8,24 +8,16 @@ using Pia.Services.Interfaces;
 
 namespace Pia.Services.Assets;
 
-/// <summary>
-/// Mirror-first downloader. Everything here exists because the fallback has to be cheap when the
-/// mirror is down and invisible when it is up.
-/// </summary>
+/// <summary>Fetches a runtime asset from the configured mirror, or upstream when none is configured.</summary>
 public sealed class AssetDownloader : IAssetDownloader
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AssetDownloader> _logger;
     private readonly AssetMirrorOptions _options;
 
-    // The mirror gets a short deadline because falling back is cheap; upstream is the last resort and
-    // gets a patient one, since the alternative to waiting is the feature simply not working.
+    // Only a deployment that configures no mirror reaches upstream, and then it is the sole source, so
+    // the deadline is patient: the alternative to waiting is the feature simply not working.
     private static readonly TimeSpan UpstreamHeadersTimeout = TimeSpan.FromSeconds(60);
-
-    // Latched on a TRANSPORT failure only, so the remaining ten assets in a first-run download do not
-    // each re-pay a DNS or TLS timeout. An HTTP status answer proves the host is up and reachable, and
-    // says nothing about the next key — a 404 there means "not mirrored", not "mirror down".
-    private volatile bool _mirrorUnreachable;
 
     public AssetDownloader(
         IHttpClientFactory httpClientFactory,
@@ -43,50 +35,45 @@ public sealed class AssetDownloader : IAssetDownloader
         IProgress<ModelDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var mirrorUrl = TryBuildMirrorUrl(asset.MirrorKey);
-        if (mirrorUrl is not null && !_mirrorUnreachable)
-        {
-            try
-            {
-                var bytes = await DownloadFromAsync(
-                        mirrorUrl, destinationPath, HeadersTimeout(_options.MirrorTimeoutSeconds), progress, cancellationToken)
-                    .ConfigureAwait(false);
-                _logger.LogInformation("Fetched {Key} from the asset mirror", asset.MirrorKey);
-                return bytes;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                // Latch on everything EXCEPT a real HTTP answer: a status code proves the host is up and
-                // says nothing about the next key, while a TLS, DNS, socket or timeout failure is a cost
-                // every remaining asset of a first run would otherwise re-pay.
-                if (ex is not HttpRequestException { StatusCode: not null })
-                    _mirrorUnreachable = true;
+        var mirrorUrl = MirrorUrlFor(asset.MirrorKey);
+        var url = mirrorUrl ?? asset.UpstreamUrl;
+        var headersTimeout = mirrorUrl is null
+            ? UpstreamHeadersTimeout
+            : HeadersTimeout(_options.MirrorTimeoutSeconds);
 
-                _logger.LogWarning(ex, "Asset mirror {Url} failed for {Key}; falling back upstream",
-                    SafeUrl.Format(mirrorUrl), asset.MirrorKey);
-            }
-        }
-
-        // Restarting from zero rather than resuming: the two origins share no ETag, so a Range request
-        // against the fallback could splice bytes from two different files. The progress bar rewinds.
-        return await DownloadFromAsync(
-                asset.UpstreamUrl, destinationPath, UpstreamHeadersTimeout, progress, cancellationToken)
+        var bytes = await DownloadFromAsync(url, destinationPath, headersTimeout, progress, cancellationToken)
             .ConfigureAwait(false);
+        _logger.LogInformation("Fetched {Key} from {Url}", asset.MirrorKey, SafeUrl.Format(url));
+        return bytes;
     }
 
     private static TimeSpan HeadersTimeout(int seconds) => TimeSpan.FromSeconds(Math.Max(1, seconds));
 
-    /// <summary>Null when no mirror is configured, or when the key cannot form a URL under it.</summary>
-    internal string? TryBuildMirrorUrl(string mirrorKey)
+    /// <summary>Null only when no mirror is configured — a key that cannot form a URL under one throws
+    /// rather than sending the download to a host the deployment did not ask for.</summary>
+    internal string? MirrorUrlFor(string mirrorKey)
     {
         var root = _options.MirrorBaseUrl?.Trim();
         if (string.IsNullOrEmpty(root)) return null;
         if (!root.EndsWith('/')) root += "/";
-        return Uri.TryCreate(new Uri(root, UriKind.Absolute), mirrorKey, out var url) ? url.ToString() : null;
+        return new Uri(new Uri(root, UriKind.Absolute), mirrorKey).ToString();
+    }
+
+    // A deadline that fires cancels the linked token, so without this the caller sees the same exception
+    // it gets when the user clicks Cancel — and the callers that filter on "did the user cancel?" read a
+    // dead host as the user's own click and unwind quietly.
+    private static async Task<HttpResponseMessage> GetHeadersAsync(
+        HttpClient http, string url, TimeSpan headersTimeout, CancellationToken deadline, CancellationToken caller)
+    {
+        try
+        {
+            return await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, deadline).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!caller.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"No response headers from {SafeUrl.Format(url)} within {headersTimeout.TotalSeconds:0}s.");
+        }
     }
 
     private async Task<long> DownloadFromAsync(
@@ -111,8 +98,7 @@ public sealed class AssetDownloader : IAssetDownloader
         using var headersCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         headersCts.CancelAfter(headersTimeout);
 
-        using var response = await http
-            .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, headersCts.Token)
+        using var response = await GetHeadersAsync(http, url, headersTimeout, headersCts.Token, cancellationToken)
             .ConfigureAwait(false);
 
         // Disarm before the body: HttpClient ties the response stream's life to the token the request was
