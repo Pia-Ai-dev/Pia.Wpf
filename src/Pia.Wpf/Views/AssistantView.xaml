@@ -12,16 +12,20 @@
              xmlns:assistant="clr-namespace:Pia.Controls.Assistant"
              xmlns:shared="clr-namespace:Pia.Controls.Shared"
              xmlns:behaviors="clr-namespace:Pia.Behaviors"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="900"
              nav:ViewModelLocator.AutoWireViewModel="True"
              PreviewKeyDown="UserControl_PreviewKeyDown">
   <UserControl.Resources>
+    <!-- In DIPs, so the cap is the same physical width at every DPI; fits the 880 answer plus its avatar. -->
+    <sys:Double x:Key="TranscriptMaxWidth">1000</sys:Double>
+
     <DataTemplate x:Key="UserMessageTemplate">
       <StackPanel x:Name="UserMessagePanel"
                   HorizontalAlignment="Right"
                   Margin="0,0,0,12"
-                  MaxWidth="{Binding ActualWidth, ElementName=MessageScrollViewer, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}">
+                  MaxWidth="{Binding ActualWidth, ElementName=TranscriptColumn, Converter={StaticResource MultiplyConverter}, ConverterParameter=0.6}">
         <Border Style="{StaticResource UserBubbleStyle}">
           <StackPanel>
             <ItemsControl ItemsSource="{Binding Attachments}"
@@ -166,11 +170,13 @@
       </Grid.RowDefinitions>
 
     <!-- Chat title chip + run-progress panel -->
-    <StackPanel Grid.Row="0">
+    <StackPanel Grid.Row="0"
+                Margin="20,0"
+                MaxWidth="{StaticResource TranscriptMaxWidth}">
       <!-- Every file tool, agent run and MCP server this window starts inherits the process token. -->
       <Border x:Name="ElevatedSessionHint"
               Style="{StaticResource PiaStatusBannerStyle}"
-              Margin="20,12,20,0"
+              Margin="0,12,0,0"
               Visibility="{Binding IsElevatedSessionHintVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
         <Grid>
           <Grid.ColumnDefinitions>
@@ -204,10 +210,10 @@
         </Grid>
       </Border>
       <assistant:PiaChatTitleChip DataContext="{Binding ChatTitleChip}"
-                                  Margin="20,12,20,0" />
+                                  Margin="0,12,0,0" />
       <!-- Read-only run-progress panel (1.4). Embedded when the active chat has a live/selected run.
            DataContext = ActiveRunProgress; visibility resolves against the VM via the root UserControl. -->
-      <assistant:RunProgressPanel Margin="20,8,20,0"
+      <assistant:RunProgressPanel Margin="0,8,0,0"
                                   DataContext="{Binding ActiveRunProgress}"
                                   Visibility="{Binding DataContext.ActiveRunProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource NullToVisibilityConverter}}" />
     </StackPanel>
@@ -233,21 +239,20 @@
                   HorizontalAlignment="Center"
                   Margin="0,6,0,0">
         <ui:Button Command="{Binding ChatTitleChip.OpenWorkingDirectoryCommand}"
-                   Appearance="Transparent"
-                   BorderThickness="0"
-                   Padding="2"
-                   Margin="0,0,3,0"
+                   Appearance="Secondary"
+                   Padding="7,5"
+                   Margin="0,0,6,0"
                    Cursor="Hand"
                    VerticalAlignment="Center"
                    AutomationProperties.Name="{loc:Str Assistant_OpenWorkingDirectory_Tooltip}"
                    AutomationProperties.AutomationId="Assistant_OpenWorkingDirectory"
                    ToolTip="{loc:Str Assistant_OpenWorkingDirectory_Tooltip}">
-          <ui:SymbolIcon Symbol="Folder24"
-                         FontSize="12"
-                         Foreground="{DynamicResource TextPlaceholderColorBrush}" />
+          <ui:SymbolIcon Symbol="FolderOpen24"
+                         FontSize="14"
+                         Foreground="{DynamicResource PiaAccentBrush}" />
         </ui:Button>
         <!-- In-place re-point: an un-started chat is the only one whose folder can still change, so
-             the edit lives on the empty state. Fill, outline and chevron surface on hover only. -->
+             the edit lives on the empty state. Drawn as a pill at rest, since users missed it as plain text. -->
         <Button x:Name="EmptyWorkingDirButton"
                 Cursor="Hand"
                 VerticalAlignment="Center"
@@ -258,35 +263,28 @@
             <ControlTemplate TargetType="Button">
               <Border x:Name="Bd"
                       CornerRadius="{StaticResource SmallRadius}"
-                      Padding="6,2"
-                      Background="Transparent"
+                      Padding="8,4"
+                      Background="{DynamicResource SurfaceMutedBrush}"
                       BorderThickness="1"
-                      BorderBrush="Transparent"
-                      TextBlock.Foreground="{DynamicResource TextPlaceholderColorBrush}">
+                      BorderBrush="{DynamicResource BorderBrush_}"
+                      TextBlock.Foreground="{DynamicResource TextFillColorSecondaryBrush}">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                   <ContentPresenter VerticalAlignment="Center" />
-                  <ui:SymbolIcon x:Name="Chevron"
-                                 Symbol="ChevronDown20"
+                  <ui:SymbolIcon Symbol="ChevronDown20"
                                  FontSize="11"
-                                 Margin="4,0,0,0"
-                                 Opacity="0"
+                                 Margin="6,0,0,0"
                                  VerticalAlignment="Center" />
                 </StackPanel>
               </Border>
               <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                  <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                  <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush_}" />
-                  <Setter TargetName="Bd" Property="TextBlock.Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
-                  <Setter TargetName="Chevron" Property="Opacity" Value="1" />
+                  <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}" />
+                  <Setter TargetName="Bd" Property="TextBlock.Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                 </Trigger>
-                <!-- Latch the hover look while the picker is open: the mouse is over the popup by
-                     then, and a row that snapped back to bare text read as dismissed. -->
+                <!-- Latch the hover look while the picker is open: the mouse is over the popup by then. -->
                 <DataTrigger Binding="{Binding ChatTitleChip.IsInlinePickerOpen}" Value="True">
-                  <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceMutedBrush}" />
-                  <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BorderBrush_}" />
-                  <Setter TargetName="Bd" Property="TextBlock.Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
-                  <Setter TargetName="Chevron" Property="Opacity" Value="1" />
+                  <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource PiaAccentBrush}" />
+                  <Setter TargetName="Bd" Property="TextBlock.Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                 </DataTrigger>
               </ControlTemplate.Triggers>
             </ControlTemplate>
@@ -385,7 +383,8 @@
           </Style.Triggers>
         </Style>
       </ScrollViewer.Style>
-      <StackPanel>
+      <StackPanel x:Name="TranscriptColumn"
+                  MaxWidth="{StaticResource TranscriptMaxWidth}">
         <!-- Scrolls with the transcript rather than floating over it, so it reads as the start of the
              conversation and takes no layout when there is nothing older. -->
         <Button x:Name="LoadOlderMessagesButton"
@@ -458,7 +457,8 @@
 
     <!-- Input area -->
     <Border Grid.Row="2" Padding="20,8,20,16">
-      <Border Style="{StaticResource PiaComposerCardStyle}">
+      <Border Style="{StaticResource PiaComposerCardStyle}"
+              MaxWidth="{StaticResource TranscriptMaxWidth}">
         <StackPanel Margin="8">
           <!-- Weak-provider warning banner (§14.4). Non-blocking: a Planned send still runs (R10). -->
           <Border Background="{DynamicResource WarnSoftBrush}"
