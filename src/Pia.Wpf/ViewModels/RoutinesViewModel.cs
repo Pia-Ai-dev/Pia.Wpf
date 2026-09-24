@@ -1686,8 +1686,7 @@ public sealed class RoutineRow
     public required string Query { get; init; }
 
     /// <summary>The goal on one line: a TextBlock still breaks on newlines, so a long goal grew its list row.</summary>
-    public string QueryPreview =>
-        string.Join(' ', Query[..Math.Min(Query.Length, 400)].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    public string QueryPreview => string.Join(' ', Query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     public required ScheduledJobKind Kind { get; init; }
     public required string KindLabel { get; init; }

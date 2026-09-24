@@ -252,7 +252,7 @@
                          Foreground="{DynamicResource PiaAccentBrush}" />
         </ui:Button>
         <!-- In-place re-point: an un-started chat is the only one whose folder can still change, so
-             the edit lives on the empty state. Drawn as a pill at rest, since users missed it as plain text. -->
+             the edit lives on the empty state. Drawn as a pill at rest so it reads as a control. -->
         <Button x:Name="EmptyWorkingDirButton"
                 Cursor="Hand"
                 VerticalAlignment="Center"
