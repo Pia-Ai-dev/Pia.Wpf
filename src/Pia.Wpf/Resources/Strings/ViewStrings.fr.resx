@@ -668,6 +668,7 @@
   <data name="Sync_LocalAuth_FieldsRequired" xml:space="preserve"><value>L'e-mail et le mot de passe sont requis</value></data>
   <data name="Sync_LocalAuth_ServerUrlRequired" xml:space="preserve"><value>L'URL du serveur n'est pas configurée.</value></data>
   <data name="Sync_LocalAuth_SignInRequired" xml:space="preserve"><value>Vous n'êtes pas connecté.</value></data>
+  <data name="Sync_LoginProviderDisabledByPolicy" xml:space="preserve"><value>Cette méthode de connexion est désactivée par la stratégie de votre organisation.</value></data>
   <data name="Sync_LocalAuth_InvalidCredentials" xml:space="preserve"><value>E-mail ou mot de passe invalide</value></data>
   <data name="Sync_LocalAuth_AccountLocked" xml:space="preserve"><value>Le compte est temporairement verrouillé. Réessayez plus tard.</value></data>
   <data name="Sync_LocalAuth_EmailNotVerified" xml:space="preserve"><value>Veuillez vérifier votre e-mail avant de vous connecter</value></data>

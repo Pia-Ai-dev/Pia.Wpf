@@ -668,6 +668,7 @@
   <data name="Sync_LocalAuth_FieldsRequired" xml:space="preserve"><value>E-Mail und Passwort sind erforderlich</value></data>
   <data name="Sync_LocalAuth_ServerUrlRequired" xml:space="preserve"><value>Server-URL ist nicht konfiguriert.</value></data>
   <data name="Sync_LocalAuth_SignInRequired" xml:space="preserve"><value>Du bist nicht angemeldet.</value></data>
+  <data name="Sync_LoginProviderDisabledByPolicy" xml:space="preserve"><value>Diese Anmeldemethode ist durch die Richtlinie deiner Organisation deaktiviert.</value></data>
   <data name="Sync_LocalAuth_InvalidCredentials" xml:space="preserve"><value>Ungültige E-Mail oder Passwort</value></data>
   <data name="Sync_LocalAuth_AccountLocked" xml:space="preserve"><value>Konto ist vorübergehend gesperrt. Versuche es später erneut.</value></data>
   <data name="Sync_LocalAuth_EmailNotVerified" xml:space="preserve"><value>Bitte bestätige deine E-Mail vor der Anmeldung</value></data>

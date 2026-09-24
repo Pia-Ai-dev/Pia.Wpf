@@ -21,3 +21,9 @@
   write, not only the ones whose last request went there. An agent step asks the
   server several times as it works, so a step answered under the shield and then
   finishing normally used to show nothing.
+
+## Administration
+
+- A sign-in method your organization's policy turns off is now refused, not
+  just hidden, and anyone still signed in with it is signed out the next time
+  Pia starts.

@@ -631,6 +631,7 @@
   <data name="Sync_LocalAuth_FieldsRequired" xml:space="preserve"><value>Email and password are required</value></data>
   <data name="Sync_LocalAuth_ServerUrlRequired" xml:space="preserve"><value>Server URL is not configured.</value></data>
   <data name="Sync_LocalAuth_SignInRequired" xml:space="preserve"><value>You are not signed in.</value></data>
+  <data name="Sync_LoginProviderDisabledByPolicy" xml:space="preserve"><value>This sign-in method is disabled by your organization's policy.</value></data>
   <data name="Sync_LocalAuth_InvalidCredentials" xml:space="preserve"><value>Invalid email or password</value></data>
   <data name="Sync_LocalAuth_AccountLocked" xml:space="preserve"><value>Account is temporarily locked. Try again later.</value></data>
   <data name="Sync_LocalAuth_EmailNotVerified" xml:space="preserve"><value>Please verify your email before signing in</value></data>
