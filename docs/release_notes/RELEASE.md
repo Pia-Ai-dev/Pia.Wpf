@@ -25,10 +25,20 @@
   when every request was answered in time. The limit covered the whole turn,
   file edits between requests included, so a provider that replied within
   seconds a dozen times over still ran it out.
+- On a wide or maximized window the chat stays in a centered column, so your
+  own messages sit next to the answers instead of at the far edge.
+- The chat switcher at the top left, and the folder buttons on an empty chat,
+  now look like buttons instead of plain text, so they are easier to find.
 - A provider's "Timeout (seconds)" accepts up to 600; it stopped at 300.
 - Answer text is sharp on every line. Single lines of a reply rendered
   blurred, most often the second or third, and which ones changed as the
   chat scrolled.
+
+## Routines
+
+- A routine with a long, multi-line goal no longer takes over the list. Each
+  entry shows the goal on one line; the full text is in the details.
+- "Run now" confirms with a short message that the routine has started.
 
 ## Privacy
 
