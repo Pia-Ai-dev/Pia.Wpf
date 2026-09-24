@@ -240,7 +240,9 @@
                   Margin="0,6,0,0">
         <ui:Button Command="{Binding ChatTitleChip.OpenWorkingDirectoryCommand}"
                    Appearance="Secondary"
-                   Padding="7,5"
+                   Height="26"
+                   CornerRadius="{StaticResource SmallRadius}"
+                   Padding="7,0"
                    Margin="0,0,6,0"
                    Cursor="Hand"
                    VerticalAlignment="Center"
@@ -253,7 +255,9 @@
         </ui:Button>
         <!-- In-place re-point: an un-started chat is the only one whose folder can still change, so
              the edit lives on the empty state. Drawn as a pill at rest so it reads as a control. -->
+        <!-- Same fixed height as the folder button beside it, so the two sit on one line. -->
         <Button x:Name="EmptyWorkingDirButton"
+                Height="26"
                 Cursor="Hand"
                 VerticalAlignment="Center"
                 Click="EmptyWorkingDirButton_Click"
@@ -263,7 +267,7 @@
             <ControlTemplate TargetType="Button">
               <Border x:Name="Bd"
                       CornerRadius="{StaticResource SmallRadius}"
-                      Padding="8,4"
+                      Padding="8,0"
                       Background="{DynamicResource SurfaceMutedBrush}"
                       BorderThickness="1"
                       BorderBrush="{DynamicResource BorderBrush_}"
