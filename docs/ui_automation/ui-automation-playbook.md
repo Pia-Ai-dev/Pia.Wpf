@@ -5,7 +5,8 @@ instance. Read this before starting a run; it replaces guesswork with what is ve
 Companion to `2026-08-16-ui-automation-gaps.md` (the findings that motivated the fixes),
 `2026-08-16-ui-automation-validation.md` (the live re-run that confirmed them), and
 [2026-08-22-fill-uiautomation-gaps-checklist.md](2026-08-22-fill-uiautomation-gaps-checklist.md)
-(the file-by-file work list for closing the "Known gaps" below).
+(the file-by-file work list for closing the "Known gaps" below). Setting WinWright up on a new machine:
+[winwright-setup.md](winwright-setup.md).
 
 ## Ground rules
 

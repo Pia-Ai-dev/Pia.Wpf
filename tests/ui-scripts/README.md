@@ -6,6 +6,7 @@ they run on demand on a Windows desktop session.
 
 Background and the traps behind every rule here: `docs/ui_automation/2026-08-18-winwright-recording-eval.md`.
 Selector reference: `docs/ui_automation/ui-automation-playbook.md`.
+First-time machine setup (WinWright install, config, MCP registration): `docs/ui_automation/winwright-setup.md`.
 
 ```
 Invoke-UiScripts.ps1                    the harness

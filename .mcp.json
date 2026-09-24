@@ -9,6 +9,14 @@
         "msedge"
       ],
       "env": {}
+    },
+    "winwright": {
+      "type": "stdio",
+      "command": "${LOCALAPPDATA}\\WinWright\\Civyk.WinWright.Mcp.exe",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
     }
   }
 }
