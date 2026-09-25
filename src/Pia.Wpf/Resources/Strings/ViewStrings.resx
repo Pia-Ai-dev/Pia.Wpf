@@ -658,6 +658,7 @@
   <data name="AccountDeletion_Password_Label" xml:space="preserve"><value>Password</value></data>
   <data name="AccountDeletion_Understood" xml:space="preserve"><value>I understand that my account and the data stored in it will be deleted.</value></data>
   <data name="AccountDeletion_Confirm" xml:space="preserve"><value>Delete account</value></data>
+  <data name="AccountDeletion_RequiredHint" xml:space="preserve"><value>The Delete account button appears once you tick the box below and, if you sign in with email and password, enter your password.</value></data>
   <data name="Sync_NeverSynced" xml:space="preserve"><value>Never synced</value></data>
   <data name="Sync_JustNow" xml:space="preserve"><value>Just now</value></data>
   <data name="Sync_MinutesAgo" xml:space="preserve"><value>{0} minute(s) ago</value></data>

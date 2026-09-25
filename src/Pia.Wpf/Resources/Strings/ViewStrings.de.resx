@@ -695,6 +695,7 @@
   <data name="AccountDeletion_Password_Label" xml:space="preserve"><value>Passwort</value></data>
   <data name="AccountDeletion_Understood" xml:space="preserve"><value>Mir ist klar, dass mein Konto und die darin gespeicherten Daten gelöscht werden.</value></data>
   <data name="AccountDeletion_Confirm" xml:space="preserve"><value>Konto löschen</value></data>
+  <data name="AccountDeletion_RequiredHint" xml:space="preserve"><value>Die Schaltfläche „Konto löschen“ erscheint, sobald du unten den Haken setzt und – bei Anmeldung mit E-Mail und Passwort – dein Passwort eingibst.</value></data>
   <data name="Sync_NeverSynced" xml:space="preserve"><value>Noch nie synchronisiert</value></data>
   <data name="Sync_JustNow" xml:space="preserve"><value>Gerade eben</value></data>
   <data name="Sync_MinutesAgo" xml:space="preserve"><value>Vor {0} Minute(n)</value></data>

@@ -695,6 +695,7 @@
   <data name="AccountDeletion_Password_Label" xml:space="preserve"><value>Mot de passe</value></data>
   <data name="AccountDeletion_Understood" xml:space="preserve"><value>Je comprends que mon compte et les données qu'il contient seront supprimés.</value></data>
   <data name="AccountDeletion_Confirm" xml:space="preserve"><value>Supprimer le compte</value></data>
+  <data name="AccountDeletion_RequiredHint" xml:space="preserve"><value>Le bouton « Supprimer le compte » apparaît dès que vous cochez la case ci-dessous et, si vous vous connectez avec une adresse e-mail et un mot de passe, que vous saisissez votre mot de passe.</value></data>
   <data name="Sync_NeverSynced" xml:space="preserve"><value>Jamais synchronisé</value></data>
   <data name="Sync_JustNow" xml:space="preserve"><value>À l'instant</value></data>
   <data name="Sync_MinutesAgo" xml:space="preserve"><value>Il y a {0} minute(s)</value></data>

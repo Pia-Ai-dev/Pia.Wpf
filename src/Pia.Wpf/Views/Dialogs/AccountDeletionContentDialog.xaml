@@ -16,10 +16,19 @@
     <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
            TargetType="{x:Type local:AccountDeletionContentDialog}" />
     <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
     <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
   </ui:ContentDialog.Resources>
 
   <StackPanel Margin="0,8,0,0" Width="460">
+    <!-- ContentDialog hides the primary button while it is disabled, so say what brings it back. -->
+    <Border Style="{StaticResource PiaRequiredHintStyle}"
+            Visibility="{Binding CanDelete, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+      <TextBlock Text="{loc:Str AccountDeletion_RequiredHint}"
+                 AutomationProperties.AutomationId="AccountDeletion_RequiredHint"
+                 TextWrapping="Wrap" />
+    </Border>
+
     <TextBlock Text="{loc:Str AccountDeletion_Intro}"
                TextWrapping="Wrap"
                Foreground="{DynamicResource TextDefaultBrush}"
