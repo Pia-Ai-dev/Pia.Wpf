@@ -36,6 +36,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
     private readonly ISettingsService _settings;
     private readonly ITextOptimizationService? _textOptimization;
     private readonly IAdvancedCreationLauncher? _advancedCreation;
+    private readonly Wpf.Ui.ISnackbarService? _snackbar;
     private readonly ILogger<RoutinesViewModel> _logger;
 
     /// <summary>The grant list as it will be persisted: insertion-ordered, deduped OrdinalIgnoreCase. The rows
@@ -505,7 +506,8 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         ISettingsService settings,
         ILogger<RoutinesViewModel> logger,
         ITextOptimizationService? textOptimization = null,
-        IAdvancedCreationLauncher? advancedCreation = null)
+        IAdvancedCreationLauncher? advancedCreation = null,
+        Wpf.Ui.ISnackbarService? snackbar = null)
     {
         _jobs = jobs;
         _runner = runner;
@@ -522,6 +524,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
         _logger = logger;
         _textOptimization = textOptimization;
         _advancedCreation = advancedCreation;
+        _snackbar = snackbar;
 
         WorkingDirectoryPicker = new WorkingDirectoryPickerViewModel(workingDirectories);
         WorkingDirectoryPicker.WorkingDirectoryChosen += (_, path) =>
@@ -1486,6 +1489,13 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                 ScheduledJobRunNowResult.AlreadyRunning => _localization["Settings_ScheduledJobs_RunAlreadyRunning"],
                 _ => _localization["Settings_ScheduledJobs_RunNotFound"],
             };
+
+            if (result == ScheduledJobRunNowResult.Dispatched)
+            {
+                _snackbar?.Show(_localization["Routines_RunStarted_Title"],
+                    _localization.Format("Routines_RunStarted_Body", row.Name),
+                    Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(3));
+            }
         }
         catch (Exception ex)
         {
@@ -1674,6 +1684,9 @@ public sealed class RoutineRow
 
     /// <summary>The goal. User content: rendered, never logged above <c>SensitiveDebug</c>.</summary>
     public required string Query { get; init; }
+
+    /// <summary>The goal on one line: a TextBlock still breaks on newlines, so a long goal grew its list row.</summary>
+    public string QueryPreview => string.Join(' ', Query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     public required ScheduledJobKind Kind { get; init; }
     public required string KindLabel { get; init; }

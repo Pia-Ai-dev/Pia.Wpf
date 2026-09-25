@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Documents;
+using Pia.Behaviors;
 using Pia.Controls;
 
 namespace Pia.Emoji;
@@ -33,6 +34,8 @@ public static class EmojiInlineBuilder
             RelativeSource = new RelativeSource(RelativeSourceMode.Self),
         });
 
-        return new InlineUIContainer(presenter) { BaselineAlignment = BaselineAlignment.Center };
+        var container = new InlineUIContainer(presenter) { BaselineAlignment = BaselineAlignment.Center };
+        SelectionCopyBehavior.SetCopyText(container, emoji);
+        return container;
     }
 }

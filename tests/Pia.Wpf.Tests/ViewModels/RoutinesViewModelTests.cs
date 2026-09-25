@@ -80,7 +80,8 @@ public class RoutinesViewModelTests
         IWorkingDirectoryService WorkingDirectories,
         ISettingsService Settings,
         ITextOptimizationService Drafting,
-        IAdvancedCreationLauncher Advanced);
+        IAdvancedCreationLauncher Advanced,
+        Wpf.Ui.ISnackbarService Snackbar);
 
     private static Sut CreateSut(params ScheduledJob[] jobs) => CreateSut(runs: null, jobs);
 
@@ -120,6 +121,7 @@ public class RoutinesViewModelTests
 
         var drafting = Substitute.For<ITextOptimizationService>();
         var advanced = Substitute.For<IAdvancedCreationLauncher>();
+        var snackbar = Substitute.For<Wpf.Ui.ISnackbarService>();
 
         // Returns null the way the real service does with no sandbox configured, so a create sends no folder
         // unless the test asks for one.
@@ -132,10 +134,10 @@ public class RoutinesViewModelTests
 
         var vm = new RoutinesViewModel(service, runner, providers, personas, runs, dialogs, windows, Localizer(),
             plugins, Substitute.For<IBrowserProvisioner>(), workingDirectories, settings,
-            NullLogger<RoutinesViewModel>.Instance, drafting, advanced);
+            NullLogger<RoutinesViewModel>.Instance, drafting, advanced, snackbar);
 
         return new Sut(vm, service, runner, providers, personas, runs, dialogs, windows, plugins,
-            workingDirectories, settings, drafting, advanced);
+            workingDirectories, settings, drafting, advanced, snackbar);
     }
 
     private static RoutineDraft Draft(
@@ -933,6 +935,52 @@ public class RoutinesViewModelTests
         Assert.Equal("Settings_ScheduledJobs_RunNotFound", gone);
         Assert.NotEqual(gone, busy);
         Assert.NotEqual(gone, dispatched);
+    }
+
+    [Fact]
+    public async Task RunNow_ConfirmsADispatchWithAShortLivedFlowMessage()
+    {
+        var job = NewJob();
+        var sut = CreateSut(job);
+        sut.Runner.RunNowAsync(job.Id, Arg.Any<CancellationToken>()).Returns(ScheduledJobRunNowResult.Dispatched);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        await sut.Vm.RunNowCommand.ExecuteAsync(null);
+
+        sut.Snackbar.Received(1).Show("Routines_RunStarted_Title", Arg.Is<string>(s => s.Contains("Nightly digest")),
+            Wpf.Ui.Controls.ControlAppearance.Success, null, Arg.Is<TimeSpan>(t => t > TimeSpan.Zero && t <= TimeSpan.FromSeconds(5)));
+    }
+
+    [Theory]
+    [InlineData(ScheduledJobRunNowResult.NotOwner)]
+    [InlineData(ScheduledJobRunNowResult.AlreadyRunning)]
+    [InlineData(ScheduledJobRunNowResult.NotFound)]
+    public async Task RunNow_ConfirmsNothingThatDidNotStart(ScheduledJobRunNowResult result)
+    {
+        var job = NewJob();
+        var sut = CreateSut(job);
+        sut.Runner.RunNowAsync(job.Id, Arg.Any<CancellationToken>()).Returns(result);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        await sut.Vm.RunNowCommand.ExecuteAsync(null);
+
+        sut.Snackbar.DidNotReceiveWithAnyArgs().Show(default!, default!, default, default, default);
+    }
+
+    [Fact]
+    public async Task Row_PreviewsAMultiLineGoalOnOneLine_WhileTheDetailKeepsItWhole()
+    {
+        var job = NewJob();
+        job.Query = "Step one:\r\n  read the file\n\nStep two:\twrite the report";
+        var sut = CreateSut(job);
+
+        await sut.Vm.RefreshAsync();
+
+        var row = Assert.Single(sut.Vm.Jobs);
+        Assert.Equal("Step one: read the file Step two: write the report", row.QueryPreview);
+        Assert.Equal(job.Query, row.Query);
     }
 
     [Fact]

@@ -83,6 +83,8 @@
   <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Aucun modèle vocal chargé. Choisissez une voix dans les paramètres pour utiliser Lire à voix haute.</value></data>
   <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Ouvrir les paramètres</value></data>
   <!-- Assistant messages -->
+  <data name="Msg_Assistant_ConfirmNewChatTitle" xml:space="preserve"><value>Démarrer un nouveau chat ?</value></data>
+  <data name="Msg_Assistant_ConfirmNewChatMessage" xml:space="preserve"><value>Votre message non envoyé sera supprimé.</value></data>
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copié</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Valeur actuelle :</value></data>
   <data name="Msg_Assistant_MemoryUpdated" xml:space="preserve"><value>Mémoire mise à jour</value></data>

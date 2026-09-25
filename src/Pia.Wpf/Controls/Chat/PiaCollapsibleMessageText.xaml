@@ -34,6 +34,7 @@
                      VerticalScrollBarVisibility="Disabled"
                      VerticalAlignment="Top"
                      AutomationProperties.AutomationId="{Binding TextAutomationId, ElementName=Root}"
+                     behaviors:SelectionCopyBehavior.IsEnabled="True"
                      behaviors:AtCommandHighlightBehavior.Text="{Binding Text, ElementName=Root}">
           <RichTextBox.ContextMenu>
             <ContextMenu>

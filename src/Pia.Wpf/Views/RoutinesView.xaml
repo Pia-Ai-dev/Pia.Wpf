@@ -225,7 +225,7 @@
                                Foreground="{DynamicResource TextDefaultBrush}"/>
                   </StackPanel>
 
-                  <TextBlock Text="{Binding Query}"
+                  <TextBlock Text="{Binding QueryPreview}"
                              Margin="0,8,0,0"
                              FontSize="12"
                              TextTrimming="CharacterEllipsis"
