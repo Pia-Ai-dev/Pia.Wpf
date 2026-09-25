@@ -37,6 +37,9 @@
   spaces, and so did code blocks in answers and @-commands in your own
   messages; only the Copy button handed back the full text. Pasted into Word
   or Outlook, a code block still arrives blank.
+- A Mistral provider with "Enable web search" and a "Mistral Agent ID" no
+  longer ends every answer in an error. The reply arrived in full, but the
+  chat was flagged "Error" each time.
 
 ## Routines
 

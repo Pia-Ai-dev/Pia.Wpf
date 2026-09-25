@@ -1,4 +1,6 @@
+using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -68,10 +70,11 @@ public sealed class MistralConversationsHandler : DelegatingHandler
             {
                 if (clientRequestedStreaming)
                 {
-                    // SDK is in streaming mode and expects SSE — wrap the buffered
-                    // chat.completion as a single chat.completion.chunk event.
+                    // Forward-only like the network stream it stands in for: the SDK's response Dispose
+                    // throws on an in-memory body it has read to the end.
                     var sse = BuildSseFromChatCompletion(transformed);
-                    response.Content = new StringContent(sse, Encoding.UTF8, "text/event-stream");
+                    response.Content = new StreamContent(new ForwardOnlyStream(Encoding.UTF8.GetBytes(sse)));
+                    response.Content.Headers.ContentType = new MediaTypeHeaderValue("text/event-stream") { CharSet = "utf-8" };
                 }
                 else
                 {
@@ -292,5 +295,10 @@ public sealed class MistralConversationsHandler : DelegatingHandler
                 }
                 return;
         }
+    }
+
+    private sealed class ForwardOnlyStream(byte[] buffer) : MemoryStream(buffer, writable: false)
+    {
+        public override bool CanSeek => false;
     }
 }
