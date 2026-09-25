@@ -47,9 +47,9 @@ Write-Host "Version: $Version" -ForegroundColor Green
 Write-Host "Checking for Velopack CLI (vpk)..." -ForegroundColor Cyan
 if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
     Write-Host "Installing vpk globally..." -ForegroundColor Yellow
-    dotnet tool install -g vpk --allow-roll-forward
+    dotnet tool install -g vpk --version 1.2.158 --allow-roll-forward
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to install vpk. Install manually: dotnet tool install -g vpk"
+        Write-Error "Failed to install vpk. Install manually: dotnet tool install -g vpk --version 1.2.158"
         exit 1
     }
 }
@@ -86,8 +86,8 @@ vpk pack `
     --packTitle "Pia" `
     --packAuthors "Pia-Ai-dev" `
     --instLicense "$RepoRoot\src\Pia.Wpf\Resources\Installer\LICENSE.txt" `
-    --msiBanner "$RepoRoot\src\Pia.Wpf\Resources\Installer\banner.bmp" `
-    --msiLogo "$RepoRoot\src\Pia.Wpf\Resources\Installer\logo.bmp" `
+    --msiTopBanner "$RepoRoot\src\Pia.Wpf\Resources\Installer\logo.bmp" `
+    --msiDialogBackground "$RepoRoot\src\Pia.Wpf\Resources\Installer\banner.bmp" `
     --msi
 
 if ($LASTEXITCODE -ne 0) {
