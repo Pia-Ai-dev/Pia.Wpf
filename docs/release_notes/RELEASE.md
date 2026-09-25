@@ -16,6 +16,10 @@
 - "New chat" asks before it throws away a message you have typed but not
   sent. The "+" under the message box is easy to mistake for attaching a
   file, and one click cleared the draft.
+- Asked about Pia in German or French, the assistant names settings the way
+  your screen shows them, such as "Tool-Zugriff" or "Erweiterungen", instead
+  of translating the English guide. It can also tell you your hotkeys,
+  privacy, Optimize and startup settings, and which version is installed.
 
 ## Code blocks
 

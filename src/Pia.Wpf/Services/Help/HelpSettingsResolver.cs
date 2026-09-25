@@ -4,34 +4,36 @@ using Pia.Services.Tts;
 
 namespace Pia.Services.Help;
 
-/// <summary>
-/// Reports what this install is actually set to, and where in the UI each value is changed. The guide
-/// describes a build; this describes the machine in front of the user — and the path is resolved
-/// through the localization service, so it names the labels they can actually see on screen.
-/// </summary>
+/// <summary>Reports this install's actual settings, each with the localized path to change it.</summary>
 public sealed class HelpSettingsResolver
 {
     public const string AllAreas = "all";
 
-    /// <summary>The areas the tool offers. Ordered so the summary reads top-down like the app does.</summary>
+    /// <summary>Ordered so the summary reads top-down like the app does.</summary>
     public static IReadOnlyList<string> Areas { get; } =
-        ["language", "speech", "assistant", "agent", "providers", "personas", "meetings", "sync", "tools"];
+    [
+        "language", "application", "hotkeys", "speech", "privacy", "providers", "optimize",
+        "assistant", "personas", "tools", "meetings", "agent", "sync", "about",
+    ];
 
     private readonly ISettingsService _settingsService;
     private readonly ILocalizationService _localizationService;
     private readonly IPersonaService _personaService;
     private readonly IProviderService _providerService;
+    private readonly ITemplateService _templateService;
 
     public HelpSettingsResolver(
         ISettingsService settingsService,
         ILocalizationService localizationService,
         IPersonaService personaService,
-        IProviderService providerService)
+        IProviderService providerService,
+        ITemplateService templateService)
     {
         _settingsService = settingsService;
         _localizationService = localizationService;
         _personaService = personaService;
         _providerService = providerService;
+        _templateService = templateService;
     }
 
     public async Task<IReadOnlyList<HelpSettingRow>> DescribeAsync(string? area, CancellationToken ct = default)
@@ -41,14 +43,19 @@ public sealed class HelpSettingsResolver
         var rows = new List<HelpSettingRow>();
 
         if (Wants(wanted, "language")) AddLanguage(rows, settings);
+        if (Wants(wanted, "application")) AddApplication(rows, settings);
+        if (Wants(wanted, "hotkeys")) AddHotkeys(rows, settings);
         if (Wants(wanted, "speech")) AddSpeech(rows, settings);
-        if (Wants(wanted, "assistant")) AddAssistant(rows, settings);
-        if (Wants(wanted, "agent")) AddAgent(rows, settings);
+        if (Wants(wanted, "privacy")) AddPrivacy(rows, settings);
         if (Wants(wanted, "providers")) await AddProvidersAsync(rows, settings);
+        if (Wants(wanted, "optimize")) await AddOptimizeAsync(rows, settings);
+        if (Wants(wanted, "assistant")) AddAssistant(rows, settings);
         if (Wants(wanted, "personas")) await AddPersonasAsync(rows, settings);
-        if (Wants(wanted, "meetings")) AddMeetings(rows, settings);
-        if (Wants(wanted, "sync")) AddSync(rows, settings);
         if (Wants(wanted, "tools")) AddTools(rows, settings);
+        if (Wants(wanted, "meetings")) AddMeetings(rows, settings);
+        if (Wants(wanted, "agent")) AddAgent(rows, settings);
+        if (Wants(wanted, "sync")) AddSync(rows, settings);
+        if (Wants(wanted, "about")) AddAbout(rows);
 
         ct.ThrowIfCancellationRequested();
         return rows;
@@ -85,6 +92,40 @@ public sealed class HelpSettingsResolver
             Path("Settings_Tab_General", "Settings_InnerTab_Speech", "Settings_SpeechToTextLanguage")));
     }
 
+    private void AddApplication(List<HelpSettingRow> rows, AppSettings settings)
+    {
+        string At(string labelKey) => Path("Settings_Tab_General", "Settings_InnerTab_Application", labelKey);
+
+        rows.Add(new HelpSettingRow("application", "Window the main button opens",
+            settings.DefaultWindowMode.ToString(), At("Settings_DefaultWindowMode")));
+        rows.Add(new HelpSettingRow("application", "Launch at Windows startup",
+            OnOff(settings.LaunchAtStartup), At("Settings_LaunchAtStartup")));
+        rows.Add(new HelpSettingRow("application", "Start minimized to the system tray",
+            OnOff(settings.StartMinimized), At("Settings_StartMinimized")));
+        rows.Add(new HelpSettingRow("application", "Paste the selected text into Pia when a hotkey opens it",
+            OnOff(settings.AutoCaptureSelectedText), At("Settings_AutoCaptureSelectedText")));
+        rows.Add(new HelpSettingRow("application", "Check for updates automatically",
+            OnOff(settings.AutoUpdateEnabled), At("Settings_AutoUpdateEnabled")));
+        rows.Add(new HelpSettingRow("application", "Export diagnostics (a redacted log zip for support)",
+            "a button; nothing is sent anywhere", At("Settings_ExportDiagnostics")));
+        rows.Add(new HelpSettingRow("application", "Reset the application",
+            "a button that deletes all local data and restarts Pia; it cannot be undone", At("Settings_ResetAppData")));
+    }
+
+    private void AddHotkeys(List<HelpSettingRow> rows, AppSettings settings)
+    {
+        string At(string labelKey) => Path("Settings_Tab_General", "Settings_InnerTab_Hotkeys", labelKey);
+
+        rows.Add(new HelpSettingRow("hotkeys", "Open the Assistant",
+            HotkeyText(settings.AssistantHotkey), At("Settings_Hotkey_Assistant")));
+        rows.Add(new HelpSettingRow("hotkeys", "Open Optimize",
+            HotkeyText(settings.OptimizeHotkey), At("Settings_Hotkey_Optimize")));
+        rows.Add(new HelpSettingRow("hotkeys", "Fast path (capture, optimize and apply in one keystroke)",
+            HotkeyText(settings.FastPathHotkey), At("Settings_Hotkey_FastPath")));
+        rows.Add(new HelpSettingRow("hotkeys", "Capture the screen into the Assistant",
+            HotkeyText(settings.ScreenCaptureHotkey), At("Settings_Hotkey_ScreenCapture")));
+    }
+
     private void AddSpeech(List<HelpSettingRow> rows, AppSettings settings)
     {
         var voice = TtsVoiceCatalog.Curated.FirstOrDefault(v => v.Key == settings.TtsVoiceModelKey);
@@ -119,6 +160,35 @@ public sealed class HelpSettingsResolver
                 ? $"Whisper ({settings.WhisperModel})"
                 : settings.SttBackend.ToString(),
             Path("Settings_Tab_General", "Settings_InnerTab_Speech", "Stt_Title")));
+    }
+
+    private void AddPrivacy(List<HelpSettingRow> rows, AppSettings settings)
+    {
+        string At(string labelKey) => Path("Settings_Tab_General", "Settings_InnerTab_Privacy", labelKey);
+        var keywords = settings.Privacy.PiiKeywords.Count;
+
+        rows.Add(new HelpSettingRow("privacy", "Replace personal data with tokens before it reaches the AI provider",
+            OnOff(settings.Privacy.TokenizationEnabled), At("Settings_Privacy_Tokenization")));
+        // The keywords are the user's secrets; a count confirms they saved without sending them to the provider.
+        rows.Add(new HelpSettingRow("privacy", "Private keywords (always treated as personal data)",
+            keywords == 0 ? "none" : keywords + " configured", At("Settings_Privacy_Keywords")));
+    }
+
+    private async Task AddOptimizeAsync(List<HelpSettingRow> rows, AppSettings settings)
+    {
+        string At(string labelKey) => Path("Settings_Tab_Optimize", "Settings_InnerTab_General", labelKey);
+        var templatesPath = Path("Settings_Tab_Optimize", "Settings_Tab_Templates");
+        var templates = await _templateService.GetTemplatesAsync();
+        var defaultTemplate = templates.FirstOrDefault(t => t.Id == settings.DefaultTemplateId);
+
+        rows.Add(new HelpSettingRow("optimize", "What happens with the optimized text",
+            OutputActionText(settings.DefaultOutputAction), At("Settings_OutputAction")));
+        rows.Add(new HelpSettingRow("optimize", "Delay between keystrokes when auto-typing",
+            settings.AutoTypeDelayMs + " ms", At("Settings_AutoTypeDelay")));
+        rows.Add(new HelpSettingRow("optimize", "Default template",
+            defaultTemplate?.Name ?? "none", templatesPath));
+        rows.Add(new HelpSettingRow("optimize", "Available templates",
+            templates.Count == 0 ? "none" : string.Join(", ", templates.Select(t => t.Name)), templatesPath));
     }
 
     private void AddAssistant(List<HelpSettingRow> rows, AppSettings settings)
@@ -233,6 +303,14 @@ public sealed class HelpSettingsResolver
         rows.Add(new HelpSettingRow("tools", "Local MCP servers (extra tools from another program)",
             "added and enabled here",
             Path("Settings_Tab_Assistant", "Settings_Tab_McpServers")));
+        rows.Add(new HelpSettingRow("tools", "Plugins from Pia Cloud",
+            "switched on or off here; needs a Pia Cloud connection",
+            Path("Settings_Tab_Plugins")));
+    }
+
+    private void AddAbout(List<HelpSettingRow> rows)
+    {
+        rows.Add(new HelpSettingRow("about", "Installed version", AppVersionInfo.Version, Path("Settings_Tab_About")));
     }
 
     /// <summary>Always rooted at the Settings entry in the sidebar, so the model never has to guess it.</summary>
@@ -243,21 +321,37 @@ public sealed class HelpSettingsResolver
     public static IReadOnlyList<string> PathLocalizationKeys { get; } =
     [
         "Nav_Settings",
-        "Settings_Tab_General", "Settings_Tab_Assistant", "Settings_Tab_Providers", "Settings_Tab_Account",
-        "Settings_Tab_Personas", "Settings_Tab_ToolPermissions", "Settings_Tab_McpServers",
-        "Settings_InnerTab_Application", "Settings_InnerTab_Speech", "Settings_InnerTab_General",
-        "Settings_UiLanguage", "Settings_SpeechToTextLanguage",
-        "Tts_Title", "Tts_VoiceSelection", "Stt_Title",
+        "Settings_Tab_General", "Settings_Tab_Providers", "Settings_Tab_Optimize", "Settings_Tab_Assistant",
+        "Settings_Tab_Account", "Settings_Tab_Plugins", "Settings_Tab_About",
+        "Settings_InnerTab_Application", "Settings_InnerTab_Hotkeys", "Settings_InnerTab_Speech",
+        "Settings_InnerTab_Privacy", "Settings_InnerTab_General",
+        "Settings_Tab_Personas", "Settings_Tab_ToolPermissions", "Settings_Tab_McpServers", "Settings_Tab_Templates",
         "Settings_Agent_Tab", "Settings_Meeting_Tab",
+        "Settings_UiLanguage", "Settings_DefaultWindowMode", "Settings_LaunchAtStartup", "Settings_StartMinimized",
+        "Settings_AutoCaptureSelectedText", "Settings_AutoUpdateEnabled", "Settings_ExportDiagnostics",
+        "Settings_ResetAppData",
+        "Settings_Hotkey_Assistant", "Settings_Hotkey_Optimize", "Settings_Hotkey_FastPath", "Settings_Hotkey_ScreenCapture",
+        "Settings_SpeechToTextLanguage", "Tts_Title", "Tts_VoiceSelection", "Stt_Title",
+        "Settings_Privacy_Tokenization", "Settings_Privacy_Keywords",
+        "Settings_OutputAction", "Settings_AutoTypeDelay",
     ];
 
     private static string OnOff(bool value) => value ? "on" : "off";
+
+    private static string HotkeyText(KeyboardShortcut? shortcut) => shortcut?.DisplayText ?? "not set";
+
+    private static string OutputActionText(OutputAction action) => action switch
+    {
+        OutputAction.AutoType => "typed into the window you came from",
+        OutputAction.PasteToPreviousWindow => "pasted into the window you came from",
+        _ => "copied to the clipboard",
+    };
 
     /// <summary>Host only: the rest of a server URL is neither useful to the model nor the user's to leak.</summary>
     private static string HostOf(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
 
-    private static string LanguageName(TargetLanguage language) => language switch
+    internal static string LanguageName(TargetLanguage language) => language switch
     {
         TargetLanguage.DE => "German",
         TargetLanguage.FR => "French",

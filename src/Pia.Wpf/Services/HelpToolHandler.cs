@@ -31,15 +31,18 @@ public class HelpToolHandler : IHelpToolHandler
 
     private readonly HelpSearchService _search;
     private readonly HelpSettingsResolver _settings;
+    private readonly HelpLabelResolver _labelResolver;
     private readonly ILogger<HelpToolHandler> _logger;
 
     public HelpToolHandler(
         HelpSearchService search,
         HelpSettingsResolver settings,
+        HelpLabelResolver labelResolver,
         ILogger<HelpToolHandler> logger)
     {
         _search = search;
         _settings = settings;
+        _labelResolver = labelResolver;
         _logger = logger;
     }
 
@@ -73,7 +76,9 @@ public class HelpToolHandler : IHelpToolHandler
         {
             _logger.SensitiveDebug("pia_help reading {Reference}", reference);
             var section = _search.Read(reference);
-            return section is null ? UnknownReferenceNote : FormatSection(section);
+            return section is null
+                ? UnknownReferenceNote
+                : WithGlossary(FormatSection(section), LabelCandidates(section));
         }
 
         var query = GetOptionalStringArg(args, "query");
@@ -83,7 +88,32 @@ public class HelpToolHandler : IHelpToolHandler
         var hits = _search.Search(query, SearchLimit);
         _logger.LogInformation("pia_help returned {Count} hit(s)", hits.Count);
 
-        return hits.Count == 0 ? EmptySearchNote : FormatHits(query, hits);
+        if (hits.Count == 0) return EmptySearchNote;
+
+        // A snippet cuts labels mid-path, so gloss the sections the hits point at.
+        var candidates = hits
+            .Select(h => _search.Read(h.Reference))
+            .OfType<HelpSection>()
+            .SelectMany(LabelCandidates);
+        return WithGlossary(FormatHits(query, hits), candidates);
+    }
+
+    private static IEnumerable<string> LabelCandidates(HelpSection section) =>
+        HelpLabelResolver.Candidates(section.Body).Append(section.Heading);
+
+    private string WithGlossary(string text, IEnumerable<string> candidates)
+    {
+        var labels = _labelResolver.For(candidates);
+        if (labels.Count == 0) return text;
+
+        var sb = new StringBuilder(text);
+        sb.Append("\n\nThe user's screen is in ").Append(HelpSettingsResolver.LanguageName(_labelResolver.Language))
+          .Append(", where the guide's labels read as below — quote the right-hand side, never your own translation:\n");
+        foreach (var label in labels)
+        {
+            sb.Append("- ").Append(label.English).Append(" = ").Append(label.Localized).Append('\n');
+        }
+        return sb.ToString();
     }
 
     private async Task<string> HandleSettingsAsync(IDictionary<string, object?> args, CancellationToken ct)
@@ -178,5 +208,5 @@ public class HelpToolHandler : IHelpToolHandler
 
     [Description("Report how THIS installation is configured, with the path to change each value in the user's own interface language. Use whenever the answer depends on the user's current settings.")]
     private static string PiaSettingsSchema(
-        [Description("One of: language, speech, assistant, agent, providers, personas, meetings, sync, tools. Omit for all.")] string? area = null) => "";
+        [Description("One of: language, application, hotkeys, speech, privacy, providers, optimize, assistant, personas, tools, meetings, agent, sync, about. Omit for all.")] string? area = null) => "";
 }

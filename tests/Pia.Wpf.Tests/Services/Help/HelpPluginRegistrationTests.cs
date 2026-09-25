@@ -1,9 +1,5 @@
-using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using Pia.Models;
 using Pia.Services;
-using Pia.Services.Help;
-using Pia.Services.Interfaces;
 using Pia.Services.Plugins;
 using Pia.Shared.Models;
 using Xunit;
@@ -19,22 +15,7 @@ public sealed class HelpPluginRegistrationTests
 {
     private static SyncPlugin HelpConfig() => BuiltInPluginDefaults.Defaults[BuiltInPluginDefaults.HelpPluginId];
 
-    private static HelpToolHandler Handler()
-    {
-        var settingsService = Substitute.For<ISettingsService>();
-        settingsService.GetSettingsAsync().Returns(new AppSettings());
-        var localization = Substitute.For<ILocalizationService>();
-        localization[Arg.Any<string>()].Returns(call => call.Arg<string>());
-        var personas = Substitute.For<IPersonaService>();
-        personas.GetPersonasAsync().Returns<IReadOnlyList<Persona>>([]);
-        var providers = Substitute.For<IProviderService>();
-        providers.GetProvidersAsync().Returns<IReadOnlyList<AiProvider>>([]);
-
-        return new HelpToolHandler(
-            new HelpSearchService(),
-            new HelpSettingsResolver(settingsService, localization, personas, providers),
-            NullLogger<HelpToolHandler>.Instance);
-    }
+    private static HelpToolHandler Handler() => HelpToolHandlerTests.Handler(TargetLanguage.EN);
 
     [Fact]
     public void TheHelpPackIsAPreloadedDefaultEnabledBuiltIn()
