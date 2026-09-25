@@ -35,7 +35,8 @@
   chat scrolled.
 - Copying a selection from the chat keeps its emoji. They pasted as blank
   spaces, and so did code blocks in answers and @-commands in your own
-  messages; only the Copy button handed back the full text.
+  messages; only the Copy button handed back the full text. Pasted into Word
+  or Outlook, a code block still arrives blank.
 
 ## Routines
 

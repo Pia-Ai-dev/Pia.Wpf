@@ -1,9 +1,11 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using Pia.Controls;
 using Pia.Controls.Chat;
+using Pia.Emoji;
 using Pia.Tests.Views;
 using Xunit;
 
@@ -134,12 +136,59 @@ public class SelectionCopyTests
     {
         Assert.Equal("hi 👋 there @summarize now ✅\r\n", WpfStaHost.Run(() =>
         {
-            var bubble = new PiaCollapsibleMessageText { Text = "hi 👋 there @summarize now ✅" };
-            Layout(bubble);
-            var body = (RichTextBox)bubble.FindName("Body")!;
+            var (bubble, body) = Bubble("hi 👋 there @summarize now ✅");
             body.SelectAll();
             return Copy(bubble, body);
         }));
+    }
+
+    /// <summary>Word and Outlook paste the RTF, another WPF box the XAML, so those carry the commands too.</summary>
+    [Fact]
+    public void CopyingASentMessage_KeepsItsCommandsInTheRichFormats()
+    {
+        var (rtf, xaml, _) = WpfStaHost.Run(() =>
+        {
+            var (bubble, body) = Bubble("hi 👋 there @summarize now ✅");
+            body.SelectAll();
+            return CopyRich(bubble, body);
+        });
+
+        Assert.Contains("@summarize", rtf);
+        Assert.Contains("@summarize", xaml);
+    }
+
+    /// <summary>A rendered emoji travels as its picture; the command beside it still arrives as text.</summary>
+    [Fact]
+    public void CopyingASentMessageWithRenderedEmoji_KeepsThePicturesAndTheCommand()
+    {
+        var (rtf, _, package) = WpfStaHost.Run(() =>
+        {
+            var (bubble, body) = Bubble("hi 👋 there @summarize now ✅");
+            foreach (var presenter in Presenters(body.Document))
+                presenter.Source = EmojiImageRenderer.Shared.Render(presenter.Emoji, 20);
+            body.SelectAll();
+            return CopyRich(bubble, body);
+        });
+
+        Assert.Contains("\\pict", rtf);
+        Assert.Contains("@summarize", rtf);
+        Assert.NotNull(package);
+        Assert.Contains("@summarize", package);
+    }
+
+    [Fact]
+    public void CopyingPartOfASentMessage_KeepsTheCommandInTheRichFormats()
+    {
+        var (rtf, xaml, _) = WpfStaHost.Run(() =>
+        {
+            var (bubble, body) = Bubble("hi 👋 there @summarize now ✅");
+            body.Selection.Select(Before(body.Document, "there"), Before(body.Document, " now"));
+            return CopyRich(bubble, body);
+        });
+
+        Assert.Contains("@summarize", rtf);
+        Assert.Contains("@summarize", xaml);
+        Assert.DoesNotContain("hi ", xaml);
     }
 
     [Fact]
@@ -177,16 +226,54 @@ public class SelectionCopyTests
         return Copy(answer, viewer);
     }
 
-    /// <summary>Listens on the host so every handler on the box has run, and cancels so the real clipboard stays untouched.</summary>
+    private static (PiaCollapsibleMessageText Bubble, RichTextBox Body) Bubble(string text)
+    {
+        var bubble = new PiaCollapsibleMessageText { Text = text };
+        Layout(bubble);
+        return (bubble, (RichTextBox)bubble.FindName("Body")!);
+    }
+
+    private static IEnumerable<EmojiPresenter> Presenters(FlowDocument document)
+    {
+        for (var p = document.ContentStart; p is not null; p = p.GetNextContextPosition(LogicalDirection.Forward))
+        {
+            if (p.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.EmbeddedElement
+                && p.GetAdjacentElement(LogicalDirection.Forward) is EmojiPresenter presenter)
+                yield return presenter;
+        }
+    }
+
     private static string Copy(FrameworkElement host, RichTextBox box)
     {
         string? unicode = null;
         string? ansi = null;
+        CopyInto(host, box, data =>
+        {
+            unicode = data.GetData(DataFormats.UnicodeText, false) as string;
+            ansi = data.GetData(DataFormats.Text, false) as string;
+        });
 
+        Assert.Equal(unicode, ansi);
+        return unicode ?? "<no text on the clipboard>";
+    }
+
+    /// <summary>The package comes back as the text it loads to, since a WPF stream cannot leave the host thread.</summary>
+    private static (string Rtf, string Xaml, string? Package) CopyRich(FrameworkElement host, RichTextBox box)
+    {
+        (string, string, string?) formats = default;
+        CopyInto(host, box, data => formats = (
+            data.GetData(DataFormats.Rtf, false) as string ?? "<no RTF>",
+            data.GetData(DataFormats.Xaml, false) as string ?? "<no XAML>",
+            data.GetData(DataFormats.XamlPackage, false) is Stream package ? TextOf(package) : null));
+        return formats;
+    }
+
+    /// <summary>Listens on the host so every handler on the box has run, and cancels so the real clipboard stays untouched.</summary>
+    private static void CopyInto(FrameworkElement host, RichTextBox box, Action<IDataObject> read)
+    {
         void Capture(object sender, DataObjectCopyingEventArgs e)
         {
-            unicode = e.DataObject.GetData(DataFormats.UnicodeText, false) as string;
-            ansi = e.DataObject.GetData(DataFormats.Text, false) as string;
+            read(e.DataObject);
             e.CancelCommand();
         }
 
@@ -199,9 +286,14 @@ public class SelectionCopyTests
         {
             DataObject.RemoveCopyingHandler(host, Capture);
         }
+    }
 
-        Assert.Equal(unicode, ansi);
-        return unicode ?? "<no text on the clipboard>";
+    private static string TextOf(Stream package)
+    {
+        var document = new FlowDocument();
+        package.Position = 0;
+        new TextRange(document.ContentStart, document.ContentEnd).Load(package, DataFormats.XamlPackage);
+        return new TextRange(document.ContentStart, document.ContentEnd).Text;
     }
 
     private static TextPointer Advance(TextPointer start, int characters)

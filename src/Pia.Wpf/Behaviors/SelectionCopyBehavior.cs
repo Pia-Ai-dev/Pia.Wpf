@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -27,7 +29,7 @@ public static class SelectionCopyBehavior
     {
         var selection = box.Selection;
         var text = selection.Text;
-        if (!HasCopyText(selection)) return text;
+        if (!StandIns(selection).Any()) return text;
 
         // List markers, table rows and cell ranges stay WPF's to lay out: the selection is read off a twin whose
         // stand-ins are Runs. The twin of plain spaces has to reproduce WPF's text, or the mapping is not trusted.
@@ -43,7 +45,7 @@ public static class SelectionCopyBehavior
         }
     }
 
-    private static bool HasCopyText(TextRange range)
+    private static IEnumerable<TextElement> StandIns(TextRange range)
     {
         for (var position = range.Start;
              position is not null && position.CompareTo(range.End) < 0;
@@ -51,10 +53,66 @@ public static class SelectionCopyBehavior
         {
             if (position.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.EmbeddedElement
                 && position.Parent is TextElement container && GetCopyText(container) is not null)
-                return true;
+                yield return container;
+        }
+    }
+
+    /// <summary>Refills WPF's own round trip of the selection, which alone carries its formatting and emoji pictures:
+    /// each inline stand-in that is not a picture arrives there as a one-space Run.</summary>
+    private static void FillRichFormats(TextSelection selection, IDataObject data)
+    {
+        var copyTexts = StandIns(selection)
+            .Where(container => container is InlineUIContainer { Child: not Image })
+            .Select(container => GetCopyText(container)!)
+            .ToList();
+        if (copyTexts.Count == 0) return;
+
+        var copy = new FlowDocument();
+        using (var package = new MemoryStream())
+        {
+            selection.Save(package, DataFormats.XamlPackage);
+            package.Position = 0;
+            new TextRange(copy.ContentStart, copy.ContentEnd).Load(package, DataFormats.XamlPackage);
         }
 
-        return false;
+        // The Run keeps its container's BaselineAlignment, which none of the text Runs beside it sets.
+        var placeholders = Runs(copy)
+            .Where(run => run.Text == " " && run.BaselineAlignment == BaselineAlignment.Center)
+            .ToList();
+        if (placeholders.Count != copyTexts.Count) return;
+
+        for (var i = 0; i < placeholders.Count; i++)
+            placeholders[i].Text = copyTexts[i];
+
+        data.SetData(DataFormats.Rtf, Encoding.UTF8.GetString(Save(copy, DataFormats.Rtf).ToArray()));
+        data.SetData(DataFormats.Xaml, Encoding.UTF8.GetString(Save(copy, DataFormats.Xaml).ToArray()));
+        if (data.GetDataPresent(DataFormats.XamlPackage, false))
+            data.SetData(DataFormats.XamlPackage, Save(copy, DataFormats.XamlPackage));
+    }
+
+    private static TextRange Content(FlowDocument document) => new(document.ContentStart, document.ContentEnd);
+
+    private static MemoryStream Save(FlowDocument document, string format)
+    {
+        var stream = new MemoryStream();
+        Content(document).Save(stream, format);
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static List<Run> Runs(FlowDocument document)
+    {
+        var runs = new List<Run>();
+        for (var position = document.ContentStart;
+             position is not null;
+             position = position.GetNextContextPosition(LogicalDirection.Forward))
+        {
+            if (position.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.ElementStart
+                && position.GetAdjacentElement(LogicalDirection.Forward) is Run run)
+                runs.Add(run);
+        }
+
+        return runs;
     }
 
     private static void OnIsEnabledChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -74,6 +132,7 @@ public static class SelectionCopyBehavior
         var text = GetSelectedText(box);
         e.DataObject.SetData(DataFormats.UnicodeText, text);
         e.DataObject.SetData(DataFormats.Text, text);
+        FillRichFormats(box.Selection, e.DataObject);
     }
 
     /// <summary>The document's structure with each stand-in as text; every other element keeps its symbol count,
