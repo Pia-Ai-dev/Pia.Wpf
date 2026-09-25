@@ -288,7 +288,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand RunInBackgroundCommand { get; }
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelStreamingCommand { get; }
-    public IRelayCommand NewChatCommand { get; }
+    public IAsyncRelayCommand NewChatCommand { get; }
     public IAsyncRelayCommand DeleteCurrentChatCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> CopyMessageCommand { get; }
     public IRelayCommand ToggleTtsCommand { get; }
@@ -451,7 +451,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
         CancelStreamingCommand = new RelayCommand(ExecuteCancelStreaming);
-        NewChatCommand = new RelayCommand(ExecuteNewChat);
+        NewChatCommand = new AsyncRelayCommand(ExecuteNewChat);
         DeleteCurrentChatCommand = new AsyncRelayCommand(ExecuteDeleteCurrentChat, CanDeleteCurrentChat);
         CopyMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteCopyMessage);
         ToggleTtsCommand = new RelayCommand(ExecuteToggleTts);
@@ -507,7 +507,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ResumeChatAsync,
             DeleteChatFromChipAsync,
             RenameChatFromChipAsync,
-            NewChat,
+            dir => NewChatAsync(dir).SafeFireAndForget(_logger),
             NavigateToAssistantHistory,
             _chatSessionManager.GetState,
             _workingDirectoryService,
@@ -1456,18 +1456,23 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _runSteering?.RevokePauseRequest(runId);
     }
 
-    /// <summary>
-    /// "New chat" (additive): open a fresh chat WITHOUT cancelling the current turn — the
-    /// running turn keeps streaming in the background and notifies on completion (the
-    /// background-chats contract: opening or switching a chat never kills an in-flight
-    /// turn). Cancelling here would abort the in-flight HTTP request — surfacing a
-    /// SocketException in the support log — and discard the background result.
-    /// </summary>
-    private void NewChat(string? workingDirectory) => StartFreshChat(workingDirectory);
+    /// <summary>Additive: a turn in flight keeps streaming in the background — cancelling it would abort the
+    /// request and discard its result.</summary>
+    private async Task NewChatAsync(string? workingDirectory)
+    {
+        // Users read the composer's "+" as "attach", and a new chat throws the draft away.
+        if (HasUnsentDraft && !await ConfirmDiscardDraftAsync()) return;
+        StartFreshChat(workingDirectory);
+    }
 
-    /// <summary>The composer's "+" — same additive contract as <see cref="NewChat"/>, opening in the
-    /// folder this chat works in.</summary>
-    private void ExecuteNewChat() => NewChat(_chatSessionManager.ActiveSession?.WorkingDirectory);
+    private Task ExecuteNewChat() => NewChatAsync(_chatSessionManager.ActiveSession?.WorkingDirectory);
+
+    // A stray keystroke is not worth a prompt.
+    private bool HasUnsentDraft => InputText.Trim().Length > 1;
+
+    private Task<bool> ConfirmDiscardDraftAsync() => _dialogService.ShowConfirmationDialogAsync(
+        _localizationService["Msg_Assistant_ConfirmNewChatTitle"],
+        _localizationService["Msg_Assistant_ConfirmNewChatMessage"]);
 
     /// <summary>Opens a new, empty active chat and resets the composer. Shared by the chip's
     /// "+ New Chat" (its pinned folder), the composer's "+" (this chat's folder) and the delete

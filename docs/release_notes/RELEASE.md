@@ -40,6 +40,9 @@
 - A Mistral provider with "Enable web search" and a "Mistral Agent ID" no
   longer ends every answer in an error. The reply arrived in full, but the
   chat was flagged "Error" each time.
+- "New chat" asks before it throws away a message you have typed but not
+  sent. The "+" under the message box is easy to mistake for attaching a
+  file, and one click cleared the draft.
 
 ## Routines
 

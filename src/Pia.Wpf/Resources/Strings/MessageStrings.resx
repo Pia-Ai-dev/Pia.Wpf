@@ -84,6 +84,8 @@
   <data name="Msg_Meeting_InviteUnreadable" xml:space="preserve"><value>That invite could not be read. Paste the link instead.</value></data>
 
   <!-- Assistant messages -->
+  <data name="Msg_Assistant_ConfirmNewChatTitle" xml:space="preserve"><value>Start a new chat?</value></data>
+  <data name="Msg_Assistant_ConfirmNewChatMessage" xml:space="preserve"><value>Your unsent message will be discarded.</value></data>
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Copied</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Current value:</value></data>
   <data name="Msg_Assistant_MemoryUpdated" xml:space="preserve"><value>Memory Updated</value></data>
