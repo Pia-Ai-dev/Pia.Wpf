@@ -72,7 +72,9 @@ public static partial class AtCommandHighlightBehavior
             label.SetResourceReference(TextBlock.ForegroundProperty, "UserBubbleFgBrush");
             border.SetResourceReference(Border.BackgroundProperty, "UserBubbleChipBgBrush");
 
-            inlines.Add(new InlineUIContainer(border) { BaselineAlignment = BaselineAlignment.Center });
+            var pill = new InlineUIContainer(border) { BaselineAlignment = BaselineAlignment.Center };
+            SelectionCopyBehavior.SetCopyText(pill, label.Text);
+            inlines.Add(pill);
 
             lastIndex = match.Index + match.Length;
         }

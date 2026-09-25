@@ -33,6 +33,9 @@
 - Answer text is sharp on every line. Single lines of a reply rendered
   blurred, most often the second or third, and which ones changed as the
   chat scrolled.
+- Copying a selection from the chat keeps its emoji. They pasted as blank
+  spaces, and so did code blocks in answers and @-commands in your own
+  messages; only the Copy button handed back the full text.
 
 ## Routines
 

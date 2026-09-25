@@ -10,6 +10,7 @@ using Markdig.Extensions.CustomContainers;
 using Markdig.Helpers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using Pia.Behaviors;
 using Pia.Emoji;
 using MdBlock = Markdig.Syntax.Block;
 using MdInline = Markdig.Syntax.Inlines.Inline;
@@ -172,10 +173,12 @@ internal static class PiaMarkdownRenderer
         var runs = colorizer.Highlight(code, language);
         control.SetContent(code, runs);
 
-        return new BlockUIContainer(control)
+        var card = new BlockUIContainer(control)
         {
             Margin = new Thickness(0),
         };
+        SelectionCopyBehavior.SetCopyText(card, code.ReplaceLineEndings());
+        return card;
     }
 
     private static Paragraph RenderThematicBreak()
