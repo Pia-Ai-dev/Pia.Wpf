@@ -34,6 +34,15 @@ session needs before it touches the app.
   That path is what the MCP entry below and `Invoke-UiScripts.ps1` assume (the harness takes
   `-WinWrightPath` to override). Versions before 3.1.0 have screenshots disabled, which makes
   them close to useless here.
+- **From a Claude session, the user runs the install.** In auto mode the permission classifier
+  refuses to put the binary under `%LOCALAPPDATA%` ("Unauthorized Persistence"), so hand the user
+  this one-liner. It also writes the `winwright.json` from section 2 and runs `doctor`. The `!`
+  prefix runs Git Bash, not PowerShell, and delivers `&` as `&amp;`, so the line avoids `&`, `<`
+  and `>`:
+
+  ```
+  ! d=$(cygpath "$LOCALAPPDATA")/WinWright; mkdir -p $d; curl -sSL -o $d/ww.zip https://github.com/civyk-official/civyk-winwright/releases/download/v3.1.0/winwright-3.1.0-win-x64.zip; unzip -oq $d/ww.zip -d $d; rm $d/ww.zip; printf '%s' '{"WinWright":{"Permissions":{"AllowFileWrite":true,"AllowFileRead":true,"AllowNetworkProbe":true,"AllowBrowserEval":true},"Audit":{"Enabled":true}}}' | tee $d/winwright.json; echo; $d/Civyk.WinWright.Mcp.exe doctor
+  ```
 - Check the environment:
 
   ```powershell
@@ -71,8 +80,11 @@ WinWright reads `winwright.json` from **next to the exe** (not the working direc
 - `AllowFileWrite` is what `ww_screenshot` with a `filePath`, `run --output`, `--format junit`
   reports and `heal --output` need. A fresh install has it off.
 - Shell, registry, process-kill, service and task-scheduler permissions stay **off** on purpose.
-- Audit logs land in the install directory as `audit-<yyyy-MM-dd>.jsonl`; `Audit.LogPath` has no
-  effect.
+- Do not count on the audit log as a trace. It is meant to land in the install directory as
+  `audit-<yyyy-MM-dd>.jsonl` (`Audit.LogPath` has no effect), but a full 3.1.0 session — launch,
+  clicks, file-writing screenshots — wrote none, and 2.0.0 leaves them at 0 bytes. The proof that
+  the file was read is a gated tool working: `ww_screenshot` with a `filePath` needs
+  `AllowFileWrite`.
 
 ## 3. Wire WinWright into Claude Code
 
@@ -84,12 +96,19 @@ so the entry is machine-independent). Nothing to add — once the binary is in p
 first start whether to enable the project's MCP servers; approve `winwright`. That approval is
 stored in the gitignored `.claude/settings.local.json` as `"enabledMcpjsonServers": ["winwright"]`.
 
-Do not also register it at local or user scope (`claude mcp add winwright …`): a second entry with
-the same name shadows the repo one, and the machines drift apart again.
+Do not also register it yourself. A local-scope entry (`claude mcp add winwright …` defaults to
+local) shadows the repo one, and the machines drift apart again. A user-scope entry loses to the
+repo one inside this repo but keeps serving every other project — typically an older WinWright
+left in `C:\Temp` — and `claude mcp list` then warns that `winwright` "is defined in multiple
+scopes". `claude mcp remove winwright -s user` clears it; that is the user's global config, so
+ask first.
 
-Confirm with `claude mcp list` (or `/mcp` in a session) that `winwright` shows `Connected` and the
-`mcp__winwright__ww_*` tools are listed. `Failed to connect` almost always means the exe is not at
-that path.
+Confirm with `claude mcp list` that `winwright` shows `Connected`. That command spawns its own copy
+of the server, so it can pass while the session still holds the failure it started with: a session
+that started before the exe was in place reports `winwright` as `CONNECTION_CLOSED`, and the
+`mcp__winwright__ww_*` tools cannot appear until the user runs `/mcp` and reconnects it. Either
+failure (`Failed to connect` in the list, `CONNECTION_CLOSED` in the session) almost always means
+the exe is not at that path.
 
 ### Permissions
 
@@ -144,7 +163,9 @@ fresh MouseEnter fires, and grab the screen region at the window's bounds with
 
 1. `doctor` passes.
 2. `claude mcp list` shows `winwright` connected.
-3. In a session, `ww_list_windows` returns the desktop's windows without an error.
+3. In the session, the `mcp__winwright__ww_*` tools are listed (a ToolSearch for `ww_launch` finds
+   them). `ww_list_windows` needs the `appId` of a launched app, so it is the first check after
+   `ww_launch`, not a setup check.
 4. `dotnet build` succeeded and `src/Pia.Wpf/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.exe`
    exists. That is the app binary — a stale `Pia.exe` beside it is an old artifact that dies with a
    PiperSharp error; never launch it.
@@ -244,6 +265,23 @@ For a whole view, collapse every sibling on the path from the target up to the r
 `Visibility` bindings missing from the POCO fall back to `Visible` and paint overlays over it.
 Delete the scratch test before the gate run.
 
+### Checking what a copy put on the clipboard
+
+- **Select inside a chat bubble with physical clicks.** A `ww_click` on body text, then `ww_keyboard`
+  `ctrl+a`, selects the whole bubble. `Home` / `shift+End` selected nothing in the read-only box;
+  a partial selection took a click plus a second `ww_click` with `modifiers=["shift"]`. Both are
+  offset clicks, so confirm the selection with an element screenshot before copying, and aim for
+  body text: a code card is its own text box, and a click there selects only the code.
+- **Put a sentinel on the clipboard first** with PowerShell's `Set-Clipboard`. A copy that never
+  fired leaves it in place, and `ww_keyboard` reports success either way. `ww_clipboard
+  action=set` fails in 3.1.0 with `Reflection-based serialization has been disabled`.
+- **Read every format, not just the text.** `Get-Clipboard` sees text only. Windows PowerShell on an
+  STA thread (`powershell.exe -NoProfile -STA`) with `Add-Type -AssemblyName PresentationCore`
+  reads the rest through `[System.Windows.Clipboard]::GetDataObject()`: `GetFormats($false)`, then
+  `GetData('Rich Text Format')`, `GetData('Xaml')` and `GetData('XamlPackage')`, a stream that is a
+  zip of `Xaml/Document.xaml` plus one `Image<n>.png` per picture. The console prints emoji as `?`,
+  so write the text to a UTF-8 file and read code points from that.
+
 ### Traps worth knowing up front
 
 Full list in the playbook; these are the ones that most often read as product bugs:
@@ -256,6 +294,12 @@ Full list in the playbook; these are the ones that most often read as product bu
   `ww_dialog action=expect` before the click that may raise one.
 - A reply older than the transcript window has no automation peers — invoke
   `Assistant_LoadOlderMessages` until its id resolves; scrolling does not help.
+- An elevated Claude Code starts WinWright elevated, and WinWright's `ww_launch` passes that on:
+  Pia's "running as administrator" banner is then expected, not a finding. File tools and agent
+  runs in that instance have admin rights too, which is one more reason to stay on a throwaway
+  profile.
+- The app window does not stay where the seed put it (`windowLeft` / `windowTop`); re-read the
+  bounds with `ww_query` or `ww_list_windows` before any offset click.
 
 ### Every new control needs an AutomationId
 
