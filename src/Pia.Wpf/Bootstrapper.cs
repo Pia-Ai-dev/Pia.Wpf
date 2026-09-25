@@ -587,6 +587,7 @@ public static class Bootstrapper
         services.AddSingleton<IChatHistoryToolHandler, ChatHistoryToolHandler>();
         services.AddSingleton<Pia.Services.Help.HelpSearchService>();
         services.AddSingleton<Pia.Services.Help.HelpSettingsResolver>();
+        services.AddSingleton<Pia.Services.Help.HelpLabelResolver>();
         services.AddSingleton<IHelpToolHandler, HelpToolHandler>();
         services.AddSingleton<IWorkingDirectoryService, WorkingDirectoryService>();
         services.AddSingleton<IAttachedFileStore, AttachedFileStore>();

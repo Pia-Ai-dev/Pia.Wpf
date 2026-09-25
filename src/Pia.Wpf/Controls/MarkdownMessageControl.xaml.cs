@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using System.Windows.Threading;
+using Pia.Behaviors;
 using Pia.Controls.Markdown;
 using Pia.Helpers;
 using Pia.Models;
@@ -181,7 +182,7 @@ public partial class MarkdownMessageControl : UserControl
     }
 
     public string GetSelectedText() =>
-        MarkdownViewer.Selection?.Text?.Trim() ?? string.Empty;
+        SelectionCopyBehavior.GetSelectedText(MarkdownViewer).Trim();
 
     private void MarkdownViewer_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {

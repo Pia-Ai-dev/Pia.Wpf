@@ -1,13 +1,16 @@
 using System;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Markdig;
 using Markdig.Extensions.CustomContainers;
+using Markdig.Helpers;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using Pia.Behaviors;
 using Pia.Emoji;
 using MdBlock = Markdig.Syntax.Block;
 using MdInline = Markdig.Syntax.Inlines.Inline;
@@ -155,8 +158,11 @@ internal static class PiaMarkdownRenderer
         return section;
     }
 
-    private static BlockUIContainer RenderCodeCard(string? languageHint, string code)
+    // An empty card carries nothing and reads as a rendering fault; a malformed fence produces one.
+    private static BlockUIContainer? RenderCodeCard(string? languageHint, string code)
     {
+        if (string.IsNullOrWhiteSpace(code)) return null;
+
         var control = new CodeBlockControl
         {
             LanguageLabel = NormalizeLabel(languageHint),
@@ -167,10 +173,12 @@ internal static class PiaMarkdownRenderer
         var runs = colorizer.Highlight(code, language);
         control.SetContent(code, runs);
 
-        return new BlockUIContainer(control)
+        var card = new BlockUIContainer(control)
         {
             Margin = new Thickness(0),
         };
+        SelectionCopyBehavior.SetCopyText(card, code.ReplaceLineEndings());
+        return card;
     }
 
     private static Paragraph RenderThematicBreak()
@@ -397,7 +405,63 @@ internal static class PiaMarkdownRenderer
 
     private static string JoinCodeLines(LeafBlock block)
     {
-        return block.Lines.Count > 0 ? block.Lines.ToString() : string.Empty;
+        if (block.Lines.Count == 0) return string.Empty;
+        return RestoreStrippedIndent(block.Lines) ?? block.Lines.ToString();
+    }
+
+    /// <summary>
+    /// CommonMark strips up to the container's indent from every line of a code block, which flattens a YAML
+    /// body indented less than its own fence. Rebuilds from the source and removes only the indent every line
+    /// shares. Null when a line does not start at column 0 of its source line — a blockquote marker, say —
+    /// where the parser's own slices are already right.
+    /// </summary>
+    private static string? RestoreStrippedIndent(StringLineGroup group)
+    {
+        var lines = group.Lines;
+        var prefixes = new string[group.Count];
+        string? common = null;
+
+        for (var i = 0; i < group.Count; i++)
+        {
+            var slice = lines[i].Slice;
+            prefixes[i] = string.Empty;
+            if (slice.Length <= 0) continue;
+            if (slice.Text is not { } text) return null;
+
+            var scan = slice.Start - 1;
+            while (scan >= 0 && (text[scan] == ' ' || text[scan] == '\t')) scan--;
+            if (scan >= 0 && text[scan] != '\n') return null;
+
+            prefixes[i] = text.Substring(scan + 1, slice.Start - scan - 1);
+            common = common is null ? prefixes[i] : CommonPrefix(common, prefixes[i]);
+        }
+
+        if (common is null) return null;
+
+        var builder = new StringBuilder();
+        for (var i = 0; i < group.Count; i++)
+        {
+            if (i > 0) builder.Append(Separator(lines[i - 1].NewLine));
+            var slice = lines[i].Slice;
+            if (slice.Length <= 0) continue;
+            builder.Append(prefixes[i], common.Length, prefixes[i].Length - common.Length);
+            builder.Append(slice.Text, slice.Start, slice.Length);
+        }
+        return builder.ToString();
+    }
+
+    private static string Separator(NewLine newLine) => newLine switch
+    {
+        NewLine.CarriageReturnLineFeed => "\r\n",
+        NewLine.CarriageReturn => "\r",
+        _ => "\n",
+    };
+
+    private static string CommonPrefix(string left, string right)
+    {
+        var length = 0;
+        while (length < left.Length && length < right.Length && left[length] == right[length]) length++;
+        return length == left.Length ? left : left[..length];
     }
 
     private static string NormalizeLabel(string? hint)

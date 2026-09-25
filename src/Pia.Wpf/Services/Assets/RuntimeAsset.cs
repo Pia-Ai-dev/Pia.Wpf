@@ -5,10 +5,12 @@ using Pia.Services.Tts;
 namespace Pia.Services.Assets;
 
 /// <summary>
-/// One downloadable artifact: where it lives on our mirror, and the upstream host to fall back to.
+/// One downloadable artifact: where it lives on our mirror, and the upstream host it is published on.
 /// </summary>
 /// <param name="MirrorKey">Relative to the mirror base. Must match the storage service's upload
 /// charset <c>^[A-Za-z0-9._/-]+$</c>.</param>
+/// <param name="UpstreamUrl">Names the release the mirror copy comes from, and the source a
+/// deployment that configures no mirror downloads from.</param>
 public readonly record struct RuntimeAsset(string MirrorKey, string UpstreamUrl);
 
 /// <summary>

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using Pia.Models;
 
@@ -206,15 +207,32 @@ public static partial class AtCommandParser
         if (string.IsNullOrWhiteSpace(text))
             return text;
 
-        var result = CommandPattern().Replace(text, match =>
+        var result = new StringBuilder(text.Length);
+        var cursor = 0;
+
+        foreach (Match match in CommandPattern().Matches(text))
         {
+            result.Append(text, cursor, match.Index - cursor);
+            cursor = match.Index + match.Length;
+
             var content = match.Groups[1].Value;
             var colonIndex = content.IndexOf(':');
-            return colonIndex < 0 ? string.Empty : content[(colonIndex + 1)..].Trim().Trim('"');
-        });
-        // Clean up extra whitespace left behind
-        result = Regex.Replace(result, @"  +", " ").Trim();
-        return result;
+            if (colonIndex >= 0)
+            {
+                result.Append(content[(colonIndex + 1)..].Trim().Trim('"'));
+                continue;
+            }
+
+            // A bare command leaves nothing behind, so swallow one adjacent space to close the gap it
+            // opened. Scoped to the token: collapsing the whole message flattened pasted YAML.
+            if (cursor < text.Length && text[cursor] == ' ')
+                cursor++;
+            else if (result.Length > 0 && result[^1] == ' ')
+                result.Length--;
+        }
+
+        result.Append(text, cursor, text.Length - cursor);
+        return result.ToString().Trim();
     }
 
     /// <summary>

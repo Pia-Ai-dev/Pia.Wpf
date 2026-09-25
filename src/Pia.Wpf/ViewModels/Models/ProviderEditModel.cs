@@ -152,7 +152,7 @@ public partial class ProviderEditModel : ObservableValidator
             ApiKey = null,
             ModelName = provider.ModelName,
             AzureDeploymentName = provider.AzureDeploymentName,
-            TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 300 ? provider.TimeoutSeconds : 300,
+            TimeoutSeconds = provider.TimeoutSeconds is > 0 and <= 600 ? provider.TimeoutSeconds : 300,
             MaxContextWindowTokens = provider.MaxContextWindowTokens ?? 0,
             MaxOutputTokens = provider.MaxOutputTokens ?? 0,
             SupportsToolCalling = provider.SupportsToolCalling,

@@ -99,7 +99,7 @@ the local `settings.json` (that is the anti-circumvention path), they just never
 | `serverUrl` | string, `null` | 🔒 Enforcing it also suppresses the hardcoded production URL written at startup, and beats the `PIA_CLOUD_SERVER_URL` dev override |
 | `syncEnabled` | bool, `false` | ✓ |
 | `trustSelfSignedCertificates` | bool, `false` | ✓ |
-| `allowedSyncProviders` | string[], `null` | ✓ `"local"`, `"google"`, `"microsoft"`, `"entraid"` (case-insensitive). `null` or `[]` = all allowed. Disallowed providers are hidden in the first-run wizard *and* account settings. Read from `enforce` first, then `defaults`. Works in both blocks |
+| `allowedSyncProviders` | string[], `null` | ✓ `"local"`, `"google"`, `"microsoft"`, `"entraid"` (case-insensitive). `null` or `[]` = all allowed. Disallowed providers are hidden in the first-run wizard *and* account settings, a login through one is refused, and a stored session from one is signed out on the next launch. Read from `enforce` first, then `defaults`. Works in both blocks |
 | `isE2EEEnabled` · `e2eeUmkVersion` · `e2eeRecoveryConfigured` | bool / int | ✗ device state |
 | `encryptedAccessToken` · `encryptedRefreshToken` · `syncUserId` · `syncUserEmail` · `syncUserDisplayName` · `syncProvider` · `syncDeviceId` · `lastSyncTimestamp` · `lastPullETag` · `lastChatPullETag` · `lastPushedSettingsHash` · `lastCatalogVersion` · `e2eeEncryptedUmk` · `e2eeDeviceId` · `assistantChatsBackfilledAt` · `managedPersonaStoreInitialized` | — | ✗ runtime state; presetting these corrupts the sync cursor |
 

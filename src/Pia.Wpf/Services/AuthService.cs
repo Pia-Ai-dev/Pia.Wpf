@@ -77,6 +77,16 @@ public class AuthService : IAuthService
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.EncryptedRefreshToken))
                 return;
 
+            if (!string.IsNullOrEmpty(settings.SyncProvider) && !IsProviderAllowed(settings.SyncProvider))
+            {
+                _logger.LogWarning("Stored sign-in method is disallowed by policy; signing out");
+                _logger.SensitiveDebug("Disallowed stored sign-in provider: {Provider}", settings.SyncProvider);
+                // Loaded first so LogoutAsync revokes it on the server.
+                _encryptedRefreshToken = settings.EncryptedRefreshToken;
+                await LogoutAsync();
+                return;
+            }
+
             // Keep the refresh token in its already-encrypted form; no plaintext at rest.
             // The persisted access token is intentionally not loaded — it is almost certainly
             // expired by the time the app restarts, so the first GetAccessTokenAsync refreshes it.
@@ -97,11 +107,27 @@ public class AuthService : IAuthService
         }
     }
 
+    private bool IsProviderAllowed(string provider) =>
+        _policyService?.IsLoginProviderAllowed(provider) ?? true;
+
+    private string? RejectDisallowedProvider(string provider)
+    {
+        if (IsProviderAllowed(provider))
+            return null;
+
+        _logger.LogWarning("Sign-in refused: the method is disallowed by policy");
+        _logger.SensitiveDebug("Refused sign-in provider: {Provider}", provider);
+        return _localizationService["Sync_LoginProviderDisabledByPolicy"];
+    }
+
     public async Task<(bool Success, string? ErrorMessage)> LoginAsync(string provider)
     {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            if (RejectDisallowedProvider(provider) is { } refused)
+                return (false, refused);
+
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
             if (string.IsNullOrEmpty(serverUrl))
             {
@@ -390,6 +416,9 @@ public class AuthService : IAuthService
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
+            if (RejectDisallowedProvider("local") is { } refused)
+                return (false, refused);
+
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
             if (string.IsNullOrEmpty(serverUrl))
             {

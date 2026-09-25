@@ -192,7 +192,7 @@ When applicable:
 
 ## UI Automation
 
-Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui_automation/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking.
+Driving the app with WinWright/UIA (walkthroughs, UI regression tests): read `docs/ui_automation/ui-automation-playbook.md` first. It lists the stable AutomationIds and the techniques that work; do not fall back to pixel-offset clicking. On a machine where WinWright is not set up yet (no `ww_*` tools), follow `docs/ui_automation/winwright-setup.md` — install, config, MCP registration and the throwaway-profile rules.
 
 Every new interactive control added to a `UserControl` (`ButtonBase`, `ComboBox`,
 `TextBoxBase`/`RichTextBox`, `PasswordBox`, `Slider`, `Expander`, `TabItem`) needs an

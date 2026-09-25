@@ -33,18 +33,17 @@ public class LocalizationSource : INotifyPropertyChanged
         Refresh();
     }
 
-    public string this[string key]
+    public string this[string key] => GetString(key, _culture);
+
+    public string GetString(string key, CultureInfo culture)
     {
-        get
+        foreach (var rm in _resourceManagers)
         {
-            foreach (var rm in _resourceManagers)
-            {
-                var value = rm.GetString(key, _culture);
-                if (value is not null)
-                    return value;
-            }
-            return $"[{key}]";
+            var value = rm.GetString(key, culture);
+            if (value is not null)
+                return value;
         }
+        return $"[{key}]";
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
