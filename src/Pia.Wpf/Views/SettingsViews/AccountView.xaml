@@ -254,12 +254,26 @@
           </StackPanel>
         </StackPanel>
 
-        <ui:Button Content="{loc:Str Sync_SignOut}"
-                   Command="{Binding SyncLogoutCommand}"
-                   AutomationProperties.AutomationId="Settings_Account_SyncLogout"
-                   Appearance="Secondary"
-                   Foreground="{DynamicResource PiaDangerBrush}"
-                   HorizontalAlignment="Left"/>
+        <StackPanel Orientation="Horizontal">
+          <ui:Button Content="{loc:Str Sync_ExportData}"
+                     Icon="{ui:SymbolIcon ArrowDownload24}"
+                     Command="{Binding ExportAccountDataCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_ExportData"
+                     Appearance="Secondary"
+                     Margin="0,0,8,0"/>
+          <ui:Button Content="{loc:Str Sync_SignOut}"
+                     Command="{Binding SyncLogoutCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_SyncLogout"
+                     Appearance="Secondary"
+                     Foreground="{DynamicResource PiaDangerBrush}"
+                     Margin="0,0,8,0"/>
+          <ui:Button Content="{loc:Str Sync_DeleteAccount}"
+                     Icon="{ui:SymbolIcon Delete24}"
+                     Command="{Binding DeleteAccountCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_DeleteAccount"
+                     Appearance="Secondary"
+                     Foreground="{DynamicResource PiaDangerBrush}"/>
+        </StackPanel>
       </StackPanel>
 
       <!-- E2EE Onboarding -->

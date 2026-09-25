@@ -1,0 +1,67 @@
+<ui:ContentDialog x:Class="Pia.Views.Dialogs.AccountDeletionContentDialog"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:local="clr-namespace:Pia.Views.Dialogs"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                  xmlns:loc="clr-namespace:Pia.Localization"
+                  xmlns:converters="clr-namespace:Pia.Converters"
+                  Title="{loc:Str AccountDeletion_Title}"
+                  PrimaryButtonText="{loc:Str AccountDeletion_Confirm}"
+                  CloseButtonText="{loc:Str Common_Cancel}"
+                  DefaultButton="Close"
+                  IsPrimaryButtonEnabled="{Binding CanDelete}"
+                  DialogMaxWidth="560"
+                  DialogMaxHeight="620">
+  <ui:ContentDialog.Resources>
+    <Style BasedOn="{StaticResource {x:Type ui:ContentDialog}}"
+           TargetType="{x:Type local:AccountDeletionContentDialog}" />
+    <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter"/>
+  </ui:ContentDialog.Resources>
+
+  <StackPanel Margin="0,8,0,0" Width="460">
+    <TextBlock Text="{loc:Str AccountDeletion_Intro}"
+               TextWrapping="Wrap"
+               Foreground="{DynamicResource TextDefaultBrush}"
+               Margin="0,0,0,12" />
+
+    <TextBlock Text="{loc:Str AccountDeletion_ExportHint}"
+               TextWrapping="Wrap"
+               FontWeight="SemiBold"
+               Foreground="{DynamicResource TextDefaultBrush}"
+               Margin="0,0,0,8" />
+    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+      <ui:Button Content="{loc:Str AccountDeletion_Export}"
+                 Icon="{ui:SymbolIcon ArrowDownload24}"
+                 Appearance="Secondary"
+                 Command="{Binding ExportCommand}"
+                 AutomationProperties.AutomationId="AccountDeletion_Export"
+                 Margin="0,0,8,0" />
+      <ui:ProgressRing IsIndeterminate="True"
+                       Width="16" Height="16"
+                       Visibility="{Binding IsExporting, Converter={StaticResource BooleanToVisibilityConverter}}" />
+    </StackPanel>
+    <TextBlock Text="{Binding ExportStatus}"
+               TextWrapping="Wrap"
+               FontSize="12"
+               Foreground="{DynamicResource TextMutedBrush}"
+               Visibility="{Binding ExportStatus, Converter={StaticResource NullToVisibilityConverter}}"
+               Margin="0,0,0,4" />
+
+    <StackPanel Visibility="{Binding RequiresPassword, Converter={StaticResource BooleanToVisibilityConverter}}"
+                Margin="0,12,0,0">
+      <TextBlock Text="{loc:Str AccountDeletion_Password_Label}"
+                 FontSize="12"
+                 Foreground="{DynamicResource TextMutedBrush}"
+                 Margin="0,0,0,4" />
+      <PasswordBox x:Name="PasswordInput"
+                   AutomationProperties.AutomationId="AccountDeletion_Password" />
+    </StackPanel>
+
+    <CheckBox IsChecked="{Binding IsUnderstood}"
+              Margin="0,16,0,0"
+              AutomationProperties.AutomationId="AccountDeletion_Understood">
+      <TextBlock Text="{loc:Str AccountDeletion_Understood}" TextWrapping="Wrap" />
+    </CheckBox>
+  </StackPanel>
+</ui:ContentDialog>

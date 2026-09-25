@@ -58,7 +58,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IWorkingDirectoryService workingDirectoryService,
         IDiagnosticsExportService diagnosticsExportService,
         IScreenCaptureAllowlistStore screenCaptureAllowlistStore,
-        IAdvancedCreationLauncher advancedCreation)
+        IAdvancedCreationLauncher advancedCreation,
+        IAccountDataService accountData,
+        IFileDialogService fileDialogs)
     {
         _logger = logger;
 
@@ -79,7 +81,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService, diagnosticsExportService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, accountData, fileDialogs);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }

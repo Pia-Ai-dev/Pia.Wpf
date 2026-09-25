@@ -641,6 +641,23 @@
   <data name="Sync_SignedInAs" xml:space="preserve"><value>Signed in as </value></data>
   <data name="Sync_Provider" xml:space="preserve"><value>Provider: </value></data>
   <data name="Sync_SignOut" xml:space="preserve"><value>Sign Out</value></data>
+  <data name="Sync_ExportData" xml:space="preserve"><value>Export data</value></data>
+  <data name="Sync_ExportData_Done" xml:space="preserve"><value>Your account data has been saved as a ZIP archive.</value></data>
+  <data name="Sync_ExportData_Failed" xml:space="preserve"><value>The export failed. Nothing was saved.</value></data>
+  <data name="Sync_DeleteAccount" xml:space="preserve"><value>Delete account</value></data>
+  <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Your account has been deleted and you are signed out.</value></data>
+  <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>The password is incorrect. Your account was not deleted.</value></data>
+  <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>The account could not be deleted. Please try again later.</value></data>
+  <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Save account data</value></data>
+  <data name="AccountDeletion_Title" xml:space="preserve"><value>Delete account</value></data>
+  <data name="AccountDeletion_Intro" xml:space="preserve"><value>Deleting your account ends your access to it immediately. Once the server's deletion period has passed, it removes the data stored in the account; after that, the data can neither be exported nor restored.</value></data>
+  <data name="AccountDeletion_ExportHint" xml:space="preserve"><value>Export your data before you delete the account. Afterwards this is no longer possible.</value></data>
+  <data name="AccountDeletion_Export" xml:space="preserve"><value>Export data now</value></data>
+  <data name="AccountDeletion_ExportDone" xml:space="preserve"><value>Export saved.</value></data>
+  <data name="AccountDeletion_ExportFailed" xml:space="preserve"><value>The export failed. Nothing was saved.</value></data>
+  <data name="AccountDeletion_Password_Label" xml:space="preserve"><value>Password</value></data>
+  <data name="AccountDeletion_Understood" xml:space="preserve"><value>I understand that my account and the data stored in it will be deleted.</value></data>
+  <data name="AccountDeletion_Confirm" xml:space="preserve"><value>Delete account</value></data>
   <data name="Sync_NeverSynced" xml:space="preserve"><value>Never synced</value></data>
   <data name="Sync_JustNow" xml:space="preserve"><value>Just now</value></data>
   <data name="Sync_MinutesAgo" xml:space="preserve"><value>{0} minute(s) ago</value></data>

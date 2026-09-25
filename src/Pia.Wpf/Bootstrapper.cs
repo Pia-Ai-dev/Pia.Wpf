@@ -899,6 +899,7 @@ public static class Bootstrapper
         services.AddSingleton<IE2EEService, E2EEService>();
         services.AddSingleton<IRecoveryCodeService, RecoveryCodeService>();
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
+        services.AddSingleton<IAccountDataService, AccountDataService>();
 
         // Sync services
         services.AddSingleton<SyncDeleteTrackerService>(sp =>

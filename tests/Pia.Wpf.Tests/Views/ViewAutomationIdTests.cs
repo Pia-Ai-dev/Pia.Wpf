@@ -50,7 +50,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 48, 6, "McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
-    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 16, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 4, 0, "TemplatesView")]
     [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 13, 0, "PiaEmptyState")]
     [InlineData(typeof(Pia.Views.AssistantView), 34, 7,
