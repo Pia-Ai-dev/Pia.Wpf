@@ -140,6 +140,7 @@ one `ww_invoke` runs the whole thing:
 | `AssistantHistory_ExportAll` / `_ExportArchive` (the `.json` archive) | `PIA_DEBUG_CHAT_EXPORT_FILE` |
 | `AssistantHistory_ExportMarkdown` (the `.md` transcript) | `PIA_DEBUG_CHAT_EXPORT_MARKDOWN_FILE` |
 | `Answer_Export_<id>` → **External** (the standalone `.html`) | `PIA_DEBUG_ANSWER_EXPORT_FILE` |
+| `Settings_Account_ExportData` / `AccountDeletion_Export` (the account `.zip`) | `PIA_DEBUG_ACCOUNT_EXPORT_FILE` |
 | `Assistant_AttachFile` (a semicolon-separated **list**, so one click stages several files) | `PIA_DEBUG_DROP_FILES` |
 
 `PIA_DEBUG_DROP_FILES` is the only way to exercise file attachments at all: a shell drag-drop is a Win32
@@ -437,8 +438,9 @@ Committed recordings, the settings fixture they start from and the replay harnes
   a script: a **Danger/Warning** notice is `FlowLifetime.Persistent` and is fully readable at leisure
   (`Flow_Title_<id>` / `Flow_Body_<id>` inside `Flow_Card_<id>`, plus `Flow_Dismiss_<id>`), while a
   **Success/Info** notice is `FlowLifetime.Transient` — a peek that expires before one MCP round trip
-  can read it. Four attempts on a confirmed-successful action caught nothing. Assert the side effect,
-  never the success notice.
+  can read it. Assert the side effect first. To read the notice as well, open the rail (below), then
+  start a PowerShell UIA poll *before* the action — `FindAll` over the app window's descendants every
+  250 ms, logging each new `Flow_Body_*` element's `Name`. A collapsed rail has no card bodies in the tree.
 - **The Flow rail’s collapsed handle cannot be invoked.** It is a `Border` with a `MouseBinding`, so it
   has no `AutomationId` and no InvokePattern. Open it with a real mouse click on the bell glyph inside
   it, after `ww_window action=activate`:

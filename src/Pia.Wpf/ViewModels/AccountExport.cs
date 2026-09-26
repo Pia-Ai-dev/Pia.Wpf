@@ -6,6 +6,10 @@ internal static class AccountExport
 {
     public static string? PromptPath(IFileDialogService fileDialogs, ILocalizationService localization)
     {
+#if DEBUG
+        if (Environment.GetEnvironmentVariable(Bootstrapper.DebugAccountExportFileEnvVar) is { Length: > 0 } preset)
+            return preset;
+#endif
         var path = fileDialogs.PromptSaveFile(
             localization["AccountExport_DialogTitle"],
             "ZIP (*.zip)|*.zip",
