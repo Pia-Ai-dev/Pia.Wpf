@@ -56,7 +56,7 @@ public sealed class CreditStatusService : ICreditStatusService
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException or NotSupportedException)
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Credit status from {Url} could not be read.", SafeUrl.Format(serverUrl));
             return null;

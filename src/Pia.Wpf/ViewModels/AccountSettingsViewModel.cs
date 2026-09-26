@@ -122,6 +122,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 RefreshCreditsAsync().SafeFireAndForget(_logger);
                 return;
             }
+            Interlocked.Increment(ref _creditsGeneration);
             Post(() =>
             {
                 IsE2EEOnboardingRequired = false;
@@ -208,7 +209,6 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
     private void ClearCredits()
     {
-        Interlocked.Increment(ref _creditsGeneration);
         CreditMeters.Clear();
         IsCreditTierSuspended = false;
         HasCredits = false;

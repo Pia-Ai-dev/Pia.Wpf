@@ -71,6 +71,7 @@ public class AccountSettingsCreditsTests
         await sut.RefreshCreditsAsync();
 
         Assert.True(sut.IsCreditTierSuspended);
+        Assert.NotEmpty(sut.CreditMeters);
     }
 
     [Fact]
@@ -130,8 +131,9 @@ public class AccountSettingsCreditsTests
         var previousCulture = CultureInfo.CurrentCulture;
         try
         {
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("de-DE");
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            _loc.Culture.Returns(CultureInfo.GetCultureInfo("de-DE"));
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en-US");
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
 
             _credits.GetAsync(Arg.Any<CancellationToken>()).Returns(new CreditStatusResponse(
                 true, null, null, null, new CreditWindowDto(1000, 620, DateTime.UtcNow.AddDays(3)), null, null, null));
@@ -139,7 +141,7 @@ public class AccountSettingsCreditsTests
 
             await sut.RefreshCreditsAsync();
 
-            Assert.Contains("1,000", Assert.Single(sut.CreditMeters).Caption);
+            Assert.Contains("1.000", Assert.Single(sut.CreditMeters).Caption);
         }
         finally
         {

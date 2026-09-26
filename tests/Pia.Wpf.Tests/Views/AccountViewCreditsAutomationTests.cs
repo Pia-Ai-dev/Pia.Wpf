@@ -33,7 +33,7 @@ public class AccountViewCreditsAutomationTests
     }
 
     /// <summary>A UIA client attached before Settings was revisited: the ItemsControl's peer is walked once
-    /// while empty, caching an empty subtree, then the seven rows arrive in one go on the revisit.</summary>
+    /// while empty, caching an empty subtree, then the rows arrive in one go on the revisit.</summary>
     [Fact]
     public void RowsAddedAfterAnEarlierWalk_AreStillReadable()
     {
@@ -63,8 +63,7 @@ public class AccountViewCreditsAutomationTests
         vm.CreditMeters.Add(new CreditMeter("weekly", "This week", 3, 10, "3 of 10 used"));
         vm.CreditMeters.Add(new CreditMeter("pool", "Free team pool this week", 4, 5, "1 of 5 left"));
 
-        // The premise: nothing has been through a layout pass yet, so the walk below finds no rows
-        // regardless of the fix — matches this file's other test only after Layout runs again.
+        // Asserted before layout, so the test cannot pass vacuously with the rows already present.
         Assert.DoesNotContain(SurveyRevisitWithoutReset(),
             id => id.StartsWith("Settings_Account_Credits_Label_", StringComparison.Ordinal));
 

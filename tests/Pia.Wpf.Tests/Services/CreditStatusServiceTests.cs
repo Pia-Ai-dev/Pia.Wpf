@@ -9,7 +9,6 @@ using Pia.Models;
 using Pia.Services.Credits;
 using Pia.Services.Interfaces;
 using Xunit;
-using Xunit.Sdk;
 
 public class CreditStatusServiceTests
 {
@@ -92,6 +91,17 @@ public class CreditStatusServiceTests
     }
 
     [Fact]
+    public async Task AnUnexpectedFailure_AnswersNull()
+    {
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(Arg.Any<string>())
+            .Returns(_ => new HttpClient(new FaultingHandler(), disposeHandler: false));
+        var sut = new CreditStatusService(_settings, _auth, factory, NullLogger<CreditStatusService>.Instance);
+
+        Assert.Null(await sut.GetAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task NoToken_AnswersNullWithoutARequest()
     {
         var (sut, handler) = Create(HttpStatusCode.OK, """{ "limited": true }""");
@@ -139,5 +149,11 @@ public class CreditStatusServiceTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
             throw new HttpRequestException("unreachable");
+    }
+
+    private sealed class FaultingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new InvalidOperationException("unknown charset");
     }
 }

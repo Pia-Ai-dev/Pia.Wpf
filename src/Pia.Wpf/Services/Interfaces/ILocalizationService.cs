@@ -6,7 +6,7 @@ namespace Pia.Services.Interfaces;
 public interface ILocalizationService
 {
     TargetLanguage CurrentLanguage { get; }
-    /// <summary>The active UI culture, distinct from the thread-local <c>CurrentUICulture</c> it can drift from.</summary>
+    /// <summary>The culture of the selected UI language; the thread culture can drift from it.</summary>
     CultureInfo Culture { get; }
     event EventHandler<TargetLanguage>? LanguageChanged;
     void SetLanguage(TargetLanguage language);

@@ -7,8 +7,8 @@ using Pia.Models;
 using Pia.Services;
 using Xunit;
 
-// SetLanguage mutates process-wide culture state (DefaultThreadCurrent*, LocalizationSource.Instance)
-// that other tests read, so this serializes through the same collection as the WPF static app.
+// The WpfApplicationStatic collection disables parallelization, so this never runs alongside
+// another collection while it mutates process-wide culture state.
 [Collection("WpfApplicationStatic")]
 public class LocalizationServiceCultureTests
 {
