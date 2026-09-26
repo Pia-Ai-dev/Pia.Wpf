@@ -963,6 +963,8 @@ public static class Bootstrapper
         // AssignmentToolHandler reads off the turn's ambient context.
         services.AddSingleton<IHeadlessAssignmentLauncher, HeadlessAssignmentLauncher>();
 
+        services.AddSingleton<Services.Credits.ICreditStatusService, Services.Credits.CreditStatusService>();
+
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
 

@@ -222,6 +222,59 @@
             </TextBlock>
           </StackPanel>
         </Border>
+
+        <StackPanel Margin="0,0,0,12"
+                    Visibility="{Binding HasCredits, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <TextBlock Text="{loc:Str Settings_Credits_Title}"
+                     Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+          <Border Style="{StaticResource PiaSettingsCardStyle}"
+                  Padding="16">
+            <StackPanel>
+              <TextBlock Text="{loc:Str Settings_Credits_Suspended}"
+                         TextWrapping="Wrap"
+                         FontSize="12"
+                         Foreground="{DynamicResource WarnBrush}"
+                         Margin="0,0,0,8"
+                         AutomationProperties.AutomationId="Settings_Account_Credits_Suspended"
+                         Visibility="{Binding IsCreditTierSuspended, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <ItemsControl ItemsSource="{Binding CreditMeters}"
+                            AutomationProperties.AutomationId="Settings_Account_Credits"
+                            behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,10">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                      </Grid.RowDefinitions>
+                      <TextBlock Text="{Binding Label}"
+                                 FontSize="13"
+                                 Foreground="{DynamicResource TextDefaultBrush}"
+                                 AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Label_{0}'}"/>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Caption}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource TextMutedBrush}"
+                                 AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Caption_{0}'}"/>
+                      <ProgressBar Grid.Row="1" Grid.ColumnSpan="2"
+                                   Value="{Binding Value, Mode=OneWay}"
+                                   Maximum="{Binding Maximum, Mode=OneWay}"
+                                   Height="4"
+                                   Margin="0,6,0,0"
+                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Bar_{0}'}"
+                                   AutomationProperties.Name="{Binding Label}"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
         <!-- Sync status -->
         <StackPanel Margin="0,0,0,12">
           <TextBlock FontSize="12"
