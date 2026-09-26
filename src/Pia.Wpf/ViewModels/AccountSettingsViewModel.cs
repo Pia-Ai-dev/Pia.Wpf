@@ -368,7 +368,6 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         ApplySettings(settings);
         UpdateSyncState();
 
-        // E2EE state
         IsE2EEEnabled = settings.IsE2EEEnabled;
         if (_deviceManagement.IsInitialized())
             DeviceFingerprint = _deviceKeys.GetFingerprint();
