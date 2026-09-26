@@ -5,6 +5,7 @@
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   xmlns:models="clr-namespace:Pia.Models"
                   xmlns:loc="clr-namespace:Pia.Localization"
+                  xmlns:behaviors="clr-namespace:Pia.Behaviors"
                   Title="{loc:Str Dialog_ProviderEdit_Title}"
                   PrimaryButtonText="{loc:Str Common_Save}"
                   CloseButtonText="{loc:Str Common_Cancel}"
@@ -89,7 +90,8 @@
                    VerticalAlignment="Stretch"
                    AutomationProperties.Name="{loc:Str Dialog_ProviderEdit_FetchModels}"
                    ToolTip="{loc:Str Dialog_ProviderEdit_FetchModels}"
-                   IsEnabled="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanConverter}}">
+                   IsEnabled="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanConverter}}"
+                   behaviors:FocusHandoffBehavior.MoveFocusWhenDisabled="True">
           <Grid>
             <ui:SymbolIcon Symbol="ArrowSync24" FontSize="16"
                            Visibility="{Binding IsFetchingModels, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />

@@ -205,7 +205,12 @@ parameter.
   (else an Optimize-mode window with no Routines/Memory/Chat-history nav), `syncEnabled: false`
   (never talk to the live account) and `uiLanguage: 0` (name-based selectors are localized strings).
 - A throwaway profile is not signed in, so it cannot verify anything sync-related — a working push
-  and a broken one look identical.
+  and a broken one look identical. For signed-in-only UI (Account export/delete, sign-out), sign in
+  through `Settings_Account_LoginWithPassword` against a loopback Node mock that answers
+  `POST /auth/login/local` with a `LocalLoginResponse` and 404s the rest, logging each request.
+- **A Debug build overwrites the seeded `serverUrl`** with `PIA_CLOUD_SERVER_URL` when that variable
+  is set in the user environment. Pass it through `ww_launch`'s `env` too, or the app talks to
+  whatever server it names; the log line `Applying PIA_CLOUD_SERVER_URL override` shows it happened.
 - **If the vault's `memory/topics/` did get wiped, check before rebuilding.** On the next real
   launch `AutoIngestService` logs `Ingest record names a topic page that is gone; re-ingesting the
   source` and re-synthesises the pages by itself; a different set of pages from the same sources is

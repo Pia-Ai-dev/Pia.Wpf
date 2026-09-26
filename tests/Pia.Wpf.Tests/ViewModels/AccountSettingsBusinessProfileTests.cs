@@ -40,7 +40,8 @@ public class AccountSettingsBusinessProfileTests
             _deviceKeys, _memory, _policy,
             new E2EEOnboardingViewModel(
                 _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
-                NullLogger<E2EEOnboardingViewModel>.Instance));
+                NullLogger<E2EEOnboardingViewModel>.Instance),
+            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>());
     }
 
     [Fact]

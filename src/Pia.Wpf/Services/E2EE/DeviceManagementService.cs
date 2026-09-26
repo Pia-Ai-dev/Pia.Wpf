@@ -135,7 +135,7 @@ public class DeviceManagementService : IDeviceManagementService
         approval.ApproverSignature = _deviceKeys.Sign(signData);
 
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsJsonAsync("/api/e2ee/devices/approve", approval);
+        var response = await client.PostAsJsonAsync("api/e2ee/devices/approve", approval);
         response.EnsureSuccessStatusCode();
 
         _logger.LogInformation("Approved device {DeviceId}", targetDevice.DeviceId);
@@ -148,7 +148,7 @@ public class DeviceManagementService : IDeviceManagementService
         // 1. Fetch recovery-wrapped UMK from server
         using var client = await CreateAuthorizedClientAsync();
         var recoveryBlob = await client.GetFromJsonAsync<RecoveryWrappedUmkBlob>(
-            "/api/e2ee/recovery/wrapped-umk");
+            "api/e2ee/recovery/wrapped-umk");
 
         if (recoveryBlob is null)
             throw new InvalidOperationException("No recovery key found on server");
@@ -175,7 +175,7 @@ public class DeviceManagementService : IDeviceManagementService
             OnboardingSessionId = onboardingSessionId
         };
 
-        var response = await client.PostAsJsonAsync("/api/e2ee/recovery/activate", activationRequest);
+        var response = await client.PostAsJsonAsync("api/e2ee/recovery/activate", activationRequest);
         response.EnsureSuccessStatusCode();
 
         // 6. Update local settings
@@ -196,7 +196,7 @@ public class DeviceManagementService : IDeviceManagementService
         using var client = await CreateAuthorizedClientAsync();
 
         var wrappedBlob = await client.GetFromJsonAsync<WrappedUmkBlob>(
-            $"/api/e2ee/devices/{deviceId}/wrapped-umk");
+            $"api/e2ee/devices/{deviceId}/wrapped-umk");
 
         if (wrappedBlob is null)
             throw new InvalidOperationException("No wrapped UMK found for this device");
@@ -229,7 +229,7 @@ public class DeviceManagementService : IDeviceManagementService
     public async Task RevokeDeviceAsync(string deviceId)
     {
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsync($"/api/e2ee/devices/{deviceId}/revoke", null);
+        var response = await client.PostAsync($"api/e2ee/devices/{deviceId}/revoke", null);
         response.EnsureSuccessStatusCode();
         _logger.LogInformation("Revoked device {DeviceId}", deviceId);
     }
@@ -237,7 +237,7 @@ public class DeviceManagementService : IDeviceManagementService
     public async Task<DeviceListResponse> GetDevicesAsync()
     {
         using var client = await CreateAuthorizedClientAsync();
-        return await client.GetFromJsonAsync<DeviceListResponse>("/api/e2ee/devices")
+        return await client.GetFromJsonAsync<DeviceListResponse>("api/e2ee/devices")
             ?? new DeviceListResponse();
     }
 
@@ -257,7 +257,7 @@ public class DeviceManagementService : IDeviceManagementService
         };
 
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsJsonAsync("/api/e2ee/devices/register", request);
+        var response = await client.PostAsJsonAsync("api/e2ee/devices/register", request);
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadFromJsonAsync<DeviceRegistrationResponse>()
@@ -277,14 +277,14 @@ public class DeviceManagementService : IDeviceManagementService
         };
 
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsJsonAsync($"/api/e2ee/devices/{deviceId}/wrapped-umk", blob);
+        var response = await client.PostAsJsonAsync($"api/e2ee/devices/{deviceId}/wrapped-umk", blob);
         response.EnsureSuccessStatusCode();
     }
 
     private async Task UploadRecoveryWrappedUmkAsync(RecoveryWrappedUmkBlob blob)
     {
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsJsonAsync("/api/e2ee/recovery/wrapped-umk", blob);
+        var response = await client.PostAsJsonAsync("api/e2ee/recovery/wrapped-umk", blob);
         response.EnsureSuccessStatusCode();
     }
 
@@ -293,7 +293,7 @@ public class DeviceManagementService : IDeviceManagementService
         try
         {
             using var client = await CreateAuthorizedClientAsync();
-            var response = await client.GetAsync("/api/e2ee/status");
+            var response = await client.GetAsync("api/e2ee/status");
             if (!response.IsSuccessStatusCode) return null;
             return await response.Content.ReadFromJsonAsync<E2EEStatusResponse>();
         }
@@ -309,7 +309,7 @@ public class DeviceManagementService : IDeviceManagementService
         try
         {
             using var client = await CreateAuthorizedClientAsync();
-            var response = await client.GetAsync($"/api/e2ee/devices/{deviceId}/status");
+            var response = await client.GetAsync($"api/e2ee/devices/{deviceId}/status");
             if (!response.IsSuccessStatusCode) return null;
             return await response.Content.ReadFromJsonAsync<DeviceStatusResponse>();
         }
@@ -322,9 +322,13 @@ public class DeviceManagementService : IDeviceManagementService
 
     private async Task<HttpClient> CreateAuthorizedClientAsync()
     {
+        var serverUrl = (await _settings.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(serverUrl))
+            throw new InvalidOperationException("Server URL not configured");
+
         var client = _httpFactory.CreateClient();
-        var settings = await _settings.GetSettingsAsync();
-        client.BaseAddress = new Uri(settings.ServerUrl ?? throw new InvalidOperationException("Server URL not configured"));
+        // Without the trailing slash a relative request path would replace the URL's last segment.
+        client.BaseAddress = new Uri(serverUrl + "/");
         var token = await _auth.GetAccessTokenAsync();
         client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);

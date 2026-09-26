@@ -24,6 +24,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private readonly IDeviceKeyService _deviceKeys;
     private readonly IMemoryService _memoryService;
     private readonly IPolicyService _policyService;
+    private readonly IAccountDataService _accountData;
+    private readonly IFileDialogService _fileDialogs;
 
     /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
     public PolicyLock Policy { get; }
@@ -44,9 +46,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         IDeviceKeyService deviceKeys,
         IMemoryService memoryService,
         IPolicyService policyService,
-        E2EEOnboardingViewModel onboardingViewModel)
+        E2EEOnboardingViewModel onboardingViewModel,
+        IAccountDataService accountData,
+        IFileDialogService fileDialogs)
         : base(requireUiThread: true)
     {
+        _accountData = accountData;
+        _fileDialogs = fileDialogs;
         _logger = logger;
         _settingsService = settingsService;
         _dialogService = dialogService;
@@ -657,6 +663,60 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         await _authService.LogoutAsync();
         UpdateSyncState();
     }
+
+    [RelayCommand]
+    private async Task ExportAccountDataAsync()
+    {
+        var path = AccountExport.PromptPath(_fileDialogs, _localizationService);
+        if (path is null) return;
+
+        if (await AccountExport.TrySaveAsync(_accountData, path, CancellationToken.None))
+            ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Done", Wpf.Ui.Controls.ControlAppearance.Success);
+        else
+            ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Failed", Wpf.Ui.Controls.ControlAppearance.Danger);
+    }
+
+    [RelayCommand]
+    private async Task DeleteAccountAsync()
+    {
+        var requiresPassword = _authService.Provider == "local";
+        var dialog = new AccountDeletionViewModel(_accountData, _fileDialogs, _localizationService, requiresPassword);
+        var confirmed = await _dialogService.ShowAccountDeletionDialogAsync(dialog);
+        dialog.ExportCommand.Cancel();
+        if (!confirmed) return;
+
+        // A running cycle would otherwise keep pushing into the account and race the sign-out.
+        var wasSyncing = _syncClientService.IsSyncActive;
+        await _syncClientService.StopBackgroundSyncAndWaitAsync();
+
+        AccountDeletionOutcome outcome;
+        try
+        {
+            outcome = await _accountData.DeleteAsync(requiresPassword ? dialog.Password : null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Account deletion request failed");
+            outcome = AccountDeletionOutcome.Failed;
+        }
+
+        if (outcome == AccountDeletionOutcome.Deleted)
+        {
+            await SyncLogoutAsync();
+            ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_Done", Wpf.Ui.Controls.ControlAppearance.Success);
+            return;
+        }
+
+        if (wasSyncing) _syncClientService.StartBackgroundSync();
+        var reason = outcome == AccountDeletionOutcome.InvalidPassword
+            ? "Sync_DeleteAccount_InvalidPassword"
+            : "Sync_DeleteAccount_Failed";
+        ShowAccountSnackbar("Sync_DeleteAccount", reason, Wpf.Ui.Controls.ControlAppearance.Danger);
+    }
+
+    private void ShowAccountSnackbar(string titleKey, string messageKey, Wpf.Ui.Controls.ControlAppearance appearance) =>
+        _snackbarService.Show(_localizationService[titleKey], _localizationService[messageKey],
+            appearance, null, TimeSpan.FromSeconds(6));
 
     [RelayCommand]
     private async Task CheckForPendingDevicesAsync()

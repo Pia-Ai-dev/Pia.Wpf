@@ -15,6 +15,8 @@ public interface IDialogService
 
     /// <summary>Asks for a filename and a destination; the edit model carries the name and the open-after flag back.</summary>
     Task<AnswerExportDestination> ShowAnswerExportDialogAsync(AnswerExportEditModel export);
+    /// <summary>True when the user confirmed the deletion; the caller then sends it with the dialog's password.</summary>
+    Task<bool> ShowAccountDeletionDialogAsync(AccountDeletionViewModel viewModel);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
 
     /// <summary>A confirmation that also carries back a "don't ask again" tick — where the suppression is

@@ -678,6 +678,24 @@
   <data name="Sync_SignedInAs" xml:space="preserve"><value>Angemeldet als </value></data>
   <data name="Sync_Provider" xml:space="preserve"><value>Anbieter: </value></data>
   <data name="Sync_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <data name="Sync_ExportData" xml:space="preserve"><value>Daten exportieren</value></data>
+  <data name="Sync_ExportData_Done" xml:space="preserve"><value>Deine Kontodaten wurden als ZIP-Archiv gespeichert.</value></data>
+  <data name="Sync_ExportData_Failed" xml:space="preserve"><value>Der Export ist fehlgeschlagen. Es wurde nichts gespeichert.</value></data>
+  <data name="Sync_DeleteAccount" xml:space="preserve"><value>Konto löschen</value></data>
+  <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Dein Konto wurde gelöscht, und du bist abgemeldet.</value></data>
+  <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>Das Passwort ist falsch. Dein Konto wurde nicht gelöscht.</value></data>
+  <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>Das Konto konnte nicht gelöscht werden. Bitte versuche es später erneut.</value></data>
+  <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Kontodaten speichern</value></data>
+  <data name="AccountDeletion_Title" xml:space="preserve"><value>Konto löschen</value></data>
+  <data name="AccountDeletion_Intro" xml:space="preserve"><value>Mit der Löschung endet dein Zugriff auf das Konto sofort. Nach Ablauf der Löschfrist des Servers werden die im Konto gespeicherten Daten entfernt; danach lassen sie sich weder exportieren noch wiederherstellen.</value></data>
+  <data name="AccountDeletion_ExportHint" xml:space="preserve"><value>Exportiere deine Daten, bevor du das Konto löschst. Danach ist das nicht mehr möglich.</value></data>
+  <data name="AccountDeletion_Export" xml:space="preserve"><value>Daten jetzt exportieren</value></data>
+  <data name="AccountDeletion_ExportDone" xml:space="preserve"><value>Export gespeichert.</value></data>
+  <data name="AccountDeletion_ExportFailed" xml:space="preserve"><value>Der Export ist fehlgeschlagen. Es wurde nichts gespeichert.</value></data>
+  <data name="AccountDeletion_Password_Label" xml:space="preserve"><value>Passwort</value></data>
+  <data name="AccountDeletion_Understood" xml:space="preserve"><value>Mir ist klar, dass mein Konto und die darin gespeicherten Daten gelöscht werden.</value></data>
+  <data name="AccountDeletion_Confirm" xml:space="preserve"><value>Konto löschen</value></data>
+  <data name="AccountDeletion_RequiredHint" xml:space="preserve"><value>Die Schaltfläche „Konto löschen“ erscheint, sobald du unten den Haken setzt und – bei Anmeldung mit E-Mail und Passwort – dein Passwort eingibst.</value></data>
   <data name="Sync_NeverSynced" xml:space="preserve"><value>Noch nie synchronisiert</value></data>
   <data name="Sync_JustNow" xml:space="preserve"><value>Gerade eben</value></data>
   <data name="Sync_MinutesAgo" xml:space="preserve"><value>Vor {0} Minute(n)</value></data>
