@@ -635,10 +635,54 @@ git commit -m "feat(credits): turn a credit status into ordered, captioned meter
 - Produces (bound by Task 4): `ObservableCollection<CreditMeter> CreditMeters`, `bool HasCredits`, `bool IsCreditTierSuspended`.
 
 - [ ] **Step 1: Write the failing tests** in `tests/Pia.Wpf.Tests/ViewModels/AccountSettingsCreditsTests.cs`.
-  Copy `CreateSut()` and the substitutes from `AccountSettingsBusinessProfileTests` and pass one more argument,
-  `_credits` (a `Substitute.For<ICreditStatusService>()`), last.
+  The scaffold is the one `AccountSettingsBusinessProfileTests` uses, plus `_credits` as the last argument.
 
 ```csharp
+namespace Pia.Tests.ViewModels;
+
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Pia.Models;
+using Pia.Services.Credits;
+using Pia.Services.E2EE;
+using Pia.Services.Interfaces;
+using Pia.Tests.TestInfrastructure;
+using Pia.ViewModels;
+using Xunit;
+
+public class AccountSettingsCreditsTests
+{
+    private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
+    private readonly IAuthService _auth = Substitute.For<IAuthService>();
+    private readonly ISyncClientService _sync = Substitute.For<ISyncClientService>();
+    private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
+    private readonly IDeviceManagementService _deviceMgmt = Substitute.For<IDeviceManagementService>();
+    private readonly IDeviceKeyService _deviceKeys = Substitute.For<IDeviceKeyService>();
+    private readonly IMemoryService _memory = Substitute.For<IMemoryService>();
+    private readonly IPolicyService _policy = Substitute.For<IPolicyService>();
+    private readonly ICreditStatusService _credits = Substitute.For<ICreditStatusService>();
+
+    public AccountSettingsCreditsTests()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings());
+        _loc[Arg.Any<string>()].Returns("{0} {1}");
+    }
+
+    private AccountSettingsViewModel CreateSut()
+    {
+        // AccountSettingsViewModel demands a captured context; inline keeps the assertions synchronous.
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+
+        return new AccountSettingsViewModel(
+            NullLogger<SettingsViewModel>.Instance, _settings, Substitute.For<IDialogService>(),
+            Substitute.For<global::Wpf.Ui.ISnackbarService>(), _auth, _sync, _loc, _deviceMgmt,
+            _deviceKeys, _memory, _policy,
+            new E2EEOnboardingViewModel(
+                _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
+                NullLogger<E2EEOnboardingViewModel>.Instance),
+            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(), _credits);
+    }
+
     private static CreditStatusResponse Limited(bool? suspended = null) => new(
         true, suspended, null, null, new CreditWindowDto(100, 40, DateTime.UtcNow.AddDays(3)), null, null, null);
 
@@ -715,6 +759,7 @@ git commit -m "feat(credits): turn a credit status into ordered, captioned meter
 
         await _credits.Received(1).GetAsync(Arg.Any<CancellationToken>());
     }
+}
 ```
 
 - [ ] **Step 2: Build and run to see them fail.** Expected: compile errors (`RefreshCreditsAsync`, `HasCredits`,
