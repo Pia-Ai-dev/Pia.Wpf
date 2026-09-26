@@ -25,11 +25,11 @@ public sealed partial class AccountDeletionViewModel : ObservableObject
     public bool RequiresPassword { get; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanDelete))]
+    [NotifyPropertyChangedFor(nameof(CanDelete), nameof(IsConfirmationIncomplete))]
     private string _password = "";
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanDelete))]
+    [NotifyPropertyChangedFor(nameof(CanDelete), nameof(IsConfirmationIncomplete))]
     private bool _isUnderstood;
 
     [ObservableProperty]
@@ -39,30 +39,25 @@ public sealed partial class AccountDeletionViewModel : ObservableObject
     [ObservableProperty]
     private string? _exportStatus;
 
-    public bool CanDelete => IsUnderstood && !IsExporting && (!RequiresPassword || Password.Length > 0);
+    public bool IsConfirmationIncomplete => !IsUnderstood || (RequiresPassword && Password.Length == 0);
 
-    public static string? PromptExportPath(IFileDialogService fileDialogs, ILocalizationService localization) =>
-        fileDialogs.PromptSaveFile(
-            localization["AccountExport_DialogTitle"],
-            "ZIP (*.zip)|*.zip",
-            $"pia-export-{DateTime.Now:yyyy-MM-dd}.zip",
-            initialDirectory: null);
+    public bool CanDelete => !IsConfirmationIncomplete && !IsExporting;
 
     [RelayCommand]
-    private async Task ExportAsync()
+    private async Task ExportAsync(CancellationToken ct)
     {
-        var path = PromptExportPath(_fileDialogs, _localization);
-        if (string.IsNullOrWhiteSpace(path)) return;
+        var path = AccountExport.PromptPath(_fileDialogs, _localization);
+        if (path is null) return;
 
         IsExporting = true;
         try
         {
-            await _accountData.ExportToFileAsync(path);
-            ExportStatus = _localization["AccountDeletion_ExportDone"];
+            var saved = await AccountExport.TrySaveAsync(_accountData, path, ct);
+            ExportStatus = _localization[saved ? "AccountDeletion_ExportDone" : "AccountDeletion_ExportFailed"];
         }
-        catch (Exception)
+        catch (OperationCanceledException)
         {
-            ExportStatus = _localization["AccountDeletion_ExportFailed"];
+            // Only closing the dialog cancels, so nobody is left to tell.
         }
         finally
         {

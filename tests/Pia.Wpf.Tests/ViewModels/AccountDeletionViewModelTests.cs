@@ -98,6 +98,47 @@ public class AccountDeletionViewModelTests
         Assert.True(sut.CanDelete);
     }
 
+    [Fact]
+    public async Task IsConfirmationIncomplete_StaysFalseWhileTheExportRuns()
+    {
+        var export = new TaskCompletionSource();
+        _fileDialogs.PromptSaveFile(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(@"C:\exports\pia.zip");
+        _accountData.ExportToFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(export.Task);
+        var sut = CreateSut(requiresPassword: true);
+        sut.IsUnderstood = true;
+        sut.Password = "pw";
+
+        var running = sut.ExportCommand.ExecuteAsync(null);
+
+        Assert.False(sut.CanDelete);
+        Assert.False(sut.IsConfirmationIncomplete);
+        export.SetResult();
+        await running;
+    }
+
+    [Fact]
+    public async Task Export_WhenCancelled_StopsQuietly()
+    {
+        CancellationToken exportToken = default;
+        _fileDialogs.PromptSaveFile(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(@"C:\exports\pia.zip");
+        _accountData.ExportToFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(ci =>
+        {
+            exportToken = ci.Arg<CancellationToken>();
+            return Task.Delay(Timeout.Infinite, exportToken);
+        });
+        var sut = CreateSut(requiresPassword: false);
+
+        var running = sut.ExportCommand.ExecuteAsync(null);
+        sut.ExportCommand.Cancel();
+        await running;
+
+        Assert.True(exportToken.IsCancellationRequested);
+        Assert.False(sut.IsExporting);
+        Assert.Null(sut.ExportStatus);
+    }
+
     private AccountDeletionViewModel CreateSut(bool requiresPassword) =>
         new(_accountData, _fileDialogs, _loc, requiresPassword);
 }

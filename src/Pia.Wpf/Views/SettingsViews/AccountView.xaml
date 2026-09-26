@@ -261,6 +261,10 @@
                      AutomationProperties.AutomationId="Settings_Account_ExportData"
                      Appearance="Secondary"
                      Margin="0,0,8,0"/>
+          <ui:ProgressRing IsIndeterminate="True"
+                           Width="16" Height="16"
+                           Margin="0,0,8,0"
+                           Visibility="{Binding ExportAccountDataCommand.IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
           <ui:Button Content="{loc:Str Sync_SignOut}"
                      Command="{Binding SyncLogoutCommand}"
                      AutomationProperties.AutomationId="Settings_Account_SyncLogout"

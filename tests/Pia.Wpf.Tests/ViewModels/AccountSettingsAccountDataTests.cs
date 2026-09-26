@@ -1,7 +1,9 @@
 namespace Pia.Tests.ViewModels;
 
+using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -36,6 +38,30 @@ public class AccountSettingsAccountDataTests
 
         await _accountData.DidNotReceiveWithAnyArgs().DeleteAsync(default, Ct);
         await _auth.DidNotReceive().LogoutAsync();
+        await _sync.DidNotReceive().StopBackgroundSyncAndWaitAsync();
+    }
+
+    [Fact]
+    public async Task DeleteAccount_ClosingTheDialog_CancelsARunningExport()
+    {
+        var exportToken = new TaskCompletionSource<CancellationToken>();
+        _fileDialogs.PromptSaveFile(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(@"C:\exports\pia.zip");
+        _accountData.ExportToFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(ci =>
+        {
+            var token = ci.Arg<CancellationToken>();
+            exportToken.SetResult(token);
+            return Task.Delay(Timeout.Infinite, token);
+        });
+        _dialogs.ShowAccountDeletionDialogAsync(Arg.Any<AccountDeletionViewModel>()).Returns(ci =>
+        {
+            _ = ci.Arg<AccountDeletionViewModel>().ExportCommand.ExecuteAsync(null);
+            return false;
+        });
+
+        await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
+
+        Assert.True((await exportToken.Task).IsCancellationRequested);
     }
 
     [Fact]
@@ -47,22 +73,56 @@ public class AccountSettingsAccountDataTests
 
         await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
 
-        _sync.Received(1).StopBackgroundSync();
-        await _auth.Received(1).LogoutAsync();
+        Received.InOrder(() =>
+        {
+            _sync.StopBackgroundSyncAndWaitAsync();
+            _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            _auth.LogoutAsync();
+        });
+        _sync.DidNotReceive().StartBackgroundSync();
     }
 
     [Theory]
     [InlineData(AccountDeletionOutcome.InvalidPassword)]
     [InlineData(AccountDeletionOutcome.Failed)]
-    public async Task DeleteAccount_WhenTheServerRefuses_StaysSignedIn(AccountDeletionOutcome outcome)
+    public async Task DeleteAccount_WhenTheServerRefuses_StaysSignedInAndResumesSync(AccountDeletionOutcome outcome)
     {
         _auth.Provider.Returns("local");
+        _sync.IsSyncActive.Returns(true);
         ConfirmDialogWith(password: "wrong");
         _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(outcome);
 
         await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
 
         await _auth.DidNotReceive().LogoutAsync();
+        _sync.Received(1).StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task DeleteAccount_WhenTheRequestThrows_StaysSignedInAndResumesSync()
+    {
+        _sync.IsSyncActive.Returns(true);
+        ConfirmDialogWith(password: "");
+        _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("offline"));
+
+        await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
+
+        await _auth.DidNotReceive().LogoutAsync();
+        _sync.Received(1).StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task DeleteAccount_WhenRefused_LeavesAStoppedSyncStopped()
+    {
+        _sync.IsSyncActive.Returns(false);
+        ConfirmDialogWith(password: "");
+        _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(AccountDeletionOutcome.Failed);
+
+        await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
+
+        _sync.DidNotReceive().StartBackgroundSync();
     }
 
     [Fact]

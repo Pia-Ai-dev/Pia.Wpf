@@ -667,18 +667,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task ExportAccountDataAsync()
     {
-        var path = AccountDeletionViewModel.PromptExportPath(_fileDialogs, _localizationService);
-        if (string.IsNullOrWhiteSpace(path)) return;
+        var path = AccountExport.PromptPath(_fileDialogs, _localizationService);
+        if (path is null) return;
 
-        try
-        {
-            await _accountData.ExportToFileAsync(path);
+        if (await AccountExport.TrySaveAsync(_accountData, path, CancellationToken.None))
             ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Done", Wpf.Ui.Controls.ControlAppearance.Success);
-        }
-        catch (Exception)
-        {
+        else
             ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Failed", Wpf.Ui.Controls.ControlAppearance.Danger);
-        }
     }
 
     [RelayCommand]
@@ -686,7 +681,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     {
         var requiresPassword = _authService.Provider == "local";
         var dialog = new AccountDeletionViewModel(_accountData, _fileDialogs, _localizationService, requiresPassword);
-        if (!await _dialogService.ShowAccountDeletionDialogAsync(dialog)) return;
+        var confirmed = await _dialogService.ShowAccountDeletionDialogAsync(dialog);
+        dialog.ExportCommand.Cancel();
+        if (!confirmed) return;
+
+        // A running cycle would otherwise keep pushing into the account and race the sign-out.
+        var wasSyncing = _syncClientService.IsSyncActive;
+        await _syncClientService.StopBackgroundSyncAndWaitAsync();
 
         AccountDeletionOutcome outcome;
         try
@@ -699,21 +700,18 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             outcome = AccountDeletionOutcome.Failed;
         }
 
-        switch (outcome)
+        if (outcome == AccountDeletionOutcome.Deleted)
         {
-            case AccountDeletionOutcome.Deleted:
-                _syncClientService.StopBackgroundSync();
-                await _authService.LogoutAsync();
-                UpdateSyncState();
-                ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_Done", Wpf.Ui.Controls.ControlAppearance.Success);
-                break;
-            case AccountDeletionOutcome.InvalidPassword:
-                ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_InvalidPassword", Wpf.Ui.Controls.ControlAppearance.Danger);
-                break;
-            default:
-                ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_Failed", Wpf.Ui.Controls.ControlAppearance.Danger);
-                break;
+            await SyncLogoutAsync();
+            ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_Done", Wpf.Ui.Controls.ControlAppearance.Success);
+            return;
         }
+
+        if (wasSyncing) _syncClientService.StartBackgroundSync();
+        var reason = outcome == AccountDeletionOutcome.InvalidPassword
+            ? "Sync_DeleteAccount_InvalidPassword"
+            : "Sync_DeleteAccount_Failed";
+        ShowAccountSnackbar("Sync_DeleteAccount", reason, Wpf.Ui.Controls.ControlAppearance.Danger);
     }
 
     private void ShowAccountSnackbar(string titleKey, string messageKey, Wpf.Ui.Controls.ControlAppearance appearance) =>
