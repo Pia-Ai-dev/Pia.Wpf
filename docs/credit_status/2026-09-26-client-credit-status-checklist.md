@@ -1,6 +1,6 @@
 # Credit status card — checklist
 
-**Status:** In progress: B1 landed. Waits on the server endpoint for the live check only.
+**Status:** In progress: B1 and B2 landed. Waits on the server endpoint for the live check only.
 **Owner:** Marco Altmann
 **Written:** 2026-09-26
 **Origin:** Owner request, 2026-09-26. Server side is Pia work item #7654
@@ -37,7 +37,7 @@ Do not tick a dependant of an open gate without revisiting it.
 - [x] **B1 Account view model.** Fetch on each Account visit and on sign-in, clear on sign-out
   (Task 3).
   *Deps:* A2 · *Effort:* S · *Value:* Enabler
-- [ ] **B2 The card.** Render the meters in `AccountView.xaml`, hidden unless there is something
+- [x] **B2 The card.** Render the meters in `AccountView.xaml`, hidden unless there is something
   to show (Task 4).
   *Deps:* B1 · *Effort:* XS · *Value:* High
 

@@ -845,7 +845,7 @@ git commit -m "feat(credits): fetch the credit status on each Account visit and 
 **Files:**
 - Modify: `src/Pia.Wpf/Views/SettingsViews/AccountView.xaml` (inside the `IsSyncLoggedIn` `StackPanel`, directly after the signed-in `Border`, before `<!-- Sync status -->`)
 
-- [ ] **Step 1: Add the card**
+- [x] **Step 1: Add the card**
 
 ```xml
         <StackPanel Margin="0,0,0,12"
@@ -899,10 +899,10 @@ git commit -m "feat(credits): fetch the credit status on each Account visit and 
 `AssistantView.xaml`; do not add a new brush. The card has no interactive control, so no
 `ViewAutomationIdTests` row; the `AutomationId` on the `Border` is for WinWright walkthroughs.
 
-- [ ] **Step 2: Zero-warning build.** Run `dotnet build -t:Rebuild` and `dotnet build -c Release -t:Rebuild`.
+- [x] **Step 2: Zero-warning build.** Run `dotnet build -t:Rebuild` and `dotnet build -c Release -t:Rebuild`.
   Expected: 0 warnings, 0 errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/Pia.Wpf/Views/SettingsViews/AccountView.xaml
