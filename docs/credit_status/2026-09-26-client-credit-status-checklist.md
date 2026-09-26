@@ -1,6 +1,6 @@
 # Credit status card — checklist
 
-**Status:** In progress: A1 landed. Waits on the server endpoint for the live check only.
+**Status:** In progress: A2 landed. Waits on the server endpoint for the live check only.
 **Owner:** Marco Altmann
 **Written:** 2026-09-26
 **Origin:** Owner request, 2026-09-26. Server side is Pia work item #7654
@@ -28,7 +28,7 @@ Do not tick a dependant of an open gate without revisiting it.
 - [x] **A1 DTOs and `CreditStatusService`.** Read `GET /api/ai/credits` and answer null for every
   "nothing to show" case (Task 1).
   *Deps:* none · *Effort:* S · *Value:* Enabler
-- [ ] **A2 `CreditMeterBuilder` and labels.** Turn a response into ordered, captioned meters, with
+- [x] **A2 `CreditMeterBuilder` and labels.** Turn a response into ordered, captioned meters, with
   en/de/fr strings (Task 2).
   *Deps:* A1 · *Effort:* S · *Value:* Enabler
 

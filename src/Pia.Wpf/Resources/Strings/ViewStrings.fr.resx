@@ -474,6 +474,18 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Recherche</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Compte</value></data>
+  <data name="Settings_Credits_Title" xml:space="preserve"><value>Crédits</value></data>
+  <data name="Settings_Credits_Weekly" xml:space="preserve"><value>Cette semaine</value></data>
+  <data name="Settings_Credits_Pool" xml:space="preserve"><value>Réserve d'équipe gratuite cette semaine</value></data>
+  <data name="Settings_Credits_TopUp" xml:space="preserve"><value>Crédits supplémentaires achetés</value></data>
+  <data name="Settings_Credits_Daily" xml:space="preserve"><value>Dernières 24 heures</value></data>
+  <data name="Settings_Credits_Hourly" xml:space="preserve"><value>Dernière heure</value></data>
+  <data name="Settings_Credits_GroupWeekly" xml:space="preserve"><value>Toute l'équipe, cette semaine</value></data>
+  <data name="Settings_Credits_GroupDaily" xml:space="preserve"><value>Toute l'équipe, dernières 24 heures</value></data>
+  <data name="Settings_Credits_UsedOf" xml:space="preserve"><value>{0} sur {1} utilisés</value></data>
+  <data name="Settings_Credits_LeftOf" xml:space="preserve"><value>{0} sur {1} restants</value></data>
+  <data name="Settings_Credits_Resets" xml:space="preserve"><value>Réinitialisation le {0}</value></data>
+  <data name="Settings_Credits_Suspended" xml:space="preserve"><value>L'offre gratuite est suspendue pour le moment. Veuillez réessayer plus tard.</value></data>
   <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Extensions</value></data>
   <data name="Plugins_Subtitle" xml:space="preserve"><value>&#201;tendez les capacit&#233;s de votre assistant avec des plugins.</value></data>
   <data name="Plugins_NotConnected" xml:space="preserve"><value>Connectez-vous &#224; Pia Cloud pour g&#233;rer les plugins.</value></data>

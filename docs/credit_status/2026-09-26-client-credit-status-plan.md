@@ -451,7 +451,7 @@ git commit -m "feat(credits): read the caller's credit status from the server"
   - `static class CreditMeterBuilder { static IReadOnlyList<CreditMeter> Build(CreditStatusResponse status, ILocalizationService loc, TimeZoneInfo zone, CultureInfo culture); }`
   - Keys, in display order: `weekly`, `pool`, `topUp`, `daily`, `hourly`, `groupWeekly`, `groupDaily`.
 
-- [ ] **Step 1: Add the strings**, the same keys in all three files
+- [x] **Step 1: Add the strings**, the same keys in all three files
 
 | Key | en | de | fr |
 |---|---|---|---|
@@ -468,7 +468,7 @@ git commit -m "feat(credits): read the caller's credit status from the server"
 | `Settings_Credits_Resets` | Resets {0} | Zurückgesetzt am {0} | Réinitialisation le {0} |
 | `Settings_Credits_Suspended` | The free tier is paused right now. Please try again later. | Die kostenlose Stufe ist gerade pausiert. Bitte versuchen Sie es später erneut. | L'offre gratuite est suspendue pour le moment. Veuillez réessayer plus tard. |
 
-- [ ] **Step 2: Write the failing tests** in `tests/Pia.Wpf.Tests/ViewModels/CreditMeterBuilderTests.cs`
+- [x] **Step 2: Write the failing tests** in `tests/Pia.Wpf.Tests/ViewModels/CreditMeterBuilderTests.cs`
 
 ```csharp
 namespace Pia.Tests.ViewModels;
@@ -550,12 +550,12 @@ public class CreditMeterBuilderTests
 
 The `"g"` pattern for `de-DE` is `dd.MM.yyyy HH:mm`; `2026-09-27T22:00Z` is Monday 00:00 in Berlin.
 
-- [ ] **Step 3: Build and run to see them fail**
+- [x] **Step 3: Build and run to see them fail**
 
 Run: `dotnet build tests/Pia.Wpf.Tests` then the exe with `-class "Pia.Tests.ViewModels.CreditMeterBuilderTests" > test.log 2>&1`
 Expected: compile error, `CreditMeterBuilder` does not exist.
 
-- [ ] **Step 4: Implement** `src/Pia.Wpf/ViewModels/CreditMeter.cs`
+- [x] **Step 4: Implement** `src/Pia.Wpf/ViewModels/CreditMeter.cs`
 
 ```csharp
 using System.Globalization;
@@ -611,9 +611,9 @@ public static class CreditMeterBuilder
 
 `Math.Max(1, …)` is what keeps a zero pool an empty bar: `ProgressBar` with `Maximum = 0` renders full.
 
-- [ ] **Step 5: Build and run the class again.** Expected: 3 PASS.
+- [x] **Step 5: Build and run the class again.** Expected: 3 PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels/CreditMeter.cs src/Pia.Wpf/Resources/Strings/ViewStrings*.resx tests/Pia.Wpf.Tests/ViewModels/CreditMeterBuilderTests.cs
