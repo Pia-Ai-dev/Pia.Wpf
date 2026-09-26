@@ -20,23 +20,26 @@ public static class CreditMeterBuilder
                 TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), zone).ToString("g", culture))}"
             : caption;
 
+        void Add(string key, string labelKey, long rawValue, long limitOrTotal, string caption, DateTime? resetsAtUtc)
+        {
+            var maximum = Math.Max(1, limitOrTotal);
+            var clampedValue = Math.Clamp(rawValue, 0, maximum);
+            meters.Add(new CreditMeter(key, loc[labelKey], clampedValue, maximum, WithReset(caption, resetsAtUtc)));
+        }
+
         void Used(string key, string labelKey, CreditWindowDto? window)
         {
             if (window is null) return;
             var rawValue = window.Used;
-            var maximum = Math.Max(1, window.Limit);
-            var clampedValue = Math.Clamp(rawValue, 0, maximum);
             var caption = string.Format(culture, loc["Settings_Credits_UsedOf"], Number(rawValue), Number(window.Limit));
-            meters.Add(new CreditMeter(key, loc[labelKey], clampedValue, maximum, WithReset(caption, window.ResetsAt)));
+            Add(key, labelKey, rawValue, window.Limit, caption, window.ResetsAt);
         }
 
         void Left(string key, string labelKey, long total, long remaining, DateTime? resetsAtUtc)
         {
             var rawValue = total - remaining;
-            var maximum = Math.Max(1, total);
-            var clampedValue = Math.Clamp(rawValue, 0, maximum);
             var caption = string.Format(culture, loc["Settings_Credits_LeftOf"], Number(remaining), Number(total));
-            meters.Add(new CreditMeter(key, loc[labelKey], clampedValue, maximum, WithReset(caption, resetsAtUtc)));
+            Add(key, labelKey, rawValue, total, caption, resetsAtUtc);
         }
 
         Used("weekly", "Settings_Credits_Weekly", status.Weekly);
