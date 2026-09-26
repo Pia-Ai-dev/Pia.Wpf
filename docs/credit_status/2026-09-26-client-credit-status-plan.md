@@ -853,16 +853,18 @@ git commit -m "feat(credits): fetch the credit status on each Account visit and 
           <TextBlock Text="{loc:Str Settings_Credits_Title}"
                      Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
           <Border Style="{StaticResource PiaSettingsCardStyle}"
-                  Padding="16"
-                  AutomationProperties.AutomationId="Settings_Account_Credits">
+                  Padding="16">
             <StackPanel>
               <TextBlock Text="{loc:Str Settings_Credits_Suspended}"
                          TextWrapping="Wrap"
                          FontSize="12"
-                         Foreground="{DynamicResource WarningBrush}"
+                         Foreground="{DynamicResource WarnBrush}"
                          Margin="0,0,0,8"
+                         AutomationProperties.AutomationId="Settings_Account_Credits_Suspended"
                          Visibility="{Binding IsCreditTierSuspended, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-              <ItemsControl ItemsSource="{Binding CreditMeters}">
+              <ItemsControl ItemsSource="{Binding CreditMeters}"
+                            AutomationProperties.AutomationId="Settings_Account_Credits"
+                            behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <Grid Margin="0,0,0,10">
@@ -876,16 +878,19 @@ git commit -m "feat(credits): fetch the credit status on each Account visit and 
                       </Grid.RowDefinitions>
                       <TextBlock Text="{Binding Label}"
                                  FontSize="13"
-                                 Foreground="{DynamicResource TextDefaultBrush}"/>
+                                 Foreground="{DynamicResource TextDefaultBrush}"
+                                 AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Label_{0}'}"/>
                       <TextBlock Grid.Column="1"
                                  Text="{Binding Caption}"
                                  FontSize="12"
-                                 Foreground="{DynamicResource TextMutedBrush}"/>
+                                 Foreground="{DynamicResource TextMutedBrush}"
+                                 AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Caption_{0}'}"/>
                       <ProgressBar Grid.Row="1" Grid.ColumnSpan="2"
                                    Value="{Binding Value, Mode=OneWay}"
                                    Maximum="{Binding Maximum, Mode=OneWay}"
                                    Height="4"
-                                   Margin="0,6,0,0"/>
+                                   Margin="0,6,0,0"
+                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Bar_{0}'}"/>
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -895,9 +900,12 @@ git commit -m "feat(credits): fetch the credit status on each Account visit and 
         </StackPanel>
 ```
 
-`WarningBrush` is defined in `Resources/Themes/Light.xaml` and `Dark.xaml` and already used by
-`AssistantView.xaml`; do not add a new brush. The card has no interactive control, so no
-`ViewAutomationIdTests` row; the `AutomationId` on the `Border` is for WinWright walkthroughs.
+`WarnBrush` is defined in `Resources/Themes/Light.xaml` and `Dark.xaml` and already used
+elsewhere; do not add a new brush. A plain `Border` has no automation peer, so the card's id sits
+on the `ItemsControl` instead, with a per-row id on each row's Label, Caption and Bar. The card has
+no interactive control, so no `ViewAutomationIdTests` row. Items can arrive in one go while a UIA
+client is attached, which caches an empty subtree per row (see the automation playbook's *Known
+gaps*), so the `ItemsControl` also carries `AutomationPeerRefreshBehavior.RefreshOnContainersGenerated`.
 
 - [x] **Step 2: Zero-warning build.** Run `dotnet build -t:Rebuild` and `dotnet build -c Release -t:Rebuild`.
   Expected: 0 warnings, 0 errors.
