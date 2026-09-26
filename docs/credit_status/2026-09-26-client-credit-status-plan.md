@@ -634,7 +634,7 @@ git commit -m "feat(credits): turn a credit status into ordered, captioned meter
 - Consumes: `ICreditStatusService.GetAsync` (Task 1), `CreditMeterBuilder.Build` (Task 2).
 - Produces (bound by Task 4): `ObservableCollection<CreditMeter> CreditMeters`, `bool HasCredits`, `bool IsCreditTierSuspended`.
 
-- [ ] **Step 1: Write the failing tests** in `tests/Pia.Wpf.Tests/ViewModels/AccountSettingsCreditsTests.cs`.
+- [x] **Step 1: Write the failing tests** in `tests/Pia.Wpf.Tests/ViewModels/AccountSettingsCreditsTests.cs`.
   The scaffold is the one `AccountSettingsBusinessProfileTests` uses, plus `_credits` as the last argument.
 
 ```csharp
@@ -762,10 +762,10 @@ public class AccountSettingsCreditsTests
 }
 ```
 
-- [ ] **Step 2: Build and run to see them fail.** Expected: compile errors (`RefreshCreditsAsync`, `HasCredits`,
+- [x] **Step 2: Build and run to see them fail.** Expected: compile errors (`RefreshCreditsAsync`, `HasCredits`,
   the extra constructor argument).
 
-- [ ] **Step 3: Implement.** In `AccountSettingsViewModel`:
+- [x] **Step 3: Implement.** In `AccountSettingsViewModel`:
   - Add `ICreditStatusService creditStatus` as the **last** constructor parameter, stored in `_creditStatus`,
     and the usings `System.Collections.ObjectModel`, `System.Globalization` and `Pia.Services.Credits`.
   - Add the state:
@@ -828,10 +828,10 @@ public class AccountSettingsCreditsTests
   Update the three existing test files: add `Substitute.For<ICreditStatusService>()` as the last
   `AccountSettingsViewModel` argument (and the `SettingsViewModel` argument in `SettingsPolicyReloadTests`).
 
-- [ ] **Step 4: Build and run the whole exe gate** (the constructor change touches other test classes).
+- [x] **Step 4: Build and run the whole exe gate** (the constructor change touches other test classes).
   Expected: all green, plus the 6 new tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/Pia.Wpf/ViewModels tests/Pia.Wpf.Tests/ViewModels

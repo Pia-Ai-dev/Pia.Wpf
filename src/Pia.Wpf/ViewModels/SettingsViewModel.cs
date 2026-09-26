@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Credits;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Navigation;
@@ -60,7 +61,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IScreenCaptureAllowlistStore screenCaptureAllowlistStore,
         IAdvancedCreationLauncher advancedCreation,
         IAccountDataService accountData,
-        IFileDialogService fileDialogs)
+        IFileDialogService fileDialogs,
+        ICreditStatusService creditStatus)
     {
         _logger = logger;
 
@@ -81,7 +83,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService, diagnosticsExportService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, accountData, fileDialogs);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, accountData, fileDialogs, creditStatus);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }
