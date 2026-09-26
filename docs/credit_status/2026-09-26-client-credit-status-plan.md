@@ -168,7 +168,7 @@ stay visible.
   - `record CreditGroupCapDto(CreditWindowDto? Daily, CreditWindowDto? Weekly)`
   - `interface ICreditStatusService { Task<CreditStatusResponse?> GetAsync(CancellationToken ct = default); }`
 
-- [ ] **Step 1: DTOs** in `src/Pia.Wpf/Services/Credits/CreditStatusResponse.cs`
+- [x] **Step 1: DTOs** in `src/Pia.Wpf/Services/Credits/CreditStatusResponse.cs`
 
 ```csharp
 namespace Pia.Services.Credits;
@@ -203,7 +203,7 @@ public interface ICreditStatusService
 }
 ```
 
-- [ ] **Step 2: Write the failing tests** in `tests/Pia.Wpf.Tests/Services/CreditStatusServiceTests.cs`
+- [x] **Step 2: Write the failing tests** in `tests/Pia.Wpf.Tests/Services/CreditStatusServiceTests.cs`
 
 ```csharp
 namespace Pia.Tests.Services;
@@ -343,12 +343,12 @@ public class CreditStatusServiceTests
 `AppSettings.ServerUrl` is a settable `string?`, and `IAuthService.GetAccessTokenAsync(bool forceRefresh = false,
 string? staleAccessToken = null)` returns `Task<string?>`, so the parameterless setup matches the service's call.
 
-- [ ] **Step 3: Build and run to see them fail**
+- [x] **Step 3: Build and run to see them fail**
 
 Run: `dotnet build tests/Pia.Wpf.Tests` then the exe with `-class "Pia.Tests.Services.CreditStatusServiceTests" > test.log 2>&1`
 Expected: compile error, `CreditStatusService` does not exist.
 
-- [ ] **Step 4: Implement** `src/Pia.Wpf/Services/Credits/CreditStatusService.cs`
+- [x] **Step 4: Implement** `src/Pia.Wpf/Services/Credits/CreditStatusService.cs`
 
 ```csharp
 using System.Net.Http;
@@ -424,11 +424,11 @@ Register in `Bootstrapper.cs`, beside the `IAssignmentApiClient` line:
         services.AddSingleton<Services.Credits.ICreditStatusService, Services.Credits.CreditStatusService>();
 ```
 
-- [ ] **Step 5: Build and run the class again**
+- [x] **Step 5: Build and run the class again**
 
 Expected: all 9 cases PASS (the theory counts four).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/Pia.Wpf/Services/Credits src/Pia.Wpf/Bootstrapper.cs tests/Pia.Wpf.Tests/Services/CreditStatusServiceTests.cs

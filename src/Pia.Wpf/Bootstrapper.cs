@@ -938,6 +938,7 @@ public static class Bootstrapper
             Services.Operators.JsonlAssignmentConsentStore.CreateDefault(
                 sp.GetRequiredService<ILogger<Services.Operators.JsonlAssignmentConsentStore>>()));
         services.AddSingleton<Services.Operators.IAssignmentApiClient, Services.Operators.AssignmentApiClient>();
+        services.AddSingleton<Services.Credits.ICreditStatusService, Services.Credits.CreditStatusService>();
         services.AddSingleton<Services.Operators.IAssignmentScopeResolver, Services.Operators.AssignmentScopeResolver>();
         services.AddSingleton<Services.Operators.IAssignmentPendingStore, Services.Operators.AssignmentPendingStore>();
         // One shared surface read: a tool handler asks for it inside PluginService's constructor, where an
