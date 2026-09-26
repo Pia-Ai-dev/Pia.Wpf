@@ -1,6 +1,8 @@
 # Credit status card — checklist
 
-**Status:** In progress: B1 and B2 landed. Waits on the server endpoint for the live check only.
+**Status:** In progress: B1, B2 and C1 landed. C2's guide paragraph is written on the
+Pia repo's `feature/7654` branch (commit `7dbc5e6a`); `help-corpus` must wait until that
+merges. C3 and the PR (C4) still wait on the server endpoint (G1).
 **Owner:** Marco Altmann
 **Written:** 2026-09-26
 **Origin:** Owner request, 2026-09-26. Server side is Pia work item #7654
@@ -43,7 +45,7 @@ Do not tick a dependant of an open gate without revisiting it.
 
 ## C — Ship
 
-- [ ] **C1 Release note.** One bullet in `docs/release_notes/RELEASE.md` (Task 5, step 1).
+- [x] **C1 Release note.** One bullet in `docs/release_notes/RELEASE.md` (Task 5, step 1).
   *Deps:* B2 · *Effort:* XS · *Value:* Med
 - [ ] **C2 Desktop guide.** A *Credits* paragraph in Pia.Docs quoting the resx labels, then
   `help-corpus` before the next push to `main` (Task 5, step 2).

@@ -913,7 +913,7 @@ git commit -m "feat(credits): show the credit meters on the Account page"
 
 ### Task 5: Release note and desktop guide
 
-- [ ] **Step 1: `docs/release_notes/RELEASE.md`.** Follow `docs/release_notes/README.md` (plain Markdown, 80
+- [x] **Step 1: `docs/release_notes/RELEASE.md`.** Follow `docs/release_notes/README.md` (plain Markdown, 80
   columns, one-level bullets). Add under the new-features heading:
 
 ```markdown
@@ -927,7 +927,7 @@ git commit -m "feat(credits): show the credit meters on the Account page"
   free-translate a UI label; take the de/fr text from the matching resx). Then run the `help-corpus` skill in
   this repo before the next push to `main`.
 
-- [ ] **Step 3: Commit** the release note (the guide is a separate Pia PR).
+- [x] **Step 3: Commit** the release note (the guide is a separate Pia PR).
 
 ```bash
 git add docs/release_notes/RELEASE.md
