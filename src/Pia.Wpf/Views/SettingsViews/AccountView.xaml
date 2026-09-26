@@ -265,7 +265,8 @@
                                    Maximum="{Binding Maximum, Mode=OneWay}"
                                    Height="4"
                                    Margin="0,6,0,0"
-                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Bar_{0}'}"/>
+                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Bar_{0}'}"
+                                   AutomationProperties.Name="{Binding Label}"/>
                     </Grid>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

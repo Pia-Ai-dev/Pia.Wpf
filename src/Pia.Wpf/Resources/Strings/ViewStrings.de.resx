@@ -484,8 +484,8 @@
   <data name="Settings_Credits_GroupDaily" xml:space="preserve"><value>Ganzes Team, letzte 24 Stunden</value></data>
   <data name="Settings_Credits_UsedOf" xml:space="preserve"><value>{0} von {1} verbraucht</value></data>
   <data name="Settings_Credits_LeftOf" xml:space="preserve"><value>{0} von {1} übrig</value></data>
-  <data name="Settings_Credits_Resets" xml:space="preserve"><value>Zurückgesetzt am {0}</value></data>
-  <data name="Settings_Credits_Suspended" xml:space="preserve"><value>Die kostenlose Stufe ist gerade pausiert. Bitte versuchen Sie es später erneut.</value></data>
+  <data name="Settings_Credits_Resets" xml:space="preserve"><value>Wird am {0} zurückgesetzt</value></data>
+  <data name="Settings_Credits_Suspended" xml:space="preserve"><value>Die kostenlose Stufe ist gerade pausiert. Bitte versuche es später erneut.</value></data>
   <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Erweiterungen</value></data>
   <data name="Plugins_Subtitle" xml:space="preserve"><value>Erweitere die F&#228;higkeiten deines Assistenten mit Plugins.</value></data>
   <data name="Plugins_NotConnected" xml:space="preserve"><value>Verbinde dich mit Pia Cloud, um Plugins zu verwalten.</value></data>
