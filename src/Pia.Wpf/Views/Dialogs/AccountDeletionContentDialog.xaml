@@ -4,6 +4,7 @@
                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                   xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                   xmlns:loc="clr-namespace:Pia.Localization"
+                  xmlns:behaviors="clr-namespace:Pia.Behaviors"
                   Title="{loc:Str AccountDeletion_Title}"
                   PrimaryButtonText="{loc:Str AccountDeletion_Confirm}"
                   PrimaryButtonAppearance="Danger"
@@ -41,6 +42,7 @@
                  Icon="{ui:SymbolIcon ArrowDownload24}"
                  Appearance="Secondary"
                  Command="{Binding ExportCommand}"
+                 behaviors:FocusHandoffBehavior.MoveFocusWhenDisabled="True"
                  AutomationProperties.AutomationId="AccountDeletion_Export"
                  Margin="0,0,8,0" />
       <ui:ProgressRing IsIndeterminate="True"

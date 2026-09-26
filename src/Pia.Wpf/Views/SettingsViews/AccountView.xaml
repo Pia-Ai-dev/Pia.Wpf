@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:localSettings="clr-namespace:Pia.Views.SettingsViews">
   <!-- Cloud Sync (single pane; the inner tab strip was flattened away) -->
   <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -258,6 +259,7 @@
           <ui:Button Content="{loc:Str Sync_ExportData}"
                      Icon="{ui:SymbolIcon ArrowDownload24}"
                      Command="{Binding ExportAccountDataCommand}"
+                     behaviors:FocusHandoffBehavior.MoveFocusWhenDisabled="True"
                      AutomationProperties.AutomationId="Settings_Account_ExportData"
                      Appearance="Secondary"
                      Margin="0,0,8,0"/>
