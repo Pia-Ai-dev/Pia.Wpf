@@ -6,6 +6,7 @@
                   xmlns:loc="clr-namespace:Pia.Localization"
                   Title="{loc:Str AccountDeletion_Title}"
                   PrimaryButtonText="{loc:Str AccountDeletion_Confirm}"
+                  PrimaryButtonAppearance="Danger"
                   CloseButtonText="{loc:Str Common_Cancel}"
                   DefaultButton="Close"
                   IsPrimaryButtonEnabled="{Binding CanDelete}"
