@@ -73,13 +73,14 @@ public sealed class AccountDataService : IAccountDataService
             return AccountDeletionOutcome.Deleted;
 
         var code = await ReadErrorCodeAsync(response, ct);
-        _logger.LogWarning("Account deletion refused: {Status} {Code}", (int)response.StatusCode, code);
-        return code switch
+        if (code == "user_not_found")
         {
-            "invalid_password" => AccountDeletionOutcome.InvalidPassword,
-            "user_not_found" => AccountDeletionOutcome.Deleted,
-            _ => AccountDeletionOutcome.Failed,
-        };
+            _logger.LogInformation("Account deletion: the server no longer has the account; treating it as deleted");
+            return AccountDeletionOutcome.Deleted;
+        }
+
+        _logger.LogWarning("Account deletion refused: {Status} {Code}", (int)response.StatusCode, code);
+        return code == "invalid_password" ? AccountDeletionOutcome.InvalidPassword : AccountDeletionOutcome.Failed;
     }
 
     private async Task<HttpResponseMessage> PostDeleteAsync(HttpClient client, object body, CancellationToken ct)

@@ -5,7 +5,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
@@ -19,6 +19,7 @@ public class AccountDataServiceTests : IDisposable
     private readonly StubHandler _handler = new();
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IAuthService _auth = Substitute.For<IAuthService>();
+    private readonly CapturingLogger<AccountDataService> _logger = new();
     private readonly string _exportDir = Path.Combine(Path.GetTempPath(), $"pia-export-test-{Guid.NewGuid():N}");
 
     public AccountDataServiceTests()
@@ -188,6 +189,27 @@ public class AccountDataServiceTests : IDisposable
         Assert.Equal(AccountDeletionOutcome.Deleted, await CreateSut().DeleteAsync("pw", Ct));
     }
 
+    [Fact]
+    public async Task DeleteAsync_WhenTheServerHasNoSuchUser_DoesNotLogARefusal()
+    {
+        _handler.Respond(HttpStatusCode.NotFound, Json("""{"error":"user_not_found"}"""));
+
+        await CreateSut().DeleteAsync("pw", Ct);
+
+        Assert.DoesNotContain(_logger.Entries, e => e.Level >= LogLevel.Warning);
+        Assert.Contains(_logger.Entries, e => e.Level == LogLevel.Information && e.Message.Contains("treating it as deleted"));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WrongPassword_LogsTheRefusal()
+    {
+        _handler.Respond(HttpStatusCode.BadRequest, Json("""{"error":"invalid_password"}"""));
+
+        await CreateSut().DeleteAsync("wrong", Ct);
+
+        Assert.Contains(_logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("refused: 400 invalid_password"));
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, "")]
     [InlineData(HttpStatusCode.InternalServerError, """{"error":"boom"}""")]
@@ -237,7 +259,7 @@ public class AccountDataServiceTests : IDisposable
     {
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_handler, disposeHandler: false));
-        return new AccountDataService(_settings, _auth, factory, NullLogger<AccountDataService>.Instance);
+        return new AccountDataService(_settings, _auth, factory, _logger);
     }
 
     private sealed class StubHandler : HttpMessageHandler
