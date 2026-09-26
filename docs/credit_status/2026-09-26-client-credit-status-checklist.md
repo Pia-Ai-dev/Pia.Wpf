@@ -1,8 +1,7 @@
 # Credit status card — checklist
 
-**Status:** In progress: B1, B2 and C1 landed. C2's guide paragraph is written on the
-Pia repo's `feature/7654` branch (commit `7dbc5e6a`); `help-corpus` must wait until that
-merges. C3 and the PR (C4) still wait on the server endpoint (G1).
+**Status:** A1–B2, C1 and C3 landed. C2's guide is written on the Pia repo's `feature/7654`
+branch (commit `7dbc5e6a`); `help-corpus` waits for its merge. C4 (PR) waits on C2 and G1.
 **Owner:** Marco Altmann
 **Written:** 2026-09-26
 **Origin:** Owner request, 2026-09-26. Server side is Pia work item #7654
@@ -23,7 +22,7 @@ Do not tick a dependant of an open gate without revisiting it.
 
 | Gate | Question it answers | Answer |
 |---|---|---|
-| G1 | Is `GET /api/ai/credits` deployed where the release points, with the contract the plan copies? | Open. Blocks C3 and the PR in C4, not A or B. |
+| G1 | Is `GET /api/ai/credits` deployed where the release points, with the contract the plan copies? | Partly answered — verified live on a local stack built from Pia `feature/7654`; deployment where the release points is still open and gates C4 only. |
 
 ## A — Data
 
@@ -50,7 +49,7 @@ Do not tick a dependant of an open gate without revisiting it.
 - [ ] **C2 Desktop guide.** A *Credits* paragraph in Pia.Docs quoting the resx labels, then
   `help-corpus` before the next push to `main` (Task 5, step 2).
   *Deps:* B2 · *Effort:* XS · *Value:* Med
-- [ ] **C3 Live walkthrough.** Free user, unlimited group, server without the endpoint (Task 6).
+- [x] **C3 Live walkthrough.** Free user, unlimited group, server without the endpoint (Task 6).
   *Deps:* B2, G1 · *Effort:* XS · *Value:* High
 - [ ] **C4 PR** `feature/credit-status` → `main`.
   *Deps:* C1, C2, C3 · *Effort:* XS · *Value:* High

@@ -2,8 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Planned. Blocked on the server endpoint: `GET /api/ai/credits` must be on the target server
-before Task 6's live check (the unit tests do not need it).
+**Status:** Implemented on `feature/credit-status`, verified live against a local stack carrying the
+endpoint (free / unlimited / full / older-server cases pass). The PR (Task 6 Step 3) waits on the Pia
+desktop guide merging, `help-corpus`, and G1 (the endpoint deployed where the release points).
 **Owner:** Marco Altmann
 **Written:** 2026-09-26
 **Origin:** Owner request, 2026-09-26: clients should see their credit usage, the free pools and the top-ups
@@ -129,6 +130,22 @@ stay visible.
    unused). A zero maximum must not divide by zero or render a full bar (Task 2, `Build_EmptyPool_…`).
 5. **A culture switch to German or French** while Settings is open: captions are built at fetch time, so the
    next visit shows the new language. Accepted, not tested; call it out in the PR.
+
+## As built
+
+The task code blocks below are the plan as first written. The shipped code, in the named files, differs
+as follows:
+
+- `CreditStatusService.cs`: the catch covers every non-cancellation exception, not a fixed type list.
+- `CreditStatusServiceTests.cs`: the no-server-URL and no-token cases are separate tests.
+- `CreditMeter.cs`: a pool or top-up bar fills with `total − remaining`, clamped to `[0, Maximum]`, through
+  one shared helper; the caption shows the raw numbers regardless of the clamp.
+- `AccountSettingsViewModel.cs`: a generation counter drops a fetch that lands after sign-out or after a
+  newer fetch; results are applied with `PostAsync`; captions use `ILocalizationService.Culture`, since the
+  thread culture can drift from the UI language.
+- `AccountView.xaml`: the card's id sits on the `ItemsControl`, with per-row ids, `WarnBrush`, an accessible
+  name on each meter bar, and the peer-refresh behavior for a UIA client attached before the rows exist.
+- `ViewStrings.de.resx`: the `Resets`/`Suspended` texts are the ones in Task 2's strings table.
 
 ---
 
@@ -465,8 +482,8 @@ git commit -m "feat(credits): read the caller's credit status from the server"
 | `Settings_Credits_GroupDaily` | Whole team, last 24 hours | Ganzes Team, letzte 24 Stunden | Toute l'équipe, dernières 24 heures |
 | `Settings_Credits_UsedOf` | {0} of {1} used | {0} von {1} verbraucht | {0} sur {1} utilisés |
 | `Settings_Credits_LeftOf` | {0} of {1} left | {0} von {1} übrig | {0} sur {1} restants |
-| `Settings_Credits_Resets` | Resets {0} | Zurückgesetzt am {0} | Réinitialisation le {0} |
-| `Settings_Credits_Suspended` | The free tier is paused right now. Please try again later. | Die kostenlose Stufe ist gerade pausiert. Bitte versuchen Sie es später erneut. | L'offre gratuite est suspendue pour le moment. Veuillez réessayer plus tard. |
+| `Settings_Credits_Resets` | Resets {0} | Wird am {0} zurückgesetzt | Réinitialisation le {0} |
+| `Settings_Credits_Suspended` | The free tier is paused right now. Please try again later. | Die kostenlose Stufe ist gerade pausiert. Bitte versuche es später erneut. | L'offre gratuite est suspendue pour le moment. Veuillez réessayer plus tard. |
 
 - [x] **Step 2: Write the failing tests** in `tests/Pia.Wpf.Tests/ViewModels/CreditMeterBuilderTests.cs`
 
@@ -900,7 +917,7 @@ git commit -m "feat(credits): fetch the credit status on each Account visit and 
         </StackPanel>
 ```
 
-`WarnBrush` is defined in `Resources/Themes/Light.xaml` and `Dark.xaml` and already used
+`WarnBrush` is defined in `Resources/Theme/PiaTokens.Light.xaml` and `PiaTokens.Dark.xaml` and already used
 elsewhere; do not add a new brush. A plain `Border` has no automation peer, so the card's id sits
 on the `ItemsControl` instead, with a per-row id on each row's Label, Caption and Bar. The card has
 no interactive control, so no `ViewAutomationIdTests` row. Items can arrive in one go while a UIA
@@ -922,12 +939,14 @@ git commit -m "feat(credits): show the credit meters on the Account page"
 ### Task 5: Release note and desktop guide
 
 - [x] **Step 1: `docs/release_notes/RELEASE.md`.** Follow `docs/release_notes/README.md` (plain Markdown, 80
-  columns, one-level bullets). Add under the new-features heading:
+  columns, one-level bullets). Shipped under a new `## Account` heading:
 
 ```markdown
+## Account
+
 - Settings → Account now shows your credits when your server limits them:
-  what you used this week, today and in the last hour, your team's free
-  weekly pool and any top-up credits left.
+  what you used this week, in the last 24 hours and in the last hour, your
+  team's free weekly pool and any top-up credits left.
 ```
 
 - [ ] **Step 2: Desktop guide.** The guide lives in the Pia repo (`src/Pia.Docs`). Add a short *Credits*
@@ -946,8 +965,8 @@ git commit -m "docs(credits): release note for the Account credit card"
 
 ### Task 6: Verify against a live server
 
-- [ ] **Step 1: Exe gate** (Global Constraints). Expected: green.
-- [ ] **Step 2: Live walkthrough.** Against a server carrying `GET /api/ai/credits` (the Pia repo's
+- [x] **Step 1: Exe gate** (Global Constraints). Expected: green.
+- [x] **Step 2: Live walkthrough.** Against a server carrying `GET /api/ai/credits` (the Pia repo's
   `pwsh deploy/local/pia-stack.ps1 up`, or a deployment that has it), sign in:
   - as a Free user: the card shows *This week*, *Last 24 hours* and *Last hour*;
   - as a user in a group with every credit setting at 0: no card;
