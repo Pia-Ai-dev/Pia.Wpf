@@ -9,7 +9,6 @@ using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using Pia.Shared.E2EE;
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Text.Json;
 
 namespace Pia.ViewModels;
@@ -193,7 +192,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         var generation = Interlocked.Increment(ref _creditsGeneration);
         var status = await _creditStatus.GetAsync();
         IReadOnlyList<CreditMeter> meters = status is { Limited: true }
-            ? CreditMeterBuilder.Build(status, _localizationService, TimeZoneInfo.Local, CultureInfo.CurrentUICulture)
+            ? CreditMeterBuilder.Build(status, _localizationService, TimeZoneInfo.Local, _localizationService.Culture)
             : [];
 
         await PostAsync(() =>

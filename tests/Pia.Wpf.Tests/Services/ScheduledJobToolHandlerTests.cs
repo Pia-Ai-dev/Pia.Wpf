@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -605,6 +606,7 @@ public class ScheduledJobToolHandlerTests
     private sealed class FakeLocalizationService : ILocalizationService
     {
         public TargetLanguage CurrentLanguage => TargetLanguage.EN;
+        public CultureInfo Culture => CultureInfo.InvariantCulture;
 
 #pragma warning disable CS0067
         public event EventHandler<TargetLanguage>? LanguageChanged;

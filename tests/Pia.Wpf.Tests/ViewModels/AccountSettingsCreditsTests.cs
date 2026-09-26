@@ -1,5 +1,6 @@
 namespace Pia.Tests.ViewModels;
 
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
@@ -27,6 +28,7 @@ public class AccountSettingsCreditsTests
         _settings.GetSettingsAsync().Returns(new AppSettings());
         _loc[Arg.Any<string>()].Returns("{0} {1}");
         _loc["Settings_Credits_Resets"].Returns("{0}");
+        _loc.Culture.Returns(CultureInfo.GetCultureInfo("en"));
     }
 
     private AccountSettingsViewModel CreateSut()
@@ -119,6 +121,31 @@ public class AccountSettingsCreditsTests
         _auth.LoginStateChanged += Raise.Event<EventHandler<bool>>(_auth, true);
 
         await _credits.Received(1).GetAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ACaption_FollowsTheUiLanguage_NotTheThreadCulture()
+    {
+        var previousUi = CultureInfo.CurrentUICulture;
+        var previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("de-DE");
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+            _credits.GetAsync(Arg.Any<CancellationToken>()).Returns(new CreditStatusResponse(
+                true, null, null, null, new CreditWindowDto(1000, 620, DateTime.UtcNow.AddDays(3)), null, null, null));
+            var sut = CreateSut();
+
+            await sut.RefreshCreditsAsync();
+
+            Assert.Contains("1,000", Assert.Single(sut.CreditMeters).Caption);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = previousUi;
+            CultureInfo.CurrentCulture = previousCulture;
+        }
     }
 
     [Fact]
