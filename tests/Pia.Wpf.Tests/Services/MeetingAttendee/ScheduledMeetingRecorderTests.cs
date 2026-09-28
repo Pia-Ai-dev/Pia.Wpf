@@ -127,6 +127,22 @@ public sealed class ScheduledMeetingRecorderTests
     }
 
     [Fact]
+    public async Task RecordAsync_WithoutSpeakerNaming_SavesNoAttendees()
+    {
+        var attendee = new FakeAttendee();
+        var memory = NewMemory();
+
+        await RunAsync(NewRecorder(memory, new AppSettings { MeetingSpeakerNaming = false }), attendee,
+            a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
+
+        var markdown = (string)memory.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync))
+            .GetArguments()[1]!;
+        Assert.DoesNotContain("attendees:", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Marco Altmann", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RecordAsync_SavesTheTranscriptUnderTheTranscriptsFolder()
     {
         var attendee = new FakeAttendee();

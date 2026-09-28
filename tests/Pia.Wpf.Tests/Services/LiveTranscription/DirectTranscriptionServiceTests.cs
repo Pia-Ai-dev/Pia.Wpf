@@ -251,6 +251,22 @@ public sealed class DirectTranscriptionServiceTests
         await fx.Service.DisposeAsync();
     }
 
+    [Fact]
+    public async Task WithoutSpeakerNaming_RenameIsRefused()
+    {
+        var fx = new Fixture(useRealConsentManager: true);
+        fx.Settings.GetSettingsAsync().Returns(new AppSettings { MeetingSpeakerNaming = false });
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        fx.RealConsent!.GetOrCreate("Speaker 1");
+
+        Assert.False(fx.Service.RenameSpeaker("Speaker 1", "Max"));
+
+        Assert.Empty(fx.SpeakerId.Renames);
+        Assert.Equal(ConsentState.Unknown, fx.RealConsent.CurrentState("Speaker 1"));
+        await fx.Service.StopAsync(TestContext.Current.CancellationToken);
+        await fx.Service.DisposeAsync();
+    }
+
     // The overlay finds the chip it made at detection by the original label; a grant renames the speaker first.
     [Fact]
     public async Task AGrantThatRenamesTheSpeaker_StillReportsTheLabelItWasDetectedUnder()

@@ -22,8 +22,9 @@ public sealed class ConsentForwardLoopTests
     private const string SessionId = "session-1";
     private const string SttModelId = "fake-stt";
 
-    private static ConsentSessionContext Context(TargetSpeechLanguage hint = TargetSpeechLanguage.EN)
-        => new(SessionId, SttModelId, hint);
+    private static ConsentSessionContext Context(
+        TargetSpeechLanguage hint = TargetSpeechLanguage.EN, bool nameSpeakers = true)
+        => new(SessionId, SttModelId, hint, nameSpeakers);
 
     private static TranscriptUtterance Mic(string text, double duration = 1.0)
         => new(TranscriptSpeaker.You, text, DateTimeOffset.UtcNow, SpeakerLabel: null, SegmentId: null, DurationSeconds: duration);
@@ -65,9 +66,10 @@ public sealed class ConsentForwardLoopTests
         public Task<ConsentGateOutcome> ProcessAsync(
             TranscriptUtterance utterance,
             TargetSpeechLanguage hint = TargetSpeechLanguage.EN,
-            Func<string, string, bool>? renameOverride = null)
+            Func<string, string, bool>? renameOverride = null,
+            bool nameSpeakers = true)
             => Loop.ProcessAsync(
-                Context(hint), utterance, Sink.Writer, renameOverride ?? RenameViaConsentManager,
+                Context(hint, nameSpeakers), utterance, Sink.Writer, renameOverride ?? RenameViaConsentManager,
                 TestContext.Current.CancellationToken);
 
         public bool TryReadEmitted(out TranscriptUtterance utterance) => Sink.Reader.TryRead(out utterance!);
@@ -208,6 +210,32 @@ public sealed class ConsentForwardLoopTests
             Arg.Any<CancellationToken>());
         Assert.NotEmpty(fx.AuditEvents);
         Assert.All(fx.AuditEvents, e => Assert.Equal("Speaker 1", e.SpeakerLabel));
+    }
+
+    // Without naming the sentence is not emitted either: it carries the very name the mode keeps out.
+    [Fact]
+    public async Task WithoutSpeakerNaming_AGrantKeepsTheDiarizerLabel_AndTheNameStaysInTheEvidence()
+    {
+        var fx = new Fixture();
+        var sentence = "My name is Max and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Max", "en", NamedConsentClassifier.CrispConfidence));
+        var renamed = false;
+
+        var outcome = await fx.ProcessAsync(
+            Loopback("Speaker 1", sentence),
+            renameOverride: (_, _) => renamed = true,
+            nameSpeakers: false);
+
+        Assert.Equal(ConsentGateOutcome.GrantWithoutName, outcome);
+        Assert.False(renamed);
+        Assert.False(fx.TryReadEmitted(out _));
+        Assert.Equal(ConsentState.Granted, fx.Consent.CurrentState("Speaker 1"));
+        var granted = Assert.Single(fx.ConsentChangedEvents);
+        Assert.Equal("Speaker 1", granted.SpeakerLabel);
+        Assert.Null(granted.ExtractedName);
+        await fx.EvidenceStore.Received(1).SaveGrantAsync(
+            SessionId, Arg.Is<ConsentEvidence>(e => e.ExtractedName == "Max"), Arg.Any<CancellationToken>());
     }
 
     // Below the threshold the diarizer still hands out the nearest label, which may be a consented one.

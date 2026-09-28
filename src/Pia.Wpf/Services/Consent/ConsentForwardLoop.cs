@@ -14,7 +14,9 @@ namespace Pia.Services.Consent;
 /// <param name="SessionId">Current session id (rotates on <c>EndSessionAsync</c>, not on a pause).</param>
 /// <param name="SttModelId">Identifier of the speech-to-text model producing the utterance text.</param>
 /// <param name="LanguageHint">The session's configured speech language, passed straight to the classifier.</param>
-public sealed record ConsentSessionContext(string SessionId, string SttModelId, TargetSpeechLanguage LanguageHint);
+/// <param name="NameSpeakers">False keeps the name from the consent sentence inside the evidence only.</param>
+public sealed record ConsentSessionContext(
+    string SessionId, string SttModelId, TargetSpeechLanguage LanguageHint, bool NameSpeakers = true);
 
 /// <summary>
 /// What <see cref="ConsentForwardLoop.ProcessAsync"/> did with one utterance. Purely observational —
@@ -30,6 +32,9 @@ public enum ConsentGateOutcome
 
     /// <summary>The consent sentence itself, emitted in-band under the (possibly renamed) final label.</summary>
     EmitConsentGrant,
+
+    /// <summary>Consent granted without naming the speaker; the sentence carries the name, so it is not emitted.</summary>
+    GrantWithoutName,
 
     /// <summary>Loopback speech with no diarizer label — unattributable, dropped unconditionally (D1 fix).</summary>
     DropUnlabeled,
@@ -358,15 +363,16 @@ public sealed class ConsentForwardLoop
             utterance.Timestamp,
             context.SttModelId);
 
-        _consent.Grant(label, result.ExtractedName, evidence);
+        var extractedName = context.NameSpeakers ? result.ExtractedName : null;
+        _consent.Grant(label, extractedName, evidence);
 
         // Resolve the final label: rename may fail (collision, diarizer refusal) — in which case the
         // grant still stands under the original diarizer label, and the name lives only in the
         // evidence/consent entry.
         var finalLabel = label;
-        if (!string.IsNullOrWhiteSpace(result.ExtractedName) && renameSpeaker(label, result.ExtractedName))
+        if (!string.IsNullOrWhiteSpace(extractedName) && renameSpeaker(label, extractedName))
         {
-            finalLabel = result.ExtractedName;
+            finalLabel = extractedName;
         }
 
         try
@@ -406,7 +412,9 @@ public sealed class ConsentForwardLoop
         // these two differ, and a subscriber that keyed its UI off ExtractedName instead would end up
         // pointing at a key the consent map does not have — making a later revoke a silent no-op.
         RaiseSpeakerConsentChanged(new ConsentStateChangedEventArgs(
-            finalLabel, ConsentState.Unknown, ConsentState.Granted, result.ExtractedName, label));
+            finalLabel, ConsentState.Unknown, ConsentState.Granted, extractedName, label));
+
+        if (!context.NameSpeakers) return ConsentGateOutcome.GrantWithoutName;
 
         var consentUtterance = utterance with { SpeakerLabel = finalLabel };
         await WriteAsync(sink, consentUtterance, cancellationToken).ConfigureAwait(false);

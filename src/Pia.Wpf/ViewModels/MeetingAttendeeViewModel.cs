@@ -113,7 +113,10 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
     /// <summary>The Teams roster when one was captured, otherwise the transcript's own speakers.</summary>
     protected override IReadOnlyCollection<string> DefaultAttendees
-        => _service.ObservedAttendees.Count > 0 ? _service.ObservedAttendees : base.DefaultAttendees;
+        => NameSpeakers && _service.ObservedAttendees.Count > 0 ? _service.ObservedAttendees : base.DefaultAttendees;
+
+    public string SpeakerDisclaimer => _localizationService[
+        NameSpeakers ? "MeetingAttendee_SpeakerDisclaimer" : "MeetingAttendee_SpeakerDisclaimer_NoNames"];
 
     public MeetingAttendeeViewModel(
         IMeetingAttendeeService service,
@@ -388,7 +391,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         // Attendee roster (if any was observed) as metadata: a localized lead-in plus a bulleted list of
         // the names seen in the meeting, so the assistant can map the diarized "Speaker N" labels to people.
         var attendees = _service.ObservedAttendees;
-        if (attendees.Count > 0)
+        if (NameSpeakers && attendees.Count > 0)
         {
             sb.AppendLine().AppendLine();
             sb.AppendLine(_localizationService["MeetingAttendee_SummaryPrompt_Attendees"]);
@@ -440,7 +443,13 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         RelabelSpeaker(oldLabel, newLabel);   // base helper: palette re-key + bubble walk
     }
 
-    private static bool CanRenameSpeakerLabel(string? oldLabel) => !string.IsNullOrWhiteSpace(oldLabel);
+    private bool CanRenameSpeakerLabel(string? oldLabel) => NameSpeakers && !string.IsNullOrWhiteSpace(oldLabel);
+
+    protected override void OnSpeakerNamingChanged()
+    {
+        RenameSpeakerLabelCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(SpeakerDisclaimer));
+    }
 
     /// <summary>Test seam: exposes the base VM's protected <see cref="TranscriptOverlayViewModel.RelabelSpeaker"/>.</summary>
     internal void RelabelSpeakerForTest(string oldLabel, string newLabel) => RelabelSpeaker(oldLabel, newLabel);

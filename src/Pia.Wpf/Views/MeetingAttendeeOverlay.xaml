@@ -242,7 +242,7 @@
                          Margin="0,1,8,0"
                          VerticalAlignment="Top"
                          Foreground="{DynamicResource TextMutedBrush}" />
-          <TextBlock Text="{loc:Str MeetingAttendee_SpeakerDisclaimer}"
+          <TextBlock Text="{Binding SpeakerDisclaimer}"
                      AutomationProperties.AutomationId="MeetingAttendee_SpeakerDisclaimer"
                      FontSize="12"
                      MaxWidth="820"

@@ -369,7 +369,9 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         RelabelChip(oldLabel, newLabel);
     }
 
-    private static bool CanRenameSpeakerLabel(string? oldLabel) => !string.IsNullOrWhiteSpace(oldLabel);
+    private bool CanRenameSpeakerLabel(string? oldLabel) => NameSpeakers && !string.IsNullOrWhiteSpace(oldLabel);
+
+    protected override void OnSpeakerNamingChanged() => RenameSpeakerLabelCommand.NotifyCanExecuteChanged();
 
     /// <summary>
     /// Withdraws a speaker's consent (§3.3): tells the service, removes their bubbles/journal entries

@@ -197,6 +197,7 @@ sync/managed personas.
 | `meetingAttendeeShowBrowserWindow` | bool, `false` | ✓ |
 | `enableMeetingDiarization` | bool, `true` | ✓ |
 | `meetingSmartSpeakerDetection` | bool, `true` | ✓ |
+| `meetingSpeakerNaming` | bool, `true` | ✓ `false` never names a speaker: the consent sentence's name stays in the consent record, rename is off, and summaries and saved notes carry no attendee list. Put it under `enforce` to hold it |
 | `speakerEmbeddingThreshold` | float, `0.50` | ✓ |
 | `meetingMaxSpeakers` | int, `0` (auto) | ✓ |
 | `meetingMinSpeechSeconds` | float, `1.5` | ✓ |

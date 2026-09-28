@@ -173,7 +173,7 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
             Start: sessionStart,
             End: bubbles[^1].EndTimestamp,
             Source: "teams",
-            Attendees: attendee.ObservedAttendees,
+            Attendees: settings.MeetingSpeakerNaming ? attendee.ObservedAttendees : [],
             Tags: [],
             Project: null,
             Notes: null,

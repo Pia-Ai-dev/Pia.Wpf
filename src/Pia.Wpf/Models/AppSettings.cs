@@ -171,6 +171,9 @@ public class AppSettings
     // for a meeting where it is visibly wrong: a confidently mislabelled transcript is worse than an
     // unlabelled one. Local-only (no SyncSettings mirror).
     public bool MeetingSuppressSpeakerLabels { get; set; } = true;
+    // Off keeps every speaker at the diarizer's label: no name from the consent sentence, no rename, and no
+    // roster in summaries or saved notes. Local-only (no SyncSettings mirror).
+    public bool MeetingSpeakerNaming { get; set; } = true;
     public float SpeakerEmbeddingThreshold { get; set; } = 0.50f;
     // Caps how many distinct speakers diarization may create in one meeting; 0 = no limit. Local-only.
     public int MeetingMaxSpeakers { get; set; } = 0;

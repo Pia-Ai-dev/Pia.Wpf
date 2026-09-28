@@ -21,6 +21,10 @@
 
 ## Meetings
 
+- "Name speakers" in Settings → Assistant → Meeting can now be switched off.
+  Speakers then keep labels such as "Speaker 1": no name from the consent
+  sentence, no renaming, and no attendee list in summaries or saved notes.
+  Your administrator can enforce it.
 - A scheduled meeting Pia attends on its own is still saved to your vault, but
   the AI model no longer evaluates its transcript by itself. Ask the assistant
   to ingest it when you want it in your topic pages.

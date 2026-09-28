@@ -77,6 +77,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     // ---- Session-scoped (survive a Stop/Start pause, cleared only by EndSessionAsync) --------------
     private string _sessionId = string.Empty;
     private string _sttModelId = string.Empty;
+    private volatile bool _nameSpeakers = true;
     private string? _vadModelPath;
     private ITranscriptionEngine? _transcriptionEngine;
     private ISpeakerIdentificationService? _speakerId;
@@ -378,7 +379,9 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             TransitionState(DirectTranscriptionState.Starting);
 
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-            var context = new ConsentSessionContext(_sessionId, _sttModelId, settings.TargetSpeechLanguage);
+            _nameSpeakers = settings.MeetingSpeakerNaming;
+            var context = new ConsentSessionContext(
+                _sessionId, _sttModelId, settings.TargetSpeechLanguage, settings.MeetingSpeakerNaming);
 
             // Every resource below is assigned to its instance field IMMEDIATELY after creation (not
             // batched at the end): if a later step throws, the catch below calls TeardownRunAsync,
@@ -638,20 +641,12 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     // Rename / revoke / stats
     // -------------------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Renames a speaker across the diarizer, the consent map and the recorded voice samples — all three,
-    /// or none of them.
-    ///
-    /// <para>Order and atomicity are a privacy boundary, not tidiness. The previous version renamed the
-    /// DIARIZER first and the consent map second, with no rollback, and neither side checked for a label
-    /// collision. Renaming an unconsented cluster onto an already-granted label therefore succeeded in the
-    /// diarizer and failed in the consent map: from then on every segment of the UNCONSENTED person came
-    /// back carrying the granted label, the gate read <see cref="ConsentState.Granted"/> for it, and their
-    /// speech was transcribed into the visible transcript, the saved Markdown and the voice statistics
-    /// under someone else's consent record.</para>
-    /// </summary>
+    /// <summary>All of diarizer, consent map and voice samples, or none: a half-done rename lets one voice speak
+    /// under another's consent. Refused while speakers are not to be named.</summary>
     public bool RenameSpeaker(string oldLabel, string newLabel)
     {
+        if (!_nameSpeakers)
+            return false;
         if (string.IsNullOrWhiteSpace(oldLabel) || string.IsNullOrWhiteSpace(newLabel))
             return false;
         if (string.Equals(oldLabel, newLabel, StringComparison.Ordinal))
