@@ -49,6 +49,7 @@ public static class ClientPolicyContract
             "managedPersonaStoreInitialized",
             "clientPolicyInitialized",
             "assistantChatsBackfilledAt",
+            "assistantChatsEncryptedResendAt",
             "isE2EEEnabled",
             "e2eeEncryptedUmk",
             "e2eeDeviceId",
