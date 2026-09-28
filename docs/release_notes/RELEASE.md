@@ -32,8 +32,8 @@
 ## Providers
 
 - Your administrator can now limit which AI provider types and which addresses
-  Pia may use, and switch off the providers' own web search. Settings →
-  Providers offers only what is allowed, and a provider outside the limits is
+  Pia may use, and switch off the providers' own web search. Adding or editing
+  a provider offers only what is allowed, and a provider outside the limits is
   refused before anything is sent to it.
 - Adding or editing a provider now says who receives what you send: whoever
   runs the address you enter.
