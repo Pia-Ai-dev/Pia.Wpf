@@ -979,7 +979,7 @@
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>End-to-End Encryption</value></data>
   <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, all synced data is encrypted on your device before being sent to the server. An encryption key and recovery code are generated when encryption is enabled, and a full sync runs. Enabling is permanent for your account.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Enable End-to-End Encryption</value></data>
-  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>End-to-end encryption is permanent for this account. To start over without it, reset your sync data on the server.</value></data>
+  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>End-to-end encryption cannot be turned off for this account. It ends only together with the synced content, when the account is deleted or an administrator resets its sync data.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Updating encryption and syncing data...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Check for device requests</value></data>
@@ -1009,7 +1009,7 @@
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Save Your Recovery Code</value></data>
   <data name="Dialog_Recovery_Description" xml:space="preserve"><value>This recovery code is the ONLY way to access your encrypted data if you lose all your devices. Write it down and store it somewhere safe.</value></data>
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
-  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>If you lose this code and all your devices, your encrypted data cannot be recovered. The server cannot decrypt your data.</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>If you lose this code and all your devices, your encrypted data cannot be recovered. The server holds your key only in encrypted form and cannot restore it for you.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>I have saved this recovery code in a safe place</value></data>
   <!-- Missed Scheduled Job Dialog -->
   <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Missed scheduled briefing</value></data>
@@ -1019,15 +1019,15 @@
   <data name="MissedRun_Later" xml:space="preserve"><value>Decide later</value></data>
   <!-- First-Run Wizard E2EE Setup Step -->
   <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Encrypt your data end-to-end</value></data>
-  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Your notes, todos, and memories stay readable only on your devices.</value></data>
+  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Your device encrypts the content of your notes, todos and memories before it syncs them.</value></data>
   <data name="Wizard_E2EE_Pros_Title" xml:space="preserve"><value>Why turn this on (recommended)</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia Cloud staff can't read your data.</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>If our servers are ever breached, your data is unreadable to attackers.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia Cloud receives your content encrypted and holds your key only in encrypted form.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>If our servers are ever breached, attackers find your content encrypted. IDs, timestamps and order stay readable.</value></data>
   <data name="Wizard_E2EE_Pros_Bullet3" xml:space="preserve"><value>Only devices you approve can decrypt your data.</value></data>
   <data name="Wizard_E2EE_Cons_Title" xml:space="preserve"><value>What you should know</value></data>
   <data name="Wizard_E2EE_Cons_Bullet1" xml:space="preserve"><value>You'll get a recovery code — save it somewhere safe (a password manager or a printed copy).</value></data>
   <data name="Wizard_E2EE_Cons_Bullet2" xml:space="preserve"><value>If you lose all your devices and the recovery code, your encrypted data is unrecoverable.</value></data>
-  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>You can turn it off later in Settings.</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Once it is on, encryption cannot be turned off in the app.</value></data>
   <data name="Wizard_E2EE_Toggle_Label" xml:space="preserve"><value>Encrypt my data with end-to-end encryption</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Title" xml:space="preserve"><value>Continue without encryption?</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Message" xml:space="preserve"><value>Your synced data will be readable by Pia Cloud staff in case of a server breach. You can turn encryption on later in Settings.</value></data>
