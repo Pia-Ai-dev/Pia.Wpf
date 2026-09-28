@@ -99,6 +99,20 @@ public class AutoIngestServiceTests : IDisposable
         Assert.Equal(result.TouchedPages, state!.TouchedPages);
     }
 
+    // A source that asks to be compiled only on request is left alone by every automatic trigger.
+    [Fact]
+    public async Task Reconcile_leaves_a_source_held_for_manual_ingest_alone_until_asked()
+    {
+        var sourceRef = Seed("meeting.md", "---\nschema: pia-meeting/v1\ningest: manual\n---\nbody\n");
+        using var svc = Build();
+
+        await svc.ReconcileAsync(TestContext.Current.CancellationToken);
+        Assert.Empty(_ingest.IngestCalls);
+
+        await svc.RunAsync(sourceRef, TestContext.Current.CancellationToken);
+        Assert.Equal([sourceRef], _ingest.IngestCalls);
+    }
+
     [Fact]
     public async Task Reconcile_skips_unchanged_and_reingests_changed()
     {

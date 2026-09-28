@@ -26,18 +26,15 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
 
     private readonly ISettingsService _settingsService;
     private readonly IMemoryService _memoryService;
-    private readonly IIngestScheduler _ingestScheduler;
     private readonly ILogger<ScheduledMeetingRecorder> _logger;
 
     public ScheduledMeetingRecorder(
         ISettingsService settingsService,
         IMemoryService memoryService,
-        IIngestScheduler ingestScheduler,
         ILogger<ScheduledMeetingRecorder> logger)
     {
         _settingsService = settingsService;
         _memoryService = memoryService;
-        _ingestScheduler = ingestScheduler;
         _logger = logger;
     }
 
@@ -179,7 +176,9 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
             Attendees: attendee.ObservedAttendees,
             Tags: [],
             Project: null,
-            Notes: null);
+            Notes: null,
+            // Nobody attended to decide, so the language model evaluates it only once the user asks.
+            ManualIngest: true);
 
         var markdown = MeetingVaultMarkdown.Render(
             metadata, DirectTranscriptMarkdown.RenderBody(title, bubbles, settings.LastCounterpartName));
@@ -194,7 +193,6 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
         _logger.LogInformation("Saved a scheduled meeting into the vault ({Chars} chars)", markdown.Length);
         _logger.SensitiveDebug("Scheduled meeting saved as {Ref}", write.Ref);
 
-        _ingestScheduler.RunAsync(write.Ref).SafeFireAndForget(_logger);
         return new MeetingRecordingResult(MeetingRecordingOutcome.Saved, write.Ref, null);
     }
 

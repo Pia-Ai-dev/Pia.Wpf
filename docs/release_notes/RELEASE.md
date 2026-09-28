@@ -10,6 +10,12 @@
   longer reaches the consent log or the file name of the consent record. Both
   keep the label Pia detected the speaker under.
 
+## Meetings
+
+- A scheduled meeting Pia attends on its own is still saved to your vault, but
+  the AI model no longer evaluates its transcript by itself. Ask the assistant
+  to ingest it when you want it in your topic pages.
+
 ## Plugins
 
 - A plugin your administrator distributes now waits for you to switch it on,

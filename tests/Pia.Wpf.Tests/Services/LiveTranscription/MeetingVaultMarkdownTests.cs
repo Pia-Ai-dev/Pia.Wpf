@@ -22,6 +22,17 @@ public class MeetingVaultMarkdownTests
         => new(title, Start, End, "teams", attendees ?? [], tags ?? [], project, notes);
 
     [Fact]
+    public void Render_HoldsTheSourceForManualIngest_OnlyWhenAsked()
+    {
+        Assert.DoesNotContain("ingest:", MeetingVaultMarkdown.Render(Meta(), "body"), StringComparison.Ordinal);
+
+        var held = MeetingVaultMarkdown.Render(Meta() with { ManualIngest = true }, "body");
+
+        var frontMatter = held[..held.IndexOf("---\n", 4, StringComparison.Ordinal)];
+        Assert.Contains("\ningest: manual\n", frontMatter, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Render_EmitsTheFullFrontmatter_ThenTheBody()
     {
         var md = MeetingVaultMarkdown.Render(
