@@ -1124,7 +1124,8 @@ public class AiClientService : IAiClientService
             _logger.LogWarning("SendRequestAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
-        catch (Exception ex)
+        // The policy gate already logged its refusal as a warning.
+        catch (Exception ex) when (ex is not ProviderBlockedByPolicyException)
         {
             _logger.LogError(ex, "SendRequestAsync: provider {ProviderType} threw an exception", provider.ProviderType);
             throw;
