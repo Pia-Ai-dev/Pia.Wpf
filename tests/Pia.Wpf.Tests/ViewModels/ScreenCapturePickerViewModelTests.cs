@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Threading;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -447,6 +448,7 @@ public sealed class ScreenCapturePickerViewModelTests
     private sealed class EchoLocalization : ILocalizationService
     {
         public TargetLanguage CurrentLanguage => TargetLanguage.EN;
+        public CultureInfo Culture => CultureInfo.InvariantCulture;
 
 #pragma warning disable CS0067
         public event EventHandler<TargetLanguage>? LanguageChanged;

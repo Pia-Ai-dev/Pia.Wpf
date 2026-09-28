@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -200,6 +201,7 @@ public class ScheduledJobToolIntegrationTests : IDisposable
     private sealed class StubLocalization : ILocalizationService
     {
         public TargetLanguage CurrentLanguage => TargetLanguage.EN;
+        public CultureInfo Culture => CultureInfo.InvariantCulture;
 
 #pragma warning disable CS0067 // Event is never used in tests.
         public event EventHandler<TargetLanguage>? LanguageChanged;

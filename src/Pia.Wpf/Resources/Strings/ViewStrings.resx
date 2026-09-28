@@ -437,6 +437,18 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Research</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Account</value></data>
+  <data name="Settings_Credits_Title" xml:space="preserve"><value>Credits</value></data>
+  <data name="Settings_Credits_Weekly" xml:space="preserve"><value>This week</value></data>
+  <data name="Settings_Credits_Pool" xml:space="preserve"><value>Free team pool this week</value></data>
+  <data name="Settings_Credits_TopUp" xml:space="preserve"><value>Top-up credits</value></data>
+  <data name="Settings_Credits_Daily" xml:space="preserve"><value>Last 24 hours</value></data>
+  <data name="Settings_Credits_Hourly" xml:space="preserve"><value>Last hour</value></data>
+  <data name="Settings_Credits_GroupWeekly" xml:space="preserve"><value>Whole team, this week</value></data>
+  <data name="Settings_Credits_GroupDaily" xml:space="preserve"><value>Whole team, last 24 hours</value></data>
+  <data name="Settings_Credits_UsedOf" xml:space="preserve"><value>{0} of {1} used</value></data>
+  <data name="Settings_Credits_LeftOf" xml:space="preserve"><value>{0} of {1} left</value></data>
+  <data name="Settings_Credits_Resets" xml:space="preserve"><value>Resets {0}</value></data>
+  <data name="Settings_Credits_Suspended" xml:space="preserve"><value>The free tier is paused right now. Please try again later.</value></data>
   <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Plugins</value></data>
   <data name="Plugins_Subtitle" xml:space="preserve"><value>Extend your assistant's capabilities with plugins.</value></data>
   <data name="Plugins_NotConnected" xml:space="preserve"><value>Connect to Pia Cloud to manage plugins.</value></data>

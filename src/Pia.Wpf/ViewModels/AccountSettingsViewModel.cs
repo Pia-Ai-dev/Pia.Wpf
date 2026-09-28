@@ -2,11 +2,13 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
+using Pia.Services.Credits;
 using Pia.Services.E2EE;
 using Pia.Helpers;
 using Pia.Services.Interfaces;
 using Pia.ViewModels.Models;
 using Pia.Shared.E2EE;
+using System.Collections.ObjectModel;
 using System.Text.Json;
 
 namespace Pia.ViewModels;
@@ -26,6 +28,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private readonly IPolicyService _policyService;
     private readonly IAccountDataService _accountData;
     private readonly IFileDialogService _fileDialogs;
+    private readonly ICreditStatusService _creditStatus;
+    private int _creditsGeneration;
 
     /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
     public PolicyLock Policy { get; }
@@ -48,11 +52,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel,
         IAccountDataService accountData,
-        IFileDialogService fileDialogs)
+        IFileDialogService fileDialogs,
+        ICreditStatusService creditStatus)
         : base(requireUiThread: true)
     {
         _accountData = accountData;
         _fileDialogs = fileDialogs;
+        _creditStatus = creditStatus;
         _logger = logger;
         _settingsService = settingsService;
         _dialogService = dialogService;
@@ -111,7 +117,12 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
         _authService.LoginStateChanged += (_, isLoggedIn) =>
         {
-            if (isLoggedIn) return;
+            if (isLoggedIn)
+            {
+                RefreshCreditsAsync().SafeFireAndForget(_logger);
+                return;
+            }
+            Interlocked.Increment(ref _creditsGeneration);
             Post(() =>
             {
                 IsE2EEOnboardingRequired = false;
@@ -123,6 +134,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 _isLoading = false;
                 DeviceFingerprint = string.Empty;
                 UpdateSyncState();
+                ClearCredits();
             });
         };
 
@@ -165,6 +177,41 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         _settingsService.SettingsChanged -= OnSettingsChanged;
         Policy.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    public ObservableCollection<CreditMeter> CreditMeters { get; } = [];
+
+    [ObservableProperty]
+    private bool _hasCredits;
+
+    [ObservableProperty]
+    private bool _isCreditTierSuspended;
+
+    internal async Task RefreshCreditsAsync()
+    {
+        // A later fetch, or a sign-out, can land while this one is still in flight.
+        var generation = Interlocked.Increment(ref _creditsGeneration);
+        var status = await _creditStatus.GetAsync();
+        IReadOnlyList<CreditMeter> meters = status is { Limited: true }
+            ? CreditMeterBuilder.Build(status, _localizationService, TimeZoneInfo.Local, _localizationService.Culture)
+            : [];
+
+        await PostAsync(() =>
+        {
+            if (generation != Volatile.Read(ref _creditsGeneration)) return;
+
+            CreditMeters.Clear();
+            foreach (var meter in meters) CreditMeters.Add(meter);
+            IsCreditTierSuspended = status is { Limited: true, Suspended: true };
+            HasCredits = meters.Count > 0;
+        });
+    }
+
+    private void ClearCredits()
+    {
+        CreditMeters.Clear();
+        IsCreditTierSuspended = false;
+        HasCredits = false;
     }
 
     // IsServerUrlEnforced itself is unbound; the markup binds the derived property. The login-visibility
@@ -320,7 +367,6 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         ApplySettings(settings);
         UpdateSyncState();
 
-        // E2EE state
         IsE2EEEnabled = settings.IsE2EEEnabled;
         if (_deviceManagement.IsInitialized())
             DeviceFingerprint = _deviceKeys.GetFingerprint();
@@ -331,6 +377,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         // No IsLoggedIn guard: it races the service's own token load, and the probe answers null without a token.
         if (!_businessProfileAnswered)
             RefreshBusinessProfileStateAsync().SafeFireAndForget(_logger);
+
+        RefreshCreditsAsync().SafeFireAndForget(_logger);
     }
 
     // Settings is re-initialized on every navigation to it, and only a login or a submit can change the
