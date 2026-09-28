@@ -1,35 +1,16 @@
 using Microsoft.Extensions.Logging;
 using Pia.Logging;
-using SherpaOnnx;
 
 namespace Pia.Services.LiveTranscription;
 
-/// <summary>
-/// Live speaker identification for a single meeting. Uses sherpa-onnx's
-/// <see cref="SpeakerEmbeddingExtractor"/> to compute per-segment embeddings and
-/// matches them against an in-process pool of running per-speaker centroids.
-///
-/// Per-speaker state is kept under an internal id (<c>spk_1</c>, <c>spk_2</c>, …)
-/// while the UI sees a display label ("Speaker 1", or whatever the user renames it
-/// to). This split makes <see cref="Rename"/> a single dictionary update.
-///
-/// Matching uses a three-zone decision around the configured cosine threshold to keep
-/// borderline cases from flipping decisions or polluting centroids:
-///   sim ≥ threshold              → match, fold embedding into centroid (weighted)
-///   threshold > sim ≥ thr − margin → match, do NOT update centroid (uncertain)
-///   sim &lt; threshold − margin   → register new speaker
-///
-/// Centroid updates are confidence-weighted (high-similarity matches dominate) and the
-/// centroid is L2-renormalized after each update so the running mean stays a unit vector.
-/// </summary>
+/// <summary>Matches each segment against running per-speaker centroids: above the threshold it joins the
+/// speaker, just below it takes the nearest label without moving the centroid, further below it is new.</summary>
 public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
 {
-    // Width of the "uncertain" band below the match threshold. A segment landing in this
-    // band gets the best-matching label but is NOT folded into the centroid — keeps a
-    // borderline embedding from dragging the centroid toward the decision boundary.
+    // Width of the band below the threshold that still takes the nearest label but never moves its centroid.
     private const float BorderlineMargin = 0.07f;
 
-    private readonly SpeakerEmbeddingExtractor _extractor;
+    private readonly IEmbeddingExtractor _extractor;
     private readonly ILogger _logger;
     private readonly float _matchThreshold;
     // Maximum number of distinct speakers to register in one meeting; 0 = unlimited. When the cap is
@@ -44,32 +25,29 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
     private bool _disposed;
 
     public SpeakerIdentificationService(string modelPath, float matchThreshold, int maxSpeakers, ILogger logger)
+        : this(new SherpaEmbeddingExtractor(modelPath), matchThreshold, maxSpeakers, logger)
     {
-        _logger = logger;
-        _matchThreshold = matchThreshold;
-        _maxSpeakers = maxSpeakers;
-
-        var config = new SpeakerEmbeddingExtractorConfig();
-        config.Model = modelPath;
-        config.NumThreads = 1;
-        config.Provider = "cpu";
-        config.Debug = 0;
-
-        _extractor = new SpeakerEmbeddingExtractor(config);
-
         _logger.LogInformation(
             "Speaker identification active. model='{Model}' dim={Dim} threshold={Threshold:F2} maxSpeakers={MaxSpeakers}",
             modelPath, _extractor.Dim, _matchThreshold, _maxSpeakers);
     }
 
+    internal SpeakerIdentificationService(IEmbeddingExtractor extractor, float matchThreshold, int maxSpeakers, ILogger logger)
+    {
+        _extractor = extractor;
+        _logger = logger;
+        _matchThreshold = matchThreshold;
+        _maxSpeakers = maxSpeakers;
+    }
+
     public string IdentifyOrRegister(float[] segmentSamples, int sampleRate)
-        => IdentifyOrRegisterWithEmbedding(segmentSamples, sampleRate).Label;
+        => Identify(segmentSamples, sampleRate).Label;
 
     public SpeakerSegmentResult IdentifyOrRegisterSegment(float[] segmentSamples, int sampleRate)
     {
-        var label = IdentifyOrRegister(segmentSamples, sampleRate);
+        var (label, _, belowThreshold) = Identify(segmentSamples, sampleRate);
         var id = Interlocked.Increment(ref _nextSegmentId) - 1;
-        return new SpeakerSegmentResult(id, label);
+        return new SpeakerSegmentResult(id, label, belowThreshold);
     }
 
     public event EventHandler<string>? SpeakerRegistered;
@@ -80,11 +58,17 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
 
     public (string Label, float[] Embedding) IdentifyOrRegisterWithEmbedding(float[] segmentSamples, int sampleRate)
     {
+        var (label, embedding, _) = Identify(segmentSamples, sampleRate);
+        return (label, embedding);
+    }
+
+    private (string Label, float[] Embedding, bool BelowThreshold) Identify(float[] segmentSamples, int sampleRate)
+    {
         var durationSec = sampleRate > 0 ? segmentSamples.Length / (float)sampleRate : 0f;
-        var embedding = ComputeEmbedding(segmentSamples, sampleRate);
+        var embedding = _extractor.Compute(segmentSamples, sampleRate);
 
         string? newlyRegisteredLabel = null;
-        (string Label, float[] Embedding) result;
+        (string Label, float[] Embedding, bool BelowThreshold) result;
 
         lock (_lock)
         {
@@ -99,9 +83,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 if (sim > bestSim) { bestSim = sim; bestId = id; }
             }
 
-            // Zone A: confident match — fold embedding into the centroid with a weight that
-            // grows with confidence, so a barely-above-threshold match doesn't drag the
-            // centroid toward the decision boundary as much as a high-confidence one does.
+            // Confident match; the weight grows with similarity so a near-threshold one barely moves the centroid.
             if (bestId is not null && bestSim >= _matchThreshold)
             {
                 var matched = _speakers[bestId];
@@ -114,11 +96,9 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                     "Diarization match: {Label} sim={Sim:F3} w={Weight:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, weight, durationSec, FormatSims(sims));
 
-                result = (label, embedding);
+                result = (label, embedding, false);
             }
-            // Zone B: borderline — return the best-matching label but DO NOT update the
-            // centroid. Keeps an uncertain segment from poisoning the speaker profile while
-            // still surfacing a sensible label to the UI.
+            // Borderline: the nearest label for the UI, but no centroid update and flagged below the threshold.
             else if (bestId is not null && bestSim >= _matchThreshold - BorderlineMargin)
             {
                 var label = _displayLabels[bestId];
@@ -126,11 +106,9 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 _logger.SensitiveInformation(
                     "Diarization borderline (no centroid update): {Label} sim={Sim:F3} threshold={Threshold:F2} margin={Margin:F2} dur={Dur:F2}s sims=[{Sims}]",
                     label, bestSim, _matchThreshold, BorderlineMargin, durationSec, FormatSims(sims));
-                result = (label, embedding);
+                result = (label, embedding, true);
             }
-            // Zone C: would normally register a brand-new speaker — UNLESS the speaker cap has been
-            // reached. At the cap we force the segment onto its best existing match (like Zone B: label
-            // it but DO NOT update the centroid), so over-segmentation cannot exceed the user's limit.
+            // At the speaker cap a would-be new speaker is forced onto its nearest match, like a borderline one.
             else if (_maxSpeakers > 0 && _speakers.Count >= _maxSpeakers && bestId is not null)
             {
                 var label = _displayLabels[bestId];
@@ -138,9 +116,8 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                 _logger.SensitiveInformation(
                     "Diarization cap reached ({Count}/{Max}); forcing best match: {Label} sim={Sim:F3} dur={Dur:F2}s sims=[{Sims}]",
                     _speakers.Count, _maxSpeakers, label, bestSim, durationSec, FormatSims(sims));
-                result = (label, embedding);
+                result = (label, embedding, true);
             }
-            // Zone C: register a brand-new speaker.
             else
             {
                 _counter++;
@@ -161,7 +138,7 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
                     FormatSims(sims));
 
                 newlyRegisteredLabel = newLabel;
-                result = (newLabel, embedding);
+                result = (newLabel, embedding, false);
             }
         }
 
@@ -232,14 +209,6 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
         _speakers.Clear();
         _displayLabels.Clear();
         _counter = 0;
-    }
-
-    private float[] ComputeEmbedding(float[] samples, int sampleRate)
-    {
-        using var stream = _extractor.CreateStream();
-        stream.AcceptWaveform(sampleRate, samples);
-        stream.InputFinished();
-        return _extractor.Compute(stream);
     }
 
     public void Dispose()

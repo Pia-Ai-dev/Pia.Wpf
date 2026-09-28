@@ -143,6 +143,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             var (bestCluster, bestSim) = BestClusterUnderLock(embedding);
             var matched = bestCluster >= 0 && bestSim >= _matchSimilarity;
             int? cluster = null;
+            var forced = false;
             if (durationSeconds >= _options.MinClusterSegmentSeconds)
             {
                 if (matched)
@@ -156,6 +157,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
                     // At the roster ceiling. Take the nearest voice instead of minting one the roster
                     // says cannot exist; no centroid update, because the match was forced not earned.
                     cluster = bestCluster;
+                    forced = true;
                 }
                 else
                 {
@@ -178,7 +180,7 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
             if (cluster is int assigned) _clusterBySegment[segId] = assigned;
             _segmentsSinceLastPass++;
             result = new SpeakerSegmentResult(
-                segId, cluster is int c ? _labelByCluster[c] : null);
+                segId, cluster is int c ? _labelByCluster[c] : null, forced);
 
             // Warm-up counts ELIGIBLE embeddings: a pass over a handful of short interjections would
             // rebuild the label/centroid maps from near-empty output and wipe every known speaker.

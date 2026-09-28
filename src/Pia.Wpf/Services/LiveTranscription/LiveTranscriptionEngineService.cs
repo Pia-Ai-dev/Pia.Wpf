@@ -175,6 +175,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
         {
             string? speakerLabel = null;
             long? segmentId = null;
+            var belowMatchThreshold = false;
             if (_speakerId is not null && samples.Length >= _minDiarizationSamples)
             {
                 try
@@ -182,6 +183,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
                     var seg = _speakerId.IdentifyOrRegisterSegment(samples, 16000);
                     speakerLabel = seg.Label;
                     segmentId = seg.SegmentId;
+                    belowMatchThreshold = seg.BelowMatchThreshold;
                     // start= lets the fixture score against stream position instead of reconstructing
                     // it from wall-clock stamps.
                     _logger.SensitiveDebug(
@@ -206,7 +208,7 @@ public sealed class LiveTranscriptionEngineService : IAsyncDisposable
             var speechStart = _source.StartedAt?.AddSeconds(startSeconds);
             var utt = new TranscriptUtterance(
                 _speaker, text, DateTimeOffset.Now, speakerLabel, segmentId, samples.Length / 16000.0,
-                speechStart, speechStart?.AddSeconds(samples.Length / 16000.0));
+                speechStart, speechStart?.AddSeconds(samples.Length / 16000.0), belowMatchThreshold);
             await _sink.WriteAsync(utt, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { /* shutdown */ }

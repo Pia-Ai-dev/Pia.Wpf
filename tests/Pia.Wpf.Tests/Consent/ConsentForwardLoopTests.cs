@@ -187,6 +187,45 @@ public sealed class ConsentForwardLoopTests
         Assert.Equal(ConsentState.Granted, fx.Consent.CurrentState("Carol"));
     }
 
+    // Below the threshold the diarizer still hands out the nearest label, which may be a consented one.
+    [Fact]
+    public async Task AConsentedLabelMatchedBelowTheThreshold_IsDropped()
+    {
+        var fx = new Fixture();
+        var sentence = "My name is Dora and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Dora", "en", NamedConsentClassifier.CrispConfidence));
+        await fx.ProcessAsync(Loopback("Speaker 1", sentence));
+        fx.TryReadEmitted(out _);
+
+        var outcome = await fx.ProcessAsync(
+            Loopback("Dora", "a voice that only resembles Dora") with { SpeakerBelowMatchThreshold = true });
+
+        Assert.Equal(ConsentGateOutcome.DropBelowMatchThreshold, outcome);
+        Assert.False(fx.TryReadEmitted(out _));
+        Assert.Equal(1, fx.Loop.DroppedBelowMatchThresholdCount);
+        Assert.Single(fx.Loop.VoiceSamples); // only the consent sentence itself
+    }
+
+    [Fact]
+    public async Task AConsentSentenceMatchedBelowTheThreshold_GrantsNothing()
+    {
+        var fx = new Fixture();
+        var sentence = "My name is Emil and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Emil", "en", NamedConsentClassifier.CrispConfidence));
+
+        var outcome = await fx.ProcessAsync(
+            Loopback("Speaker 1", sentence) with { SpeakerBelowMatchThreshold = true });
+
+        Assert.Equal(ConsentGateOutcome.DropBelowMatchThreshold, outcome);
+        Assert.False(fx.TryReadEmitted(out _));
+        Assert.Equal(ConsentState.Unknown, fx.Consent.CurrentState("Speaker 1"));
+        fx.Classifier.DidNotReceiveWithAnyArgs().Classify(default!, default);
+        await fx.EvidenceStore.DidNotReceive().SaveGrantAsync(
+            Arg.Any<string>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task RevokedSpeaker_IsDropped_AndIsNotReclassified()
     {

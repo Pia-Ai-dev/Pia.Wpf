@@ -503,6 +503,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 new Dictionary<string, object?>
                 {
                     ["droppedUnlabeledLoopback"] = _forwardLoop?.DroppedUnlabeledCount ?? 0,
+                    ["droppedBelowMatchThreshold"] = _forwardLoop?.DroppedBelowMatchThresholdCount ?? 0,
                     ["droppedUnconsented"] = _forwardLoop?.DroppedUnconsentedCount ?? 0,
                     ["droppedMicEcho"] = _forwardLoop?.DroppedEchoCount ?? 0,
                 }));

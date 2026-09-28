@@ -34,6 +34,9 @@ public enum ConsentGateOutcome
     /// <summary>Loopback speech with no diarizer label — unattributable, dropped unconditionally (D1 fix).</summary>
     DropUnlabeled,
 
+    /// <summary>Loopback speech whose label is only the nearest match, below the diarizer's threshold.</summary>
+    DropBelowMatchThreshold,
+
     /// <summary>Loopback speech from a speaker who has not (yet, or no longer) consented.</summary>
     DropUnconsented,
 
@@ -77,6 +80,7 @@ public sealed class ConsentForwardLoop
     private readonly List<VoiceSample> _voiceSamples = new();
 
     private int _droppedUnlabeledCount;
+    private int _droppedBelowMatchThresholdCount;
     private int _droppedUnconsentedCount;
     private int _droppedRevokedCount;
     private int _droppedEchoCount;
@@ -106,6 +110,8 @@ public sealed class ConsentForwardLoop
 
     /// <summary>Batched count of loopback utterances dropped for carrying no diarizer label (D1).</summary>
     public int DroppedUnlabeledCount => Volatile.Read(ref _droppedUnlabeledCount);
+
+    public int DroppedBelowMatchThresholdCount => Volatile.Read(ref _droppedBelowMatchThresholdCount);
 
     /// <summary>Batched count of loopback utterances dropped because their speaker had not consented.</summary>
     public int DroppedUnconsentedCount => Volatile.Read(ref _droppedUnconsentedCount);
@@ -268,6 +274,16 @@ public sealed class ConsentForwardLoop
             _logger.LogInformation("Dropped an unattributable loopback utterance (no diarizer label)");
             _logger.SensitiveDebug("Dropped unlabeled loopback utterance text: '{Text}'", utterance.Text);
             return ConsentGateOutcome.DropUnlabeled;
+        }
+
+        // The nearest label may be a consented speaker's; only a match above the threshold speaks for them.
+        if (utterance.SpeakerBelowMatchThreshold)
+        {
+            Interlocked.Increment(ref _droppedBelowMatchThresholdCount);
+            _logger.LogInformation("Dropped a loopback utterance matched to its speaker below the threshold");
+            _logger.SensitiveDebug("Dropped below-threshold utterance for {Label}: '{Text}'",
+                utterance.SpeakerLabel, utterance.Text);
+            return ConsentGateOutcome.DropBelowMatchThreshold;
         }
 
         var label = utterance.SpeakerLabel;
