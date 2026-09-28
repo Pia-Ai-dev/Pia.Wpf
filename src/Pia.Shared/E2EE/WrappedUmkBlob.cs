@@ -13,5 +13,13 @@ public class WrappedUmkBlob
     public required string HkdfSalt { get; set; }
     public int WrapVersion { get; set; } = 1;
     public string? CreatedByDeviceId { get; set; }
+
+    /// <summary>Base64: the approving device's ECDSA signature over <see cref="DeviceApprovalSignature"/>.</summary>
+    public string? ApproverSignature { get; set; }
+
+    public int SignatureVersion { get; set; } = 1;
+
+    /// <summary>The onboarding session the approval signature names.</summary>
+    public string? OnboardingSessionId { get; set; }
     public DateTime CreatedAt { get; set; }
 }

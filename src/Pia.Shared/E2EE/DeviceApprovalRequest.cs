@@ -14,5 +14,8 @@ public class DeviceApprovalRequest
     public required string HkdfSalt { get; set; }
     /// <summary>Base64: ECDSA signature from approving device over the approval payload.</summary>
     public string? ApproverSignature { get; set; }
+
+    /// <summary>Which <see cref="DeviceApprovalSignature"/> payload <see cref="ApproverSignature"/> covers; absent means 1.</summary>
+    public int SignatureVersion { get; set; } = 1;
     public required string ApproverDeviceId { get; set; }
 }
