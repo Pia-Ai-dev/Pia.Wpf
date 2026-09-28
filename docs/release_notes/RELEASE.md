@@ -10,3 +10,7 @@
   uploaded again, encrypted, instead of staying readable on the server until
   their next change. This happens when you turn encryption on and, if it is
   already on, once after this update.
+- "Sign Out" and "Delete account" now remove the end-to-end encryption key
+  from this device, so another account signing in here cannot encrypt under
+  it. Signing back in takes it back without setup if this device set up
+  encryption or used the recovery code; an approved device needs the code.

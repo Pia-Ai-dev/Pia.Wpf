@@ -33,6 +33,10 @@ public interface IDeviceManagementService
     /// </summary>
     Task FetchAndUnwrapUmkAsync();
 
+    /// <summary>True when this device holds the key, taking back its own server copy first if the server still
+    /// lists the device as active.</summary>
+    Task<bool> TryRestoreKeyAsync();
+
     /// <summary>
     /// Revoke a device by its deviceId.
     /// </summary>

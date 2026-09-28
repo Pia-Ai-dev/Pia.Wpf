@@ -226,6 +226,26 @@ public class DeviceManagementService : IDeviceManagementService
         _logger.LogInformation("Fetched and unwrapped UMK from device {Approver}", wrappedBlob.CreatedByDeviceId);
     }
 
+    public async Task<bool> TryRestoreKeyAsync()
+    {
+        if (IsInitialized()) return true;
+        if (!_deviceKeys.HasDeviceKeys()) return false;
+
+        var status = await GetDeviceStatusAsync(_deviceKeys.GetDeviceId());
+        if (status is not { Status: DeviceStatus.Active }) return false;
+
+        try
+        {
+            await FetchAndUnwrapUmkAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not take back this device's copy of the key");
+            return false;
+        }
+        return IsInitialized();
+    }
+
     public async Task RevokeDeviceAsync(string deviceId)
     {
         using var client = await CreateAuthorizedClientAsync();

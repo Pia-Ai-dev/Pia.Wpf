@@ -600,7 +600,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
         var e2eeStatus = await _deviceManagement.CheckE2EEStatusAsync();
 
-        if (e2eeStatus is { IsEnabled: true } && !_deviceManagement.IsInitialized())
+        if (e2eeStatus is { IsEnabled: true } && !await _deviceManagement.TryRestoreKeyAsync())
         {
             _logger.LogInformation("E2EE enabled on account but UMK not available; showing onboarding in wizard");
             _cloudAccountHasE2EE = true;
