@@ -86,6 +86,10 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     [ObservableProperty]
     private bool _suppressSpeakerLabels;
 
+    /// <summary>False keeps every speaker at the diarizer's label: no rename and no attendee roster.</summary>
+    [ObservableProperty]
+    private bool _nameSpeakers = true;
+
     [ObservableProperty]
     private string _statusText = string.Empty;
 
@@ -152,10 +156,12 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     /// fallback; an overlay with a real roster overrides this.
     /// </summary>
     protected virtual IReadOnlyCollection<string> DefaultAttendees
-        => Bubbles
-            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.DisplayLabel, CounterpartName))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
+        => !NameSpeakers
+            ? []
+            : Bubbles
+                .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.DisplayLabel, CounterpartName))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
 
     // ---- Reader plumbing -------------------------------------------------------------------------
 
@@ -174,7 +180,11 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     {
         await StopReaderAsync().ConfigureAwait(false);
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
-        DispatchToUi(() => SuppressSpeakerLabels = settings.MeetingSuppressSpeakerLabels);
+        DispatchToUi(() =>
+        {
+            SuppressSpeakerLabels = settings.MeetingSuppressSpeakerLabels;
+            NameSpeakers = settings.MeetingSpeakerNaming;
+        });
         _readerCts = new CancellationTokenSource();
         _readerTask = Task.Run(() => ConsumeUtterancesAsync(_readerCts.Token), CancellationToken.None);
     }
@@ -285,6 +295,13 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
     /// </summary>
     private string? ResolveDisplayLabel(string? speakerLabel) =>
         _displayNumbering.Resolve(speakerLabel, SuppressSpeakerLabels);
+
+    partial void OnNameSpeakersChanged(bool value) => OnSpeakerNamingChanged();
+
+    /// <summary>Lets an overlay refresh what depends on naming, such as whether rename can run.</summary>
+    protected virtual void OnSpeakerNamingChanged()
+    {
+    }
 
     partial void OnSuppressSpeakerLabelsChanged(bool value)
     {

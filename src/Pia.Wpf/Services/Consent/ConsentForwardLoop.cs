@@ -14,7 +14,9 @@ namespace Pia.Services.Consent;
 /// <param name="SessionId">Current session id (rotates on <c>EndSessionAsync</c>, not on a pause).</param>
 /// <param name="SttModelId">Identifier of the speech-to-text model producing the utterance text.</param>
 /// <param name="LanguageHint">The session's configured speech language, passed straight to the classifier.</param>
-public sealed record ConsentSessionContext(string SessionId, string SttModelId, TargetSpeechLanguage LanguageHint);
+/// <param name="NameSpeakers">False keeps the name from the consent sentence inside the evidence only.</param>
+public sealed record ConsentSessionContext(
+    string SessionId, string SttModelId, TargetSpeechLanguage LanguageHint, bool NameSpeakers = true);
 
 /// <summary>
 /// What <see cref="ConsentForwardLoop.ProcessAsync"/> did with one utterance. Purely observational —
@@ -31,8 +33,14 @@ public enum ConsentGateOutcome
     /// <summary>The consent sentence itself, emitted in-band under the (possibly renamed) final label.</summary>
     EmitConsentGrant,
 
+    /// <summary>Consent granted without naming the speaker; the sentence carries the name, so it is not emitted.</summary>
+    GrantWithoutName,
+
     /// <summary>Loopback speech with no diarizer label — unattributable, dropped unconditionally (D1 fix).</summary>
     DropUnlabeled,
+
+    /// <summary>Loopback speech whose label is only the nearest match, below the diarizer's threshold.</summary>
+    DropBelowMatchThreshold,
 
     /// <summary>Loopback speech from a speaker who has not (yet, or no longer) consented.</summary>
     DropUnconsented,
@@ -77,6 +85,7 @@ public sealed class ConsentForwardLoop
     private readonly List<VoiceSample> _voiceSamples = new();
 
     private int _droppedUnlabeledCount;
+    private int _droppedBelowMatchThresholdCount;
     private int _droppedUnconsentedCount;
     private int _droppedRevokedCount;
     private int _droppedEchoCount;
@@ -106,6 +115,8 @@ public sealed class ConsentForwardLoop
 
     /// <summary>Batched count of loopback utterances dropped for carrying no diarizer label (D1).</summary>
     public int DroppedUnlabeledCount => Volatile.Read(ref _droppedUnlabeledCount);
+
+    public int DroppedBelowMatchThresholdCount => Volatile.Read(ref _droppedBelowMatchThresholdCount);
 
     /// <summary>Batched count of loopback utterances dropped because their speaker had not consented.</summary>
     public int DroppedUnconsentedCount => Volatile.Read(ref _droppedUnconsentedCount);
@@ -270,6 +281,16 @@ public sealed class ConsentForwardLoop
             return ConsentGateOutcome.DropUnlabeled;
         }
 
+        // The nearest label may be a consented speaker's; only a match above the threshold speaks for them.
+        if (utterance.SpeakerBelowMatchThreshold)
+        {
+            Interlocked.Increment(ref _droppedBelowMatchThresholdCount);
+            _logger.LogInformation("Dropped a loopback utterance matched to its speaker below the threshold");
+            _logger.SensitiveDebug("Dropped below-threshold utterance for {Label}: '{Text}'",
+                utterance.SpeakerLabel, utterance.Text);
+            return ConsentGateOutcome.DropBelowMatchThreshold;
+        }
+
         var label = utterance.SpeakerLabel;
 
         switch (_consent.CurrentState(label))
@@ -331,8 +352,10 @@ public sealed class ConsentForwardLoop
             return ConsentGateOutcome.DropUnconsented;
         }
 
+        // A name typed before consent is not the speaker's to give, so the record keeps the detected label.
+        var detectedLabel = _consent.TryGet(label, out var entry) ? entry.DetectedLabel : label;
         var evidence = new ConsentEvidence(
-            label,
+            detectedLabel,
             result.ExtractedName,
             utterance.Text,
             result.Language,
@@ -340,15 +363,16 @@ public sealed class ConsentForwardLoop
             utterance.Timestamp,
             context.SttModelId);
 
-        _consent.Grant(label, result.ExtractedName, evidence);
+        var extractedName = context.NameSpeakers ? result.ExtractedName : null;
+        _consent.Grant(label, extractedName, evidence);
 
         // Resolve the final label: rename may fail (collision, diarizer refusal) — in which case the
         // grant still stands under the original diarizer label, and the name lives only in the
         // evidence/consent entry.
         var finalLabel = label;
-        if (!string.IsNullOrWhiteSpace(result.ExtractedName) && renameSpeaker(label, result.ExtractedName))
+        if (!string.IsNullOrWhiteSpace(extractedName) && renameSpeaker(label, extractedName))
         {
-            finalLabel = result.ExtractedName;
+            finalLabel = extractedName;
         }
 
         try
@@ -364,17 +388,16 @@ public sealed class ConsentForwardLoop
                 Guid.NewGuid(),
                 DateTimeOffset.UtcNow,
                 ConsentAuditEventTypes.EvidenceWriteFailed,
-                label,
+                detectedLabel,
                 null));
         }
 
-        // Audit uses the ORIGINAL diarizer label, never the extracted name: the name is personal data
-        // and must live only in the DPAPI-protected evidence file, not in the plaintext audit trail.
+        // Names, extracted or typed, live only inside the DPAPI-protected evidence, never in the plaintext audit.
         _auditLog.Append(new AuditEvent(
             Guid.NewGuid(),
             DateTimeOffset.UtcNow,
             ConsentAuditEventTypes.ConsentGranted,
-            label,
+            detectedLabel,
             new Dictionary<string, object?>
             {
                 ["confidence"] = result.Confidence,
@@ -389,7 +412,9 @@ public sealed class ConsentForwardLoop
         // these two differ, and a subscriber that keyed its UI off ExtractedName instead would end up
         // pointing at a key the consent map does not have — making a later revoke a silent no-op.
         RaiseSpeakerConsentChanged(new ConsentStateChangedEventArgs(
-            finalLabel, ConsentState.Unknown, ConsentState.Granted, result.ExtractedName, label));
+            finalLabel, ConsentState.Unknown, ConsentState.Granted, extractedName, label));
+
+        if (!context.NameSpeakers) return ConsentGateOutcome.GrantWithoutName;
 
         var consentUtterance = utterance with { SpeakerLabel = finalLabel };
         await WriteAsync(sink, consentUtterance, cancellationToken).ConfigureAwait(false);

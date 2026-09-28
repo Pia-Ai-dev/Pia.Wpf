@@ -30,7 +30,7 @@ public sealed class AnthropicProviderHandler : IAiProviderHandler
     {
         var http = new HttpClient(
             new AnthropicRequestHandler(
-                provider.EnableWebSearch,
+                provider.UsesWebSearch,
                 provider.EnablePromptCache,
                 ReasoningEffortMapping.ToAnthropic(provider.ReasoningEffort),
                 disableThinking: provider.ReasoningEffort == Pia.Models.ReasoningEffort.None)

@@ -92,6 +92,7 @@
   <data name="Msg_Assistant_MessageCopied" xml:space="preserve"><value>Message copied to clipboard.</value></data>
   <data name="Msg_Assistant_NewValue" xml:space="preserve"><value>New value:</value></data>
   <data name="Msg_Assistant_NoProviderConfigured" xml:space="preserve"><value>No AI provider configured for Assistant mode. Please add one in Settings.</value></data>
+  <data name="Msg_Assistant_ProviderBlockedByPolicy" xml:space="preserve"><value>Your organization's policy does not allow this AI provider. Choose another one in Settings → Providers.</value></data>
   <data name="Msg_Assistant_NoProviderInline" xml:space="preserve"><value>No AI provider configured. Please add one in Settings.</value></data>
   <data name="Msg_Assistant_PermanentDeleteMemory" xml:space="preserve"><value>This will permanently delete this memory.</value></data>
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>This will permanently delete this reminder.</value></data>

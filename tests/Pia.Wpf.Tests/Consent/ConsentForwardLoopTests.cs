@@ -22,8 +22,9 @@ public sealed class ConsentForwardLoopTests
     private const string SessionId = "session-1";
     private const string SttModelId = "fake-stt";
 
-    private static ConsentSessionContext Context(TargetSpeechLanguage hint = TargetSpeechLanguage.EN)
-        => new(SessionId, SttModelId, hint);
+    private static ConsentSessionContext Context(
+        TargetSpeechLanguage hint = TargetSpeechLanguage.EN, bool nameSpeakers = true)
+        => new(SessionId, SttModelId, hint, nameSpeakers);
 
     private static TranscriptUtterance Mic(string text, double duration = 1.0)
         => new(TranscriptSpeaker.You, text, DateTimeOffset.UtcNow, SpeakerLabel: null, SegmentId: null, DurationSeconds: duration);
@@ -65,9 +66,10 @@ public sealed class ConsentForwardLoopTests
         public Task<ConsentGateOutcome> ProcessAsync(
             TranscriptUtterance utterance,
             TargetSpeechLanguage hint = TargetSpeechLanguage.EN,
-            Func<string, string, bool>? renameOverride = null)
+            Func<string, string, bool>? renameOverride = null,
+            bool nameSpeakers = true)
             => Loop.ProcessAsync(
-                Context(hint), utterance, Sink.Writer, renameOverride ?? RenameViaConsentManager,
+                Context(hint, nameSpeakers), utterance, Sink.Writer, renameOverride ?? RenameViaConsentManager,
                 TestContext.Current.CancellationToken);
 
         public bool TryReadEmitted(out TranscriptUtterance utterance) => Sink.Reader.TryRead(out utterance!);
@@ -185,6 +187,94 @@ public sealed class ConsentForwardLoopTests
         Assert.Equal(ConsentGateOutcome.DropUnconsented, outcome);
         Assert.Equal(ConsentState.Unknown, fx.Consent.CurrentState("Speaker 2"));
         Assert.Equal(ConsentState.Granted, fx.Consent.CurrentState("Carol"));
+    }
+
+    // A name typed before the speaker consented is not theirs to give: it stays out of the plaintext audit
+    // trail and out of the evidence label, which names the evidence file.
+    [Fact]
+    public async Task ANameGivenBeforeConsent_StaysOutOfTheAuditTrailAndTheEvidenceLabel()
+    {
+        var fx = new Fixture();
+        fx.Consent.GetOrCreate("Speaker 1");
+        Assert.True(fx.Consent.Rename("Speaker 1", "Chef"));
+        var sentence = "My name is Max and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Max", "en", NamedConsentClassifier.CrispConfidence));
+
+        var outcome = await fx.ProcessAsync(Loopback("Chef", sentence));
+
+        Assert.Equal(ConsentGateOutcome.EmitConsentGrant, outcome);
+        await fx.EvidenceStore.Received(1).SaveGrantAsync(
+            SessionId,
+            Arg.Is<ConsentEvidence>(e => e.SpeakerLabel == "Speaker 1" && e.ExtractedName == "Max"),
+            Arg.Any<CancellationToken>());
+        Assert.NotEmpty(fx.AuditEvents);
+        Assert.All(fx.AuditEvents, e => Assert.Equal("Speaker 1", e.SpeakerLabel));
+    }
+
+    // Without naming the sentence is not emitted either: it carries the very name the mode keeps out.
+    [Fact]
+    public async Task WithoutSpeakerNaming_AGrantKeepsTheDiarizerLabel_AndTheNameStaysInTheEvidence()
+    {
+        var fx = new Fixture();
+        var sentence = "My name is Max and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Max", "en", NamedConsentClassifier.CrispConfidence));
+        var renamed = false;
+
+        var outcome = await fx.ProcessAsync(
+            Loopback("Speaker 1", sentence),
+            renameOverride: (_, _) => renamed = true,
+            nameSpeakers: false);
+
+        Assert.Equal(ConsentGateOutcome.GrantWithoutName, outcome);
+        Assert.False(renamed);
+        Assert.False(fx.TryReadEmitted(out _));
+        Assert.Equal(ConsentState.Granted, fx.Consent.CurrentState("Speaker 1"));
+        var granted = Assert.Single(fx.ConsentChangedEvents);
+        Assert.Equal("Speaker 1", granted.SpeakerLabel);
+        Assert.Null(granted.ExtractedName);
+        await fx.EvidenceStore.Received(1).SaveGrantAsync(
+            SessionId, Arg.Is<ConsentEvidence>(e => e.ExtractedName == "Max"), Arg.Any<CancellationToken>());
+    }
+
+    // Below the threshold the diarizer still hands out the nearest label, which may be a consented one.
+    [Fact]
+    public async Task AConsentedLabelMatchedBelowTheThreshold_IsDropped()
+    {
+        var fx = new Fixture();
+        var sentence = "My name is Dora and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Dora", "en", NamedConsentClassifier.CrispConfidence));
+        await fx.ProcessAsync(Loopback("Speaker 1", sentence));
+        fx.TryReadEmitted(out _);
+
+        var outcome = await fx.ProcessAsync(
+            Loopback("Dora", "a voice that only resembles Dora") with { SpeakerBelowMatchThreshold = true });
+
+        Assert.Equal(ConsentGateOutcome.DropBelowMatchThreshold, outcome);
+        Assert.False(fx.TryReadEmitted(out _));
+        Assert.Equal(1, fx.Loop.DroppedBelowMatchThresholdCount);
+        Assert.Single(fx.Loop.VoiceSamples); // only the consent sentence itself
+    }
+
+    [Fact]
+    public async Task AConsentSentenceMatchedBelowTheThreshold_GrantsNothing()
+    {
+        var fx = new Fixture();
+        var sentence = "My name is Emil and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Emil", "en", NamedConsentClassifier.CrispConfidence));
+
+        var outcome = await fx.ProcessAsync(
+            Loopback("Speaker 1", sentence) with { SpeakerBelowMatchThreshold = true });
+
+        Assert.Equal(ConsentGateOutcome.DropBelowMatchThreshold, outcome);
+        Assert.False(fx.TryReadEmitted(out _));
+        Assert.Equal(ConsentState.Unknown, fx.Consent.CurrentState("Speaker 1"));
+        fx.Classifier.DidNotReceiveWithAnyArgs().Classify(default!, default);
+        await fx.EvidenceStore.DidNotReceive().SaveGrantAsync(
+            Arg.Any<string>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

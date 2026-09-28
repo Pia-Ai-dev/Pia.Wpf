@@ -105,6 +105,20 @@ public class AppSettings
     /// </summary>
     public bool AllowProviderManagement { get; set; } = true;
 
+    /// <summary>Provider types this device may use, by <see cref="AiProviderType"/> name; null or empty allows
+    /// all. Pia Cloud is always allowed.</summary>
+    public List<string>? AllowedProviderTypes { get; set; }
+
+    /// <summary>Hosts a provider's endpoint may point at: an exact host, or <c>*.example.com</c> for its
+    /// subdomains; null or empty allows all. Pia Cloud is always allowed.</summary>
+    public List<string>? AllowedProviderEndpoints { get; set; }
+
+    /// <summary>False keeps every provider's own web search off, whatever the provider is set to.</summary>
+    public bool AllowProviderWebSearch { get; set; } = true;
+
+    /// <summary>False stops local MCP servers from being added or started.</summary>
+    public bool AllowLocalMcpServers { get; set; } = true;
+
     /// <summary>
     /// False hides add/edit/delete on personas, leaving built-in and managed ones. Same enforce-only
     /// caveat as <see cref="AllowProviderManagement"/>.
@@ -171,6 +185,9 @@ public class AppSettings
     // for a meeting where it is visibly wrong: a confidently mislabelled transcript is worse than an
     // unlabelled one. Local-only (no SyncSettings mirror).
     public bool MeetingSuppressSpeakerLabels { get; set; } = true;
+    // Off keeps every speaker at the diarizer's label: no name from the consent sentence, no rename, and no
+    // roster in summaries or saved notes. Local-only (no SyncSettings mirror).
+    public bool MeetingSpeakerNaming { get; set; } = true;
     public float SpeakerEmbeddingThreshold { get; set; } = 0.50f;
     // Caps how many distinct speakers diarization may create in one meeting; 0 = no limit. Local-only.
     public int MeetingMaxSpeakers { get; set; } = 0;

@@ -7,6 +7,7 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 
 namespace Pia.ViewModels;
 
@@ -96,9 +97,15 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     private async Task LoadProviderPolicyAsync()
     {
-        _allowProviderManagement = (await _settingsService.GetSettingsAsync()).AllowProviderManagement;
+        var settings = await _settingsService.GetSettingsAsync();
+        _allowProviderManagement = settings.AllowProviderManagement;
+        _providerPolicy = settings;
         OnPropertyChanged(nameof(IsProviderStepVisible));
         OnPropertyChanged(nameof(VisibleStepCount));
+        OnPropertyChanged(nameof(WizardProviderTypes));
+        OnPropertyChanged(nameof(IsProviderEndpointBlocked));
+        if (!ProviderPolicy.IsTypeAllowed(SelectedProviderType, settings) && WizardProviderTypes.Count > 0)
+            SelectedProviderType = WizardProviderTypes[0];
     }
 
     private async Task PersistLanguageAsync(TargetLanguage language)
@@ -165,10 +172,18 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProviderSummary))]
+    [NotifyPropertyChangedFor(nameof(IsProviderEndpointBlocked))]
     private AiProviderType _selectedProviderType = AiProviderType.OpenAI;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProviderEndpointBlocked))]
     private string _providerEndpoint = string.Empty;
+
+    private AppSettings? _providerPolicy;
+
+    public bool IsProviderEndpointBlocked =>
+        !string.IsNullOrWhiteSpace(ProviderEndpoint)
+        && !ProviderPolicy.IsEndpointAllowed(SelectedProviderType, ProviderEndpoint, _providerPolicy);
 
     [ObservableProperty]
     private string _providerApiKey = string.Empty;
@@ -198,9 +213,12 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     public ObservableCollection<string> AvailableModels { get; } = [];
 
-    /// <summary>Provider types available in wizard (excludes PiaCloud).</summary>
-    public IReadOnlyList<AiProviderType> WizardProviderTypes { get; } =
+    private static readonly AiProviderType[] AllWizardProviderTypes =
         [AiProviderType.OpenAI, AiProviderType.AzureOpenAI, AiProviderType.Ollama, AiProviderType.OpenRouter, AiProviderType.OpenAICompatible, AiProviderType.Mistral, AiProviderType.Anthropic];
+
+    /// <summary>Provider types available in wizard (excludes PiaCloud), limited by the organization's policy.</summary>
+    public IReadOnlyList<AiProviderType> WizardProviderTypes =>
+        AllWizardProviderTypes.Where(t => ProviderPolicy.IsTypeAllowed(t, _providerPolicy)).ToList();
 
     partial void OnSelectedProviderTypeChanged(AiProviderType value)
     {
@@ -223,6 +241,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
         NextOrFinishCommand.NotifyCanExecuteChanged();
     }
+
+    // Next also keys off the address, so an edit after a passed test must re-check it.
+    partial void OnProviderEndpointChanged(string value) => NextOrFinishCommand.NotifyCanExecuteChanged();
 
     // --- Ready step summary ---
 
@@ -387,7 +408,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         }
 
         // Provider step (step 3): block Next unless connection test passed (only when shown)
-        if (CurrentStep == 3 && IsProviderStepVisible && !ConnectionTestPassed) return false;
+        if (CurrentStep == 3 && IsProviderStepVisible && (!ConnectionTestPassed || IsProviderEndpointBlocked)) return false;
 
         return true;
     }

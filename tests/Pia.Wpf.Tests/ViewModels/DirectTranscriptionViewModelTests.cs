@@ -136,6 +136,18 @@ public class DirectTranscriptionViewModelTests
     }
 
     [Fact]
+    public void WithoutSpeakerNaming_RenameIsUnavailable()
+    {
+        var (vm, service) = CreateSut();
+        service.RaiseSpeakerRegistered("Speaker 2");
+        Assert.True(vm.RenameSpeakerLabelCommand.CanExecute("Speaker 2"));
+
+        vm.NameSpeakers = false;
+
+        Assert.False(vm.RenameSpeakerLabelCommand.CanExecute("Speaker 2"));
+    }
+
+    [Fact]
     public async Task RenameRefusedByTheService_LeavesTheChipAndTranscriptUntouched()
     {
         // The service refuses a rename whose target label is already taken. The UI must not relabel

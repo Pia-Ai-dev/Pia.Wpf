@@ -551,6 +551,8 @@
   <data name="Settings_Diarization_SmartAuto_Description" xml:space="preserve"><value>Pia bewertet alle Stimmen im Verlauf des Meetings laufend neu und korrigiert frühere Sprecherzuordnungen automatisch. Die manuelle Feinabstimmung ist ausgeblendet, solange diese Option aktiv ist.</value></data>
   <data name="Settings_Diarization_SuppressLabels" xml:space="preserve"><value>Sprecherbezeichnungen im Transkript ausblenden</value></data>
   <data name="Settings_Diarization_SuppressLabels_Description" xml:space="preserve"><value>Zeigt und exportiert das Transkript ohne jede Sprecherbezeichnung. Die Sprechblasen bleiben nach Stimme gruppiert und eingefärbt; nur die Bezeichnungen entfallen — der Teil, der eine Identität behauptet. Sinnvoll, wenn die Zuordnung sichtbar falsch ist: ein Transkript ohne Bezeichnungen nützt einer Zusammenfassung mehr als ein selbstbewusst falsch beschriftetes.</value></data>
+  <data name="Settings_Diarization_NameSpeakers" xml:space="preserve"><value>Sprecher benennen</value></data>
+  <data name="Settings_Diarization_NameSpeakers_Description" xml:space="preserve"><value>Der Zustimmungssatz und das Umbenennen geben einem Sprecher einen Namen, und die Teilnehmerliste kommt in Zusammenfassungen und gespeicherte Notizen. Ausgeschaltet behält jeder Sprecher eine Bezeichnung wie „Speaker 1“, und ein im Zustimmungssatz genannter Name steht nur im Zustimmungsnachweis.</value></data>
   <data name="Settings_Diarization_MicEchoCancellation" xml:space="preserve"><value>Lautsprecher-Echo im Mikrofon entfernen</value></data>
   <data name="Settings_Diarization_MicEchoCancellation_Description" xml:space="preserve"><value>Führt das Mikrofon über die Windows-Echounterdrückung, damit die Gegenseite, die aus Ihren Lautsprechern kommt, entfernt wird, bevor sie transkribiert wird. Ohne das werden deren Worte ein zweites Mal als Ihre aufgezeichnet. Nur abschalten, wenn Sie ohnehin immer ein Headset tragen und die mitgelieferte Rauschunterdrückung und Pegelregelung stört.</value></data>
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Empfindlichkeit der Sprecherzuordnung</value></data>
@@ -750,6 +752,9 @@
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Anbietertyp *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Endpunkt *</value></data>
+  <data name="Dialog_ProviderEdit_TypeBlocked" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt diesen Anbietertyp nicht.</value></data>
+  <data name="Dialog_ProviderEdit_EndpointBlocked" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt diese Adresse nicht.</value></data>
+  <data name="Dialog_ProviderEdit_RecipientNotice" xml:space="preserve"><value>Deine Anfragen, Anhänge und Gesprächsinhalte gehen an den Betreiber dieser Adresse. Pia prüft diesen Dienst nicht.</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>API-Schlüssel</value></data>
   <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud speichert API-Schlüssel von Anbietern nur bei aktivierter Ende-zu-Ende-Verschlüsselung. Dieser Schlüssel bleibt auf diesem Gerät – gib ihn auf deinen anderen Geräten erneut ein oder aktiviere die Ende-zu-Ende-Verschlüsselung unter „Konto“.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Modellname</value></data>
@@ -1014,7 +1019,7 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Jetzt einrichten</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, werden alle synchronisierten Daten auf deinem Gerät verschlüsselt, bevor sie an den Server gesendet werden. Beim Aktivieren werden ein Schlüssel und ein Wiederherstellungscode erzeugt und eine vollständige Synchronisation ausgelöst. Die Aktivierung ist für dieses Konto dauerhaft.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, verschlüsselt dein Gerät die Inhalte, die du synchronisierst, bevor sie an den Server gehen; der Server hat deinen Schlüssel nur in verschlüsselter Form. Kennungen, Zeitpunkte und Reihenfolge bleiben lesbar. Beim Aktivieren werden ein Schlüssel und ein Wiederherstellungscode erzeugt und eine vollständige Synchronisation ausgelöst. Die Aktivierung ist für dieses Konto dauerhaft.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
   <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung lässt sich für dieses Konto nicht abschalten. Sie endet nur zusammen mit den synchronisierten Inhalten, wenn das Konto gelöscht wird oder eine Administration seine Synchronisationsdaten zurücksetzt.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Verschlüsselung wird aktualisiert und Daten werden synchronisiert...</value></data>
@@ -1679,6 +1684,8 @@
   <data name="McpServers_Title" xml:space="preserve"><value>MCP-Server</value></data>
   <data name="McpServers_Subtitle" xml:space="preserve"><value>Binde MCP-Server ein, die auf diesem Computer laufen. Ihren Tool-Namen wird der Servername vorangestellt, damit sie nie mit Pias eigenen Tools kollidieren.</value></data>
   <data name="McpServers_Add" xml:space="preserve"><value>Server hinzufügen</value></data>
+  <data name="McpServers_BlockedByPolicy" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt auf diesem Gerät keine lokalen MCP-Server.</value></data>
+  <data name="McpServers_Edit_RecipientNotice" xml:space="preserve"><value>Dieser Server läuft als Programm auf diesem Gerät, mit deinen Rechten. Was der Assistent an seine Werkzeuge gibt, geht an dieses Programm und dorthin, womit es sich verbindet.</value></data>
   <data name="McpServers_Empty" xml:space="preserve"><value>Noch keine MCP-Server</value></data>
   <data name="McpServers_EmptyHint" xml:space="preserve"><value>Füge einen Server hinzu, um dem Assistenten Tools außerhalb von Pia zu geben.</value></data>
   <data name="McpServers_Name" xml:space="preserve"><value>Name</value></data>

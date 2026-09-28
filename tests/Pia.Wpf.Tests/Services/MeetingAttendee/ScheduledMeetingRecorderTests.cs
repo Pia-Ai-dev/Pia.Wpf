@@ -91,11 +91,9 @@ public sealed class ScheduledMeetingRecorderTests
         }
     }
 
-    private static ScheduledMeetingRecorder NewRecorder(
-        IMemoryService memory, IIngestScheduler? ingest = null, AppSettings? settings = null) =>
+    private static ScheduledMeetingRecorder NewRecorder(IMemoryService memory, AppSettings? settings = null) =>
         Quickened(new ScheduledMeetingRecorder(
-            NewSettings(settings), memory, ingest ?? Substitute.For<IIngestScheduler>(),
-            NullLogger<ScheduledMeetingRecorder>.Instance));
+            NewSettings(settings), memory, NullLogger<ScheduledMeetingRecorder>.Instance));
 
     /// <summary>Both waits exist for a real meeting's pace; a test should not sit out a real minute.</summary>
     private static ScheduledMeetingRecorder Quickened(ScheduledMeetingRecorder recorder)
@@ -129,13 +127,28 @@ public sealed class ScheduledMeetingRecorderTests
     }
 
     [Fact]
+    public async Task RecordAsync_WithoutSpeakerNaming_SavesNoAttendees()
+    {
+        var attendee = new FakeAttendee();
+        var memory = NewMemory();
+
+        await RunAsync(NewRecorder(memory, new AppSettings { MeetingSpeakerNaming = false }), attendee,
+            a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
+
+        var markdown = (string)memory.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync))
+            .GetArguments()[1]!;
+        Assert.DoesNotContain("attendees:", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Marco Altmann", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RecordAsync_SavesTheTranscriptUnderTheTranscriptsFolder()
     {
         var attendee = new FakeAttendee();
         var memory = NewMemory();
-        var ingest = Substitute.For<IIngestScheduler>();
 
-        var result = await RunAsync(NewRecorder(memory, ingest), attendee, a =>
+        var result = await RunAsync(NewRecorder(memory), attendee, a =>
         {
             a.Emit(Utterance("agenda item one", 0, "Speaker 1", 1));
             a.Emit(Utterance("agreed", 40, "Speaker 2", 2));
@@ -156,16 +169,20 @@ public sealed class ScheduledMeetingRecorderTests
         Assert.Contains("agreed", markdown, StringComparison.Ordinal);
     }
 
+    // Nobody was there to decide, so the language model does not evaluate the transcript until the user asks.
     [Fact]
-    public async Task RecordAsync_TriggersIngest_SoRecallCanReachTheTranscript()
+    public async Task RecordAsync_LeavesTheEvaluationToTheUser()
     {
         var attendee = new FakeAttendee();
-        var ingest = Substitute.For<IIngestScheduler>();
+        var memory = NewMemory();
 
-        var result = await RunAsync(NewRecorder(NewMemory(), ingest), attendee,
+        await RunAsync(NewRecorder(memory), attendee,
             a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
 
-        await ingest.Received(1).RunAsync(result.Reference!, Arg.Any<CancellationToken>());
+        var markdown = (string)memory.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync))
+            .GetArguments()[1]!;
+        Assert.Contains("\ningest: manual\n", markdown, StringComparison.Ordinal);
     }
 
     [Fact]

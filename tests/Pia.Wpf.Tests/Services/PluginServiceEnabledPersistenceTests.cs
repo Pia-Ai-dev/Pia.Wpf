@@ -55,7 +55,7 @@ public sealed class PluginServiceEnabledPersistenceTests : IDisposable
             Substitute.For<IScreenCaptureToolHandler>(),
             Substitute.For<IHelpToolHandler>(),
             Substitute.For<IAssignmentSurfaceCache>(),
-            Substitute.For<ISettingsService>(),
+            SettingsStubs.Returning(),
             NullLogger<PluginService>.Instance,
             sqlite);
     }

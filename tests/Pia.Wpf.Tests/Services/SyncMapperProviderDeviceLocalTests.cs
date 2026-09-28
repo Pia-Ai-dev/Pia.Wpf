@@ -186,7 +186,13 @@ public class SyncMapperProviderDeviceLocalTests
         // Omitted from the DTO on purpose and handled elsewhere:
         // EncryptedApiKey is preserved conditionally by ProviderService.UpdateProviderAsync (an E2EE pull
         // can carry a real rotated key, so it must not be clobbered unconditionally).
-        var handledElsewhere = new[] { nameof(AiProvider.EncryptedApiKey) };
+        // WebSearchBlockedByPolicy and UsesWebSearch are runtime-only, stamped from this device's policy.
+        var handledElsewhere = new[]
+        {
+            nameof(AiProvider.EncryptedApiKey),
+            nameof(AiProvider.WebSearchBlockedByPolicy),
+            nameof(AiProvider.UsesWebSearch),
+        };
 
         var unaccounted = typeof(AiProvider).GetProperties()
             .Select(p => p.Name)

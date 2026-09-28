@@ -91,6 +91,7 @@
   <data name="Msg_Assistant_MessageCopied" xml:space="preserve"><value>Nachricht in die Zwischenablage kopiert.</value></data>
   <data name="Msg_Assistant_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
   <data name="Msg_Assistant_NoProviderConfigured" xml:space="preserve"><value>Kein KI-Anbieter für den Assistentenmodus konfiguriert. Bitte füge einen in den Einstellungen hinzu.</value></data>
+  <data name="Msg_Assistant_ProviderBlockedByPolicy" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt diesen KI-Anbieter nicht. Wähle in Einstellungen → Anbieter einen anderen.</value></data>
   <data name="Msg_Assistant_NoProviderInline" xml:space="preserve"><value>Kein KI-Anbieter konfiguriert. Bitte füge einen in den Einstellungen hinzu.</value></data>
   <data name="Msg_Assistant_PermanentDeleteMemory" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>

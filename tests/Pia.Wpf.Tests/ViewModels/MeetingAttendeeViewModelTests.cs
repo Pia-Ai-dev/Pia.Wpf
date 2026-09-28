@@ -790,6 +790,36 @@ public class MeetingAttendeeViewModelTests
     }
 
     [Fact]
+    public void WithoutSpeakerNaming_RenameIsUnavailable_AndTheDisclaimerSaysSo()
+    {
+        var (vm, _) = CreateSut();
+        Assert.True(vm.RenameSpeakerLabelCommand.CanExecute("Speaker 1"));
+        Assert.Equal("MeetingAttendee_SpeakerDisclaimer", vm.SpeakerDisclaimer);
+
+        vm.NameSpeakers = false;
+
+        Assert.False(vm.RenameSpeakerLabelCommand.CanExecute("Speaker 1"));
+        Assert.Equal("MeetingAttendee_SpeakerDisclaimer_NoNames", vm.SpeakerDisclaimer);
+    }
+
+    [Fact]
+    public void WithoutSpeakerNaming_TheSummaryCarriesNoRoster()
+    {
+        var (vm, service) = CreateSut();
+        service.ObservedAttendees = new[] { "Marco Altmann", "Jane Doe" };
+        vm.NameSpeakers = false;
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+        string? captured = null;
+        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+
+        vm.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.NotNull(captured);
+        Assert.DoesNotContain("Marco Altmann", captured);
+        Assert.DoesNotContain("MeetingAttendee_SummaryPrompt_Attendees", captured);
+    }
+
+    [Fact]
     public void Summarize_OmitsAttendeesSection_WhenNoneObserved()
     {
         var (vm, _) = CreateSut();
@@ -955,6 +985,23 @@ public class MeetingAttendeeViewModelTests
 
         Assert.NotNull(seen);
         Assert.Equal("Marco Altmann, Jane Doe", seen!.Attendees);
+    }
+
+    [Fact]
+    public async Task WithoutSpeakerNaming_SaveToVaultPrefillsNoAttendees()
+    {
+        var (vm, service, dialog, _, _) = CreateSutWithVault();
+        service.ObservedAttendees = new[] { "Marco Altmann", "Jane Doe" };
+        vm.NameSpeakers = false;
+        MeetingSaveEditModel? seen = null;
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { seen = ci.Arg<MeetingSaveEditModel>(); return Task.FromResult(false); });
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        Assert.NotNull(seen);
+        Assert.True(string.IsNullOrEmpty(seen!.Attendees));
     }
 
     [Fact]

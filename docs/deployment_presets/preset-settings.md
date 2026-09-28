@@ -146,6 +146,10 @@ the local `settings.json` (that is the anti-circumvention path), they just never
 | Key | Type / default | |
 |---|---|---|
 | `allowProviderManagement` | bool, `true` | 🔒 **Put this in `enforce`.** `false` hides Add provider and refuses add/edit/delete; the configured providers stay usable. The tab shows "Managed by your organization" instead of the Add button. Also removes the first-run wizard's provider step, which is the only other place a provider gets created — so a managed machine is never asked to configure one |
+| `allowedProviderTypes` | string[], `null` | 🔒 **Put this in `enforce`.** Provider types this device may use, by name: `OpenAI`, `AzureOpenAI`, `Ollama`, `OpenRouter`, `OpenAICompatible`, `Mistral`, `VLlm`, `Anthropic` (case-insensitive). `null` or `[]` allows all. Pia Cloud is always allowed. The provider dialog and the first-run wizard offer only these types, an existing provider of another type cannot be saved, and a request to it is refused before anything is sent |
+| `allowedProviderEndpoints` | string[], `null` | 🔒 **Put this in `enforce`.** Hosts a provider's address may point at: an exact host (`llm.corp.example`) or `*.example.com` for its subdomains; a pattern written as a URL counts by its host. `null` or `[]` allows all. Pia Cloud is exempt. Another address cannot be saved, models are not fetched from it, and a request to it is refused |
+| `allowProviderWebSearch` | bool, `true` | 🔒 **Put this in `enforce`.** `false` keeps every provider's own web search off (OpenAI, OpenRouter, Anthropic, Mistral agents) without clearing the user's choice; the checkbox is locked. Pia Cloud's search runs on the server and is not affected |
+| `allowLocalMcpServers` | bool, `true` | 🔒 **Put this in `enforce`.** `false` locks Add server under Settings → Assistant → MCP servers, refuses saving and testing one, and stops local servers that are running; each says why. Servers the administrator distributes are not affected |
 | `allowPersonaManagement` | bool, `true` | 🔒 **`enforce` only.** `false` hides Add persona and refuses add/edit/duplicate/delete. Built-in and managed personas stay available |
 | `blockedBuiltInPersonas` | string[], `null` | ✓ Hides built-ins from the picker. Keys: `PiaPersonal`, `PiaBusiness`, `ExperiencedCoder`, `MarketingWriter`, `FinancialExpert`, `WorldwideCompanyCeo`, `ExplainItSimply` (case-insensitive; a Guid also works). Unknown entries are ignored. Hidden ids stay reserved, so a hidden built-in cannot be re-created as a user persona, and one already in an agent-persona roster is kept rather than pruned — unblocking restores it. If you block the persona a mode falls back to, resolution degrades to another built-in rather than failing |
 | `useSameProviderForAllModes` | bool, `true` | 🔒 ✓ |
@@ -197,6 +201,7 @@ sync/managed personas.
 | `meetingAttendeeShowBrowserWindow` | bool, `false` | ✓ |
 | `enableMeetingDiarization` | bool, `true` | ✓ |
 | `meetingSmartSpeakerDetection` | bool, `true` | ✓ |
+| `meetingSpeakerNaming` | bool, `true` | ✓ `false` never names a speaker: the consent sentence's name stays in the consent record, rename is off, and summaries and saved notes carry no attendee list. Put it under `enforce` to hold it |
 | `speakerEmbeddingThreshold` | float, `0.50` | ✓ |
 | `meetingMaxSpeakers` | int, `0` (auto) | ✓ |
 | `meetingMinSpeechSeconds` | float, `1.5` | ✓ |

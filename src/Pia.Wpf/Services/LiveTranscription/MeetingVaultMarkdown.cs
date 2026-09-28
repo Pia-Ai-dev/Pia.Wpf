@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Pia.Infrastructure.Vault;
 using Pia.Models;
+using Pia.Services.Wiki;
 
 namespace Pia.Services.LiveTranscription;
 
@@ -17,7 +18,8 @@ public sealed record MeetingVaultMetadata(
     IReadOnlyCollection<string> Attendees,
     IReadOnlyCollection<string> Tags,
     string? Project,
-    string? Notes);
+    string? Notes,
+    bool ManualIngest = false);
 
 /// <summary>
 /// Renders a meeting as a vault <c>sources/</c> document: a YAML metadata block followed by the
@@ -55,6 +57,11 @@ public static class MeetingVaultMarkdown
         }
 
         AppendNotes(sb, meta.Notes);
+        if (meta.ManualIngest)
+        {
+            sb.Append(SourceIngestMarker.YamlLine).Append('\n');
+        }
+
         sb.Append("---\n");
         sb.Append(body);
         return sb.ToString();

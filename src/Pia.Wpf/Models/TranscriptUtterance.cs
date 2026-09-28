@@ -26,6 +26,7 @@ public enum TranscriptSpeaker
 /// returned. Null when the source could not date its samples. Only cross-channel overlap uses it.
 /// </param>
 /// <param name="SpeechEnd">End of the spoken audio; null whenever <paramref name="SpeechStart"/> is.</param>
+/// <param name="SpeakerBelowMatchThreshold">The diarizer gave <paramref name="SpeakerLabel"/> as the nearest match only.</param>
 public sealed record TranscriptUtterance(
     TranscriptSpeaker Speaker,
     string Text,
@@ -34,4 +35,5 @@ public sealed record TranscriptUtterance(
     long? SegmentId = null,
     double? DurationSeconds = null,
     DateTimeOffset? SpeechStart = null,
-    DateTimeOffset? SpeechEnd = null);
+    DateTimeOffset? SpeechEnd = null,
+    bool SpeakerBelowMatchThreshold = false);

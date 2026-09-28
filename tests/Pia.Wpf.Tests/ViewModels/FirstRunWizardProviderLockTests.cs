@@ -10,7 +10,7 @@ using Xunit;
 
 /// <summary>
 /// The wizard is the only provider-creation path outside the Providers tab, and on a freshly deployed
-/// machine it is the first screen — so <c>allowProviderManagement: false</c> has to reach it.
+/// machine it is the first screen — so the organization's provider policy has to reach it.
 /// </summary>
 public class FirstRunWizardProviderLockTests
 {
@@ -97,5 +97,29 @@ public class FirstRunWizardProviderLockTests
         await sut.NextOrFinishCommand.ExecuteAsync(null);
 
         await providers.Received(1).AddProviderAsync(Arg.Any<AiProvider>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task ABlockedAddressAfterAPassedTest_ReChecksNext()
+    {
+        var sut = await LoadedSut(
+            new AppSettings { AllowedProviderEndpoints = ["api.openai.com"] }, Substitute.For<IProviderService>());
+
+        // The address check reads the policy the ctor loads; wait until it applies.
+        sut.ProviderEndpoint = "https://api.mistral.ai/v1";
+        for (var i = 0; i < 100 && !sut.IsProviderEndpointBlocked; i++)
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+
+        sut.ProviderEndpoint = "https://api.openai.com/v1";
+        sut.ConnectionTestPassed = true;
+        sut.CurrentStep = 3;
+        Assert.True(sut.NextOrFinishCommand.CanExecute(null));
+
+        var rechecked = false;
+        sut.NextOrFinishCommand.CanExecuteChanged += (_, _) => rechecked = true;
+        sut.ProviderEndpoint = "https://api.mistral.ai/v1";
+
+        Assert.True(rechecked);
+        Assert.False(sut.NextOrFinishCommand.CanExecute(null));
     }
 }

@@ -114,9 +114,17 @@ public partial class MeetingSettingsViewModel : UiThreadViewModel, IDisposable
     private bool _meetingSuppressSpeakerLabels;
 
     [ObservableProperty]
+    private bool _meetingSpeakerNaming = true;
+
+    [ObservableProperty]
     private bool _micEchoCancellation = true;
 
     partial void OnMeetingSuppressSpeakerLabelsChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnMeetingSpeakerNamingChanged(bool value)
     {
         if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
     }
@@ -216,6 +224,7 @@ public partial class MeetingSettingsViewModel : UiThreadViewModel, IDisposable
         MeetingAttendeeShowBrowserWindow = settings.MeetingAttendeeShowBrowserWindow;
         MeetingSmartSpeakerDetection = settings.MeetingSmartSpeakerDetection;
         MeetingSuppressSpeakerLabels = settings.MeetingSuppressSpeakerLabels;
+        MeetingSpeakerNaming = settings.MeetingSpeakerNaming;
         MicEchoCancellation = settings.MicEchoCancellation;
 
         _isLoading = false;
@@ -232,6 +241,7 @@ public partial class MeetingSettingsViewModel : UiThreadViewModel, IDisposable
         settings.MeetingAttendeeShowBrowserWindow = MeetingAttendeeShowBrowserWindow;
         settings.MeetingSmartSpeakerDetection = MeetingSmartSpeakerDetection;
         settings.MeetingSuppressSpeakerLabels = MeetingSuppressSpeakerLabels;
+        settings.MeetingSpeakerNaming = MeetingSpeakerNaming;
         settings.MicEchoCancellation = MicEchoCancellation;
         await _settingsService.SaveSettingsAsync(settings);
     }

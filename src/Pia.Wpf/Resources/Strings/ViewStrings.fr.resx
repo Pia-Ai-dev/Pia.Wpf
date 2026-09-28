@@ -551,6 +551,8 @@
   <data name="Settings_Diarization_SmartAuto_Description" xml:space="preserve"><value>Pia réévalue toutes les voix au fil de la réunion et corrige automatiquement les attributions précédentes. Les réglages manuels sont masqués tant que cette option est active.</value></data>
   <data name="Settings_Diarization_SuppressLabels" xml:space="preserve"><value>Masquer les libellés d’intervenant dans le transcript</value></data>
   <data name="Settings_Diarization_SuppressLabels_Description" xml:space="preserve"><value>Affiche et exporte le transcript sans aucun libellé d’intervenant. Les bulles restent regroupées et colorées par voix ; seuls les libellés disparaissent, c’est-à-dire la partie qui affirme une identité. À utiliser lorsque l’attribution est visiblement erronée : un transcript sans libellés sert mieux un résumé qu’un transcript étiqueté à tort avec assurance.</value></data>
+  <data name="Settings_Diarization_NameSpeakers" xml:space="preserve"><value>Nommer les intervenants</value></data>
+  <data name="Settings_Diarization_NameSpeakers_Description" xml:space="preserve"><value>La phrase de consentement et le renommage donnent un nom à un intervenant, et la liste des participants figure dans les résumés et les notes enregistrées. Désactivé, chaque intervenant garde un libellé comme « Speaker 1 », et un nom prononcé dans la phrase de consentement ne figure que dans la preuve du consentement.</value></data>
   <data name="Settings_Diarization_MicEchoCancellation" xml:space="preserve"><value>Supprimer l’écho des haut-parleurs sur le microphone</value></data>
   <data name="Settings_Diarization_MicEchoCancellation_Description" xml:space="preserve"><value>Fait passer le microphone par l’annulateur d’écho de Windows afin que la voix de l’autre partie, sortant de vos haut-parleurs, soit retirée avant d’être transcrite. Sans cela, ses propos sont enregistrés une seconde fois comme les vôtres. À désactiver seulement si vous portez toujours un casque et que la suppression de bruit et le contrôle de gain associés vous gênent.</value></data>
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Sensibilité de correspondance des intervenants</value></data>
@@ -750,6 +752,9 @@
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Nom *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Type de fournisseur *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Point d'accès *</value></data>
+  <data name="Dialog_ProviderEdit_TypeBlocked" xml:space="preserve"><value>La stratégie de votre organisation n'autorise pas ce type de fournisseur.</value></data>
+  <data name="Dialog_ProviderEdit_EndpointBlocked" xml:space="preserve"><value>La stratégie de votre organisation n'autorise pas cette adresse.</value></data>
+  <data name="Dialog_ProviderEdit_RecipientNotice" xml:space="preserve"><value>Vos requêtes, pièces jointes et contenus de conversation vont à l'exploitant de cette adresse. Pia ne vérifie pas ce service.</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>Clé API</value></data>
   <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud ne conserve les clés API des fournisseurs que si le chiffrement de bout en bout est activé. Cette clé reste sur cet appareil : saisissez-la de nouveau sur vos autres appareils, ou activez le chiffrement de bout en bout dans Compte.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Nom du modèle</value></data>
@@ -1014,7 +1019,7 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Configurer maintenant</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Chiffrement de bout en bout</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, toutes les données synchronisées sont chiffrées sur votre appareil avant d'être envoyées au serveur. Une clé de chiffrement et un code de récupération sont générés à l'activation, qui déclenche une synchronisation complète. L'activation est définitive pour votre compte.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, votre appareil chiffre le contenu que vous synchronisez avant de l'envoyer au serveur, qui ne détient votre clé que sous forme chiffrée. Les identifiants, les horodatages et l'ordre restent lisibles. Une clé de chiffrement et un code de récupération sont générés à l'activation, qui déclenche une synchronisation complète. L'activation est définitive pour votre compte.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Activer le chiffrement de bout en bout</value></data>
   <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Le chiffrement de bout en bout ne peut pas être désactivé pour ce compte. Il ne prend fin qu'avec le contenu synchronisé, lorsque le compte est supprimé ou qu'un administrateur réinitialise ses données de synchronisation.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Mise à jour du chiffrement et synchronisation des données...</value></data>
@@ -1679,6 +1684,8 @@
   <data name="McpServers_Title" xml:space="preserve"><value>Serveurs MCP</value></data>
   <data name="McpServers_Subtitle" xml:space="preserve"><value>Connectez des serveurs MCP qui s'exécutent sur cet ordinateur. Le nom du serveur préfixe celui de ses outils, pour qu'ils n'entrent jamais en conflit avec ceux de Pia.</value></data>
   <data name="McpServers_Add" xml:space="preserve"><value>Ajouter un serveur</value></data>
+  <data name="McpServers_BlockedByPolicy" xml:space="preserve"><value>La stratégie de votre organisation n'autorise pas de serveurs MCP locaux sur cet appareil.</value></data>
+  <data name="McpServers_Edit_RecipientNotice" xml:space="preserve"><value>Ce serveur s'exécute comme un programme sur cet appareil, avec vos droits. Ce que l'assistant transmet à ses outils va à ce programme et à ce à quoi il se connecte.</value></data>
   <data name="McpServers_Empty" xml:space="preserve"><value>Aucun serveur MCP</value></data>
   <data name="McpServers_EmptyHint" xml:space="preserve"><value>Ajoutez un serveur pour donner à l'assistant des outils extérieurs à Pia.</value></data>
   <data name="McpServers_Name" xml:space="preserve"><value>Nom</value></data>

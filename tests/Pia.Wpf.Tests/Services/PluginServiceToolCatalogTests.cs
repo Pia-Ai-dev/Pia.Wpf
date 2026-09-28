@@ -58,7 +58,7 @@ public sealed class PluginServiceToolCatalogTests : IDisposable
             Substitute.For<IScreenCaptureToolHandler>(),
             Substitute.For<IHelpToolHandler>(),
             Substitute.For<IAssignmentSurfaceCache>(),
-            Substitute.For<ISettingsService>(),
+            SettingsStubs.Returning(),
             NullLogger<PluginService>.Instance,
             _sqlite);
     }

@@ -7,6 +7,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Flow;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 using Pia.Shared.Models;
 
 namespace Pia.ViewModels.Models;
@@ -812,6 +813,21 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                     Kind = RunFailureKind.Generic,
                     Title = _localizationService["Msg_Error"],
                     Message = _localizationService["Msg_Assistant_NoProviderConfigured"],
+                });
+                await FinalizeFailedSetupAsync(session);
+                return true;
+            }
+
+            if (!ProviderPolicy.IsAllowed(provider, await _settingsService.GetSettingsAsync()))
+            {
+                assistantMessage.Content = _localizationService["Msg_Assistant_ProviderBlockedByPolicy"];
+                assistantMessage.IsStreaming = false;
+                session.SetState(ChatState.Error);
+                session.RaiseRunFailed(new RunFailedEventArgs
+                {
+                    Kind = RunFailureKind.Generic,
+                    Title = _localizationService["Msg_Error"],
+                    Message = _localizationService["Msg_Assistant_ProviderBlockedByPolicy"],
                 });
                 await FinalizeFailedSetupAsync(session);
                 return true;

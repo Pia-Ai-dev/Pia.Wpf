@@ -60,6 +60,9 @@ public interface IPluginService
     /// <summary>Starts the server, lists its tools and shuts it back down, without touching the catalogue.</summary>
     Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default);
 
+    /// <summary>False while the organization's policy keeps local MCP servers off this device.</summary>
+    bool AreLocalMcpServersAllowed { get; }
+
     /// <summary>Adds or replaces a local server, restarting its process. Returns the id, minted when
     /// <paramref name="pluginId"/> is null.</summary>
     Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default);

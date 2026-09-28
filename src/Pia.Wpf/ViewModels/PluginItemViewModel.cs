@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Pia.Shared.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Plugins;
 using Wpf.Ui.Controls;
 
 namespace Pia.ViewModels;
@@ -50,8 +51,8 @@ public partial class PluginItemViewModel : ObservableObject
     public void Initialize(SyncPlugin plugin, string? serverUrl)
     {
         _plugin = plugin;
-        IsEnabled = plugin.UserEnabled ?? true;
-        StatusText = plugin.IsActive ? "Active" : "Inactive";
+        IsEnabled = PluginEnablement.IsEnabled(plugin);
+        StatusText = IsEnabled ? "Active" : "Inactive";
         FallbackIcon = MapFallbackIcon(plugin);
         _ = LoadIconAsync(plugin.IconUrl, serverUrl);
     }

@@ -1015,6 +1015,8 @@ public class PolicyServiceTests : IDisposable
         nameof(AppSettings.ModePersonaDefaults),
         nameof(AppSettings.AgentPersonaRoster),
         nameof(AppSettings.AllowedSyncProviders),
+        nameof(AppSettings.AllowedProviderTypes),
+        nameof(AppSettings.AllowedProviderEndpoints),
         nameof(AppSettings.AlwaysAllowedTools),
         nameof(AppSettings.BlockedBuiltInPersonas),
         nameof(AppSettings.TodoColumnWidths)
@@ -1037,6 +1039,8 @@ public class PolicyServiceTests : IDisposable
         "modePersonaDefaults": { "Optimize": "22222222-2222-2222-2222-222222222222" },
         "agentPersonaRoster": { "Business": [ "33333333-3333-3333-3333-333333333333" ] },
         "allowedSyncProviders": [ "microsoft" ],
+        "allowedProviderTypes": [ "AzureOpenAI" ],
+        "allowedProviderEndpoints": [ "*.openai.azure.com" ],
         "alwaysAllowedTools": [ { "pluginId": "44444444-4444-4444-4444-444444444444", "toolName": "read_file", "grantedAt": "2026-01-01T00:00:00+00:00" } ],
         "blockedBuiltInPersonas": [ "coach" ],
         "todoColumnWidths": { "55555555-5555-5555-5555-555555555555": 240.0 },

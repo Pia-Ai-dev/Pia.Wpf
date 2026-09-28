@@ -72,7 +72,8 @@ public interface ISpeakerIdentificationService : IDisposable
 }
 
 /// <summary>Identify-or-register result carrying the journal id for the segment's embedding.</summary>
-public readonly record struct SpeakerSegmentResult(long SegmentId, string? Label);
+/// <param name="BelowMatchThreshold">The label is only the nearest one: the segment matched it below the threshold.</param>
+public readonly record struct SpeakerSegmentResult(long SegmentId, string? Label, bool BelowMatchThreshold = false);
 
 /// <summary>One retroactive label correction produced by an adaptive re-cluster pass.</summary>
 public readonly record struct SpeakerReassignment(long SegmentId, string? NewLabel);

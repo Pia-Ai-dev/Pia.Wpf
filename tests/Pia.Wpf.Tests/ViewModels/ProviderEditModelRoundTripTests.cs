@@ -15,6 +15,7 @@ public class ProviderEditModelRoundTripTests
         nameof(AiProvider.EncryptedApiKey),
         nameof(AiProvider.CreatedAt),
         nameof(AiProvider.UpdatedAt),
+        nameof(AiProvider.WebSearchBlockedByPolicy),
     ];
 
     private static AiProvider FullyPopulatedProvider() => new()

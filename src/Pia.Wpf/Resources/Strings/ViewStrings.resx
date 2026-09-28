@@ -514,6 +514,8 @@
   <data name="Settings_Diarization_SmartAuto_Description" xml:space="preserve"><value>Pia re-evaluates all voices as the meeting progresses and automatically corrects earlier speaker assignments. Manual tuning is hidden while this is on.</value></data>
   <data name="Settings_Diarization_SuppressLabels" xml:space="preserve"><value>Hide speaker labels in the transcript</value></data>
   <data name="Settings_Diarization_SuppressLabels_Description" xml:space="preserve"><value>Shows and exports the transcript without any speaker labels. Bubbles stay grouped and coloured by voice; only the labels, which are the part that claims an identity, are removed. Use this when attribution is visibly wrong — an unlabelled transcript serves a summary better than a confidently mislabelled one.</value></data>
+  <data name="Settings_Diarization_NameSpeakers" xml:space="preserve"><value>Name speakers</value></data>
+  <data name="Settings_Diarization_NameSpeakers_Description" xml:space="preserve"><value>Lets the consent sentence and a rename give a speaker a name, and adds the attendee list to summaries and saved notes. Switched off, every speaker keeps a label such as “Speaker 1”, and a name said in the consent sentence stays in the consent record only.</value></data>
   <data name="Settings_Diarization_MicEchoCancellation" xml:space="preserve"><value>Cancel speaker echo on the microphone</value></data>
   <data name="Settings_Diarization_MicEchoCancellation_Description" xml:space="preserve"><value>Routes the microphone through the Windows echo canceller so the other side, coming out of your loudspeakers, is removed before it is transcribed. Without it their words are recorded a second time as yours. Switch it off only if you always wear a headset and dislike the noise suppression and gain control that come with it.</value></data>
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Speaker matching sensitivity</value></data>
@@ -713,6 +715,9 @@
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Provider Type *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Endpoint *</value></data>
+  <data name="Dialog_ProviderEdit_TypeBlocked" xml:space="preserve"><value>Your organization's policy does not allow this provider type.</value></data>
+  <data name="Dialog_ProviderEdit_EndpointBlocked" xml:space="preserve"><value>Your organization's policy does not allow this address.</value></data>
+  <data name="Dialog_ProviderEdit_RecipientNotice" xml:space="preserve"><value>Your requests, attachments and conversation content go to whoever runs this address. Pia does not check that service.</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>API Key</value></data>
   <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud does not store provider API keys unless end-to-end encryption is on. This key stays on this device — enter it again on your other devices, or turn on end-to-end encryption under Account.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Model Name</value></data>
@@ -977,7 +982,7 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Set up now</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>End-to-End Encryption</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, all synced data is encrypted on your device before being sent to the server. An encryption key and recovery code are generated when encryption is enabled, and a full sync runs. Enabling is permanent for your account.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, your device encrypts the content you sync before sending it to the server, which holds your key only in encrypted form. IDs, timestamps and order stay readable. An encryption key and recovery code are generated when encryption is enabled, and a full sync runs. Enabling is permanent for your account.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Enable End-to-End Encryption</value></data>
   <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>End-to-end encryption cannot be turned off for this account. It ends only together with the synced content, when the account is deleted or an administrator resets its sync data.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Updating encryption and syncing data...</value></data>
@@ -1689,6 +1694,8 @@
   <data name="McpServers_Title" xml:space="preserve"><value>MCP servers</value></data>
   <data name="McpServers_Subtitle" xml:space="preserve"><value>Connect MCP servers that run on this computer. Their tool names are prefixed with the server name, so they never clash with Pia's own tools.</value></data>
   <data name="McpServers_Add" xml:space="preserve"><value>Add server</value></data>
+  <data name="McpServers_BlockedByPolicy" xml:space="preserve"><value>Your organization's policy does not allow local MCP servers on this device.</value></data>
+  <data name="McpServers_Edit_RecipientNotice" xml:space="preserve"><value>This server runs as a program on this device with your permissions. What the assistant passes to its tools goes to this program and to whatever it connects to.</value></data>
   <data name="McpServers_Empty" xml:space="preserve"><value>No MCP servers yet</value></data>
   <data name="McpServers_EmptyHint" xml:space="preserve"><value>Add a server to give the assistant tools from outside Pia.</value></data>
   <data name="McpServers_Name" xml:space="preserve"><value>Name</value></data>

@@ -68,6 +68,24 @@ public class AiClientService : IAiClientService
         _throttle = throttle;
     }
 
+    // One gate ahead of every handler, so a provider the organization does not allow never sees a request.
+    private async Task<AiProvider> EnforcePolicyAsync(AiProvider provider)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!ProviderPolicy.IsAllowed(provider, settings))
+        {
+            _logger.LogWarning("Refused a request to a {ProviderType} provider the policy does not allow", provider.ProviderType);
+            throw new ProviderBlockedByPolicyException();
+        }
+
+        if (settings.AllowProviderWebSearch || provider.WebSearchBlockedByPolicy)
+            return provider;
+
+        var withoutSearch = provider.Clone();
+        withoutSearch.WebSearchBlockedByPolicy = true;
+        return withoutSearch;
+    }
+
     /// <summary>The caller's timeoutCts owns the request bound; HttpClient's 100s default would fire first and surface as a bare cancellation.</summary>
     private HttpClient CreateAiHttpClient()
     {
@@ -209,6 +227,7 @@ public class AiClientService : IAiClientService
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
+        provider = await EnforcePolicyAsync(provider);
         var providerHandler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await providerHandler.CreateChatClientAsync(
@@ -865,6 +884,7 @@ public class AiClientService : IAiClientService
 
         try
         {
+            provider = await EnforcePolicyAsync(provider);
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(
@@ -1056,6 +1076,7 @@ public class AiClientService : IAiClientService
             _logger.LogInformation("SendRequestAsync: type={Type}", provider.ProviderType);
             _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
 
+            provider = await EnforcePolicyAsync(provider);
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: mode, managedPersonaId: null, personaModelType: null, linkedCts.Token);
@@ -1103,7 +1124,8 @@ public class AiClientService : IAiClientService
             _logger.LogWarning("SendRequestAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
-        catch (Exception ex)
+        // The policy gate already logged its refusal as a warning.
+        catch (Exception ex) when (ex is not ProviderBlockedByPolicyException)
         {
             _logger.LogError(ex, "SendRequestAsync: provider {ProviderType} threw an exception", provider.ProviderType);
             throw;
@@ -1123,6 +1145,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         // No persona here on purpose: this tool-free stream serves SuggestionService, not an assistant
@@ -1241,6 +1264,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
@@ -1280,6 +1304,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
@@ -1323,6 +1348,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);

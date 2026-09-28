@@ -9,7 +9,7 @@ namespace Pia.Services.Consent;
 /// persisted (DPAPI-protected) but must never reach a log line, an audit event, or a UI surface
 /// outside DEBUG.</para>
 /// </summary>
-/// <param name="SpeakerLabel">The diarizer label that spoke the sentence, at the time of the grant.</param>
+/// <param name="SpeakerLabel">The label the speaker was detected under; it names the evidence file.</param>
 /// <param name="ExtractedName">
 /// The name the speaker introduced themselves with, or <c>null</c> when it could not be captured.
 /// </param>
