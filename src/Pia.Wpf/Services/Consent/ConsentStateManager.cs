@@ -17,13 +17,14 @@ public sealed class ConsentStateManager : IConsentStateManager
     private sealed class MutableEntry
     {
         public required string SpeakerLabel { get; set; }
+        public required string DetectedLabel { get; init; }
         public required DateTimeOffset FirstDetected { get; init; }
         public ConsentState State { get; set; } = ConsentState.Unknown;
         public string? ExtractedName { get; set; }
         public ConsentEvidence? Evidence { get; set; }
 
         public SpeakerConsentEntry ToSnapshot() =>
-            new(SpeakerLabel, FirstDetected, State, ExtractedName, Evidence);
+            new(SpeakerLabel, FirstDetected, State, ExtractedName, Evidence, DetectedLabel);
     }
 
     private readonly ILogger<ConsentStateManager> _logger;
@@ -178,7 +179,10 @@ public sealed class ConsentStateManager : IConsentStateManager
     {
         if (!_entries.TryGetValue(speakerLabel, out var entry))
         {
-            entry = new MutableEntry { SpeakerLabel = speakerLabel, FirstDetected = _clock.GetUtcNow() };
+            entry = new MutableEntry
+            {
+                SpeakerLabel = speakerLabel, DetectedLabel = speakerLabel, FirstDetected = _clock.GetUtcNow(),
+            };
             _entries[speakerLabel] = entry;
         }
         return entry;

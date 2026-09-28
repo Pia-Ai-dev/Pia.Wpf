@@ -347,8 +347,10 @@ public sealed class ConsentForwardLoop
             return ConsentGateOutcome.DropUnconsented;
         }
 
+        // A name typed before consent is not the speaker's to give, so the record keeps the detected label.
+        var detectedLabel = _consent.TryGet(label, out var entry) ? entry.DetectedLabel : label;
         var evidence = new ConsentEvidence(
-            label,
+            detectedLabel,
             result.ExtractedName,
             utterance.Text,
             result.Language,
@@ -380,17 +382,16 @@ public sealed class ConsentForwardLoop
                 Guid.NewGuid(),
                 DateTimeOffset.UtcNow,
                 ConsentAuditEventTypes.EvidenceWriteFailed,
-                label,
+                detectedLabel,
                 null));
         }
 
-        // Audit uses the ORIGINAL diarizer label, never the extracted name: the name is personal data
-        // and must live only in the DPAPI-protected evidence file, not in the plaintext audit trail.
+        // Names, extracted or typed, live only inside the DPAPI-protected evidence, never in the plaintext audit.
         _auditLog.Append(new AuditEvent(
             Guid.NewGuid(),
             DateTimeOffset.UtcNow,
             ConsentAuditEventTypes.ConsentGranted,
-            label,
+            detectedLabel,
             new Dictionary<string, object?>
             {
                 ["confidence"] = result.Confidence,

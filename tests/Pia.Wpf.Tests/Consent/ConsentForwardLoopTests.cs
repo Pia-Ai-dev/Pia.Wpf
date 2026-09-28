@@ -187,6 +187,29 @@ public sealed class ConsentForwardLoopTests
         Assert.Equal(ConsentState.Granted, fx.Consent.CurrentState("Carol"));
     }
 
+    // A name typed before the speaker consented is not theirs to give: it stays out of the plaintext audit
+    // trail and out of the evidence label, which names the evidence file.
+    [Fact]
+    public async Task ANameGivenBeforeConsent_StaysOutOfTheAuditTrailAndTheEvidenceLabel()
+    {
+        var fx = new Fixture();
+        fx.Consent.GetOrCreate("Speaker 1");
+        Assert.True(fx.Consent.Rename("Speaker 1", "Chef"));
+        var sentence = "My name is Max and I accept that this call is recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Max", "en", NamedConsentClassifier.CrispConfidence));
+
+        var outcome = await fx.ProcessAsync(Loopback("Chef", sentence));
+
+        Assert.Equal(ConsentGateOutcome.EmitConsentGrant, outcome);
+        await fx.EvidenceStore.Received(1).SaveGrantAsync(
+            SessionId,
+            Arg.Is<ConsentEvidence>(e => e.SpeakerLabel == "Speaker 1" && e.ExtractedName == "Max"),
+            Arg.Any<CancellationToken>());
+        Assert.NotEmpty(fx.AuditEvents);
+        Assert.All(fx.AuditEvents, e => Assert.Equal("Speaker 1", e.SpeakerLabel));
+    }
+
     // Below the threshold the diarizer still hands out the nearest label, which may be a consented one.
     [Fact]
     public async Task AConsentedLabelMatchedBelowTheThreshold_IsDropped()
