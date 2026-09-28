@@ -1014,7 +1014,7 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Jetzt einrichten</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, werden alle synchronisierten Daten auf deinem Gerät verschlüsselt, bevor sie an den Server gesendet werden. Beim Aktivieren werden ein Schlüssel und ein Wiederherstellungscode erzeugt und eine vollständige Synchronisation ausgelöst. Die Aktivierung ist für dieses Konto dauerhaft.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, verschlüsselt dein Gerät die Inhalte, die du synchronisierst, bevor sie an den Server gehen; der Server hat deinen Schlüssel nur in verschlüsselter Form. Kennungen, Zeitpunkte und Reihenfolge bleiben lesbar. Beim Aktivieren werden ein Schlüssel und ein Wiederherstellungscode erzeugt und eine vollständige Synchronisation ausgelöst. Die Aktivierung ist für dieses Konto dauerhaft.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
   <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung lässt sich für dieses Konto nicht abschalten. Sie endet nur zusammen mit den synchronisierten Inhalten, wenn das Konto gelöscht wird oder eine Administration seine Synchronisationsdaten zurücksetzt.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Verschlüsselung wird aktualisiert und Daten werden synchronisiert...</value></data>

@@ -1014,7 +1014,7 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Configurer maintenant</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Chiffrement de bout en bout</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, toutes les données synchronisées sont chiffrées sur votre appareil avant d'être envoyées au serveur. Une clé de chiffrement et un code de récupération sont générés à l'activation, qui déclenche une synchronisation complète. L'activation est définitive pour votre compte.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, votre appareil chiffre le contenu que vous synchronisez avant de l'envoyer au serveur, qui ne détient votre clé que sous forme chiffrée. Les identifiants, les horodatages et l'ordre restent lisibles. Une clé de chiffrement et un code de récupération sont générés à l'activation, qui déclenche une synchronisation complète. L'activation est définitive pour votre compte.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Activer le chiffrement de bout en bout</value></data>
   <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Le chiffrement de bout en bout ne peut pas être désactivé pour ce compte. Il ne prend fin qu'avec le contenu synchronisé, lorsque le compte est supprimé ou qu'un administrateur réinitialise ses données de synchronisation.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Mise à jour du chiffrement et synchronisation des données...</value></data>

@@ -977,7 +977,7 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Set up now</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>End-to-End Encryption</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, all synced data is encrypted on your device before being sent to the server. An encryption key and recovery code are generated when encryption is enabled, and a full sync runs. Enabling is permanent for your account.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, your device encrypts the content you sync before sending it to the server, which holds your key only in encrypted form. IDs, timestamps and order stay readable. An encryption key and recovery code are generated when encryption is enabled, and a full sync runs. Enabling is permanent for your account.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Enable End-to-End Encryption</value></data>
   <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>End-to-end encryption cannot be turned off for this account. It ends only together with the synced content, when the account is deleted or an administrator resets its sync data.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Updating encryption and syncing data...</value></data>

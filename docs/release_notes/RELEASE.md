@@ -1,5 +1,11 @@
 # Pia next
 
+## Privacy
+
+- The end-to-end encryption description in Settings → Account now says what
+  the encryption covers, like the setup wizard: your device encrypts the
+  content, while IDs, timestamps and order stay readable.
+
 ## Live transcription
 
 - The transcript now shows speech under the name of someone who said the
