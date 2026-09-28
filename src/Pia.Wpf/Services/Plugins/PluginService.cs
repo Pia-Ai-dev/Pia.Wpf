@@ -974,26 +974,7 @@ public class PluginService : IPluginService
         }
     }
 
-    private static bool IsPluginEnabled(SyncPlugin config)
-    {
-        if (!config.IsActive)
-            return false;
-
-        if (config.UserEnabled.HasValue)
-            return config.UserEnabled.Value;
-
-        // Fall back to defaultEnabled from ConfigJson
-        try
-        {
-            using var doc = JsonDocument.Parse(config.ConfigJson);
-            if (doc.RootElement.TryGetProperty("defaultEnabled", out var el))
-                return el.GetBoolean();
-        }
-        catch { }
-
-        // A distributed MCP server runs a process here, so without the admin's explicit default it waits for the user.
-        return !(config is { IsPreloaded: false, Kind: "mcp_server" } && !LocalMcpConfig.IsLocal(config.ConfigJson));
-    }
+    private static bool IsPluginEnabled(SyncPlugin config) => PluginEnablement.IsEnabled(config);
 
     private static string? GetHandlerId(string configJson)
     {
