@@ -186,7 +186,7 @@ public class PluginService : IPluginService
 
     public bool AreLocalMcpServersAllowed => _localMcpAllowed;
 
-    // A policy change reaches servers already running: disallowed, they stop; allowed again, the enabled ones start.
+    // A policy change reaches running servers: disallowed, they stop and say why; allowed again, the enabled ones start.
     private async Task ApplyLocalMcpPolicyAsync(bool allowed)
     {
         if (allowed == _localMcpAllowed) return;
@@ -195,8 +195,14 @@ public class PluginService : IPluginService
         foreach (var plugin in _pluginConfigs.Values.Where(p => LocalMcpConfig.IsLocal(p.ConfigJson)).ToList())
         {
             if (!allowed)
+            {
                 await ShutdownHandlerAsync(plugin.Id);
-            else if (IsPluginEnabled(plugin) && !HasHandler(plugin.Id))
+                _startFailures[plugin.Id] = LocalMcpBlockedReason;
+                continue;
+            }
+
+            _startFailures.TryRemove(plugin.Id, out _);
+            if (IsPluginEnabled(plugin) && !HasHandler(plugin.Id))
                 await ActivateMcpPluginAsync(plugin);
         }
 
