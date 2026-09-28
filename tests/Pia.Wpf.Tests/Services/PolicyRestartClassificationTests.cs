@@ -59,7 +59,10 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.Theme),
         nameof(AppSettings.UserOperatingMode),
         nameof(AppSettings.UseSameProviderForAllModes),
-        nameof(AppSettings.WhisperModel)
+        nameof(AppSettings.WhisperModel),
+        nameof(AppSettings.AllowedProviderTypes),
+        nameof(AppSettings.AllowedProviderEndpoints),
+        nameof(AppSettings.AllowProviderWebSearch)
     ];
 
     private static readonly string[] LiveWithWork =
@@ -67,6 +70,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.AllowedSyncProviders),
         nameof(AppSettings.AllowPersonaManagement),
         nameof(AppSettings.AllowProviderManagement),
+        nameof(AppSettings.AllowLocalMcpServers),
         nameof(AppSettings.AlwaysAllowedTools),
         nameof(AppSettings.AssistantChatHistoryToolsEnabled),
         nameof(AppSettings.AssistantDefaultWorkingDirectory),
@@ -182,7 +186,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 48 && LiveWithWork.Length == 23
+            LiveAlready.Length == 51 && LiveWithWork.Length == 24
                 && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

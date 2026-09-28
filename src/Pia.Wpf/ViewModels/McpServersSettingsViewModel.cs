@@ -169,6 +169,12 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     private void OnPluginsChanged(object? sender, EventArgs e)
     {
+        PostOrRun(() =>
+        {
+            OnPropertyChanged(nameof(CanAddServers));
+            AddServerCommand.NotifyCanExecuteChanged();
+        });
+
         // A save raises this itself, and reloading mid-save would drop the editor the user is still in.
         if (_suppressReload) return;
         PostOrRun(Reload);
@@ -307,7 +313,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     // ---- editor -------------------------------------------------------------------------------------
 
-    private bool CanAddServer() => !IsEditorOpen;
+    private bool CanAddServer() => !IsEditorOpen && CanAddServers;
+
+    public bool CanAddServers => _pluginService.AreLocalMcpServersAllowed;
 
     [RelayCommand(CanExecute = nameof(CanAddServer))]
     private void AddServer()

@@ -91,6 +91,7 @@
   <data name="Msg_Assistant_MessageCopied" xml:space="preserve"><value>Message copié dans le presse-papiers.</value></data>
   <data name="Msg_Assistant_NewValue" xml:space="preserve"><value>Nouvelle valeur :</value></data>
   <data name="Msg_Assistant_NoProviderConfigured" xml:space="preserve"><value>Aucun fournisseur d'IA configuré pour le mode Assistant. Veuillez en ajouter un dans les Paramètres.</value></data>
+  <data name="Msg_Assistant_ProviderBlockedByPolicy" xml:space="preserve"><value>La stratégie de votre organisation n'autorise pas ce fournisseur d'IA. Choisissez-en un autre dans Paramètres → Fournisseurs.</value></data>
   <data name="Msg_Assistant_NoProviderInline" xml:space="preserve"><value>Aucun fournisseur d'IA configuré. Veuillez en ajouter un dans les Paramètres.</value></data>
   <data name="Msg_Assistant_PermanentDeleteMemory" xml:space="preserve"><value>Cette mémoire sera définitivement supprimée.</value></data>
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Ce rappel sera définitivement supprimé.</value></data>

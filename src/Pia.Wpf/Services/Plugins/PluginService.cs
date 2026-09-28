@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Services.Interfaces;
@@ -42,6 +43,9 @@ public class PluginService : IPluginService
 
     /// <summary>Why a server never got as far as a handler, so the settings row can say so.</summary>
     private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
+
+    private const string LocalMcpBlockedReason = "Your organization's policy does not allow local MCP servers.";
+    private volatile bool _localMcpAllowed = true;
 
     public IReadOnlyList<IPluginToolHandler> ActiveHandlers
     {
@@ -94,7 +98,11 @@ public class PluginService : IPluginService
 
         // Plugins whose tool list depends on settings (files plugin's sandbox folder)
         // need their routes rebuilt whenever those settings change.
-        _settingsService.SettingsChanged += (_, _) => RebuildToolNameRoutes();
+        _settingsService.SettingsChanged += (_, settings) =>
+        {
+            RebuildToolNameRoutes();
+            ApplyLocalMcpPolicyAsync(settings.AllowLocalMcpServers).SafeFireAndForget(_logger);
+        };
 
         // The assignment pack's availability is a server probe, not a setting, so it flips outside every
         // other rebuild trigger. Without this the first probe that turns it on offers tools with no route.
@@ -176,8 +184,30 @@ public class PluginService : IPluginService
         }
     }
 
+    public bool AreLocalMcpServersAllowed => _localMcpAllowed;
+
+    // A policy change reaches servers already running: disallowed, they stop; allowed again, the enabled ones start.
+    private async Task ApplyLocalMcpPolicyAsync(bool allowed)
+    {
+        if (allowed == _localMcpAllowed) return;
+        _localMcpAllowed = allowed;
+
+        foreach (var plugin in _pluginConfigs.Values.Where(p => LocalMcpConfig.IsLocal(p.ConfigJson)).ToList())
+        {
+            if (!allowed)
+                await ShutdownHandlerAsync(plugin.Id);
+            else if (IsPluginEnabled(plugin) && !HasHandler(plugin.Id))
+                await ActivateMcpPluginAsync(plugin);
+        }
+
+        RebuildToolNameRoutes();
+        PluginsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public async Task InitializePersistedPluginsAsync()
     {
+        _localMcpAllowed = (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers;
+
         // A switched-off server, local or distributed, is skipped rather than started-then-hidden: activation
         // spawns its process, which the user switched off precisely to avoid.
         var serverPlugins = _pluginConfigs.Values
@@ -425,11 +455,16 @@ public class PluginService : IPluginService
             _startFailures.TryGetValue(pluginId, out var failure) ? failure : null);
     }
 
-    public Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
-        McpServerProbe.ProbeAsync(definition, timeout: null, ct);
+    public async Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
+        (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers
+            ? await McpServerProbe.ProbeAsync(definition, timeout: null, ct)
+            : McpProbeResult.Failed(LocalMcpBlockedReason);
 
     public async Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default)
     {
+        if (!(await _settingsService.GetSettingsAsync()).AllowLocalMcpServers)
+            throw new InvalidOperationException(LocalMcpBlockedReason);
+
         var id = pluginId ?? Guid.NewGuid();
         var existing = _pluginConfigs.TryGetValue(id, out var found) ? found : null;
 
@@ -621,6 +656,13 @@ public class PluginService : IPluginService
 
         var localDefinition = ReadLocalDefinition(plugin);
         _startFailures.TryRemove(plugin.Id, out _);
+
+        if (localDefinition is not null && !(await _settingsService.GetSettingsAsync()).AllowLocalMcpServers)
+        {
+            _logger.LogInformation("Local MCP server {PluginId} not started: the policy does not allow local servers", plugin.Id);
+            _startFailures[plugin.Id] = LocalMcpBlockedReason;
+            return;
+        }
 
         if (localDefinition is not null && transport != "stdio")
         {

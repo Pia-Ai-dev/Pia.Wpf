@@ -257,6 +257,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel, IDisposable
             return;
 
         var editModel = new ProviderEditModel { IsApiKeyDeviceLocal = await IsApiKeyDeviceLocalAsync() };
+        editModel.ApplyPolicy(await _settingsService.GetSettingsAsync());
 
         if (await _dialogService.ShowProviderEditDialogAsync(editModel, _providerService))
         {
@@ -279,6 +280,7 @@ public partial class ProvidersSettingsViewModel : UiThreadViewModel, IDisposable
             return;
 
         var editModel = ProviderEditModel.FromProvider(provider, await IsApiKeyDeviceLocalAsync());
+        editModel.ApplyPolicy(await _settingsService.GetSettingsAsync());
 
         if (await _dialogService.ShowProviderEditDialogAsync(editModel, _providerService))
         {

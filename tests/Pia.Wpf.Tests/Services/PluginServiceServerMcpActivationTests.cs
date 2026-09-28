@@ -165,7 +165,7 @@ public sealed class PluginServiceServerMcpActivationTests : IDisposable
             Substitute.For<IScreenCaptureToolHandler>(),
             Substitute.For<IHelpToolHandler>(),
             Substitute.For<IAssignmentSurfaceCache>(),
-            Substitute.For<ISettingsService>(),
+            SettingsStubs.Returning(),
             log,
             sqlite,
             cabManager: null,

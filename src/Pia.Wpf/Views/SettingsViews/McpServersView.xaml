@@ -35,6 +35,9 @@
                  VerticalAlignment="Top"
                  AutomationProperties.AutomationId="McpServers_AddButton"
                  AutomationProperties.Name="{loc:Str McpServers_Add}"
+                 ToolTipService.ShowOnDisabled="True"
+                 ToolTip="{loc:Str McpServers_BlockedByPolicy}"
+                 ToolTipService.IsEnabled="{Binding CanAddServers, Converter={StaticResource InverseBooleanConverter}}"
                  Command="{Binding AddServerCommand}">
         <StackPanel Orientation="Horizontal">
           <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,6,0"/>
@@ -301,6 +304,12 @@
           <ScrollViewer VerticalScrollBarVisibility="Auto"
                         Visibility="{Binding IsEditorOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel Margin="0,0,10,0">
+
+              <Border Style="{StaticResource PiaFieldNoticeStyle}" Margin="0,0,0,12">
+                <TextBlock Text="{loc:Str McpServers_Edit_RecipientNotice}"
+                           AutomationProperties.AutomationId="McpServers_Edit_RecipientNotice"
+                           TextWrapping="Wrap"/>
+              </Border>
 
               <TextBlock Text="{loc:Str McpServers_PasteJson}"
                          Style="{StaticResource PiaSettingsSectionLabelStyle}"

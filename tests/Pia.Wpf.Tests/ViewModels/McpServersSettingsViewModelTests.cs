@@ -62,6 +62,8 @@ public class McpServersSettingsViewModelTests
 
     private static Fixture Build(IPluginService plugins)
     {
+        plugins.AreLocalMcpServersAllowed.Returns(true);
+
         // Echoing localizer: the assertions below are about WHICH string a state picks, not its wording.
         var localization = Substitute.For<ILocalizationService>();
         localization[Arg.Any<string>()].Returns(call => (string)call[0]);
@@ -251,6 +253,21 @@ public class McpServersSettingsViewModelTests
         vm.SelectedServer = vm.Servers.Single(s => s.Id == OtherId);
 
         Assert.Null(vm.DetailMessage);
+    }
+
+    [Fact]
+    public void WhenThePolicyDisallowsLocalServers_AddingOneIsNotOffered()
+    {
+        var plugins = Substitute.For<IPluginService>();
+        plugins.GetLocalMcpPlugins().Returns([]);
+        var (vm, _, _) = Build(plugins);
+        Assert.True(vm.AddServerCommand.CanExecute(null));
+
+        plugins.AreLocalMcpServersAllowed.Returns(false);
+        plugins.PluginsChanged += Raise.Event();
+
+        Assert.False(vm.CanAddServers);
+        Assert.False(vm.AddServerCommand.CanExecute(null));
     }
 
     [Fact]

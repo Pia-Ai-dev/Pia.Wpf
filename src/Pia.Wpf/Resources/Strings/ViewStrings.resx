@@ -715,6 +715,9 @@
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Provider Type *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Endpoint *</value></data>
+  <data name="Dialog_ProviderEdit_TypeBlocked" xml:space="preserve"><value>Your organization's policy does not allow this provider type.</value></data>
+  <data name="Dialog_ProviderEdit_EndpointBlocked" xml:space="preserve"><value>Your organization's policy does not allow this address.</value></data>
+  <data name="Dialog_ProviderEdit_RecipientNotice" xml:space="preserve"><value>Your requests, attachments and conversation content go to whoever runs this address. Pia does not check that service.</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>API Key</value></data>
   <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud does not store provider API keys unless end-to-end encryption is on. This key stays on this device — enter it again on your other devices, or turn on end-to-end encryption under Account.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Model Name</value></data>
@@ -1691,6 +1694,8 @@
   <data name="McpServers_Title" xml:space="preserve"><value>MCP servers</value></data>
   <data name="McpServers_Subtitle" xml:space="preserve"><value>Connect MCP servers that run on this computer. Their tool names are prefixed with the server name, so they never clash with Pia's own tools.</value></data>
   <data name="McpServers_Add" xml:space="preserve"><value>Add server</value></data>
+  <data name="McpServers_BlockedByPolicy" xml:space="preserve"><value>Your organization's policy does not allow local MCP servers on this device.</value></data>
+  <data name="McpServers_Edit_RecipientNotice" xml:space="preserve"><value>This server runs as a program on this device with your permissions. What the assistant passes to its tools goes to this program and to whatever it connects to.</value></data>
   <data name="McpServers_Empty" xml:space="preserve"><value>No MCP servers yet</value></data>
   <data name="McpServers_EmptyHint" xml:space="preserve"><value>Add a server to give the assistant tools from outside Pia.</value></data>
   <data name="McpServers_Name" xml:space="preserve"><value>Name</value></data>

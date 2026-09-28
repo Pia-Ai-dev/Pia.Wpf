@@ -752,6 +752,9 @@
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Nom *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Type de fournisseur *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Point d'accès *</value></data>
+  <data name="Dialog_ProviderEdit_TypeBlocked" xml:space="preserve"><value>La stratégie de votre organisation n'autorise pas ce type de fournisseur.</value></data>
+  <data name="Dialog_ProviderEdit_EndpointBlocked" xml:space="preserve"><value>La stratégie de votre organisation n'autorise pas cette adresse.</value></data>
+  <data name="Dialog_ProviderEdit_RecipientNotice" xml:space="preserve"><value>Vos requêtes, pièces jointes et contenus de conversation vont à l'exploitant de cette adresse. Pia ne vérifie pas ce service.</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>Clé API</value></data>
   <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud ne conserve les clés API des fournisseurs que si le chiffrement de bout en bout est activé. Cette clé reste sur cet appareil : saisissez-la de nouveau sur vos autres appareils, ou activez le chiffrement de bout en bout dans Compte.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Nom du modèle</value></data>
@@ -1681,6 +1684,8 @@
   <data name="McpServers_Title" xml:space="preserve"><value>Serveurs MCP</value></data>
   <data name="McpServers_Subtitle" xml:space="preserve"><value>Connectez des serveurs MCP qui s'exécutent sur cet ordinateur. Le nom du serveur préfixe celui de ses outils, pour qu'ils n'entrent jamais en conflit avec ceux de Pia.</value></data>
   <data name="McpServers_Add" xml:space="preserve"><value>Ajouter un serveur</value></data>
+  <data name="McpServers_BlockedByPolicy" xml:space="preserve"><value>La stratégie de votre organisation n'autorise pas de serveurs MCP locaux sur cet appareil.</value></data>
+  <data name="McpServers_Edit_RecipientNotice" xml:space="preserve"><value>Ce serveur s'exécute comme un programme sur cet appareil, avec vos droits. Ce que l'assistant transmet à ses outils va à ce programme et à ce à quoi il se connecte.</value></data>
   <data name="McpServers_Empty" xml:space="preserve"><value>Aucun serveur MCP</value></data>
   <data name="McpServers_EmptyHint" xml:space="preserve"><value>Ajoutez un serveur pour donner à l'assistant des outils extérieurs à Pia.</value></data>
   <data name="McpServers_Name" xml:space="preserve"><value>Nom</value></data>

@@ -85,7 +85,7 @@ public sealed class AssignmentPluginRegistrationTests : IDisposable
             Substitute.For<IScreenCaptureToolHandler>(),
             Substitute.For<IHelpToolHandler>(),
             cache,
-            Substitute.For<ISettingsService>(),
+            SettingsStubs.Returning(),
             NullLogger<PluginService>.Instance,
             _sqlite);
     }

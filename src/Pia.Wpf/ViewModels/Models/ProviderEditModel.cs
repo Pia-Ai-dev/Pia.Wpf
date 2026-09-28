@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Pia.Models;
+using Pia.Services.Providers;
 using System.Collections.ObjectModel;
 using System.ComponentModel.DataAnnotations;
 
@@ -16,11 +17,14 @@ public partial class ProviderEditModel : ObservableValidator
     private string _name = string.Empty;
 
     [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(IsTypeBlocked))]
+    [NotifyPropertyChangedFor(nameof(IsEndpointBlocked))]
     [ObservableProperty]
     private AiProviderType _providerType;
 
     [Required(ErrorMessage = "Endpoint is required")]
     [NotifyPropertyChangedFor(nameof(CanSave))]
+    [NotifyPropertyChangedFor(nameof(IsEndpointBlocked))]
     [ObservableProperty]
     private string _endpoint = string.Empty;
 
@@ -85,7 +89,35 @@ public partial class ProviderEditModel : ObservableValidator
     public bool RequiresEndpoint => !(IsCloudProvider && ProviderType == AiProviderType.PiaCloud);
 
     public bool CanSave =>
-        !string.IsNullOrWhiteSpace(Name) && (!RequiresEndpoint || !string.IsNullOrWhiteSpace(Endpoint));
+        !string.IsNullOrWhiteSpace(Name) && (!RequiresEndpoint || !string.IsNullOrWhiteSpace(Endpoint))
+        && !IsTypeBlocked && !IsEndpointBlocked;
+
+    private AppSettings? _policy;
+    private AiProviderType _typeAtPolicy;
+
+    /// <summary>The organization's provider limits, which the dialog offers and checks against.</summary>
+    public void ApplyPolicy(AppSettings settings)
+    {
+        _policy = settings;
+        _typeAtPolicy = ProviderType;
+        OnPropertyChanged(nameof(AvailableProviderTypes));
+        OnPropertyChanged(nameof(IsTypeBlocked));
+        OnPropertyChanged(nameof(IsEndpointBlocked));
+        OnPropertyChanged(nameof(IsWebSearchAllowed));
+        OnPropertyChanged(nameof(CanSave));
+    }
+
+    // A refused type the provider already has stays listed, so the dialog still shows what it is.
+    public AiProviderType[] AvailableProviderTypes =>
+        EditableProviderTypes.Where(t => t == _typeAtPolicy || ProviderPolicy.IsTypeAllowed(t, _policy)).ToArray();
+
+    public bool IsTypeBlocked => !ProviderPolicy.IsTypeAllowed(ProviderType, _policy);
+
+    public bool IsEndpointBlocked =>
+        RequiresEndpoint && !string.IsNullOrWhiteSpace(Endpoint)
+        && !ProviderPolicy.IsEndpointAllowed(ProviderType, Endpoint, _policy);
+
+    public bool IsWebSearchAllowed => _policy?.AllowProviderWebSearch ?? true;
 
     public bool IsMistralWebSearchAvailable =>
         ProviderType == AiProviderType.Mistral && !string.IsNullOrWhiteSpace(MistralAgentId);
