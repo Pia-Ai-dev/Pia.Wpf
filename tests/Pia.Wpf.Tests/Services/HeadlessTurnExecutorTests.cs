@@ -546,6 +546,8 @@ public sealed class HeadlessTurnExecutorTests
             => _inner.GetUnbackfilledIdsAsync(ct);
 
         public Task MarkBackfilledAsync(Guid id, CancellationToken ct = default) => _inner.MarkBackfilledAsync(id, ct);
+
+        public Task ClearBackfillMarksAsync(CancellationToken ct = default) => _inner.ClearBackfillMarksAsync(ct);
     }
 
     /// <summary>Everything a headless run needs, wired to one temp SQLite file.</summary>

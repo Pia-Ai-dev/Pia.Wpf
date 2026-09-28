@@ -692,6 +692,21 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Equal(matching.Id, Assert.Single(hits).Id);
     }
 
+    [Fact]
+    public async Task ClearBackfillMarks_OwesEveryChatToTheServerAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = MakeChat(title: "Backfilled once", body: "sent before encryption");
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+        await _service.MarkBackfilledAsync(chat.Id, ct);
+        Assert.DoesNotContain(chat.Id, await _service.GetUnbackfilledIdsAsync(ct));
+
+        await _service.ClearBackfillMarksAsync(ct);
+
+        Assert.Contains(chat.Id, await _service.GetUnbackfilledIdsAsync(ct));
+    }
+
     private static SyncAssistantChat MakeChat(string title, string body)
     {
         var now = DateTime.UtcNow;

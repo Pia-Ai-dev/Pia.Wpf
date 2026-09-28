@@ -98,6 +98,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     public event EventHandler? E2EEOnboardingRequired;
     public event EventHandler? E2EEOnboardingCleared;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
+    public event EventHandler? EncryptedMigrationCompleted;
     public event EventHandler? CurrentDeviceRevoked;
     public event EventHandler<SyncCompletedEventArgs>? SyncCompleted;
 
@@ -585,6 +586,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             // Persist the settings hash only after every batch pushed successfully (EnsureSuccessAsync
             // throws otherwise), so a failed push never strands settings behind an advanced hash.
             await PersistSettingsHashIfChangedAsync(settings, settingsHash, settingsChanged);
+
+            if (isE2EE)
+                EncryptedMigrationCompleted?.Invoke(this, EventArgs.Empty);
 
             _logger.LogInformation("First-sync push completed in {BatchCount} batch(es): {Sessions} sessions, {Templates} templates, {Personas} personas, {Providers} providers, {Memories} memories, {KanbanColumns} kanbanColumns, {Todos} todos, {Jobs} scheduledJobs",
                 batchCount, sessionDtos.Count, templateDtos.Count, personaDtos.Count, providerDtos.Count,

@@ -528,6 +528,9 @@ public class AppSettings
     // so a different account re-backfills. See AssistantChatSyncService.
     public DateTime? AssistantChatsBackfilledAt { get; set; }
 
+    // Set once every chat was queued for an encrypted re-push, so an encrypted install re-pushes them only once.
+    public DateTime? AssistantChatsEncryptedResendAt { get; set; }
+
     // E2EE settings
     public bool IsE2EEEnabled { get; set; }
     public string? E2EEEncryptedUmk { get; set; }

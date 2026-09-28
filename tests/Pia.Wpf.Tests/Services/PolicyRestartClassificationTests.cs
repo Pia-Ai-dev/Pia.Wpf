@@ -91,6 +91,7 @@ public class PolicyRestartClassificationTests
     private static readonly string[] RestartRequired =
     [
         nameof(AppSettings.AssistantChatsBackfilledAt),
+        nameof(AppSettings.AssistantChatsEncryptedResendAt),
         nameof(AppSettings.AssistantFolderLayoutVersion),
         nameof(AppSettings.EncryptedRefreshToken),
         nameof(AppSettings.HasCompletedFirstRunWizard),
@@ -181,7 +182,7 @@ public class PolicyRestartClassificationTests
     {
         Assert.True(
             LiveAlready.Length == 47 && LiveWithWork.Length == 23
-                && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 28,
+                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
 
