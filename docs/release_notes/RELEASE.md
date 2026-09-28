@@ -9,3 +9,9 @@
 - A name you give a speaker before they have said the consent sentence no
   longer reaches the consent log or the file name of the consent record. Both
   keep the label Pia detected the speaker under.
+
+## Plugins
+
+- A plugin your administrator distributes no longer starts once you have
+  switched it off, neither when Pia starts nor when the server updates it.
+  Switching it back on starts it right away, without a restart.

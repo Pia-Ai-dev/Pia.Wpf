@@ -178,11 +178,11 @@ public class PluginService : IPluginService
 
     public async Task InitializePersistedPluginsAsync()
     {
-        // A disabled local server is skipped rather than started-then-hidden: activation spawns its process,
-        // which the user switched off precisely to avoid.
+        // A switched-off server, local or distributed, is skipped rather than started-then-hidden: activation
+        // spawns its process, which the user switched off precisely to avoid.
         var serverPlugins = _pluginConfigs.Values
             .Where(p => !p.IsPreloaded && !_handlers.ContainsKey(p.Id))
-            .Where(p => !LocalMcpConfig.IsLocal(p.ConfigJson) || IsPluginEnabled(p))
+            .Where(IsPluginEnabled)
             .ToList();
 
         foreach (var plugin in serverPlugins)
@@ -258,6 +258,12 @@ public class PluginService : IPluginService
         cmd.CommandText = "DELETE FROM Plugins WHERE Id = @Id";
         cmd.Parameters.AddWithValue("@Id", pluginId.ToString());
         cmd.ExecuteNonQuery();
+    }
+
+    private bool HasHandler(Guid pluginId)
+    {
+        lock (_handlers)
+            return _handlers.ContainsKey(pluginId);
     }
 
     private void RegisterHandler(Guid pluginId, IPluginToolHandler handler)
@@ -551,15 +557,18 @@ public class PluginService : IPluginService
             if (!plugin.IsPreloaded)
                 SavePluginToDb(plugin);
 
-            if (_handlers.TryGetValue(plugin.Id, out var existing))
+            if (!plugin.IsPreloaded && !IsPluginEnabled(plugin))
             {
-                // Update existing handler metadata
+                await ShutdownHandlerAsync(plugin.Id);
+            }
+            else if (_handlers.TryGetValue(plugin.Id, out var existing))
+            {
                 existing.ApplyServerMetadata(plugin);
                 _logger.LogDebug("Updated metadata for plugin {PluginName}", plugin.Name);
             }
             else if (!plugin.IsPreloaded)
             {
-                // New server-only plugin — run preflight and cab extraction outside the lock
+                // Preflight and cab extraction run outside the lock.
                 await ActivateMcpPluginAsync(plugin);
             }
         }
@@ -851,18 +860,18 @@ public class PluginService : IPluginService
             // carries the switch across a restart.
             SavePluginToDb(config);
 
-            if (LocalMcpConfig.IsLocal(config.ConfigJson))
+            // The switch owns the subprocess of every MCP server, local or distributed by the admin.
+            if (!config.IsPreloaded && config.Kind == "mcp_server")
             {
-                // The switch owns the subprocess for a local server — there is no admin push to start or
-                // stop it on the user's behalf.
-                if (enabled)
-                    await ActivateMcpPluginAsync(config);
-                else
+                if (!enabled)
                     await ShutdownHandlerAsync(pluginId);
+                else if (IsPluginEnabled(config) && !HasHandler(pluginId))
+                    await ActivateMcpPluginAsync(config);
 
                 RebuildToolNameRoutes();
             }
-            else
+
+            if (!LocalMcpConfig.IsLocal(config.ConfigJson))
             {
                 lock (_pendingPrefs)
                 {
