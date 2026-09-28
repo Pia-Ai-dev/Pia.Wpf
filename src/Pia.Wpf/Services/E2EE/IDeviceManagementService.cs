@@ -27,10 +27,8 @@ public interface IDeviceManagementService
     /// </summary>
     Task ActivateViaRecoveryAsync(string recoveryCode, string onboardingSessionId);
 
-    /// <summary>
-    /// Fetch this device's wrapped UMK from the server and unwrap it.
-    /// Called after another device approves this one.
-    /// </summary>
+    /// <summary>Unwraps this device's server copy of the key; another device's wrap needs that device's valid
+    /// signature, or <see cref="UnverifiedApprovalException"/> is thrown.</summary>
     Task FetchAndUnwrapUmkAsync();
 
     /// <summary>True when this device holds the key, taking back its own server copy first if the server still

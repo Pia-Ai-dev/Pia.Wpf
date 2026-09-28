@@ -22,7 +22,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
     private string? _onboardingSessionId;
     private int _consecutivePollErrors;
 
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _pollInterval;
     private static readonly TimeSpan SessionTimeout = TimeSpan.FromMinutes(10);
     private const int MaxConsecutivePollErrors = 3;
 
@@ -52,8 +52,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         IE2EEService e2ee,
         ISyncClientService syncService,
         ISettingsService settingsService,
-        ILogger<E2EEOnboardingViewModel> logger)
+        ILogger<E2EEOnboardingViewModel> logger,
+        TimeSpan? pollIntervalOverride = null)
     {
+        _pollInterval = pollIntervalOverride ?? TimeSpan.FromSeconds(5);
         _deviceMgmt = deviceMgmt;
         _deviceKeys = deviceKeys;
         _e2ee = e2ee;
@@ -197,7 +199,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                     StatusMessage = $"Waiting for approval... ({remaining.Minutes}m {remaining.Seconds}s remaining)";
                 }
 
-                await Task.Delay(PollInterval, ct);
+                await Task.Delay(_pollInterval, ct);
 
                 try
                 {
@@ -228,7 +230,18 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         _logger.LogInformation("Device approved, fetching UMK");
                         StatusMessage = "Device approved! Fetching encryption key...";
 
-                        await _deviceMgmt.FetchAndUnwrapUmkAsync();
+                        try
+                        {
+                            await _deviceMgmt.FetchAndUnwrapUmkAsync();
+                        }
+                        catch (UnverifiedApprovalException)
+                        {
+                            StatusMessage = "";
+                            ErrorMessage = "The approval could not be verified, so this device did not accept the key. Use your recovery code instead.";
+                            _onboardingSessionId = null;
+                            State = OnboardingState.Error;
+                            return;
+                        }
                         await CompleteOnboardingAsync();
                         return;
                     }

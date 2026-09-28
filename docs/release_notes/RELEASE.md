@@ -14,3 +14,7 @@
   from this device, so another account signing in here cannot encrypt under
   it. Signing back in takes it back without setup if this device set up
   encryption or used the recovery code; an approved device needs the code.
+- "Approve from another device" now accepts the encryption key only with the
+  signature of an active device of your account, and approvals are signed
+  over the key they hand over. This needs an up-to-date Pia server; until
+  then, and for devices approved earlier, use "Use recovery code".

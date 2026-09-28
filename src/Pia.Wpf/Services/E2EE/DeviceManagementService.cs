@@ -120,6 +120,9 @@ public class DeviceManagementService : IDeviceManagementService
         var (wrappedUmk, hkdfSalt) = _e2ee.WrapUmkForDevice(
             targetDevice.AgreementPublicKey, targetDevice.DeviceId);
 
+        var signed = DeviceApprovalSignature.Payload(
+            DeviceApprovalSignature.Current, onboardingSessionId, targetDevice.DeviceId,
+            targetDevice.AgreementPublicKey, wrappedUmk, hkdfSalt)!;
         var approval = new DeviceApprovalRequest
         {
             OnboardingSessionId = onboardingSessionId,
@@ -127,12 +130,9 @@ public class DeviceManagementService : IDeviceManagementService
             WrappedUmk = wrappedUmk,
             HkdfSalt = hkdfSalt,
             ApproverDeviceId = deviceId,
+            ApproverSignature = _deviceKeys.Sign(signed),
+            SignatureVersion = DeviceApprovalSignature.Current,
         };
-
-        // Sign the approval
-        var signData = Encoding.UTF8.GetBytes(
-            $"{onboardingSessionId}:{targetDevice.DeviceId}:{targetDevice.AgreementPublicKey}");
-        approval.ApproverSignature = _deviceKeys.Sign(signData);
 
         using var client = await CreateAuthorizedClientAsync();
         var response = await client.PostAsJsonAsync("api/e2ee/devices/approve", approval);
@@ -201,18 +201,15 @@ public class DeviceManagementService : IDeviceManagementService
         if (wrappedBlob is null)
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
-        // Need the sender's (approver's) public key to derive shared secret
         var devices = await GetDevicesAsync();
-        var approverDevice = devices.Devices
-            .FirstOrDefault(d => d.DeviceId == wrappedBlob.CreatedByDeviceId);
-
-        if (approverDevice is null)
-            throw new InvalidOperationException("Approver device not found");
+        var senderAgreementKey = wrappedBlob.CreatedByDeviceId == deviceId
+            ? _deviceKeys.GetAgreementPublicKey()
+            : VerifiedApprover(wrappedBlob, devices, deviceId).AgreementPublicKey;
 
         var umk = _e2ee.UnwrapUmkForDevice(
             wrappedBlob.Ciphertext,
             wrappedBlob.HkdfSalt,
-            approverDevice.AgreementPublicKey,
+            senderAgreementKey,
             deviceId);
 
         await _e2ee.StoreUmkAsync(umk);
@@ -224,6 +221,28 @@ public class DeviceManagementService : IDeviceManagementService
         await _settings.SaveSettingsAsync(settings);
 
         _logger.LogInformation("Fetched and unwrapped UMK from device {Approver}", wrappedBlob.CreatedByDeviceId);
+    }
+
+    // A copy this device wrapped for itself needs no signature and is opened with the local agreement key.
+    private DeviceInfo VerifiedApprover(WrappedUmkBlob blob, DeviceListResponse devices, string deviceId)
+    {
+        var approver = devices.Devices.FirstOrDefault(d =>
+            d.DeviceId == blob.CreatedByDeviceId && d.Status == DeviceStatus.Active);
+        var payload = string.IsNullOrEmpty(blob.OnboardingSessionId)
+            ? null
+            : DeviceApprovalSignature.Payload(
+                blob.SignatureVersion, blob.OnboardingSessionId, deviceId, _deviceKeys.GetAgreementPublicKey(),
+                blob.Ciphertext, blob.HkdfSalt);
+
+        if (approver is null || payload is null || string.IsNullOrEmpty(blob.ApproverSignature)
+            || !_deviceKeys.Verify(payload, blob.ApproverSignature, approver.SigningPublicKey))
+        {
+            _logger.LogWarning(
+                "Refusing the key handed over by device {Approver}: no valid signature of an active device",
+                blob.CreatedByDeviceId);
+            throw new UnverifiedApprovalException("The approval could not be verified.");
+        }
+        return approver;
     }
 
     public async Task<bool> TryRestoreKeyAsync()
