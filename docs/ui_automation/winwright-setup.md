@@ -216,12 +216,15 @@ parameter.
   source` and re-synthesises the pages by itself; a different set of pages from the same sources is
   not a loss. The manual rebuild — set the real `settings.json`'s `ingestSchemaVersion` to `0`
   and relaunch — costs a full re-synthesis in LLM calls, so it is the owner's call.
-- **Seeding without the enum trap:** boot the app once against an empty `PIA_DATA_DIR`, close it,
-  then edit the `settings.json` it wrote — set `hasCompletedFirstRunWizard: true` and point
-  `assistantFilesFolder` at a scratch folder in the same edit. That file already carries the
-  current `ingestSchemaVersion` and valid enum values. The `providers.json` it mints has no
-  working provider; use `setup-profile.mjs` when a run needs one. JSON string paths take forward
-  slashes (`C:/Users/...`), which avoids escaping backslashes.
+- **Never boot against an empty `PIA_DATA_DIR`.** A fresh profile starts at `ingestSchemaVersion 0`
+  with the vault on the real default, so that first boot wipes the real `memory/topics/` (log:
+  `Ingest synthesis migration: cleared N topic page(s)`) before any patch can land.
+- **Seeding without the enum trap:** before the first boot, write a `settings.json` holding only
+  `{"assistantFilesFolder": "<scratch>", "ingestSchemaVersion": 2, "hasCompletedFirstRunWizard": true}`.
+  No enums, so nothing can fail to deserialize; the app fills in every other key on first save.
+  Confirm the `Ensured vault sources directory` log line names the scratch path. The
+  `providers.json` it mints has no working provider; use `setup-profile.mjs` when a run needs one.
+  JSON string paths take forward slashes (`C:/Users/...`), which avoids escaping backslashes.
 
 **Use the existing seeders rather than deriving a profile by hand:**
 
