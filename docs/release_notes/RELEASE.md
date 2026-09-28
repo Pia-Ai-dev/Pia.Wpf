@@ -15,6 +15,9 @@
 - A name you give a speaker before they have said the consent sentence no
   longer reaches the consent log or the file name of the consent record. Both
   keep the label Pia detected the speaker under.
+- When someone says the consent sentence, their chip in the transcription
+  window now switches to their name instead of a second chip appearing while
+  the first one keeps waiting for consent.
 
 ## Meetings
 

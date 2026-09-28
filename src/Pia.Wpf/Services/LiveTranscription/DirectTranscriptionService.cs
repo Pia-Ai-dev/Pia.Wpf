@@ -765,7 +765,8 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     }
 
     private void OnForwardLoopSpeakerConsentChanged(object? sender, ConsentStateChangedEventArgs e)
-        => RaiseSpeakerConsentChanged(new SpeakerConsentChangedEventArgs(e.SpeakerLabel, e.OldState, e.NewState, e.ExtractedName));
+        => RaiseSpeakerConsentChanged(new SpeakerConsentChangedEventArgs(
+            e.SpeakerLabel, e.OldState, e.NewState, e.ExtractedName, e.OriginalSpeakerLabel));
 
     private void RaiseConsentSessionReset()
     {

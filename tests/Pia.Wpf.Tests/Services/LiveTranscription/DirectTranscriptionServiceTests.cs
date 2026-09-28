@@ -251,6 +251,30 @@ public sealed class DirectTranscriptionServiceTests
         await fx.Service.DisposeAsync();
     }
 
+    // The overlay finds the chip it made at detection by the original label; a grant renames the speaker first.
+    [Fact]
+    public async Task AGrantThatRenamesTheSpeaker_StillReportsTheLabelItWasDetectedUnder()
+    {
+        var fx = new Fixture(useRealConsentManager: true);
+        var sentence = "My name is Ann and I accept this recording by Pia.";
+        fx.Classifier.Classify(sentence, Arg.Any<TargetSpeechLanguage>())
+            .Returns(new NamedConsentResult(true, "Ann", "en", NamedConsentClassifier.CrispConfidence));
+        var changes = new List<SpeakerConsentChangedEventArgs>();
+        fx.Service.SpeakerConsentChanged += (_, e) => changes.Add(e);
+
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        await fx.LoopbackSink!.WriteAsync(
+            new TranscriptUtterance(TranscriptSpeaker.Them, sentence, DateTimeOffset.UtcNow, SpeakerLabel: "Speaker 1"),
+            TestContext.Current.CancellationToken);
+        await fx.Service.StopAsync(TestContext.Current.CancellationToken);
+
+        var granted = Assert.Single(changes, e => e.NewState == ConsentState.Granted);
+        Assert.Equal("Ann", granted.SpeakerLabel);
+        Assert.Equal("Speaker 1", granted.OriginalSpeakerLabel);
+
+        await fx.Service.DisposeAsync();
+    }
+
     // -------------------------------------------------------------------------------------------
     // RenameSpeaker: the composite (consent map + diarizer + samples) rename must be all-or-nothing
     // -------------------------------------------------------------------------------------------
