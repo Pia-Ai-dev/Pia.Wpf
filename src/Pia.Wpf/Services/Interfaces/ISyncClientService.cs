@@ -60,6 +60,9 @@ public interface ISyncClientService
     /// </summary>
     event EventHandler<SyncCompletedEventArgs>? SyncCompleted;
 
+    /// <summary>Raised after a first sync pushed everything encrypted; chats sync on their own endpoint and follow.</summary>
+    event EventHandler? EncryptedMigrationCompleted;
+
     /// <summary>Triggers a full sync cycle (push then pull). Returns counts, or null if sync was skipped.</summary>
     Task<SyncResult?> SyncNowAsync();
 

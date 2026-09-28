@@ -372,11 +372,22 @@ public class AuthService : IAuthService
         settings.SyncDeviceId ??= Guid.NewGuid().ToString();
         // A marker surviving from an earlier connection would suppress this account's history upload.
         settings.AssistantChatsBackfilledAt = null;
+        ForgetE2EEKey(settings);
         if (reportedMetadata)
             settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);
 
         LoginStateChanged?.Invoke(this, true);
+    }
+
+    // The key belongs to one account and records no owner, so it goes on sign-out and on every sign-in; the
+    // server keeps this device's wrapped copy, which the sign-in paths take back.
+    private static void ForgetE2EEKey(AppSettings settings)
+    {
+        settings.IsE2EEEnabled = false;
+        settings.E2EEEncryptedUmk = null;
+        settings.E2EEUmkVersion = 0;
+        settings.E2EERecoveryConfigured = false;
     }
 
     internal const string DeviceIdHeader = "X-Pia-Device-Id";
@@ -577,6 +588,7 @@ public class AuthService : IAuthService
             settings.LastChatPullETag = null;
             settings.LastPullETag = null;
             settings.ClientPolicyInitialized = false;
+            ForgetE2EEKey(settings);
             await _settingsService.SaveSettingsAsync(settings);
 
             // Sync stays off until the next login, so a kept group policy would go on being applied

@@ -1016,7 +1016,7 @@
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Chiffrement de bout en bout</value></data>
   <data name="Settings_E2EE_Description" xml:space="preserve"><value>Lorsqu'il est activé, toutes les données synchronisées sont chiffrées sur votre appareil avant d'être envoyées au serveur. Une clé de chiffrement et un code de récupération sont générés à l'activation, qui déclenche une synchronisation complète. L'activation est définitive pour votre compte.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Activer le chiffrement de bout en bout</value></data>
-  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Le chiffrement de bout en bout est définitif pour ce compte. Pour repartir sans chiffrement, réinitialisez vos données de synchronisation sur le serveur.</value></data>
+  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Le chiffrement de bout en bout ne peut pas être désactivé pour ce compte. Il ne prend fin qu'avec le contenu synchronisé, lorsque le compte est supprimé ou qu'un administrateur réinitialise ses données de synchronisation.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Mise à jour du chiffrement et synchronisation des données...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Vérifier les demandes d'appareils</value></data>
@@ -1046,7 +1046,7 @@
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Enregistrez votre code de récupération</value></data>
   <data name="Dialog_Recovery_Description" xml:space="preserve"><value>Ce code de récupération est le SEUL moyen d'accéder à vos données chiffrées si vous perdez tous vos appareils. Notez-le et conservez-le en lieu sûr.</value></data>
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
-  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Si vous perdez ce code et tous vos appareils, vos données chiffrées ne pourront pas être récupérées. Le serveur ne peut pas déchiffrer vos données.</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Si vous perdez ce code et tous vos appareils, vos données chiffrées ne pourront pas être récupérées. Le serveur ne détient votre clé que sous forme chiffrée et ne peut pas la restaurer pour vous.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>J'ai enregistré ce code de récupération en lieu sûr</value></data>
   <!-- Missed Scheduled Job Dialog -->
   <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Recherche planifiée manquée</value></data>
@@ -1056,15 +1056,15 @@
   <data name="MissedRun_Later" xml:space="preserve"><value>Décider plus tard</value></data>
   <!-- First-Run Wizard E2EE Setup Step -->
   <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Chiffrer vos données de bout en bout</value></data>
-  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Vos notes, tâches et souvenirs restent lisibles uniquement sur vos appareils.</value></data>
+  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Votre appareil chiffre le contenu de vos notes, tâches et souvenirs avant de les synchroniser.</value></data>
   <data name="Wizard_E2EE_Pros_Title" xml:space="preserve"><value>Pourquoi activer (recommandé)</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Le personnel de Pia Cloud ne peut pas lire vos données.</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>En cas de violation de nos serveurs, vos données restent illisibles pour les attaquants.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia Cloud reçoit votre contenu chiffré et ne détient votre clé que sous forme chiffrée.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>En cas de violation de nos serveurs, les attaquants trouvent votre contenu chiffré. Les identifiants, les horodatages et l'ordre restent lisibles.</value></data>
   <data name="Wizard_E2EE_Pros_Bullet3" xml:space="preserve"><value>Seuls les appareils que vous approuvez peuvent déchiffrer vos données.</value></data>
   <data name="Wizard_E2EE_Cons_Title" xml:space="preserve"><value>Ce que vous devez savoir</value></data>
   <data name="Wizard_E2EE_Cons_Bullet1" xml:space="preserve"><value>Vous obtiendrez un code de récupération — conservez-le en lieu sûr (gestionnaire de mots de passe ou copie imprimée).</value></data>
   <data name="Wizard_E2EE_Cons_Bullet2" xml:space="preserve"><value>Si vous perdez tous vos appareils et le code de récupération, vos données chiffrées sont irrécupérables.</value></data>
-  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Vous pourrez désactiver le chiffrement plus tard dans les Paramètres.</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Une fois activé, le chiffrement ne peut plus être désactivé dans l'application.</value></data>
   <data name="Wizard_E2EE_Toggle_Label" xml:space="preserve"><value>Chiffrer mes données de bout en bout</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Title" xml:space="preserve"><value>Continuer sans chiffrement ?</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Message" xml:space="preserve"><value>Vos données synchronisées pourront être lues par le personnel de Pia Cloud en cas de violation des serveurs. Vous pourrez activer le chiffrement plus tard dans les Paramètres.</value></data>

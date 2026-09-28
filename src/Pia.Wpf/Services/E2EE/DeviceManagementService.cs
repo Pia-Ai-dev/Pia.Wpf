@@ -120,6 +120,9 @@ public class DeviceManagementService : IDeviceManagementService
         var (wrappedUmk, hkdfSalt) = _e2ee.WrapUmkForDevice(
             targetDevice.AgreementPublicKey, targetDevice.DeviceId);
 
+        var signed = DeviceApprovalSignature.Payload(
+            DeviceApprovalSignature.Current, onboardingSessionId, targetDevice.DeviceId,
+            targetDevice.AgreementPublicKey, wrappedUmk, hkdfSalt)!;
         var approval = new DeviceApprovalRequest
         {
             OnboardingSessionId = onboardingSessionId,
@@ -127,12 +130,9 @@ public class DeviceManagementService : IDeviceManagementService
             WrappedUmk = wrappedUmk,
             HkdfSalt = hkdfSalt,
             ApproverDeviceId = deviceId,
+            ApproverSignature = _deviceKeys.Sign(signed),
+            SignatureVersion = DeviceApprovalSignature.Current,
         };
-
-        // Sign the approval
-        var signData = Encoding.UTF8.GetBytes(
-            $"{onboardingSessionId}:{targetDevice.DeviceId}:{targetDevice.AgreementPublicKey}");
-        approval.ApproverSignature = _deviceKeys.Sign(signData);
 
         using var client = await CreateAuthorizedClientAsync();
         var response = await client.PostAsJsonAsync("api/e2ee/devices/approve", approval);
@@ -145,7 +145,6 @@ public class DeviceManagementService : IDeviceManagementService
     {
         var deviceId = _deviceKeys.GetDeviceId();
 
-        // 1. Fetch recovery-wrapped UMK from server
         using var client = await CreateAuthorizedClientAsync();
         var recoveryBlob = await client.GetFromJsonAsync<RecoveryWrappedUmkBlob>(
             "api/e2ee/recovery/wrapped-umk");
@@ -153,19 +152,40 @@ public class DeviceManagementService : IDeviceManagementService
         if (recoveryBlob is null)
             throw new InvalidOperationException("No recovery key found on server");
 
-        // 2. Unwrap UMK using recovery code
         var umk = _recovery.UnwrapUmkFromRecovery(recoveryBlob, recoveryCode);
         await _e2ee.StoreUmkAsync(umk);
-
-        // 3. Self-wrap UMK for this device
         var (selfWrapped, hkdfSalt) = _e2ee.WrapUmkForSelf();
 
-        // 4. Compute proof-of-possession
+        // The server activates only a pending device; an active one replaces its unopenable copy with its own wrap.
+        var status = await GetDeviceStatusAsync(deviceId);
+        if (status is { Status: DeviceStatus.Active })
+        {
+            await UploadWrappedUmkAsync(deviceId, selfWrapped, hkdfSalt, deviceId);
+            _logger.LogInformation("Replaced this active device's copy of the key via recovery code");
+        }
+        else
+        {
+            await ActivatePendingDeviceAsync(client, deviceId, umk, selfWrapped, hkdfSalt, onboardingSessionId);
+            _logger.LogInformation("Activated device via recovery code");
+        }
+
+        var settings = await _settings.GetSettingsAsync();
+        settings.IsE2EEEnabled = true;
+        settings.E2EEUmkVersion = recoveryBlob.UmkVersion;
+        await _settings.SaveSettingsAsync(settings);
+
+        Array.Clear(umk);
+    }
+
+    private async Task ActivatePendingDeviceAsync(
+        HttpClient client, string deviceId, byte[] umk, string selfWrapped, string hkdfSalt,
+        string onboardingSessionId)
+    {
         var proofKey = _crypto.DeriveKey(umk, Encoding.UTF8.GetBytes("activation"), "pia-activation-proof-v1");
         var proof = Convert.ToBase64String(
             HMACSHA256.HashData(proofKey, Encoding.UTF8.GetBytes(onboardingSessionId)));
+        Array.Clear(proofKey);
 
-        // 5. Send recovery activation request
         var activationRequest = new RecoveryActivationRequest
         {
             DeviceId = deviceId,
@@ -177,17 +197,6 @@ public class DeviceManagementService : IDeviceManagementService
 
         var response = await client.PostAsJsonAsync("api/e2ee/recovery/activate", activationRequest);
         response.EnsureSuccessStatusCode();
-
-        // 6. Update local settings
-        var settings = await _settings.GetSettingsAsync();
-        settings.IsE2EEEnabled = true;
-        settings.E2EEUmkVersion = recoveryBlob.UmkVersion;
-        await _settings.SaveSettingsAsync(settings);
-
-        Array.Clear(umk);
-        Array.Clear(proofKey);
-
-        _logger.LogInformation("Activated device via recovery code");
     }
 
     public async Task FetchAndUnwrapUmkAsync()
@@ -201,18 +210,15 @@ public class DeviceManagementService : IDeviceManagementService
         if (wrappedBlob is null)
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
-        // Need the sender's (approver's) public key to derive shared secret
         var devices = await GetDevicesAsync();
-        var approverDevice = devices.Devices
-            .FirstOrDefault(d => d.DeviceId == wrappedBlob.CreatedByDeviceId);
-
-        if (approverDevice is null)
-            throw new InvalidOperationException("Approver device not found");
+        var senderAgreementKey = wrappedBlob.CreatedByDeviceId == deviceId
+            ? _deviceKeys.GetAgreementPublicKey()
+            : VerifiedApprover(wrappedBlob, devices, deviceId).AgreementPublicKey;
 
         var umk = _e2ee.UnwrapUmkForDevice(
             wrappedBlob.Ciphertext,
             wrappedBlob.HkdfSalt,
-            approverDevice.AgreementPublicKey,
+            senderAgreementKey,
             deviceId);
 
         await _e2ee.StoreUmkAsync(umk);
@@ -224,6 +230,48 @@ public class DeviceManagementService : IDeviceManagementService
         await _settings.SaveSettingsAsync(settings);
 
         _logger.LogInformation("Fetched and unwrapped UMK from device {Approver}", wrappedBlob.CreatedByDeviceId);
+    }
+
+    // A copy this device wrapped for itself needs no signature and is opened with the local agreement key.
+    private DeviceInfo VerifiedApprover(WrappedUmkBlob blob, DeviceListResponse devices, string deviceId)
+    {
+        var approver = devices.Devices.FirstOrDefault(d =>
+            d.DeviceId == blob.CreatedByDeviceId && d.Status == DeviceStatus.Active);
+        var payload = string.IsNullOrEmpty(blob.OnboardingSessionId)
+            ? null
+            : DeviceApprovalSignature.Payload(
+                blob.SignatureVersion, blob.OnboardingSessionId, deviceId, _deviceKeys.GetAgreementPublicKey(),
+                blob.Ciphertext, blob.HkdfSalt);
+
+        if (approver is null || payload is null || string.IsNullOrEmpty(blob.ApproverSignature)
+            || !_deviceKeys.Verify(payload, blob.ApproverSignature, approver.SigningPublicKey))
+        {
+            _logger.LogWarning(
+                "Refusing the key handed over by device {Approver}: no valid signature of an active device",
+                blob.CreatedByDeviceId);
+            throw new UnverifiedApprovalException("The approval could not be verified.");
+        }
+        return approver;
+    }
+
+    public async Task<bool> TryRestoreKeyAsync()
+    {
+        if (IsInitialized()) return true;
+        if (!_deviceKeys.HasDeviceKeys()) return false;
+
+        var status = await GetDeviceStatusAsync(_deviceKeys.GetDeviceId());
+        if (status is not { Status: DeviceStatus.Active }) return false;
+
+        try
+        {
+            await FetchAndUnwrapUmkAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not take back this device's copy of the key");
+            return false;
+        }
+        return IsInitialized();
     }
 
     public async Task RevokeDeviceAsync(string deviceId)

@@ -179,4 +179,7 @@ public interface IAssistantChatService
     Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default);
 
     Task MarkBackfilledAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>Owes every chat to the server again, e.g. so copies pushed before encryption are replaced.</summary>
+    Task ClearBackfillMarksAsync(CancellationToken ct = default);
 }

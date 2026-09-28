@@ -1067,6 +1067,24 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
+    public async Task ClearBackfillMarksAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return;
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE AssistantChats SET BackfilledAt = NULL";
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private static async Task<List<SyncAssistantChatMessage>> GetMessagesAsync(
         SqliteConnection connection, Guid chatId, CancellationToken ct)
     {

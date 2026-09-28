@@ -91,7 +91,7 @@ public class FirstRunWizardViewModelTests
     {
         _auth.LoginWithPasswordAsync("a@example.com", "pw").Returns((true, (string?)null));
         _deviceMgmt.CheckE2EEStatusAsync().Returns(new E2EEStatusResponse { IsEnabled = true });
-        _deviceMgmt.IsInitialized().Returns(true);
+        _deviceMgmt.TryRestoreKeyAsync().Returns(true);
 
         var sut = CreateSut();
         sut.LoginEmailInput = "a@example.com";
@@ -126,7 +126,7 @@ public class FirstRunWizardViewModelTests
     {
         _auth.LoginWithPasswordAsync("a@example.com", "pw").Returns((true, (string?)null));
         _deviceMgmt.CheckE2EEStatusAsync().Returns(new E2EEStatusResponse { IsEnabled = true });
-        _deviceMgmt.IsInitialized().Returns(true);
+        _deviceMgmt.TryRestoreKeyAsync().Returns(true);
 
         var sut = CreateSut();
         sut.LoginEmailInput = "a@example.com";

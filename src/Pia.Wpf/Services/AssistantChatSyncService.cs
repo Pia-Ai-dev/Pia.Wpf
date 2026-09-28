@@ -52,6 +52,8 @@ public sealed class AssistantChatSyncService : BackgroundService
     /// <summary>True while the rate limiter has cut a backfill pass short and chats are still owed.</summary>
     private volatile bool _backfillPaced;
 
+    private volatile bool _resendAllRequested;
+
     private readonly TimeSpan _startupDelay;
 
     /// <summary>The server's sync policy refills over a one-minute window, so nudging faster than this only
@@ -88,6 +90,7 @@ public sealed class AssistantChatSyncService : BackgroundService
     {
         _chatService.ChatsChanged += OnChatsChanged;
         _chatService.ChatAccessed += OnChatAccessed;
+        _syncClient.EncryptedMigrationCompleted += OnEncryptedMigrationCompleted;
         return base.StartAsync(cancellationToken);
     }
 
@@ -95,6 +98,7 @@ public sealed class AssistantChatSyncService : BackgroundService
     {
         _chatService.ChatsChanged -= OnChatsChanged;
         _chatService.ChatAccessed -= OnChatAccessed;
+        _syncClient.EncryptedMigrationCompleted -= OnEncryptedMigrationCompleted;
         return base.StopAsync(cancellationToken);
     }
 
@@ -120,6 +124,14 @@ public sealed class AssistantChatSyncService : BackgroundService
     // write the API has.
     private void OnChatAccessed(object? sender, Guid chatId) => EnqueueOp(chatId, OpKind.Upsert);
 
+    // The server keeps a chat's plaintext copy until the next PUT replaces it, so after encryption every chat is
+    // owed again. Only a flag here: the loop reopens the backfill, which keeps every push on its thread.
+    private void OnEncryptedMigrationCompleted(object? sender, EventArgs e)
+    {
+        _resendAllRequested = true;
+        _signal.Writer.TryWrite(0);
+    }
+
     private void EnqueueOp(Guid id, OpKind kind)
     {
         lock (_stateLock)
@@ -141,17 +153,23 @@ public sealed class AssistantChatSyncService : BackgroundService
             if (!await RunStartupCycleAsync(stoppingToken)) return;
 
             // A pass gets one rate-limit window, so without a nudge the remainder waits for the next launch
-            // — weeks, on a catalogue of any size. The callback does nothing but wake the loop below, which
-            // keeps every push on this one thread.
-            using Timer? backfillNudge = _backfillPaced
-                ? new Timer(
-                    _ => { if (_backfillPaced) _signal.Writer.TryWrite(0); },
-                    null, _backfillRetryInterval, _backfillRetryInterval)
-                : null;
+            // — weeks, on a catalogue of any size. Armed even when startup finished, since an encrypted
+            // migration can reopen the backfill later. The callback only wakes the loop below, which keeps
+            // every push on this one thread.
+            using var backfillNudge = new Timer(
+                _ => { if (_backfillPaced) _signal.Writer.TryWrite(0); },
+                null, _backfillRetryInterval, _backfillRetryInterval);
 
             await foreach (var _ in _signal.Reader.ReadAllAsync(stoppingToken))
             {
                 await DrainAsync(stoppingToken);
+
+                if (_resendAllRequested)
+                {
+                    _resendAllRequested = false;
+                    await ReopenBackfillAsync(stoppingToken);
+                    _backfillPaced = true;
+                }
 
                 if (_backfillPaced)
                     _backfillPaced = await RunStartupPushAsync(stoppingToken);
@@ -181,6 +199,13 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
 
         await RunStartupPullAsync(ct);
+
+        // A chat pushed before encryption keeps its plaintext copy on the server until it is pushed again,
+        // so an encrypted install owes every chat that re-push once.
+        var settings = await _settingsService.GetSettingsAsync();
+        if (settings.IsE2EEEnabled && settings.AssistantChatsEncryptedResendAt is null)
+            await ReopenBackfillAsync(ct);
+
         _backfillPaced = await RunStartupPushAsync(ct);
         return true;
     }
@@ -432,18 +457,8 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// One-time backfill: pushes every locally stored chat to the cloud. Chats
-    /// created before cloud sign-in never raised <c>ChatsChanged</c>, so the
-    /// event-driven push path alone would never upload them. Runs once per
-    /// connection (gated by <c>AssistantChatsBackfilledAt</c>, cleared on logout)
-    /// and only after the startup pull, so freshly pulled chats are reconciled by
-    /// the upsert path's normal 409-merge rather than overwriting remote state.
-    /// <br/>
-    /// Returns true when the rate limiter is the only thing standing between this pass and a finished
-    /// backfill, i.e. when another pass a minute from now is worth running. Every other unfinished outcome
-    /// returns false: retrying a rejected sign-in or a missing E2EE onboarding once a minute fixes nothing.
-    /// </summary>
+    /// <summary>Pushes the chats the server is still owed, which no <c>ChatsChanged</c> will ever cover. True only
+    /// when the rate limiter cut the pass short, i.e. when another pass a minute from now is worth running.</summary>
     private async Task<bool> RunStartupPushAsync(CancellationToken ct)
     {
         try
@@ -525,6 +540,15 @@ public sealed class AssistantChatSyncService : BackgroundService
             _logger.LogWarning(ex, "Startup backfill push failed; will retry next launch");
             return false;
         }
+    }
+
+    private async Task ReopenBackfillAsync(CancellationToken ct)
+    {
+        await _chatService.ClearBackfillMarksAsync(ct);
+        var settings = await _settingsService.GetSettingsAsync();
+        settings.AssistantChatsBackfilledAt = null;
+        settings.AssistantChatsEncryptedResendAt = DateTime.UtcNow;
+        await _settingsService.SaveSettingsAsync(settings);
     }
 
     private async Task RunStartupPullAsync(CancellationToken ct)

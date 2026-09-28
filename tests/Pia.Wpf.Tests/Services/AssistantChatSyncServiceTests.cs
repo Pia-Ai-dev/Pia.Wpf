@@ -518,6 +518,139 @@ public class AssistantChatSyncServiceTests
             Arg.Is<AppSettings>(s => s.AssistantChatsBackfilledAt != null));
     }
 
+    // Chats never ride the sync push, so an encrypted first sync reaches them only through this event, and a
+    // chat the backfill already delivered keeps its plaintext copy on the server unless its mark is cleared.
+    [Fact]
+    public async Task AnEncryptedMigration_PushesChatsTheBackfillAlreadyDelivered_AgainAsCiphertext()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = SampleChat();
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            AssistantChatsBackfilledAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        var marksCleared = false;
+        _chatService.When(c => c.ClearBackfillMarksAsync(Arg.Any<CancellationToken>()))
+            .Do(_ => marksCleared = true);
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => (IReadOnlyList<Guid>)(marksCleared ? [chat.Id] : []));
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
+        var syncClient = Substitute.For<ISyncClientService>();
+
+        var sut = new AssistantChatSyncService(
+            _chatService, _capabilities, _auth, _settings, _clientFactory, NewE2EEMapper(),
+            syncClient, NullLogger<AssistantChatSyncService>.Instance, startupDelayOverride: TimeSpan.Zero);
+
+        await sut.StartAsync(ct);
+        try
+        {
+            syncClient.EncryptedMigrationCompleted += Raise.Event();
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline && _handler.LastPutBody is null)
+                await Task.Delay(20, ct);
+        }
+        finally
+        {
+            await sut.StopAsync(ct);
+        }
+
+        Assert.NotNull(_handler.LastPutBody);
+        using var doc = JsonDocument.Parse(_handler.LastPutBody!);
+        Assert.False(string.IsNullOrEmpty(doc.RootElement.GetProperty("encryptedPayload").GetString()));
+        Assert.Equal(0, doc.RootElement.GetProperty("messages").GetArrayLength());
+    }
+
+    // An encrypted install can still have plaintext chat copies on the server from before its migration covered
+    // chats, so its startup re-pushes every chat once — and only once, or every launch replays the catalogue.
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, false)]
+    public async Task StartupCycle_RePushesEveryChatOnce_OnAnEncryptedInstall(
+        bool encrypted, bool alreadyRePushed, bool expectPush)
+    {
+        var chat = SampleChat();
+        var stored = new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            IsE2EEEnabled = encrypted,
+            AssistantChatsBackfilledAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            AssistantChatsEncryptedResendAt = alreadyRePushed
+                ? new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc)
+                : null,
+        };
+        _settings.GetSettingsAsync().Returns(stored);
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        var marksCleared = false;
+        _chatService.When(c => c.ClearBackfillMarksAsync(Arg.Any<CancellationToken>()))
+            .Do(_ => marksCleared = true);
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => (IReadOnlyList<Guid>)(marksCleared ? [chat.Id] : []));
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
+
+        var sut = CreateSut(encrypted ? NewE2EEMapper() : NewPlainMapper());
+        await InvokeRunStartupCycleAsync(sut, CancellationToken.None);
+
+        Assert.Equal(expectPush, _handler.LastPutBody is not null);
+        Assert.Equal(encrypted, stored.AssistantChatsEncryptedResendAt is not null);
+    }
+
+    // A startup that had nothing owed never paced, so the re-push the migration starts later is the first pass
+    // the rate limiter can cut short; its remainder must not wait for the next launch.
+    [Fact]
+    public async Task AnEncryptedMigrationCutShortByTheRateLimit_ResumesOnTheNudge()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = SampleChat();
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            AssistantChatsBackfilledAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
+        var syncClient = Substitute.For<ISyncClientService>();
+
+        var sut = new AssistantChatSyncService(
+            _chatService, _capabilities, _auth, _settings, _clientFactory, NewE2EEMapper(),
+            syncClient, NullLogger<AssistantChatSyncService>.Instance,
+            startupDelayOverride: TimeSpan.Zero, backfillRetryIntervalOverride: TimeSpan.FromMilliseconds(20));
+
+        int Passes() => _chatService.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.GetUnbackfilledIdsAsync));
+
+        await sut.StartAsync(ct);
+        try
+        {
+            syncClient.EncryptedMigrationCompleted += Raise.Event();
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline && Passes() < 2)
+                await Task.Delay(20, ct);
+        }
+        finally
+        {
+            await sut.StopAsync(ct);
+        }
+
+        Assert.True(Passes() >= 2, $"only {Passes()} re-push pass(es) ran; the nudge never resumed it");
+    }
+
     // The capability probe is unauthenticated, so probing before sign-in beacons the server from
     // every signed-out install.
     [Fact]

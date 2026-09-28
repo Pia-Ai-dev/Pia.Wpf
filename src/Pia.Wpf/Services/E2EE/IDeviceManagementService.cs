@@ -22,16 +22,17 @@ public interface IDeviceManagementService
     /// </summary>
     Task ApproveDeviceAsync(string onboardingSessionId, DeviceInfo targetDevice);
 
-    /// <summary>
-    /// Activate this device using the recovery code.
-    /// </summary>
+    /// <summary>Takes the key back with the recovery code: activates a pending device, and replaces an active
+    /// device's server copy with its own wrap, which needs no onboarding session.</summary>
     Task ActivateViaRecoveryAsync(string recoveryCode, string onboardingSessionId);
 
-    /// <summary>
-    /// Fetch this device's wrapped UMK from the server and unwrap it.
-    /// Called after another device approves this one.
-    /// </summary>
+    /// <summary>Unwraps this device's server copy of the key; another device's wrap needs that device's valid
+    /// signature, or <see cref="UnverifiedApprovalException"/> is thrown.</summary>
     Task FetchAndUnwrapUmkAsync();
+
+    /// <summary>True when this device holds the key, taking back its own server copy first if the server still
+    /// lists the device as active.</summary>
+    Task<bool> TryRestoreKeyAsync();
 
     /// <summary>
     /// Revoke a device by its deviceId.

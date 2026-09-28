@@ -42,11 +42,19 @@ public class E2EEService : IE2EEService
 
     public byte[]? LoadUmk()
     {
-        if (_cachedUmk is not null) return _cachedUmk;
-
+        // The persisted copy is authoritative: once sign-out removes it, the cached key goes too.
         var settings = _settings.GetSettingsAsync().GetAwaiter().GetResult();
         if (string.IsNullOrEmpty(settings.E2EEEncryptedUmk))
+        {
+            if (_cachedUmk is not null)
+            {
+                Array.Clear(_cachedUmk);
+                _cachedUmk = null;
+            }
             return null;
+        }
+
+        if (_cachedUmk is not null) return _cachedUmk;
 
         var decrypted = _dpapi.Decrypt(settings.E2EEEncryptedUmk);
         if (string.IsNullOrEmpty(decrypted))
