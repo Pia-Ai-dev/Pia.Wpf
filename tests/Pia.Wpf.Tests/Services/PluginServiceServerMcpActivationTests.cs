@@ -30,6 +30,49 @@ public sealed class PluginServiceServerMcpActivationTests : IDisposable
     }
 
     [Fact]
+    public async Task ANewlyDistributedExtension_WaitsForTheUser()
+    {
+        var pushed = Pushed(defaultEnabled: null);
+        var log = new CapturingLogger<PluginService>();
+        var service = CreateService(log);
+
+        await service.ApplyServerPluginsAsync([pushed], []);
+        Assert.Equal(0, StartAttempts(log));
+
+        await service.SetPluginEnabledAsync(pushed.Id, true);
+        Assert.Equal(1, StartAttempts(log));
+    }
+
+    [Fact]
+    public async Task AnExtensionTheAdminSwitchesOnByDefault_StartsWithoutAsking()
+    {
+        var log = new CapturingLogger<PluginService>();
+
+        await CreateService(log).ApplyServerPluginsAsync([Pushed(defaultEnabled: true)], []);
+
+        Assert.Equal(1, StartAttempts(log));
+    }
+
+    // Ran before this rule existed without the user ever choosing: it keeps running rather than vanish.
+    [Fact]
+    public async Task AnExtensionFromBeforeTheRule_KeepsStarting()
+    {
+        var seedLog = new CapturingLogger<PluginService>();
+        var seed = CreateService(seedLog);
+        await seed.ApplyServerPluginsAsync([Pushed(defaultEnabled: null)], []);
+        using (var rewind = _contexts[^1].GetConnection().CreateCommand())
+        {
+            rewind.CommandText = "PRAGMA user_version = 0";
+            rewind.ExecuteNonQuery();
+        }
+
+        var log = new CapturingLogger<PluginService>();
+        await CreateService(log).InitializePersistedPluginsAsync();
+
+        Assert.Equal(1, StartAttempts(log));
+    }
+
+    [Fact]
     public async Task ASwitchedOffExtension_DoesNotStartOnTheNextLaunch()
     {
         var pushed = Pushed();
@@ -92,12 +135,14 @@ public sealed class PluginServiceServerMcpActivationTests : IDisposable
         log.Entries.Count(e => e.Message.Contains(Name, StringComparison.Ordinal)
             && e.Message.Contains("not found on PATH", StringComparison.Ordinal));
 
-    private static SyncPlugin Pushed(Guid? id = null, bool isActive = true) => new()
+    private static SyncPlugin Pushed(Guid? id = null, bool isActive = true, bool? defaultEnabled = true) => new()
     {
         Id = id ?? Guid.NewGuid(),
         Kind = "mcp_server",
         Name = Name,
-        ConfigJson = """{"transport":"stdio","command":"pia-tests-no-such-command"}""",
+        ConfigJson = defaultEnabled is bool on
+            ? $$"""{"transport":"stdio","command":"pia-tests-no-such-command","defaultEnabled":{{(on ? "true" : "false")}}}"""
+            : """{"transport":"stdio","command":"pia-tests-no-such-command"}""",
         IsActive = isActive,
     };
 

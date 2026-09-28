@@ -12,6 +12,7 @@
 
 ## Plugins
 
-- A plugin your administrator distributes no longer starts once you have
-  switched it off, neither when Pia starts nor when the server updates it.
-  Switching it back on starts it right away, without a restart.
+- A plugin your administrator distributes now waits for you to switch it on,
+  unless your administrator switched it on for everyone; ones already running
+  keep running. Once switched off, it stays off when Pia starts or the server
+  updates it, and switching it back on starts it right away.

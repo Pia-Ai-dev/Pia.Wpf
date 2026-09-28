@@ -642,6 +642,7 @@ public class SqliteContext : IDisposable
         command.ExecuteNonQuery();
 
         MigrateSchema();
+        KeepPreviouslyStartedPluginsOn();
         EnsureMemoriesFts();
         EnsureChunksFts();
         EnsureAssistantChatsFts();
@@ -1229,6 +1230,24 @@ public class SqliteContext : IDisposable
             addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN EffortPinRecorded INTEGER NOT NULL DEFAULT 0";
             addCol.ExecuteNonQuery();
         }
+    }
+
+    // A distributed MCP server without the admin's default now waits for the user; one that already ran
+    // here before that rule keeps running. user_version makes this a one-off, so a later arrival still waits.
+    private void KeepPreviouslyStartedPluginsOn()
+    {
+        using var read = _connection!.CreateCommand();
+        read.CommandText = "PRAGMA user_version";
+        if (Convert.ToInt64(read.ExecuteScalar()) >= 1) return;
+
+        using var update = _connection.CreateCommand();
+        update.CommandText = """
+            UPDATE Plugins SET UserEnabled = 1
+            WHERE UserEnabled IS NULL AND IsPreloaded = 0 AND Kind = 'mcp_server'
+              AND (CASE WHEN json_valid(ConfigJson) THEN json_extract(ConfigJson, '$.defaultEnabled') END) IS NULL;
+            PRAGMA user_version = 1;
+            """;
+        update.ExecuteNonQuery();
     }
 
     private void EnsureMemoriesFts()

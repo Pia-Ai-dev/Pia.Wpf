@@ -949,7 +949,8 @@ public class PluginService : IPluginService
         }
         catch { }
 
-        return true; // Default to enabled
+        // A distributed MCP server runs a process here, so without the admin's explicit default it waits for the user.
+        return !(config is { IsPreloaded: false, Kind: "mcp_server" } && !LocalMcpConfig.IsLocal(config.ConfigJson));
     }
 
     private static string? GetHandlerId(string configJson)
