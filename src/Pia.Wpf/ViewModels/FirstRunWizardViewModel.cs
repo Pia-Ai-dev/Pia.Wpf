@@ -242,6 +242,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
         NextOrFinishCommand.NotifyCanExecuteChanged();
     }
 
+    // Next also keys off the address, so an edit after a passed test must re-check it.
+    partial void OnProviderEndpointChanged(string value) => NextOrFinishCommand.NotifyCanExecuteChanged();
+
     // --- Ready step summary ---
 
     public bool HasProviderConfigured => IsLoggedIn || ConnectionTestPassed;
