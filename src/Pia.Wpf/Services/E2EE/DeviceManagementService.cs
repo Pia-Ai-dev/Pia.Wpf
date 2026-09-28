@@ -145,7 +145,6 @@ public class DeviceManagementService : IDeviceManagementService
     {
         var deviceId = _deviceKeys.GetDeviceId();
 
-        // 1. Fetch recovery-wrapped UMK from server
         using var client = await CreateAuthorizedClientAsync();
         var recoveryBlob = await client.GetFromJsonAsync<RecoveryWrappedUmkBlob>(
             "api/e2ee/recovery/wrapped-umk");
@@ -153,19 +152,40 @@ public class DeviceManagementService : IDeviceManagementService
         if (recoveryBlob is null)
             throw new InvalidOperationException("No recovery key found on server");
 
-        // 2. Unwrap UMK using recovery code
         var umk = _recovery.UnwrapUmkFromRecovery(recoveryBlob, recoveryCode);
         await _e2ee.StoreUmkAsync(umk);
-
-        // 3. Self-wrap UMK for this device
         var (selfWrapped, hkdfSalt) = _e2ee.WrapUmkForSelf();
 
-        // 4. Compute proof-of-possession
+        // The server activates only a pending device; an active one replaces its unopenable copy with its own wrap.
+        var status = await GetDeviceStatusAsync(deviceId);
+        if (status is { Status: DeviceStatus.Active })
+        {
+            await UploadWrappedUmkAsync(deviceId, selfWrapped, hkdfSalt, deviceId);
+            _logger.LogInformation("Replaced this active device's copy of the key via recovery code");
+        }
+        else
+        {
+            await ActivatePendingDeviceAsync(client, deviceId, umk, selfWrapped, hkdfSalt, onboardingSessionId);
+            _logger.LogInformation("Activated device via recovery code");
+        }
+
+        var settings = await _settings.GetSettingsAsync();
+        settings.IsE2EEEnabled = true;
+        settings.E2EEUmkVersion = recoveryBlob.UmkVersion;
+        await _settings.SaveSettingsAsync(settings);
+
+        Array.Clear(umk);
+    }
+
+    private async Task ActivatePendingDeviceAsync(
+        HttpClient client, string deviceId, byte[] umk, string selfWrapped, string hkdfSalt,
+        string onboardingSessionId)
+    {
         var proofKey = _crypto.DeriveKey(umk, Encoding.UTF8.GetBytes("activation"), "pia-activation-proof-v1");
         var proof = Convert.ToBase64String(
             HMACSHA256.HashData(proofKey, Encoding.UTF8.GetBytes(onboardingSessionId)));
+        Array.Clear(proofKey);
 
-        // 5. Send recovery activation request
         var activationRequest = new RecoveryActivationRequest
         {
             DeviceId = deviceId,
@@ -177,17 +197,6 @@ public class DeviceManagementService : IDeviceManagementService
 
         var response = await client.PostAsJsonAsync("api/e2ee/recovery/activate", activationRequest);
         response.EnsureSuccessStatusCode();
-
-        // 6. Update local settings
-        var settings = await _settings.GetSettingsAsync();
-        settings.IsE2EEEnabled = true;
-        settings.E2EEUmkVersion = recoveryBlob.UmkVersion;
-        await _settings.SaveSettingsAsync(settings);
-
-        Array.Clear(umk);
-        Array.Clear(proofKey);
-
-        _logger.LogInformation("Activated device via recovery code");
     }
 
     public async Task FetchAndUnwrapUmkAsync()

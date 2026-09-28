@@ -22,9 +22,8 @@ public interface IDeviceManagementService
     /// </summary>
     Task ApproveDeviceAsync(string onboardingSessionId, DeviceInfo targetDevice);
 
-    /// <summary>
-    /// Activate this device using the recovery code.
-    /// </summary>
+    /// <summary>Takes the key back with the recovery code: activates a pending device, and replaces an active
+    /// device's server copy with its own wrap, which needs no onboarding session.</summary>
     Task ActivateViaRecoveryAsync(string recoveryCode, string onboardingSessionId);
 
     /// <summary>Unwraps this device's server copy of the key; another device's wrap needs that device's valid
