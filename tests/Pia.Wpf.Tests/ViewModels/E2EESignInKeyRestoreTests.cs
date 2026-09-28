@@ -3,6 +3,7 @@ namespace Pia.Tests.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Services.Credits;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
@@ -73,7 +74,8 @@ public class E2EESignInKeyRestoreTests
             NullLogger<SettingsViewModel>.Instance, _settings, Substitute.For<IDialogService>(),
             Substitute.For<global::Wpf.Ui.ISnackbarService>(), _auth, _sync, loc, _deviceMgmt,
             _deviceKeys, Substitute.For<IMemoryService>(), Substitute.For<IPolicyService>(), Onboarding(),
-            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>());
+            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
+            Substitute.For<ICreditStatusService>());
     }
 
     private FirstRunWizardViewModel CreateWizard()
