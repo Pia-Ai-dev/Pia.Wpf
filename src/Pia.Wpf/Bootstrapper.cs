@@ -815,6 +815,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<Services.Consent.INamedConsentClassifier>(),
                     sp.GetRequiredService<Services.Consent.IConsentAuditLog>(),
                     sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+                    uiLanguage: () => sp.GetRequiredService<ILocalizationService>().CurrentLanguage,
                     createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
                         sp.GetRequiredService<ISettingsService>(),
                         sp.GetRequiredService<IAssetDownloader>(),
@@ -843,6 +844,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<Services.Consent.INamedConsentClassifier>(),
                     sp.GetRequiredService<Services.Consent.IConsentAuditLog>(),
                     sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+                    uiLanguage: () => sp.GetRequiredService<ILocalizationService>().CurrentLanguage,
                     createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
                         sp.GetRequiredService<ISettingsService>(),
                         sp.GetRequiredService<IAssetDownloader>(),

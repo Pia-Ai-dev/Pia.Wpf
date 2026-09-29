@@ -215,5 +215,8 @@ public sealed class ConsentStateManagerTests
         Language: "de",
         Confidence: 0.95f,
         GrantedAt: DateTimeOffset.UtcNow,
-        SttModelId: "whisper-base");
+        SttModelId: "whisper-base",
+        NoticeVersion: ConsentNotice.Version,
+        NoticePurposes: ConsentNotice.Purposes,
+        NoticeLanguage: "en");
 }

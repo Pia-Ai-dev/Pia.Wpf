@@ -229,5 +229,6 @@ public sealed class ConsentFrontMatterTests
     }
 
     private static ConsentEvidence Evidence(string label) => new(
-        label, "Anna", "My name is Anna and I accept this recording by Pia.", "en", 0.95f, Granted, "fake-stt");
+        label, "Anna", "My name is Anna and I accept this recording by Pia.", "en", 0.95f, Granted, "fake-stt",
+        ConsentNotice.Version, ConsentNotice.Purposes, "en");
 }

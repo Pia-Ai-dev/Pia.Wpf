@@ -291,6 +291,47 @@ public sealed class DirectTranscriptionServiceTests
         await fx.Service.DisposeAsync();
     }
 
+    // The notice was accepted in the language of the first start; a later switch changes nothing they saw.
+    [Fact]
+    public async Task Grants_CiteTheNoticeOfTheSessionsFirstStart_UntilANewSessionBegins()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fx = new Fixture(useRealConsentManager: true) { UiLanguage = TargetLanguage.DE };
+        fx.Classifier.Classify(Arg.Any<string>(), Arg.Any<TargetSpeechLanguage>())
+            .Returns(new NamedConsentResult(true, null, "en", NamedConsentClassifier.CrispConfidence));
+        var markers = new List<ConsentSessionMarker>();
+        fx.EvidenceStore
+            .SaveGrantAsync(Arg.Do<ConsentSessionMarker>(markers.Add), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        async Task GrantAsync(string label)
+        {
+            await fx.Service.StartAsync(ct);
+            await fx.LoopbackSink!.WriteAsync(
+                new TranscriptUtterance(TranscriptSpeaker.Them, "consent", DateTimeOffset.UtcNow, SpeakerLabel: label), ct);
+            await fx.Service.StopAsync(ct);
+        }
+
+        await GrantAsync("Speaker 1");
+        var firstSession = fx.Service.SessionId;
+        fx.UiLanguage = TargetLanguage.FR;
+        await GrantAsync("Speaker 2");
+        await fx.Service.EndSessionAsync(ct);
+        await GrantAsync("Speaker 1");
+
+        Assert.Equal(3, markers.Count);
+        Assert.Same(markers[0], markers[1]);
+        Assert.Equal(firstSession, markers[0].SessionId);
+        Assert.Equal("de", markers[0].NoticeLanguage);
+        Assert.Equal(ConsentSessionMarker.DirectKind, markers[0].Kind);
+        Assert.Equal(ConsentNotice.Version, markers[0].NoticeVersion);
+        Assert.Equal(ConsentNotice.Purposes, markers[0].NoticePurposes);
+        Assert.NotEqual(firstSession, markers[2].SessionId);
+        Assert.Equal("fr", markers[2].NoticeLanguage);
+
+        await fx.Service.DisposeAsync();
+    }
+
     // -------------------------------------------------------------------------------------------
     // RenameSpeaker: the composite (consent map + diarizer + samples) rename must be all-or-nothing
     // -------------------------------------------------------------------------------------------
@@ -674,7 +715,10 @@ public sealed class DirectTranscriptionServiceTests
         "en",
         NamedConsentClassifier.CrispConfidence,
         DateTimeOffset.UtcNow,
-        "fake-stt");
+        "fake-stt",
+        ConsentNotice.Version,
+        ConsentNotice.Purposes,
+        "en");
 
     /// <summary>
     /// Wires the internal seam constructor to fully synchronous fakes, records dispose steps into a
@@ -706,6 +750,8 @@ public sealed class DirectTranscriptionServiceTests
         public FakeTranscriptionEngine TranscriptionEngine { get; private set; }
 
         public bool CreateTranscriptionThrows { get; init; }
+
+        public TargetLanguage UiLanguage { get; set; } = TargetLanguage.EN;
 
         /// <summary>Makes the mic capture source fail to start, modelling an absent or exclusively-held device.</summary>
         public bool MicSourceThrowsOnStart { get; set; }
@@ -764,6 +810,7 @@ public sealed class DirectTranscriptionServiceTests
                 Classifier,
                 AuditLog,
                 EvidenceStore,
+                () => UiLanguage,
                 createTranscription: async ct =>
                 {
                     if (CreateTranscriptionThrows)

@@ -8,21 +8,21 @@ using Pia.Logging;
 namespace Pia.Services.Consent;
 
 /// <summary>
-/// DPAPI-protected, write-only persistence of consent evidence (Art. 7 GDPR Nachweispflicht). One file
-/// per speaker per session for the grant, plus a separate revocation file appended beside it — the
-/// grant file itself is never modified, and only <see cref="ConsentRetention"/> removes it.
-///
-/// <para>This is the D7 fix: the old branch's equivalent write path always passed an empty evidence
-/// path and never persisted anything. Both public methods THROW on any encryption or I/O failure —
-/// a silent failure here is exactly the defect being fixed.</para>
+/// DPAPI-protected, write-only consent evidence: per session folder a marker, one grant file per speaker and a
+/// revocation file beside it. Every write throws on failure, because a silent one would leave no proof at all.
 /// </summary>
 public sealed class ConsentEvidenceStore : IConsentEvidenceStore
 {
+    public const string SessionMarkerFileName = "session.json";
+
+    private sealed record SessionEnvelope(string Schema, ConsentSessionMarker Session);
+
     private sealed record GrantEnvelope(string Schema, string SessionId, ConsentEvidence Evidence);
 
     private sealed record RevocationEnvelope(string Schema, string SessionId, string SpeakerLabel, DateTimeOffset RevokedAt);
 
-    private const string GrantSchema = "pia-consent-evidence/v1";
+    private const string SessionSchema = "pia-consent-session/v1";
+    private const string GrantSchema = "pia-consent-evidence/v2";
     private const string RevocationSchema = "pia-consent-revocation/v1";
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
@@ -41,20 +41,28 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
         _logger = logger;
     }
 
-    public async Task SaveGrantAsync(string sessionId, ConsentEvidence evidence, CancellationToken cancellationToken = default)
+    public async Task SaveGrantAsync(ConsentSessionMarker session, ConsentEvidence evidence, CancellationToken cancellationToken = default)
     {
-        var envelope = new GrantEnvelope(GrantSchema, sessionId, evidence);
-        var json = JsonSerializer.Serialize(envelope, JsonOpts);
-        var protectedJson = Protect(json);
+        var sessionDir = Path.Combine(_rootDirectory, session.SessionId);
+        var markerPath = Path.Combine(sessionDir, SessionMarkerFileName);
 
-        var sessionDir = Path.Combine(_rootDirectory, sessionId);
+        // The marker comes with the first grant, not at prepare: a warmup that nobody consents to leaves no folder.
+        var protectedMarker = File.Exists(markerPath)
+            ? null
+            : Protect(JsonSerializer.Serialize(new SessionEnvelope(SessionSchema, session), JsonOpts));
+        var protectedGrant = Protect(JsonSerializer.Serialize(
+            new GrantEnvelope(GrantSchema, session.SessionId, evidence), JsonOpts));
+
         Directory.CreateDirectory(sessionDir);
+        if (protectedMarker is not null)
+            await File.WriteAllTextAsync(markerPath, protectedMarker, cancellationToken).ConfigureAwait(false);
+
         var path = Path.Combine(sessionDir, $"{SanitizeFileName(evidence.SpeakerLabel)}.json");
+        await File.WriteAllTextAsync(path, protectedGrant, cancellationToken).ConfigureAwait(false);
 
-        await File.WriteAllTextAsync(path, protectedJson, cancellationToken).ConfigureAwait(false);
-
-        _logger.LogInformation("Consent evidence saved for session {SessionId}: {Outcome}", sessionId, true);
-        _logger.SensitiveDebug("Consent evidence saved for label {Label}", evidence.SpeakerLabel);
+        _logger.LogInformation("Consent evidence saved (first in session: {First})", protectedMarker is not null);
+        _logger.SensitiveDebug(
+            "Consent evidence saved for session {SessionId}, label {Label}", session.SessionId, evidence.SpeakerLabel);
     }
 
     public async Task SaveRevocationAsync(string sessionId, string speakerLabel, DateTimeOffset revokedAt, CancellationToken cancellationToken = default)
@@ -69,8 +77,8 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
 
         await File.WriteAllTextAsync(path, protectedJson, cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation("Consent revocation saved for session {SessionId}: {Outcome}", sessionId, true);
-        _logger.SensitiveDebug("Consent revocation saved for label {Label}", speakerLabel);
+        _logger.LogInformation("Consent revocation saved");
+        _logger.SensitiveDebug("Consent revocation saved for session {SessionId}, label {Label}", sessionId, speakerLabel);
     }
 
     /// <summary>

@@ -1,24 +1,14 @@
 namespace Pia.Services.Consent;
 
 /// <summary>
-/// Persists consent evidence so a grant can still be proven after the session ends
-/// (Art. 7 GDPR Nachweispflicht). Write-only: there is no reader and no expiry stamp, and a session ages
-/// out on its file dates alone — see <see cref="ConsentRetention"/>.
-///
-/// <para>Both methods THROW on failure. That is the contract, not an oversight: the defect this store
-/// exists to fix was a silent success path that persisted nothing at all. The caller audits the failure
-/// (<see cref="ConsentAuditEventTypes.EvidenceWriteFailed"/>) and continues.</para>
+/// Persists consent evidence so a grant can still be proven after the session ends. Write-only; every method
+/// throws on failure, and the caller audits it (<see cref="ConsentAuditEventTypes.EvidenceWriteFailed"/>).
 /// </summary>
 public interface IConsentEvidenceStore
 {
-    /// <summary>
-    /// Writes one DPAPI-protected evidence file for a grant.
-    /// </summary>
-    /// <param name="sessionId">Session the grant belongs to; scopes the file name or folder.</param>
-    /// <param name="evidence">The evidence to persist. Written once and never modified afterwards.</param>
-    /// <param name="cancellationToken">Cancels the write.</param>
+    /// <summary>Writes a grant's evidence file, and the session's marker with the session's first grant.</summary>
     /// <exception cref="Exception">Any encryption or I/O failure propagates — nothing is swallowed.</exception>
-    Task SaveGrantAsync(string sessionId, ConsentEvidence evidence, CancellationToken cancellationToken = default);
+    Task SaveGrantAsync(ConsentSessionMarker session, ConsentEvidence evidence, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Appends a revocation record BESIDE the grant evidence. The grant evidence is never modified, and it is

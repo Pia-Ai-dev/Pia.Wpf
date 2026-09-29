@@ -6,17 +6,13 @@ using Pia.Services.LiveTranscription;
 
 namespace Pia.Services.Consent;
 
-/// <summary>
-/// Per-session context the forward loop needs but does not own: which session evidence/audit lines
-/// belong to, which speech-to-text model produced the text, and which language the classifier should
-/// try first.
-/// </summary>
-/// <param name="SessionId">Current session id (rotates on <c>EndSessionAsync</c>, not on a pause).</param>
+/// <summary>Per-session facts the forward loop needs but does not own.</summary>
+/// <param name="Session">The session the evidence belongs to, with the notice its user accepted.</param>
 /// <param name="SttModelId">Identifier of the speech-to-text model producing the utterance text.</param>
 /// <param name="LanguageHint">The session's configured speech language, passed straight to the classifier.</param>
 /// <param name="NameSpeakers">False keeps the name from the consent sentence inside the evidence only.</param>
 public sealed record ConsentSessionContext(
-    string SessionId, string SttModelId, TargetSpeechLanguage LanguageHint, bool NameSpeakers = true);
+    ConsentSessionMarker Session, string SttModelId, TargetSpeechLanguage LanguageHint, bool NameSpeakers = true);
 
 /// <summary>
 /// What <see cref="ConsentForwardLoop.ProcessAsync"/> did with one utterance. Purely observational —
@@ -361,14 +357,15 @@ public sealed class ConsentForwardLoop
             result.Language,
             result.Confidence,
             utterance.Timestamp,
-            context.SttModelId);
+            context.SttModelId,
+            context.Session.NoticeVersion,
+            context.Session.NoticePurposes,
+            context.Session.NoticeLanguage);
 
         var extractedName = context.NameSpeakers ? result.ExtractedName : null;
         _consent.Grant(label, extractedName, evidence);
 
-        // Resolve the final label: rename may fail (collision, diarizer refusal) — in which case the
-        // grant still stands under the original diarizer label, and the name lives only in the
-        // evidence/consent entry.
+        // A refused rename leaves the grant under the diarizer label, with the name only in the evidence.
         var finalLabel = label;
         if (!string.IsNullOrWhiteSpace(extractedName) && renameSpeaker(label, extractedName))
         {
@@ -377,7 +374,7 @@ public sealed class ConsentForwardLoop
 
         try
         {
-            await _evidenceStore.SaveGrantAsync(context.SessionId, evidence, cancellationToken).ConfigureAwait(false);
+            await _evidenceStore.SaveGrantAsync(context.Session, evidence, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -405,12 +402,8 @@ public sealed class ConsentForwardLoop
                 ["hasName"] = !string.IsNullOrWhiteSpace(result.ExtractedName),
             }));
 
-        // Raised BEFORE the sink write so a UI subscriber can relabel its chip before the consent
-        // utterance (already carrying the new label) arrives. `finalLabel` is the AUTHORITATIVE key (the
-        // one the consent map is keyed by and the gate reads); the original diarizer label rides along so
-        // a subscriber can still find the row it created at detection time. When the rename was refused
-        // these two differ, and a subscriber that keyed its UI off ExtractedName instead would end up
-        // pointing at a key the consent map does not have — making a later revoke a silent no-op.
+        // Before the sink write, so the chip is relabelled before the renamed utterance arrives. `finalLabel` is
+        // the consent-map key; the detection label rides along so the subscriber can find its row.
         RaiseSpeakerConsentChanged(new ConsentStateChangedEventArgs(
             finalLabel, ConsentState.Unknown, ConsentState.Granted, extractedName, label));
 

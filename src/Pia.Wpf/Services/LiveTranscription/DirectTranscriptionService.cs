@@ -27,6 +27,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     private readonly INamedConsentClassifier _consentClassifier;
     private readonly IConsentAuditLog _auditLog;
     private readonly IConsentEvidenceStore _evidenceStore;
+    private readonly Func<TargetLanguage> _uiLanguage;
 
     // ---- Injected seams ---------------------------------------------------------------------------
     private readonly Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService SpeakerId, string SttModelId)>> _createTranscription;
@@ -77,6 +78,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     // ---- Session-scoped (survive a Stop/Start pause, cleared only by EndSessionAsync) --------------
     private string _sessionId = string.Empty;
     private readonly List<string> _transcriptSessionIds = new();
+    private ConsentSessionMarker? _sessionMarker;
     private string _sttModelId = string.Empty;
     private volatile bool _nameSpeakers = true;
     private string? _vadModelPath;
@@ -126,7 +128,8 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         IConsentStateManager consentStateManager,
         INamedConsentClassifier consentClassifier,
         IConsentAuditLog auditLog,
-        IConsentEvidenceStore evidenceStore)
+        IConsentEvidenceStore evidenceStore,
+        ILocalizationService localizationService)
         : this(
             settingsService,
             loggerFactory,
@@ -134,6 +137,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             consentClassifier,
             auditLog,
             evidenceStore,
+            () => localizationService.CurrentLanguage,
             createTranscription: CreateProductionTranscriptionFactory(settingsService, assetDownloader, loggerFactory),
             micSourceFactory: () => CreateMicSource(settingsService, loggerFactory),
             loopbackSourceFactory: () => new LoopbackAudioCaptureService(loggerFactory.CreateLogger<LoopbackAudioCaptureService>()),
@@ -235,6 +239,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         INamedConsentClassifier consentClassifier,
         IConsentAuditLog auditLog,
         IConsentEvidenceStore evidenceStore,
+        Func<TargetLanguage> uiLanguage,
         Func<CancellationToken, Task<(string SileroPath, ITranscriptionEngine Engine, ISpeakerIdentificationService SpeakerId, string SttModelId)>> createTranscription,
         Func<IAudioCaptureSource> micSourceFactory,
         Func<IAudioCaptureSource> loopbackSourceFactory,
@@ -247,6 +252,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         _consentClassifier = consentClassifier;
         _auditLog = auditLog;
         _evidenceStore = evidenceStore;
+        _uiLanguage = uiLanguage;
 
         _createTranscription = createTranscription;
         _micSourceFactory = micSourceFactory;
@@ -305,6 +311,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                     _sessionId = sessionId;
                     _transcriptSessionIds.Add(sessionId);
                 }
+                _sessionMarker = null;
 
                 // A new diarizer's "Speaker 1" is a different voice, so grants must not carry over, and the
                 // UI must hear about it or it keeps showing consent the gate no longer honours.
@@ -369,14 +376,12 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     {
         lock (_stateLock)
         {
-            // Starting/Stopping are impossible while the gate is held; Preparing means a background
-            // warmup is mid-flight, and PrepareAsync's own gate will serialize us behind it.
+            // The gate rules out Starting/Stopping; a Preparing warmup is serialized by PrepareAsync's own gate.
             if (_state is DirectTranscriptionState.Running)
                 throw new InvalidOperationException($"Cannot start while {_state}");
         }
 
-        // A stop that arrives while this start is still building can cancel it here rather than blocking
-        // behind a model download. Linked to the caller's token so an external cancel still works.
+        // Lets a stop cancel a start that is still waiting on a model download.
         var startCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         lock (_stateLock) { _startCts = startCts; }
         var startToken = startCts.Token;
@@ -390,18 +395,20 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
             _nameSpeakers = settings.MeetingSpeakerNaming;
+
+            // Taken at the first start of the session, when the user has just accepted the notice; a resume
+            // after a language switch must not rewrite what they were shown.
+            _sessionMarker ??= new ConsentSessionMarker(
+                _sessionId,
+                DateTimeOffset.UtcNow,
+                ConsentSessionMarker.DirectKind,
+                ConsentNotice.Version,
+                ConsentNotice.Purposes,
+                ConsentNotice.LanguageOf(_uiLanguage()));
             var context = new ConsentSessionContext(
-                _sessionId, _sttModelId, settings.TargetSpeechLanguage, settings.MeetingSpeakerNaming);
+                _sessionMarker, _sttModelId, settings.TargetSpeechLanguage, settings.MeetingSpeakerNaming);
 
-            // Every resource below is assigned to its instance field IMMEDIATELY after creation (not
-            // batched at the end): if a later step throws, the catch below calls TeardownRunAsync,
-            // which only tears down what it finds in the instance fields. Batching the assignments
-            // until "everything succeeded" would leak a mid-start failure's already-created sources,
-            // engines, or forward-loop task, because teardown would see nothing to dispose.
-
-            // Fresh raw channel every start (fixes D2: the old branch's raw channel was a readonly
-            // field completed inside the same teardown that StopAsync called, so a second start wrote
-            // into an already-closed writer and produced nothing).
+            // Each resource goes into its field the moment it exists: teardown only reaches what the fields hold.
             var rawChannel = UtteranceChannel.CreateBounded();
             _rawChannel = rawChannel;
 
@@ -410,8 +417,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             _forwardLoopTask = Task.Run(
                 () => _forwardLoop!.RunAsync(context, rawChannel.Reader, _publicChannel.Writer, RenameSpeaker, forwardCts.Token));
 
-            // Sources are single-use (LoopbackAudioCaptureService.StartAsync throws while IsRunning,
-            // which stays true after StopAsync until DisposeAsync) — build fresh instances every start.
+            // Sources are single-use: a loopback capture stays IsRunning after its stop until it is disposed.
             var micSource = _micSourceFactory();
             _micSource = micSource;
             var loopbackSource = _loopbackSourceFactory();
@@ -437,16 +443,14 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             _loopbackEngine = loopbackEngine;
             WireSpeakingChanged(loopbackEngine, TranscriptSpeaker.Them);
 
-            // Only claimed once the whole run is genuinely up. Transitioning unconditionally is what let a
-            // torn-down run still report "Listening".
+            // Running only once the whole run is up, or a torn-down run would report "Listening".
             startToken.ThrowIfCancellationRequested();
             TransitionState(DirectTranscriptionState.Running);
             _logger.LogInformation("Direct transcription started");
         }
         catch (OperationCanceledException)
         {
-            // A cancelled start is not a failure: unwind the half-built run and fall back to the state
-            // the session was already in (Prepared — the models and consent map are untouched).
+            // Not a failure: the models and the consent map are untouched, so the session stays Prepared.
             _logger.LogInformation("Direct transcription start was cancelled; run torn down");
             await TeardownRunAsync().ConfigureAwait(false);
             TransitionState(DirectTranscriptionState.Prepared);
@@ -569,6 +573,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 _sessionId = string.Empty;
                 _transcriptSessionIds.Clear();
             }
+            _sessionMarker = null;
             _sttModelId = string.Empty;
 
             // The public channel outlives the session, so an undrained trailing utterance would land in the
