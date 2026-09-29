@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Infrastructure.Vault;
@@ -18,13 +17,9 @@ public sealed class ConsentLifetimeService : IDisposable
     // The chat id is reported before the chat's row is written, so a young summary entry cannot be checked yet.
     internal static readonly TimeSpan SummaryGrace = TimeSpan.FromMinutes(10);
 
-    // A note that opens with a thematic break and never closes it must not be read whole.
-    private const int FrontMatterLineCap = 1000;
-
-    private const string FrontMatterDelimiter = "---";
-
     private readonly string _evidenceRoot;
     private readonly IVaultStore _vault;
+    private readonly ConsentVaultScan _scan;
     private readonly IngestStateStore _ingestState;
     private readonly IAssistantChatService _chats;
     private readonly IConsentEvidenceStore _evidenceStore;
@@ -52,6 +47,7 @@ public sealed class ConsentLifetimeService : IDisposable
     {
         _evidenceRoot = evidenceRoot;
         _vault = vault;
+        _scan = new ConsentVaultScan(vault, logger);
         _ingestState = ingestState;
         _chats = chats;
         _evidenceStore = evidenceStore;
@@ -156,7 +152,7 @@ public sealed class ConsentLifetimeService : IDisposable
     {
         if (folders.Count == 0) return ConsentLifetimeOutcome.None;
 
-        var scan = await ScanVaultAsync(cancellationToken).ConfigureAwait(false);
+        var scan = await _scan.ScanAsync(cancellationToken).ConfigureAwait(false);
         var now = _clock.GetUtcNow();
         int kept = 0, deleted = 0, skipped = 0;
 
@@ -196,9 +192,10 @@ public sealed class ConsentLifetimeService : IDisposable
         return new ConsentLifetimeOutcome(kept, deleted, skipped, scan.NotesScanned, scan.NotesUnreadable);
     }
 
-    private async Task<Liveness> AssessAsync(string sessionId, VaultScan scan, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task<Liveness> AssessAsync(
+        string sessionId, ConsentVaultScanResult scan, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        if (scan.SessionIds.Contains(sessionId)) return Liveness.Alive;
+        if (scan.NotesBySession.ContainsKey(sessionId)) return Liveness.Alive;
 
         var copies = await _evidenceStore.ReadCopiesAsync(sessionId, cancellationToken).ConfigureAwait(false);
         if (copies is null) return Liveness.Unknown;
@@ -247,62 +244,6 @@ public sealed class ConsentLifetimeService : IDisposable
         return false;
     }
 
-    private async Task<VaultScan> ScanVaultAsync(CancellationToken cancellationToken)
-    {
-        var root = _vault.Root;
-        // An offline or not yet derived vault shows no notes, which must not read as "every note is gone".
-        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root)) return VaultScan.Incomplete;
-
-        IReadOnlyList<string> notes;
-        try
-        {
-            notes = await _vault.EnumerateAsync("*.md").ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _logger.LogWarning("Failed to list the vault for consent sessions ({Error})", ex.GetType().Name);
-            _logger.SensitiveDebug("Failed to list the vault for consent sessions: {Exception}", ex);
-            return VaultScan.Incomplete;
-        }
-
-        var sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var unreadable = 0;
-        foreach (var note in notes)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                foreach (var sessionId in ConsentFrontMatter.ReadSessions(ReadFrontMatter(Path.Combine(root, note))))
-                    sessionIds.Add(sessionId);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                unreadable++;
-            }
-        }
-
-        if (unreadable > 0)
-            _logger.LogWarning("Consent vault scan could not read {Count} notes; their sessions are kept", unreadable);
-        return new VaultScan(sessionIds, notes.Count, unreadable, IsComplete: unreadable == 0);
-    }
-
-    private static string? ReadFrontMatter(string path)
-    {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-
-        var first = reader.ReadLine();
-        if (first is null || first.TrimEnd() != FrontMatterDelimiter) return null;
-
-        var text = new StringBuilder(first).Append('\n');
-        for (var i = 0; i < FrontMatterLineCap && reader.ReadLine() is { } line; i++)
-        {
-            text.Append(line).Append('\n');
-            if (line.TrimEnd() == FrontMatterDelimiter) return text.ToString();
-        }
-        return null;
-    }
-
     private void LogOutcome(string trigger, ConsentLifetimeOutcome outcome) =>
         _logger.LogInformation(
             "Consent evidence lifetime ({Trigger}): sessions kept {Kept}, deleted {Deleted}, skipped {Skipped}; "
@@ -314,11 +255,6 @@ public sealed class ConsentLifetimeService : IDisposable
         Alive,
         Gone,
         Unknown,
-    }
-
-    private sealed record VaultScan(IReadOnlySet<string> SessionIds, int NotesScanned, int NotesUnreadable, bool IsComplete)
-    {
-        public static VaultScan Incomplete { get; } = new(new HashSet<string>(), 0, 0, IsComplete: false);
     }
 }
 
