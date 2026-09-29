@@ -207,9 +207,38 @@ public class DeviceManagementService : IDeviceManagementService
             OnboardingSessionId = onboardingSessionId
         };
 
-        var response = await client.PostAsJsonAsync("api/e2ee/recovery/activate", activationRequest);
+        using var response = await client.PostAsJsonAsync("api/e2ee/recovery/activate", activationRequest);
+        if (response.StatusCode == HttpStatusCode.BadRequest && await IsSpentOnboardingSessionAsync(response))
+        {
+            _logger.LogInformation("The server no longer accepts this device's onboarding session");
+            throw new OnboardingSessionExpiredException("The onboarding session is no longer valid.");
+        }
         response.EnsureSuccessStatusCode();
     }
+
+    // The server answers a spent session with a bare JSON string and a failed proof with an { error } envelope.
+    private static async Task<bool> IsSpentOnboardingSessionAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind switch
+            {
+                JsonValueKind.String => MentionsOnboardingSession(doc.RootElement.GetString()),
+                JsonValueKind.Object => doc.RootElement.TryGetProperty("error", out var error)
+                    && error.ValueKind == JsonValueKind.String && error.GetString() == "invalid_onboarding_session",
+                _ => false,
+            };
+        }
+        catch (JsonException)
+        {
+            return MentionsOnboardingSession(body);
+        }
+    }
+
+    private static bool MentionsOnboardingSession(string? text) =>
+        text?.Contains("onboarding session", StringComparison.OrdinalIgnoreCase) == true;
 
     public async Task FetchAndUnwrapUmkAsync()
     {

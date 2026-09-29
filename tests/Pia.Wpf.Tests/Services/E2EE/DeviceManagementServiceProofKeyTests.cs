@@ -241,6 +241,37 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
         Assert.Equal(DeviceStatus.Active, _server.DeviceStatus);
     }
 
+    [Fact]
+    public async Task RecoveryActivation_OnASpentSession_SaysSoInsteadOfFailingPlainly()
+    {
+        var recovery = new RecoveryCodeService(new CryptoService());
+        var code = recovery.GenerateRecoveryCode();
+        _server.RecoveryCopy = recovery.WrapUmkForRecovery(_umk, code);
+        _server.IsEnabled = true;
+        _server.DeviceStatus = DeviceStatus.Pending;
+        _server.SessionSpent = true;
+
+        await Assert.ThrowsAsync<OnboardingSessionExpiredException>(
+            () => CreateSut(recovery).ActivateViaRecoveryAsync(code, "c2Vzc2lvbi0x"));
+    }
+
+    [Fact]
+    public async Task RecoveryActivation_WithAProofTheServerRejects_IsNotTakenForASpentSession()
+    {
+        var recovery = new RecoveryCodeService(new CryptoService());
+        var code = recovery.GenerateRecoveryCode();
+        _server.RecoveryCopy = recovery.WrapUmkForRecovery(_umk, code);
+        _server.StoredProofKey = Convert.ToBase64String(RecoveryActivationProof.DeriveProofKey(new byte[32]));
+        _server.IsEnabled = true;
+        _server.DeviceStatus = DeviceStatus.Pending;
+
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            () => CreateSut(recovery).ActivateViaRecoveryAsync(code, "c2Vzc2lvbi0x"));
+
+        Assert.IsType<HttpRequestException>(ex);
+        Assert.Equal(DeviceStatus.Pending, _server.DeviceStatus);
+    }
+
     public void Dispose() => _keys.Dispose();
 
     private async Task ActiveDeviceOnEnabledAccountAsync()
@@ -289,6 +320,7 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
         public bool RecoveryCopyLocked { get; set; }
         public bool ProofKeyConflict { get; set; }
         public bool ProofKeyNotSetUp { get; set; }
+        public bool SessionSpent { get; set; }
         public HttpStatusCode? ProofKeyStatus { get; set; }
         public List<string> Requests { get; } = [];
 
@@ -348,6 +380,11 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
         private async Task<HttpResponseMessage> ActivateAsync(HttpContent content, CancellationToken ct)
         {
             var activation = (await content.ReadFromJsonAsync<RecoveryActivationRequest>(ct))!;
+            if (SessionSpent)
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(""""Invalid or expired onboarding session"""", Encoding.UTF8, "application/json"),
+                };
             if (StoredProofKey is not null && !RecoveryActivationProof.Verify(
                     Convert.FromBase64String(StoredProofKey), activation.OnboardingSessionId, activation.ProofOfPossession))
                 return Error(HttpStatusCode.BadRequest, E2EEErrorCodes.InvalidProof);
