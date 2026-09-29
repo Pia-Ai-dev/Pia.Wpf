@@ -373,15 +373,15 @@ public sealed class DirectTranscriptionServiceTests
     // -------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task RevokeSpeaker_AuditsUnderTheGrantsLabel_NeverTheExtractedName()
+    public async Task RevokeSpeaker_AuditsUnderTheDetectedLabel_NeverTheName()
     {
-        // After a grant-time rename the consent-map key IS the extracted personal name, so a revoke driven
-        // from the UI carries that name. It must not reach the plaintext JSONL audit trail, nor become the
-        // evidence FILE NAME (DPAPI protects the contents, not the name) — and keying the revocation by the
-        // grant's own label is also what keeps the Art. 7 record correlatable with the grant it revokes.
+        // After a rename the caller's label is a personal name; the plaintext audit trail and the evidence
+        // file name must carry the detected label instead.
         var fx = new Fixture(useRealConsentManager: true);
         await fx.Service.PrepareAsync(TestContext.Current.CancellationToken);
-        fx.RealConsent!.Grant("Anna", "Anna", Evidence("Speaker 2", "Anna"));
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 2");
+        fx.RealConsent!.Grant("Speaker 2", "Anna", Evidence("Speaker 2", "Anna"));
+        Assert.True(fx.Service.RenameSpeaker("Speaker 2", "Anna"));
 
         fx.Service.RevokeSpeaker("Anna");
 
@@ -389,6 +389,27 @@ public sealed class DirectTranscriptionServiceTests
         Assert.Equal("Speaker 2", revoked.SpeakerLabel);
         await fx.EvidenceStore.Received(1).SaveRevocationAsync(
             Arg.Any<string>(), "Speaker 2", Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RevokeSpeaker_KeepsTheSameRevocationTimeInMemoryAsOnDisk()
+    {
+        var fx = new Fixture(useRealConsentManager: true);
+        await fx.Service.PrepareAsync(TestContext.Current.CancellationToken);
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 2");
+        fx.RealConsent!.Grant("Speaker 2", "Anna", Evidence("Speaker 2", "Anna"));
+        DateTimeOffset? persisted = null;
+        fx.EvidenceStore
+            .SaveRevocationAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Do<DateTimeOffset>(t => persisted = t), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        fx.Service.RevokeSpeaker("Speaker 2");
+
+        Assert.True(fx.RealConsent.TryGet("Speaker 2", out var entry));
+        Assert.NotNull(entry.RevokedAt);
+        Assert.Equal(persisted, entry.RevokedAt);
 
         await fx.Service.DisposeAsync();
     }
@@ -411,6 +432,109 @@ public sealed class DirectTranscriptionServiceTests
     // -------------------------------------------------------------------------------------------
     // Session lifecycle
     // -------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task SessionId_ExistsFromPrepareUntilTheSessionEnds()
+    {
+        var fx = new Fixture();
+        Assert.Null(fx.Service.SessionId);
+        Assert.Empty(fx.Service.TranscriptSessionIds);
+
+        await fx.Service.PrepareAsync(TestContext.Current.CancellationToken);
+        var sessionId = fx.Service.SessionId;
+        Assert.False(string.IsNullOrEmpty(sessionId));
+        Assert.Equal(new[] { sessionId! }, fx.Service.TranscriptSessionIds);
+
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        await fx.Service.StopAsync(TestContext.Current.CancellationToken);
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(sessionId, fx.Service.SessionId);
+        Assert.Equal(new[] { sessionId! }, fx.Service.TranscriptSessionIds);
+
+        await fx.Service.EndSessionAsync(TestContext.Current.CancellationToken);
+        Assert.Null(fx.Service.SessionId);
+        Assert.Empty(fx.Service.TranscriptSessionIds);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AFailedResumeRetry_MintsANewId_AndKeepsTheOneTheTranscriptAlreadyRestsOn()
+    {
+        var fx = new Fixture();
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        var first = fx.Service.SessionId!;
+        await fx.Service.StopAsync(TestContext.Current.CancellationToken);
+
+        fx.MicSourceThrowsOnStart = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(TestContext.Current.CancellationToken));
+        fx.MicSourceThrowsOnStart = false;
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+
+        var second = fx.Service.SessionId!;
+        Assert.NotEqual(first, second);
+        Assert.Equal(new[] { first, second }, fx.Service.TranscriptSessionIds);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task EndSessionAsync_AnnouncesEveryTranscriptId_BeforeClearingThem()
+    {
+        var fx = new Fixture();
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        await fx.Service.StopAsync(TestContext.Current.CancellationToken);
+        fx.MicSourceThrowsOnStart = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(TestContext.Current.CancellationToken));
+        fx.MicSourceThrowsOnStart = false;
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        var expected = fx.Service.TranscriptSessionIds;
+
+        var ended = new List<string>();
+        string? currentDuringEvent = null;
+        fx.Service.SessionEnded += (_, id) =>
+        {
+            ended.Add(id);
+            currentDuringEvent = fx.Service.SessionId;
+        };
+
+        await fx.Service.EndSessionAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, ended);
+        Assert.Equal(expected[^1], currentDuringEvent);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_EndsTheSessionWithoutAnnouncingIt()
+    {
+        var fx = new Fixture();
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        var ended = 0;
+        fx.Service.SessionEnded += (_, _) => ended++;
+
+        await fx.Service.DisposeAsync();
+
+        Assert.Equal(DirectTranscriptionState.Idle, fx.Service.State);
+        Assert.Equal(0, ended);
+    }
+
+    [Fact]
+    public async Task SessionAuditLines_CarryTheSessionId()
+    {
+        var fx = new Fixture();
+        await fx.Service.StartAsync(TestContext.Current.CancellationToken);
+        var sessionId = fx.Service.SessionId;
+        await fx.Service.StopAsync(TestContext.Current.CancellationToken);
+
+        var started = Assert.Single(fx.AuditEvents, e => e.EventType == ConsentAuditEventTypes.SessionStarted);
+        var stopped = Assert.Single(fx.AuditEvents, e => e.EventType == ConsentAuditEventTypes.SessionStopped);
+        Assert.Equal(sessionId, started.Details!["sessionId"]);
+        Assert.Equal(sessionId, stopped.Details!["sessionId"]);
+
+        await fx.Service.DisposeAsync();
+    }
 
     [Fact]
     public async Task RePrepareAfterAFailedStart_DisposesThePreviousSessionsNatives()

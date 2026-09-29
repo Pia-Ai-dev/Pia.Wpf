@@ -286,7 +286,7 @@ public sealed class ConsentForwardLoopTests
             .Returns(new NamedConsentResult(true, "Dave", "en", NamedConsentClassifier.CrispConfidence));
         await fx.ProcessAsync(Loopback("Speaker 1", sentence));
         fx.TryReadEmitted(out _);
-        fx.Consent.Revoke("Dave");
+        fx.Consent.Revoke("Dave", DateTimeOffset.UtcNow);
         fx.Classifier.ClearReceivedCalls();
 
         var outcome = await fx.ProcessAsync(Loopback("Dave", sentence));

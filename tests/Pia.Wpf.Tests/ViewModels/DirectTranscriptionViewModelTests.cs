@@ -576,8 +576,11 @@ public class DirectTranscriptionViewModelTests
         private readonly List<SpeakerVoiceStats> _voiceStats = [];
 
         public DirectTranscriptionState State { get; private set; } = DirectTranscriptionState.Idle;
+        public string? SessionId => null;
+        public IReadOnlyList<string> TranscriptSessionIds => [];
         public ChannelReader<TranscriptUtterance> Utterances => _channel.Reader;
 
+        public event EventHandler<string>? SessionEnded { add { } remove { } }
         public event EventHandler<DirectTranscriptionState>? StateChanged;
         public event EventHandler<SpeakerConsentChangedEventArgs>? SpeakerConsentChanged;
         public event EventHandler<string>? SpeakerRegistered;

@@ -76,6 +76,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
     // ---- Session-scoped (survive a Stop/Start pause, cleared only by EndSessionAsync) --------------
     private string _sessionId = string.Empty;
+    private readonly List<string> _transcriptSessionIds = new();
     private string _sttModelId = string.Empty;
     private volatile bool _nameSpeakers = true;
     private string? _vadModelPath;
@@ -98,8 +99,19 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         get { lock (_stateLock) return _state; }
     }
 
+    public string? SessionId
+    {
+        get { lock (_stateLock) return _sessionId.Length == 0 ? null : _sessionId; }
+    }
+
+    public IReadOnlyList<string> TranscriptSessionIds
+    {
+        get { lock (_stateLock) return _transcriptSessionIds.ToArray(); }
+    }
+
     public ChannelReader<TranscriptUtterance> Utterances => _publicChannel.Reader;
 
+    public event EventHandler<string>? SessionEnded;
     public event EventHandler<DirectTranscriptionState>? StateChanged;
     public event EventHandler<SpeakerConsentChangedEventArgs>? SpeakerConsentChanged;
     public event EventHandler<string>? SpeakerRegistered;
@@ -257,17 +269,14 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
         await _prepareGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        // Published so a session end can ABORT this prepare instead of merely waiting it out. The wait is
-        // mandatory (a completing prepare must not assign live native handles into a session that is being
-        // torn down), and on the first run it would otherwise be a whole model download long — with
-        // EndSessionAsync reached from a synchronous Dispose on the UI thread, that is a frozen window.
+        // Published so a session end can abort a first-run model download instead of freezing the UI thread
+        // that is waiting on it.
         var prepareCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         lock (_stateLock) { _prepareCts = prepareCts; }
 
         try
         {
-            // Re-check under the gate: a second caller that queued behind an in-flight prepare must
-            // not repeat the work (or resubscribe the diarizer's SpeakerRegistered event).
+            // A caller queued behind an in-flight prepare must not repeat it or resubscribe the diarizer.
             lock (_stateLock)
             {
                 if (_state is DirectTranscriptionState.Prepared or DirectTranscriptionState.Running) return;
@@ -277,11 +286,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
             try
             {
-                // Re-preparing (the Error/retry path) must release the PREVIOUS session's natives before
-                // provisioning new ones. Without this, a failed StartAsync — an absent or exclusively-held
-                // microphone is enough — left the session's sherpa recognizer and native diarizer alive in
-                // state Error, and the retry assigned straight over the fields, leaking one native model
-                // pair per retry with no teardown path able to reach them again.
+                // The Error/retry path still holds the previous natives; assigning over them would leak them.
                 if (_transcriptionEngine is not null || _speakerId is not null || _forwardLoop is not null)
                     await TeardownSessionAsync().ConfigureAwait(false);
 
@@ -294,18 +299,19 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 _sttModelId = sttModelId;
                 _speakerId.SpeakerRegistered += OnSpeakerRegistered;
 
-                _sessionId = Guid.NewGuid().ToString("N");
+                var sessionId = Guid.NewGuid().ToString("N");
+                lock (_stateLock)
+                {
+                    _sessionId = sessionId;
+                    _transcriptSessionIds.Add(sessionId);
+                }
 
-                // The consent map MUST be cleared here: the diarizer built above is brand new, so its
-                // "Speaker 1" is a different voice from the previous one's, and carrying a grant over
-                // would hand one person's consent to another. But clearing it silently was its own defect
-                // on the Error-retry path — the UI kept showing speakers as consented while the gate had
-                // reverted them to Unknown and was dropping their speech. Announce it.
+                // A new diarizer's "Speaker 1" is a different voice, so grants must not carry over, and the
+                // UI must hear about it or it keeps showing consent the gate no longer honours.
                 _consentStateManager.ResetSession();
                 RaiseConsentSessionReset();
 
-                // Per session, like the diarizer: it remembers the far end's recent speech, and carrying
-                // that across sessions would let one meeting's audio explain away the next one's.
+                // Per session: one meeting's far-end speech must not explain away the next one's.
                 _echoDetector = new EchoDetector();
 
                 _forwardLoop = new ConsentForwardLoop(
@@ -318,7 +324,11 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 _forwardLoop.SpeakerConsentChanged += OnForwardLoopSpeakerConsentChanged;
 
                 _auditLog.Append(new AuditEvent(
-                    Guid.NewGuid(), DateTimeOffset.UtcNow, ConsentAuditEventTypes.SessionStarted, null, null));
+                    Guid.NewGuid(),
+                    DateTimeOffset.UtcNow,
+                    ConsentAuditEventTypes.SessionStarted,
+                    null,
+                    new Dictionary<string, object?> { ["sessionId"] = sessionId }));
 
                 TransitionState(DirectTranscriptionState.Prepared);
                 _logger.LogInformation("Direct transcription prepared");
@@ -475,12 +485,8 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
     private async Task StopCoreAsync()
     {
-        // Atomic check-and-set: guard and transition under the SAME lock so two concurrent callers
-        // cannot both pass before either sets Stopping — otherwise each owned resource could be
-        // disposed twice (the old branch's bug; see MeetingAttendeeService.StopAsync for the pattern).
-        // Preparing is excluded too: a background warmup has no run to stop, and flipping it to
-        // Stopping -> Prepared would both lie about the session and emit a SessionStopped audit line for
-        // a session that never started.
+        // Check and set under one lock, or two callers both pass and dispose every resource twice. A warmup
+        // (Preparing) has no run to stop and must not produce a SESSION_STOPPED line.
         EventHandler<DirectTranscriptionState>? handler;
         lock (_stateLock)
         {
@@ -505,6 +511,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 null,
                 new Dictionary<string, object?>
                 {
+                    ["sessionId"] = _sessionId,
                     ["droppedUnlabeledLoopback"] = _forwardLoop?.DroppedUnlabeledCount ?? 0,
                     ["droppedBelowMatchThreshold"] = _forwardLoop?.DroppedBelowMatchThresholdCount ?? 0,
                     ["droppedUnconsented"] = _forwardLoop?.DroppedUnconsentedCount ?? 0,
@@ -522,7 +529,11 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         }
     }
 
-    public async Task EndSessionAsync(CancellationToken cancellationToken = default)
+    public Task EndSessionAsync(CancellationToken cancellationToken = default)
+        => EndSessionCoreAsync(announce: true, cancellationToken);
+
+    // Teardown does not announce: by then the consumers of SessionEnded may already be disposed.
+    private async Task EndSessionCoreAsync(bool announce, CancellationToken cancellationToken)
     {
         if (State is DirectTranscriptionState.Idle) return;
 
@@ -530,18 +541,14 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
         if (State is DirectTranscriptionState.Running or DirectTranscriptionState.Starting or DirectTranscriptionState.Stopping)
         {
-            // Never treat "already Stopping" as "already torn down": StopAsync queues on the same gate as
-            // the in-flight stop, so by the time it returns both engines really have been disposed and
-            // drained. Skipping this wait disposed the shared sherpa recognizer and the native ONNX
-            // diarizer while a trailing segment was still being decoded through them.
+            // "Already Stopping" is not "already torn down": only the queued stop guarantees the engines have
+            // drained before the natives they decode through are disposed.
             try { await StopAsync(cancellationToken).ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogWarning(ex, "Stop while ending the session threw; continuing teardown"); }
         }
 
-        // Barrier on any in-flight PrepareAsync (including a background warmup): it must finish assigning
-        // — or failing — before this method disposes the session's native models, otherwise it writes live
-        // sherpa/ONNX handles into a session that nothing will ever tear down again. Cancelled first so the
-        // barrier resolves promptly instead of waiting out a whole first-run model download.
+        // A prepare still assigning would write live native handles into a session nothing tears down again;
+        // cancel it, then barrier on it.
         CancelInFlightPrepare();
         await WaitForPrepareIdleAsync(cancellationToken).ConfigureAwait(false);
 
@@ -550,14 +557,22 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         {
             await TeardownSessionAsync().ConfigureAwait(false);
 
+            if (announce)
+            {
+                foreach (var endedId in TranscriptSessionIds)
+                    RaiseSessionEnded(endedId);
+            }
+
             _consentStateManager.ResetSession();
-            _sessionId = string.Empty;
+            lock (_stateLock)
+            {
+                _sessionId = string.Empty;
+                _transcriptSessionIds.Clear();
+            }
             _sttModelId = string.Empty;
 
-            // Drain whatever the forward loop emitted after the UI's consumer was cancelled. The public
-            // channel outlives every session (its reader must stay stable), so an undrained trailing
-            // utterance would be delivered into the NEXT session's transcript — carrying the previous
-            // session's speaker label, after consent had already been reset.
+            // The public channel outlives the session, so an undrained trailing utterance would land in the
+            // next session's transcript under a label whose consent has just been reset.
             var dropped = 0;
             while (_publicChannel.Reader.TryRead(out _)) dropped++;
             if (dropped > 0)
@@ -612,7 +627,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
         try
         {
-            await EndSessionAsync().ConfigureAwait(false);
+            await EndSessionCoreAsync(announce: false, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -684,36 +699,24 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
     public void RevokeSpeaker(string speakerLabel)
     {
-        // The evidence label must be read BEFORE the revoke, while the entry is still Granted, and it is
-        // deliberately not `speakerLabel`: after a grant-time rename the caller's label IS the extracted
-        // personal name, and both the plaintext JSONL audit trail and the evidence FILENAME must stay
-        // name-free (the DPAPI envelope protects the contents, not the file name). Using the grant's own
-        // label also keeps the revocation record correlatable with the grant it revokes.
-        _consentStateManager.TryGet(speakerLabel, out var priorEntry);
-        var evidenceLabel = priorEntry?.Evidence?.SpeakerLabel ?? speakerLabel;
-        var extractedName = priorEntry?.ExtractedName;
-
-        // Single lock acquisition decides whether a revoke actually happened. Probing CurrentState first
-        // and branching on the probe left a window in which a concurrent grant landed between the two
-        // calls: the speaker was really revoked in-session, yet the audit event and the persisted
-        // revocation record were both skipped — the exact Nachweispflicht gap the evidence store exists
-        // to close.
-        if (!_consentStateManager.Revoke(speakerLabel)) return;
-
-        _auditLog.Append(new AuditEvent(
-            Guid.NewGuid(), DateTimeOffset.UtcNow, ConsentAuditEventTypes.ConsentRevoked, evidenceLabel, null));
-
-        // Revocation removes this speaker's text from the transcript, so their measured speech must go
-        // too — otherwise their name, utterance count and speaking time survive in the voice-stats flyout
-        // and in the YAML front matter of the file the user saves and shares.
-        _forwardLoop?.RemoveSamplesFor(speakerLabel);
+        // The detected label, not the caller's: after a rename that is a personal name, and the audit trail
+        // and the evidence file name must stay name-free.
+        if (!_consentStateManager.TryGet(speakerLabel, out var priorEntry)) return;
+        var detectedLabel = priorEntry.DetectedLabel;
 
         var revokedAt = DateTimeOffset.UtcNow;
-        var sessionId = _sessionId;
-        _ = SaveRevocationBestEffortAsync(sessionId, evidenceLabel, revokedAt);
+        if (!_consentStateManager.Revoke(speakerLabel, revokedAt)) return;
+
+        _auditLog.Append(new AuditEvent(
+            Guid.NewGuid(), revokedAt, ConsentAuditEventTypes.ConsentRevoked, detectedLabel, null));
+
+        // Their text leaves the transcript, so their name and speaking time must leave the stats with it.
+        _forwardLoop?.RemoveSamplesFor(speakerLabel);
+
+        _ = SaveRevocationBestEffortAsync(_sessionId, detectedLabel, revokedAt);
 
         RaiseSpeakerConsentChanged(new SpeakerConsentChangedEventArgs(
-            speakerLabel, ConsentState.Granted, ConsentState.Revoked, extractedName, evidenceLabel));
+            speakerLabel, ConsentState.Granted, ConsentState.Revoked, priorEntry.ExtractedName, detectedLabel));
     }
 
     private async Task SaveRevocationBestEffortAsync(string sessionId, string speakerLabel, DateTimeOffset revokedAt)
@@ -762,6 +765,25 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     private void OnForwardLoopSpeakerConsentChanged(object? sender, ConsentStateChangedEventArgs e)
         => RaiseSpeakerConsentChanged(new SpeakerConsentChangedEventArgs(
             e.SpeakerLabel, e.OldState, e.NewState, e.ExtractedName, e.OriginalSpeakerLabel));
+
+    private void RaiseSessionEnded(string sessionId)
+    {
+        var handler = SessionEnded;
+        if (handler is null) return;
+
+        // Each subscriber on its own: one that throws must not keep the next from cleaning up its session.
+        foreach (var subscriber in handler.GetInvocationList())
+        {
+            try
+            {
+                ((EventHandler<string>)subscriber).Invoke(this, sessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SessionEnded subscriber threw");
+            }
+        }
+    }
 
     private void RaiseConsentSessionReset()
     {

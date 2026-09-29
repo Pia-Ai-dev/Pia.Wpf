@@ -22,9 +22,10 @@ public sealed class ConsentStateManager : IConsentStateManager
         public ConsentState State { get; set; } = ConsentState.Unknown;
         public string? ExtractedName { get; set; }
         public ConsentEvidence? Evidence { get; set; }
+        public DateTimeOffset? RevokedAt { get; set; }
 
         public SpeakerConsentEntry ToSnapshot() =>
-            new(SpeakerLabel, FirstDetected, State, ExtractedName, Evidence, DetectedLabel);
+            new(SpeakerLabel, FirstDetected, State, ExtractedName, Evidence, DetectedLabel, RevokedAt);
     }
 
     private readonly ILogger<ConsentStateManager> _logger;
@@ -89,6 +90,7 @@ public sealed class ConsentStateManager : IConsentStateManager
             entry.State = newState;
             entry.ExtractedName = extractedName;
             entry.Evidence = evidence;
+            entry.RevokedAt = null;
         }
 
         _logger.LogInformation("Consent state {Old} -> {New}", oldState, newState);
@@ -96,7 +98,7 @@ public sealed class ConsentStateManager : IConsentStateManager
         Raise(speakerLabel, oldState, newState, extractedName);
     }
 
-    public bool Revoke(string speakerLabel)
+    public bool Revoke(string speakerLabel, DateTimeOffset revokedAt)
     {
         ConsentState oldState;
         string? extractedName;
@@ -118,6 +120,7 @@ public sealed class ConsentStateManager : IConsentStateManager
             }
 
             entry.State = ConsentState.Revoked;
+            entry.RevokedAt = revokedAt;
             // Evidence and ExtractedName are deliberately preserved.
             extractedName = entry.ExtractedName;
         }
