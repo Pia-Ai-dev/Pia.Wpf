@@ -426,6 +426,11 @@ public sealed class AdaptiveSpeakerIdentificationService : ISpeakerIdentificatio
         }
     }
 
+    public void ContinueNumberingAfter(int lastNumber)
+    {
+        lock (_lock) _speakerCounter = Math.Max(_speakerCounter, lastNumber);
+    }
+
     /// <summary>
     /// Actively erase all in-memory biometric state: zero every journaled embedding and every
     /// centroid vector before dropping references. Segment ids stay monotonic across Reset so a

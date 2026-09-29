@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,9 @@ namespace Pia.Services.LiveTranscription;
 /// </summary>
 public sealed class DirectTranscriptionService : IDirectTranscriptionService
 {
+    // What the diarizer names a new voice, followed by its number.
+    private const string MintedLabelPrefix = "Speaker ";
+
     private readonly ISettingsService _settingsService;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<DirectTranscriptionService> _logger;
@@ -327,6 +331,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 _speakerId.SpeakerRegistered += OnSpeakerRegistered;
 
                 var sessionId = Guid.NewGuid().ToString("N");
+                int lastSpeakerNumber;
                 lock (_stateLock)
                 {
                     // A retry keeps the transcript, so the consent it rests on has to outlive the reset below.
@@ -337,11 +342,16 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                     }
                     _sessionId = sessionId;
                     _transcriptSessionIds.Add(sessionId);
+                    lastSpeakerNumber = HighestSpeakerNumber(_earlierSessionConsents);
                 }
                 _sessionMarker = null;
 
-                // A new diarizer's "Speaker 1" is a different voice, so grants must not carry over, and the
-                // UI must hear about it or it keeps showing consent the gate no longer honours.
+                // The kept bubbles still carry the earlier sessions' labels; a reused number would let a rename
+                // or a revocation reach a second person.
+                _speakerId.ContinueNumberingAfter(lastSpeakerNumber);
+
+                // A new diarizer knows none of the earlier voices, so grants must not carry over, and the UI
+                // must hear about it or it keeps showing consent the gate no longer honours.
                 _consentStateManager.ResetSession();
                 RaiseConsentSessionReset();
 
@@ -714,6 +724,13 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             return false;
         }
 
+        // An earlier session's speaker keeps their label in the transcript, and one label must name one person.
+        if (IsLabelOfAnEarlierSession(newLabel))
+        {
+            _logger.LogInformation("Speaker rename refused: an earlier session of the transcript uses the target label");
+            return false;
+        }
+
         if (_speakerId is null)
             return false;
 
@@ -734,6 +751,32 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         // or the statistics would report one person as two rows with split totals and halved shares.
         _forwardLoop?.RenameSamples(oldLabel, newLabel);
         return true;
+    }
+
+    private bool IsLabelOfAnEarlierSession(string label)
+    {
+        lock (_stateLock)
+        {
+            return _earlierSessionConsents.Any(c =>
+                string.Equals(c.Speaker.SpeakerLabel, label, StringComparison.Ordinal)
+                || string.Equals(c.Speaker.DetectedLabel, label, StringComparison.Ordinal));
+        }
+    }
+
+    // The detected label, not the current one: a rename turns that into a name.
+    private static int HighestSpeakerNumber(IEnumerable<SessionSpeakerConsent> consents)
+    {
+        var highest = 0;
+        foreach (var consent in consents)
+        {
+            var label = consent.Speaker.DetectedLabel;
+            if (label.StartsWith(MintedLabelPrefix, StringComparison.Ordinal)
+                && int.TryParse(label.AsSpan(MintedLabelPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+            {
+                highest = Math.Max(highest, number);
+            }
+        }
+        return highest;
     }
 
     public void RevokeSpeaker(string speakerLabel)

@@ -194,6 +194,11 @@ public sealed class SpeakerIdentificationService : ISpeakerIdentificationService
         }
     }
 
+    public void ContinueNumberingAfter(int lastNumber)
+    {
+        lock (_lock) _counter = Math.Max(_counter, lastNumber);
+    }
+
     /// <summary>
     /// Actively erase all in-memory biometric state: zero each centroid's float[] vector
     /// (so the embedding bytes don't linger on the managed heap waiting for GC), then drop

@@ -181,6 +181,30 @@ public class DirectTranscriptionViewModelTests
     }
 
     [Fact]
+    public async Task AcrossAFailedStartRetry_RenamingAndRevokingTheNewSessionsSpeaker_LeavesTheEarlierOnesBubbles()
+    {
+        // The retry's diarizer numbers on after the transcript's highest label, so the two voices never share one.
+        var (vm, service, dialog) = CreateSutWithDialog();
+        dialog.ShowInputDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(Task.FromResult<string?>("Ben"));
+        var t0 = DateTimeOffset.Now;
+        service.RaiseSpeakerRegistered("Speaker 1");
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "before the retry", t0, "Speaker 1"));
+        service.RaiseConsentSessionReset();
+        service.RaiseSpeakerRegistered("Speaker 2");
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "after the retry", t0.AddSeconds(30), "Speaker 2"));
+
+        Assert.Equal(["Speaker 1", "Speaker 2"], vm.Bubbles.Select(b => b.DisplayLabel));
+
+        await vm.RenameSpeakerLabelCommand.ExecuteAsync("Speaker 2");
+        Assert.Equal(["Speaker 1", "Ben"], vm.Bubbles.Select(b => b.SpeakerLabel));
+
+        await vm.RevokeSpeakerCommand.ExecuteAsync("Ben");
+        var kept = Assert.Single(vm.Bubbles);
+        Assert.Equal("Speaker 1", kept.SpeakerLabel);
+        Assert.Equal("Speaker 1", kept.DisplayLabel);
+    }
+
+    [Fact]
     public void Revoke_RemovesThatSpeakersBubblesAndJournalEntries_AndLeavesOthersIntact()
     {
         var (vm, _) = CreateSut();
@@ -541,23 +565,23 @@ public class DirectTranscriptionViewModelTests
     [Fact]
     public void BuildMarkdown_AfterAFailedStartRetry_ListsEachSessionsSpeakerUnderItsSession()
     {
-        // The retry built a new diarizer, so both sessions have a "Speaker 1" — two voices, two grants.
+        // The retry built a new diarizer, which numbers on after the first session's voices.
         var (vm, service) = CreateSut();
         service.TranscriptSessionIds = [SessionA, SessionB];
         service.TranscriptConsents =
         [
             Consented(SessionA, "Anna", "Speaker 1"),
-            Consented(SessionB, "Speaker 1", "Speaker 1"),
+            Consented(SessionB, "Speaker 2", "Speaker 2"),
         ];
         var t0 = DateTimeOffset.Now;
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "before the retry", t0, "Anna"));
-        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "after the retry", t0.AddSeconds(30), "Speaker 1"));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "after the retry", t0.AddSeconds(30), "Speaker 2"));
 
         var (frontMatter, _) = SplitFrontMatter(vm.BuildMarkdown());
 
         Assert.Contains($"consentSessions: [{SessionA}, {SessionB}]\n", frontMatter, StringComparison.Ordinal);
         Assert.Contains($"  - {{session: {SessionA}, label: Speaker 1, shownAs: Anna, grantedAt: ", frontMatter, StringComparison.Ordinal);
-        Assert.Contains($"  - {{session: {SessionB}, label: Speaker 1, shownAs: Speaker 1, grantedAt: ", frontMatter, StringComparison.Ordinal);
+        Assert.Contains($"  - {{session: {SessionB}, label: Speaker 2, shownAs: Speaker 1, grantedAt: ", frontMatter, StringComparison.Ordinal);
     }
 
     [Fact]

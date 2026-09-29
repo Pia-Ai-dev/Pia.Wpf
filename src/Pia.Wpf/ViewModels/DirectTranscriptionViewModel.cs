@@ -569,13 +569,8 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _consentSoundPlayer?.PlayConsentGranted();
     }
 
-    /// <summary>
-    /// The service discarded the consent map (a re-prepare after a failed start rebuilds the diarizer, so
-    /// old labels now belong to different voices). Drop every chip and every statistic: leaving a chip
-    /// reading "consented" while the gate has reverted that speaker to Unknown would tell the user a
-    /// participant is being recorded while their speech is in fact being dropped. Existing bubbles stay —
-    /// that text was emitted lawfully under the consent that existed at the time.
-    /// </summary>
+    // A chip still reading "consented" would claim a recording the reset gate now drops. The bubbles stay: they
+    // were emitted under the consent of the time.
     private void OnConsentSessionReset(object? sender, EventArgs e)
     {
         DispatchToUi(() =>

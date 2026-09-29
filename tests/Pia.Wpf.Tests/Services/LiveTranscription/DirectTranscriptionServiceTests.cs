@@ -535,17 +535,80 @@ public sealed class DirectTranscriptionServiceTests
         fx.MicSourceThrowsOnStart = false;
         await fx.Service.StartAsync(ct);
         var second = fx.Service.SessionId!;
-        // The new diarizer's "Speaker 1" is another voice, with a consent of its own.
-        fx.RealConsent.Grant("Speaker 1", null, Evidence("Speaker 1", "Ben"));
+        // The new diarizer numbers on after the transcript's highest label.
+        fx.RealConsent.Grant("Speaker 3", null, Evidence("Speaker 3", "Ben"));
 
         var consents = fx.Service.TranscriptConsents;
 
         Assert.Equal(
-            [(first, "Speaker 1", ConsentState.Granted), (first, "Speaker 2", ConsentState.Unknown), (second, "Speaker 1", ConsentState.Granted)],
+            [(first, "Speaker 1", ConsentState.Granted), (first, "Speaker 2", ConsentState.Unknown), (second, "Speaker 3", ConsentState.Granted)],
             consents.Select(c => (c.SessionId, c.Speaker.DetectedLabel, c.Speaker.State)));
 
         await fx.Service.EndSessionAsync(ct);
         Assert.Empty(fx.Service.TranscriptConsents);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task AFailedStartRetry_NumbersTheNewVoicesAfterTheTranscriptsHighestDetectedLabel()
+    {
+        // Speaker 2 never consented and was renamed: both still hold their number in the kept bubbles.
+        var fx = new Fixture(useRealConsentManager: true) { NewNativesPerCreate = true };
+        var ct = TestContext.Current.CancellationToken;
+        await fx.Service.StartAsync(ct);
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 1");
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 2");
+        Assert.True(fx.Service.RenameSpeaker("Speaker 2", "Ben"));
+        await fx.Service.StopAsync(ct);
+        Assert.Equal([0], fx.SpeakerId.ContinuedAfter);
+
+        fx.MicSourceThrowsOnStart = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(ct));
+        fx.MicSourceThrowsOnStart = false;
+        await fx.Service.StartAsync(ct);
+
+        Assert.Equal([2], fx.SpeakerId.ContinuedAfter);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ANewTranscript_NumbersItsVoicesFromOneAgain()
+    {
+        var fx = new Fixture(useRealConsentManager: true) { NewNativesPerCreate = true };
+        var ct = TestContext.Current.CancellationToken;
+        await fx.Service.StartAsync(ct);
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 1");
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 2");
+
+        await fx.Service.EndSessionAsync(ct);
+        await fx.Service.PrepareAsync(ct);
+
+        Assert.Equal([0], fx.SpeakerId.ContinuedAfter);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ARename_OntoALabelAnEarlierSessionOfTheTranscriptUses_IsRefused()
+    {
+        var fx = new Fixture(useRealConsentManager: true) { NewNativesPerCreate = true };
+        var ct = TestContext.Current.CancellationToken;
+        await fx.Service.StartAsync(ct);
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 1");
+        Assert.True(fx.Service.RenameSpeaker("Speaker 1", "Anna"));
+        await fx.Service.StopAsync(ct);
+        fx.MicSourceThrowsOnStart = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(ct));
+        fx.MicSourceThrowsOnStart = false;
+        await fx.Service.StartAsync(ct);
+        fx.SpeakerId.RaiseSpeakerRegistered("Speaker 2");
+
+        Assert.False(fx.Service.RenameSpeaker("Speaker 2", "Anna"));
+        Assert.False(fx.Service.RenameSpeaker("Speaker 2", "Speaker 1"));
+        Assert.Empty(fx.SpeakerId.Renames);
+        Assert.True(fx.Service.RenameSpeaker("Speaker 2", "Ben"));
 
         await fx.Service.DisposeAsync();
     }

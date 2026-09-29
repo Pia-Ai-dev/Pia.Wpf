@@ -34,6 +34,15 @@ public class AdaptiveSpeakerIdentificationServiceTests
     }
 
     [Fact]
+    public void ContinuingTheNumbering_NamesTheNextNewVoiceAfterIt()
+    {
+        using var svc = Create();
+        svc.ContinueNumberingAfter(4);
+
+        Assert.Equal("Speaker 5", svc.IdentifyOrRegisterSegment(Seg(0), 16000).Label);
+    }
+
+    [Fact]
     public void CloseSegments_ShareTheLabel_DistantSegmentGetsANewOne()
     {
         using var svc = Create();
