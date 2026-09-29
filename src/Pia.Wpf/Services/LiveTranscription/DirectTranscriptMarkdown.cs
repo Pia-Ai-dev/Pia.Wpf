@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Pia.Converters;
 using Pia.Models;
+using Pia.Services.Consent;
 
 namespace Pia.Services.LiveTranscription;
 
@@ -16,25 +17,21 @@ public static class DirectTranscriptMarkdown
 {
     public const string Schema = "pia-direct-transcript/v1";
 
-    /// <summary>
-    /// Renders the full saved-file Markdown: YAML front matter (schema/start/end/speakers/
-    /// voiceStats) followed by <see cref="RenderBody"/>. <paramref name="sessionEnd"/> is
-    /// emitted as given even when it is earlier than <paramref name="sessionStart"/> — this
-    /// renderer never "fixes" caller data, it only formats it.
-    /// </summary>
+    /// <summary>Front matter, then <see cref="RenderBody"/>. Caller data is formatted as given, never "fixed".</summary>
     public static string Render(
         string title,
         DateTimeOffset sessionStart,
         DateTimeOffset sessionEnd,
         IReadOnlyList<TranscriptBubble> bubbles,
         IReadOnlyList<SpeakerVoiceStats> voiceStats,
-        string? counterpartName)
+        string? counterpartName,
+        ConsentRecord? consent = null)
     {
         ArgumentNullException.ThrowIfNull(bubbles);
         ArgumentNullException.ThrowIfNull(voiceStats);
 
         var sb = new StringBuilder();
-        AppendFrontMatter(sb, sessionStart, sessionEnd, bubbles, voiceStats, counterpartName);
+        AppendFrontMatter(sb, sessionStart, sessionEnd, bubbles, voiceStats, counterpartName, consent);
         sb.Append(RenderBody(title, bubbles, counterpartName));
         return sb.ToString();
     }
@@ -85,7 +82,8 @@ public static class DirectTranscriptMarkdown
         DateTimeOffset sessionEnd,
         IReadOnlyList<TranscriptBubble> bubbles,
         IReadOnlyList<SpeakerVoiceStats> voiceStats,
-        string? counterpartName)
+        string? counterpartName,
+        ConsentRecord? consent)
     {
         sb.Append("---\n");
         sb.Append("schema: ").Append(Schema).Append('\n');
@@ -102,9 +100,8 @@ public static class DirectTranscriptMarkdown
         sb.Append("voiceStats:\n");
         foreach (var stat in voiceStats)
         {
-            // Stats are keyed by the diarizer's label, the bubbles by the renumbered one. Without this
-            // lookup one document says "Speaker 1" in speakers: and "Speaker 17" in voiceStats:. A
-            // matched bubble wins even with a null label, or suppression would leak the raw one back.
+            // Stats carry the diarizer's label, bubbles the renumbered one; a matched bubble wins even with a
+            // null label, or suppression would leak the raw one back.
             var match = bubbles.FirstOrDefault(b =>
                 string.Equals(b.SpeakerLabel, stat.SpeakerLabel, StringComparison.Ordinal));
             var displayLabel = match is not null ? match.DisplayLabel : stat.SpeakerLabel;
@@ -114,6 +111,12 @@ public static class DirectTranscriptMarkdown
             sb.Append("    totalSeconds: ").Append(stat.TotalSpeechSeconds.ToString("F1", CultureInfo.InvariantCulture)).Append('\n');
             sb.Append("    meanSeconds: ").Append(stat.MeanUtteranceSeconds.ToString("F1", CultureInfo.InvariantCulture)).Append('\n');
             sb.Append("    sharePercent: ").Append((stat.ShareOfMeasuredSpeech * 100.0).ToString("F1", CultureInfo.InvariantCulture)).Append('\n');
+        }
+
+        if (consent is not null)
+        {
+            foreach (var line in ConsentFrontMatter.Render(consent))
+                sb.Append(line).Append('\n');
         }
 
         sb.Append("---\n");
