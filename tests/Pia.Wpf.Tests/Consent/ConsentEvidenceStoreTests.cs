@@ -190,7 +190,7 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
         await sut.AppendCopyAsync("session-7", ConsentCopy.Export(@"C:\x.md", DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
 
         Assert.False(Directory.Exists(Path.Combine(_tmpDir, "session-7")));
-        Assert.Empty(await sut.ReadCopiesAsync("session-7", TestContext.Current.CancellationToken));
+        Assert.Equal<ConsentCopy>([], await sut.ReadCopiesAsync("session-7", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -232,7 +232,7 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
 
         await sut.AppendCopyAsync("session-9", ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow), ct);
 
-        Assert.Empty(await sut.ReadCopiesAsync("session-9", ct));
+        Assert.Equal<ConsentCopy>([], await sut.ReadCopiesAsync("session-9", ct));
     }
 
     [Fact]
@@ -250,6 +250,26 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
         await sut.AppendCopyAsync("session-10", last, ct);
 
         Assert.Equal([first, last], await sut.ReadCopiesAsync("session-10", ct));
+    }
+
+    /// <summary>The lifetime sweep deletes on "no copies", so a log it cannot open must not read as an empty one.</summary>
+    [Fact]
+    public async Task ReadCopiesAsync_WhenTheLogCannotBeOpened_ReturnsNull()
+    {
+        var dpapi = SubstituteDpapi();
+        MakeReversible(dpapi);
+        var sut = new ConsentEvidenceStore(_tmpDir, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+        await sut.SaveGrantAsync(Session("session-11"), MakeEvidence("Speaker 1", "yes, Pia may record"), ct);
+        await sut.AppendCopyAsync("session-11", ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow), ct);
+
+        using (new FileStream(
+            Path.Combine(_tmpDir, "session-11", ConsentEvidenceStore.CopiesFileName), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Null(await sut.ReadCopiesAsync("session-11", ct));
+        }
+
+        Assert.Single(await sut.ReadCopiesAsync("session-11", ct) ?? []);
     }
 
     [Theory]
@@ -271,6 +291,6 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
         await sut.AppendCopyAsync(sessionId, ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow), ct);
 
         Assert.Empty(Directory.GetFiles(_tmpDir, ConsentEvidenceStore.CopiesFileName, SearchOption.AllDirectories));
-        Assert.Empty(await sut.ReadCopiesAsync(sessionId, ct));
+        Assert.Equal<ConsentCopy>([], await sut.ReadCopiesAsync(sessionId, ct));
     }
 }

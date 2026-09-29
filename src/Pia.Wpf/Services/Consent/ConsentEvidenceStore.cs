@@ -121,12 +121,14 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
         }
     }
 
-    public async Task<IReadOnlyList<ConsentCopy>> ReadCopiesAsync(string sessionId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ConsentCopy>?> ReadCopiesAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         if (!IsSessionFolderName(sessionId)) return [];
 
         var path = Path.Combine(_rootDirectory, sessionId, CopiesFileName);
         string[] lines;
+        // Under the append gate: whichever side opens the file second would otherwise fail on a sharing violation.
+        await _copiesGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (!File.Exists(path)) return [];
@@ -134,8 +136,14 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Failed to read a consent copies log");
-            return [];
+            // By type only: the message carries the log's path, and so the session id.
+            _logger.LogWarning("Failed to read a consent copies log ({Error})", ex.GetType().Name);
+            _logger.SensitiveDebug("Failed to read the copies log of session {SessionId}: {Exception}", sessionId, ex);
+            return null;
+        }
+        finally
+        {
+            _copiesGate.Release();
         }
 
         var copies = new List<ConsentCopy>(lines.Length);
@@ -162,7 +170,7 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
     }
 
     // A session id names a folder; one read back from a user-editable note must not reach outside the root.
-    private static bool IsSessionFolderName(string? sessionId)
+    internal static bool IsSessionFolderName(string? sessionId)
         => !string.IsNullOrWhiteSpace(sessionId)
            && sessionId is not ("." or "..")
            && sessionId.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;

@@ -24,6 +24,6 @@ public interface IConsentEvidenceStore
     /// </summary>
     Task AppendCopyAsync(string sessionId, ConsentCopy copy, CancellationToken cancellationToken = default);
 
-    /// <summary>The session's logged copies, oldest first; empty when there are none or the log cannot be read.</summary>
-    Task<IReadOnlyList<ConsentCopy>> ReadCopiesAsync(string sessionId, CancellationToken cancellationToken = default);
+    /// <summary>The session's logged copies, oldest first; empty when there are none, <c>null</c> when the log cannot be read.</summary>
+    Task<IReadOnlyList<ConsentCopy>?> ReadCopiesAsync(string sessionId, CancellationToken cancellationToken = default);
 }

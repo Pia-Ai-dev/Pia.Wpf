@@ -29,6 +29,10 @@ public interface IWindowManagerService
     void HideWindow(WindowMode mode);
     void HideAllWindows();
     void CloseAndDisposeAll();
+
+    /// <summary>Set as <see cref="CloseAndDisposeAll"/> begins, before any window's view model is disposed.</summary>
+    bool IsShuttingDown { get; }
+
     bool IsVisible(WindowMode mode);
 
     /// <summary>Shown but iconic: still in the taskbar, so a toggle must restore it rather than hide it.</summary>

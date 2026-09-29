@@ -788,8 +788,8 @@ public static class Bootstrapper
                 sp.GetRequiredService<ISettingsService>(),
                 sp.GetRequiredService<ILogger<Services.MeetingAttendee.BackgroundMeetingSessions>>()));
 
-        // Direct transcription (in-session voice consent + live capture). Session-scoped consent
-        // only (owner decision D-3/D-4): no persistent voice-profile store, no evidence retention worker.
+        // Direct transcription (in-session voice consent + live capture). Consent is session-scoped: there is
+        // no persistent voice-profile store.
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<Services.Consent.IConsentStateManager, Services.Consent.ConsentStateManager>();
         services.AddSingleton<Services.Consent.INamedConsentClassifier, Services.Consent.NamedConsentClassifier>();
@@ -929,6 +929,19 @@ public static class Bootstrapper
         // separately-constructed service would not share.
         services.AddSingleton<IScheduledJobRunner>(sp => sp.GetRequiredService<ScheduledJobBackgroundService>());
         services.AddSingleton<AssistantChatRetentionService>();
+        // The window manager is read lazily: it is the only thing that knows the app is exiting while windows
+        // still end their transcription sessions.
+        services.AddSingleton(sp => new Services.Consent.ConsentLifetimeService(
+            PiaPaths.ConsentEvidenceDirectory,
+            sp.GetRequiredService<IVaultStore>(),
+            sp.GetRequiredService<Pia.Services.Wiki.IngestStateStore>(),
+            sp.GetRequiredService<IAssistantChatService>(),
+            sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+            sp.GetRequiredService<IDirectTranscriptionService>(),
+            sp.GetRequiredService<TimeProvider>(),
+            dataRootsOverridden: PiaPaths.IsOverridden,
+            isShuttingDown: () => sp.GetRequiredService<IWindowManagerService>().IsShuttingDown,
+            sp.GetRequiredService<ILogger<Services.Consent.ConsentLifetimeService>>()));
         services.AddSingleton<Services.Consent.ConsentRetentionBackgroundService>();
         services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
 
