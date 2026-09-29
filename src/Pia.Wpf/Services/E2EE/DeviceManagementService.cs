@@ -342,10 +342,13 @@ public class DeviceManagementService : IDeviceManagementService
                 case HttpStatusCode.Conflict:
                     var code = await ReadErrorCodeAsync(response);
                     if (code == E2EEErrorCodes.ProofKeyConflict)
+                    {
                         _logger.LogWarning("The server holds a different recovery proof key for this account");
-                    else
-                        _logger.LogInformation("The server refused the recovery proof key ({Code})", code ?? "no code");
-                    return true;
+                        return true;
+                    }
+                    // A missing precondition, e.g. this device just turned pending: worth another try.
+                    _logger.LogInformation("The server is not ready for the recovery proof key ({Code})", code ?? "no code");
+                    return false;
                 case HttpStatusCode.BadRequest:
                     _logger.LogWarning("The server rejected the recovery proof key as malformed");
                     return true;

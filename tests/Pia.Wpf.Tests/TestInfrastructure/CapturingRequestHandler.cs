@@ -9,6 +9,7 @@ namespace Pia.Tests.TestInfrastructure;
 internal sealed class CapturingRequestHandler : HttpMessageHandler
 {
     private readonly string _responseBody;
+    private readonly HttpStatusCode _status;
 
     public Uri? LastRequestUri { get; private set; }
 
@@ -16,9 +17,10 @@ internal sealed class CapturingRequestHandler : HttpMessageHandler
 
     public string? LastAuthorization { get; private set; }
 
-    public CapturingRequestHandler(string responseBody = "{}")
+    public CapturingRequestHandler(string responseBody = "{}", HttpStatusCode status = HttpStatusCode.OK)
     {
         _responseBody = responseBody;
+        _status = status;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
@@ -29,7 +31,7 @@ internal sealed class CapturingRequestHandler : HttpMessageHandler
         LastAuthorization = request.Headers.Authorization?.ToString();
         if (request.Content is not null)
             LastBody = await request.Content.ReadAsStringAsync(cancellationToken);
-        return new HttpResponseMessage(HttpStatusCode.OK)
+        return new HttpResponseMessage(_status)
         {
             Content = new StringContent(_responseBody, Encoding.UTF8, "application/json"),
         };

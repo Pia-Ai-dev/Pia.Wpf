@@ -159,6 +159,34 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
     }
 
     [Fact]
+    public async Task Ensure_WhenTheServerIsNotReadyYet_TriesAgain()
+    {
+        await ActiveDeviceOnEnabledAccountAsync();
+        _server.ProofKeyNotSetUp = true;
+        var sut = CreateSut();
+
+        await sut.EnsureRecoveryProofKeyAsync();
+        _server.ProofKeyNotSetUp = false;
+        await sut.EnsureRecoveryProofKeyAsync();
+
+        Assert.Equal(2, _server.Requests.Count(r => r == $"PUT {ProofKeyPath}"));
+        Assert.NotNull(_server.StoredProofKey);
+    }
+
+    [Fact]
+    public async Task Ensure_WhenTheServerCallsTheKeyMalformed_StopsAskingForThisRun()
+    {
+        await ActiveDeviceOnEnabledAccountAsync();
+        _server.ProofKeyStatus = HttpStatusCode.BadRequest;
+        var sut = CreateSut();
+
+        await sut.EnsureRecoveryProofKeyAsync();
+        await sut.EnsureRecoveryProofKeyAsync();
+
+        Assert.Single(_server.Requests, $"PUT {ProofKeyPath}");
+    }
+
+    [Fact]
     public async Task Ensure_AfterAServerError_TriesAgain()
     {
         await ActiveDeviceOnEnabledAccountAsync();
@@ -260,6 +288,7 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
         public RecoveryWrappedUmkBlob? RecoveryCopy { get; set; }
         public bool RecoveryCopyLocked { get; set; }
         public bool ProofKeyConflict { get; set; }
+        public bool ProofKeyNotSetUp { get; set; }
         public HttpStatusCode? ProofKeyStatus { get; set; }
         public List<string> Requests { get; } = [];
 
@@ -291,9 +320,13 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
             if (request.Method == HttpMethod.Put && path == ProofKeyPath)
             {
                 if (ProofKeyStatus is { } forced)
-                    return new HttpResponseMessage(forced);
+                    return forced == HttpStatusCode.BadRequest
+                        ? Error(forced, "invalid_proof_key")
+                        : new HttpResponseMessage(forced);
                 if (ProofKeyConflict)
                     return Error(HttpStatusCode.Conflict, E2EEErrorCodes.ProofKeyConflict);
+                if (ProofKeyNotSetUp)
+                    return Error(HttpStatusCode.Conflict, "recovery_not_set_up");
                 StoredProofKey = (await request.Content!.ReadFromJsonAsync<RecoveryProofKeyRequest>(ct))!.ProofKey;
                 return new HttpResponseMessage(HttpStatusCode.NoContent);
             }

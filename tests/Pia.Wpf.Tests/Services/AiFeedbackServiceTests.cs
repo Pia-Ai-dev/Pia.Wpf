@@ -18,9 +18,10 @@ public class AiFeedbackServiceTests
         new(ChatRole.Assistant, "The capital of France is Berlin.") { Stats = new AnswerStats(20, AnswerProvenance.PiaCloudLabel) };
 
     private static (AiFeedbackService Sut, CapturingRequestHandler Http, ITokenMapService TokenMap) Build(
-        AppSettings settings, string? token = "tok", string responseBody = "{}")
+        AppSettings settings, string? token = "tok", string responseBody = "{}",
+        System.Net.HttpStatusCode status = System.Net.HttpStatusCode.OK)
     {
-        var handler = new CapturingRequestHandler(responseBody);
+        var handler = new CapturingRequestHandler(responseBody, status);
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(handler));
 
@@ -145,6 +146,19 @@ public class AiFeedbackServiceTests
 
         Assert.Equal(id, accepted!.Id);
         Assert.Equal(AiFeedbackResponse.DeliveryStoredOnly, accepted.Delivery);
+    }
+
+    [Fact]
+    public async Task Send_TreatsTheServersAcceptedStatusAsSent()
+    {
+        var (sut, _, _) = Build(
+            new AppSettings { ServerUrl = "https://cloud.example" },
+            responseBody: """{"id":"7d1f6c2e-3b6a-4a55-9d0e-2f1c8b9a4e11","delivery":"notified"}""",
+            status: System.Net.HttpStatusCode.Accepted);
+
+        var accepted = await sut.SendAsync(new AiFeedbackRequest(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(AiFeedbackResponse.DeliveryNotified, accepted?.Delivery);
     }
 
     [Theory]
