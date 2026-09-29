@@ -740,6 +740,79 @@ public class DirectTranscriptionViewModelTests
         sound.DidNotReceive().PlayConsentGranted();
     }
 
+    // ---- Copies of a revoked session -------------------------------------------------------------------
+
+    [Fact]
+    public async Task Revoke_WithCopiesOfTheSession_ShowsThem_ThenRecordsTheRevocationInTheKeptNotes()
+    {
+        var copies = CopiesFinding(new ConsentCopyInventory([], ["sources/kickoff.md"], [], false));
+        var (vm, service, dialog, _, _) = CreateSutWithVault(consentCopies: copies);
+        var revokedAt = new DateTimeOffset(2026, 9, 29, 10, 20, 0, TimeSpan.FromHours(2));
+        service.TranscriptSessionIds = [SessionA, SessionB];
+        service.TranscriptConsents = [Consented(SessionB, "Speaker 2", "Speaker 2", revokedAt)];
+
+        await vm.RevokeSpeakerCommand.ExecuteAsync("Speaker 2");
+
+        await copies.Received(1).FindAsync(
+            Arg.Is<IReadOnlyList<string>>(ids => ids.SequenceEqual(new[] { SessionA, SessionB })), Arg.Any<CancellationToken>());
+        Received.InOrder(() =>
+        {
+            dialog.ShowConsentCopiesDialogAsync(Arg.Is<ConsentCopiesViewModel>(c => c.Notes.Count == 1));
+            copies.RecordRevocationAsync(
+                "sources/kickoff.md",
+                Arg.Is<ConsentRecord>(r => r.Consents.Single().RevokedAt == revokedAt && r.Consents.Single().ShownAs == null),
+                Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task Revoke_WithoutAnyCopy_ShowsNoDialog()
+    {
+        var copies = CopiesFinding(new ConsentCopyInventory([], [], [], false));
+        var (vm, service, dialog, _, _) = CreateSutWithVault(consentCopies: copies);
+        service.TranscriptSessionIds = [SessionA];
+
+        await vm.RevokeSpeakerCommand.ExecuteAsync("Speaker 2");
+
+        await copies.Received(1).FindAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+        await dialog.DidNotReceive().ShowConsentCopiesDialogAsync(Arg.Any<ConsentCopiesViewModel>());
+    }
+
+    [Fact]
+    public async Task Revoke_WithAnUnreadableCopiesLog_StillShowsTheDialog()
+    {
+        var copies = CopiesFinding(new ConsentCopyInventory([], [], [], CopiesLogUnreadable: true));
+        var (vm, service, dialog, _, _) = CreateSutWithVault(consentCopies: copies);
+        service.TranscriptSessionIds = [SessionA];
+
+        await vm.RevokeSpeakerCommand.ExecuteAsync("Speaker 2");
+
+        await dialog.Received(1).ShowConsentCopiesDialogAsync(Arg.Is<ConsentCopiesViewModel>(c => c.CopiesLogUnreadable));
+    }
+
+    [Fact]
+    public async Task ARevokeTheServiceRefused_ShowsNoDialog()
+    {
+        // Nothing was withdrawn, so a dialog saying consent was revoked would be untrue.
+        var copies = CopiesFinding(new ConsentCopyInventory([], ["sources/kickoff.md"], [], false));
+        var (vm, service, dialog, _, _) = CreateSutWithVault(consentCopies: copies);
+        service.TranscriptSessionIds = [SessionA];
+        service.RevokeSucceeds = false;
+
+        await vm.RevokeSpeakerCommand.ExecuteAsync("Speaker 2");
+
+        await copies.DidNotReceive().FindAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+        await dialog.DidNotReceive().ShowConsentCopiesDialogAsync(Arg.Any<ConsentCopiesViewModel>());
+    }
+
+    private static IConsentCopyService CopiesFinding(ConsentCopyInventory inventory)
+    {
+        var copies = Substitute.For<IConsentCopyService>();
+        copies.FindAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>()).Returns(inventory);
+        copies.RecordRevocationAsync(Arg.Any<string>(), Arg.Any<ConsentRecord>(), Arg.Any<CancellationToken>()).Returns(true);
+        return copies;
+    }
+
     private const string SessionA = "3f2a9c1e7b4d4e0f8a6b5c4d3e2f1a0b";
     private const string SessionB = "9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e";
 
@@ -785,7 +858,8 @@ public class DirectTranscriptionViewModelTests
         IConsentSoundPlayer? consentSound = null,
         TargetLanguage uiLanguage = TargetLanguage.EN,
         IConsentEvidenceStore? consentStore = null,
-        IFileDialogService? files = null)
+        IFileDialogService? files = null,
+        IConsentCopyService? consentCopies = null)
     {
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
@@ -812,7 +886,10 @@ public class DirectTranscriptionViewModelTests
             service, settingsService, loc, files, dialog, memory, ingest,
             Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<DirectTranscriptionViewModel>.Instance, new InlineUiDispatcher(),
-            clipboard, consentSound, consentEvidenceStore: consentStore);
+            clipboard, consentSound, consentEvidenceStore: consentStore,
+            consentCopies: consentCopies is null
+                ? null
+                : () => new ConsentCopiesViewModel(consentCopies, NullLogger<ConsentCopiesViewModel>.Instance));
 
         return (vm, service, dialog, memory, ingest);
     }
@@ -894,10 +971,15 @@ public class DirectTranscriptionViewModelTests
             return RenameSucceeds;
         }
 
-        public void RevokeSpeaker(string speakerLabel)
+        /// <summary>Set false to model a label that held no consent to withdraw.</summary>
+        public bool RevokeSucceeds { get; set; } = true;
+
+        public bool RevokeSpeaker(string speakerLabel)
         {
             Revocations.Add(speakerLabel);
+            if (!RevokeSucceeds) return false;
             RaiseConsentChanged(speakerLabel, ConsentState.Granted, ConsentState.Revoked, null);
+            return true;
         }
 
         public IReadOnlyList<SpeakerVoiceStats> GetVoiceStats() => _voiceStats.ToList();

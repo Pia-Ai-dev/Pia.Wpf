@@ -136,6 +136,19 @@
   <data name="DirectTrans_RenameSpeaker_Title" xml:space="preserve"><value>Renommer l’intervenant</value></data>
   <data name="DirectTrans_RenameSpeaker_Prompt" xml:space="preserve"><value>Nouveau nom pour {0} :</value></data>
   <data name="DirectTrans_RevokeSpeaker_MenuItem" xml:space="preserve"><value>Révoquer le consentement</value></data>
+  <data name="ConsentCopies_Title" xml:space="preserve"><value>Copies de cette session</value></data>
+  <data name="ConsentCopies_Intro" xml:space="preserve"><value>Le consentement a été révoqué. Ces copies contiennent des propos de la session :</value></data>
+  <data name="ConsentCopies_LogUnreadable" xml:space="preserve"><value>Pia n’a pas pu lire dans quels fichiers et conversations la session a été copiée ; certains peuvent manquer ci-dessous.</value></data>
+  <data name="ConsentCopies_Exports_Heading" xml:space="preserve"><value>Fichiers exportés</value></data>
+  <data name="ConsentCopies_Exports_Note" xml:space="preserve"><value>Pia ne peut pas accéder à ces fichiers. Veuillez les supprimer ou les nettoyer vous-même.</value></data>
+  <data name="ConsentCopies_Notes_Heading" xml:space="preserve"><value>Notes du coffre</value></data>
+  <data name="ConsentCopies_Notes_Kept" xml:space="preserve"><value>Les notes conservées mentionnent la révocation.</value></data>
+  <data name="ConsentCopies_Chats_Heading" xml:space="preserve"><value>Conversations</value></data>
+  <data name="ConsentCopies_Chat_Label" xml:space="preserve"><value>Résumé</value></data>
+  <data name="ConsentCopies_Delete" xml:space="preserve"><value>Supprimer</value></data>
+  <data name="ConsentCopies_DeleteAll" xml:space="preserve"><value>Tout supprimer</value></data>
+  <data name="ConsentCopies_DeleteFailed" xml:space="preserve"><value>Certaines copies n’ont pas pu être supprimées.</value></data>
+  <data name="ConsentCopies_Close" xml:space="preserve"><value>Fermer</value></data>
   <data name="DirectTrans_SummaryPrompt" xml:space="preserve"><value>Merci de résumer la transcription suivante d’une session de transcription directe enregistrée le {0}.</value></data>
   <data name="Speaker_Me" xml:space="preserve"><value>moi</value></data>
   <data name="Speaker_Them" xml:space="preserve"><value>eux</value></data>

@@ -942,6 +942,7 @@ public static class Bootstrapper
             dataRootsOverridden: PiaPaths.IsOverridden,
             isShuttingDown: () => sp.GetRequiredService<IWindowManagerService>().IsShuttingDown,
             sp.GetRequiredService<ILogger<Services.Consent.ConsentLifetimeService>>()));
+        services.AddSingleton<Services.Consent.IConsentCopyService, Services.Consent.ConsentCopyService>();
         services.AddSingleton<Services.Consent.ConsentRetentionBackgroundService>();
         services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
 
@@ -1013,6 +1014,10 @@ public static class Bootstrapper
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<MeetingAttendeeViewModel>();
         services.AddScoped<DirectTranscriptionViewModel>();
+        // Transient behind a scoped factory: each revocation lists its own copies, and deleting the open summary
+        // chat has to reach this window's chat sessions.
+        services.AddTransient<ConsentCopiesViewModel>();
+        services.AddScoped<Func<ConsentCopiesViewModel>>(sp => sp.GetRequiredService<ConsentCopiesViewModel>);
         services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<VaultViewModel>();
         services.AddScoped<RoutinesViewModel>();

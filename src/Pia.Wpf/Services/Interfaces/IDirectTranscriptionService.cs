@@ -165,7 +165,8 @@ public interface IDirectTranscriptionService : IAsyncDisposable
     /// Withdraws one speaker's consent for the rest of the session. Their subsequent speech is dropped;
     /// the recorded grant evidence is preserved.
     /// </summary>
-    void RevokeSpeaker(string speakerLabel);
+    /// <returns><c>false</c> when the label holds no consent of this session to withdraw.</returns>
+    bool RevokeSpeaker(string speakerLabel);
 
     /// <summary>
     /// Per-speaker speaking statistics for CONSENTED speech only — dropped audio is never measured.

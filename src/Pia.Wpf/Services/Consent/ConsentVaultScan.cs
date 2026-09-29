@@ -70,6 +70,43 @@ public sealed class ConsentVaultScan
         return new ConsentVaultScanResult(result, notes.Count, unreadable, IsComplete: unreadable == 0);
     }
 
+    /// <summary>The sessions the note names right now; <c>null</c> when it is not a readable note inside the vault.</summary>
+    public IReadOnlyList<string>? ReadSessions(string reference)
+    {
+        var path = ResolveInsideVault(reference);
+        if (path is null) return null;
+
+        try
+        {
+            return File.Exists(path) ? ConsentFrontMatter.ReadSessions(ReadFrontMatter(path)) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning("Failed to read a vault note's consent sessions ({Error})", ex.GetType().Name);
+            return null;
+        }
+    }
+
+    private string? ResolveInsideVault(string reference)
+    {
+        var root = _vault.Root;
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(reference)) return null;
+
+        try
+        {
+            var rootFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
+            var path = Path.GetFullPath(Path.Combine(rootFull, reference.Replace('/', Path.DirectorySeparatorChar)));
+            return path.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase)
+                   && path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+                ? path
+                : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
     // Shared, so a note open in an editor is still read.
     private static string? ReadFrontMatter(string path)
     {

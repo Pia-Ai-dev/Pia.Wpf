@@ -34,6 +34,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     private readonly IClipboardService? _clipboardService;
     private readonly IConsentSoundPlayer? _consentSoundPlayer;
     private readonly IConsentEvidenceStore? _consentEvidenceStore;
+    private readonly Func<ConsentCopiesViewModel>? _consentCopies;
 
     private readonly Dictionary<string, int> _chipColorIndex = new(StringComparer.Ordinal);
     private int _nextChipColorIndex;
@@ -107,7 +108,8 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves them.
         IChatSessionManager? chatSessionManager = null,
         IWorkingDirectoryService? workingDirectoryService = null,
-        IConsentEvidenceStore? consentEvidenceStore = null)
+        IConsentEvidenceStore? consentEvidenceStore = null,
+        Func<ConsentCopiesViewModel>? consentCopies = null)
         : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
             ingestScheduler, snackbarService, logger, uiDispatcher, chatSessionManager,
             workingDirectoryService)
@@ -116,6 +118,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _clipboardService = clipboardService;
         _consentSoundPlayer = consentSoundPlayer;
         _consentEvidenceStore = consentEvidenceStore;
+        _consentCopies = consentCopies;
 
         // Construct StopCommand BEFORE subscribing to StateChanged: a state change raised during wiring
         // would NRE in OnRunningChanged (mirrors MeetingAttendeeViewModel's ctor ordering).
@@ -375,22 +378,45 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
 
     protected override void OnSpeakerNamingChanged() => RenameSpeakerLabelCommand.NotifyCanExecuteChanged();
 
-    /// <summary>
-    /// Withdraws a speaker's consent (§3.3): tells the service, removes their bubbles/journal entries
-    /// from the in-memory transcript (<see cref="TranscriptOverlayViewModel.RemoveSpeaker"/>), and marks
-    /// the chip revoked. No confirmation dialog in v1 (no localized key exists for one).
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanRevokeSpeaker))]
-    private Task RevokeSpeakerAsync(string? speakerLabel)
+    private async Task RevokeSpeakerAsync(string? speakerLabel)
     {
-        if (string.IsNullOrWhiteSpace(speakerLabel)) return Task.CompletedTask;
+        if (string.IsNullOrWhiteSpace(speakerLabel)) return;
 
-        _service.RevokeSpeaker(speakerLabel);
+        var revoked = _service.RevokeSpeaker(speakerLabel);
         ApplyRevocation(speakerLabel);
-        return Task.CompletedTask;
+        if (revoked) await ShowSessionCopiesAsync();
     }
 
     private static bool CanRevokeSpeaker(string? speakerLabel) => !string.IsNullOrWhiteSpace(speakerLabel);
+
+    // The copies still hold the withdrawn words. The session's evidence folder is left alone: the session is live.
+    private async Task ShowSessionCopiesAsync()
+    {
+        if (_consentCopies is null) return;
+        var sessionIds = _service.TranscriptSessionIds;
+        if (sessionIds.Count == 0) return;
+
+        ConsentCopiesViewModel copies;
+        try
+        {
+            copies = _consentCopies();
+            await copies.LoadAsync(sessionIds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to list the copies of a revoked session");
+            return;
+        }
+
+        if (!copies.HasCopies) return;
+
+        try { await _dialogService.ShowConsentCopiesDialogAsync(copies); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to show the copies of a revoked session"); }
+
+        try { await copies.RecordRevocationInKeptNotesAsync(BuildRecord(shownAs: null)); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to record a revocation in the kept vault notes"); }
+    }
 
     // ---- Summarize with the assistant ---------------------------------------------------------------
 
@@ -458,15 +484,19 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
 
     protected override ConsentRecord? BuildConsentRecord(IReadOnlyList<TranscriptBubble> transcript)
     {
-        var record = ConsentRecord.ForSpeakers(
+        var record = BuildRecord(consent => DirectTranscriptMarkdown.ShownAs(transcript, consent.Speaker.SpeakerLabel, CounterpartName));
+        return record.IsEmpty ? null : record;
+    }
+
+    // A kept note passes no shownAs: what it prints for a speaker is its own, and the rewrite keeps it.
+    private ConsentRecord BuildRecord(Func<SessionSpeakerConsent, string?>? shownAs) =>
+        ConsentRecord.ForSpeakers(
             _service.TranscriptSessionIds,
             ConsentNotice.Version,
             ConsentNotice.Purposes,
             _service.TranscriptNoticeLanguage ?? ConsentNotice.LanguageOf(_localizationService.CurrentLanguage),
             _service.TranscriptConsents,
-            consent => DirectTranscriptMarkdown.ShownAs(transcript, consent.Speaker.SpeakerLabel, CounterpartName));
-        return record.IsEmpty ? null : record;
-    }
+            shownAs);
 
     protected override Task OnTranscriptExportedAsync(string path)
         => LogCopyAsync(_service.TranscriptSessionIds, ConsentCopy.Export(path, DateTimeOffset.UtcNow));

@@ -779,15 +779,15 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
         return highest;
     }
 
-    public void RevokeSpeaker(string speakerLabel)
+    public bool RevokeSpeaker(string speakerLabel)
     {
         // The detected label, not the caller's: after a rename that is a personal name, and the audit trail
         // and the evidence file name must stay name-free.
-        if (!_consentStateManager.TryGet(speakerLabel, out var priorEntry)) return;
+        if (!_consentStateManager.TryGet(speakerLabel, out var priorEntry)) return false;
         var detectedLabel = priorEntry.DetectedLabel;
 
         var revokedAt = DateTimeOffset.UtcNow;
-        if (!_consentStateManager.Revoke(speakerLabel, revokedAt)) return;
+        if (!_consentStateManager.Revoke(speakerLabel, revokedAt)) return false;
 
         _auditLog.Append(new AuditEvent(
             Guid.NewGuid(), revokedAt, ConsentAuditEventTypes.ConsentRevoked, detectedLabel, null));
@@ -799,6 +799,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
         RaiseSpeakerConsentChanged(new SpeakerConsentChangedEventArgs(
             speakerLabel, ConsentState.Granted, ConsentState.Revoked, priorEntry.ExtractedName, detectedLabel));
+        return true;
     }
 
     private async Task SaveRevocationBestEffortAsync(string sessionId, string speakerLabel, DateTimeOffset revokedAt)
