@@ -91,6 +91,49 @@ public class AssistantViewModelOverlayHostingTests
     public async Task DirectTranscriptionSummary_ReportsTheFreshChatsId_OnceItIsAssigned()
     {
         var store = Substitute.For<IConsentEvidenceStore>();
+        var (vm, summaryChat) = await OpenSummaryHandOffAsync(store);
+        var chatId = Guid.NewGuid();
+        Guid? idBeforeTheTurn = Guid.Empty;
+        var chatLoggedBeforeTheTurn = true;
+        // As the real manager does: a first turn gets its id synchronously, before the send returns.
+        StubStartTurn(ci =>
+        {
+            var session = ci.Arg<ChatSession>();
+            idBeforeTheTurn = session.Id;
+            chatLoggedBeforeTheTurn = store.ReceivedCalls().Any(IsChatCopy);
+            session.SetIdentity(chatId, DateTime.UtcNow, null, null, autoTitleApplied: false);
+            return true;
+        });
+
+        vm.DirectTranscription.SummarizeWithAssistantCommand.Execute(null);
+        summaryChat().SetIdentity(chatId, DateTime.UtcNow, null, "renamed", autoTitleApplied: true);
+
+        Assert.Null(idBeforeTheTurn);
+        Assert.False(chatLoggedBeforeTheTurn);
+        await store.Received(1).AppendCopyAsync(
+            "session-a", Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ChatKind && c.ChatId == chatId), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>A refused send leaves the chat without an id, and its next first turn is the user's own.</summary>
+    [Fact]
+    public async Task DirectTranscriptionSummary_ThatTheManagerRefuses_DoesNotReportTheChatsLaterFirstTurn()
+    {
+        var store = Substitute.For<IConsentEvidenceStore>();
+        var (vm, summaryChat) = await OpenSummaryHandOffAsync(store);
+        StubStartTurn(_ => false);
+
+        vm.DirectTranscription.SummarizeWithAssistantCommand.Execute(null);
+        summaryChat().SetIdentity(Guid.NewGuid(), DateTime.UtcNow, null, null, autoTitleApplied: false);
+
+        await store.Received(1).AppendCopyAsync(
+            "session-a", Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.SummaryRequestedKind), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().AppendCopyAsync(
+            Arg.Any<string>(), Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ChatKind), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>Opens direct transcription with one bubble, ready to summarise; returns the fresh chat once made.</summary>
+    private async Task<(AssistantViewModel Vm, Func<ChatSession> SummaryChat)> OpenSummaryHandOffAsync(IConsentEvidenceStore store)
+    {
         var vm = CreateSut(store);
         ChatSession? summaryChat = null;
         // As the real manager does: the fresh chat becomes the active one, which the send then uses.
@@ -101,21 +144,17 @@ public class AssistantViewModelOverlayHostingTests
         vm.ActivePersona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
         vm.DirectTranscription.AddUtterance(
             new TranscriptUtterance(TranscriptSpeaker.You, "agenda item one", DateTimeOffset.Now));
-
-        vm.DirectTranscription.SummarizeWithAssistantCommand.Execute(null);
-
-        Assert.NotNull(summaryChat);
-        Assert.Null(summaryChat!.Id);
-        await store.DidNotReceive().AppendCopyAsync(
-            Arg.Any<string>(), Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ChatKind), Arg.Any<CancellationToken>());
-
-        var chatId = Guid.NewGuid();
-        summaryChat.SetIdentity(chatId, DateTime.UtcNow, null, null, autoTitleApplied: false);
-        summaryChat.SetIdentity(chatId, DateTime.UtcNow, null, "renamed", autoTitleApplied: true);
-
-        await store.Received(1).AppendCopyAsync(
-            "session-a", Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ChatKind && c.ChatId == chatId), Arg.Any<CancellationToken>());
+        return (vm, () => summaryChat ?? throw new InvalidOperationException("no fresh chat was opened"));
     }
+
+    private void StubStartTurn(Func<NSubstitute.Core.CallInfo, bool> turn) =>
+        _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
+                Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>())
+            .Returns(ci => Task.FromResult(turn(ci)));
+
+    private static bool IsChatCopy(NSubstitute.Core.ICall call) =>
+        call.GetMethodInfo().Name == nameof(IConsentEvidenceStore.AppendCopyAsync)
+        && call.GetArguments()[1] is ConsentCopy { Kind: ConsentCopy.ChatKind };
 
     [Fact]
     public async Task DirectTranscriptionCloseRequested_HidesTheOverlay_ExactlyOnce()

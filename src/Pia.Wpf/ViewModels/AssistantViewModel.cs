@@ -1176,7 +1176,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
         // carries the (sensitive) transcript.
         IsDirectTranscriptionVisible = false;
-        SendTranscriptSummary(e);
+        SendTranscriptSummaryAsync(e).SafeFireAndForget(_logger);
     }
 
     private void OnMeetingAttendeeSummarizeRequested(object? sender, TranscriptSummaryRequestedEventArgs e)
@@ -1184,11 +1184,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
         // carries the (sensitive) meeting transcript.
         IsMeetingAttendeeVisible = false;
-        SendTranscriptSummary(e);
+        SendTranscriptSummaryAsync(e).SafeFireAndForget(_logger);
     }
 
     /// <summary>Sends the prompt as the first turn of a fresh chat and reports that chat's id once it has one.</summary>
-    private void SendTranscriptSummary(TranscriptSummaryRequestedEventArgs request)
+    private async Task SendTranscriptSummaryAsync(TranscriptSummaryRequestedEventArgs request)
     {
         var chat = StartFreshChat();
         // The staged images belong to whatever the user was composing behind the overlay, not to the summary.
@@ -1197,16 +1197,25 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         InputText = request.Prompt;
 
         // Subscribed before the send, which may assign the id synchronously; the id is never pre-assigned.
-        ReportIdOnceAssigned(chat, request);
-        SendMessageCommand.Execute(null);
+        var onAssigned = ReportIdOnceAssigned(chat, request);
+        try
+        {
+            await SendMessageCommand.ExecuteAsync(null);
+        }
+        finally
+        {
+            // A first turn has its id before the send returns, so a chat still without one was refused, and its
+            // next, unrelated first turn must not be reported as the summary.
+            if (onAssigned is not null) chat.IdentityAssigned -= onAssigned;
+        }
     }
 
-    private static void ReportIdOnceAssigned(ChatSession chat, TranscriptSummaryRequestedEventArgs request)
+    private static EventHandler? ReportIdOnceAssigned(ChatSession chat, TranscriptSummaryRequestedEventArgs request)
     {
         if (chat.Id is { } existing)
         {
             request.ReportChatId(existing);
-            return;
+            return null;
         }
 
         void OnAssigned(object? sender, EventArgs e)
@@ -1217,6 +1226,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
 
         chat.IdentityAssigned += OnAssigned;
+        return OnAssigned;
     }
 
     private void OnMeetingAttendeeOpenSettingsRequested(object? sender, EventArgs e)
