@@ -37,3 +37,5 @@
   on its own.
 - A device the server lists as waiting for approval now asks to be set up
   again instead of syncing on.
+- Setting up Pia on another computer for an account that is already
+  encrypted now leads straight to the recovery code or an approval.
