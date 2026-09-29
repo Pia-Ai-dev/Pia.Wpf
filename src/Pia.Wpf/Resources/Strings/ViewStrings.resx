@@ -1044,6 +1044,7 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>I've saved my recovery code somewhere safe</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Could not enable encryption</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Setting up encryption…</value></data>
+  <data name="Wizard_E2EE_AlreadyEnabled" xml:space="preserve"><value>Encryption is already set up for this account. Set up this device with your recovery code or an approval from another device.</value></data>
   <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
   <data name="Flow_EmptyState" xml:space="preserve"><value>You're all caught up.</value></data>
   <data name="Flow_ClearAll" xml:space="preserve"><value>Clear all</value></data>

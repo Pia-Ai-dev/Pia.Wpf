@@ -1081,6 +1081,7 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>J'ai sauvegardé mon code de récupération en lieu sûr</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Impossible d'activer le chiffrement</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Configuration du chiffrement…</value></data>
+  <data name="Wizard_E2EE_AlreadyEnabled" xml:space="preserve"><value>Le chiffrement est déjà configuré pour ce compte. Configurez cet appareil avec votre code de récupération ou une approbation depuis un autre appareil.</value></data>
   <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
   <data name="Flow_EmptyState" xml:space="preserve"><value>Vous êtes à jour.</value></data>
   <data name="Flow_ClearAll" xml:space="preserve"><value>Tout effacer</value></data>

@@ -49,7 +49,7 @@ public class DeviceManagementService : IDeviceManagementService
         if (await CheckE2EEStatusAsync() is { IsEnabled: true })
         {
             _logger.LogWarning("Not bootstrapping E2EE: the server reports it enabled for this account");
-            throw new InvalidOperationException("End-to-end encryption is already set up for this account.");
+            throw new E2EEAlreadyEnabledException("End-to-end encryption is already set up for this account.");
         }
 
         // 1. Generate device keys (happens lazily in DeviceKeyService)

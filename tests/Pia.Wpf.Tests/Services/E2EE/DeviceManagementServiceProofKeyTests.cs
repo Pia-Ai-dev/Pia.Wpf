@@ -57,7 +57,7 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
     {
         _server.IsEnabled = true;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => CreateSut(StubRecovery()).BootstrapFirstDeviceAsync());
+        await Assert.ThrowsAsync<E2EEAlreadyEnabledException>(() => CreateSut(StubRecovery()).BootstrapFirstDeviceAsync());
 
         Assert.DoesNotContain(_server.Requests, r => r.StartsWith("POST") || r.StartsWith("PUT"));
         Assert.Null(_e2ee.LoadUmk());

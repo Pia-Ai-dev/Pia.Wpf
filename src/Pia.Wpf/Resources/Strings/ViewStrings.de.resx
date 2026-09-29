@@ -1081,6 +1081,7 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>Ich habe meinen Wiederherstellungscode sicher gespeichert</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Verschlüsselung konnte nicht aktiviert werden</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Verschlüsselung wird eingerichtet…</value></data>
+  <data name="Wizard_E2EE_AlreadyEnabled" xml:space="preserve"><value>Die Verschlüsselung ist für dieses Konto schon eingerichtet. Richte dieses Gerät mit deinem Wiederherstellungscode oder einer Freigabe von einem anderen Gerät ein.</value></data>
   <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
   <data name="Flow_EmptyState" xml:space="preserve"><value>Alles erledigt.</value></data>
   <data name="Flow_ClearAll" xml:space="preserve"><value>Alle löschen</value></data>
