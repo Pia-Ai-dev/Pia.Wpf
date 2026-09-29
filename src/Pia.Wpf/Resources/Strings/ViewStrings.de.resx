@@ -1472,7 +1472,7 @@
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Teams-Besprechung</value></data>
   <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams-Link *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Link aus der Besprechungseinladung einfügen</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Alle Teilnehmenden dürfen aufgezeichnet und transkribiert werden *</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Alle Teilnehmenden dürfen aufgezeichnet und transkribiert werden; das Transkript wird als Notiz im Vault gespeichert und auf Wunsch von Ihrem KI-Anbieter ausgewertet *</value></data>
   <data name="Routines_Draft_Describe" xml:space="preserve"><value>In einem Satz beschreiben</value></data>
   <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Sag, was passieren soll und wie oft. Pia füllt Name, Anweisung und Zeitplan aus — alles davon kannst du vor dem Speichern noch ändern.</value></data>
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Mit KI entwerfen</value></data>

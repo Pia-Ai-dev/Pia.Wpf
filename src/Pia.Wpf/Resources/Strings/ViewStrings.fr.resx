@@ -1472,7 +1472,7 @@
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Réunion Teams</value></data>
   <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Lien Teams *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Collez le lien de l'invitation à la réunion</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Tous les participants peuvent être enregistrés et transcrits *</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Tous les participants peuvent être enregistrés et transcrits ; la transcription est enregistrée comme note dans le coffre et, sur demande, analysée par votre fournisseur d’IA *</value></data>
   <data name="Routines_Draft_Describe" xml:space="preserve"><value>Décrivez-la en une phrase</value></data>
   <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Dites ce qui doit se passer et à quelle fréquence. Pia remplit le nom, l’instruction et la planification — vous pouvez tout modifier avant d’enregistrer.</value></data>
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Rédiger avec l’IA</value></data>

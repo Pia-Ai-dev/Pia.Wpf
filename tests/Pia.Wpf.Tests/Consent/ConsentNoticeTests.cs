@@ -38,6 +38,19 @@ public sealed class ConsentNoticeTests
             + $"ConsentNotice.TeamsTextHash to \"{actual}\".");
     }
 
+    [Fact]
+    public void TeamsLiveWording_BelongsToTheCurrentVersion()
+    {
+        var actual = HashOf(
+            CommonStrings.ResourceManager,
+            key => key is "MeetingAttendee_Consent_Purposes" or "MeetingAttendee_Consent_Label");
+
+        Assert.True(
+            actual == ConsentNotice.TeamsLiveTextHash,
+            "The Teams overlay's consent wording changed. Bump ConsentNotice.TeamsLiveVersion and set "
+            + $"ConsentNotice.TeamsLiveTextHash to \"{actual}\".");
+    }
+
     [Theory]
     [InlineData(TargetLanguage.EN, "en")]
     [InlineData(TargetLanguage.DE, "de")]

@@ -1482,7 +1482,7 @@
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Teams meeting</value></data>
   <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams link *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Paste the meeting invite link</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed *</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed; the transcript is saved as a vault note and, on request, analysed by your AI provider *</value></data>
   <data name="Routines_Draft_Describe" xml:space="preserve"><value>Describe it in a sentence</value></data>
   <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Say what you want to happen and how often. Pia fills in the name, the instruction and the schedule — you can change all of it before saving.</value></data>
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Draft with AI</value></data>

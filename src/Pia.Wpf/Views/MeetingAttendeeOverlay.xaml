@@ -192,9 +192,13 @@
                        TextWrapping="Wrap"
                        Margin="0,6,0,0" />
 
+            <TextBlock Text="{loc:Str MeetingAttendee_Consent_Purposes}"
+                       Style="{StaticResource PiaSettingsDescriptionStyle}"
+                       TextWrapping="Wrap"
+                       Margin="0,14,0,0" />
             <CheckBox AutomationProperties.AutomationId="MeetingAttendee_Consent"
                       IsChecked="{Binding ConsentAcknowledged}"
-                      Margin="0,14,0,0"
+                      Margin="0,8,0,0"
                       Content="{loc:Str MeetingAttendee_Consent_Label}" />
           </StackPanel>
         </Border>

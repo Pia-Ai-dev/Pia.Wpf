@@ -69,6 +69,7 @@
   <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
   <data name="MeetingAttendee_Url_DropHint" xml:space="preserve"><value>Or drag the Outlook invite here — Pia reads the link out of it.</value></data>
   <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>I confirm I'm allowed to have an assistant join and transcribe this meeting.</value></data>
+  <data name="MeetingAttendee_Consent_Purposes" xml:space="preserve"><value>Pia transcribes the meeting on this device and uses the transcript for three purposes: transcription on this device; if you choose, saving it as a file or as a vault note — your AI provider then works a vault note into your knowledge base; and, if you choose, a summary by your AI provider, which receives the transcript for it. The summary is saved as a chat together with the transcript and, with sync turned on, synchronised with your account.</value></data>
   <data name="MeetingAttendee_OpenSettings" xml:space="preserve"><value>Meeting settings</value></data>
   <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>meeting</value></data>
   <data name="MeetingAttendee_SaveDialog_Title" xml:space="preserve"><value>Save meeting transcript</value></data>
@@ -115,7 +116,7 @@
   <data name="DirectTrans_Status_Stopping" xml:space="preserve"><value>Stopping…</value></data>
   <data name="DirectTrans_Status_Error" xml:space="preserve"><value>Something went wrong</value></data>
   <data name="DirectTrans_Disclaimer_Title" xml:space="preserve"><value>Before you start</value></data>
-  <data name="DirectTrans_Disclaimer_Body" xml:space="preserve"><value>This transcribes your microphone and this device's system audio, entirely on this device. Nothing is sent anywhere. Everyone speaking into your microphone appears as "me" in the transcript.</value></data>
+  <data name="DirectTrans_Disclaimer_Body" xml:space="preserve"><value>Pia transcribes your microphone and this device's system audio on this device. Everyone speaking into your microphone appears as "me" in the transcript. Pia uses the transcript for three purposes: transcription on this device; if you choose, saving it as a file or as a vault note — your AI provider then works a vault note into your knowledge base; and, if you choose, a summary by your AI provider, which receives the transcript for it. The summary is saved as a chat together with the transcript and, with sync turned on, synchronised with your account.</value></data>
   <data name="DirectTrans_Disclaimer_ConsentExplainer" xml:space="preserve"><value>People on the other side (system audio) are not transcribed until they say a consent sentence naming Pia — until then their speech is only checked for that sentence, then discarded.</value></data>
   <data name="DirectTrans_Disclaimer_CrossTalkLimitation" xml:space="preserve"><value>Note: overlapping speech (cross-talk) can occasionally be misattributed to the wrong speaker.</value></data>
   <data name="DirectTrans_Disclaimer_ShortUtteranceLimitation" xml:space="preserve"><value>Very short remarks (under about 1.5 seconds) are dropped and never transcribed, consented or not.</value></data>
