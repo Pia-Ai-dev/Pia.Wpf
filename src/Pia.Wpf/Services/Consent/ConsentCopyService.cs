@@ -78,11 +78,14 @@ public sealed class ConsentCopyService : IConsentCopyService
             }
         }
 
+        // A note only exists after a logged vault save, so without one an incomplete scan hides nothing.
+        var vaultUnchecked = !scan.IsComplete && (logUnreadable || logged.Any(copy => copy.Kind == ConsentCopy.VaultKind));
+
         _logger.LogInformation(
             "Copies of a revoked transcript: exports {Exports}, vault notes {Notes}, chats {Chats}, copies log unreadable {Unreadable}, "
             + "vault unchecked {Unchecked}",
-            exports.Count, notes.Count, chats.Count, logUnreadable, !scan.IsComplete);
-        return new ConsentCopyInventory(exports, notes, chats, logUnreadable, VaultUnchecked: !scan.IsComplete);
+            exports.Count, notes.Count, chats.Count, logUnreadable, vaultUnchecked);
+        return new ConsentCopyInventory(exports, notes, chats, logUnreadable, VaultUnchecked: vaultUnchecked);
     }
 
     public async Task<bool> DeleteNoteAsync(

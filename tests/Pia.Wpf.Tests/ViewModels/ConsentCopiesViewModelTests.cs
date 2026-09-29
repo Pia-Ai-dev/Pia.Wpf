@@ -213,6 +213,7 @@ public sealed class ConsentCopiesViewModelTests : IDisposable
     {
         Note("sources/a.md", SessionA);
         var locked = Note("sources/locked.md", Unrelated);
+        await LogAsync(SessionA, ConsentCopy.Vault("sources/a.md", GrantedAt));
         var sut = Build();
 
         using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None))
@@ -226,8 +227,9 @@ public sealed class ConsentCopiesViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task AVaultThatIsNotThere_AloneStillCountsAsACopy()
+    public async Task AVaultThatIsNotThere_AfterAVaultSave_AloneStillCountsAsACopy()
     {
+        await LogAsync(SessionA, ConsentCopy.Vault("sources/a.md", GrantedAt));
         Directory.Delete(_vaultRoot, recursive: true);
         var sut = Build();
 
@@ -236,6 +238,18 @@ public sealed class ConsentCopiesViewModelTests : IDisposable
         Assert.True(sut.VaultUnchecked);
         Assert.Empty(sut.Notes);
         Assert.True(sut.HasCopies);
+    }
+
+    [Fact]
+    public async Task AVaultThatIsNotThere_WithoutAVaultSave_IsNotACopy()
+    {
+        Directory.Delete(_vaultRoot, recursive: true);
+        var sut = Build();
+
+        await sut.LoadAsync([SessionA], Ct);
+
+        Assert.False(sut.VaultUnchecked);
+        Assert.False(sut.HasCopies);
     }
 
     [Fact]
