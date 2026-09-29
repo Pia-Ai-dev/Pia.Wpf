@@ -7,5 +7,8 @@ namespace Pia.Shared;
 /// </summary>
 public static class PersonaTypes
 {
-    public static readonly IReadOnlyList<string> Suggested = ["general", "fast", "code", "private"];
+    /// <summary>The type a persona with a blank type routes as, on the client and the server.</summary>
+    public const string Default = "general";
+
+    public static readonly IReadOnlyList<string> Suggested = [Default, "fast", "code", "private"];
 }
