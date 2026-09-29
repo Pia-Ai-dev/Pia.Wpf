@@ -208,6 +208,47 @@ public sealed class ConsentCopiesViewModelTests : IDisposable
         Assert.True(sut.HasCopies);
     }
 
+    [Fact]
+    public async Task AnUnreadableNote_StillListsTheOthers_AndSaysSomeCouldNotBeChecked()
+    {
+        Note("sources/a.md", SessionA);
+        var locked = Note("sources/locked.md", Unrelated);
+        var sut = Build();
+
+        using (new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await sut.LoadAsync([SessionA], Ct);
+        }
+
+        Assert.True(sut.VaultUnchecked);
+        Assert.False(sut.CopiesLogUnreadable);
+        Assert.Equal(["sources/a.md"], sut.Notes.Select(n => n.Reference));
+    }
+
+    [Fact]
+    public async Task AVaultThatIsNotThere_AloneStillCountsAsACopy()
+    {
+        Directory.Delete(_vaultRoot, recursive: true);
+        var sut = Build();
+
+        await sut.LoadAsync([SessionA], Ct);
+
+        Assert.True(sut.VaultUnchecked);
+        Assert.Empty(sut.Notes);
+        Assert.True(sut.HasCopies);
+    }
+
+    [Fact]
+    public async Task ACompleteScan_ChecksEveryNote()
+    {
+        Note("sources/a.md", SessionA);
+        var sut = Build();
+
+        await sut.LoadAsync([SessionA], Ct);
+
+        Assert.False(sut.VaultUnchecked);
+    }
+
     // ---- Vault notes ---------------------------------------------------------------------------------
 
     [Fact]

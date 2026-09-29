@@ -17,6 +17,13 @@
                  Foreground="{DynamicResource WarnBrush}"
                  Margin="0,0,0,12" />
 
+      <TextBlock Text="{loc:Str ConsentCopies_VaultUnchecked}"
+                 Visibility="{Binding VaultUnchecked, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 FontSize="12"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource WarnBrush}"
+                 Margin="0,0,0,12" />
+
       <StackPanel Visibility="{Binding HasExports, Converter={StaticResource BooleanToVisibilityConverter}}"
                   Margin="0,0,0,16">
         <TextBlock Text="{loc:Str ConsentCopies_Exports_Heading}"

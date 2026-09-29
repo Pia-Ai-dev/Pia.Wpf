@@ -470,6 +470,93 @@ public sealed class DirectTranscriptionServiceTests
         await fx.Service.DisposeAsync();
     }
 
+    /// <summary>Starts, lets <paramref name="duringFirst"/> act on the first session, then retries a failed start.</summary>
+    private static async Task<(string First, string Second)> RetryAfterAFailedStartAsync(Fixture fx, Action duringFirst)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fx.Service.StartAsync(ct);
+        var first = fx.Service.SessionId!;
+        duringFirst();
+        await fx.Service.StopAsync(ct);
+
+        fx.MicSourceThrowsOnStart = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(ct));
+        fx.MicSourceThrowsOnStart = false;
+        await fx.Service.StartAsync(ct);
+        return (first, fx.Service.SessionId!);
+    }
+
+    [Fact]
+    public async Task RevokeSpeaker_OfAnEarlierSession_IsSavedIntoThatSessionsFolder_AndKeptInTheTranscriptsConsents()
+    {
+        var fx = new Fixture(useRealConsentManager: true) { NewNativesPerCreate = true };
+        var (first, second) = await RetryAfterAFailedStartAsync(fx, () =>
+        {
+            fx.SpeakerId.RaiseSpeakerRegistered("Speaker 1");
+            fx.RealConsent!.Grant("Speaker 1", "Anna", Evidence("Speaker 1", "Anna"));
+        });
+        DateTimeOffset? persisted = null;
+        fx.EvidenceStore
+            .SaveRevocationAsync(first, "Speaker 1", Arg.Do<DateTimeOffset>(t => persisted = t), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        var changes = new List<SpeakerConsentChangedEventArgs>();
+        fx.Service.SpeakerConsentChanged += (_, e) => changes.Add(e);
+
+        Assert.True(fx.Service.RevokeSpeaker("Speaker 1"));
+
+        await fx.EvidenceStore.Received(1).SaveRevocationAsync(
+            first, "Speaker 1", Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await fx.EvidenceStore.DidNotReceive().SaveRevocationAsync(
+            second, Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        var revoked = Assert.Single(fx.Service.TranscriptConsents, c => c.SessionId == first);
+        Assert.Equal(ConsentState.Revoked, revoked.Speaker.State);
+        Assert.NotNull(revoked.Speaker.RevokedAt);
+        Assert.Equal(persisted, revoked.Speaker.RevokedAt);
+        Assert.Equal("Speaker 1", Assert.Single(fx.AuditEvents, e => e.EventType == ConsentAuditEventTypes.ConsentRevoked).SpeakerLabel);
+        Assert.Equal(ConsentState.Revoked, Assert.Single(changes).NewState);
+
+        // Once withdrawn there is nothing left to withdraw.
+        Assert.False(fx.Service.RevokeSpeaker("Speaker 1"));
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RevokeSpeaker_OfARenamedEarlierSpeaker_IsSavedUnderTheDetectedLabel()
+    {
+        var fx = new Fixture(useRealConsentManager: true) { NewNativesPerCreate = true };
+        var (first, _) = await RetryAfterAFailedStartAsync(fx, () =>
+        {
+            fx.SpeakerId.RaiseSpeakerRegistered("Speaker 1");
+            fx.RealConsent!.Grant("Speaker 1", "Anna", Evidence("Speaker 1", "Anna"));
+            Assert.True(fx.Service.RenameSpeaker("Speaker 1", "Anna"));
+        });
+
+        Assert.True(fx.Service.RevokeSpeaker("Anna"));
+
+        await fx.EvidenceStore.Received(1).SaveRevocationAsync(
+            first, "Speaker 1", Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        Assert.Equal("Speaker 1", Assert.Single(fx.AuditEvents, e => e.EventType == ConsentAuditEventTypes.ConsentRevoked).SpeakerLabel);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RevokeSpeaker_OfAnEarlierSpeakerWhoNeverConsented_WithdrawsNothing()
+    {
+        var fx = new Fixture(useRealConsentManager: true) { NewNativesPerCreate = true };
+        await RetryAfterAFailedStartAsync(fx, () => fx.SpeakerId.RaiseSpeakerRegistered("Speaker 1"));
+
+        Assert.False(fx.Service.RevokeSpeaker("Speaker 1"));
+
+        await fx.EvidenceStore.DidNotReceive().SaveRevocationAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        Assert.DoesNotContain(fx.AuditEvents, e => e.EventType == ConsentAuditEventTypes.ConsentRevoked);
+        Assert.Equal(ConsentState.Unknown, Assert.Single(fx.Service.TranscriptConsents).Speaker.State);
+
+        await fx.Service.DisposeAsync();
+    }
+
     // -------------------------------------------------------------------------------------------
     // Session lifecycle
     // -------------------------------------------------------------------------------------------

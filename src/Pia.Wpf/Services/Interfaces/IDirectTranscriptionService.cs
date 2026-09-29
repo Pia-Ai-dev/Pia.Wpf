@@ -162,10 +162,10 @@ public interface IDirectTranscriptionService : IAsyncDisposable
     bool RenameSpeaker(string oldLabel, string newLabel);
 
     /// <summary>
-    /// Withdraws one speaker's consent for the rest of the session. Their subsequent speech is dropped;
-    /// the recorded grant evidence is preserved.
+    /// Withdraws one speaker's consent for the rest of the session, also one given in an earlier session of the
+    /// transcript. Their subsequent speech is dropped; the recorded grant evidence is preserved.
     /// </summary>
-    /// <returns><c>false</c> when the label holds no consent of this session to withdraw.</returns>
+    /// <returns><c>false</c> when the label holds no consent of the transcript to withdraw.</returns>
     bool RevokeSpeaker(string speakerLabel);
 
     /// <summary>

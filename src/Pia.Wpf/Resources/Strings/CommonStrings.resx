@@ -139,6 +139,7 @@
   <data name="ConsentCopies_Title" xml:space="preserve"><value>Copies of this session</value></data>
   <data name="ConsentCopies_Intro" xml:space="preserve"><value>Consent was revoked. These copies contain utterances from the session:</value></data>
   <data name="ConsentCopies_LogUnreadable" xml:space="preserve"><value>Pia could not read which files and chats the session went into, so some may be missing below.</value></data>
+  <data name="ConsentCopies_VaultUnchecked" xml:space="preserve"><value>Pia could not check every vault note, so some notes with utterances from the session may be missing below.</value></data>
   <data name="ConsentCopies_Exports_Heading" xml:space="preserve"><value>Exported files</value></data>
   <data name="ConsentCopies_Exports_Note" xml:space="preserve"><value>Pia cannot reach these files. Please delete or clean them up yourself.</value></data>
   <data name="ConsentCopies_Notes_Heading" xml:space="preserve"><value>Vault notes</value></data>

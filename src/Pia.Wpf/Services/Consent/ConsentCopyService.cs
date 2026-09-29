@@ -79,9 +79,10 @@ public sealed class ConsentCopyService : IConsentCopyService
         }
 
         _logger.LogInformation(
-            "Copies of a revoked transcript: exports {Exports}, vault notes {Notes}, chats {Chats}, copies log unreadable {Unreadable}",
-            exports.Count, notes.Count, chats.Count, logUnreadable);
-        return new ConsentCopyInventory(exports, notes, chats, logUnreadable);
+            "Copies of a revoked transcript: exports {Exports}, vault notes {Notes}, chats {Chats}, copies log unreadable {Unreadable}, "
+            + "vault unchecked {Unchecked}",
+            exports.Count, notes.Count, chats.Count, logUnreadable, !scan.IsComplete);
+        return new ConsentCopyInventory(exports, notes, chats, logUnreadable, VaultUnchecked: !scan.IsComplete);
     }
 
     public async Task<bool> DeleteNoteAsync(

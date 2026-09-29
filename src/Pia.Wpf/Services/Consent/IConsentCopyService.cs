@@ -21,11 +21,14 @@ public interface IConsentCopyService
 /// <param name="Notes">Vault-relative notes whose front matter names one of the sessions.</param>
 /// <param name="Chats">Summary chats that are still stored, latest first.</param>
 /// <param name="CopiesLogUnreadable">A session's copies log could not be read, so exports and chats may be missing.</param>
+/// <param name="VaultUnchecked">A note could not be read or the vault is not there, so notes may be missing.</param>
 public sealed record ConsentCopyInventory(
     IReadOnlyList<ConsentCopy> Exports,
     IReadOnlyList<string> Notes,
     IReadOnlyList<ConsentCopy> Chats,
-    bool CopiesLogUnreadable)
+    bool CopiesLogUnreadable,
+    bool VaultUnchecked = false)
 {
-    public bool IsEmpty => Exports.Count == 0 && Notes.Count == 0 && Chats.Count == 0 && !CopiesLogUnreadable;
+    public bool IsEmpty =>
+        Exports.Count == 0 && Notes.Count == 0 && Chats.Count == 0 && !CopiesLogUnreadable && !VaultUnchecked;
 }

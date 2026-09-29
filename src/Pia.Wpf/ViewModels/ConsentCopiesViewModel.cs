@@ -24,6 +24,10 @@ public sealed partial class ConsentCopiesViewModel : ObservableObject
     private bool _copiesLogUnreadable;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCopies))]
+    private bool _vaultUnchecked;
+
+    [ObservableProperty]
     private bool _deleteFailed;
 
     public ObservableCollection<ConsentExportRow> Exports { get; } = [];
@@ -38,7 +42,7 @@ public sealed partial class ConsentCopiesViewModel : ObservableObject
 
     public bool HasChats => Chats.Count > 0;
 
-    public bool HasCopies => HasExports || HasNotes || HasChats || CopiesLogUnreadable;
+    public bool HasCopies => HasExports || HasNotes || HasChats || CopiesLogUnreadable || VaultUnchecked;
 
     public ConsentCopiesViewModel(
         IConsentCopyService copies,
@@ -72,6 +76,7 @@ public sealed partial class ConsentCopiesViewModel : ObservableObject
             Chats.Add(new ConsentChatRow(chat.ChatId!.Value, chat.At.LocalDateTime));
 
         CopiesLogUnreadable = inventory.CopiesLogUnreadable;
+        VaultUnchecked = inventory.VaultUnchecked;
     }
 
     /// <summary>Writes the revocation into every note the user kept.</summary>

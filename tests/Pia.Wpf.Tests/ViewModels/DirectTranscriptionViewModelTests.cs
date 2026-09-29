@@ -791,6 +791,18 @@ public class DirectTranscriptionViewModelTests
     }
 
     [Fact]
+    public async Task Revoke_WithNotesThatCouldNotBeChecked_StillShowsTheDialog()
+    {
+        var copies = CopiesFinding(new ConsentCopyInventory([], [], [], false, VaultUnchecked: true));
+        var (vm, service, dialog, _, _) = CreateSutWithVault(consentCopies: copies);
+        service.TranscriptSessionIds = [SessionA];
+
+        await vm.RevokeSpeakerCommand.ExecuteAsync("Speaker 2");
+
+        await dialog.Received(1).ShowConsentCopiesDialogAsync(Arg.Is<ConsentCopiesViewModel>(c => c.VaultUnchecked));
+    }
+
+    [Fact]
     public async Task ARevokeTheServiceRefused_ShowsNoDialog()
     {
         // Nothing was withdrawn, so a dialog saying consent was revoked would be untrue.

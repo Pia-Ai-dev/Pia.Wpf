@@ -783,7 +783,7 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     {
         // The detected label, not the caller's: after a rename that is a personal name, and the audit trail
         // and the evidence file name must stay name-free.
-        if (!_consentStateManager.TryGet(speakerLabel, out var priorEntry)) return false;
+        if (!_consentStateManager.TryGet(speakerLabel, out var priorEntry)) return RevokeEarlierSessionSpeaker(speakerLabel);
         var detectedLabel = priorEntry.DetectedLabel;
 
         var revokedAt = DateTimeOffset.UtcNow;
@@ -799,6 +799,36 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
 
         RaiseSpeakerConsentChanged(new SpeakerConsentChangedEventArgs(
             speakerLabel, ConsentState.Granted, ConsentState.Revoked, priorEntry.ExtractedName, detectedLabel));
+        return true;
+    }
+
+    // A failed-start retry keeps the earlier session's bubbles, so their speaker can still withdraw; the
+    // revocation belongs in that session's evidence folder.
+    private bool RevokeEarlierSessionSpeaker(string speakerLabel)
+    {
+        var revokedAt = DateTimeOffset.UtcNow;
+        SessionSpeakerConsent revoked;
+        lock (_stateLock)
+        {
+            var index = _earlierSessionConsents.FindIndex(c =>
+                c.Speaker.State == ConsentState.Granted
+                && string.Equals(c.Speaker.SpeakerLabel, speakerLabel, StringComparison.Ordinal));
+            if (index < 0) return false;
+
+            var prior = _earlierSessionConsents[index];
+            revoked = prior with { Speaker = prior.Speaker with { State = ConsentState.Revoked, RevokedAt = revokedAt } };
+            _earlierSessionConsents[index] = revoked;
+        }
+
+        var detectedLabel = revoked.Speaker.DetectedLabel;
+        _auditLog.Append(new AuditEvent(
+            Guid.NewGuid(), revokedAt, ConsentAuditEventTypes.ConsentRevoked, detectedLabel, null));
+        _logger.LogInformation("Consent revoked for a speaker of an earlier session of the transcript");
+
+        _ = SaveRevocationBestEffortAsync(revoked.SessionId, detectedLabel, revokedAt);
+
+        RaiseSpeakerConsentChanged(new SpeakerConsentChangedEventArgs(
+            speakerLabel, ConsentState.Granted, ConsentState.Revoked, revoked.Speaker.ExtractedName, detectedLabel));
         return true;
     }
 
