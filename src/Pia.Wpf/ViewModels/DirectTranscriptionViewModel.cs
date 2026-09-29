@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Consent;
@@ -85,12 +86,10 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     protected override string MeetingSourceKind => "direct";
 
     /// <summary>
-    /// Raised when the user clicks "Summarize with assistant". Carries a ready-to-send prompt (a
-    /// localized instruction followed by the front-matter-free transcript body) — mirrors
-    /// <see cref="MeetingAttendeeViewModel.SummarizeRequested"/>. The old silent-save-then-hand-over-a-
-    /// path flow cannot be ported: both types it needed were deleted from the current branch.
+    /// Raised by "Summarize with assistant" with a ready-to-send prompt: a localized instruction and the
+    /// front-matter-free body, so no consent record reaches the provider.
     /// </summary>
-    public event EventHandler<string>? SummarizeRequested;
+    public event EventHandler<TranscriptSummaryRequestedEventArgs>? SummarizeRequested;
 
     public DirectTranscriptionViewModel(
         IDirectTranscriptionService service,
@@ -401,7 +400,25 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         if (!CanSummarize()) return;
         // Do NOT log the prompt or transcript (sensitive user content); only that a summary was requested.
         _logger.LogInformation("DirectTranscription ViewModel: summary requested");
-        SummarizeRequested?.Invoke(this, BuildSummaryPrompt());
+
+        // Captured now: the session may have ended by the time the chat gets its id.
+        var sessionIds = _service.TranscriptSessionIds;
+        var logged = LogCopyAsync(sessionIds, ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow));
+        logged.SafeFireAndForget(_logger);
+
+        SummarizeRequested?.Invoke(this, new TranscriptSummaryRequestedEventArgs(
+            BuildSummaryPrompt(),
+            chatId => LogChatAfterAsync(logged, sessionIds, ConsentCopy.Chat(chatId, DateTimeOffset.UtcNow))
+                .SafeFireAndForget(_logger)));
+    }
+
+    // After the summary-requested entry, so the log never names a chat before the request that made it.
+    private async Task LogChatAfterAsync(Task requestLogged, IReadOnlyList<string> sessionIds, ConsentCopy chat)
+    {
+        try { await requestLogged.ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Logging the summary request failed"); }
+
+        await LogCopyAsync(sessionIds, chat).ConfigureAwait(false);
     }
 
     private bool CanSummarize() => !IsRunning && Bubbles.Count > 0;

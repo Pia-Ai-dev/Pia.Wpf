@@ -1171,33 +1171,52 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ToggleDirectTranscriptionCommand.Execute(null);
     }
 
-    private void OnDirectTranscriptionSummarizeRequested(object? sender, string prompt)
+    private void OnDirectTranscriptionSummarizeRequested(object? sender, TranscriptSummaryRequestedEventArgs e)
     {
-        // "Summarize with assistant" on the post-session transcript: hide the overlay so the chat (where
-        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
-        // the prompt. Mirrors OnMeetingAttendeeSummarizeRequested; do NOT log the prompt — it carries the
-        // (sensitive) transcript.
+        // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
+        // carries the (sensitive) transcript.
         IsDirectTranscriptionVisible = false;
-        StartFreshChat();
+        SendTranscriptSummary(e);
+    }
+
+    private void OnMeetingAttendeeSummarizeRequested(object? sender, TranscriptSummaryRequestedEventArgs e)
+    {
+        // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
+        // carries the (sensitive) meeting transcript.
+        IsMeetingAttendeeVisible = false;
+        SendTranscriptSummary(e);
+    }
+
+    /// <summary>Sends the prompt as the first turn of a fresh chat and reports that chat's id once it has one.</summary>
+    private void SendTranscriptSummary(TranscriptSummaryRequestedEventArgs request)
+    {
+        var chat = StartFreshChat();
+        // The staged images belong to whatever the user was composing behind the overlay, not to the summary.
         PendingAttachments.Clear();
-        InputText = prompt;
+        // StartFreshChat clears InputText as its last step, so the prompt goes in afterwards.
+        InputText = request.Prompt;
+
+        // Subscribed before the send, which may assign the id synchronously; the id is never pre-assigned.
+        ReportIdOnceAssigned(chat, request);
         SendMessageCommand.Execute(null);
     }
 
-    private void OnMeetingAttendeeSummarizeRequested(object? sender, string prompt)
+    private static void ReportIdOnceAssigned(ChatSession chat, TranscriptSummaryRequestedEventArgs request)
     {
-        // "Summarize with assistant" on the post-meeting transcript: hide the overlay so the chat (where
-        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
-        // the prompt. StartFreshChat clears InputText as its last step, so set the prompt afterwards.
-        // Sync fire-and-forget mirrors OnMeetingAttendeeCloseRequested. Do NOT log the prompt — it carries
-        // the (sensitive) meeting transcript.
-        IsMeetingAttendeeVisible = false;
-        StartFreshChat();
-        // Drop any image left pending in the composer behind the overlay so the summary turn carries only
-        // the prompt (StartFreshChat clears InputText but not the staged images).
-        PendingAttachments.Clear();
-        InputText = prompt;
-        SendMessageCommand.Execute(null);
+        if (chat.Id is { } existing)
+        {
+            request.ReportChatId(existing);
+            return;
+        }
+
+        void OnAssigned(object? sender, EventArgs e)
+        {
+            if (chat.Id is not { } assigned) return;
+            chat.IdentityAssigned -= OnAssigned;
+            request.ReportChatId(assigned);
+        }
+
+        chat.IdentityAssigned += OnAssigned;
     }
 
     private void OnMeetingAttendeeOpenSettingsRequested(object? sender, EventArgs e)
@@ -1474,12 +1493,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _localizationService["Msg_Assistant_ConfirmNewChatTitle"],
         _localizationService["Msg_Assistant_ConfirmNewChatMessage"]);
 
-    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the chip's
-    /// "+ New Chat" (its pinned folder), the composer's "+" (this chat's folder) and the delete
-    /// path (the deleted chat's folder).</summary>
-    /// <param name="workingDirectory">Relative working dir to pin (forward slashes;
-    /// null/empty = sandbox root).</param>
-    private void StartFreshChat(string? workingDirectory = null)
+    /// <summary>Opens a new, empty active chat and resets the composer.</summary>
+    /// <param name="workingDirectory">Relative working dir to pin (forward slashes; null/empty = sandbox root).</param>
+    private ChatSession StartFreshChat(string? workingDirectory = null)
     {
         _ttsService.Stop();
 
@@ -1498,6 +1514,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         // The empty state is back, and the stores may have moved since it was last on screen.
         RefreshSuggestionsAsync().SafeFireAndForget(_logger);
+        return session;
     }
 
     private async Task ResumeChatAsync(Guid chatId)

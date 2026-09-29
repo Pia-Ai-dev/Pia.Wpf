@@ -348,13 +348,10 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     // ---- Summarize with the assistant ------------------------------------------------------------
 
     /// <summary>
-    /// Raised when the user clicks "Summarize with assistant" on the post-meeting transcript. Carries a
-    /// ready-to-send prompt (a localized instruction describing the transcript's provenance, followed by
-    /// the transcript Markdown). The host <see cref="AssistantViewModel"/> handles it by hiding the
-    /// overlay and sending the prompt to a fresh chat. Meeting-specific, so it lives here rather than on
-    /// the shared base.
+    /// Raised by "Summarize with assistant" with a ready-to-send prompt: a localized provenance instruction and
+    /// the transcript Markdown.
     /// </summary>
-    public event EventHandler<string>? SummarizeRequested;
+    public event EventHandler<TranscriptSummaryRequestedEventArgs>? SummarizeRequested;
 
     /// <summary>
     /// Hands a summarization prompt to the host assistant. Shares <see cref="CanSummarize"/> gating with
@@ -367,7 +364,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         // Do NOT log the prompt or transcript (sensitive user content); only that a summary was requested
         // — mirrors the URL-omitting StartAsync log line.
         _logger.LogInformation("MeetingAttendee ViewModel: summary requested");
-        SummarizeRequested?.Invoke(this, BuildSummaryPrompt());
+        SummarizeRequested?.Invoke(this, new TranscriptSummaryRequestedEventArgs(BuildSummaryPrompt()));
     }
 
     private bool CanSummarize() => !IsRunning && Bubbles.Count > 0;

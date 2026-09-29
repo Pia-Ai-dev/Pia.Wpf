@@ -269,7 +269,7 @@ public class DirectTranscriptionViewModelTests
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "agenda item one", DateTimeOffset.Now));
 
         string? captured = null;
-        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+        vm.SummarizeRequested += (_, e) => captured = e.Prompt;
 
         vm.SummarizeWithAssistantCommand.Execute(null);
 
@@ -277,6 +277,59 @@ public class DirectTranscriptionViewModelTests
         Assert.Contains("agenda item one", captured);
         Assert.DoesNotContain(DirectTranscriptMarkdown.Schema, captured);
         Assert.DoesNotContain("---", captured);
+    }
+
+    [Fact]
+    public void BuildSummaryPrompt_CarriesNoConsentRecord_EvenWithAConsentedSpeaker()
+    {
+        // The prompt goes to the AI provider; the record is tracked by chat id instead.
+        var (vm, service) = CreateSut();
+        service.TranscriptSessionIds = [SessionA];
+        service.TranscriptConsents = [Consented(SessionA, "Speaker 2", "Speaker 2")];
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now, "Speaker 2"));
+        string? captured = null;
+        vm.SummarizeRequested += (_, e) => captured = e.Prompt;
+
+        vm.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.NotNull(captured);
+        Assert.Contains("agenda item one", captured, StringComparison.Ordinal);
+        Assert.DoesNotContain("consent", captured, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(SessionA, captured, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Summarize_LogsTheRequest_ThenTheChatIdOnceReported_ForEverySession()
+    {
+        var store = Substitute.For<IConsentEvidenceStore>();
+        var logged = new List<(string SessionId, ConsentCopy Copy)>();
+        store.AppendCopyAsync(Arg.Any<string>(), Arg.Any<ConsentCopy>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                logged.Add((ci.ArgAt<string>(0), ci.ArgAt<ConsentCopy>(1)));
+                return Task.CompletedTask;
+            });
+        var (vm, service, _, _, _) = CreateSutWithVault(consentStore: store);
+        service.TranscriptSessionIds = [SessionA, SessionB];
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "agenda item one", DateTimeOffset.Now));
+        TranscriptSummaryRequestedEventArgs? request = null;
+        vm.SummarizeRequested += (_, e) => request = e;
+
+        vm.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.NotNull(request);
+        Assert.Equal(
+            [(SessionA, ConsentCopy.SummaryRequestedKind), (SessionB, ConsentCopy.SummaryRequestedKind)],
+            logged.Select(l => (l.SessionId, l.Copy.Kind)));
+
+        // The overlay session may be over by the time the chat gets its id; the ids are the request's.
+        service.TranscriptSessionIds = [];
+        var chatId = Guid.NewGuid();
+        request!.ReportChatId(chatId);
+
+        Assert.Equal(
+            [(SessionA, ConsentCopy.ChatKind, chatId), (SessionB, ConsentCopy.ChatKind, chatId)],
+            logged.Skip(2).Select(l => (l.SessionId, l.Copy.Kind, l.Copy.ChatId!.Value)));
     }
 
     [Fact]

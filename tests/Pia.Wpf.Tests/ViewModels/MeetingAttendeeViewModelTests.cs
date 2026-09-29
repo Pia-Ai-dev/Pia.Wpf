@@ -758,7 +758,7 @@ public class MeetingAttendeeViewModelTests
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
 
         string? captured = null;
-        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+        vm.SummarizeRequested += (_, e) => captured = e.Prompt;
 
         vm.SummarizeWithAssistantCommand.Execute(null);
 
@@ -778,7 +778,7 @@ public class MeetingAttendeeViewModelTests
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
 
         string? captured = null;
-        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+        vm.SummarizeRequested += (_, e) => captured = e.Prompt;
 
         vm.SummarizeWithAssistantCommand.Execute(null);
 
@@ -810,7 +810,7 @@ public class MeetingAttendeeViewModelTests
         vm.NameSpeakers = false;
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
         string? captured = null;
-        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+        vm.SummarizeRequested += (_, e) => captured = e.Prompt;
 
         vm.SummarizeWithAssistantCommand.Execute(null);
 
@@ -826,7 +826,7 @@ public class MeetingAttendeeViewModelTests
         vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "agenda item one", DateTimeOffset.Now));
 
         string? captured = null;
-        vm.SummarizeRequested += (_, prompt) => captured = prompt;
+        vm.SummarizeRequested += (_, e) => captured = e.Prompt;
 
         vm.SummarizeWithAssistantCommand.Execute(null);
 

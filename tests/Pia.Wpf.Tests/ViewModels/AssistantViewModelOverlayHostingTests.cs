@@ -5,6 +5,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.MeetingAttendee;
 using Pia.Tests.Services;
@@ -84,6 +85,36 @@ public class AssistantViewModelOverlayHostingTests
         // must not carry over an unrelated screenshot the user had queued.
         Assert.False(vm.IsDirectTranscriptionVisible);
         Assert.Empty(vm.PendingAttachments);
+    }
+
+    [Fact]
+    public async Task DirectTranscriptionSummary_ReportsTheFreshChatsId_OnceItIsAssigned()
+    {
+        var store = Substitute.For<IConsentEvidenceStore>();
+        var vm = CreateSut(store);
+        ChatSession? summaryChat = null;
+        // As the real manager does: the fresh chat becomes the active one, which the send then uses.
+        _manager.GetOrCreateActiveForNewChat().Returns(_ => summaryChat = NewChatSession());
+        _manager.ActiveSession.Returns(_ => summaryChat);
+        _directService.TranscriptSessionIds.Returns(["session-a"]);
+        await vm.ToggleDirectTranscriptionCommand.ExecuteAsync(null);
+        vm.ActivePersona = new Persona { Name = "Tester", SystemPrompt = "be helpful", ToolScope = PersonaToolScope.Full };
+        vm.DirectTranscription.AddUtterance(
+            new TranscriptUtterance(TranscriptSpeaker.You, "agenda item one", DateTimeOffset.Now));
+
+        vm.DirectTranscription.SummarizeWithAssistantCommand.Execute(null);
+
+        Assert.NotNull(summaryChat);
+        Assert.Null(summaryChat!.Id);
+        await store.DidNotReceive().AppendCopyAsync(
+            Arg.Any<string>(), Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ChatKind), Arg.Any<CancellationToken>());
+
+        var chatId = Guid.NewGuid();
+        summaryChat.SetIdentity(chatId, DateTime.UtcNow, null, null, autoTitleApplied: false);
+        summaryChat.SetIdentity(chatId, DateTime.UtcNow, null, "renamed", autoTitleApplied: true);
+
+        await store.Received(1).AppendCopyAsync(
+            "session-a", Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ChatKind && c.ChatId == chatId), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -190,7 +221,17 @@ public class AssistantViewModelOverlayHostingTests
         };
     }
 
-    private AssistantViewModel CreateSut()
+    private static ChatSession NewChatSession() => new(
+        Substitute.For<ITokenMapService>(),
+        Substitute.For<IAiClientService>(),
+        Substitute.For<IPluginService>(),
+        Substitute.For<IActionCardBuilder>(),
+        Substitute.For<IToolPermissionService>(),
+        Substitute.For<ILocalizationService>(),
+        NullLogger.Instance,
+        _ => false);
+
+    private AssistantViewModel CreateSut(IConsentEvidenceStore? consentStore = null)
     {
         // ChatTitleChipViewModel (built in the ctor) requires a captured SynchronizationContext.
         if (System.Threading.SynchronizationContext.Current is null)
@@ -200,15 +241,7 @@ public class AssistantViewModelOverlayHostingTests
         _directService.GetVoiceStats().Returns(Array.Empty<SpeakerVoiceStats>());
         // StartFreshChat (hit by the summarize hand-off) calls SetWorkingDirectory on whatever
         // this returns, so it must be a real ChatSession rather than the substitute default null.
-        _manager.GetOrCreateActiveForNewChat().Returns(_ => new ChatSession(
-            Substitute.For<ITokenMapService>(),
-            Substitute.For<IAiClientService>(),
-            Substitute.For<IPluginService>(),
-            Substitute.For<IActionCardBuilder>(),
-            Substitute.For<IToolPermissionService>(),
-            Substitute.For<ILocalizationService>(),
-            NullLogger.Instance,
-            _ => false));
+        _manager.GetOrCreateActiveForNewChat().Returns(_ => NewChatSession());
 
         var meeting = new MeetingAttendeeViewModel(
             _meetingService,
@@ -232,7 +265,8 @@ public class AssistantViewModelOverlayHostingTests
             Substitute.For<IIngestScheduler>(),
             Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<DirectTranscriptionViewModel>.Instance,
-            new InlineUiDispatcher());
+            new InlineUiDispatcher(),
+            consentEvidenceStore: consentStore);
 
         return new AssistantViewModel(
             NullLogger<AssistantViewModel>.Instance,
