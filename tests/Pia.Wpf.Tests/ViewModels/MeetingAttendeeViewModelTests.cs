@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
@@ -1356,6 +1357,244 @@ public class MeetingAttendeeViewModelTests
         }
     }
 
+    // ---- Consent evidence (the host's tick) -------------------------------------------------------
+
+    private sealed record ConsentSut(
+        MeetingAttendeeViewModel Vm,
+        FakeMeetingAttendeeService Service,
+        IDialogService Dialog,
+        IMemoryService Memory,
+        IFileDialogService Files,
+        IConsentEvidenceStore Evidence,
+        ConsentLiveSessions Live);
+
+    private static ConsentSut CreateSutWithConsent()
+    {
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.GetSettingsAsync().Returns(new AppSettings());
+
+        var loc = Substitute.For<ILocalizationService>();
+        loc[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
+        loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci.Arg<string>()} {string.Join(" ", ci.ArgAt<object[]>(1))}");
+        loc.CurrentLanguage.Returns(TargetLanguage.FR);
+
+        var files = Substitute.For<IFileDialogService>();
+        var dialog = Substitute.For<IDialogService>();
+        var memory = Substitute.For<IMemoryService>();
+        memory.ResolveCreateSourceAsync(Arg.Any<string>())
+            .Returns(ci => Task.FromResult(new SourceCreatePreview(true, ci.Arg<string>(), null)));
+        memory.CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(ci => Task.FromResult(new SourceWrite(true, ci.ArgAt<string>(0), null)));
+        var evidence = Substitute.For<IConsentEvidenceStore>();
+        var live = new ConsentLiveSessions(NullLogger<ConsentLiveSessions>.Instance);
+        var service = new FakeMeetingAttendeeService();
+
+        var vm = new MeetingAttendeeViewModel(
+            service, settingsService, loc, files, dialog, memory, Substitute.For<IIngestScheduler>(),
+            Substitute.For<Wpf.Ui.ISnackbarService>(),
+            NullLogger<MeetingAttendeeViewModel>.Instance, new InlineUiDispatcher(),
+            consentEvidenceStore: evidence, consentLiveSessions: live);
+
+        return new ConsentSut(vm, service, dialog, memory, files, evidence, live);
+    }
+
+    /// <summary>Ticks the confirmation, joins, and leaves the meeting with one utterance on screen.</summary>
+    private static async Task<string> AttendAsync(ConsentSut sut)
+    {
+        sut.Vm.MeetingUrl = ValidUrl;
+        sut.Vm.ConsentAcknowledged = true;
+        await sut.Vm.StartCommand.ExecuteAsync(null);
+        var sessionId = Assert.Single(sut.Live.Snapshot());
+
+        sut.Service.RaiseState(MeetingAttendeeState.Idle);
+        Utter(sut.Vm, "Speaker 1", "agenda item one", 0);
+        return sessionId;
+    }
+
+    private static ConsentSessionMarker SavedMarker(ConsentSut sut) => (ConsentSessionMarker)sut.Evidence.ReceivedCalls()
+        .Single(c => c.GetMethodInfo().Name == nameof(IConsentEvidenceStore.SaveHostAcknowledgementAsync))
+        .GetArguments()[0]!;
+
+    [Fact]
+    public async Task Start_OnceAdmitted_KeepsTheHostsTickAsTheSessionsEvidence()
+    {
+        var sut = CreateSutWithConsent();
+        sut.Vm.MeetingUrl = ValidUrl;
+        var before = DateTimeOffset.Now;
+        sut.Vm.ConsentAcknowledged = true;
+        var after = DateTimeOffset.Now;
+
+        await sut.Vm.StartCommand.ExecuteAsync(null);
+
+        var marker = SavedMarker(sut);
+        Assert.Equal(ConsentSessionMarker.TeamsLiveKind, marker.Kind);
+        Assert.Equal(ConsentNotice.TeamsLiveVersion, marker.NoticeVersion);
+        Assert.Equal(ConsentNotice.TeamsLivePurposes, marker.NoticePurposes);
+        Assert.Equal("fr", marker.NoticeLanguage);
+        var acknowledgedAt = (DateTimeOffset)sut.Evidence.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IConsentEvidenceStore.SaveHostAcknowledgementAsync))
+            .GetArguments()[1]!;
+        Assert.InRange(acknowledgedAt, before, after);
+        // Live while the transcript is on screen, so no sweep can take the folder.
+        Assert.Equal([marker.SessionId], sut.Live.Snapshot());
+
+        sut.Vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Start_ThatNeverGetsIn_WritesNoEvidence()
+    {
+        var sut = CreateSutWithConsent();
+        sut.Service.StartThrows = new InvalidOperationException("never admitted");
+        sut.Vm.MeetingUrl = ValidUrl;
+        sut.Vm.ConsentAcknowledged = true;
+
+        await sut.Vm.StartCommand.ExecuteAsync(null);
+
+        await sut.Evidence.DidNotReceive().SaveHostAcknowledgementAsync(
+            Arg.Any<ConsentSessionMarker>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        Assert.Empty(sut.Live.Snapshot());
+
+        sut.Vm.Dispose();
+    }
+
+    [Fact]
+    public async Task SaveToVault_CarriesTheHostAcknowledgement_AndLogsTheNote()
+    {
+        var sut = CreateSutWithConsent();
+        sut.Dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { ci.Arg<MeetingSaveEditModel>().Title = "Q3 roadmap sync"; return Task.FromResult(true); });
+        var sessionId = await AttendAsync(sut);
+
+        await ((IAsyncRelayCommand)sut.Vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        var call = Assert.Single(
+            sut.Memory.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync));
+        var reference = (string)call.GetArguments()[0]!;
+        var markdown = (string)call.GetArguments()[1]!;
+        Assert.Contains($"\nconsentRecord: {ConsentFrontMatter.Schema}\n", markdown, StringComparison.Ordinal);
+        Assert.Contains($"\nconsentSessions: [{sessionId}]\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nconsentNoticeVersion: 1\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nconsentNoticePurposes: [transcribe, store, summarize]\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nconsentNoticeLanguage: fr\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nhostAcknowledgedAt: '", markdown, StringComparison.Ordinal);
+        // No consent sentence in teams-live, so no speaker is listed.
+        Assert.DoesNotContain("consents:", markdown, StringComparison.Ordinal);
+        await sut.Evidence.Received(1).AppendCopyAsync(
+            sessionId,
+            Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.VaultKind && c.Ref == reference),
+            Arg.Any<CancellationToken>());
+
+        sut.Vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Export_CarriesTheRecordInItsFrontMatter_AndLogsTheFile()
+    {
+        var sut = CreateSutWithConsent();
+        var path = Path.Combine(Path.GetTempPath(), $"pia-meeting-{Guid.NewGuid():N}.md");
+        sut.Files.PromptSaveFile(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(path);
+        var sessionId = await AttendAsync(sut);
+
+        try
+        {
+            await ((IAsyncRelayCommand)sut.Vm.SaveTranscriptCommand).ExecuteAsync(null);
+
+            var lines = (await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken)).Split("\r\n");
+            Assert.Equal("---", lines[0]);
+            Assert.Contains($"consentSessions: [{sessionId}]", lines);
+            Assert.Contains(lines, line => line.StartsWith("hostAcknowledgedAt: '", StringComparison.Ordinal));
+            Assert.Contains(lines, line => line.StartsWith("# MeetingAttendee_Title", StringComparison.Ordinal));
+            await sut.Evidence.Received(1).AppendCopyAsync(
+                sessionId,
+                Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ExportKind && c.Path == path),
+                Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            File.Delete(path);
+            sut.Vm.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Summarize_LogsTheRequestThenTheChat_AndKeepsTheRecordOutOfThePrompt()
+    {
+        var sut = CreateSutWithConsent();
+        var sessionId = await AttendAsync(sut);
+        TranscriptSummaryRequestedEventArgs? request = null;
+        sut.Vm.SummarizeRequested += (_, e) => request = e;
+        var chatId = Guid.NewGuid();
+
+        sut.Vm.SummarizeWithAssistantCommand.Execute(null);
+        request!.ReportChatId(chatId);
+
+        // The prompt goes to the provider, and the record must not travel with it.
+        Assert.DoesNotContain("consentRecord", request.Prompt, StringComparison.Ordinal);
+        Assert.Contains("agenda item one", request.Prompt, StringComparison.Ordinal);
+        Received.InOrder(() =>
+        {
+            sut.Evidence.AppendCopyAsync(
+                sessionId, Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.SummaryRequestedKind), Arg.Any<CancellationToken>());
+            sut.Evidence.AppendCopyAsync(
+                sessionId, Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ChatKind && c.ChatId == chatId), Arg.Any<CancellationToken>());
+        });
+
+        sut.Vm.Dispose();
+    }
+
+    [Fact]
+    public async Task TheSession_OutlivesTheMeeting_AndEndsWhenTheOverlayReopens()
+    {
+        var sut = CreateSutWithConsent();
+        var ended = new List<string>();
+        sut.Live.SessionEnded += (_, id) => ended.Add(id);
+        var sessionId = await AttendAsync(sut);
+        await sut.Vm.StopAsync();
+
+        // Save and summarize come after the meeting, so its end must not end the session.
+        Assert.Empty(ended);
+
+        await sut.Vm.PrepareForDisplayAsync();
+
+        Assert.Equal([sessionId], ended);
+        Assert.Empty(sut.Live.Snapshot());
+        Assert.DoesNotContain("consentRecord", sut.Vm.BuildMarkdown(), StringComparison.Ordinal);
+
+        sut.Vm.Dispose();
+    }
+
+    [Fact]
+    public async Task ANewMeeting_EndsThePreviousSession_AndOpensItsOwn()
+    {
+        var sut = CreateSutWithConsent();
+        var ended = new List<string>();
+        sut.Live.SessionEnded += (_, id) => ended.Add(id);
+        var first = await AttendAsync(sut);
+
+        await sut.Vm.StartCommand.ExecuteAsync(null);
+
+        Assert.Equal([first], ended);
+        var second = Assert.Single(sut.Live.Snapshot());
+        Assert.NotEqual(first, second);
+
+        sut.Vm.Dispose();
+    }
+
+    [Fact]
+    public async Task Dispose_EndsTheSession()
+    {
+        var sut = CreateSutWithConsent();
+        var ended = new List<string>();
+        sut.Live.SessionEnded += (_, id) => ended.Add(id);
+        var sessionId = await AttendAsync(sut);
+
+        sut.Vm.Dispose();
+
+        Assert.Equal([sessionId], ended);
+    }
+
     // ---- helpers ----------------------------------------------------------------------------------
 
     private static (MeetingAttendeeViewModel vm, FakeMeetingAttendeeService service) CreateSut()
@@ -1450,6 +1689,9 @@ public class MeetingAttendeeViewModelTests
         public string? LastStartUrl { get; private set; }
         public int StartCount { get; private set; }
 
+        /// <summary>Fails the next join the way the real service does: in Error, then throwing.</summary>
+        public Exception? StartThrows { get; set; }
+
         public (string Old, string New)? LastRename { get; private set; }
         public int RenameCount { get; private set; }
 
@@ -1460,6 +1702,13 @@ public class MeetingAttendeeViewModelTests
         {
             LastStartUrl = meetingUrl;
             StartCount++;
+            if (StartThrows is { } failure)
+            {
+                State = MeetingAttendeeState.Error;
+                StateChanged?.Invoke(this, State);
+                return Task.FromException(failure);
+            }
+
             State = MeetingAttendeeState.Attending;
             StateChanged?.Invoke(this, State);
             return Task.CompletedTask;
