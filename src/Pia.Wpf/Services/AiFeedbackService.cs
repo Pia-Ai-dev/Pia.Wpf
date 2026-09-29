@@ -35,7 +35,8 @@ public sealed class AiFeedbackService : IAiFeedbackService
     }
 
     public async Task<AiFeedbackRequest> BuildRequestAsync(
-        AssistantMessage message, Guid? chatId, string rating, string? comment, bool includeAnswer)
+        AssistantMessage message, Guid? chatId, string rating, string? comment, bool includeAnswer,
+        bool privacyConcern = false)
     {
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         var hasText = includeAnswer || !string.IsNullOrWhiteSpace(comment);
@@ -64,6 +65,7 @@ public sealed class AiFeedbackService : IAiFeedbackService
             Comment = Guard(comment),
             AnswerText = includeAnswer ? Guard(message.Content) : null,
             PiiTokenized = hasText && tokenMap is not null,
+            PrivacyConcern = privacyConcern,
             Model = message.Stats?.Model,
             AnsweredAt = message.Timestamp.ToUniversalTime(),
             ReportedAt = DateTime.UtcNow,
@@ -72,21 +74,21 @@ public sealed class AiFeedbackService : IAiFeedbackService
         };
     }
 
-    public async Task<bool> SendAsync(AiFeedbackRequest request, CancellationToken ct = default)
+    public async Task<AiFeedbackResponse?> SendAsync(AiFeedbackRequest request, CancellationToken ct = default)
     {
         var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
         var serverUrl = settings.ServerUrl?.TrimEnd('/');
         if (string.IsNullOrEmpty(serverUrl))
         {
             _logger.LogWarning("AI feedback not sent: no Pia Cloud server configured");
-            return false;
+            return null;
         }
 
         var token = await _authService.GetAccessTokenAsync().ConfigureAwait(false);
         if (string.IsNullOrEmpty(token))
         {
             _logger.LogWarning("AI feedback not sent: not signed in to Pia Cloud");
-            return false;
+            return null;
         }
 
         try
@@ -100,18 +102,38 @@ public sealed class AiFeedbackService : IAiFeedbackService
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("AI feedback rejected with status {Status}", (int)response.StatusCode);
-                return false;
+                return null;
             }
 
+            var accepted = await ReadResponseAsync(response, ct).ConfigureAwait(false);
+
             // Ids and flags only: the comment and the answer are user content.
-            _logger.LogInformation("AI feedback sent for message {MessageId} (rating={Rating}, withAnswer={WithAnswer})",
-                request.MessageId, request.Rating, request.AnswerText is not null);
-            return true;
+            _logger.LogInformation(
+                "AI feedback sent for message {MessageId} (rating={Rating}, withAnswer={WithAnswer}, privacy={Privacy}, delivery={Delivery})",
+                request.MessageId, request.Rating, request.AnswerText is not null, request.PrivacyConcern,
+                accepted.Delivery ?? "unknown");
+            return accepted;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             _logger.LogWarning(ex, "AI feedback could not be sent");
-            return false;
+            return null;
         }
+    }
+
+    /// <summary>Never fails: once the status is a success, the report is already stored.</summary>
+    private async Task<AiFeedbackResponse> ReadResponseAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(body))
+                return JsonSerializer.Deserialize<AiFeedbackResponse>(body, JsonOptions) ?? new AiFeedbackResponse();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "AI feedback accepted, but the response body could not be read");
+        }
+        return new AiFeedbackResponse();
     }
 }

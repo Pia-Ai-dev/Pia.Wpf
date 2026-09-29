@@ -11,8 +11,9 @@ public interface IAiFeedbackService
     /// prompts when the privacy setting is on, so the server never sees data the chat itself withheld.
     /// </summary>
     Task<AiFeedbackRequest> BuildRequestAsync(
-        AssistantMessage message, Guid? chatId, string rating, string? comment, bool includeAnswer);
+        AssistantMessage message, Guid? chatId, string rating, string? comment, bool includeAnswer,
+        bool privacyConcern = false);
 
-    /// <summary>False when no Pia Cloud server is configured, the user is signed out, or the server refused.</summary>
-    Task<bool> SendAsync(AiFeedbackRequest request, CancellationToken ct = default);
+    /// <summary>Null when no Pia Cloud server is configured, the user is signed out, or the server refused.</summary>
+    Task<AiFeedbackResponse?> SendAsync(AiFeedbackRequest request, CancellationToken ct = default);
 }

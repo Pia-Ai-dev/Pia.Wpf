@@ -516,6 +516,8 @@ Changes will be applied.</value></data>
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Thank you</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Your feedback was sent to the Pia Cloud team.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>The feedback could not be sent. Check your Pia Cloud connection and try again.</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly_Title" xml:space="preserve"><value>Report saved</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly" xml:space="preserve"><value>Your report was saved by the server operator, but nobody was notified.</value></data>
   <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>That window or display is no longer available.</value></data>
   <data name="Msg_Screen_Minimized" xml:space="preserve"><value>The window is minimized. Restore it first — Pia will not move windows on its own.</value></data>
   <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>The window is hidden by Windows (another virtual desktop or a suspended app).</value></data>

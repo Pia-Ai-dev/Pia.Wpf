@@ -1782,21 +1782,31 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     return;
 
                 report = await _aiFeedback.BuildRequestAsync(
-                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingDown, edit.Comment, edit.IncludeAnswer);
+                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingDown, edit.Comment, edit.IncludeAnswer,
+                    edit.PrivacyConcern);
             }
 
-            var sent = await _aiFeedback.SendAsync(report);
+            var accepted = await _aiFeedback.SendAsync(report);
+            var (title, text, appearance, seconds) = FeedbackOutcome(accepted, request.Positive);
             _snackbarService.Show(
-                _localizationService[sent ? "Msg_Assistant_FeedbackSent_Title" : "Msg_Error"],
-                _localizationService[sent ? "Msg_Assistant_FeedbackSent" : "Msg_Assistant_FeedbackFailed"],
-                sent ? Wpf.Ui.Controls.ControlAppearance.Success : Wpf.Ui.Controls.ControlAppearance.Danger,
-                null, TimeSpan.FromSeconds(3));
+                _localizationService[title], _localizationService[text], appearance, null, TimeSpan.FromSeconds(seconds));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send AI feedback for message {MessageId}", request.Message.Id);
         }
     }
+
+    // A thumbs-up is only counted, so "nobody was notified" would read as a fault there.
+    internal static (string Title, string Text, Wpf.Ui.Controls.ControlAppearance Appearance, int Seconds) FeedbackOutcome(
+        Shared.Models.AiFeedbackResponse? accepted, bool positive) => accepted switch
+    {
+        null => ("Msg_Error", "Msg_Assistant_FeedbackFailed", Wpf.Ui.Controls.ControlAppearance.Danger, 3),
+        { Delivery: Shared.Models.AiFeedbackResponse.DeliveryStoredOnly } when !positive =>
+            ("Msg_Assistant_FeedbackStoredOnly_Title", "Msg_Assistant_FeedbackStoredOnly",
+                Wpf.Ui.Controls.ControlAppearance.Caution, 8),
+        _ => ("Msg_Assistant_FeedbackSent_Title", "Msg_Assistant_FeedbackSent", Wpf.Ui.Controls.ControlAppearance.Success, 3),
+    };
 
     private async Task ExecuteAddPiiKeyword(PiiKeywordRequest? request)
     {

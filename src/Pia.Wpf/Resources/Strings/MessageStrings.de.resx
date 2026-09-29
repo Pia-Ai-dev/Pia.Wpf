@@ -508,6 +508,8 @@
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Danke</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Ihr Feedback wurde an das Pia-Cloud-Team gesendet.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>Das Feedback konnte nicht gesendet werden. Prüfen Sie die Pia-Cloud-Verbindung und versuchen Sie es erneut.</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly_Title" xml:space="preserve"><value>Meldung gespeichert</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly" xml:space="preserve"><value>Ihre Meldung ist beim Betreiber gespeichert, benachrichtigt wurde aber niemand.</value></data>
   <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>Dieses Fenster oder dieser Bildschirm ist nicht mehr verfügbar.</value></data>
   <data name="Msg_Screen_Minimized" xml:space="preserve"><value>Das Fenster ist minimiert. Bitte zuerst wiederherstellen — Pia verschiebt keine Fenster von selbst.</value></data>
   <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>Das Fenster wird von Windows ausgeblendet (anderer virtueller Desktop oder angehaltene App).</value></data>

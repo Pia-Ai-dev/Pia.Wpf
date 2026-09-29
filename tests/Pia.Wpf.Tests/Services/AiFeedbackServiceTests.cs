@@ -18,9 +18,9 @@ public class AiFeedbackServiceTests
         new(ChatRole.Assistant, "The capital of France is Berlin.") { Stats = new AnswerStats(20, AnswerProvenance.PiaCloudLabel) };
 
     private static (AiFeedbackService Sut, CapturingRequestHandler Http, ITokenMapService TokenMap) Build(
-        AppSettings settings, string? token = "tok")
+        AppSettings settings, string? token = "tok", string responseBody = "{}")
     {
-        var handler = new CapturingRequestHandler();
+        var handler = new CapturingRequestHandler(responseBody);
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(handler));
 
@@ -98,7 +98,7 @@ public class AiFeedbackServiceTests
 
         var sent = await sut.SendAsync(request, TestContext.Current.CancellationToken);
 
-        Assert.True(sent);
+        Assert.NotNull(sent);
         Assert.Equal("https://cloud.example/api/ai-feedback", http.LastRequestUri!.ToString());
         Assert.Equal("Bearer tok", http.LastAuthorization);
         using var doc = JsonDocument.Parse(http.LastBody!);
@@ -111,11 +111,53 @@ public class AiFeedbackServiceTests
     public async Task Send_IsRefusedLocally_WithoutAServerOrASession()
     {
         var (noServer, http, _) = Build(new AppSettings());
-        Assert.False(await noServer.SendAsync(new AiFeedbackRequest(), TestContext.Current.CancellationToken));
+        Assert.Null(await noServer.SendAsync(new AiFeedbackRequest(), TestContext.Current.CancellationToken));
         Assert.Null(http.LastRequestUri);
 
         var (signedOut, http2, _) = Build(new AppSettings { ServerUrl = "https://cloud.example" }, token: null);
-        Assert.False(await signedOut.SendAsync(new AiFeedbackRequest(), TestContext.Current.CancellationToken));
+        Assert.Null(await signedOut.SendAsync(new AiFeedbackRequest(), TestContext.Current.CancellationToken));
         Assert.Null(http2.LastRequestUri);
+    }
+
+    [Fact]
+    public async Task Build_CarriesThePrivacyConcern_IntoTheWireBody()
+    {
+        var (sut, http, _) = Build(new AppSettings { ServerUrl = "https://cloud.example" });
+
+        var request = await sut.BuildRequestAsync(
+            PiaCloudAnswer(), null, AiFeedbackRequest.RatingDown, "c", includeAnswer: false, privacyConcern: true);
+        await sut.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.True(request.PrivacyConcern);
+        using var doc = JsonDocument.Parse(http.LastBody!);
+        Assert.True(doc.RootElement.GetProperty("privacyConcern").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Send_ReturnsTheServersDelivery()
+    {
+        var id = Guid.NewGuid();
+        var (sut, _, _) = Build(
+            new AppSettings { ServerUrl = "https://cloud.example" },
+            responseBody: $$"""{"id":"{{id}}","delivery":"stored_only"}""");
+
+        var accepted = await sut.SendAsync(new AiFeedbackRequest(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(id, accepted!.Id);
+        Assert.Equal(AiFeedbackResponse.DeliveryStoredOnly, accepted.Delivery);
+    }
+
+    [Theory]
+    [InlineData("""{"id":"7d1f6c2e-3b6a-4a55-9d0e-2f1c8b9a4e11"}""")]
+    [InlineData("")]
+    [InlineData("not json")]
+    public async Task Send_ToAServerThatSaysNothingAboutDelivery_StillCountsAsSent(string body)
+    {
+        var (sut, _, _) = Build(new AppSettings { ServerUrl = "https://cloud.example" }, responseBody: body);
+
+        var accepted = await sut.SendAsync(new AiFeedbackRequest(), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(accepted);
+        Assert.Null(accepted.Delivery);
     }
 }
