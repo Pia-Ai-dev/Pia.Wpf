@@ -1,7 +1,7 @@
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
@@ -14,17 +14,18 @@ public class DeviceManagementService : IDeviceManagementService
     private readonly IE2EEService _e2ee;
     private readonly IDeviceKeyService _deviceKeys;
     private readonly IRecoveryCodeService _recovery;
-    private readonly ICryptoService _crypto;
     private readonly ISettingsService _settings;
     private readonly IAuthService _auth;
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<DeviceManagementService> _logger;
 
+    // Server URL and account the proof key is settled for, so a sign-in to another account checks again.
+    private string? _proofKeySettledFor;
+
     public DeviceManagementService(
         IE2EEService e2ee,
         IDeviceKeyService deviceKeys,
         IRecoveryCodeService recovery,
-        ICryptoService crypto,
         ISettingsService settings,
         IAuthService auth,
         IHttpClientFactory httpFactory,
@@ -33,7 +34,6 @@ public class DeviceManagementService : IDeviceManagementService
         _e2ee = e2ee;
         _deviceKeys = deviceKeys;
         _recovery = recovery;
-        _crypto = crypto;
         _settings = settings;
         _auth = auth;
         _httpFactory = httpFactory;
@@ -43,6 +43,14 @@ public class DeviceManagementService : IDeviceManagementService
     public async Task<string> BootstrapFirstDeviceAsync()
     {
         _logger.LogInformation("Bootstrapping E2EE for first device");
+
+        // A retry after a partial success would wrap a new key while the locked recovery copy keeps the old one,
+        // and the code shown would open nothing.
+        if (await CheckE2EEStatusAsync() is { IsEnabled: true })
+        {
+            _logger.LogWarning("Not bootstrapping E2EE: the server reports it enabled for this account");
+            throw new InvalidOperationException("End-to-end encryption is already set up for this account.");
+        }
 
         // 1. Generate device keys (happens lazily in DeviceKeyService)
         var deviceId = _deviceKeys.GetDeviceId();
@@ -66,6 +74,11 @@ public class DeviceManagementService : IDeviceManagementService
         var recoveryCode = _recovery.GenerateRecoveryCode();
         var recoveryBlob = _recovery.WrapUmkForRecovery(umk, recoveryCode);
         await UploadRecoveryWrappedUmkAsync(recoveryBlob);
+
+        // Only after the recovery copy: the server refuses a proof key without one. A failure here is caught up
+        // later by EnsureRecoveryProofKeyAsync.
+        await TryPutRecoveryProofKeyAsync(umk);
+        Array.Clear(umk);
 
         // 6. Update local settings
         var settings = await _settings.GetSettingsAsync();
@@ -181,9 +194,8 @@ public class DeviceManagementService : IDeviceManagementService
         HttpClient client, string deviceId, byte[] umk, string selfWrapped, string hkdfSalt,
         string onboardingSessionId)
     {
-        var proofKey = _crypto.DeriveKey(umk, Encoding.UTF8.GetBytes("activation"), "pia-activation-proof-v1");
-        var proof = Convert.ToBase64String(
-            HMACSHA256.HashData(proofKey, Encoding.UTF8.GetBytes(onboardingSessionId)));
+        var proofKey = RecoveryActivationProof.DeriveProofKey(umk);
+        var proof = RecoveryActivationProof.Compute(proofKey, onboardingSessionId);
         Array.Clear(proofKey);
 
         var activationRequest = new RecoveryActivationRequest
@@ -274,6 +286,109 @@ public class DeviceManagementService : IDeviceManagementService
         return IsInitialized();
     }
 
+    public async Task EnsureRecoveryProofKeyAsync()
+    {
+        try
+        {
+            var account = await CurrentAccountAsync();
+            if (account is null || account == _proofKeySettledFor || !IsInitialized())
+                return;
+
+            var status = await CheckE2EEStatusAsync();
+            if (status is not { IsEnabled: true, HasRecoveryKey: true })
+                return;
+            if (status.HasRecoveryProofKey)
+            {
+                _proofKeySettledFor = account;
+                return;
+            }
+
+            if (await GetDeviceStatusAsync(_deviceKeys.GetDeviceId()) is not { Status: DeviceStatus.Active })
+                return;
+
+            // The cached key itself: never cleared here.
+            var umk = _e2ee.LoadUmk();
+            if (umk is not null && await TryPutRecoveryProofKeyAsync(umk))
+                _proofKeySettledFor = account;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check the recovery proof key");
+        }
+    }
+
+    /// <summary>False only for a failure worth retrying; a refusal the server would repeat counts as settled.</summary>
+    private async Task<bool> TryPutRecoveryProofKeyAsync(byte[] umk)
+    {
+        var proofKey = RecoveryActivationProof.DeriveProofKey(umk);
+        try
+        {
+            using var client = await CreateAuthorizedClientAsync();
+            using var response = await client.PutAsJsonAsync(
+                "api/e2ee/recovery/proof-key",
+                new RecoveryProofKeyRequest { ProofKey = Convert.ToBase64String(proofKey) });
+
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Recovery proof key stored on the server");
+                return true;
+            }
+
+            switch (response.StatusCode)
+            {
+                case HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed:
+                    _logger.LogInformation("The server does not accept a recovery proof key yet");
+                    return true;
+                case HttpStatusCode.Conflict:
+                    var code = await ReadErrorCodeAsync(response);
+                    if (code == E2EEErrorCodes.ProofKeyConflict)
+                        _logger.LogWarning("The server holds a different recovery proof key for this account");
+                    else
+                        _logger.LogInformation("The server refused the recovery proof key ({Code})", code ?? "no code");
+                    return true;
+                case HttpStatusCode.BadRequest:
+                    _logger.LogWarning("The server rejected the recovery proof key as malformed");
+                    return true;
+                default:
+                    _logger.LogWarning(
+                        "Storing the recovery proof key failed with status {Status}", (int)response.StatusCode);
+                    return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not store the recovery proof key");
+            return false;
+        }
+        finally
+        {
+            Array.Clear(proofKey);
+        }
+    }
+
+    private async Task<string?> CurrentAccountAsync()
+    {
+        var serverUrl = (await _settings.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
+        var email = _auth.UserEmail;
+        return string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(email) ? null : $"{serverUrl}|{email}";
+    }
+
+    private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
+                ? error.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public async Task RevokeDeviceAsync(string deviceId)
     {
         using var client = await CreateAuthorizedClientAsync();
@@ -332,7 +447,13 @@ public class DeviceManagementService : IDeviceManagementService
     private async Task UploadRecoveryWrappedUmkAsync(RecoveryWrappedUmkBlob blob)
     {
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsJsonAsync("api/e2ee/recovery/wrapped-umk", blob);
+        using var response = await client.PostAsJsonAsync("api/e2ee/recovery/wrapped-umk", blob);
+        if (response.StatusCode == HttpStatusCode.Conflict
+            && await ReadErrorCodeAsync(response) == E2EEErrorCodes.RecoveryKeyLocked)
+        {
+            _logger.LogWarning("The server refused to replace the recovery copy of the key: it is locked");
+            throw new InvalidOperationException("The recovery key of this account is locked and cannot be replaced.");
+        }
         response.EnsureSuccessStatusCode();
     }
 

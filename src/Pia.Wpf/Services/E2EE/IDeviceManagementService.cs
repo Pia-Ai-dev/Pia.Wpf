@@ -34,6 +34,9 @@ public interface IDeviceManagementService
     /// lists the device as active.</summary>
     Task<bool> TryRestoreKeyAsync();
 
+    /// <summary>Uploads the recovery proof key an existing account lacks, once per account and app run; never throws.</summary>
+    Task EnsureRecoveryProofKeyAsync();
+
     /// <summary>
     /// Revoke a device by its deviceId.
     /// </summary>

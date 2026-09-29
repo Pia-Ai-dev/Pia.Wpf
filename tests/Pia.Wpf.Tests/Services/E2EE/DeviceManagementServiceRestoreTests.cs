@@ -98,7 +98,7 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
         };
 
         return new DeviceManagementService(
-            _e2ee, _keys, Substitute.For<IRecoveryCodeService>(), new CryptoService(), _settings, auth, factory,
+            _e2ee, _keys, Substitute.For<IRecoveryCodeService>(), _settings, auth, factory,
             NullLogger<DeviceManagementService>.Instance);
     }
 

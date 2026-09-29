@@ -395,6 +395,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             // pending device.
             if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
             {
+                await _deviceMgmt.EnsureRecoveryProofKeyAsync();
+
                 var got200Pull = pullOk && serverTimestamp.HasValue;
                 var (shouldCheckDevices, nextDeviceCheckCounter) = AdvanceDeviceCheck(_deviceCheckCounter, got200Pull);
                 _deviceCheckCounter = nextDeviceCheckCounter;

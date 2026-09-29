@@ -187,7 +187,7 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         auth.GetAccessTokenAsync().Returns("token-1");
 
         return new DeviceManagementService(
-            e2ee, keys, Substitute.For<IRecoveryCodeService>(), new CryptoService(), settings, auth, factory,
+            e2ee, keys, Substitute.For<IRecoveryCodeService>(), settings, auth, factory,
             NullLogger<DeviceManagementService>.Instance);
     }
 
