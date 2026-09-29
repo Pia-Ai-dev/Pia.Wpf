@@ -26,6 +26,9 @@ public class AiFeedbackRequest
     /// <summary>True when personal data in <see cref="Comment"/> and <see cref="AnswerText"/> was replaced by the client's PII placeholders.</summary>
     public bool PiiTokenized { get; set; }
 
+    /// <summary>The user ticked "concerns data protection"; a server that predates it keeps it in <see cref="ExtensionData"/>.</summary>
+    public bool PrivacyConcern { get; set; }
+
     public string? Model { get; set; }
     public DateTime AnsweredAt { get; set; }
     public DateTime ReportedAt { get; set; }
