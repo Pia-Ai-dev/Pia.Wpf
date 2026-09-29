@@ -1,6 +1,8 @@
 # Consent retention: 14 days, swept at start and daily
 
-**Status:** Implemented
+**Status:** Superseded for sessions recorded from 2026-09-29 on by
+[2026-09-29-consent-evidence-lifetime.md](2026-09-29-consent-evidence-lifetime.md); still applies to
+evidence folders without `session.json` and to the audit trail
 **Owner:** marco.altmann@neo42.de
 **Written:** 2026-09-09
 **Origin:** Owner decision reversing D-4 of
