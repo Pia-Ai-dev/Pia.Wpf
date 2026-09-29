@@ -24,6 +24,7 @@ public sealed class ConsentLifetimeService : IDisposable
     private readonly IAssistantChatService _chats;
     private readonly IConsentEvidenceStore _evidenceStore;
     private readonly IDirectTranscriptionService _transcription;
+    private readonly IConsentLiveSessions _liveSessions;
     private readonly TimeProvider _clock;
     private readonly bool _dataRootsOverridden;
     private readonly Func<bool> _isShuttingDown;
@@ -40,6 +41,7 @@ public sealed class ConsentLifetimeService : IDisposable
         IAssistantChatService chats,
         IConsentEvidenceStore evidenceStore,
         IDirectTranscriptionService transcription,
+        IConsentLiveSessions liveSessions,
         TimeProvider clock,
         bool dataRootsOverridden,
         Func<bool> isShuttingDown,
@@ -52,15 +54,17 @@ public sealed class ConsentLifetimeService : IDisposable
         _chats = chats;
         _evidenceStore = evidenceStore;
         _transcription = transcription;
+        _liveSessions = liveSessions;
         _clock = clock;
         _dataRootsOverridden = dataRootsOverridden;
         _isShuttingDown = isShuttingDown;
         _logger = logger;
 
         _transcription.SessionEnded += OnSessionEnded;
+        _liveSessions.SessionEnded += OnSessionEnded;
     }
 
-    /// <summary>Judges every v2 folder except those of the transcript still open.</summary>
+    /// <summary>Judges every v2 folder except those of the transcript still open and of a recording still running.</summary>
     public async Task<ConsentLifetimeOutcome> SweepAsync(CancellationToken cancellationToken = default)
     {
         if (IsSuspended()) return ConsentLifetimeOutcome.None;
@@ -73,6 +77,7 @@ public sealed class ConsentLifetimeService : IDisposable
 
             // Read after listing: a session that starts in between would otherwise have a folder but no live id.
             var live = new HashSet<string>(_transcription.TranscriptSessionIds, StringComparer.OrdinalIgnoreCase);
+            live.UnionWith(_liveSessions.Snapshot());
             var ended = folders.Where(folder => !live.Contains(Path.GetFileName(folder))).ToList();
 
             var outcome = await JudgeAsync(ended, cancellationToken).ConfigureAwait(false);
@@ -109,10 +114,14 @@ public sealed class ConsentLifetimeService : IDisposable
         }
     }
 
-    public void Dispose() => _transcription.SessionEnded -= OnSessionEnded;
+    public void Dispose()
+    {
+        _transcription.SessionEnded -= OnSessionEnded;
+        _liveSessions.SessionEnded -= OnSessionEnded;
+    }
 
-    // Raised under the transcription service's start/stop lock, and by window teardown at exit: nothing here may
-    // call back into the service or block it, and at exit the next startup sweep takes the folder instead.
+    // Raised under the transcription service's start/stop lock, by a recording's end, and by window teardown at exit:
+    // nothing here may call back into the raiser or block it, and at exit the next startup sweep takes the folder.
     private void OnSessionEnded(object? sender, string sessionId)
     {
         if (_isShuttingDown()) return;

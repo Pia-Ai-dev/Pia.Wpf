@@ -29,6 +29,7 @@ public sealed class ConsentLifetimeServiceTests : IDisposable
     private readonly IAssistantChatService _chats = Substitute.For<IAssistantChatService>();
     private readonly HashSet<Guid> _existingChats = [];
     private readonly IDirectTranscriptionService _transcription = Substitute.For<IDirectTranscriptionService>();
+    private readonly ConsentLiveSessions _recordings = new(NullLogger<ConsentLiveSessions>.Instance);
     private readonly List<ConsentLifetimeService> _built = [];
     private bool _shuttingDown;
 
@@ -69,6 +70,7 @@ public sealed class ConsentLifetimeServiceTests : IDisposable
             _chats,
             _store,
             _transcription,
+            _recordings,
             _clock,
             dataRootsOverridden,
             () => _shuttingDown,
@@ -382,6 +384,51 @@ public sealed class ConsentLifetimeServiceTests : IDisposable
         Assert.False(Directory.Exists(Folder(ended)));
         Assert.Equal(1, outcome.Kept);
         Assert.Equal(1, outcome.Deleted);
+    }
+
+    [Fact]
+    public async Task TheSweep_SkipsARecordingStillRunning()
+    {
+        var recording = await ConsentedSessionAsync();
+        var ended = await ConsentedSessionAsync();
+        _recordings.Register(recording);
+
+        var outcome = await Build().SweepAsync(Ct);
+
+        Assert.True(Directory.Exists(Folder(recording)));
+        Assert.False(Directory.Exists(Folder(ended)));
+        Assert.Equal(1, outcome.Kept);
+        Assert.Equal(1, outcome.Deleted);
+    }
+
+    [Fact]
+    public async Task ARecordingThatEnds_WithoutAManagedCopy_LosesItsFolder_OffTheRaisingThread()
+    {
+        var sessionId = await ConsentedSessionAsync();
+        _recordings.Register(sessionId);
+        Build();
+
+        _recordings.Unregister(sessionId);
+
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (Directory.Exists(Folder(sessionId)) && DateTime.UtcNow < deadline)
+            await Task.Delay(20, Ct);
+        Assert.False(Directory.Exists(Folder(sessionId)));
+    }
+
+    [Fact]
+    public async Task ARecordingThatEnds_DuringShutdown_KeepsItsFolder()
+    {
+        var sessionId = await ConsentedSessionAsync();
+        _recordings.Register(sessionId);
+        Build();
+        _shuttingDown = true;
+
+        _recordings.Unregister(sessionId);
+        _shuttingDown = false;
+        await Task.Delay(300, Ct);
+
+        Assert.True(Directory.Exists(Folder(sessionId)));
     }
 
     [Fact]

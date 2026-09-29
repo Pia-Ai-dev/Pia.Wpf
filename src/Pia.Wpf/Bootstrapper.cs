@@ -799,6 +799,7 @@ public static class Bootstrapper
         services.AddSingleton<Services.Consent.IConsentAuditLog>(sp =>
             Services.Consent.JsonlConsentAuditLog.CreateForSession(
                 sp.GetRequiredService<ILogger<Services.Consent.JsonlConsentAuditLog>>()));
+        services.AddSingleton<Services.Consent.IConsentLiveSessions, Services.Consent.ConsentLiveSessions>();
         services.AddSingleton<Services.Consent.IConsentEvidenceStore>(sp => new Services.Consent.ConsentEvidenceStore(
             Services.Consent.ConsentEvidenceStore.DefaultRootDirectory,
             sp.GetRequiredService<DpapiHelper>(),
@@ -938,6 +939,7 @@ public static class Bootstrapper
             sp.GetRequiredService<IAssistantChatService>(),
             sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
             sp.GetRequiredService<IDirectTranscriptionService>(),
+            sp.GetRequiredService<Services.Consent.IConsentLiveSessions>(),
             sp.GetRequiredService<TimeProvider>(),
             dataRootsOverridden: PiaPaths.IsOverridden,
             isShuttingDown: () => sp.GetRequiredService<IWindowManagerService>().IsShuttingDown,
