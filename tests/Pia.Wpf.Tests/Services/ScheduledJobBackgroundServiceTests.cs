@@ -1504,7 +1504,7 @@ public class ScheduledJobBackgroundServiceTests
     {
         var recorder = Substitute.For<IScheduledMeetingRecorder>();
         recorder.RecordAsync(Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<CancellationToken>()).Returns(result);
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns(result);
         return recorder;
     }
 
@@ -1525,8 +1525,10 @@ public class ScheduledJobBackgroundServiceTests
         await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder, sessions), CancellationToken.None);
 
         // The meeting runs on the pool's attendee, never on the overlay's shared one.
+        // The host's acknowledgement becomes the recording's consent evidence.
         await recorder.Received(1).RecordAsync(
-            sessions.Attendees[0], job.MeetingUrl!, job.Name, Arg.Any<CancellationToken>());
+            sessions.Attendees[0], job.MeetingUrl!, job.Name, new DateTimeOffset(job.MeetingConsentAckAt!.Value),
+            Arg.Any<CancellationToken>());
         Assert.Equal(1, notifications.MeetingSavedCount);
         Assert.Single(jobs.Completed);
         Assert.Null(jobs.Completed[0].EntryId);
@@ -1557,7 +1559,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var recorder = Substitute.For<IScheduledMeetingRecorder>();
         recorder.RecordAsync(Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<CancellationToken>()).Returns<MeetingRecordingResult>(_ => throw new InvalidOperationException("boom"));
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns<MeetingRecordingResult>(_ => throw new InvalidOperationException("boom"));
 
         await TickAndSettleAsync(
             NewMeetingService(jobs, new FakeNotificationSurface(), recorder, sessions), CancellationToken.None);
@@ -1598,7 +1600,7 @@ public class ScheduledJobBackgroundServiceTests
         await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder, sessions), CancellationToken.None);
 
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         // Still due, no strike, nothing announced: the next tick retries, and the lateness gate is what
         // eventually gives up. Retiring a standup because another meeting overran would be worse.
         Assert.Empty(jobs.Dispatched);
@@ -1619,7 +1621,7 @@ public class ScheduledJobBackgroundServiceTests
         await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder), CancellationToken.None);
 
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         // The missed-run dialog is the wrong answer for a meeting: whoever would click it is in the meeting.
         Assert.Equal(0, notifications.AskCount);
         Assert.Equal(1, notifications.FailureCount);
@@ -1638,7 +1640,7 @@ public class ScheduledJobBackgroundServiceTests
             NewMeetingService(jobs, new FakeNotificationSurface(), recorder), CancellationToken.None);
 
         await recorder.Received(1).RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1703,7 +1705,7 @@ public class ScheduledJobBackgroundServiceTests
             NewMeetingService(jobs, notifications, recorder, sessions, settings), CancellationToken.None);
 
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         Assert.Single(jobs.Failed);
         Assert.Equal(1, notifications.FailureCount);
         // Refused before a slot is taken, so a misconfigured job cannot starve the pool.
@@ -1726,7 +1728,7 @@ public class ScheduledJobBackgroundServiceTests
         // A meeting creates no AgentRuns row, so the TriggerRef guard cannot see it: if this write faults
         // and we dispatched anyway, every later tick would re-dispatch.
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         // And the slot goes back rather than being held by a meeting that never started.
         Assert.Equal(1, sessions.Released);
     }

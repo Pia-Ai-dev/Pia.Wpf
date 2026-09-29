@@ -39,6 +39,14 @@ public sealed record ConsentRecord(
 
         return new ConsentRecord(sessionIds, noticeVersion, noticePurposes, noticeLanguage, consents);
     }
+
+    /// <summary>A meeting's host acknowledgement: no per-speaker consents, and so no labels either.</summary>
+    public static ConsentRecord ForHostAcknowledgement(ConsentSessionMarker session, DateTimeOffset acknowledgedAt)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return new ConsentRecord(
+            [session.SessionId], session.NoticeVersion, session.NoticePurposes, session.NoticeLanguage, [], acknowledgedAt);
+    }
 }
 
 /// <param name="Label">The detected label, which keys the evidence and the audit trail.</param>

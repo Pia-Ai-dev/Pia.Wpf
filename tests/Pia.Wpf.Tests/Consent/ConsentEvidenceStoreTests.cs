@@ -123,6 +123,56 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveHostAcknowledgementAsync_WritesTheMarker_AndTheAcknowledgementWithItsOffset()
+    {
+        var dpapi = SubstituteDpapi();
+        MakeReversible(dpapi);
+        var sut = new ConsentEvidenceStore(_tmpDir, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+        var session = ConsentSessionMarker.ForTeams(
+            "session-7", new DateTimeOffset(2026, 9, 29, 8, 0, 0, TimeSpan.Zero), "fr");
+        var acknowledgedAt = new DateTimeOffset(2026, 9, 28, 9, 15, 0, TimeSpan.FromHours(2));
+
+        await sut.SaveHostAcknowledgementAsync(session, acknowledgedAt, TestContext.Current.CancellationToken);
+
+        var sessionDir = Path.Combine(_tmpDir, session.SessionId);
+        Assert.Equal(
+            [ConsentEvidenceStore.HostAcknowledgementFileName, ConsentEvidenceStore.SessionMarkerFileName],
+            Directory.GetFiles(sessionDir).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+
+        var markerRaw = await File.ReadAllTextAsync(
+            Path.Combine(sessionDir, ConsentEvidenceStore.SessionMarkerFileName), TestContext.Current.CancellationToken);
+        using var marker = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(markerRaw)));
+        Assert.Equal(ConsentSessionMarker.TeamsKind, marker.RootElement.GetProperty("Session").GetProperty("Kind").GetString());
+
+        var raw = await File.ReadAllTextAsync(
+            Path.Combine(sessionDir, ConsentEvidenceStore.HostAcknowledgementFileName), TestContext.Current.CancellationToken);
+        var json = Encoding.UTF8.GetString(Convert.FromBase64String(raw));
+        using var acknowledgement = JsonDocument.Parse(json);
+        var root = acknowledgement.RootElement;
+        Assert.Equal("pia-consent-host-ack/v1", root.GetProperty("Schema").GetString());
+        Assert.Equal(session.SessionId, root.GetProperty("SessionId").GetString());
+        Assert.Contains("2026-09-28T09:15:00+02:00", json, StringComparison.Ordinal);
+        Assert.Equal(acknowledgedAt, root.GetProperty("AcknowledgedAt").GetDateTimeOffset());
+        Assert.Equal(ConsentNotice.TeamsVersion, root.GetProperty("NoticeVersion").GetInt32());
+        Assert.Equal(ConsentNotice.TeamsPurposes, root.GetProperty("NoticePurposes").EnumerateArray().Select(p => p.GetString()));
+        Assert.Equal("fr", root.GetProperty("NoticeLanguage").GetString());
+    }
+
+    [Fact]
+    public async Task SaveHostAcknowledgementAsync_WhenEncryptReturnsEmpty_Throws_AndCreatesNoFolder()
+    {
+        var dpapi = SubstituteDpapi();
+        dpapi.Encrypt(Arg.Any<string>()).Returns(string.Empty);
+        var sut = new ConsentEvidenceStore(_tmpDir, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+        var session = ConsentSessionMarker.ForTeams("session-8", DateTimeOffset.UtcNow, "de");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.SaveHostAcknowledgementAsync(session, DateTimeOffset.Now, TestContext.Current.CancellationToken));
+
+        Assert.False(Directory.Exists(Path.Combine(_tmpDir, session.SessionId)));
+    }
+
+    [Fact]
     public async Task SaveGrantAsync_WhenEncryptReturnsEmpty_Throws_AndWritesNoFile()
     {
         var dpapi = SubstituteDpapi();

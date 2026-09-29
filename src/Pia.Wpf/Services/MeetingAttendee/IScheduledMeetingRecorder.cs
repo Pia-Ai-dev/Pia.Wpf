@@ -31,6 +31,11 @@ public interface IScheduledMeetingRecorder
     /// than injected because concurrent meetings each need their own — the shared singleton holds one
     /// session and refuses a second start. The caller owns its lifetime; this never disposes it.
     /// </param>
+    /// <param name="hostAcknowledgedAt">When the routine's host confirmed everyone may be recorded: the session's consent evidence.</param>
     Task<MeetingRecordingResult> RecordAsync(
-        IMeetingAttendeeService attendee, string meetingUrl, string title, CancellationToken cancellationToken = default);
+        IMeetingAttendeeService attendee,
+        string meetingUrl,
+        string title,
+        DateTimeOffset hostAcknowledgedAt,
+        CancellationToken cancellationToken = default);
 }

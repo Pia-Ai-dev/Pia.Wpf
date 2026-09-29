@@ -1,15 +1,19 @@
 namespace Pia.Services.Consent;
 
 /// <summary>
-/// Persists consent evidence so a grant can still be proven after the session ends, plus a log of the copies
-/// the session's transcript went into. The grant and revocation writers throw on failure, and the caller audits
-/// it (<see cref="ConsentAuditEventTypes.EvidenceWriteFailed"/>); the copies log never throws.
+/// Persists consent evidence so it can still be proven after the session ends, plus a log of the copies the
+/// session's transcript went into. The evidence writers throw on failure; the copies log never throws.
 /// </summary>
 public interface IConsentEvidenceStore
 {
     /// <summary>Writes a grant's evidence file, and the session's marker with the session's first grant.</summary>
     /// <exception cref="Exception">Any encryption or I/O failure propagates — nothing is swallowed.</exception>
     Task SaveGrantAsync(ConsentSessionMarker session, ConsentEvidence evidence, CancellationToken cancellationToken = default);
+
+    /// <summary>Writes a meeting host's acknowledgement, which stands in for per-speaker grants, and the session's marker.</summary>
+    /// <exception cref="Exception">Any encryption or I/O failure propagates — nothing is swallowed.</exception>
+    Task SaveHostAcknowledgementAsync(
+        ConsentSessionMarker session, DateTimeOffset acknowledgedAt, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Appends a revocation record BESIDE the grant evidence. The grant evidence is never modified: withdrawing

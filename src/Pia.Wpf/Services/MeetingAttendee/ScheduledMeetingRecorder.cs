@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
@@ -26,20 +27,33 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
 
     private readonly ISettingsService _settingsService;
     private readonly IMemoryService _memoryService;
+    private readonly IConsentEvidenceStore _evidenceStore;
+    private readonly IConsentLiveSessions _liveSessions;
+    private readonly ILocalizationService _localization;
     private readonly ILogger<ScheduledMeetingRecorder> _logger;
 
     public ScheduledMeetingRecorder(
         ISettingsService settingsService,
         IMemoryService memoryService,
+        IConsentEvidenceStore evidenceStore,
+        IConsentLiveSessions liveSessions,
+        ILocalizationService localization,
         ILogger<ScheduledMeetingRecorder> logger)
     {
         _settingsService = settingsService;
         _memoryService = memoryService;
+        _evidenceStore = evidenceStore;
+        _liveSessions = liveSessions;
+        _localization = localization;
         _logger = logger;
     }
 
     public async Task<MeetingRecordingResult> RecordAsync(
-        IMeetingAttendeeService attendee, string meetingUrl, string title, CancellationToken cancellationToken = default)
+        IMeetingAttendeeService attendee,
+        string meetingUrl,
+        string title,
+        DateTimeOffset hostAcknowledgedAt,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(attendee);
         ArgumentException.ThrowIfNullOrWhiteSpace(meetingUrl);
@@ -55,40 +69,58 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
         attendee.SpeakersReassigned += OnReassigned;
         var collector = Task.Run(() => CollectAsync(attendee, journal, collectCts.Token), CancellationToken.None);
 
+        HostAcknowledgedSession? consent = null;
         try
         {
-            if (!await TryJoinAsync(attendee, meetingUrl, cancellationToken).ConfigureAwait(false))
-                return new MeetingRecordingResult(MeetingRecordingOutcome.JoinFailed, null, "The meeting attendee was never admitted.");
+            try
+            {
+                if (!await TryJoinAsync(attendee, meetingUrl, cancellationToken).ConfigureAwait(false))
+                    return new MeetingRecordingResult(MeetingRecordingOutcome.JoinFailed, null, "The meeting attendee was never admitted.");
 
-            await WaitForMeetingEndAsync(attendee, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "Scheduled meeting attendance failed before the meeting ended");
-            return new MeetingRecordingResult(MeetingRecordingOutcome.JoinFailed, null, ex.Message);
+                // Only once capture runs: a meeting that never let the attendee in leaves no evidence folder.
+                consent = await HostAcknowledgedSession.StartAsync(
+                    ConsentSessionMarker.ForTeams(
+                        Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow, ConsentNotice.LanguageOf(_localization.CurrentLanguage)),
+                    hostAcknowledgedAt,
+                    _evidenceStore,
+                    _liveSessions,
+                    _logger).ConfigureAwait(false);
+
+                await WaitForMeetingEndAsync(attendee, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Scheduled meeting attendance failed before the meeting ended");
+                return new MeetingRecordingResult(MeetingRecordingOutcome.JoinFailed, null, ex.Message);
+            }
+            finally
+            {
+                // Give the transcription tail a moment to land, then stop collecting and take whatever is
+                // still buffered — the channel completes only on the service's own disposal, so the loop
+                // would otherwise never return.
+                try { await Task.Delay(DrainGrace, cancellationToken).ConfigureAwait(false); }
+                catch (OperationCanceledException) { /* shutting down; save what we have */ }
+
+                await collectCts.CancelAsync().ConfigureAwait(false);
+                try { await collector.ConfigureAwait(false); } catch { /* logged inside */ }
+                attendee.SpeakersReassigned -= OnReassigned;
+                journal.DrainRemaining(attendee.Utterances);
+            }
+
+            var bubbles = journal.Project();
+            if (bubbles.Count == 0)
+            {
+                _logger.LogInformation("Scheduled meeting produced no transcript; nothing saved");
+                return new MeetingRecordingResult(MeetingRecordingOutcome.NothingCaptured, null, null);
+            }
+
+            return await SaveAsync(attendee, bubbles, title, sessionStart, settings, consent).ConfigureAwait(false);
         }
         finally
         {
-            // Give the transcription tail a moment to land, then stop collecting and take whatever is
-            // still buffered — the channel completes only on the service's own disposal, so the loop
-            // would otherwise never return.
-            try { await Task.Delay(DrainGrace, cancellationToken).ConfigureAwait(false); }
-            catch (OperationCanceledException) { /* shutting down; save what we have */ }
-
-            await collectCts.CancelAsync().ConfigureAwait(false);
-            try { await collector.ConfigureAwait(false); } catch { /* logged inside */ }
-            attendee.SpeakersReassigned -= OnReassigned;
-            journal.DrainRemaining(attendee.Utterances);
+            // After the save and its copy log, so the end is judged with the note already in the vault.
+            consent?.End();
         }
-
-        var bubbles = journal.Project();
-        if (bubbles.Count == 0)
-        {
-            _logger.LogInformation("Scheduled meeting produced no transcript; nothing saved");
-            return new MeetingRecordingResult(MeetingRecordingOutcome.NothingCaptured, null, null);
-        }
-
-        return await SaveAsync(attendee, bubbles, title, sessionStart, settings).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -162,7 +194,7 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
 
     private async Task<MeetingRecordingResult> SaveAsync(
         IMeetingAttendeeService attendee, IReadOnlyList<TranscriptBubble> bubbles, string title,
-        DateTimeOffset sessionStart, AppSettings settings)
+        DateTimeOffset sessionStart, AppSettings settings, HostAcknowledgedSession? consent)
     {
         var (reference, refusal) = await ResolveFreeReferenceAsync(sessionStart, title).ConfigureAwait(false);
         if (reference is null)
@@ -181,7 +213,7 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
             ManualIngest: true);
 
         var markdown = MeetingVaultMarkdown.Render(
-            metadata, DirectTranscriptMarkdown.RenderBody(title, bubbles, settings.LastCounterpartName));
+            metadata, DirectTranscriptMarkdown.RenderBody(title, bubbles, settings.LastCounterpartName), consent?.Record);
 
         var write = await _memoryService.CreateSourceAsync(reference, markdown).ConfigureAwait(false);
         if (!write.Success)
@@ -192,6 +224,9 @@ public sealed class ScheduledMeetingRecorder : IScheduledMeetingRecorder
 
         _logger.LogInformation("Saved a scheduled meeting into the vault ({Chars} chars)", markdown.Length);
         _logger.SensitiveDebug("Scheduled meeting saved as {Ref}", write.Ref);
+
+        if (consent is not null)
+            await consent.LogCopyAsync(ConsentCopy.Vault(write.Ref, DateTimeOffset.UtcNow)).ConfigureAwait(false);
 
         return new MeetingRecordingResult(MeetingRecordingOutcome.Saved, write.Ref, null);
     }

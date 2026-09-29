@@ -552,7 +552,9 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             return;
         }
 
-        TrackDispatch(RunMeetingAsync(job, lease, ct));
+        // Stamped as local time by the routine editor, so the local offset is the right one.
+        var hostAcknowledgedAt = new DateTimeOffset(job.MeetingConsentAckAt!.Value);
+        TrackDispatch(RunMeetingAsync(job, lease, hostAcknowledgedAt, ct));
     }
 
     private string? ClassifyMeetingRefusal(ScheduledJob job, AppSettings settings)
@@ -569,14 +571,17 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     }
 
     private async Task RunMeetingAsync(
-        ScheduledJob job, Services.MeetingAttendee.BackgroundMeetingLease lease, CancellationToken ct)
+        ScheduledJob job,
+        Services.MeetingAttendee.BackgroundMeetingLease lease,
+        DateTimeOffset hostAcknowledgedAt,
+        CancellationToken ct)
     {
         // The lease IS the meeting: disposing it tears the browser and the models down and hands the slot
         // back, so it has to outlive the recording and nothing else may end it early.
         await using var _ = lease;
         try
         {
-            var result = await _meetingRecorder.RecordAsync(lease.Attendee, job.MeetingUrl!, job.Name, ct);
+            var result = await _meetingRecorder.RecordAsync(lease.Attendee, job.MeetingUrl!, job.Name, hostAcknowledgedAt, ct);
 
             if (result.Outcome is Services.MeetingAttendee.MeetingRecordingOutcome.Saved)
             {

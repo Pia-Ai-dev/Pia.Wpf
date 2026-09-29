@@ -13,4 +13,8 @@ public sealed record ConsentSessionMarker(
 {
     public const string DirectKind = "direct";
     public const string TeamsKind = "teams";
+
+    /// <summary>A scheduled Teams recording, consented to by the routine's host acknowledgement.</summary>
+    public static ConsentSessionMarker ForTeams(string sessionId, DateTimeOffset startedAt, string noticeLanguage)
+        => new(sessionId, startedAt, TeamsKind, ConsentNotice.TeamsVersion, ConsentNotice.TeamsPurposes, noticeLanguage);
 }
