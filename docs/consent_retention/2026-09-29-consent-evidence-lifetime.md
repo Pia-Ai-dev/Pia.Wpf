@@ -74,6 +74,10 @@ a version bump.
   does, so a UI-test run against a throwaway vault would otherwise delete real evidence.
 - An unreadable note, an unreadable copies log or a missing vault root makes the scan inconclusive,
   and nothing is deleted in that pass.
+  - This is deliberate: evidence is kept longer rather than dropped while its note may still exist.
+  - The limit: one note that stays unreadable, for example because of its permissions or because it
+    is a cloud placeholder, keeps every v2 folder until it is fixed.
+  - The log shows it only as an unreadable-note count.
 - Running sessions are never swept, direct or Teams; session end at app shutdown is left to the next
   start.
 - Folders without `session.json` (recorded before this rule) still age out after 14 days, as
