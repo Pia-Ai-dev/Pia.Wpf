@@ -1906,6 +1906,15 @@ public class SyncClientService : ISyncClientService, IDisposable
                     CurrentDeviceRevoked?.Invoke(this, EventArgs.Empty);
                     return;
                 }
+
+                // Re-registered under this id with other keys: approving "it" would hand the key to those keys.
+                if (currentDevice.Status == DeviceStatus.Pending)
+                {
+                    _logger.LogWarning(
+                        "Current device {DeviceId} is pending on the server; onboarding required", currentDeviceId);
+                    NotifyE2EEOnboardingRequired();
+                    return;
+                }
             }
 
             var pending = response.Devices
