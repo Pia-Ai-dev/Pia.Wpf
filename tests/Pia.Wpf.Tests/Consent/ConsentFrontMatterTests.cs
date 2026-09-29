@@ -70,11 +70,107 @@ public sealed class ConsentFrontMatterTests
         consent.Revoke("Anna", Revoked);
         consent.GetOrCreate("Speaker 3");
 
-        var record = ConsentRecord.ForSpeakers([SessionA], 1, ["transcribe"], "en", consent.Snapshot());
+        var record = ConsentRecord.ForSpeakers(
+            [SessionA], 1, ["transcribe"], "en", consent.Snapshot().Select(s => new SessionSpeakerConsent(SessionA, s)));
 
         var entry = Assert.Single(record.Consents);
-        Assert.Equal(new ConsentRecordEntry("Speaker 2", Granted, Revoked), entry);
+        Assert.Equal(new ConsentRecordEntry("Speaker 2", Granted, Revoked, Session: SessionA), entry);
         Assert.DoesNotContain(ConsentFrontMatter.Render(record), l => l.Contains("Anna", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ForSpeakers_TakesShownAsFromTheResolver_AndTheSessionFromEachSpeaker()
+    {
+        var first = new ConsentStateManager(NullLogger<ConsentStateManager>.Instance, TimeProvider.System);
+        first.GetOrCreate("Speaker 1");
+        first.Grant("Speaker 1", null, Evidence("Speaker 1"));
+        var second = new ConsentStateManager(NullLogger<ConsentStateManager>.Instance, TimeProvider.System);
+        second.GetOrCreate("Speaker 1");
+        second.Grant("Speaker 1", null, Evidence("Speaker 1"));
+
+        var record = ConsentRecord.ForSpeakers(
+            [SessionA, SessionB], 1, ["transcribe"], "en",
+            [.. first.Snapshot().Select(s => new SessionSpeakerConsent(SessionA, s)),
+             .. second.Snapshot().Select(s => new SessionSpeakerConsent(SessionB, s))],
+            s => s.SessionId == SessionA ? "Speaker 1" : null);
+
+        Assert.Equal(
+            [
+                new ConsentRecordEntry("Speaker 1", Granted, null, "Speaker 1", SessionA),
+                new ConsentRecordEntry("Speaker 1", Granted, null, null, SessionB),
+            ],
+            record.Consents);
+    }
+
+    [Fact]
+    public void Render_ForARecordSpanningSessions_NamesEachEntrysSession_AndItsShownAs()
+    {
+        var lines = ConsentFrontMatter.Render(Record(
+            new ConsentRecordEntry("Speaker 17", Granted, null, "Speaker 1", SessionA),
+            new ConsentRecordEntry("Speaker 17", Granted, Revoked, "Anna Maier", SessionB)));
+
+        Assert.Equal(
+            [
+                $"  - {{session: {SessionA}, label: Speaker 17, shownAs: Speaker 1, grantedAt: '2026-09-29T10:01:02+02:00'}}",
+                $"  - {{session: {SessionB}, label: Speaker 17, shownAs: Anna Maier, grantedAt: '2026-09-29T10:01:02+02:00', revokedAt: '2026-09-29T10:20:00+02:00'}}",
+            ],
+            lines.SkipWhile(l => l != "consents:").Skip(1));
+    }
+
+    [Fact]
+    public void Render_ForASingleSession_LeavesTheSessionOut()
+    {
+        var record = new ConsentRecord(
+            [SessionA], 1, ["transcribe"], "en", [new ConsentRecordEntry("Speaker 17", Granted, null, "Speaker 1", SessionA)]);
+
+        Assert.Equal(
+            "  - {label: Speaker 17, shownAs: Speaker 1, grantedAt: '2026-09-29T10:01:02+02:00'}",
+            ConsentFrontMatter.Render(record)[^1]);
+    }
+
+    [Fact]
+    public void ReplaceConsents_KeepsTheShownAsTheNoteAlreadyCarries()
+    {
+        // After a revocation the live transcript has lost that speaker's bubbles and renumbered the rest, but the
+        // kept note's body has not changed, so its shownAs values are the ones that still describe it.
+        var note = Note(
+        [
+            "title: Sync",
+            .. ConsentFrontMatter.Render(Record(
+                new ConsentRecordEntry("Speaker 17", Granted, null, "Speaker 1", SessionA),
+                new ConsentRecordEntry("Speaker 18", Granted, null, "Speaker 2", SessionB))),
+        ]);
+
+        var updated = ConsentFrontMatter.ReplaceConsents(note, Record(
+            new ConsentRecordEntry("Speaker 17", Granted, Revoked, null, SessionA),
+            new ConsentRecordEntry("Speaker 18", Granted, null, "Speaker 1", SessionB),
+            new ConsentRecordEntry("Speaker 19", Granted, null, "Speaker 3", SessionB)));
+
+        var expected = Note(
+        [
+            "title: Sync",
+            .. ConsentFrontMatter.Render(Record(
+                new ConsentRecordEntry("Speaker 17", Granted, Revoked, "Speaker 1", SessionA),
+                new ConsentRecordEntry("Speaker 18", Granted, null, "Speaker 2", SessionB),
+                new ConsentRecordEntry("Speaker 19", Granted, null, "Speaker 3", SessionB))),
+        ]);
+        Assert.Equal(expected, updated);
+    }
+
+    [Fact]
+    public void ReplaceConsents_ReadsAQuotedShownAsBack()
+    {
+        var note = Note(
+        [
+            .. ConsentFrontMatter.Render(Record(
+                new ConsentRecordEntry("Speaker 17", Granted, null, "O'Brien, Pat: host", SessionA))),
+        ]);
+
+        var updated = ConsentFrontMatter.ReplaceConsents(
+            note, Record(new ConsentRecordEntry("Speaker 17", Granted, Revoked, null, SessionA)));
+
+        Assert.Contains("shownAs: 'O''Brien, Pat: host', grantedAt:", updated, StringComparison.Ordinal);
+        Assert.Contains("revokedAt: '2026-09-29T10:20:00+02:00'", updated, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -80,6 +80,12 @@ public interface IDirectTranscriptionService : IAsyncDisposable
     /// </summary>
     IReadOnlyList<string> TranscriptSessionIds { get; }
 
+    /// <summary>Every speaker's consent state across <see cref="TranscriptSessionIds"/>, oldest session first.</summary>
+    IReadOnlyList<SessionSpeakerConsent> TranscriptConsents { get; }
+
+    /// <summary>Two-letter language the notice was shown in at the transcript's first start; <c>null</c> before it.</summary>
+    string? TranscriptNoticeLanguage { get; }
+
     /// <summary>
     /// Raised by <see cref="EndSessionAsync"/> once per transcript session id, before any is cleared; not at dispose.
     /// </summary>

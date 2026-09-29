@@ -8,12 +8,14 @@ using Pia.Logging;
 namespace Pia.Services.Consent;
 
 /// <summary>
-/// DPAPI-protected, write-only consent evidence: per session folder a marker, one grant file per speaker and a
-/// revocation file beside it. Every write throws on failure, because a silent one would leave no proof at all.
+/// DPAPI-protected consent evidence: per session folder a marker, one grant file per speaker, a revocation file
+/// beside it, and a copies log. Grant and revocation writes throw on failure, because a silent one would leave no
+/// proof at all.
 /// </summary>
 public sealed class ConsentEvidenceStore : IConsentEvidenceStore
 {
     public const string SessionMarkerFileName = "session.json";
+    public const string CopiesFileName = "copies.json";
 
     private sealed record SessionEnvelope(string Schema, ConsentSessionMarker Session);
 
@@ -21,11 +23,17 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
 
     private sealed record RevocationEnvelope(string Schema, string SessionId, string SpeakerLabel, DateTimeOffset RevokedAt);
 
+    private sealed record CopyEnvelope(string Schema, string SessionId, ConsentCopy Copy);
+
     private const string SessionSchema = "pia-consent-session/v1";
     private const string GrantSchema = "pia-consent-evidence/v2";
     private const string RevocationSchema = "pia-consent-revocation/v1";
+    private const string CopySchema = "pia-consent-copy/v1";
 
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false };
+
+    // One protected line per entry, so an append never has to decrypt and rewrite what is already there.
+    private readonly SemaphoreSlim _copiesGate = new(1, 1);
 
     /// <summary>Default root: <c>%LOCALAPPDATA%\Pia\ConsentEvidence</c>.</summary>
     public static string DefaultRootDirectory => PiaPaths.ConsentEvidenceDirectory;
@@ -80,6 +88,84 @@ public sealed class ConsentEvidenceStore : IConsentEvidenceStore
         _logger.LogInformation("Consent revocation saved");
         _logger.SensitiveDebug("Consent revocation saved for session {SessionId}, label {Label}", sessionId, speakerLabel);
     }
+
+    public async Task AppendCopyAsync(string sessionId, ConsentCopy copy, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(copy);
+        if (!IsSessionFolderName(sessionId)) return;
+
+        var sessionDir = Path.Combine(_rootDirectory, sessionId);
+        try
+        {
+            await _copiesGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                // Without a marker nobody consented, and creating the folder here would leave one nothing sweeps.
+                if (!File.Exists(Path.Combine(sessionDir, SessionMarkerFileName))) return;
+
+                var line = Protect(JsonSerializer.Serialize(new CopyEnvelope(CopySchema, sessionId, copy), JsonOpts));
+                await File.AppendAllTextAsync(
+                    Path.Combine(sessionDir, CopiesFileName), line + "\n", cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _copiesGate.Release();
+            }
+
+            _logger.LogInformation("Consent copy logged ({Kind})", copy.Kind);
+            _logger.SensitiveDebug("Consent copy logged for session {SessionId}: {Copy}", sessionId, copy);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to log a consent copy ({Kind})", copy.Kind);
+        }
+    }
+
+    public async Task<IReadOnlyList<ConsentCopy>> ReadCopiesAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        if (!IsSessionFolderName(sessionId)) return [];
+
+        var path = Path.Combine(_rootDirectory, sessionId, CopiesFileName);
+        string[] lines;
+        try
+        {
+            if (!File.Exists(path)) return [];
+            lines = await File.ReadAllLinesAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to read a consent copies log");
+            return [];
+        }
+
+        var copies = new List<ConsentCopy>(lines.Length);
+        var unreadable = 0;
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var envelope = JsonSerializer.Deserialize<CopyEnvelope>(_dpapi.Decrypt(line.Trim()), JsonOpts);
+                if (envelope?.Copy is { } copy) copies.Add(copy);
+                else unreadable++;
+            }
+            catch (JsonException)
+            {
+                unreadable++;
+            }
+        }
+
+        // A torn final line from a crash mid-append must not hide the entries before it.
+        if (unreadable > 0)
+            _logger.LogWarning("Skipped {Count} unreadable consent copy entries", unreadable);
+        return copies;
+    }
+
+    // A session id names a folder; one read back from a user-editable note must not reach outside the root.
+    private static bool IsSessionFolderName(string? sessionId)
+        => !string.IsNullOrWhiteSpace(sessionId)
+           && sessionId is not ("." or "..")
+           && sessionId.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
 
     /// <summary>
     /// Encrypts <paramref name="plainText"/> and throws when DPAPI silently failed. <see cref="DpapiHelper"/>

@@ -32,6 +32,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     private readonly IDirectTranscriptionService _service;
     private readonly IClipboardService? _clipboardService;
     private readonly IConsentSoundPlayer? _consentSoundPlayer;
+    private readonly IConsentEvidenceStore? _consentEvidenceStore;
 
     private readonly Dictionary<string, int> _chipColorIndex = new(StringComparer.Ordinal);
     private int _nextChipColorIndex;
@@ -104,9 +105,10 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         IUiDispatcher uiDispatcher,
         IClipboardService? clipboardService = null,
         IConsentSoundPlayer? consentSoundPlayer = null,
-        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves both.
+        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves them.
         IChatSessionManager? chatSessionManager = null,
-        IWorkingDirectoryService? workingDirectoryService = null)
+        IWorkingDirectoryService? workingDirectoryService = null,
+        IConsentEvidenceStore? consentEvidenceStore = null)
         : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
             ingestScheduler, snackbarService, logger, uiDispatcher, chatSessionManager,
             workingDirectoryService)
@@ -114,6 +116,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _service = service;
         _clipboardService = clipboardService;
         _consentSoundPlayer = consentSoundPlayer;
+        _consentEvidenceStore = consentEvidenceStore;
 
         // Construct StopCommand BEFORE subscribing to StateChanged: a state change raised during wiring
         // would NRE in OnRunningChanged (mirrors MeetingAttendeeViewModel's ctor ordering).
@@ -421,7 +424,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
 
     // ---- Save (front matter + stats block) ----------------------------------------------------------
 
-    /// <summary>Prepends YAML front matter (schema/session bounds/speakers) and the voice-stats block.</summary>
+    /// <summary>Prepends YAML front matter (schema/session bounds/speakers/consent) and the voice-stats block.</summary>
     internal override string BuildMarkdown()
     {
         var transcript = BuildFullTranscript();
@@ -432,7 +435,35 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
             sessionEnd,
             transcript,
             SuppressSpeakerLabels ? [] : _service.GetVoiceStats(),
-            CounterpartName);
+            CounterpartName,
+            BuildConsentRecord(transcript));
+    }
+
+    protected override ConsentRecord? BuildConsentRecord(IReadOnlyList<TranscriptBubble> transcript)
+    {
+        var record = ConsentRecord.ForSpeakers(
+            _service.TranscriptSessionIds,
+            ConsentNotice.Version,
+            ConsentNotice.Purposes,
+            _service.TranscriptNoticeLanguage ?? ConsentNotice.LanguageOf(_localizationService.CurrentLanguage),
+            _service.TranscriptConsents,
+            consent => DirectTranscriptMarkdown.ShownAs(transcript, consent.Speaker.SpeakerLabel, CounterpartName));
+        return record.IsEmpty ? null : record;
+    }
+
+    protected override Task OnTranscriptExportedAsync(string path)
+        => LogCopyAsync(_service.TranscriptSessionIds, ConsentCopy.Export(path, DateTimeOffset.UtcNow));
+
+    protected override Task OnTranscriptSavedToVaultAsync(string reference)
+        => LogCopyAsync(_service.TranscriptSessionIds, ConsentCopy.Vault(reference, DateTimeOffset.UtcNow));
+
+    // Every session the transcript rests on; the store skips those nobody consented in.
+    private async Task LogCopyAsync(IReadOnlyList<string> sessionIds, ConsentCopy copy)
+    {
+        if (_consentEvidenceStore is null) return;
+
+        foreach (var sessionId in sessionIds)
+            await _consentEvidenceStore.AppendCopyAsync(sessionId, copy).ConfigureAwait(false);
     }
 
     // ---- Consent chips -------------------------------------------------------------------------------

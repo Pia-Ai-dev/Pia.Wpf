@@ -62,8 +62,7 @@ public static class DirectTranscriptMarkdown
 
         foreach (var bubble in bubbles)
         {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.DisplayLabel, counterpartName);
-            sb.Append("**").Append(label).Append("** _")
+            sb.Append("**").Append(SpeakerLabelOf(bubble, counterpartName)).Append("** _")
               .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
             if (bubble.EndTimestamp != bubble.StartTimestamp)
             {
@@ -75,6 +74,20 @@ public static class DirectTranscriptMarkdown
 
         return sb.ToString();
     }
+
+    /// <summary>What <see cref="RenderBody"/> prints for the foreign speaker keyed <paramref name="speakerLabel"/>;
+    /// <c>null</c> when none of their utterances is in <paramref name="bubbles"/>.</summary>
+    public static string? ShownAs(IReadOnlyList<TranscriptBubble> bubbles, string speakerLabel, string? counterpartName)
+    {
+        ArgumentNullException.ThrowIfNull(bubbles);
+
+        var bubble = bubbles.FirstOrDefault(b =>
+            b.Speaker == TranscriptSpeaker.Them && string.Equals(b.SpeakerLabel, speakerLabel, StringComparison.Ordinal));
+        return bubble is null ? null : SpeakerLabelOf(bubble, counterpartName);
+    }
+
+    private static string SpeakerLabelOf(TranscriptBubble bubble, string? counterpartName)
+        => SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.DisplayLabel, counterpartName);
 
     private static void AppendFrontMatter(
         StringBuilder sb,
@@ -125,7 +138,7 @@ public static class DirectTranscriptMarkdown
     private static List<string> ResolveDeduplicatedSpeakers(IReadOnlyList<TranscriptBubble> bubbles, string? counterpartName)
     {
         return bubbles
-            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.DisplayLabel, counterpartName))
+            .Select(b => SpeakerLabelOf(b, counterpartName))
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }

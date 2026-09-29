@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -449,6 +450,155 @@ public class DirectTranscriptionViewModelTests
     }
 
     [Fact]
+    public void BuildMarkdown_CarriesTheConsentRecord_WhoseShownAsIsTheLabelTheBodyPrints()
+    {
+        var (vm, service) = CreateSut();
+        service.TranscriptSessionIds = [SessionA];
+        service.TranscriptNoticeLanguage = "de";
+        service.TranscriptConsents = [Consented(SessionA, "Speaker 17", "Speaker 17")];
+        var t0 = DateTimeOffset.Now;
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "welcome", t0));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello there", t0.AddSeconds(30), "Speaker 17"));
+
+        var (frontMatter, body) = SplitFrontMatter(vm.BuildMarkdown());
+
+        Assert.Contains($"consentSessions: [{SessionA}]\n", frontMatter, StringComparison.Ordinal);
+        Assert.Contains($"consentNoticeVersion: {ConsentNotice.Version}\n", frontMatter, StringComparison.Ordinal);
+        Assert.Contains("consentNoticePurposes: [transcribe, store, summarize]\n", frontMatter, StringComparison.Ordinal);
+        Assert.Contains("consentNoticeLanguage: de\n", frontMatter, StringComparison.Ordinal);
+        var shownAs = Regex.Match(frontMatter, @"\{label: Speaker 17, shownAs: ([^,]+), grantedAt: ").Groups[1].Value;
+        Assert.Equal("Speaker 1", shownAs);
+        Assert.Contains($"**{shownAs}** _", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMarkdown_ShowsANamedSpeakerByName_UnderTheDetectedLabel()
+    {
+        var (vm, service) = CreateSut();
+        service.TranscriptSessionIds = [SessionA];
+        service.TranscriptConsents = [Consented(SessionA, "Anna", "Speaker 2")];
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello there", DateTimeOffset.Now, "Anna"));
+
+        var (frontMatter, body) = SplitFrontMatter(vm.BuildMarkdown());
+
+        Assert.Contains("  - {label: Speaker 2, shownAs: Anna, grantedAt: ", frontMatter, StringComparison.Ordinal);
+        Assert.Contains("**Anna** _", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMarkdown_AfterAFailedStartRetry_ListsEachSessionsSpeakerUnderItsSession()
+    {
+        // The retry built a new diarizer, so both sessions have a "Speaker 1" — two voices, two grants.
+        var (vm, service) = CreateSut();
+        service.TranscriptSessionIds = [SessionA, SessionB];
+        service.TranscriptConsents =
+        [
+            Consented(SessionA, "Anna", "Speaker 1"),
+            Consented(SessionB, "Speaker 1", "Speaker 1"),
+        ];
+        var t0 = DateTimeOffset.Now;
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "before the retry", t0, "Anna"));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "after the retry", t0.AddSeconds(30), "Speaker 1"));
+
+        var (frontMatter, _) = SplitFrontMatter(vm.BuildMarkdown());
+
+        Assert.Contains($"consentSessions: [{SessionA}, {SessionB}]\n", frontMatter, StringComparison.Ordinal);
+        Assert.Contains($"  - {{session: {SessionA}, label: Speaker 1, shownAs: Anna, grantedAt: ", frontMatter, StringComparison.Ordinal);
+        Assert.Contains($"  - {{session: {SessionB}, label: Speaker 1, shownAs: Speaker 1, grantedAt: ", frontMatter, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMarkdown_ForARevokedSpeaker_KeepsTheGrantWithItsRevocationTime()
+    {
+        var (vm, service) = CreateSut();
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "welcome", DateTimeOffset.Now));
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "withdrawn words", DateTimeOffset.Now, "Speaker 2"));
+        vm.RevokeSpeakerCommand.Execute("Speaker 2");
+        var revokedAt = new DateTimeOffset(2026, 9, 29, 10, 20, 0, TimeSpan.FromHours(2));
+        service.TranscriptSessionIds = [SessionA];
+        service.TranscriptConsents = [Consented(SessionA, "Speaker 2", "Speaker 2", revokedAt)];
+
+        var (frontMatter, body) = SplitFrontMatter(vm.BuildMarkdown());
+
+        // No shownAs: the body no longer holds a word of theirs.
+        Assert.Contains(
+            "  - {label: Speaker 2, grantedAt: '2026-09-29T10:01:02+02:00', revokedAt: '2026-09-29T10:20:00+02:00'}\n",
+            frontMatter,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("withdrawn words", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMarkdown_WithoutAConsentedForeignSpeaker_HasNoConsentBlock()
+    {
+        var (vm, service) = CreateSut();
+        service.TranscriptSessionIds = [SessionA];
+        service.TranscriptConsents =
+        [
+            new SessionSpeakerConsent(SessionA, new SpeakerConsentEntry(
+                "Speaker 3", GrantedAt, ConsentState.Unknown, null, null, "Speaker 3", null)),
+        ];
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.You, "just me", DateTimeOffset.Now));
+
+        var markdown = vm.BuildMarkdown();
+
+        Assert.DoesNotContain("consentRecord", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("consents:", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveToVault_CarriesTheConsentRecord_AndLogsTheNoteForEverySession()
+    {
+        var store = Substitute.For<IConsentEvidenceStore>();
+        var (vm, service, dialog, memory, _) = CreateSutWithVault(consentStore: store);
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { ci.Arg<MeetingSaveEditModel>().Title = "Kickoff"; return Task.FromResult(true); });
+        service.TranscriptSessionIds = [SessionA, SessionB];
+        service.TranscriptConsents = [Consented(SessionB, "Speaker 4", "Speaker 4")];
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello there", DateTimeOffset.Now, "Speaker 4"));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        var call = Assert.Single(
+            memory.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync));
+        var reference = (string)call.GetArguments()[0]!;
+        var (frontMatter, body) = SplitFrontMatter((string)call.GetArguments()[1]!);
+        Assert.Contains("source: direct\n", frontMatter, StringComparison.Ordinal);
+        Assert.Contains($"consentSessions: [{SessionA}, {SessionB}]\n", frontMatter, StringComparison.Ordinal);
+        Assert.Contains($"  - {{session: {SessionB}, label: Speaker 4, shownAs: Speaker 1, grantedAt: ", frontMatter, StringComparison.Ordinal);
+        Assert.Contains("**Speaker 1** _", body, StringComparison.Ordinal);
+
+        foreach (var sessionId in new[] { SessionA, SessionB })
+        {
+            await store.Received(1).AppendCopyAsync(
+                sessionId,
+                Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.VaultKind && c.Ref == reference),
+                Arg.Any<CancellationToken>());
+        }
+        await store.DidNotReceive().AppendCopyAsync(
+            Arg.Any<string>(), Arg.Is<ConsentCopy>(c => c.Kind != ConsentCopy.VaultKind), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SaveToVault_WhenTheWriteFails_LogsNoCopy()
+    {
+        var store = Substitute.For<IConsentEvidenceStore>();
+        var (vm, service, dialog, memory, _) = CreateSutWithVault(consentStore: store);
+        dialog.ShowMeetingSaveDialogAsync(Arg.Any<MeetingSaveEditModel>())
+            .Returns(ci => { ci.Arg<MeetingSaveEditModel>().Title = "Kickoff"; return Task.FromResult(true); });
+        memory.CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(Task.FromResult(new SourceWrite(false, string.Empty, "disk full")));
+        service.TranscriptSessionIds = [SessionA];
+        service.TranscriptConsents = [Consented(SessionA, "Speaker 4", "Speaker 4")];
+        vm.AddUtterance(new TranscriptUtterance(TranscriptSpeaker.Them, "hello there", DateTimeOffset.Now, "Speaker 4"));
+
+        await ((IAsyncRelayCommand)vm.SaveToVaultCommand).ExecuteAsync(null);
+
+        await store.DidNotReceive().AppendCopyAsync(
+            Arg.Any<string>(), Arg.Any<ConsentCopy>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void CopyConsentSentence_PutsTheGivenSentenceOnTheClipboard()
     {
         var clipboard = Substitute.For<IClipboardService>();
@@ -513,6 +663,32 @@ public class DirectTranscriptionViewModelTests
         sound.DidNotReceive().PlayConsentGranted();
     }
 
+    private const string SessionA = "3f2a9c1e7b4d4e0f8a6b5c4d3e2f1a0b";
+    private const string SessionB = "9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e";
+
+    private static readonly DateTimeOffset GrantedAt = new(2026, 9, 29, 10, 1, 2, TimeSpan.FromHours(2));
+
+    /// <param name="key">The consent map's key, which the transcript's bubbles carry too.</param>
+    private static SessionSpeakerConsent Consented(
+        string sessionId, string key, string detectedLabel, DateTimeOffset? revokedAt = null)
+        => new(sessionId, new SpeakerConsentEntry(
+            key,
+            GrantedAt,
+            revokedAt is null ? ConsentState.Granted : ConsentState.Revoked,
+            null,
+            new ConsentEvidence(
+                detectedLabel, null, "I accept this recording by Pia.", "en", 0.95f, GrantedAt, "fake-stt",
+                ConsentNotice.Version, ConsentNotice.Purposes, "de"),
+            detectedLabel,
+            revokedAt));
+
+    private static (string FrontMatter, string Body) SplitFrontMatter(string markdown)
+    {
+        var close = markdown.IndexOf("\n---\n", StringComparison.Ordinal);
+        Assert.True(markdown.StartsWith("---\n", StringComparison.Ordinal) && close > 0, "no front matter");
+        return (markdown[..(close + 1)], markdown[(close + 5)..]);
+    }
+
     private static (DirectTranscriptionViewModel vm, FakeDirectTranscriptionService service) CreateSut()
     {
         var (vm, service, _) = CreateSutWithDialog();
@@ -530,7 +706,9 @@ public class DirectTranscriptionViewModelTests
         IMemoryService memory, IIngestScheduler ingest) CreateSutWithVault(
         IClipboardService? clipboard = null,
         IConsentSoundPlayer? consentSound = null,
-        TargetLanguage uiLanguage = TargetLanguage.EN)
+        TargetLanguage uiLanguage = TargetLanguage.EN,
+        IConsentEvidenceStore? consentStore = null,
+        IFileDialogService? files = null)
     {
         var settingsService = Substitute.For<ISettingsService>();
         settingsService.GetSettingsAsync().Returns(new AppSettings());
@@ -543,7 +721,7 @@ public class DirectTranscriptionViewModelTests
         loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
             .Returns(ci => $"{ci.Arg<string>()} {string.Join(" ", ci.ArgAt<object[]>(1))}");
 
-        var files = Substitute.For<IFileDialogService>();
+        files ??= Substitute.For<IFileDialogService>();
         var dialog = Substitute.For<IDialogService>();
         var memory = Substitute.For<IMemoryService>();
         memory.ResolveCreateSourceAsync(Arg.Any<string>())
@@ -557,7 +735,7 @@ public class DirectTranscriptionViewModelTests
             service, settingsService, loc, files, dialog, memory, ingest,
             Substitute.For<Wpf.Ui.ISnackbarService>(),
             NullLogger<DirectTranscriptionViewModel>.Instance, new InlineUiDispatcher(),
-            clipboard, consentSound);
+            clipboard, consentSound, consentEvidenceStore: consentStore);
 
         return (vm, service, dialog, memory, ingest);
     }
@@ -577,7 +755,9 @@ public class DirectTranscriptionViewModelTests
 
         public DirectTranscriptionState State { get; private set; } = DirectTranscriptionState.Idle;
         public string? SessionId => null;
-        public IReadOnlyList<string> TranscriptSessionIds => [];
+        public IReadOnlyList<string> TranscriptSessionIds { get; set; } = [];
+        public IReadOnlyList<SessionSpeakerConsent> TranscriptConsents { get; set; } = [];
+        public string? TranscriptNoticeLanguage { get; set; }
         public ChannelReader<TranscriptUtterance> Utterances => _channel.Reader;
 
         public event EventHandler<string>? SessionEnded { add { } remove { } }

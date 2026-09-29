@@ -520,6 +520,60 @@ public sealed class DirectTranscriptionServiceTests
     }
 
     [Fact]
+    public async Task AFailedResumeRetry_KeepsTheEarlierSessionsConsent_UnderItsOwnId()
+    {
+        var fx = new Fixture(useRealConsentManager: true);
+        var ct = TestContext.Current.CancellationToken;
+        await fx.Service.StartAsync(ct);
+        var first = fx.Service.SessionId!;
+        fx.RealConsent!.Grant("Speaker 1", "Anna", Evidence("Speaker 1", "Anna"));
+        fx.RealConsent.GetOrCreate("Speaker 2");
+        await fx.Service.StopAsync(ct);
+
+        fx.MicSourceThrowsOnStart = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(ct));
+        fx.MicSourceThrowsOnStart = false;
+        await fx.Service.StartAsync(ct);
+        var second = fx.Service.SessionId!;
+        // The new diarizer's "Speaker 1" is another voice, with a consent of its own.
+        fx.RealConsent.Grant("Speaker 1", null, Evidence("Speaker 1", "Ben"));
+
+        var consents = fx.Service.TranscriptConsents;
+
+        Assert.Equal(
+            [(first, "Speaker 1", ConsentState.Granted), (first, "Speaker 2", ConsentState.Unknown), (second, "Speaker 1", ConsentState.Granted)],
+            consents.Select(c => (c.SessionId, c.Speaker.DetectedLabel, c.Speaker.State)));
+
+        await fx.Service.EndSessionAsync(ct);
+        Assert.Empty(fx.Service.TranscriptConsents);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TheNoticeLanguage_IsTheOneShownAtTheTranscriptsFirstStart()
+    {
+        var fx = new Fixture { UiLanguage = TargetLanguage.DE };
+        var ct = TestContext.Current.CancellationToken;
+        Assert.Null(fx.Service.TranscriptNoticeLanguage);
+
+        await fx.Service.StartAsync(ct);
+        await fx.Service.StopAsync(ct);
+        fx.UiLanguage = TargetLanguage.FR;
+        fx.MicSourceThrowsOnStart = true;
+        await Assert.ThrowsAnyAsync<Exception>(() => fx.Service.StartAsync(ct));
+        fx.MicSourceThrowsOnStart = false;
+        await fx.Service.StartAsync(ct);
+
+        Assert.Equal("de", fx.Service.TranscriptNoticeLanguage);
+
+        await fx.Service.EndSessionAsync(ct);
+        Assert.Null(fx.Service.TranscriptNoticeLanguage);
+
+        await fx.Service.DisposeAsync();
+    }
+
+    [Fact]
     public async Task EndSessionAsync_AnnouncesEveryTranscriptId_BeforeClearingThem()
     {
         var fx = new Fixture();

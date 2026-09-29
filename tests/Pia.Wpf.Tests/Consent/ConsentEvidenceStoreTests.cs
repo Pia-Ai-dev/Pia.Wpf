@@ -32,6 +32,8 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
     {
         dpapi.Encrypt(Arg.Any<string>())
             .Returns(ci => Convert.ToBase64String(Encoding.UTF8.GetBytes(ci.Arg<string>())));
+        dpapi.Decrypt(Arg.Any<string>())
+            .Returns(ci => Encoding.UTF8.GetString(Convert.FromBase64String(ci.Arg<string>())));
     }
 
     private static ConsentSessionMarker Session(string sessionId) => new(
@@ -176,5 +178,99 @@ public sealed class ConsentEvidenceStoreTests : IDisposable
 
         var revocationFile = Path.Combine(sessionDir, "Speaker 1.revoked.json");
         Assert.True(File.Exists(revocationFile), "non-vacuity: a separate revocation file must have been written");
+    }
+
+    [Fact]
+    public async Task AppendCopyAsync_ForASessionNobodyConsentedIn_CreatesNoFolder()
+    {
+        var dpapi = SubstituteDpapi();
+        MakeReversible(dpapi);
+        var sut = new ConsentEvidenceStore(_tmpDir, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+
+        await sut.AppendCopyAsync("session-7", ConsentCopy.Export(@"C:\x.md", DateTimeOffset.UtcNow), TestContext.Current.CancellationToken);
+
+        Assert.False(Directory.Exists(Path.Combine(_tmpDir, "session-7")));
+        Assert.Empty(await sut.ReadCopiesAsync("session-7", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AppendCopyAsync_AppendsOneProtectedLinePerCopy_ThatReadCopiesAsyncReturnsInOrder()
+    {
+        var dpapi = SubstituteDpapi();
+        MakeReversible(dpapi);
+        var sut = new ConsentEvidenceStore(_tmpDir, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+        await sut.SaveGrantAsync(Session("session-8"), MakeEvidence("Speaker 1", "yes, Pia may record"), ct);
+        var at = new DateTimeOffset(2026, 9, 29, 8, 0, 0, TimeSpan.Zero);
+        var chatId = Guid.NewGuid();
+        ConsentCopy[] copies =
+        [
+            ConsentCopy.Export($@"C:\Users\x\{Canary}.md", at),
+            ConsentCopy.Vault("sources/transcripts/meeting-20260929-1000-sync.md", at.AddMinutes(1)),
+            ConsentCopy.SummaryRequested(at.AddMinutes(2)),
+            ConsentCopy.Chat(chatId, at.AddMinutes(3)),
+        ];
+
+        foreach (var copy in copies)
+            await sut.AppendCopyAsync("session-8", copy, ct);
+
+        var raw = await File.ReadAllTextAsync(Path.Combine(_tmpDir, "session-8", ConsentEvidenceStore.CopiesFileName), ct);
+        Assert.DoesNotContain(Canary, raw, StringComparison.Ordinal);
+        Assert.Equal(copies.Length, raw.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.Equal(copies, await sut.ReadCopiesAsync("session-8", ct));
+    }
+
+    [Fact]
+    public async Task AppendCopyAsync_WhenProtectionFails_DoesNotThrow()
+    {
+        var dpapi = SubstituteDpapi();
+        MakeReversible(dpapi);
+        var sut = new ConsentEvidenceStore(_tmpDir, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+        await sut.SaveGrantAsync(Session("session-9"), MakeEvidence("Speaker 1", "yes, Pia may record"), ct);
+        dpapi.Encrypt(Arg.Any<string>()).Returns(string.Empty);
+
+        await sut.AppendCopyAsync("session-9", ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow), ct);
+
+        Assert.Empty(await sut.ReadCopiesAsync("session-9", ct));
+    }
+
+    [Fact]
+    public async Task ReadCopiesAsync_SkipsATornLine_AndKeepsTheOthers()
+    {
+        var dpapi = SubstituteDpapi();
+        MakeReversible(dpapi);
+        var sut = new ConsentEvidenceStore(_tmpDir, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+        await sut.SaveGrantAsync(Session("session-10"), MakeEvidence("Speaker 1", "yes, Pia may record"), ct);
+        var first = ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow);
+        await sut.AppendCopyAsync("session-10", first, ct);
+        await File.AppendAllTextAsync(Path.Combine(_tmpDir, "session-10", ConsentEvidenceStore.CopiesFileName), "eyJTY2hl\n", ct);
+        var last = ConsentCopy.Chat(Guid.NewGuid(), DateTimeOffset.UtcNow);
+        await sut.AppendCopyAsync("session-10", last, ct);
+
+        Assert.Equal([first, last], await sut.ReadCopiesAsync("session-10", ct));
+    }
+
+    [Theory]
+    [InlineData("..")]
+    [InlineData(@"..\escaped")]
+    [InlineData("../escaped")]
+    public async Task CopiesLog_RefusesASessionIdThatLeavesTheRoot(string sessionId)
+    {
+        var dpapi = SubstituteDpapi();
+        MakeReversible(dpapi);
+        var root = Path.Combine(_tmpDir, "root");
+        var sut = new ConsentEvidenceStore(root, dpapi, NullLogger<ConsentEvidenceStore>.Instance);
+        var ct = TestContext.Current.CancellationToken;
+        // A folder that looks like a consented session just outside the root.
+        Directory.CreateDirectory(Path.Combine(_tmpDir, "escaped"));
+        await File.WriteAllTextAsync(Path.Combine(_tmpDir, "escaped", ConsentEvidenceStore.SessionMarkerFileName), "x", ct);
+        await File.WriteAllTextAsync(Path.Combine(_tmpDir, ConsentEvidenceStore.SessionMarkerFileName), "x", ct);
+
+        await sut.AppendCopyAsync(sessionId, ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow), ct);
+
+        Assert.Empty(Directory.GetFiles(_tmpDir, ConsentEvidenceStore.CopiesFileName, SearchOption.AllDirectories));
+        Assert.Empty(await sut.ReadCopiesAsync(sessionId, ct));
     }
 }

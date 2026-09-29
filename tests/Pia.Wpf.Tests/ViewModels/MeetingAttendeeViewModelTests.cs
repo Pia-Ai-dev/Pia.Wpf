@@ -900,6 +900,7 @@ public class MeetingAttendeeViewModelTests
         Assert.Contains("source: teams", markdown, StringComparison.Ordinal);
         Assert.Contains("attendees: [Marco Altmann, Jane Doe]", markdown, StringComparison.Ordinal);
         Assert.Contains("agenda item one", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("consentRecord", markdown, StringComparison.Ordinal);
 
         await ingest.Received(1).RunAsync(reference, Arg.Any<CancellationToken>());
     }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Pia.Services.LiveTranscription;
 using Pia.Services.Wiki;
 
@@ -19,6 +20,10 @@ public static class ConsentFrontMatter
     private const string NoticeLanguageKey = "consentNoticeLanguage";
     private const string ConsentsKey = "consents";
     private const string HostAcknowledgedKey = "hostAcknowledgedAt";
+
+    private const string SessionField = "session";
+    private const string LabelField = "label";
+    private const string ShownAsField = "shownAs";
 
     private const string Delimiter = "---";
 
@@ -49,12 +54,7 @@ public static class ConsentFrontMatter
         {
             lines.Add($"{ConsentsKey}:");
             foreach (var consent in record.Consents)
-            {
-                var map = $"label: {YamlText.Scalar(consent.Label)}, grantedAt: {Timestamp(consent.GrantedAt)}";
-                if (consent.RevokedAt is { } revokedAt)
-                    map += $", revokedAt: {Timestamp(revokedAt)}";
-                lines.Add($"  - {{{map}}}");
-            }
+                lines.Add($"  - {{{ConsentMap(consent, record.SpansSessions)}}}");
         }
 
         return lines;
@@ -62,12 +62,13 @@ public static class ConsentFrontMatter
 
     /// <summary>
     /// Swaps the note's consent block for <paramref name="record"/>'s, leaving every other line as it was. A
-    /// block the user deleted is added back before the closing delimiter; a note without front matter gets one.
+    /// speaker the note already lists keeps the note's <c>shownAs</c>, because that describes the note's own body.
+    /// A block the user deleted is added back before the closing delimiter; a note without front matter gets one.
     /// </summary>
     public static string ReplaceConsents(string noteText, ConsentRecord record)
     {
         ArgumentNullException.ThrowIfNull(noteText);
-        var rendered = Render(record);
+        ArgumentNullException.ThrowIfNull(record);
 
         var bom = noteText.StartsWith('﻿') ? "﻿" : string.Empty;
         var text = noteText[bom.Length..];
@@ -75,6 +76,7 @@ public static class ConsentFrontMatter
         var lines = text.Split('\n');
 
         var close = FindClosingDelimiter(lines);
+        var rendered = Render(close < 0 ? record : KeepShownAs(record, ReadConsents(lines, close)));
         if (close < 0)
         {
             if (rendered.Count == 0) return noteText;
@@ -135,6 +137,98 @@ public static class ConsentFrontMatter
         }
 
         return [];
+    }
+
+    private static string ConsentMap(ConsentRecordEntry consent, bool withSession)
+    {
+        var map = new StringBuilder();
+        if (withSession && consent.Session is { } session)
+            map.Append(SessionField).Append(": ").Append(YamlText.Scalar(session)).Append(", ");
+        map.Append(LabelField).Append(": ").Append(YamlText.Scalar(consent.Label));
+        if (consent.ShownAs is { } shownAs)
+            map.Append(", ").Append(ShownAsField).Append(": ").Append(YamlText.Scalar(shownAs));
+        map.Append(", grantedAt: ").Append(Timestamp(consent.GrantedAt));
+        if (consent.RevokedAt is { } revokedAt)
+            map.Append(", revokedAt: ").Append(Timestamp(revokedAt));
+        return map.ToString();
+    }
+
+    private static ConsentRecord KeepShownAs(ConsentRecord record, IReadOnlyList<IReadOnlyDictionary<string, string>> listed)
+    {
+        if (listed.Count == 0) return record;
+
+        var consents = record.Consents
+            .Select(consent =>
+            {
+                var match = listed.FirstOrDefault(entry =>
+                    entry.TryGetValue(LabelField, out var label) && label == consent.Label
+                    && (!entry.TryGetValue(SessionField, out var session) || consent.Session is null || session == consent.Session));
+                return match is null ? consent : consent with { ShownAs = match.GetValueOrDefault(ShownAsField) };
+            })
+            .ToList();
+        return record with { Consents = consents };
+    }
+
+    private static List<IReadOnlyDictionary<string, string>> ReadConsents(string[] lines, int close)
+    {
+        var entries = new List<IReadOnlyDictionary<string, string>>();
+        for (var i = 1; i < close; i++)
+        {
+            if (!IsKeyLine(lines[i], ConsentsKey)) continue;
+
+            for (var j = i + 1; j < close && IsContinuation(lines[j]); j++)
+            {
+                if (ParseFlowMap(lines[j]) is { } entry) entries.Add(entry);
+            }
+            break;
+        }
+        return entries;
+    }
+
+    private static Dictionary<string, string>? ParseFlowMap(string line)
+    {
+        var content = line.TrimEnd('\r').Trim();
+        if (content.StartsWith('-')) content = content[1..].Trim();
+        if (content.Length < 2 || content[0] != '{' || content[^1] != '}') return null;
+
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in SplitOutsideQuotes(content[1..^1]))
+        {
+            var colon = pair.IndexOf(':');
+            if (colon <= 0) continue;
+            map[pair[..colon].Trim()] = Unquote(pair[(colon + 1)..].Trim());
+        }
+        return map;
+    }
+
+    private static IEnumerable<string> SplitOutsideQuotes(string text)
+    {
+        var start = 0;
+        char? quote = null;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (quote is null)
+            {
+                if (c is '\'' or '"') quote = c;
+                else if (c == ',')
+                {
+                    yield return text[start..i];
+                    start = i + 1;
+                }
+            }
+            else if (c == quote)
+            {
+                // '' inside a single-quoted scalar is an escaped quote, not its end.
+                if (c == '\'' && i + 1 < text.Length && text[i + 1] == '\'') i++;
+                else quote = null;
+            }
+            else if (c == '\\' && quote == '"')
+            {
+                i++;
+            }
+        }
+        yield return text[start..];
     }
 
     private static string FlowList(IEnumerable<string> values)

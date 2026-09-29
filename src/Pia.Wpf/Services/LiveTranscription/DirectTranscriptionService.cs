@@ -78,6 +78,8 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     // ---- Session-scoped (survive a Stop/Start pause, cleared only by EndSessionAsync) --------------
     private string _sessionId = string.Empty;
     private readonly List<string> _transcriptSessionIds = new();
+    private readonly List<SessionSpeakerConsent> _earlierSessionConsents = new();
+    private string? _transcriptNoticeLanguage;
     private ConsentSessionMarker? _sessionMarker;
     private string _sttModelId = string.Empty;
     private volatile bool _nameSpeakers = true;
@@ -109,6 +111,25 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
     public IReadOnlyList<string> TranscriptSessionIds
     {
         get { lock (_stateLock) return _transcriptSessionIds.ToArray(); }
+    }
+
+    public IReadOnlyList<SessionSpeakerConsent> TranscriptConsents
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                var consents = new List<SessionSpeakerConsent>(_earlierSessionConsents);
+                if (_sessionId.Length > 0)
+                    consents.AddRange(_consentStateManager.Snapshot().Select(s => new SessionSpeakerConsent(_sessionId, s)));
+                return consents;
+            }
+        }
+    }
+
+    public string? TranscriptNoticeLanguage
+    {
+        get { lock (_stateLock) return _transcriptNoticeLanguage; }
     }
 
     public ChannelReader<TranscriptUtterance> Utterances => _publicChannel.Reader;
@@ -308,6 +329,12 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
                 var sessionId = Guid.NewGuid().ToString("N");
                 lock (_stateLock)
                 {
+                    // A retry keeps the transcript, so the consent it rests on has to outlive the reset below.
+                    if (_sessionId.Length > 0)
+                    {
+                        _earlierSessionConsents.AddRange(_consentStateManager.Snapshot()
+                            .Select(s => new SessionSpeakerConsent(_sessionId, s)));
+                    }
                     _sessionId = sessionId;
                     _transcriptSessionIds.Add(sessionId);
                 }
@@ -396,15 +423,20 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
             _nameSpeakers = settings.MeetingSpeakerNaming;
 
-            // Taken at the first start of the session, when the user has just accepted the notice; a resume
-            // after a language switch must not rewrite what they were shown.
+            // Taken at the transcript's first start, when the user has just accepted the notice; a resume or a
+            // retry after a language switch must not rewrite what they were shown.
+            string noticeLanguage;
+            lock (_stateLock)
+            {
+                noticeLanguage = _transcriptNoticeLanguage ??= ConsentNotice.LanguageOf(_uiLanguage());
+            }
             _sessionMarker ??= new ConsentSessionMarker(
                 _sessionId,
                 DateTimeOffset.UtcNow,
                 ConsentSessionMarker.DirectKind,
                 ConsentNotice.Version,
                 ConsentNotice.Purposes,
-                ConsentNotice.LanguageOf(_uiLanguage()));
+                noticeLanguage);
             var context = new ConsentSessionContext(
                 _sessionMarker, _sttModelId, settings.TargetSpeechLanguage, settings.MeetingSpeakerNaming);
 
@@ -572,6 +604,8 @@ public sealed class DirectTranscriptionService : IDirectTranscriptionService
             {
                 _sessionId = string.Empty;
                 _transcriptSessionIds.Clear();
+                _earlierSessionConsents.Clear();
+                _transcriptNoticeLanguage = null;
             }
             _sessionMarker = null;
             _sttModelId = string.Empty;
