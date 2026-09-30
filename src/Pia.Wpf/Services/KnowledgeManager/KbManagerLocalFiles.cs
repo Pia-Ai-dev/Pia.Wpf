@@ -12,6 +12,7 @@ public static class KbManagerLocalFiles
 {
     private const int MaxFileNameChars = 120;
     private const int MaxNumberedCopies = 999;
+    private const char ByteOrderMark = '\xFEFF';
     private const string IgnoredError =
         "That path is excluded by the folder's ignore rules (.piaignore, .gitignore or the defaults).";
 
@@ -67,7 +68,7 @@ public static class KbManagerLocalFiles
             return false;
         }
 
-        if (text.Length > 0 && text[0] == '﻿') text = text[1..];
+        if (text.Length > 0 && text[0] == ByteOrderMark) text = text[1..];
         if (string.IsNullOrWhiteSpace(text))
         {
             error = "That file is empty.";
@@ -114,6 +115,12 @@ public static class KbManagerLocalFiles
                 baseName = Path.GetFileNameWithoutExtension(full);
                 extension = Path.GetExtension(full);
             }
+        }
+
+        if (SensitivePathGuard.IsBlocked(directory, out var blockedReason))
+        {
+            error = BlockedError(blockedReason);
+            return false;
         }
 
         var canonicalRoot = SafeFolderPath.Canonicalize(root);
@@ -221,7 +228,7 @@ public static class KbManagerLocalFiles
 
         if (SensitivePathGuard.IsBlocked(full, out var reason))
         {
-            error = $"Refusing to use that path — {reason}.";
+            error = BlockedError(reason);
             return false;
         }
 
@@ -235,6 +242,8 @@ public static class KbManagerLocalFiles
         error = string.Empty;
         return true;
     }
+
+    private static string BlockedError(string reason) => $"Refusing to use that path — {reason}.";
 
     // The matcher applies a directory rule only to a directory path, so every ancestor is asked on its own.
     private static bool IsIgnored(string root, string relative, bool isDirectory)
