@@ -194,8 +194,9 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
 
     [Theory]
     [InlineData("Pending", "Queued for indexing.")]
+    [InlineData("Processing", "Queued for indexing.")]
     [InlineData("Ready", "already held a document with identical content")]
-    [InlineData("Processing", "already held a document with identical content")]
+    [InlineData("Failed", "already held a document with identical content")]
     public async Task Upload_Execute_OnlyClaimsQueuedWhenANewDocumentWasCreated(string status, string expectedNote)
     {
         KnowledgeBases(Handbook());

@@ -297,7 +297,9 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
             {
                 var result = await _api.UploadAsync(kbId, request, CancellationToken.None);
                 if (!result.IsOk) return Refusal(result);
-                var created = string.Equals(result.Value!.Status, "Pending", StringComparison.OrdinalIgnoreCase);
+                var created = result.Value!.Status is { } status
+                    && (status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+                        || status.Equals("Processing", StringComparison.OrdinalIgnoreCase));
                 return new { document_id = result.Value.DocumentId, status = result.Value.Status, note = created ? UploadQueued : UploadReused };
             }));
     }
