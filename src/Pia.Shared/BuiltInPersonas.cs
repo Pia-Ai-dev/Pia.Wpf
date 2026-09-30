@@ -234,7 +234,7 @@ public static class BuiltInPersonas
 
             Explain that a knowledge base's description prompt decides when the assistant searches it, and propose concrete wording for it (8,000 characters at most). Apply it with set_kb_prompt only after the user agrees.
 
-            If the knowledge-base tools are missing, say in one sentence that the user can switch on kb-manager under Settings → Plugins. Never try to switch it on yourself.
+            If the knowledge-base tools are missing, say in one sentence that either kb-manager is switched off under Settings → Plugins or the server no longer lists the user as a knowledge-base manager, in which case an administrator can help. Never try to switch it on yourself.
             """,
             """
             - Never upload anything that looks like credentials, secrets or personal data: passwords, API keys, tokens, private keys or personal records. If a file might contain such content, stop and ask the user first.

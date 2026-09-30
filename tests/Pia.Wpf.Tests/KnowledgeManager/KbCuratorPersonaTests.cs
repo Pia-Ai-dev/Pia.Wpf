@@ -228,9 +228,18 @@ public sealed partial class KbCuratorPersonaTests : IDisposable
         Assert.Contains("numbered plan", prompt, StringComparison.Ordinal);
         Assert.Contains("Failed", prompt, StringComparison.Ordinal);
         Assert.Contains("8,000", prompt, StringComparison.Ordinal);
-        Assert.Contains("kb-manager", prompt, StringComparison.Ordinal);
-        Assert.Contains("Settings → Plugins", prompt, StringComparison.Ordinal);
         Assert.Contains("language", prompt, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void WhenTheToolsAreMissing_ThePromptNamesBothCauses_AndNeverSwitchesThePackOnItself()
+    {
+        var prompt = Curator().SystemPrompt;
+
+        Assert.Contains("switched off under Settings → Plugins", prompt, StringComparison.Ordinal);
+        Assert.Contains("no longer lists the user as a knowledge-base manager", prompt, StringComparison.Ordinal);
+        Assert.Contains("administrator", prompt, StringComparison.Ordinal);
+        Assert.Contains("Never try to switch it on yourself", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
