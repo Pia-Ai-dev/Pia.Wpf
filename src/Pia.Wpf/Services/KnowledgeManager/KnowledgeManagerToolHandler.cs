@@ -30,6 +30,10 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
     private const string NoFilesFolder =
         "No assistant files folder is configured. Ask the user to set one under Settings → Assistant.";
 
+    private const string FileToolsOff =
+        "File access is switched off for the assistant, so no file was read or written. "
+        + "The user can switch it on under Settings → Assistant.";
+
     private const string NoKnowledgeBases = "Your group has no knowledge bases you can manage.";
     private const string BadKbId = "kb_id must be an id from list_knowledge_bases.";
     private const string BadDocumentId = "document_id must be an id from list_kb_documents.";
@@ -234,8 +238,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         if (!TryGetGuid(args, "kb_id", out var kbId)) return BadKbId;
         if (!TryGetGuid(args, "document_id", out var documentId)) return BadDocumentId;
 
-        var root = _files.ResolveToolRoot();
-        if (root is null) return NoFilesFolder;
+        if (!TryGetFilesRoot(out var root, out var filesRefusal)) return filesRefusal;
 
         var document = await FindDocumentAsync(kbId, documentId, ct);
         if (document.Refusal is { } refusal) return refusal;
@@ -259,8 +262,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         var path = GetString(args, "path");
         if (string.IsNullOrWhiteSpace(path)) return (PathRequired, null);
 
-        var root = _files.ResolveToolRoot();
-        if (root is null) return (NoFilesFolder, null);
+        if (!TryGetFilesRoot(out var root, out var filesRefusal)) return (filesRefusal, null);
         if (!KbManagerLocalFiles.TryRead(root, path, out var file, out var readError))
             return (readError, null);
 
@@ -301,8 +303,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         long size;
         if (path is not null)
         {
-            var root = _files.ResolveToolRoot();
-            if (root is null) return (NoFilesFolder, null);
+            if (!TryGetFilesRoot(out var root, out var filesRefusal)) return (filesRefusal, null);
             if (!KbManagerLocalFiles.TryRead(root, path, out var file, out var readError)) return (readError, null);
 
             text = file.Content;
@@ -385,6 +386,26 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
                 var result = await _api.DeleteAsync(kbId, documentId, CancellationToken.None);
                 return result.IsOk ? Deleted : Refusal(result, documentScoped: true);
             }));
+    }
+
+    private bool TryGetFilesRoot(out string root, out string refusal)
+    {
+        root = string.Empty;
+        refusal = string.Empty;
+        if (!_files.IsAvailable)
+        {
+            refusal = FileToolsOff;
+            return false;
+        }
+
+        if (_files.ResolveToolRoot() is not { } resolved)
+        {
+            refusal = NoFilesFolder;
+            return false;
+        }
+
+        root = resolved;
+        return true;
     }
 
     private string Details(string kbName, string title, long sizeBytes) =>

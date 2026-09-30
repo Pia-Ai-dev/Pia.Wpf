@@ -27,6 +27,7 @@ public class KnowledgeManagerToolHandlerTestBase : IDisposable
     {
         Directory.CreateDirectory(Root);
         Surface.IsAvailable.Returns(true);
+        Files.IsAvailable.Returns(true);
         Files.ResolveToolRoot().Returns(Root);
         Localization[Arg.Any<string>()].Returns(ci => ci.Arg<string>());
         Localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
