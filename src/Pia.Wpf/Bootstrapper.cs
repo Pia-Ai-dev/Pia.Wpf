@@ -962,6 +962,9 @@ public static class Bootstrapper
         // awaited HTTP probe would block launch.
         services.AddSingleton<Services.Operators.IAssignmentSurfaceCache, Services.Operators.AssignmentSurfaceCache>();
         services.AddSingleton<IAssignmentToolHandler, AssignmentToolHandler>();
+        services.AddSingleton<Services.KnowledgeManager.IKnowledgeManagerApiClient, Services.KnowledgeManager.KnowledgeManagerApiClient>();
+        services.AddSingleton<Services.KnowledgeManager.IKnowledgeManagerSurfaceCache, Services.KnowledgeManager.KnowledgeManagerSurfaceCache>();
+        services.AddSingleton<IKnowledgeManagerToolHandler, Services.KnowledgeManager.KnowledgeManagerToolHandler>();
         // The concrete type is registered too, so the notification surface can subscribe to the SAME
         // instance's Completed event that the drain worker drives.
         services.AddSingleton<Services.Operators.AssignmentRunOrchestrator>();

@@ -9,6 +9,7 @@ using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Shared.Models;
 
@@ -29,7 +30,9 @@ public class PluginService : IPluginService
     private readonly IAssignmentToolHandler _assignmentToolHandler;
     private readonly IScreenCaptureToolHandler _screenCaptureToolHandler;
     private readonly IHelpToolHandler _helpToolHandler;
+    private readonly IKnowledgeManagerToolHandler _kbManagerToolHandler;
     private readonly IAssignmentSurfaceCache _assignmentSurfaceCache;
+    private readonly IKnowledgeManagerSurfaceCache _kbManagerSurfaceCache;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
@@ -68,7 +71,9 @@ public class PluginService : IPluginService
         IAssignmentToolHandler assignmentToolHandler,
         IScreenCaptureToolHandler screenCaptureToolHandler,
         IHelpToolHandler helpToolHandler,
+        IKnowledgeManagerToolHandler kbManagerToolHandler,
         IAssignmentSurfaceCache assignmentSurfaceCache,
+        IKnowledgeManagerSurfaceCache kbManagerSurfaceCache,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
@@ -86,7 +91,9 @@ public class PluginService : IPluginService
         _assignmentToolHandler = assignmentToolHandler;
         _screenCaptureToolHandler = screenCaptureToolHandler;
         _helpToolHandler = helpToolHandler;
+        _kbManagerToolHandler = kbManagerToolHandler;
         _assignmentSurfaceCache = assignmentSurfaceCache;
+        _kbManagerSurfaceCache = kbManagerSurfaceCache;
         _settingsService = settingsService;
         _logger = logger;
         _sqliteContext = sqliteContext;
@@ -107,6 +114,13 @@ public class PluginService : IPluginService
         // The assignment pack's availability is a server probe, not a setting, so it flips outside every
         // other rebuild trigger. Without this the first probe that turns it on offers tools with no route.
         _assignmentSurfaceCache.Changed += (_, _) => RebuildToolNameRoutes();
+
+        // Same reason, plus the Plugins settings row appears and disappears with the surface.
+        _kbManagerSurfaceCache.Changed += (_, _) =>
+        {
+            RebuildToolNameRoutes();
+            PluginsChanged?.Invoke(this, EventArgs.Empty);
+        };
     }
 
     private void InitializeBuiltInPlugins()
@@ -131,6 +145,7 @@ public class PluginService : IPluginService
                 "assignments" => BuiltInPluginHandler.FromAssignmentHandler(_assignmentToolHandler, config),
                 "screen" => BuiltInPluginHandler.FromScreenCaptureHandler(_screenCaptureToolHandler, config),
                 "help" => BuiltInPluginHandler.FromHelpHandler(_helpToolHandler, config),
+                "kb-manager" => BuiltInPluginHandler.FromKnowledgeManagerHandler(_kbManagerToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 
@@ -432,6 +447,10 @@ public class PluginService : IPluginService
     {
         return _pluginConfigs.Values.ToList();
     }
+
+    public IReadOnlyList<SyncPlugin> GetVisiblePluginConfigs() =>
+        [.. _pluginConfigs.Values.Where(p =>
+            p.Id != BuiltInPluginDefaults.KbManagerPluginId || _kbManagerSurfaceCache.IsAvailable)];
 
     public IReadOnlyList<SyncPlugin> GetLocalMcpPlugins() =>
         [.. _pluginConfigs.Values.Where(p => LocalMcpConfig.IsLocal(p.ConfigJson)).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)];

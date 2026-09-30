@@ -49,6 +49,10 @@ public interface IPluginService
     List<SyncPluginPreference> GetPendingPreferenceChanges();
     void ClearPreferenceChangesAfterSuccessfulPush();
     IReadOnlyList<SyncPlugin> GetAllPluginConfigs();
+
+    /// <summary>What the Plugins settings page lists: every config except a server-gated pack whose surface is hidden.</summary>
+    IReadOnlyList<SyncPlugin> GetVisiblePluginConfigs();
+
     Task ShutdownAllAsync();
 
     /// <summary>MCP servers the user added on this machine, as opposed to the ones an admin pushes down
