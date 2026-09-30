@@ -223,4 +223,69 @@ public sealed class KbManagerLocalFilesTests : IDisposable
     {
         Assert.False(KbManagerLocalFiles.TrySaveNew(_root, "copy.exe", "Plan", KbManagerLimits.Markdown, "x", out _, out _));
     }
+
+    // Windows 10 still maps a device name to the device when an extension follows it.
+    [Theory]
+    [InlineData("NUL.report", "_NUL.report")]
+    [InlineData("Aux. rules", "_Aux. rules")]
+    [InlineData("con .notes", "_con .notes")]
+    [InlineData("COM¹", "_COM¹")]
+    [InlineData("LPT³.draft", "_LPT³.draft")]
+    [InlineData("CONIN$", "_CONIN$")]
+    [InlineData("conout$.log", "_conout$.log")]
+    [InlineData("Console", "Console")]
+    [InlineData("COM10", "COM10")]
+    public void SafeFileName_ADeviceNameBeforeAnyDot_IsEscaped(string title, string expected)
+    {
+        Assert.Equal(expected, KbManagerLocalFiles.SafeFileName(title));
+    }
+
+    [Fact]
+    public void SafeFileName_TheLengthCap_NeverLeavesHalfASurrogatePair()
+    {
+        var name = KbManagerLocalFiles.SafeFileName("a" + string.Concat(Enumerable.Repeat("😀", 150)));
+
+        Assert.False(char.IsHighSurrogate(name[^1]));
+        Assert.True(name.Length <= 120);
+    }
+
+    [Fact]
+    public void TrySaveNew_AFolderHoldsTheName_WritesANumberedCopy()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "Plan.md"));
+
+        Assert.True(KbManagerLocalFiles.TrySaveNew(_root, null, "Plan", KbManagerLimits.Markdown, "x", out var saved, out _));
+
+        Assert.Equal("Plan (1).md", saved);
+    }
+
+    [Theory]
+    [InlineData("bin/")]
+    [InlineData("bin/copy.md")]
+    [InlineData(".git/copy.md")]
+    public void TrySaveNew_IntoAnIgnoredFolder_IsRefused(string path)
+    {
+        Assert.False(KbManagerLocalFiles.TrySaveNew(_root, path, "Plan", KbManagerLimits.Markdown, "x", out _, out _));
+        Assert.False(Directory.Exists(Path.Combine(_root, "bin")) && Directory.EnumerateFiles(Path.Combine(_root, "bin")).Any());
+    }
+
+    [Fact]
+    public void TrySaveNew_AJunctionOutOfTheRoot_IsRefusedAndWritesNothingOutside()
+    {
+        var outside = Path.Combine(_parent, "outside");
+        Directory.CreateDirectory(outside);
+        var link = Path.Combine(_root, "exports");
+        var psi = new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{outside}\"")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+        };
+        using (var proc = System.Diagnostics.Process.Start(psi)!) proc.WaitForExit();
+        Assert.True(Directory.Exists(link), "mklink /J failed");
+
+        Assert.False(KbManagerLocalFiles.TrySaveNew(_root, "exports", "Plan", KbManagerLimits.Markdown, "x", out _, out _));
+        Assert.False(KbManagerLocalFiles.TryRead(_root, "exports/Plan.md", out _, out _));
+        Assert.Empty(Directory.EnumerateFileSystemEntries(outside));
+    }
 }

@@ -12,14 +12,16 @@ public static class KbManagerLocalFiles
 {
     private const int MaxFileNameChars = 120;
     private const int MaxNumberedCopies = 999;
+    private const string IgnoredError =
+        "That path is excluded by the folder's ignore rules (.piaignore, .gitignore or the defaults).";
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        "CON", "PRN", "AUX", "NUL",
-        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+        "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM¹", "COM²", "COM³",
+        "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³",
     };
 
     public static string? ContentTypeFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch
@@ -114,24 +116,64 @@ public static class KbManagerLocalFiles
             }
         }
 
-        Directory.CreateDirectory(directory);
         var canonicalRoot = SafeFolderPath.Canonicalize(root);
+        var directoryRelative = Path.GetRelativePath(canonicalRoot, directory).Replace('\\', '/');
+        if (directoryRelative != "." && IsIgnored(root, directoryRelative, isDirectory: true))
+        {
+            error = IgnoredError;
+            return false;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error = "That folder cannot be created; pass another path.";
+            return false;
+        }
+
         for (var copy = 0; copy <= MaxNumberedCopies; copy++)
         {
             var name = copy == 0 ? baseName + extension : $"{baseName} ({copy}){extension}";
             var candidate = Path.Combine(directory, name);
+            var candidateRelative = Path.GetRelativePath(canonicalRoot, candidate).Replace('\\', '/');
+            if (IsIgnored(root, candidateRelative, isDirectory: false))
+            {
+                error = IgnoredError;
+                return false;
+            }
+
+            FileStream stream;
             try
             {
-                using var stream = new FileStream(candidate, FileMode.CreateNew, FileAccess.Write);
-                using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-                writer.Write(content);
+                stream = new FileStream(candidate, FileMode.CreateNew, FileAccess.Write);
             }
-            catch (IOException) when (File.Exists(candidate))
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && Path.Exists(candidate))
             {
                 continue;
             }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                error = "That file cannot be written there; pass another path.";
+                return false;
+            }
 
-            relativePath = Path.GetRelativePath(canonicalRoot, candidate).Replace('\\', '/');
+            try
+            {
+                using (stream)
+                using (var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)))
+                    writer.Write(content);
+            }
+            catch (IOException)
+            {
+                File.Delete(candidate);
+                error = "Writing the file failed; nothing was saved.";
+                return false;
+            }
+
+            relativePath = candidateRelative;
             error = string.Empty;
             return true;
         }
@@ -152,10 +194,17 @@ public static class KbManagerLocalFiles
             cleaned = cleaned[..^known.Length];
 
         cleaned = cleaned.Trim().TrimEnd('.', ' ');
-        if (cleaned.Length > MaxFileNameChars) cleaned = cleaned[..MaxFileNameChars].TrimEnd('.', ' ');
+        if (cleaned.Length > MaxFileNameChars)
+        {
+            var cut = char.IsHighSurrogate(cleaned[MaxFileNameChars - 1]) ? MaxFileNameChars - 1 : MaxFileNameChars;
+            cleaned = cleaned[..cut].TrimEnd('.', ' ');
+        }
+
         if (cleaned.Length == 0) return "document";
 
-        return ReservedNames.Contains(cleaned) ? "_" + cleaned : cleaned;
+        // Windows 10 opens the device for "NUL.report.md" too, so the part before the first dot decides.
+        var stem = cleaned.Split('.')[0].TrimEnd(' ');
+        return ReservedNames.Contains(stem) ? "_" + cleaned : cleaned;
     }
 
     private static bool TryResolve(
@@ -177,9 +226,9 @@ public static class KbManagerLocalFiles
         }
 
         relative = Path.GetRelativePath(SafeFolderPath.Canonicalize(root), full).Replace('\\', '/');
-        if (IsIgnored(root, relative))
+        if (IsIgnored(root, relative, isDirectory: false))
         {
-            error = "That path is excluded by the folder's ignore rules (.piaignore, .gitignore or the defaults).";
+            error = IgnoredError;
             return false;
         }
 
@@ -188,7 +237,7 @@ public static class KbManagerLocalFiles
     }
 
     // The matcher applies a directory rule only to a directory path, so every ancestor is asked on its own.
-    private static bool IsIgnored(string root, string relative)
+    private static bool IsIgnored(string root, string relative, bool isDirectory)
     {
         var matcher = SandboxIgnore.ForRoot(root);
         var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -197,6 +246,6 @@ public static class KbManagerLocalFiles
             if (matcher.IsIgnored(string.Join('/', parts[..i]), isDirectory: true)) return true;
         }
 
-        return parts.Length > 0 && matcher.IsIgnored(relative, isDirectory: false);
+        return parts.Length > 0 && matcher.IsIgnored(relative, isDirectory);
     }
 }
