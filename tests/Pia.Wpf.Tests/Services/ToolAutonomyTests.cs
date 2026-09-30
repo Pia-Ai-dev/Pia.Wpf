@@ -890,4 +890,35 @@ public class ToolAutonomyTests
             ToolGateSurface.Unattended, "write_file", ToolClass.Files,
             policy: new RunAutonomyPolicy([ToolClass.Files]), scratchTarget: true)).Decision);
     }
+
+    /// <summary>A write lands in a knowledge base other people search; no class switch may authorize that.</summary>
+    [Theory]
+    [InlineData(ToolGateSurface.Interactive, ToolGateOutcome.Prompt)]
+    [InlineData(ToolGateSurface.Unattended, ToolGateOutcome.Park)]
+    public void APolicyNamingKnowledgeBase_DoesNotAutoRunAWrite(ToolGateSurface surface, ToolGateOutcome expected)
+    {
+        foreach (var policy in new[] { new RunAutonomyPolicy([ToolClass.KnowledgeBase]), EveryClassPolicy })
+        {
+            var verdict = ToolAutonomy.Resolve(Input(
+                surface, "upload_kb_document", ToolClass.KnowledgeBase, policy,
+                canPark: surface == ToolGateSurface.Unattended));
+
+            Assert.Equal(expected, verdict.Outcome);
+        }
+    }
+
+    [Fact]
+    public void AStandingGrant_StillRunsAKnowledgeBaseWrite()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "upload_kb_document", ToolClass.KnowledgeBase, standingGrant: true));
+
+        Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, verdict.Decision);
+    }
+
+    [Fact]
+    public void TheSettingsPreset_DoesNotCoverKnowledgeBase()
+    {
+        Assert.DoesNotContain(ToolClass.KnowledgeBase, RunAutonomyPolicy.PresetClasses);
+    }
 }

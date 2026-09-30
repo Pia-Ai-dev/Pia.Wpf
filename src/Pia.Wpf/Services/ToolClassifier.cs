@@ -44,6 +44,7 @@ public static class ToolClassifier
         "ingest" => ToolClass.Ingest,
         "assignments" => ToolClass.Assignment,
         "screen" => ToolClass.Screen,
+        "kb-manager" => ToolClass.KnowledgeBase,
         _ => ToolClass.Unknown,
     };
 }

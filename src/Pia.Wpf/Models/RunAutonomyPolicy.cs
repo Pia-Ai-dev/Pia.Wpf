@@ -14,7 +14,8 @@ public sealed record RunAutonomyPolicy(IReadOnlyCollection<ToolClass> AutoApprov
     /// work while not being delete-like by name, so the never-covers-a-delete rule would not stop it;
     /// <c>External</c> because a class grant would make an MCP server's NEXT tool auto-approved retroactively;
     /// <c>Ingest</c> because it is never gated (it returns no pending action); <c>Screen</c> because no class
-    /// switch may authorize reading the user's screen.
+    /// switch may authorize reading the user's screen; <c>KnowledgeBase</c> because a write changes what
+    /// everyone in the group finds.
     /// </summary>
     public static readonly IReadOnlyList<ToolClass> PresetClasses =
     [

@@ -35,7 +35,10 @@ public enum ActionCardCategory
     Assignment,
 
     /// <summary>The built-in screen tools (plugin <c>screen</c>).</summary>
-    Screen
+    Screen,
+
+    /// <summary>The built-in knowledge-base manager tools (plugin <c>kb-manager</c>).</summary>
+    KnowledgeBase
 }
 
 public record ActionCardDetail(string Label, string Value);
@@ -92,6 +95,7 @@ public partial class ActionCardInfo : ObservableObject
 
     public bool IsDestructive { get; init; }
     public string? WarningText { get; init; }
+    public bool HasWarning => !string.IsNullOrEmpty(WarningText);
 
     public ObservableCollection<ActionCardDetail> Details { get; init; } = [];
     public ObservableCollection<ActionCardDetail> OldValueDetails { get; init; } = [];

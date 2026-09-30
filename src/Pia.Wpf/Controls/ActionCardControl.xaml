@@ -127,7 +127,7 @@
               </Style>
             </StackPanel.Style>
 
-            <!-- Warning text for destructive operations -->
+            <!-- Warning text -->
             <TextBlock Text="{Binding WarningText}"
                        FontSize="12"
                        Foreground="#C42B1C"
@@ -137,7 +137,7 @@
                 <Style TargetType="TextBlock">
                   <Setter Property="Visibility" Value="Collapsed" />
                   <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsDestructive}" Value="True">
+                    <DataTrigger Binding="{Binding HasWarning}" Value="True">
                       <Setter Property="Visibility" Value="Visible" />
                     </DataTrigger>
                   </Style.Triggers>
