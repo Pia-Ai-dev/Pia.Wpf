@@ -395,6 +395,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             // pending device.
             if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
             {
+                await _deviceMgmt.EnsureRecoveryProofKeyAsync();
+
                 var got200Pull = pullOk && serverTimestamp.HasValue;
                 var (shouldCheckDevices, nextDeviceCheckCounter) = AdvanceDeviceCheck(_deviceCheckCounter, got200Pull);
                 _deviceCheckCounter = nextDeviceCheckCounter;
@@ -1902,6 +1904,15 @@ public class SyncClientService : ISyncClientService, IDisposable
                         currentDeviceId,
                         currentDevice is null ? "not found" : "revoked");
                     CurrentDeviceRevoked?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                // Re-registered under this id with other keys: approving "it" would hand the key to those keys.
+                if (currentDevice.Status == DeviceStatus.Pending)
+                {
+                    _logger.LogWarning(
+                        "Current device {DeviceId} is pending on the server; onboarding required", currentDeviceId);
+                    NotifyE2EEOnboardingRequired();
                     return;
                 }
             }

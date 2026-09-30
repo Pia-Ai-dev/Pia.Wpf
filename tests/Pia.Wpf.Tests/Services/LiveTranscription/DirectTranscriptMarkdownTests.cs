@@ -159,6 +159,30 @@ public class DirectTranscriptMarkdownTests
         Assert.True(numericLineCount >= 6, "non-vacuity: expected 3 numeric lines per stat entry");
     }
 
+    [Theory]
+    [InlineData(false, "Speaker 1")]
+    [InlineData(true, "Alex")]
+    public void ShownAs_IsTheHeadingRenderBodyPrintsForThatSpeaker(bool suppressed, string expected)
+    {
+        // A suppressed label leaves the bubble without a display label, so the body falls back to the counterpart.
+        var bubble = new TranscriptBubble(
+            TranscriptSpeaker.Them, SessionStart, "hello", "Speaker 17", displayLabel: suppressed ? null : "Speaker 1");
+        var bubbles = new[] { MakeBubble(TranscriptSpeaker.You, "hi", null, SessionStart, SessionStart), bubble };
+
+        var shownAs = DirectTranscriptMarkdown.ShownAs(bubbles, "Speaker 17", "Alex");
+
+        Assert.Equal(expected, shownAs);
+        Assert.Contains($"**{shownAs}** _", DirectTranscriptMarkdown.RenderBody("Title", bubbles, "Alex"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShownAs_ForASpeakerWithoutUtterances_IsNull()
+    {
+        var bubbles = new[] { MakeBubble(TranscriptSpeaker.Them, "hi", "Speaker 2", SessionStart, SessionStart) };
+
+        Assert.Null(DirectTranscriptMarkdown.ShownAs(bubbles, "Speaker 3", null));
+    }
+
     [Fact]
     public void RenderBody_ContainsOneHeadingPerBubble_AndTheBubbleText()
     {

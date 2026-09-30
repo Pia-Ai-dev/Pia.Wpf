@@ -1044,6 +1044,7 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>I've saved my recovery code somewhere safe</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Could not enable encryption</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Setting up encryption…</value></data>
+  <data name="Wizard_E2EE_AlreadyEnabled" xml:space="preserve"><value>Encryption is already set up for this account. Set up this device with your recovery code or an approval from another device.</value></data>
   <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
   <data name="Flow_EmptyState" xml:space="preserve"><value>You're all caught up.</value></data>
   <data name="Flow_ClearAll" xml:space="preserve"><value>Clear all</value></data>
@@ -1482,7 +1483,7 @@
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Teams meeting</value></data>
   <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams link *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Paste the meeting invite link</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed *</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed; the transcript is saved as a vault note and, on request, analysed by your AI provider *</value></data>
   <data name="Routines_Draft_Describe" xml:space="preserve"><value>Describe it in a sentence</value></data>
   <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Say what you want to happen and how often. Pia fills in the name, the instruction and the schedule — you can change all of it before saving.</value></data>
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Draft with AI</value></data>
@@ -1642,6 +1643,7 @@
   <data name="AiFeedback_Comment_Label" xml:space="preserve"><value>What was wrong?</value></data>
   <data name="AiFeedback_Comment_Placeholder" xml:space="preserve"><value>Optional — e.g. wrong facts, inappropriate tone, refused for no reason</value></data>
   <data name="AiFeedback_IncludeAnswer" xml:space="preserve"><value>Include the answer text</value></data>
+  <data name="AiFeedback_PrivacyConcern" xml:space="preserve"><value>This concerns data protection</value></data>
   <data name="AiFeedback_PrivacyNote_Tokenized" xml:space="preserve"><value>Personal data in the text is replaced by placeholders before sending, as in your chats.</value></data>
   <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>The text is sent as shown; PII tokenization is off in your privacy settings.</value></data>
   <data name="About_AiFeedback_Title" xml:space="preserve"><value>AI feedback and complaints</value></data>

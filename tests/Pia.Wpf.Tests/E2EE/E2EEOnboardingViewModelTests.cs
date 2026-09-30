@@ -174,7 +174,7 @@ public class E2EEOnboardingViewModelTests
 
         // First call: expired session. Second call: success.
         _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), "session-1")
-            .ThrowsAsync(new HttpRequestException("Invalid or expired onboarding session"));
+            .ThrowsAsync(new OnboardingSessionExpiredException("spent"));
         _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), "session-2")
             .Returns(Task.CompletedTask);
 
@@ -186,6 +186,34 @@ public class E2EEOnboardingViewModelTests
 
         Assert.Equal(OnboardingState.Success, sut.State);
         Assert.Equal(2, callCount); // Re-registered
+    }
+
+    [Fact]
+    public async Task ActivateWithRecoveryCode_RejectedProof_DoesNotReRegister()
+    {
+        var callCount = 0;
+        _deviceMgmt.RegisterPendingDeviceAsync().Returns(_ =>
+        {
+            callCount++;
+            return new DeviceRegistrationResponse
+            {
+                OnboardingSessionId = $"session-{callCount}",
+                ServerChallenge = "challenge",
+                IsFirstDevice = false
+            };
+        });
+        _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), Arg.Any<string>())
+            .ThrowsAsync(new HttpRequestException("Response status code does not indicate success: 400 (Bad Request)."));
+
+        var sut = CreateSut();
+        sut.ShowRecoveryCodeEntryCommand.Execute(null);
+        sut.RecoveryCodeInput = "ABCD-EFGH-IJKL-MNOP";
+
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, callCount);
+        Assert.Equal(OnboardingState.EnteringRecoveryCode, sut.State);
+        Assert.Contains("Invalid recovery code", sut.ErrorMessage);
     }
 
     [Fact]

@@ -1171,33 +1171,62 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ToggleDirectTranscriptionCommand.Execute(null);
     }
 
-    private void OnDirectTranscriptionSummarizeRequested(object? sender, string prompt)
+    private void OnDirectTranscriptionSummarizeRequested(object? sender, TranscriptSummaryRequestedEventArgs e)
     {
-        // "Summarize with assistant" on the post-session transcript: hide the overlay so the chat (where
-        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
-        // the prompt. Mirrors OnMeetingAttendeeSummarizeRequested; do NOT log the prompt — it carries the
-        // (sensitive) transcript.
+        // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
+        // carries the (sensitive) transcript.
         IsDirectTranscriptionVisible = false;
-        StartFreshChat();
-        PendingAttachments.Clear();
-        InputText = prompt;
-        SendMessageCommand.Execute(null);
+        SendTranscriptSummaryAsync(e).SafeFireAndForget(_logger);
     }
 
-    private void OnMeetingAttendeeSummarizeRequested(object? sender, string prompt)
+    private void OnMeetingAttendeeSummarizeRequested(object? sender, TranscriptSummaryRequestedEventArgs e)
     {
-        // "Summarize with assistant" on the post-meeting transcript: hide the overlay so the chat (where
-        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
-        // the prompt. StartFreshChat clears InputText as its last step, so set the prompt afterwards.
-        // Sync fire-and-forget mirrors OnMeetingAttendeeCloseRequested. Do NOT log the prompt — it carries
-        // the (sensitive) meeting transcript.
+        // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
+        // carries the (sensitive) meeting transcript.
         IsMeetingAttendeeVisible = false;
-        StartFreshChat();
-        // Drop any image left pending in the composer behind the overlay so the summary turn carries only
-        // the prompt (StartFreshChat clears InputText but not the staged images).
+        SendTranscriptSummaryAsync(e).SafeFireAndForget(_logger);
+    }
+
+    /// <summary>Sends the prompt as the first turn of a fresh chat and reports that chat's id once it has one.</summary>
+    private async Task SendTranscriptSummaryAsync(TranscriptSummaryRequestedEventArgs request)
+    {
+        var chat = StartFreshChat();
+        // The staged images belong to whatever the user was composing behind the overlay, not to the summary.
         PendingAttachments.Clear();
-        InputText = prompt;
-        SendMessageCommand.Execute(null);
+        // StartFreshChat clears InputText as its last step, so the prompt goes in afterwards.
+        InputText = request.Prompt;
+
+        // Subscribed before the send, which may assign the id synchronously; the id is never pre-assigned.
+        var onAssigned = ReportIdOnceAssigned(chat, request);
+        try
+        {
+            await SendMessageCommand.ExecuteAsync(null);
+        }
+        finally
+        {
+            // A first turn has its id before the send returns, so a chat still without one was refused, and its
+            // next, unrelated first turn must not be reported as the summary.
+            if (onAssigned is not null) chat.IdentityAssigned -= onAssigned;
+        }
+    }
+
+    private static EventHandler? ReportIdOnceAssigned(ChatSession chat, TranscriptSummaryRequestedEventArgs request)
+    {
+        if (chat.Id is { } existing)
+        {
+            request.ReportChatId(existing);
+            return null;
+        }
+
+        void OnAssigned(object? sender, EventArgs e)
+        {
+            if (chat.Id is not { } assigned) return;
+            chat.IdentityAssigned -= OnAssigned;
+            request.ReportChatId(assigned);
+        }
+
+        chat.IdentityAssigned += OnAssigned;
+        return OnAssigned;
     }
 
     private void OnMeetingAttendeeOpenSettingsRequested(object? sender, EventArgs e)
@@ -1474,12 +1503,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _localizationService["Msg_Assistant_ConfirmNewChatTitle"],
         _localizationService["Msg_Assistant_ConfirmNewChatMessage"]);
 
-    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the chip's
-    /// "+ New Chat" (its pinned folder), the composer's "+" (this chat's folder) and the delete
-    /// path (the deleted chat's folder).</summary>
-    /// <param name="workingDirectory">Relative working dir to pin (forward slashes;
-    /// null/empty = sandbox root).</param>
-    private void StartFreshChat(string? workingDirectory = null)
+    /// <summary>Opens a new, empty active chat and resets the composer.</summary>
+    /// <param name="workingDirectory">Relative working dir to pin (forward slashes; null/empty = sandbox root).</param>
+    private ChatSession StartFreshChat(string? workingDirectory = null)
     {
         _ttsService.Stop();
 
@@ -1498,6 +1524,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         // The empty state is back, and the stores may have moved since it was last on screen.
         RefreshSuggestionsAsync().SafeFireAndForget(_logger);
+        return session;
     }
 
     private async Task ResumeChatAsync(Guid chatId)
@@ -1782,21 +1809,31 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     return;
 
                 report = await _aiFeedback.BuildRequestAsync(
-                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingDown, edit.Comment, edit.IncludeAnswer);
+                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingDown, edit.Comment, edit.IncludeAnswer,
+                    edit.PrivacyConcern);
             }
 
-            var sent = await _aiFeedback.SendAsync(report);
+            var accepted = await _aiFeedback.SendAsync(report);
+            var (title, text, appearance, seconds) = FeedbackOutcome(accepted, request.Positive);
             _snackbarService.Show(
-                _localizationService[sent ? "Msg_Assistant_FeedbackSent_Title" : "Msg_Error"],
-                _localizationService[sent ? "Msg_Assistant_FeedbackSent" : "Msg_Assistant_FeedbackFailed"],
-                sent ? Wpf.Ui.Controls.ControlAppearance.Success : Wpf.Ui.Controls.ControlAppearance.Danger,
-                null, TimeSpan.FromSeconds(3));
+                _localizationService[title], _localizationService[text], appearance, null, TimeSpan.FromSeconds(seconds));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send AI feedback for message {MessageId}", request.Message.Id);
         }
     }
+
+    // A thumbs-up is only counted, so "nobody was notified" would read as a fault there.
+    internal static (string Title, string Text, Wpf.Ui.Controls.ControlAppearance Appearance, int Seconds) FeedbackOutcome(
+        Shared.Models.AiFeedbackResponse? accepted, bool positive) => accepted switch
+    {
+        null => ("Msg_Error", "Msg_Assistant_FeedbackFailed", Wpf.Ui.Controls.ControlAppearance.Danger, 3),
+        { Delivery: Shared.Models.AiFeedbackResponse.DeliveryStoredOnly } when !positive =>
+            ("Msg_Assistant_FeedbackStoredOnly_Title", "Msg_Assistant_FeedbackStoredOnly",
+                Wpf.Ui.Controls.ControlAppearance.Caution, 8),
+        _ => ("Msg_Assistant_FeedbackSent_Title", "Msg_Assistant_FeedbackSent", Wpf.Ui.Controls.ControlAppearance.Success, 3),
+    };
 
     private async Task ExecuteAddPiiKeyword(PiiKeywordRequest? request)
     {

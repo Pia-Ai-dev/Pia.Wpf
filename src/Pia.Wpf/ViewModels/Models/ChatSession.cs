@@ -170,14 +170,20 @@ public sealed class ChatSession : IDisposable
         CreatedAt = DateTime.UtcNow;
     }
 
+    /// <summary>Raised once, when a chat that had no id gets one (its first turn, or a hydrate from the store).</summary>
+    public event EventHandler? IdentityAssigned;
+
     /// <summary>Sets identity/metadata once the chat is first persisted (or hydrated from the store).</summary>
     internal void SetIdentity(Guid id, DateTime createdAt, Guid? providerId, string? title, bool autoTitleApplied)
     {
+        var first = Id is null;
         Id = id;
         CreatedAt = createdAt;
         ProviderId = providerId;
         Title = title;
         AutoTitleApplied = autoTitleApplied;
+
+        if (first) IdentityAssigned?.Invoke(this, EventArgs.Empty);
     }
 
     internal void SetTitle(string? title) => Title = title;

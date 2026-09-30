@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
@@ -17,6 +18,17 @@ namespace Pia.Tests.Services.MeetingAttendee;
 public sealed class ScheduledMeetingRecorderTests
 {
     private const string Url = "https://teams.microsoft.com/l/meetup-join/x";
+
+    private static readonly DateTimeOffset AcknowledgedAt = new(2026, 9, 28, 9, 15, 0, TimeSpan.FromHours(2));
+
+    private readonly IConsentEvidenceStore _evidence = Substitute.For<IConsentEvidenceStore>();
+    private readonly ConsentLiveSessions _live = new(NullLogger<ConsentLiveSessions>.Instance);
+    private readonly ILocalizationService _localization = Substitute.For<ILocalizationService>();
+
+    public ScheduledMeetingRecorderTests()
+    {
+        _localization.CurrentLanguage.Returns(TargetLanguage.DE);
+    }
 
     private static ISettingsService NewSettings(AppSettings? settings = null)
     {
@@ -91,9 +103,9 @@ public sealed class ScheduledMeetingRecorderTests
         }
     }
 
-    private static ScheduledMeetingRecorder NewRecorder(IMemoryService memory, AppSettings? settings = null) =>
+    private ScheduledMeetingRecorder NewRecorder(IMemoryService memory, AppSettings? settings = null) =>
         Quickened(new ScheduledMeetingRecorder(
-            NewSettings(settings), memory, NullLogger<ScheduledMeetingRecorder>.Instance));
+            NewSettings(settings), memory, _evidence, _live, _localization, NullLogger<ScheduledMeetingRecorder>.Instance));
 
     /// <summary>Both waits exist for a real meeting's pace; a test should not sit out a real minute.</summary>
     private static ScheduledMeetingRecorder Quickened(ScheduledMeetingRecorder recorder)
@@ -115,7 +127,7 @@ public sealed class ScheduledMeetingRecorderTests
     private static async Task<MeetingRecordingResult> RunAsync(
         ScheduledMeetingRecorder recorder, FakeAttendee attendee, Action<FakeAttendee> duringMeeting)
     {
-        var recording = recorder.RecordAsync(attendee, Url, "Q3 roadmap sync");
+        var recording = recorder.RecordAsync(attendee, Url, "Q3 roadmap sync", AcknowledgedAt);
 
         while (attendee.State != MeetingAttendeeState.Attending && !recording.IsCompleted)
             await Task.Delay(10);
@@ -226,7 +238,8 @@ public sealed class ScheduledMeetingRecorderTests
     {
         var attendee = new FakeAttendee { AdmissionTimeouts = 2 };
 
-        var result = await NewRecorder(NewMemory()).RecordAsync(attendee, Url, "Standup", TestContext.Current.CancellationToken);
+        var result = await NewRecorder(NewMemory()).RecordAsync(
+            attendee, Url, "Standup", AcknowledgedAt, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, attendee.StartCount);
         Assert.Equal(MeetingRecordingOutcome.JoinFailed, result.Outcome);
@@ -237,7 +250,8 @@ public sealed class ScheduledMeetingRecorderTests
     {
         var attendee = new ThrowingAttendee();
 
-        var result = await NewRecorder(NewMemory()).RecordAsync(attendee, Url, "Standup", TestContext.Current.CancellationToken);
+        var result = await NewRecorder(NewMemory()).RecordAsync(
+            attendee, Url, "Standup", AcknowledgedAt, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, attendee.StartCount);
         Assert.Equal(MeetingRecordingOutcome.JoinFailed, result.Outcome);
@@ -283,6 +297,127 @@ public sealed class ScheduledMeetingRecorderTests
 
         // A second meeting in the same minute must not clobber the first.
         Assert.EndsWith("-2.md", result.Reference, StringComparison.Ordinal);
+    }
+
+    // ---- Consent evidence ------------------------------------------------------------------------
+
+    private static string SavedMarkdown(IMemoryService memory) => (string)memory.ReceivedCalls()
+        .Single(c => c.GetMethodInfo().Name == nameof(IMemoryService.CreateSourceAsync))
+        .GetArguments()[1]!;
+
+    private ConsentSessionMarker SavedMarker() => (ConsentSessionMarker)_evidence.ReceivedCalls()
+        .Single(c => c.GetMethodInfo().Name == nameof(IConsentEvidenceStore.SaveHostAcknowledgementAsync))
+        .GetArguments()[0]!;
+
+    [Fact]
+    public async Task RecordAsync_KeepsTheHostAcknowledgementAsTheSessionsEvidence_AndTheSessionLiveWhileItRecords()
+    {
+        var attendee = new FakeAttendee();
+        IReadOnlyCollection<string> liveDuringMeeting = [];
+
+        await RunAsync(NewRecorder(NewMemory()), attendee, a =>
+        {
+            liveDuringMeeting = _live.Snapshot();
+            a.Emit(Utterance("hello", 0, "Speaker 1", 1));
+        });
+
+        await _evidence.Received(1).SaveHostAcknowledgementAsync(
+            Arg.Any<ConsentSessionMarker>(), AcknowledgedAt, Arg.Any<CancellationToken>());
+        var marker = SavedMarker();
+        Assert.Equal(ConsentSessionMarker.TeamsKind, marker.Kind);
+        Assert.Equal(ConsentNotice.TeamsVersion, marker.NoticeVersion);
+        Assert.Equal(ConsentNotice.TeamsPurposes, marker.NoticePurposes);
+        Assert.Equal("de", marker.NoticeLanguage);
+        Assert.Equal([marker.SessionId], liveDuringMeeting);
+        Assert.Empty(_live.Snapshot());
+    }
+
+    [Fact]
+    public async Task RecordAsync_SavesTheConsentRecordIntoTheNote_AndLogsTheNoteAsTheSessionsCopy()
+    {
+        var attendee = new FakeAttendee();
+        var memory = NewMemory();
+
+        var result = await RunAsync(NewRecorder(memory), attendee,
+            a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
+
+        var sessionId = SavedMarker().SessionId;
+        var markdown = SavedMarkdown(memory);
+        Assert.Contains($"\nconsentRecord: {ConsentFrontMatter.Schema}\n", markdown, StringComparison.Ordinal);
+        Assert.Contains($"\nconsentSessions: [{sessionId}]\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nconsentNoticeVersion: 2\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nconsentNoticePurposes: [transcribe, store]\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nconsentNoticeLanguage: de\n", markdown, StringComparison.Ordinal);
+        Assert.Contains("\nhostAcknowledgedAt: '2026-09-28T09:15:00+02:00'\n", markdown, StringComparison.Ordinal);
+        // The host stands in for every speaker, so the block names none of them.
+        Assert.DoesNotContain("consents:", markdown, StringComparison.Ordinal);
+        await _evidence.Received(1).AppendCopyAsync(
+            sessionId,
+            Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.VaultKind && c.Ref == result.Reference),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RecordAsync_EndsTheSession_OnlyOnceTheNoteAndItsCopyAreLogged()
+    {
+        var attendee = new FakeAttendee();
+        var memory = NewMemory();
+        var order = new List<string>();
+        memory.When(m => m.CreateSourceAsync(Arg.Any<string>(), Arg.Any<string>())).Do(_ => order.Add("note"));
+        _evidence.When(e => e.AppendCopyAsync(Arg.Any<string>(), Arg.Any<ConsentCopy>(), Arg.Any<CancellationToken>()))
+            .Do(_ => order.Add("copy"));
+        _live.SessionEnded += (_, _) => order.Add("ended");
+
+        await RunAsync(NewRecorder(memory), attendee, a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
+
+        Assert.Equal(["note", "copy", "ended"], order);
+    }
+
+    [Fact]
+    public async Task RecordAsync_EndsTheSession_WhenNothingWasCaptured()
+    {
+        var attendee = new FakeAttendee();
+        var ended = new List<string>();
+        _live.SessionEnded += (_, id) => ended.Add(id);
+
+        var result = await RunAsync(NewRecorder(NewMemory()), attendee, _ => { });
+
+        Assert.Equal(MeetingRecordingOutcome.NothingCaptured, result.Outcome);
+        Assert.Equal([SavedMarker().SessionId], ended);
+        await _evidence.DidNotReceive().AppendCopyAsync(
+            Arg.Any<string>(), Arg.Any<ConsentCopy>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RecordAsync_WritesNoEvidence_ForAMeetingItNeverGotInto()
+    {
+        var attendee = new FakeAttendee { AdmissionTimeouts = 2 };
+        var ended = new List<string>();
+        _live.SessionEnded += (_, id) => ended.Add(id);
+
+        var result = await NewRecorder(NewMemory()).RecordAsync(
+            attendee, Url, "Standup", AcknowledgedAt, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MeetingRecordingOutcome.JoinFailed, result.Outcome);
+        await _evidence.DidNotReceive().SaveHostAcknowledgementAsync(
+            Arg.Any<ConsentSessionMarker>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        Assert.Empty(ended);
+    }
+
+    [Fact]
+    public async Task RecordAsync_StillSavesTheNoteWithItsRecord_WhenTheEvidenceCannotBeWritten()
+    {
+        var attendee = new FakeAttendee();
+        var memory = NewMemory();
+        _evidence.SaveHostAcknowledgementAsync(Arg.Any<ConsentSessionMarker>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new System.IO.IOException("disk full")));
+
+        var result = await RunAsync(NewRecorder(memory), attendee,
+            a => a.Emit(Utterance("hello", 0, "Speaker 1", 1)));
+
+        Assert.Equal(MeetingRecordingOutcome.Saved, result.Outcome);
+        Assert.Contains($"consentSessions: [{SavedMarker().SessionId}]", SavedMarkdown(memory), StringComparison.Ordinal);
+        Assert.Empty(_live.Snapshot());
     }
 
 

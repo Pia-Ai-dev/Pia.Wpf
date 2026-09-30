@@ -144,6 +144,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsE2EESetupVisible))]
     private bool _isE2EEOnboardingRequired;
 
+    [ObservableProperty]
+    private bool _showE2EEAlreadyEnabledNotice;
+
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
 
     public E2EESetupStepViewModel E2EESetupViewModel { get; }
@@ -319,6 +322,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             try
             {
                 IsE2EEOnboardingRequired = false;
+                ShowE2EEAlreadyEnabledNotice = false;
                 _syncClientService.NotifyE2EEOnboardingCompleted();
                 await _syncClientService.PerformFirstSyncMigrationAsync();
             }
@@ -334,6 +338,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
         // E2EE setup step controls when the wizard advances past step 2
         E2EESetupViewModel.AdvanceRequested += AdvanceFromE2EEStep;
+        E2EESetupViewModel.AccountAlreadyEncrypted += HandleAccountAlreadyEncryptedAsync;
         E2EESetupViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(E2EESetupStepViewModel.State)
@@ -457,6 +462,33 @@ public partial class FirstRunWizardViewModel : ObservableObject
         // Always called from CurrentStep == 2; skip Provider when it is not shown.
         CurrentStep = IsProviderStepVisible ? 3 : 4;
         NotifyNavigationChanged();
+    }
+
+    private async Task HandleAccountAlreadyEncryptedAsync()
+    {
+        try
+        {
+            await HandlePostLoginSyncAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Re-reading the E2EE state after a refused setup failed in wizard");
+        }
+
+        if (IsE2EEOnboardingRequired)
+        {
+            ShowE2EEAlreadyEnabledNotice = true;
+            CurrentStep = 1;
+            NotifyNavigationChanged();
+        }
+        else if (_cloudAccountHasE2EE)
+        {
+            AdvanceFromE2EEStep(true);
+        }
+        else
+        {
+            E2EESetupViewModel.ErrorMessage = _localizationService["Wizard_E2EE_AlreadyEnabled"];
+        }
     }
 
     private void NotifyNavigationChanged()

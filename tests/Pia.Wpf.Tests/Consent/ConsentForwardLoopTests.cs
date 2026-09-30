@@ -22,9 +22,17 @@ public sealed class ConsentForwardLoopTests
     private const string SessionId = "session-1";
     private const string SttModelId = "fake-stt";
 
+    private static readonly ConsentSessionMarker Session = new(
+        SessionId,
+        new DateTimeOffset(2026, 9, 29, 10, 0, 0, TimeSpan.Zero),
+        ConsentSessionMarker.DirectKind,
+        ConsentNotice.Version,
+        ConsentNotice.Purposes,
+        "de");
+
     private static ConsentSessionContext Context(
         TargetSpeechLanguage hint = TargetSpeechLanguage.EN, bool nameSpeakers = true)
-        => new(SessionId, SttModelId, hint, nameSpeakers);
+        => new(Session, SttModelId, hint, nameSpeakers);
 
     private static TranscriptUtterance Mic(string text, double duration = 1.0)
         => new(TranscriptSpeaker.You, text, DateTimeOffset.UtcNow, SpeakerLabel: null, SegmentId: null, DurationSeconds: duration);
@@ -52,7 +60,7 @@ public sealed class ConsentForwardLoopTests
         {
             AuditLog.When(a => a.Append(Arg.Any<AuditEvent>())).Do(ci => AuditEvents.Add(ci.Arg<AuditEvent>()));
             EvidenceStore
-                .SaveGrantAsync(Arg.Any<string>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>())
+                .SaveGrantAsync(Arg.Any<ConsentSessionMarker>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
 
             Loop = new ConsentForwardLoop(
@@ -148,10 +156,27 @@ public sealed class ConsentForwardLoopTests
         Assert.Equal(sentence, emitted.Text);
         Assert.Equal(ConsentState.Granted, fx.Consent.CurrentState("Alice"));
         await fx.EvidenceStore.Received(1).SaveGrantAsync(
-            SessionId,
+            Session,
             Arg.Is<ConsentEvidence>(e => e.SpeakerLabel == "Speaker 1" && e.ExtractedName == "Alice"),
             Arg.Any<CancellationToken>());
         Assert.Contains(fx.ConsentChangedEvents, e => e.SpeakerLabel == "Alice" && e.NewState == ConsentState.Granted);
+    }
+
+    [Fact]
+    public async Task AGrantsEvidence_CitesTheNoticeTheSessionWasStartedUnder()
+    {
+        var fx = new Fixture();
+        var sentence = "My name is Alice and I accept that this meeting gets recorded by Pia.";
+        fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
+            .Returns(new NamedConsentResult(true, "Alice", "en", NamedConsentClassifier.CrispConfidence));
+
+        await fx.ProcessAsync(Loopback("Speaker 1", sentence));
+
+        Assert.True(fx.Consent.TryGet("Alice", out var entry));
+        Assert.Equal(ConsentNotice.Version, entry.Evidence!.NoticeVersion);
+        Assert.Equal(ConsentNotice.Purposes, entry.Evidence.NoticePurposes);
+        Assert.Equal("de", entry.Evidence.NoticeLanguage);
+        Assert.Equal("en", entry.Evidence.Language);
     }
 
     [Fact]
@@ -205,7 +230,7 @@ public sealed class ConsentForwardLoopTests
 
         Assert.Equal(ConsentGateOutcome.EmitConsentGrant, outcome);
         await fx.EvidenceStore.Received(1).SaveGrantAsync(
-            SessionId,
+            Session,
             Arg.Is<ConsentEvidence>(e => e.SpeakerLabel == "Speaker 1" && e.ExtractedName == "Max"),
             Arg.Any<CancellationToken>());
         Assert.NotEmpty(fx.AuditEvents);
@@ -235,7 +260,7 @@ public sealed class ConsentForwardLoopTests
         Assert.Equal("Speaker 1", granted.SpeakerLabel);
         Assert.Null(granted.ExtractedName);
         await fx.EvidenceStore.Received(1).SaveGrantAsync(
-            SessionId, Arg.Is<ConsentEvidence>(e => e.ExtractedName == "Max"), Arg.Any<CancellationToken>());
+            Session, Arg.Is<ConsentEvidence>(e => e.ExtractedName == "Max"), Arg.Any<CancellationToken>());
     }
 
     // Below the threshold the diarizer still hands out the nearest label, which may be a consented one.
@@ -274,7 +299,7 @@ public sealed class ConsentForwardLoopTests
         Assert.Equal(ConsentState.Unknown, fx.Consent.CurrentState("Speaker 1"));
         fx.Classifier.DidNotReceiveWithAnyArgs().Classify(default!, default);
         await fx.EvidenceStore.DidNotReceive().SaveGrantAsync(
-            Arg.Any<string>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>());
+            Arg.Any<ConsentSessionMarker>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -286,7 +311,7 @@ public sealed class ConsentForwardLoopTests
             .Returns(new NamedConsentResult(true, "Dave", "en", NamedConsentClassifier.CrispConfidence));
         await fx.ProcessAsync(Loopback("Speaker 1", sentence));
         fx.TryReadEmitted(out _);
-        fx.Consent.Revoke("Dave");
+        fx.Consent.Revoke("Dave", DateTimeOffset.UtcNow);
         fx.Classifier.ClearReceivedCalls();
 
         var outcome = await fx.ProcessAsync(Loopback("Dave", sentence));
@@ -310,7 +335,7 @@ public sealed class ConsentForwardLoopTests
         Assert.Equal(ConsentGateOutcome.DropUnconsented, outcome);
         Assert.Equal(ConsentState.Unknown, fx.Consent.CurrentState("Speaker 1"));
         await fx.EvidenceStore.DidNotReceive()
-            .SaveGrantAsync(Arg.Any<string>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>());
+            .SaveGrantAsync(Arg.Any<ConsentSessionMarker>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -341,7 +366,7 @@ public sealed class ConsentForwardLoopTests
         fx.Classifier.Classify(sentence, TargetSpeechLanguage.EN)
             .Returns(new NamedConsentResult(true, "Frank", "en", NamedConsentClassifier.CrispConfidence));
         fx.EvidenceStore
-            .SaveGrantAsync(Arg.Any<string>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>())
+            .SaveGrantAsync(Arg.Any<ConsentSessionMarker>(), Arg.Any<ConsentEvidence>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("disk full"));
 
         var outcome = await fx.ProcessAsync(Loopback("Speaker 1", sentence));

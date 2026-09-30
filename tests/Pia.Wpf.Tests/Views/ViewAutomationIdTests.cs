@@ -127,6 +127,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.WizardSteps.AccountSetupStep), 10, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.WizardSteps.E2EESetupStep), 5, 0, "")]
     [InlineData(typeof(Pia.Views.Dialogs.ScreenCapturePickerView), 3, 2, "")]
+    [InlineData(typeof(Pia.Views.Dialogs.ConsentCopiesView), 4, 2, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

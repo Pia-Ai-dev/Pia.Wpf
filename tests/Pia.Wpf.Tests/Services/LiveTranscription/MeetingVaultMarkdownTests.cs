@@ -1,4 +1,5 @@
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.LiveTranscription;
 using Xunit;
 
@@ -63,6 +64,32 @@ public class MeetingVaultMarkdownTests
 
             """.ReplaceLineEndings("\n"),
             md);
+    }
+
+    [Fact]
+    public void Render_WithAConsentRecord_PutsItLastInTheFrontmatter_WithShownAs()
+    {
+        var record = new ConsentRecord(
+            ["3f2a9c1e7b4d4e0f8a6b5c4d3e2f1a0b"], ConsentNotice.Version, ConsentNotice.Purposes, "de",
+            [new ConsentRecordEntry("Speaker 17", Start.AddMinutes(1), ShownAs: "Speaker 1", Session: "3f2a9c1e7b4d4e0f8a6b5c4d3e2f1a0b")]);
+
+        var md = MeetingVaultMarkdown.Render(Meta(), "# Meeting\n\n**Speaker 1** _09:01:00_\n", record);
+
+        Assert.Contains(
+            $"""
+            source: teams
+            consentRecord: {ConsentFrontMatter.Schema}
+            consentSessions: [3f2a9c1e7b4d4e0f8a6b5c4d3e2f1a0b]
+            consentNoticeVersion: {ConsentNotice.Version}
+            consentNoticePurposes: [transcribe, store, summarize]
+            consentNoticeLanguage: de
+            consents:
+              - {"{"}label: Speaker 17, shownAs: Speaker 1, grantedAt: '2026-08-12T09:01:00+02:00'{"}"}
+            ---
+            # Meeting
+            """.ReplaceLineEndings("\n"),
+            md,
+            StringComparison.Ordinal);
     }
 
     [Fact]

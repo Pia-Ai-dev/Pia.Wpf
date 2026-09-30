@@ -125,11 +125,9 @@ public partial class E2EEOnboardingViewModel : ObservableObject
 
             await CompleteOnboardingAsync();
         }
-        catch (HttpRequestException ex) when (ex.Message.Contains("expired", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("Invalid", StringComparison.OrdinalIgnoreCase))
+        catch (OnboardingSessionExpiredException ex)
         {
             _logger.LogWarning(ex, "Onboarding session expired during recovery, re-registering");
-            // Session expired or invalidated (e.g., after re-key) — try once more
             try
             {
                 _onboardingSessionId = null;

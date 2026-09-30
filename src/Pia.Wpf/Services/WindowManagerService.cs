@@ -21,10 +21,13 @@ public partial class WindowManagerService : IWindowManagerService
     private readonly Services.Flow.IFlowService _flowService;
     private readonly ILocalizationService _localizationService;
     private readonly Dictionary<WindowMode, ManagedWindow> _windows = new();
-    private bool _isShuttingDown;
+    // Read off the UI thread, by the events a view model's teardown raises.
+    private volatile bool _isShuttingDown;
     private double _lastWindowLeft = double.NaN;
     private double _lastWindowTop = double.NaN;
     private const double PositionOffset = 30;
+
+    public bool IsShuttingDown => _isShuttingDown;
 
     public bool HasOpenWindows => _windows.Values.Any(w => w.Window.Visibility == Visibility.Visible);
 

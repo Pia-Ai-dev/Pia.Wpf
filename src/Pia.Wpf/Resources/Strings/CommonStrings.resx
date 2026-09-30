@@ -69,6 +69,7 @@
   <data name="MeetingAttendee_Url_Placeholder" xml:space="preserve"><value>https://teams.microsoft.com/l/meetup-join/…</value></data>
   <data name="MeetingAttendee_Url_DropHint" xml:space="preserve"><value>Or drag the Outlook invite here — Pia reads the link out of it.</value></data>
   <data name="MeetingAttendee_Consent_Label" xml:space="preserve"><value>I confirm I'm allowed to have an assistant join and transcribe this meeting.</value></data>
+  <data name="MeetingAttendee_Consent_Purposes" xml:space="preserve"><value>Pia transcribes the meeting on this device and uses the transcript for three purposes: transcription on this device; if you choose, saving it as a file or as a vault note — your AI provider then works a vault note into your knowledge base; and, if you choose, a summary by your AI provider, which receives the transcript for it. The summary is saved as a chat together with the transcript and, with sync turned on, synchronised with your account.</value></data>
   <data name="MeetingAttendee_OpenSettings" xml:space="preserve"><value>Meeting settings</value></data>
   <data name="MeetingAttendee_Speaker_Placeholder" xml:space="preserve"><value>meeting</value></data>
   <data name="MeetingAttendee_SaveDialog_Title" xml:space="preserve"><value>Save meeting transcript</value></data>
@@ -115,7 +116,7 @@
   <data name="DirectTrans_Status_Stopping" xml:space="preserve"><value>Stopping…</value></data>
   <data name="DirectTrans_Status_Error" xml:space="preserve"><value>Something went wrong</value></data>
   <data name="DirectTrans_Disclaimer_Title" xml:space="preserve"><value>Before you start</value></data>
-  <data name="DirectTrans_Disclaimer_Body" xml:space="preserve"><value>This transcribes your microphone and this device's system audio, entirely on this device. Nothing is sent anywhere. Everyone speaking into your microphone appears as "me" in the transcript.</value></data>
+  <data name="DirectTrans_Disclaimer_Body" xml:space="preserve"><value>Pia transcribes your microphone and this device's system audio on this device. Everyone speaking into your microphone appears as "me" in the transcript. Pia uses the transcript for three purposes: transcription on this device; if you choose, saving it as a file or as a vault note — your AI provider then works a vault note into your knowledge base; and, if you choose, a summary by your AI provider, which receives the transcript for it. The summary is saved as a chat together with the transcript and, with sync turned on, synchronised with your account.</value></data>
   <data name="DirectTrans_Disclaimer_ConsentExplainer" xml:space="preserve"><value>People on the other side (system audio) are not transcribed until they say a consent sentence naming Pia — until then their speech is only checked for that sentence, then discarded.</value></data>
   <data name="DirectTrans_Disclaimer_CrossTalkLimitation" xml:space="preserve"><value>Note: overlapping speech (cross-talk) can occasionally be misattributed to the wrong speaker.</value></data>
   <data name="DirectTrans_Disclaimer_ShortUtteranceLimitation" xml:space="preserve"><value>Very short remarks (under about 1.5 seconds) are dropped and never transcribed, consented or not.</value></data>
@@ -135,6 +136,20 @@
   <data name="DirectTrans_RenameSpeaker_Title" xml:space="preserve"><value>Rename speaker</value></data>
   <data name="DirectTrans_RenameSpeaker_Prompt" xml:space="preserve"><value>New name for {0}:</value></data>
   <data name="DirectTrans_RevokeSpeaker_MenuItem" xml:space="preserve"><value>Revoke consent</value></data>
+  <data name="ConsentCopies_Title" xml:space="preserve"><value>Copies of this session</value></data>
+  <data name="ConsentCopies_Intro" xml:space="preserve"><value>Consent was revoked. These copies contain utterances from the session:</value></data>
+  <data name="ConsentCopies_LogUnreadable" xml:space="preserve"><value>Pia could not read which files and chats the session went into, so some may be missing below.</value></data>
+  <data name="ConsentCopies_VaultUnchecked" xml:space="preserve"><value>Pia could not check every vault note, so some notes with utterances from the session may be missing below.</value></data>
+  <data name="ConsentCopies_Exports_Heading" xml:space="preserve"><value>Exported files</value></data>
+  <data name="ConsentCopies_Exports_Note" xml:space="preserve"><value>Pia cannot reach these files. Please delete or clean them up yourself.</value></data>
+  <data name="ConsentCopies_Notes_Heading" xml:space="preserve"><value>Vault notes</value></data>
+  <data name="ConsentCopies_Notes_Kept" xml:space="preserve"><value>Kept notes record the revocation.</value></data>
+  <data name="ConsentCopies_Chats_Heading" xml:space="preserve"><value>Chats</value></data>
+  <data name="ConsentCopies_Chat_Label" xml:space="preserve"><value>Summary</value></data>
+  <data name="ConsentCopies_Delete" xml:space="preserve"><value>Delete</value></data>
+  <data name="ConsentCopies_DeleteAll" xml:space="preserve"><value>Delete all</value></data>
+  <data name="ConsentCopies_DeleteFailed" xml:space="preserve"><value>Some copies could not be deleted.</value></data>
+  <data name="ConsentCopies_Close" xml:space="preserve"><value>Close</value></data>
   <data name="DirectTrans_SummaryPrompt" xml:space="preserve"><value>Please summarize the following transcript from a direct-transcription session recorded on {0}.</value></data>
   <data name="Speaker_Me" xml:space="preserve"><value>me</value></data>
   <data name="Speaker_Them" xml:space="preserve"><value>them</value></data>

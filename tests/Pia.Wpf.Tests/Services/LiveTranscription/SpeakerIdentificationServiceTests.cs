@@ -50,6 +50,17 @@ public sealed class SpeakerIdentificationServiceTests
     }
 
     [Fact]
+    public void ContinuingTheNumbering_NamesTheNextNewVoicesAfterIt_AndNeverRewinds()
+    {
+        using var sut = Create();
+        sut.ContinueNumberingAfter(2);
+
+        Assert.Equal("Speaker 3", sut.IdentifyOrRegisterSegment(Seg(0), 16000).Label);
+        sut.ContinueNumberingAfter(1);
+        Assert.Equal("Speaker 4", sut.IdentifyOrRegisterSegment(Seg(90), 16000).Label);
+    }
+
+    [Fact]
     public void ANewSpeaker_IsNotBelowTheThreshold()
     {
         using var sut = Create();

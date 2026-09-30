@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Pia.Converters;
 using Pia.Models;
+using Pia.Services.Consent;
 
 namespace Pia.Services.LiveTranscription;
 
@@ -16,25 +17,21 @@ public static class DirectTranscriptMarkdown
 {
     public const string Schema = "pia-direct-transcript/v1";
 
-    /// <summary>
-    /// Renders the full saved-file Markdown: YAML front matter (schema/start/end/speakers/
-    /// voiceStats) followed by <see cref="RenderBody"/>. <paramref name="sessionEnd"/> is
-    /// emitted as given even when it is earlier than <paramref name="sessionStart"/> — this
-    /// renderer never "fixes" caller data, it only formats it.
-    /// </summary>
+    /// <summary>Front matter, then <see cref="RenderBody"/>. Caller data is formatted as given, never "fixed".</summary>
     public static string Render(
         string title,
         DateTimeOffset sessionStart,
         DateTimeOffset sessionEnd,
         IReadOnlyList<TranscriptBubble> bubbles,
         IReadOnlyList<SpeakerVoiceStats> voiceStats,
-        string? counterpartName)
+        string? counterpartName,
+        ConsentRecord? consent = null)
     {
         ArgumentNullException.ThrowIfNull(bubbles);
         ArgumentNullException.ThrowIfNull(voiceStats);
 
         var sb = new StringBuilder();
-        AppendFrontMatter(sb, sessionStart, sessionEnd, bubbles, voiceStats, counterpartName);
+        AppendFrontMatter(sb, sessionStart, sessionEnd, bubbles, voiceStats, counterpartName, consent);
         sb.Append(RenderBody(title, bubbles, counterpartName));
         return sb.ToString();
     }
@@ -65,8 +62,7 @@ public static class DirectTranscriptMarkdown
 
         foreach (var bubble in bubbles)
         {
-            var label = SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.DisplayLabel, counterpartName);
-            sb.Append("**").Append(label).Append("** _")
+            sb.Append("**").Append(SpeakerLabelOf(bubble, counterpartName)).Append("** _")
               .Append(bubble.StartTimestamp.LocalDateTime.ToString("HH:mm:ss", CultureInfo.InvariantCulture));
             if (bubble.EndTimestamp != bubble.StartTimestamp)
             {
@@ -79,13 +75,28 @@ public static class DirectTranscriptMarkdown
         return sb.ToString();
     }
 
+    /// <summary>What <see cref="RenderBody"/> prints for the foreign speaker keyed <paramref name="speakerLabel"/>;
+    /// <c>null</c> when none of their utterances is in <paramref name="bubbles"/>.</summary>
+    public static string? ShownAs(IReadOnlyList<TranscriptBubble> bubbles, string speakerLabel, string? counterpartName)
+    {
+        ArgumentNullException.ThrowIfNull(bubbles);
+
+        var bubble = bubbles.FirstOrDefault(b =>
+            b.Speaker == TranscriptSpeaker.Them && string.Equals(b.SpeakerLabel, speakerLabel, StringComparison.Ordinal));
+        return bubble is null ? null : SpeakerLabelOf(bubble, counterpartName);
+    }
+
+    private static string SpeakerLabelOf(TranscriptBubble bubble, string? counterpartName)
+        => SpeakerToDisplayNameConverter.Resolve(bubble.Speaker, bubble.DisplayLabel, counterpartName);
+
     private static void AppendFrontMatter(
         StringBuilder sb,
         DateTimeOffset sessionStart,
         DateTimeOffset sessionEnd,
         IReadOnlyList<TranscriptBubble> bubbles,
         IReadOnlyList<SpeakerVoiceStats> voiceStats,
-        string? counterpartName)
+        string? counterpartName,
+        ConsentRecord? consent)
     {
         sb.Append("---\n");
         sb.Append("schema: ").Append(Schema).Append('\n');
@@ -102,9 +113,8 @@ public static class DirectTranscriptMarkdown
         sb.Append("voiceStats:\n");
         foreach (var stat in voiceStats)
         {
-            // Stats are keyed by the diarizer's label, the bubbles by the renumbered one. Without this
-            // lookup one document says "Speaker 1" in speakers: and "Speaker 17" in voiceStats:. A
-            // matched bubble wins even with a null label, or suppression would leak the raw one back.
+            // Stats carry the diarizer's label, bubbles the renumbered one; a matched bubble wins even with a
+            // null label, or suppression would leak the raw one back.
             var match = bubbles.FirstOrDefault(b =>
                 string.Equals(b.SpeakerLabel, stat.SpeakerLabel, StringComparison.Ordinal));
             var displayLabel = match is not null ? match.DisplayLabel : stat.SpeakerLabel;
@@ -116,13 +126,19 @@ public static class DirectTranscriptMarkdown
             sb.Append("    sharePercent: ").Append((stat.ShareOfMeasuredSpeech * 100.0).ToString("F1", CultureInfo.InvariantCulture)).Append('\n');
         }
 
+        if (consent is not null)
+        {
+            foreach (var line in ConsentFrontMatter.Render(consent))
+                sb.Append(line).Append('\n');
+        }
+
         sb.Append("---\n");
     }
 
     private static List<string> ResolveDeduplicatedSpeakers(IReadOnlyList<TranscriptBubble> bubbles, string? counterpartName)
     {
         return bubbles
-            .Select(b => SpeakerToDisplayNameConverter.Resolve(b.Speaker, b.DisplayLabel, counterpartName))
+            .Select(b => SpeakerLabelOf(b, counterpartName))
             .Distinct(StringComparer.Ordinal)
             .ToList();
     }

@@ -457,6 +457,24 @@ public class AssistantChatService : IAssistantChatService, IDisposable
         }
     }
 
+    public async Task<bool> ExistsAsync(Guid id, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return false;
+
+            using var command = Connection().CreateCommand();
+            command.CommandText = "SELECT 1 FROM AssistantChats WHERE Id = @Id LIMIT 1";
+            command.Parameters.AddWithValue("@Id", id.ToString());
+            return await command.ExecuteScalarAsync(ct) is not null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(
         string? searchText = null,
         DateTime? fromDate = null,

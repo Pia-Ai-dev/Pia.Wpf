@@ -102,6 +102,14 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
+    public async Task ShowConsentCopiesDialogAsync(ViewModels.ConsentCopiesViewModel viewModel)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new ConsentCopiesContentDialog(dialogHost, viewModel);
+        await dialog.ShowAsync();
+    }
+
     public async Task<bool> ShowAccountDeletionDialogAsync(ViewModels.AccountDeletionViewModel viewModel)
     {
         var dialogHost = _contentDialogService.GetDialogHostEx()

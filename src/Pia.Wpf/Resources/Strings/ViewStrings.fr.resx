@@ -1081,6 +1081,7 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>J'ai sauvegardé mon code de récupération en lieu sûr</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Impossible d'activer le chiffrement</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Configuration du chiffrement…</value></data>
+  <data name="Wizard_E2EE_AlreadyEnabled" xml:space="preserve"><value>Le chiffrement est déjà configuré pour ce compte. Configurez cet appareil avec votre code de récupération ou une approbation depuis un autre appareil.</value></data>
   <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
   <data name="Flow_EmptyState" xml:space="preserve"><value>Vous êtes à jour.</value></data>
   <data name="Flow_ClearAll" xml:space="preserve"><value>Tout effacer</value></data>
@@ -1472,7 +1473,7 @@
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Réunion Teams</value></data>
   <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Lien Teams *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Collez le lien de l'invitation à la réunion</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Tous les participants peuvent être enregistrés et transcrits *</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Tous les participants peuvent être enregistrés et transcrits ; la transcription est enregistrée comme note dans le coffre et, sur demande, analysée par votre fournisseur d’IA *</value></data>
   <data name="Routines_Draft_Describe" xml:space="preserve"><value>Décrivez-la en une phrase</value></data>
   <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Dites ce qui doit se passer et à quelle fréquence. Pia remplit le nom, l’instruction et la planification — vous pouvez tout modifier avant d’enregistrer.</value></data>
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Rédiger avec l’IA</value></data>
@@ -1632,6 +1633,7 @@
   <data name="AiFeedback_Comment_Label" xml:space="preserve"><value>Qu'est-ce qui n'allait pas ?</value></data>
   <data name="AiFeedback_Comment_Placeholder" xml:space="preserve"><value>Facultatif – p. ex. faits erronés, ton inapproprié, refus injustifié</value></data>
   <data name="AiFeedback_IncludeAnswer" xml:space="preserve"><value>Joindre le texte de la réponse</value></data>
+  <data name="AiFeedback_PrivacyConcern" xml:space="preserve"><value>Concerne la protection des données</value></data>
   <data name="AiFeedback_PrivacyNote_Tokenized" xml:space="preserve"><value>Les données personnelles du texte sont remplacées par des espaces réservés avant l'envoi, comme dans vos conversations.</value></data>
   <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>Le texte est envoyé tel qu'affiché ; la tokenisation des données personnelles est désactivée dans vos paramètres de confidentialité.</value></data>
   <data name="About_AiFeedback_Title" xml:space="preserve"><value>Retours et réclamations sur l'IA</value></data>

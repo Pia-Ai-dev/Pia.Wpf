@@ -12,6 +12,7 @@ using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.ViewModels.Models;
@@ -532,7 +533,11 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
             folder = ResolveSaveFolder(settings);
             try { Directory.CreateDirectory(folder); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to ensure transcript folder {Folder}", folder); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to ensure the transcript folder");
+                _logger.SensitiveDebug("Transcript folder: {Folder}", folder);
+            }
         }
         catch (Exception ex)
         {
@@ -553,12 +558,32 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         {
             var markdown = BuildMarkdown();
             await File.WriteAllTextAsync(path, markdown, Encoding.UTF8).ConfigureAwait(false);
-            _logger.LogInformation("Saved transcript to {Path}", path);
+            _logger.LogInformation("Saved transcript ({Chars} chars)", markdown.Length);
+            _logger.SensitiveDebug("Saved transcript to {Path}", path);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save transcript to {Path}", path);
+            _logger.LogError(ex, "Failed to save transcript");
+            _logger.SensitiveDebug("Failed transcript save target: {Path}", path);
+            return;
         }
+
+        await RunSaveHookAsync(() => OnTranscriptExportedAsync(path)).ConfigureAwait(false);
+    }
+
+    /// <summary>The consent evidence a saved transcript carries; <c>null</c> writes none.</summary>
+    /// <param name="transcript">The bubbles the saved body is rendered from.</param>
+    protected virtual ConsentRecord? BuildConsentRecord(IReadOnlyList<TranscriptBubble> transcript) => null;
+
+    protected virtual Task OnTranscriptExportedAsync(string path) => Task.CompletedTask;
+
+    protected virtual Task OnTranscriptSavedToVaultAsync(string reference) => Task.CompletedTask;
+
+    // The transcript is already written, so nothing a hook does may turn the save into a failure.
+    private async Task RunSaveHookAsync(Func<Task> hook)
+    {
+        try { await hook().ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "A transcript save hook failed"); }
     }
 
     private string ResolveSaveFolder(AppSettings settings)
@@ -601,7 +626,8 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         var sessionEnd = transcript.Count > 0 ? transcript[^1].EndTimestamp : _sessionStart;
         var markdown = MeetingVaultMarkdown.Render(
             model.ToMetadata(sessionEnd, MeetingSourceKind),
-            DirectTranscriptMarkdown.RenderBody(_localizationService[TitleKey], transcript, CounterpartName));
+            DirectTranscriptMarkdown.RenderBody(_localizationService[TitleKey], transcript, CounterpartName),
+            BuildConsentRecord(transcript));
 
         var write = await _memoryService.CreateSourceAsync(reference, markdown);
         if (!write.Success)
@@ -617,6 +643,7 @@ public abstract partial class TranscriptOverlayViewModel : ObservableObject, IDi
         // Manual RunAsync always executes and shares the scheduler's serial queue, so it is deterministic
         // whether or not the sources watcher is enabled, and cannot race the watcher's own pickup.
         _ingestScheduler.RunAsync(write.Ref).SafeFireAndForget(_logger);
+        await RunSaveHookAsync(() => OnTranscriptSavedToVaultAsync(write.Ref));
 
         _snackbarService.Show(
             _localizationService["Msg_MeetingSave_Saved"],

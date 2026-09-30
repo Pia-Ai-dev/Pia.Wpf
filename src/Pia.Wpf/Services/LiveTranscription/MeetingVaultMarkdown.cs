@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Pia.Infrastructure.Vault;
 using Pia.Models;
+using Pia.Services.Consent;
 using Pia.Services.Wiki;
 
 namespace Pia.Services.LiveTranscription;
@@ -34,7 +35,7 @@ public static class MeetingVaultMarkdown
 {
     public const string Schema = "pia-meeting/v1";
 
-    public static string Render(MeetingVaultMetadata meta, string body)
+    public static string Render(MeetingVaultMetadata meta, string body, ConsentRecord? consent = null)
     {
         ArgumentNullException.ThrowIfNull(meta);
 
@@ -60,6 +61,12 @@ public static class MeetingVaultMarkdown
         if (meta.ManualIngest)
         {
             sb.Append(SourceIngestMarker.YamlLine).Append('\n');
+        }
+
+        if (consent is not null)
+        {
+            foreach (var line in ConsentFrontMatter.Render(consent))
+                sb.Append(line).Append('\n');
         }
 
         sb.Append("---\n");

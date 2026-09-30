@@ -36,6 +36,9 @@ public interface IDialogService
     /// <see cref="AssignmentConsentViewModel.SendAsync"/> and surfaces its <c>ResultMessage</c>.</summary>
     Task<bool> ShowAssignmentConsentDialogAsync(AssignmentConsentViewModel viewModel);
 
+    /// <summary>Lists a revoked session's copies until the user closes it; deleting happens inside, through the view model.</summary>
+    Task ShowConsentCopiesDialogAsync(ConsentCopiesViewModel viewModel);
+
     /// <summary>True when the user pressed Capture; the caller then awaits
     /// <see cref="ScreenCapturePickerViewModel.CaptureSelectedAsync"/> for the frame.</summary>
     Task<bool> ShowScreenCapturePickerDialogAsync(ScreenCapturePickerViewModel viewModel);

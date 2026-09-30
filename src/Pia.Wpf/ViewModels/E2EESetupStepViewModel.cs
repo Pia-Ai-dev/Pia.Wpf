@@ -53,6 +53,9 @@ public partial class E2EESetupStepViewModel : ObservableObject
     /// </summary>
     public event Action<bool>? AdvanceRequested;
 
+    /// <summary>Raised when the server refuses setup because the account is already encrypted; awaited while still busy.</summary>
+    public event Func<Task>? AccountAlreadyEncrypted;
+
     [RelayCommand]
     private async Task ProceedAsync()
     {
@@ -86,6 +89,13 @@ public partial class E2EESetupStepViewModel : ObservableObject
             RecoveryCode = code;
             State = E2EESetupState.SavingRecoveryCode;
             _logger.LogInformation("E2EE bootstrap completed; awaiting recovery-code confirmation");
+        }
+        catch (E2EEAlreadyEnabledException)
+        {
+            _logger.LogInformation("E2EE bootstrap refused in wizard: the account is already encrypted");
+            State = E2EESetupState.Choice;
+            if (AccountAlreadyEncrypted is { } handler)
+                await handler();
         }
         catch (Exception ex)
         {

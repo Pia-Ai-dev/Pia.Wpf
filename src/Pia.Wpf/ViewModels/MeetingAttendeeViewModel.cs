@@ -2,8 +2,10 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
@@ -26,6 +28,13 @@ namespace Pia.ViewModels;
 public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 {
     private readonly IMeetingAttendeeService _service;
+    private readonly IConsentEvidenceStore? _consentEvidenceStore;
+    private readonly IConsentLiveSessions? _consentLiveSessions;
+
+    private DateTimeOffset? _consentAcknowledgedAt;
+
+    // The session the transcript on screen rests on; ends when that transcript is discarded, not when the meeting does.
+    private HostAcknowledgedSession? _consentSession;
 
     /// <summary>
     /// Stop command. Constructed manually (not via <c>[RelayCommand]</c>) so <see cref="StopAsync"/>
@@ -45,13 +54,12 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
 
     partial void OnMeetingUrlChanged(string value) => DropFailureMessage = null;
 
-    /// <summary>
-    /// One-time, in-session acknowledgement that the user is allowed to have an assistant join and
-    /// transcribe the meeting. Gates <see cref="StartCommand"/> (see open questions re: org policy).
-    /// </summary>
+    /// <summary>The host's confirmation that the meeting may be transcribed; its tick time is the session's consent evidence.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private bool _consentAcknowledged;
+
+    partial void OnConsentAcknowledgedChanged(bool value) => _consentAcknowledgedAt = value ? DateTimeOffset.Now : null;
 
     /// <summary>
     /// The display name the assistant joins the meeting under. Pre-filled on open by
@@ -129,14 +137,18 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         Wpf.Ui.ISnackbarService snackbarService,
         ILogger<MeetingAttendeeViewModel> logger,
         IUiDispatcher uiDispatcher,
-        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves both.
+        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves them.
         IChatSessionManager? chatSessionManager = null,
-        IWorkingDirectoryService? workingDirectoryService = null)
+        IWorkingDirectoryService? workingDirectoryService = null,
+        IConsentEvidenceStore? consentEvidenceStore = null,
+        IConsentLiveSessions? consentLiveSessions = null)
         : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
             ingestScheduler, snackbarService, logger, uiDispatcher, chatSessionManager,
             workingDirectoryService)
     {
         _service = service;
+        _consentEvidenceStore = consentEvidenceStore;
+        _consentLiveSessions = consentLiveSessions;
         CounterpartName = _localizationService["MeetingAttendee_Speaker_Placeholder"];
 
         // Construct StopCommand BEFORE subscribing: OnServiceStateChanged → OnRunningChanged calls
@@ -172,6 +184,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         var name = string.IsNullOrWhiteSpace(settings.MeetingAttendeeDisplayName)
             ? MeetingAttendeeService.BuildDisplayName(settings.SyncUserDisplayName)
             : settings.MeetingAttendeeDisplayName;
+        EndConsentSession();
         DispatchToUi(() =>
         {
             _userDisplayNameForDefault = settings.SyncUserDisplayName;
@@ -271,6 +284,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             : AssistantDisplayName.Trim();
         await _settingsService.SaveSettingsAsync(settings).ConfigureAwait(false);
 
+        EndConsentSession();
         DispatchToUi(() =>
         {
             ClearTranscript();
@@ -299,6 +313,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         try
         {
             await _service.StartAsync(MeetingUrl, cancellationToken, speakerDownload?.Progress).ConfigureAwait(false);
+            await StartConsentSessionAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -315,6 +330,45 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             if (speakerDownload is not null) await speakerDownload.DisposeAsync().ConfigureAwait(false);
         }
     }
+
+    // Once capture runs: a join that failed leaves no evidence folder.
+    private async Task StartConsentSessionAsync()
+    {
+        if (_consentEvidenceStore is null || _consentLiveSessions is null || _consentAcknowledgedAt is not { } acknowledgedAt)
+            return;
+
+        var session = await HostAcknowledgedSession.StartAsync(
+            ConsentSessionMarker.ForTeamsLive(
+                Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow, ConsentNotice.LanguageOf(_localizationService.CurrentLanguage)),
+            acknowledgedAt,
+            _consentEvidenceStore,
+            _consentLiveSessions,
+            _logger).ConfigureAwait(false);
+        Interlocked.Exchange(ref _consentSession, session)?.End();
+    }
+
+    private void EndConsentSession() => Interlocked.Exchange(ref _consentSession, null)?.End();
+
+    // ---- Consent record and copies ---------------------------------------------------------------
+
+    protected override ConsentRecord? BuildConsentRecord(IReadOnlyList<TranscriptBubble> transcript) => _consentSession?.Record;
+
+    protected override Task OnTranscriptExportedAsync(string path)
+        => LogCopyAsync(_consentSession, ConsentCopy.Export(path, DateTimeOffset.UtcNow));
+
+    protected override Task OnTranscriptSavedToVaultAsync(string reference)
+        => LogCopyAsync(_consentSession, ConsentCopy.Vault(reference, DateTimeOffset.UtcNow));
+
+    private static Task LogCopyAsync(HostAcknowledgedSession? session, ConsentCopy copy)
+        => session?.LogCopyAsync(copy) ?? Task.CompletedTask;
+
+    internal override string BuildMarkdown()
+        => _consentSession?.Record is { } record
+            ? ConsentFrontMatter.ReplaceConsents(BuildTranscriptMarkdown(), record)
+            : BuildTranscriptMarkdown();
+
+    // The summary prompt goes to the provider, so it carries the transcript without the consent record.
+    private string BuildTranscriptMarkdown() => base.BuildMarkdown();
 
     // ---- Stop -------------------------------------------------------------------------------------
 
@@ -348,13 +402,10 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
     // ---- Summarize with the assistant ------------------------------------------------------------
 
     /// <summary>
-    /// Raised when the user clicks "Summarize with assistant" on the post-meeting transcript. Carries a
-    /// ready-to-send prompt (a localized instruction describing the transcript's provenance, followed by
-    /// the transcript Markdown). The host <see cref="AssistantViewModel"/> handles it by hiding the
-    /// overlay and sending the prompt to a fresh chat. Meeting-specific, so it lives here rather than on
-    /// the shared base.
+    /// Raised by "Summarize with assistant" with a ready-to-send prompt: a localized provenance instruction and
+    /// the transcript Markdown.
     /// </summary>
-    public event EventHandler<string>? SummarizeRequested;
+    public event EventHandler<TranscriptSummaryRequestedEventArgs>? SummarizeRequested;
 
     /// <summary>
     /// Hands a summarization prompt to the host assistant. Shares <see cref="CanSummarize"/> gating with
@@ -367,7 +418,24 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
         // Do NOT log the prompt or transcript (sensitive user content); only that a summary was requested
         // — mirrors the URL-omitting StartAsync log line.
         _logger.LogInformation("MeetingAttendee ViewModel: summary requested");
-        SummarizeRequested?.Invoke(this, BuildSummaryPrompt());
+
+        // Captured now: the transcript may be discarded by the time the chat gets its id.
+        var session = _consentSession;
+        var logged = LogCopyAsync(session, ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow));
+        logged.SafeFireAndForget(_logger);
+
+        SummarizeRequested?.Invoke(this, new TranscriptSummaryRequestedEventArgs(
+            BuildSummaryPrompt(),
+            chatId => LogChatAfterAsync(logged, session, chatId).SafeFireAndForget(_logger)));
+    }
+
+    // After the summary-requested entry, so the log never names a chat before the request that made it.
+    private async Task LogChatAfterAsync(Task requestLogged, HostAcknowledgedSession? session, Guid chatId)
+    {
+        try { await requestLogged.ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Logging the summary request failed"); }
+
+        await LogCopyAsync(session, ConsentCopy.Chat(chatId, DateTimeOffset.UtcNow)).ConfigureAwait(false);
     }
 
     private bool CanSummarize() => !IsRunning && Bubbles.Count > 0;
@@ -399,7 +467,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
                 sb.Append("- ").AppendLine(attendee);
         }
 
-        sb.AppendLine().AppendLine().Append(BuildMarkdown());
+        sb.AppendLine().AppendLine().Append(BuildTranscriptMarkdown());
         return sb.ToString();
     }
 
@@ -523,6 +591,7 @@ public partial class MeetingAttendeeViewModel : TranscriptOverlayViewModel
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to stop meeting attendee service on dispose"); }
         }
 
+        EndConsentSession();
         base.Dispose();
     }
 }

@@ -15,10 +15,12 @@ namespace Pia.Services.Consent;
 /// The grant evidence, or <c>null</c> when never granted. Preserved across a revocation.
 /// </param>
 /// <param name="DetectedLabel">The diarizer's own label at detection, which no rename changes.</param>
+/// <param name="RevokedAt">When consent was last revoked, or <c>null</c> while it stands or never existed.</param>
 public sealed record SpeakerConsentEntry(
     string SpeakerLabel,
     DateTimeOffset FirstDetected,
     ConsentState State,
     string? ExtractedName,
     ConsentEvidence? Evidence,
-    string DetectedLabel);
+    string DetectedLabel,
+    DateTimeOffset? RevokedAt);

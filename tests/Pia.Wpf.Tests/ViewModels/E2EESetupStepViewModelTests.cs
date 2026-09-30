@@ -181,12 +181,42 @@ public class E2EESetupStepViewModelTests
     {
         _deviceMgmt.BootstrapFirstDeviceAsync().ThrowsAsync(new InvalidOperationException("server unreachable"));
 
+        var alreadyEncryptedRaised = false;
         var sut = CreateSut();
+        sut.AccountAlreadyEncrypted += () =>
+        {
+            alreadyEncryptedRaised = true;
+            return Task.CompletedTask;
+        };
         await sut.ProceedCommand.ExecuteAsync(null);
 
         Assert.Equal(E2EESetupState.Choice, sut.State);
         Assert.NotNull(sut.ErrorMessage);
         Assert.Contains("server unreachable", sut.ErrorMessage);
+        Assert.False(sut.IsBusy);
+        Assert.False(alreadyEncryptedRaised);
+        _syncService.DidNotReceive().StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task Bootstrap_OnAnAlreadyEncryptedAccount_HandsOverWithoutAnError()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync().ThrowsAsync(new E2EEAlreadyEnabledException("already on"));
+        bool? busyWhileRaised = null;
+        var sut = CreateSut();
+        sut.AccountAlreadyEncrypted += () =>
+        {
+            busyWhileRaised = sut.IsBusy;
+            return Task.CompletedTask;
+        };
+
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        Assert.True(busyWhileRaised);
+        Assert.Equal(E2EESetupState.Choice, sut.State);
+        Assert.Null(sut.ErrorMessage);
+        Assert.False(sut.HasErrorMessage);
+        Assert.Null(sut.RecoveryCode);
         Assert.False(sut.IsBusy);
         _syncService.DidNotReceive().StartBackgroundSync();
     }

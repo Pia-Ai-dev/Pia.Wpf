@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Consent;
@@ -32,6 +33,8 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     private readonly IDirectTranscriptionService _service;
     private readonly IClipboardService? _clipboardService;
     private readonly IConsentSoundPlayer? _consentSoundPlayer;
+    private readonly IConsentEvidenceStore? _consentEvidenceStore;
+    private readonly Func<ConsentCopiesViewModel>? _consentCopies;
 
     private readonly Dictionary<string, int> _chipColorIndex = new(StringComparer.Ordinal);
     private int _nextChipColorIndex;
@@ -84,12 +87,10 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
     protected override string MeetingSourceKind => "direct";
 
     /// <summary>
-    /// Raised when the user clicks "Summarize with assistant". Carries a ready-to-send prompt (a
-    /// localized instruction followed by the front-matter-free transcript body) — mirrors
-    /// <see cref="MeetingAttendeeViewModel.SummarizeRequested"/>. The old silent-save-then-hand-over-a-
-    /// path flow cannot be ported: both types it needed were deleted from the current branch.
+    /// Raised by "Summarize with assistant" with a ready-to-send prompt: a localized instruction and the
+    /// front-matter-free body, so no consent record reaches the provider.
     /// </summary>
-    public event EventHandler<string>? SummarizeRequested;
+    public event EventHandler<TranscriptSummaryRequestedEventArgs>? SummarizeRequested;
 
     public DirectTranscriptionViewModel(
         IDirectTranscriptionService service,
@@ -104,9 +105,11 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         IUiDispatcher uiDispatcher,
         IClipboardService? clipboardService = null,
         IConsentSoundPlayer? consentSoundPlayer = null,
-        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves both.
+        // Trailing and defaulted: the hand-built test sites keep compiling; the container resolves them.
         IChatSessionManager? chatSessionManager = null,
-        IWorkingDirectoryService? workingDirectoryService = null)
+        IWorkingDirectoryService? workingDirectoryService = null,
+        IConsentEvidenceStore? consentEvidenceStore = null,
+        Func<ConsentCopiesViewModel>? consentCopies = null)
         : base(settingsService, localizationService, fileDialogService, dialogService, memoryService,
             ingestScheduler, snackbarService, logger, uiDispatcher, chatSessionManager,
             workingDirectoryService)
@@ -114,6 +117,8 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _service = service;
         _clipboardService = clipboardService;
         _consentSoundPlayer = consentSoundPlayer;
+        _consentEvidenceStore = consentEvidenceStore;
+        _consentCopies = consentCopies;
 
         // Construct StopCommand BEFORE subscribing to StateChanged: a state change raised during wiring
         // would NRE in OnRunningChanged (mirrors MeetingAttendeeViewModel's ctor ordering).
@@ -373,22 +378,45 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
 
     protected override void OnSpeakerNamingChanged() => RenameSpeakerLabelCommand.NotifyCanExecuteChanged();
 
-    /// <summary>
-    /// Withdraws a speaker's consent (§3.3): tells the service, removes their bubbles/journal entries
-    /// from the in-memory transcript (<see cref="TranscriptOverlayViewModel.RemoveSpeaker"/>), and marks
-    /// the chip revoked. No confirmation dialog in v1 (no localized key exists for one).
-    /// </summary>
     [RelayCommand(CanExecute = nameof(CanRevokeSpeaker))]
-    private Task RevokeSpeakerAsync(string? speakerLabel)
+    private async Task RevokeSpeakerAsync(string? speakerLabel)
     {
-        if (string.IsNullOrWhiteSpace(speakerLabel)) return Task.CompletedTask;
+        if (string.IsNullOrWhiteSpace(speakerLabel)) return;
 
-        _service.RevokeSpeaker(speakerLabel);
+        var revoked = _service.RevokeSpeaker(speakerLabel);
         ApplyRevocation(speakerLabel);
-        return Task.CompletedTask;
+        if (revoked) await ShowSessionCopiesAsync();
     }
 
     private static bool CanRevokeSpeaker(string? speakerLabel) => !string.IsNullOrWhiteSpace(speakerLabel);
+
+    // The copies still hold the withdrawn words. The session's evidence folder is left alone: the session is live.
+    private async Task ShowSessionCopiesAsync()
+    {
+        if (_consentCopies is null) return;
+        var sessionIds = _service.TranscriptSessionIds;
+        if (sessionIds.Count == 0) return;
+
+        ConsentCopiesViewModel copies;
+        try
+        {
+            copies = _consentCopies();
+            await copies.LoadAsync(sessionIds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to list the copies of a revoked session");
+            return;
+        }
+
+        if (!copies.HasCopies) return;
+
+        try { await _dialogService.ShowConsentCopiesDialogAsync(copies); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to show the copies of a revoked session"); }
+
+        try { await copies.RecordRevocationInKeptNotesAsync(BuildRecord(shownAs: null)); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to record a revocation in the kept vault notes"); }
+    }
 
     // ---- Summarize with the assistant ---------------------------------------------------------------
 
@@ -398,7 +426,25 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         if (!CanSummarize()) return;
         // Do NOT log the prompt or transcript (sensitive user content); only that a summary was requested.
         _logger.LogInformation("DirectTranscription ViewModel: summary requested");
-        SummarizeRequested?.Invoke(this, BuildSummaryPrompt());
+
+        // Captured now: the session may have ended by the time the chat gets its id.
+        var sessionIds = _service.TranscriptSessionIds;
+        var logged = LogCopyAsync(sessionIds, ConsentCopy.SummaryRequested(DateTimeOffset.UtcNow));
+        logged.SafeFireAndForget(_logger);
+
+        SummarizeRequested?.Invoke(this, new TranscriptSummaryRequestedEventArgs(
+            BuildSummaryPrompt(),
+            chatId => LogChatAfterAsync(logged, sessionIds, ConsentCopy.Chat(chatId, DateTimeOffset.UtcNow))
+                .SafeFireAndForget(_logger)));
+    }
+
+    // After the summary-requested entry, so the log never names a chat before the request that made it.
+    private async Task LogChatAfterAsync(Task requestLogged, IReadOnlyList<string> sessionIds, ConsentCopy chat)
+    {
+        try { await requestLogged.ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Logging the summary request failed"); }
+
+        await LogCopyAsync(sessionIds, chat).ConfigureAwait(false);
     }
 
     private bool CanSummarize() => !IsRunning && Bubbles.Count > 0;
@@ -421,7 +467,7 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
 
     // ---- Save (front matter + stats block) ----------------------------------------------------------
 
-    /// <summary>Prepends YAML front matter (schema/session bounds/speakers) and the voice-stats block.</summary>
+    /// <summary>Prepends YAML front matter (schema/session bounds/speakers/consent) and the voice-stats block.</summary>
     internal override string BuildMarkdown()
     {
         var transcript = BuildFullTranscript();
@@ -432,7 +478,39 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
             sessionEnd,
             transcript,
             SuppressSpeakerLabels ? [] : _service.GetVoiceStats(),
-            CounterpartName);
+            CounterpartName,
+            BuildConsentRecord(transcript));
+    }
+
+    protected override ConsentRecord? BuildConsentRecord(IReadOnlyList<TranscriptBubble> transcript)
+    {
+        var record = BuildRecord(consent => DirectTranscriptMarkdown.ShownAs(transcript, consent.Speaker.SpeakerLabel, CounterpartName));
+        return record.IsEmpty ? null : record;
+    }
+
+    // A kept note passes no shownAs: what it prints for a speaker is its own, and the rewrite keeps it.
+    private ConsentRecord BuildRecord(Func<SessionSpeakerConsent, string?>? shownAs) =>
+        ConsentRecord.ForSpeakers(
+            _service.TranscriptSessionIds,
+            ConsentNotice.Version,
+            ConsentNotice.Purposes,
+            _service.TranscriptNoticeLanguage ?? ConsentNotice.LanguageOf(_localizationService.CurrentLanguage),
+            _service.TranscriptConsents,
+            shownAs);
+
+    protected override Task OnTranscriptExportedAsync(string path)
+        => LogCopyAsync(_service.TranscriptSessionIds, ConsentCopy.Export(path, DateTimeOffset.UtcNow));
+
+    protected override Task OnTranscriptSavedToVaultAsync(string reference)
+        => LogCopyAsync(_service.TranscriptSessionIds, ConsentCopy.Vault(reference, DateTimeOffset.UtcNow));
+
+    // Every session the transcript rests on; the store skips those nobody consented in.
+    private async Task LogCopyAsync(IReadOnlyList<string> sessionIds, ConsentCopy copy)
+    {
+        if (_consentEvidenceStore is null) return;
+
+        foreach (var sessionId in sessionIds)
+            await _consentEvidenceStore.AppendCopyAsync(sessionId, copy).ConfigureAwait(false);
     }
 
     // ---- Consent chips -------------------------------------------------------------------------------
@@ -521,13 +599,8 @@ public sealed partial class DirectTranscriptionViewModel : TranscriptOverlayView
         _consentSoundPlayer?.PlayConsentGranted();
     }
 
-    /// <summary>
-    /// The service discarded the consent map (a re-prepare after a failed start rebuilds the diarizer, so
-    /// old labels now belong to different voices). Drop every chip and every statistic: leaving a chip
-    /// reading "consented" while the gate has reverted that speaker to Unknown would tell the user a
-    /// participant is being recorded while their speech is in fact being dropped. Existing bubbles stay —
-    /// that text was emitted lawfully under the consent that existed at the time.
-    /// </summary>
+    // A chip still reading "consented" would claim a recording the reset gate now drops. The bubbles stay: they
+    // were emitted under the consent of the time.
     private void OnConsentSessionReset(object? sender, EventArgs e)
     {
         DispatchToUi(() =>

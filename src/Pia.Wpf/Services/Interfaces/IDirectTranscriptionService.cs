@@ -72,6 +72,25 @@ public interface IDirectTranscriptionService : IAsyncDisposable
     /// <summary>Current lifecycle state.</summary>
     DirectTranscriptionState State { get; }
 
+    /// <summary>The current session's id, or <c>null</c> when no session has been prepared.</summary>
+    string? SessionId { get; }
+
+    /// <summary>
+    /// Every id minted since the last session end: a failed-start retry mints a new one but keeps the transcript.
+    /// </summary>
+    IReadOnlyList<string> TranscriptSessionIds { get; }
+
+    /// <summary>Every speaker's consent state across <see cref="TranscriptSessionIds"/>, oldest session first.</summary>
+    IReadOnlyList<SessionSpeakerConsent> TranscriptConsents { get; }
+
+    /// <summary>Two-letter language the notice was shown in at the transcript's first start; <c>null</c> before it.</summary>
+    string? TranscriptNoticeLanguage { get; }
+
+    /// <summary>
+    /// Raised by <see cref="EndSessionAsync"/> once per transcript session id, before any is cleared; not at dispose.
+    /// </summary>
+    event EventHandler<string>? SessionEnded;
+
     /// <summary>
     /// Stable for the service lifetime; SingleReader — exactly one consumer ever. Completed only in
     /// <see cref="IAsyncDisposable.DisposeAsync"/>, so it survives a stop/resume cycle unchanged.
@@ -128,9 +147,8 @@ public interface IDirectTranscriptionService : IAsyncDisposable
     Task StopAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Ends the session: <see cref="StopAsync"/>, then dispose the shared engine and the diarizer LAST
-    /// (native resources), clear the consent map, rotate the session id, and return to
-    /// <see cref="DirectTranscriptionState.Idle"/>. Consent does not survive this.
+    /// Stops, disposes the natives, raises <see cref="SessionEnded"/>, then clears the consent map and the
+    /// session ids and returns to <see cref="DirectTranscriptionState.Idle"/>.
     /// </summary>
     Task EndSessionAsync(CancellationToken cancellationToken = default);
 
@@ -144,10 +162,11 @@ public interface IDirectTranscriptionService : IAsyncDisposable
     bool RenameSpeaker(string oldLabel, string newLabel);
 
     /// <summary>
-    /// Withdraws one speaker's consent for the rest of the session. Their subsequent speech is dropped;
-    /// the recorded grant evidence is preserved.
+    /// Withdraws one speaker's consent for the rest of the session, also one given in an earlier session of the
+    /// transcript. Their subsequent speech is dropped; the recorded grant evidence is preserved.
     /// </summary>
-    void RevokeSpeaker(string speakerLabel);
+    /// <returns><c>false</c> when the label holds no consent of the transcript to withdraw.</returns>
+    bool RevokeSpeaker(string speakerLabel);
 
     /// <summary>
     /// Per-speaker speaking statistics for CONSENTED speech only — dropped audio is never measured.

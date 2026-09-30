@@ -507,6 +507,8 @@ Les modifications seront appliquées.</value></data>
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Merci</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Votre retour a été envoyé à l'équipe Pia Cloud.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>Le retour n'a pas pu être envoyé. Vérifiez la connexion à Pia Cloud et réessayez.</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly_Title" xml:space="preserve"><value>Signalement enregistré</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly" xml:space="preserve"><value>Votre signalement est enregistré chez l'opérateur du serveur, mais personne n'a été prévenu.</value></data>
   <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>Cette fenêtre ou cet écran n'est plus disponible.</value></data>
   <data name="Msg_Screen_Minimized" xml:space="preserve"><value>La fenêtre est réduite. Restaurez-la d'abord — Pia ne déplace pas les fenêtres elle-même.</value></data>
   <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>La fenêtre est masquée par Windows (autre bureau virtuel ou application suspendue).</value></data>
