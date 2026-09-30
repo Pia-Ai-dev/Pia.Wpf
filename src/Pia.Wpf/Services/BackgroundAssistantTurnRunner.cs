@@ -508,8 +508,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             if (approvals?.PendingToolName is { } parkedFor)
             {
                 dispatch.Stop?.RequestStop();
-                approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
-                approvals.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: true));
+                var withheldHeading = ParkedHeading(pending);
+                approvals.Park(pending.ToolName, withheldHeading ?? ToolApprovalArguments.Describe(toolCall));
+                approvals.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: true, withheldHeading));
                 _logger.LogInformation(
                     "Background turn withheld {ToolName}: the run is already parked on {ParkedToolName}",
                     pending.ToolName, parkedFor);
@@ -643,11 +644,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 dispatch.Stop?.RequestStop();
                 // The arguments ride along so the Continue card can name what it is about to allow. NOT logged
                 // anywhere on this path — a path is user content, and the count is what the audit row carries.
+                var heading = ParkedHeading(pending);
                 var parked = approvals is not null
-                    && approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
+                    && approvals.Park(pending.ToolName, heading ?? ToolApprovalArguments.Describe(toolCall));
                 // Outside the audit guard below: a second parked call of the same tool writes no second
                 // timeline row but must still be replayable — that is the delete-four-files case.
-                approvals?.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: false));
+                approvals?.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: false, heading));
                 _logger.LogInformation(
                     "Background turn parked {ToolName} for human approval (first={First})", pending.ToolName, parked);
                 // Audited only for the call that actually parked the run. A second parked call in the
@@ -704,14 +706,22 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// is the one spelling the pause envelope, the grant list and the re-route all key on.
     /// </summary>
     private static ToolApprovalStore.ParkedCall BuildParkedCall(
-        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, bool withheld) =>
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, bool withheld,
+        string? heading) =>
         new(pending.ToolName,
             toolCall.CallId,
             dispatch.Round,
             pending.PluginId,
             AgentToolExchangeSerializer.SerializeArguments(toolCall.Arguments),
-            ToolApprovalArguments.Describe(toolCall),
+            // DisplayArgs is the text to show for this parked call: its heading when it has one, else its arguments.
+            heading ?? ToolApprovalArguments.Describe(toolCall),
             withheld);
+
+    // A knowledge-base call names its target by id, so the approver is shown what it does and warns about instead.
+    private string? ParkedHeading(PluginToolCall pending) =>
+        ToolClassifier.Classify(pending.PluginName, IsExternalTool(pending.ToolName)) == ToolClass.KnowledgeBase
+            ? ToolApprovalArguments.Heading(pending.Description, pending.Warning)
+            : null;
 
     /// <summary>
     /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the

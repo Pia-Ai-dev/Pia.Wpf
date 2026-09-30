@@ -48,6 +48,35 @@ public sealed class RunProgressViewModelApprovalDetailTests
         vm.Dispose();
     }
 
+    /// <summary>A knowledge-base park stores "what this call is" beside its arguments, so the disclosure opens with
+    /// it and the GUID-only key=value lines follow.</summary>
+    [Fact]
+    public async Task ApprovalDetail_OpensWithTheStoredHeading_WhenTheRowCarriesOne()
+    {
+        const string heading = "Add \"X\" to Handbook — The content is stored unencrypted.";
+        StubRow(Row("write_file", """{"kb_id":"1","path":"x.md"}""", heading));
+
+        var vm = CreateVm();
+        await vm.ApprovalDetailLoadTask!;
+
+        Assert.Equal(heading + "\nkb_id=1\npath=x.md", vm.ApprovalDetailText);
+        vm.Dispose();
+    }
+
+    /// <summary>Rows parked before headings existed hold the capped argument line in that column. Printing it
+    /// above the very lines it summarises would show every argument twice.</summary>
+    [Fact]
+    public async Task ApprovalDetail_OfARowWrittenBeforeHeadings_RendersAsItAlwaysDid()
+    {
+        StubRow(Row("write_file", ArgumentsJson("hello"), "content=hello path=canary.md"));
+
+        var vm = CreateVm();
+        await vm.ApprovalDetailLoadTask!;
+
+        Assert.Equal("content=hello\npath=canary.md", vm.ApprovalDetailText);
+        vm.Dispose();
+    }
+
     /// <summary>The park row is committed by the run's own path, so the first projection can legitimately read
     /// nothing. An attempt-latch would leave the disclosure permanently absent.</summary>
     [Fact]
@@ -180,7 +209,7 @@ public sealed class RunProgressViewModelApprovalDetailTests
     private static string ArgumentsJson(string content) =>
         $$"""{"content":"{{content}}","path":"canary.md"}""";
 
-    private static AgentToolExchangeRow Row(string toolName, string argumentsJson) => new(
+    private static AgentToolExchangeRow Row(string toolName, string argumentsJson, string displayArgs = CappedArgs) => new(
         Id: Guid.NewGuid(),
         RunId: Guid.NewGuid(),
         StepId: null,
@@ -194,7 +223,7 @@ public sealed class RunProgressViewModelApprovalDetailTests
         PluginId: null,
         ArgumentsJson: argumentsJson,
         ArgsOmitted: false,
-        DisplayArgs: CappedArgs,
+        DisplayArgs: displayArgs,
         ResultKind: AgentToolExchangeResult.None,
         ResultText: null,
         Chars: argumentsJson.Length,

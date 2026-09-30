@@ -256,6 +256,58 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>A knowledge-base call names its target by GUID, so the approver saw "kb_id=… path=…" with no
+    /// knowledge base and neither warning. The description and the handler's warnings now ride with the park.</summary>
+    [Fact]
+    public async Task AKnowledgeBaseWrite_ParksWithTheKbNameAndBothWarnings_OnTheEnvelopeAndTheRow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string description = "Add \"Onboarding\" to Handbook";
+        const string unencrypted = "The content is stored unencrypted on the server.";
+        const string shared = "This knowledge base is also used by other groups.";
+        var probe = new ToolProbe("upload_kb_document");
+        var (launcher, _) = Build(probe, pluginName: "kb-manager", description: description,
+            warning: unencrypted + "\n" + shared, firstPath: "notes/onboarding.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal("upload_kb_document", PauseMember(run, "tool"));
+        var expected = $"{description} — {unencrypted} — {shared}";
+        Assert.Equal(expected, PauseMember(run, "args"));
+
+        var row = Assert.Single(await _exchanges!.GetReplayableAsync(handle.RunId, "upload_kb_document", ct));
+        Assert.Equal(expected, row.DisplayArgs);
+        // The replayable call itself is untouched: the heading is display text, never part of the arguments.
+        Assert.Contains("notes/onboarding.md", row.ArgumentsJson, StringComparison.Ordinal);
+        Assert.False(probe.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    /// <summary>The control: only a knowledge-base call is rewritten. Another tool's description and warning must
+    /// not displace the argument line, whose paths are what the approver is deciding on.</summary>
+    [Fact]
+    public async Task AToolOutsideTheKnowledgeBase_KeepsTodaysParkText()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, description: "Write report.md", warning: "careful", firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal("path=report.md", PauseMember(run, "args"));
+        var row = Assert.Single(await _exchanges!.GetReplayableAsync(handle.RunId, "write_file", ct));
+        Assert.Equal("path=report.md", row.DisplayArgs);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>The other half of the reported loss: the run's only real vault write was the SECOND call in the
     /// parked exchange, discarded with the same envelope. It survives as its own replayable row.</summary>
     [Fact]
@@ -1446,7 +1498,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         IToolPermissionService? permissions = null,
         string? firstPath = null, string? secondPath = null, string? firstContent = null,
         bool faultOnExecute = false, string executeResult = ExecuteResult, ITokenMapService? tokenMap = null,
-        IReadOnlyList<IReadOnlyList<ScriptedCall>>? dispatchScript = null)
+        IReadOnlyList<IReadOnlyList<ScriptedCall>>? dispatchScript = null,
+        string? pluginName = null, string description = "desc", string? warning = null)
     {
         List<ScriptedCall> everyDispatch = [new(probe.ToolName, firstPath, firstContent)];
         if (secondToolName is not null)
@@ -1486,14 +1539,16 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 return routed
                     // A deferred write is the only shape that reaches the gate; a read short-circuits above it.
                     ? ((object? Result, PluginToolCall? PendingAction)?)(null, new PluginToolCall(
-                        name, pluginId ?? Guid.NewGuid(), isMcpTool ? "some-mcp-server" : "files", "desc", null,
+                        name, pluginId ?? Guid.NewGuid(), pluginName ?? (isMcpTool ? "some-mcp-server" : "files"),
+                        description, null,
                         () =>
                         {
                             probe.MarkExecuted(name, ArgumentText(call, "path"));
                             if (faultOnExecute && probe.ExecutedNames.Count == 1)
                                 throw new InvalidOperationException(ExecuteFailure);
                             return Task.FromResult<object?>(executeResult);
-                        }))
+                        },
+                        Warning: warning))
                     // NULL, not a tuple of nulls: `route is null` is what the handler tests for, and a
                     // (null, null) tuple would fall out at "Tool call handled." instead — a different path.
                     : null;
