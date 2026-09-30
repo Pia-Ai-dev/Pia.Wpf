@@ -268,4 +268,58 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
         Assert.Null(pending);
         Assert.Equal("That document is not in this knowledge base. Call list_kb_documents for the ids.", result);
     }
+
+    [Fact]
+    public async Task Upload_Execute_SendsTheBytesTheCardShowed_EvenIfTheFileChangedAfterwards()
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("a.md", "approved");
+        Api.UploadAsync(Kb, Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Ok, new KbManagerWriteResult(Doc, "Pending")));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+        WriteFile("a.md", "swapped after the card was shown");
+        await pending!.Execute();
+
+        await Api.Received(1).UploadAsync(Kb, Arg.Is<KbManagerUploadRequest>(r => r.Content == "approved"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("upload_kb_document")]
+    [InlineData("set_kb_prompt")]
+    [InlineData("delete_kb_document")]
+    public async Task AnyWrite_ForbiddenWhenExecuted_HidesTheSurfaceAndSaysSoOnce(string tool)
+    {
+        KnowledgeBases(Handbook());
+        Documents(Onboarding());
+        WriteFile("a.md", "x");
+        var forbidden = new KbManagerError(KbManagerErrorCodes.NotAKbManager, null, null, null, null, null);
+        Api.UploadAsync(Arg.Any<Guid>(), Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>()).Returns(
+            new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Forbidden, null, forbidden));
+        Api.SetPromptAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(
+            new KbManagerResult<bool>(KbManagerCallStatus.Forbidden, false, forbidden));
+        Api.DeleteAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(
+            new KbManagerResult<bool>(KbManagerCallStatus.Forbidden, false, forbidden));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call(tool,
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString()), ("path", "a.md"), ("prompt", "p")), Ct);
+        var executed = await pending!.Execute();
+
+        Surface.Received(1).Hide();
+        Assert.Equal("The server no longer lets you manage knowledge bases, so nothing was read or changed.", executed);
+    }
+
+    [Fact]
+    public async Task AHostileTitle_CannotAddALineToTheCard()
+    {
+        KnowledgeBases(new KbManagerKnowledgeBase(Kb, "Handbook\nSize: 0 B", 1, false, false));
+        Documents(Onboarding() with { Title = "Plan\r\nKnowledge base: Somewhere else" });
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("delete_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString())), Ct);
+
+        Assert.Equal(3, pending!.Details!.Split('\n').Length);
+    }
 }
