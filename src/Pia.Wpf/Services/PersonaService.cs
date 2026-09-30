@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Shared;
 
 namespace Pia.Services;
@@ -28,25 +29,34 @@ public class PersonaService : IPersonaService
     private readonly SyncDeleteTrackerService _deleteTracker;
     private readonly ISettingsService _settingsService;
 
+    private readonly IKnowledgeManagerSurfaceCache? _kbManagerSurface;
+
     private readonly IReadOnlyList<Persona> _builtIns;
     private readonly HashSet<Guid> _builtInIds;
 
     public event EventHandler? PersonasChanged;
     public event EventHandler<ManagedPersonaWithdrawnEventArgs>? ManagedPersonaWithdrawn;
 
+    // Trailing and defaulted, same discipline; null ⇒ the KB Curator is never hidden for want of a surface.
     public PersonaService(
         SqliteContext context,
         ILogger<PersonaService> logger,
         SyncDeleteTrackerService deleteTracker,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        IKnowledgeManagerSurfaceCache? kbManagerSurface = null)
     {
         _context = context;
         _logger = logger;
         _deleteTracker = deleteTracker;
         _settingsService = settingsService;
+        _kbManagerSurface = kbManagerSurface;
 
         _builtIns = CreateBuiltInPersonas();
         _builtInIds = _builtIns.Select(p => p.Id).ToHashSet();
+
+        // Raised on whichever thread the probe ran on; every subscriber marshals to the UI thread itself.
+        if (kbManagerSurface is not null)
+            kbManagerSurface.Changed += (_, _) => OnPersonasChanged();
     }
 
     private void OnPersonasChanged() => PersonasChanged?.Invoke(this, EventArgs.Empty);
@@ -423,8 +433,16 @@ public class PersonaService : IPersonaService
             ?? _builtIns.First(p => p.Id == fallbackId);
     }
 
-    private async Task<HashSet<Guid>> GetBlockedBuiltInIdsAsync() =>
-        ResolveBlockedBuiltInIds(await _settingsService.GetSettingsAsync());
+    private async Task<HashSet<Guid>> GetBlockedBuiltInIdsAsync()
+    {
+        var blocked = ResolveBlockedBuiltInIds(await _settingsService.GetSettingsAsync());
+
+        // Its tools exist only for a KB manager, so without the surface it has nothing to work with.
+        if (_kbManagerSurface is { IsAvailable: false })
+            blocked.Add(BuiltInPersonas.PiaKbCuratorId);
+
+        return blocked;
+    }
 
     internal static HashSet<Guid> ResolveBlockedBuiltInIds(AppSettings settings)
     {

@@ -8,3 +8,6 @@
   knowledge base. Changes ask first, unless you chose "Always allow" for it.
 - The new "kb-manager" plugin is off by default and only listed for users
   your administrator or organisation manager made knowledge-base manager.
+- The new persona "Pia · KB Curator" plans and explains knowledge-base
+  changes step by step. It shows in the persona picker only for
+  knowledge-base managers.
