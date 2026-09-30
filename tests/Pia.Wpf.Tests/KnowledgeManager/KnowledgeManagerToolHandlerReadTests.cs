@@ -222,6 +222,7 @@ public sealed class KnowledgeManagerToolHandlerReadTests : KnowledgeManagerToolH
     [Fact]
     public async Task ADocumentThatIsNotThere_IsNamedAsSuch()
     {
+        KnowledgeBases(Handbook());
         Api.GetContentAsync(Kb, Doc, Arg.Any<CancellationToken>())
             .Returns(new KbManagerResult<KbManagerDocumentContent>(KbManagerCallStatus.NotFound));
 
@@ -229,5 +230,33 @@ public sealed class KnowledgeManagerToolHandlerReadTests : KnowledgeManagerToolH
             Call("read_kb_document", ("kb_id", Kb.ToString()), ("document_id", Doc.ToString())), Ct);
 
         Assert.Equal("That document is not in this knowledge base. Call list_kb_documents for the ids.", result);
+    }
+
+    [Fact]
+    public async Task AKnowledgeBaseThatIsNotThere_IsNamedAsSuch_NotAsAMissingDocument()
+    {
+        KnowledgeBases();
+        Api.GetContentAsync(Kb, Doc, Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerDocumentContent>(KbManagerCallStatus.NotFound));
+
+        var (result, _) = await CreateSut().HandleToolCallAsync(
+            Call("read_kb_document", ("kb_id", Kb.ToString()), ("document_id", Doc.ToString())), Ct);
+
+        Assert.Equal("That knowledge base is not one you can manage. Call list_knowledge_bases for the ids.", result);
+    }
+
+    [Fact]
+    public async Task ANotFound_WhenTheKnowledgeBaseLookupIsRefused_ReportsThatRefusal()
+    {
+        Api.ListKnowledgeBasesAsync(Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<IReadOnlyList<KbManagerKnowledgeBase>>(KbManagerCallStatus.Forbidden));
+        Api.GetContentAsync(Kb, Doc, Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerDocumentContent>(KbManagerCallStatus.NotFound));
+
+        var (result, _) = await CreateSut().HandleToolCallAsync(
+            Call("read_kb_document", ("kb_id", Kb.ToString()), ("document_id", Doc.ToString())), Ct);
+
+        Surface.Received(1).Hide();
+        Assert.Equal("The server no longer lets you manage knowledge bases, so nothing was read or changed.", result);
     }
 }

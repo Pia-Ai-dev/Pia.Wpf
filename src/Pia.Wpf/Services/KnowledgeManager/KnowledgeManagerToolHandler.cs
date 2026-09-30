@@ -59,6 +59,8 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
     private const string UploadQueued = "Queued for indexing. It becomes searchable once its status is Ready — check with list_kb_documents.";
     private const string UpdateQueued = "Replaced. The previous version stays searchable until the new one is indexed.";
 
+    private const int PreviewChars = 200;
+
     private readonly IKnowledgeManagerApiClient _api;
     private readonly IKnowledgeManagerSurfaceCache _surface;
     private readonly IFilesToolHandler _files;
@@ -212,6 +214,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         if (!TryGetGuid(args, "document_id", out var documentId)) return BadDocumentId;
 
         var result = await _api.GetContentAsync(kbId, documentId, ct);
+        if (result.Status == KbManagerCallStatus.NotFound) return await NotFoundSentenceAsync(kbId, ct);
         if (!result.IsOk) return Refusal(result, documentScoped: true);
 
         var (text, truncated) = TruncateUtf8(result.Value!.Content, KbManagerLimits.MaxInlineContentBytes);
@@ -400,7 +403,13 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
     // The card parses one "Label: value" pair per line, so a value may not carry a line break.
     private static string OneLine(string value) => value.Replace('\r', ' ').Replace('\n', ' ');
 
-    private static string Preview(string prompt) => prompt.Length <= 200 ? prompt : prompt[..200] + "…";
+    private static string Preview(string prompt)
+    {
+        if (prompt.Length <= PreviewChars) return prompt;
+
+        var cut = char.IsHighSurrogate(prompt[PreviewChars - 1]) ? PreviewChars - 1 : PreviewChars;
+        return prompt[..cut] + "…";
+    }
 
     private static string FormatSize(long bytes) => bytes switch
     {
@@ -418,6 +427,10 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         var kb = result.Value!.FirstOrDefault(k => k.Id == kbId);
         return kb is null ? (null, UnknownKb) : (kb, null);
     }
+
+    // The server answers a missing KB and a missing document alike with not_found, so only the KB list can tell them apart.
+    private async Task<string> NotFoundSentenceAsync(Guid kbId, CancellationToken ct) =>
+        (await FindKnowledgeBaseAsync(kbId, ct)).Refusal ?? UnknownDocument;
 
     private async Task<(KbManagerDocument? Value, string? Refusal)> FindDocumentAsync(
         Guid kbId, Guid documentId, CancellationToken ct)

@@ -229,6 +229,47 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
     }
 
     [Fact]
+    public async Task SetPrompt_ALongPrompt_IsPreviewedWithoutSplittingASurrogatePair()
+    {
+        KnowledgeBases(Handbook());
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", new string('a', 199) + "😀" + "tail")), Ct);
+
+        var preview = PromptPreview(pending!.Details!);
+        Assert.Equal(new string('a', 199) + "…", preview);
+        AssertNoLoneSurrogate(preview);
+    }
+
+    [Fact]
+    public async Task SetPrompt_ALongPrompt_KeepsAPairThatEndsExactlyAtTheCut()
+    {
+        KnowledgeBases(Handbook());
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", new string('a', 198) + "😀" + "tail")), Ct);
+
+        var preview = PromptPreview(pending!.Details!);
+        Assert.Equal(new string('a', 198) + "😀" + "…", preview);
+        AssertNoLoneSurrogate(preview);
+    }
+
+    private static string PromptPreview(string details)
+    {
+        const string label = "Msg_KbManager_Detail_Prompt: ";
+        return details[(details.IndexOf(label, StringComparison.Ordinal) + label.Length)..];
+    }
+
+    private static void AssertNoLoneSurrogate(string text)
+    {
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (char.IsHighSurrogate(text[i])) Assert.True(i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]));
+            if (char.IsLowSurrogate(text[i])) Assert.True(i > 0 && char.IsHighSurrogate(text[i - 1]));
+        }
+    }
+
+    [Fact]
     public async Task SetPrompt_OnAnUnsharedKb_CarriesNoWarning()
     {
         KnowledgeBases(Handbook(shared: false));
