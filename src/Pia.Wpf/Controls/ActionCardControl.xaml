@@ -127,7 +127,6 @@
               </Style>
             </StackPanel.Style>
 
-            <!-- Warning text -->
             <TextBlock Text="{Binding WarningText}"
                        FontSize="12"
                        Foreground="#C42B1C"
