@@ -308,6 +308,30 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
     }
 
     [Fact]
+    public async Task SetPrompt_AnEmptyString_SaysOnTheCardThatItClearsThePrompt()
+    {
+        KnowledgeBases(Handbook());
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", "")), Ct);
+
+        Assert.Equal("Msg_KbManager_Summary_PromptClear(Handbook)", pending!.Description);
+        Assert.Contains(
+            "Msg_KbManager_Detail_Prompt: Msg_KbManager_Detail_PromptRemoved", pending.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SetPrompt_ANonEmptyString_KeepsTheOrdinaryChangeWording()
+    {
+        KnowledgeBases(Handbook());
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", "Search for HR questions.")), Ct);
+
+        Assert.Equal("Msg_KbManager_Summary_Prompt(Handbook)", pending!.Description);
+    }
+
+    [Fact]
     public async Task SetPrompt_ALongPrompt_IsPreviewedWithoutSplittingASurrogatePair()
     {
         KnowledgeBases(Handbook());

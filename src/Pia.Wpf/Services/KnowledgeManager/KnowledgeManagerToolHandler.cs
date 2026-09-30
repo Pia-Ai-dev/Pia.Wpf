@@ -358,11 +358,13 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         var kb = await FindKnowledgeBaseAsync(kbId, ct);
         if (kb.Refusal is { } refusal) return (refusal, null);
 
+        var clearing = prompt.Length == 0;
+        var shown = clearing ? _localization["Msg_KbManager_Detail_PromptRemoved"] : OneLine(Preview(prompt));
         var details = $"{_localization["Msg_KbManager_Detail_KnowledgeBase"]}: {OneLine(kb.Value!.Name)}\n"
-            + $"{_localization["Msg_KbManager_Detail_Prompt"]}: {OneLine(Preview(prompt))}";
+            + $"{_localization["Msg_KbManager_Detail_Prompt"]}: {shown}";
         return (null, new KbManagerToolCall(
             "set_kb_prompt",
-            _localization.Format("Msg_KbManager_Summary_Prompt", kb.Value.Name),
+            _localization.Format(clearing ? "Msg_KbManager_Summary_PromptClear" : "Msg_KbManager_Summary_Prompt", kb.Value.Name),
             details,
             Warning(kb.Value, carriesContent: false),
             async () =>

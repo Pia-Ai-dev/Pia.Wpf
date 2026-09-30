@@ -113,6 +113,8 @@
   <data name="Msg_KbManager_Summary_Update" xml:space="preserve"><value>Replace the text of "{0}" in {1}</value></data>
   <data name="Msg_KbManager_Summary_Delete" xml:space="preserve"><value>Remove "{0}" from {1}</value></data>
   <data name="Msg_KbManager_Summary_Prompt" xml:space="preserve"><value>Change the description of {0}</value></data>
+  <data name="Msg_KbManager_Summary_PromptClear" xml:space="preserve"><value>Clear the description of {0}</value></data>
+  <data name="Msg_KbManager_Detail_PromptRemoved" xml:space="preserve"><value>(will be removed)</value></data>
   <data name="Msg_Assistant_PermanentDeleteExternal" xml:space="preserve"><value>This external tool may permanently change or delete data. Review it carefully.</value></data>
   <data name="Msg_Assistant_GitSwitchWarning" xml:space="preserve"><value>Switching branches may discard or overlay uncommitted changes.</value></data>
   <data name="Msg_Assistant_GitRestoreWarning" xml:space="preserve"><value>This discards changes and cannot be undone.</value></data>
