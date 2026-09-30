@@ -160,6 +160,39 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
     }
 
     [Theory]
+    [InlineData("A document needs a title.", "The server refused the request: A document needs a title.")]
+    [InlineData("Bad input", "The server refused the request: Bad input.")]
+    [InlineData(null, "The server refused the request: title_required.")]
+    public async Task Execute_AnInvalidRefusal_RelaysTheServerMessageWithOneFullStop(string? message, string expected)
+    {
+        KnowledgeBases(Handbook());
+        Api.SetPromptAsync(Kb, "p", Arg.Any<CancellationToken>()).Returns(new KbManagerResult<bool>(
+            KbManagerCallStatus.Invalid, false, new KbManagerError("title_required", message, null, null, null, null)));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", "p")), Ct);
+
+        Assert.Equal(expected, await pending!.Execute());
+    }
+
+    [Theory]
+    [InlineData("Something is off.", "The server refused the change: Something is off.")]
+    [InlineData("Something is off", "The server refused the change: Something is off.")]
+    public async Task Execute_AnUnrecognisedConflict_RelaysTheServerMessageWithOneFullStop(string message, string expected)
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("a.md", "x");
+        Api.UploadAsync(Kb, Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>()).Returns(
+            new KbManagerResult<KbManagerWriteResult>(
+                KbManagerCallStatus.Conflict, null, new KbManagerError("something_else", message, null, null, null, null)));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+
+        Assert.Equal(expected, await pending!.Execute());
+    }
+
+    [Theory]
     [InlineData("Pending", "Queued for indexing.")]
     [InlineData("Ready", "already held a document with identical content")]
     [InlineData("Processing", "already held a document with identical content")]

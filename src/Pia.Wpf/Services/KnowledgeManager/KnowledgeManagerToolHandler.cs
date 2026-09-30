@@ -489,7 +489,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
             case KbManagerCallStatus.Conflict:
                 return ConflictSentence(result.Error);
             case KbManagerCallStatus.Invalid:
-                return $"The server refused the request: {result.Error?.Message ?? result.Error?.Code ?? "invalid input"}.";
+                return EndSentence($"The server refused the request: {result.Error?.Message ?? result.Error?.Code ?? "invalid input"}");
             default:
                 return ServerUnavailable;
         }
@@ -515,8 +515,10 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
                 : "That content is already in this knowledge base. Nothing was changed.";
         }
 
-        return $"The server refused the change: {error?.Message ?? error?.Code ?? "conflict"}.";
+        return EndSentence($"The server refused the change: {error?.Message ?? error?.Code ?? "conflict"}");
     }
+
+    private static string EndSentence(string text) => text.EndsWith('.') ? text : text + ".";
 
     private static string QuotaLabel(string? resource) => resource switch
     {
