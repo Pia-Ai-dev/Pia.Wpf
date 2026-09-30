@@ -20,7 +20,9 @@ public sealed class KnowledgeManagerSurfaceCache : IKnowledgeManagerSurfaceCache
 {
     private readonly IKnowledgeManagerApiClient _api;
     private readonly ILogger<KnowledgeManagerSurfaceCache> _logger;
+    private readonly Lock _gate = new();
     private volatile bool _available;
+    private int _generation;
 
     public KnowledgeManagerSurfaceCache(IKnowledgeManagerApiClient api, ILogger<KnowledgeManagerSurfaceCache> logger)
     {
@@ -34,6 +36,7 @@ public sealed class KnowledgeManagerSurfaceCache : IKnowledgeManagerSurfaceCache
 
     public async Task<bool> RefreshAsync(CancellationToken ct = default)
     {
+        var generation = Interlocked.Increment(ref _generation);
         bool next;
         try
         {
@@ -45,17 +48,23 @@ public sealed class KnowledgeManagerSurfaceCache : IKnowledgeManagerSurfaceCache
             next = false;
         }
 
-        Apply(next);
-        return next;
+        return Apply(next, generation);
     }
 
-    public void Hide() => Apply(false);
+    public void Hide() => Apply(false, Interlocked.Increment(ref _generation));
 
-    private void Apply(bool next)
+    // A probe answered after a newer probe or a Hide() started is stale, so a revoke cannot be undone by it.
+    private bool Apply(bool next, int generation)
     {
-        if (_available == next) return;
-        _available = next;
+        lock (_gate)
+        {
+            if (generation != Volatile.Read(ref _generation)) return _available;
+            if (_available == next) return next;
+            _available = next;
+        }
+
         _logger.LogInformation("Knowledge-base manager surface is now {State}.", next ? "available" : "hidden");
         Changed?.Invoke(this, EventArgs.Empty);
+        return next;
     }
 }

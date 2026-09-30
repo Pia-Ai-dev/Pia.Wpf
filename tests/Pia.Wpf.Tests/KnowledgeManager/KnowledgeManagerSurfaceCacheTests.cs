@@ -83,4 +83,43 @@ public sealed class KnowledgeManagerSurfaceCacheTests
         Assert.False(sut.IsAvailable);
         Assert.Equal(1, fired);
     }
+
+    [Fact]
+    public async Task AProbeInFlightDuringHide_DoesNotShowTheSurfaceAgain()
+    {
+        Answer(KbManagerCallStatus.Ok, []);
+        var sut = CreateSut();
+        await sut.RefreshAsync(Ct);
+        var pending = PendingProbe();
+
+        var refresh = sut.RefreshAsync(Ct);
+        sut.Hide();
+        pending.SetResult(new(KbManagerCallStatus.Ok, []));
+
+        Assert.False(await refresh);
+        Assert.False(sut.IsAvailable);
+    }
+
+    [Fact]
+    public async Task AnOlderProbeLandingLast_DoesNotOverrideANewerOne()
+    {
+        var older = PendingProbe();
+        var sut = CreateSut();
+        var first = sut.RefreshAsync(Ct);
+        Answer(KbManagerCallStatus.Forbidden);
+
+        Assert.False(await sut.RefreshAsync(Ct));
+        older.SetResult(new(KbManagerCallStatus.Ok, []));
+
+        Assert.False(await first);
+        Assert.False(sut.IsAvailable);
+    }
+
+    private TaskCompletionSource<KbManagerResult<IReadOnlyList<KbManagerKnowledgeBase>>> PendingProbe()
+    {
+        var pending = new TaskCompletionSource<KbManagerResult<IReadOnlyList<KbManagerKnowledgeBase>>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _api.ListKnowledgeBasesAsync(Arg.Any<CancellationToken>()).Returns(pending.Task);
+        return pending;
+    }
 }
