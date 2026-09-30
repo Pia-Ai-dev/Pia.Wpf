@@ -160,6 +160,26 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
     }
 
     [Theory]
+    [InlineData("Pending", "Queued for indexing.")]
+    [InlineData("Ready", "already held a document with identical content")]
+    [InlineData("Processing", "already held a document with identical content")]
+    public async Task Upload_Execute_OnlyClaimsQueuedWhenANewDocumentWasCreated(string status, string expectedNote)
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("a.md", "# Text");
+        Api.UploadAsync(Kb, Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Ok, new KbManagerWriteResult(Doc, status)));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+        var executed = Json(await pending!.Execute());
+
+        Assert.Contains(expectedNote, executed.GetProperty("note").GetString(), StringComparison.Ordinal);
+        Assert.Equal(status, executed.GetProperty("status").GetString());
+        Assert.Equal(Doc, executed.GetProperty("document_id").GetGuid());
+    }
+
+    [Theory]
     [InlineData(null, null)]
     [InlineData(100L, null)]
     [InlineData(null, 101L)]

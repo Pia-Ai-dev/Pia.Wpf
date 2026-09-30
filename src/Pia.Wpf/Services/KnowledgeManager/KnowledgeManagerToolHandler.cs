@@ -61,6 +61,10 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
     private const string Deleted = "The document was removed from the knowledge base.";
     private const string PromptSaved = "The description prompt was saved; the next chat turn uses it.";
     private const string UploadQueued = "Queued for indexing. It becomes searchable once its status is Ready — check with list_kb_documents.";
+    private const string UploadReused =
+        "The knowledge base already held a document with identical content, so no new document was created and "
+        + "the title was not applied. Its current status is in this result; list_kb_documents shows the document.";
+
     private const string UpdateQueued = "Replaced. The previous version stays searchable until the new one is indexed.";
 
     private const int PreviewChars = 200;
@@ -284,7 +288,8 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
             {
                 var result = await _api.UploadAsync(kbId, request, CancellationToken.None);
                 if (!result.IsOk) return Refusal(result);
-                return new { document_id = result.Value!.DocumentId, status = result.Value.Status, note = UploadQueued };
+                var created = string.Equals(result.Value!.Status, "Pending", StringComparison.OrdinalIgnoreCase);
+                return new { document_id = result.Value.DocumentId, status = result.Value.Status, note = created ? UploadQueued : UploadReused };
             }));
     }
 
