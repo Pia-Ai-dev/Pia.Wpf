@@ -46,6 +46,44 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
     }
 
     [Fact]
+    public async Task Upload_CardNamesTheLocalFile_EvenWhenTheTitleSaysSomethingElse()
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("private/salary.md", "secret");
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("upload_kb_document",
+            ("kb_id", Kb.ToString()), ("path", "private/salary.md"), ("title", "Onboarding guide")), Ct);
+
+        Assert.Contains("Msg_KbManager_Detail_Document: Onboarding guide", pending!.Details, StringComparison.Ordinal);
+        Assert.Contains("Msg_KbManager_Detail_File: private/salary.md", pending.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_FromAPath_CardNamesTheLocalFile()
+    {
+        KnowledgeBases(Handbook());
+        Documents(Onboarding());
+        WriteFile("drafts/diary.md", "private");
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("update_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString()), ("path", "drafts/diary.md")), Ct);
+
+        Assert.Contains("Msg_KbManager_Detail_File: drafts/diary.md", pending!.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_WithInlineContent_HasNoFileRow()
+    {
+        KnowledgeBases(Handbook());
+        Documents(Onboarding());
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("update_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString()), ("content", "New text")), Ct);
+
+        Assert.DoesNotContain("Msg_KbManager_Detail_File", pending!.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Upload_Execute_SendsTheFileAndReportsTheStatus()
     {
         KnowledgeBases(Handbook());

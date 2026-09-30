@@ -105,6 +105,7 @@
   <data name="Msg_KbManager_UnencryptedWarning" xml:space="preserve"><value>Le contenu est stocké sans chiffrement sur le serveur et peut être trouvé par toutes les personnes dont le groupe utilise cette base de connaissances.</value></data>
   <data name="Msg_KbManager_Detail_KnowledgeBase" xml:space="preserve"><value>Base de connaissances</value></data>
   <data name="Msg_KbManager_Detail_Document" xml:space="preserve"><value>Document</value></data>
+  <data name="Msg_KbManager_Detail_File" xml:space="preserve"><value>Fichier</value></data>
   <data name="Msg_KbManager_Detail_Size" xml:space="preserve"><value>Taille</value></data>
   <data name="Msg_KbManager_Detail_Prompt" xml:space="preserve"><value>Description</value></data>
   <data name="Msg_KbManager_Summary_Upload" xml:space="preserve"><value>Ajouter « {0} » à {1}</value></data>

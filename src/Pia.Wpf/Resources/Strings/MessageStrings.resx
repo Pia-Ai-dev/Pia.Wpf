@@ -106,6 +106,7 @@
   <data name="Msg_KbManager_UnencryptedWarning" xml:space="preserve"><value>The content is stored unencrypted on the server and can be found by everyone whose group uses this knowledge base.</value></data>
   <data name="Msg_KbManager_Detail_KnowledgeBase" xml:space="preserve"><value>Knowledge base</value></data>
   <data name="Msg_KbManager_Detail_Document" xml:space="preserve"><value>Document</value></data>
+  <data name="Msg_KbManager_Detail_File" xml:space="preserve"><value>File</value></data>
   <data name="Msg_KbManager_Detail_Size" xml:space="preserve"><value>Size</value></data>
   <data name="Msg_KbManager_Detail_Prompt" xml:space="preserve"><value>Description prompt</value></data>
   <data name="Msg_KbManager_Summary_Upload" xml:space="preserve"><value>Add "{0}" to {1}</value></data>

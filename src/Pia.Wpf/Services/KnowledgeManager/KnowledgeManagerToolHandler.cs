@@ -278,7 +278,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         return (null, new KbManagerToolCall(
             "upload_kb_document",
             _localization.Format("Msg_KbManager_Summary_Upload", title, kb.Value!.Name),
-            Details(kb.Value.Name, title, file.SizeBytes),
+            Details(kb.Value.Name, title, file.SizeBytes, file.RelativePath),
             Warning(kb.Value, carriesContent: true),
             async () =>
             {
@@ -300,6 +300,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
 
         string text;
         string? contentType = null;
+        string? localFile = null;
         long size;
         if (path is not null)
         {
@@ -308,6 +309,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
 
             text = file.Content;
             contentType = file.ContentType;
+            localFile = file.RelativePath;
             size = file.SizeBytes;
         }
         else
@@ -327,7 +329,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         return (null, new KbManagerToolCall(
             "update_kb_document",
             _localization.Format("Msg_KbManager_Summary_Update", document.Value!.Title, kb.Value!.Name),
-            Details(kb.Value.Name, document.Value.Title, size),
+            Details(kb.Value.Name, document.Value.Title, size, localFile),
             Warning(kb.Value, carriesContent: true),
             async () =>
             {
@@ -408,9 +410,10 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         return true;
     }
 
-    private string Details(string kbName, string title, long sizeBytes) =>
+    private string Details(string kbName, string title, long sizeBytes, string? localFile = null) =>
         $"{_localization["Msg_KbManager_Detail_KnowledgeBase"]}: {OneLine(kbName)}\n"
         + $"{_localization["Msg_KbManager_Detail_Document"]}: {OneLine(title)}\n"
+        + (localFile is null ? string.Empty : $"{_localization["Msg_KbManager_Detail_File"]}: {OneLine(localFile)}\n")
         + $"{_localization["Msg_KbManager_Detail_Size"]}: {FormatSize(sizeBytes)}";
 
     private string? Warning(KbManagerKnowledgeBase kb, bool carriesContent)
