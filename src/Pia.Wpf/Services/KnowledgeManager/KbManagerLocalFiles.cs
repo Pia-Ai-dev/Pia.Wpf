@@ -149,16 +149,7 @@ public static class KbManagerLocalFiles
             return false;
         }
 
-        try
-        {
-            Directory.CreateDirectory(directory);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            error = "That folder cannot be created; pass another path.";
-            return false;
-        }
-
+        var directoryReady = false;
         for (var copy = 0; copy <= MaxNumberedCopies; copy++)
         {
             var name = copy == 0 ? baseName + extension : $"{baseName} ({copy}){extension}";
@@ -168,6 +159,20 @@ public static class KbManagerLocalFiles
             {
                 error = IgnoredError;
                 return false;
+            }
+
+            if (!directoryReady)
+            {
+                try
+                {
+                    Directory.CreateDirectory(directory);
+                    directoryReady = true;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    error = "That folder cannot be created; pass another path.";
+                    return false;
+                }
             }
 
             FileStream stream;

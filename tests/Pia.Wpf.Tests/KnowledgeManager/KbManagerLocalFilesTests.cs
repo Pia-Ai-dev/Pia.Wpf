@@ -340,6 +340,27 @@ public sealed class KbManagerLocalFilesTests : IDisposable
     }
 
     [Fact]
+    public void TrySaveNew_WhenTheFileNameIsIgnored_LeavesNoNewFoldersBehind()
+    {
+        Write(".piaignore", "*.md\n");
+
+        Assert.False(KbManagerLocalFiles.TrySaveNew(
+            _root, "archive/2026/", "Plan", KbManagerLimits.Markdown, "x", out _, out var error));
+
+        Assert.Contains("ignore rules", error, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(_root, "archive")));
+    }
+
+    [Fact]
+    public void TrySaveNew_IntoAFolderThatDoesNotExistYet_CreatesIt()
+    {
+        Assert.True(KbManagerLocalFiles.TrySaveNew(
+            _root, "archive/2026/", "Plan", KbManagerLimits.Markdown, "x", out var saved, out _));
+
+        Assert.Equal("archive/2026/Plan.md", saved);
+    }
+
+    [Fact]
     public void TrySaveNew_AJunctionOutOfTheRoot_IsRefusedAndWritesNothingOutside()
     {
         var outside = Path.Combine(_parent, "outside");
