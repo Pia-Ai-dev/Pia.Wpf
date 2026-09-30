@@ -146,6 +146,11 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             card.State = ActionCardState.Accepted;
             card.IsDiffExpanded = false;
         }
+        else if (card.HasWarning)
+        {
+            // The warning sits in the expandable details; collapsed, "Allow once" could be clicked unread.
+            card.IsExpanded = true;
+        }
 
         return card;
     }
