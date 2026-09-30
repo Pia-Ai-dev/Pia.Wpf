@@ -249,4 +249,14 @@ public sealed class HelpSettingsResolverTests
 
         Assert.Contains(rows, r => r.Path == "«Nav_Settings» > «Settings_Tab_Plugins»");
     }
+
+    [Fact]
+    public async Task TheToolsArea_TellsWhereTheKnowledgeBaseManagerPackIsSwitchedOn()
+    {
+        var rows = await Build(new AppSettings()).DescribeAsync("tools", TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(rows, r => r.Label.StartsWith("Knowledge-base manager tools", StringComparison.Ordinal));
+        Assert.Contains("«Settings_Tab_Plugins»", row.Path, StringComparison.Ordinal);
+        Assert.Contains("off by default", row.Value, StringComparison.Ordinal);
+    }
 }
