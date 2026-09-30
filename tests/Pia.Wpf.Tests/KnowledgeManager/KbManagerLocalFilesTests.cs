@@ -222,6 +222,33 @@ public sealed class KbManagerLocalFilesTests : IDisposable
         Assert.Equal("copy.md", saved);
     }
 
+    [Theory]
+    [InlineData(".")]
+    [InlineData("./")]
+    [InlineData(".\\")]
+    public void TrySaveNew_TheFilesFolderItself_IsTheDefaultTarget(string path)
+    {
+        Assert.True(KbManagerLocalFiles.TrySaveNew(_root, path, "Plan", KbManagerLimits.Markdown, "x", out var saved, out _));
+
+        Assert.Equal("Plan.md", saved);
+    }
+
+    [Fact]
+    public void TrySaveNew_TheFilesFolderByItsAbsolutePath_IsTheDefaultTarget()
+    {
+        Assert.True(KbManagerLocalFiles.TrySaveNew(_root, _root, "Plan", KbManagerLimits.Markdown, "x", out var saved, out _));
+
+        Assert.Equal("Plan.md", saved);
+    }
+
+    [Fact]
+    public void TryRead_TheFilesFolderItself_SaysItIsNotAFile()
+    {
+        Assert.False(KbManagerLocalFiles.TryRead(_root, ".", out _, out var error));
+
+        Assert.Contains("files folder itself", error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TrySaveNew_OutsideTheRoot_IsRefused()
     {

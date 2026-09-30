@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Text;
 using Pia.Infrastructure;
@@ -106,7 +107,7 @@ public static class KbManagerLocalFiles
 
         string directory;
         string baseName;
-        if (string.IsNullOrWhiteSpace(requestedPath))
+        if (string.IsNullOrWhiteSpace(requestedPath) || IsFilesFolderItself(root, requestedPath))
         {
             directory = SafeFolderPath.Canonicalize(root);
             baseName = SafeFileName(title);
@@ -247,7 +248,9 @@ public static class KbManagerLocalFiles
 
         if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, requestedPath, out full))
         {
-            error = "That path is outside the assistant files folder.";
+            error = requestedPath is not null && IsFilesFolderItself(root, requestedPath)
+                ? "That path is the assistant files folder itself; pass a file inside it."
+                : "That path is outside the assistant files folder.";
             return false;
         }
 
@@ -272,6 +275,22 @@ public static class KbManagerLocalFiles
 
         error = string.Empty;
         return true;
+    }
+
+    private static bool IsFilesFolderItself(string root, string requestedPath)
+    {
+        try
+        {
+            var canonicalRoot = SafeFolderPath.Canonicalize(root);
+            var candidate = Path.GetFullPath(requestedPath.Trim(), canonicalRoot);
+            if (Directory.Exists(candidate)) candidate = SafeFolderPath.Canonicalize(candidate);
+            return string.Equals(
+                candidate.TrimEnd('\\', '/'), canonicalRoot.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException or Win32Exception)
+        {
+            return false;
+        }
     }
 
     private static string BlockedError(string reason) => $"Refusing to use that path — {reason}.";
