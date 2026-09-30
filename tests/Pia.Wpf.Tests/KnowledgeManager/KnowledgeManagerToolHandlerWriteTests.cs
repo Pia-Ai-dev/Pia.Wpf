@@ -1,0 +1,271 @@
+using System.IO;
+using NSubstitute;
+using Pia.Services.KnowledgeManager;
+using Pia.Shared.Knowledge;
+using Xunit;
+
+namespace Pia.Tests.KnowledgeManager;
+
+public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerToolHandlerTestBase
+{
+    private void WriteFile(string relative, string text)
+    {
+        var full = Path.Combine(Root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, text);
+    }
+
+    [Fact]
+    public async Task Upload_ProposesAPendingActionWithTheUnencryptedWarning()
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("notes/onboarding.md", "# Day one");
+
+        var (result, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "notes/onboarding.md")), Ct);
+
+        Assert.Null(result);
+        Assert.NotNull(pending);
+        Assert.Equal("upload_kb_document", pending.ToolName);
+        Assert.Equal("Msg_KbManager_Summary_Upload(onboarding|Handbook)", pending.Description);
+        Assert.Contains("Msg_KbManager_Detail_KnowledgeBase: Handbook", pending.Details, StringComparison.Ordinal);
+        Assert.Equal("Msg_KbManager_UnencryptedWarning", pending.Warning);
+        await Api.DidNotReceiveWithAnyArgs().UploadAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task Upload_OnASharedKb_AddsTheSharedWarning()
+    {
+        KnowledgeBases(Handbook(shared: true));
+        WriteFile("a.md", "x");
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+
+        Assert.Equal("Msg_KbManager_UnencryptedWarning\nMsg_KbManager_SharedWarning", pending!.Warning);
+    }
+
+    [Fact]
+    public async Task Upload_Execute_SendsTheFileAndReportsTheStatus()
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("a.md", "# Text");
+        Api.UploadAsync(Kb, Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Ok, new KbManagerWriteResult(Doc, "Pending")));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md"), ("title", "Custom")), Ct);
+        var executed = await pending!.Execute();
+
+        await Api.Received(1).UploadAsync(Kb,
+            Arg.Is<KbManagerUploadRequest>(r => r.Title == "Custom" && r.Content == "# Text" && r.ContentType == KbManagerLimits.Markdown),
+            Arg.Any<CancellationToken>());
+        Assert.Equal("Pending", Json(executed).GetProperty("status").GetString());
+    }
+
+    [Theory]
+    [InlineData("../outside.md")]
+    [InlineData("bin/notes.md")]
+    [InlineData("report.docx")]
+    public async Task Upload_PathOutsideTheSandbox_ProposesNothingAndCallsNoApi(string path)
+    {
+        WriteFile("bin/notes.md", "x");
+        WriteFile("report.docx", "x");
+
+        var (result, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", path)), Ct);
+
+        Assert.Null(pending);
+        Assert.IsType<string>(result);
+        await Api.DidNotReceiveWithAnyArgs().ListKnowledgeBasesAsync(Ct);
+        await Api.DidNotReceiveWithAnyArgs().UploadAsync(default, default!, Ct);
+    }
+
+    [Fact]
+    public async Task Upload_WithoutAPath_AsksForOne()
+    {
+        var (result, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString())), Ct);
+
+        Assert.Null(pending);
+        Assert.Equal("path is required: a .txt or .md file inside the assistant files folder.", result);
+    }
+
+    [Fact]
+    public async Task Upload_ToAKbTheUserDoesNotManage_IsRefused()
+    {
+        KnowledgeBases();
+        WriteFile("a.md", "x");
+
+        var (result, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+
+        Assert.Null(pending);
+        Assert.Equal("That knowledge base is not one you can manage. Call list_knowledge_bases for the ids.", result);
+    }
+
+    [Fact]
+    public async Task Upload_Execute_QuotaRefusal_IsOnePlainSentence()
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("a.md", "x");
+        Api.UploadAsync(Kb, Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Conflict, null,
+                new KbManagerError(KbManagerErrorCodes.QuotaExceeded, null, "KnowledgeDocuments", 100, 101, null)));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+
+        Assert.Equal(
+            "Quota exceeded: the document limit is 100, and this would make 101. Nothing was changed.",
+            await pending!.Execute());
+    }
+
+    [Fact]
+    public async Task Upload_Execute_TooLargeWithNoErrorBody_IsStillOnePlainSentence()
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("a.md", "x");
+        Api.UploadAsync(Kb, Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.TooLarge));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+
+        Assert.Equal(
+            "The server refused that content as too large (one document may hold at most 10 MB), so nothing was sent.",
+            await pending!.Execute());
+    }
+
+    [Fact]
+    public async Task Update_WithBothPathAndContent_IsRefused()
+    {
+        var (result, pending) = await CreateSut().HandleToolCallAsync(Call("update_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString()), ("path", "a.md"), ("content", "x")), Ct);
+
+        Assert.Null(pending);
+        Assert.StartsWith("Pass exactly one of path", (string)result!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_WithNeither_IsRefused()
+    {
+        var (result, pending) = await CreateSut().HandleToolCallAsync(Call("update_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString())), Ct);
+
+        Assert.Null(pending);
+        Assert.StartsWith("Pass exactly one of path", (string)result!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_InlineContentOver32Kb_IsRefused()
+    {
+        var (result, pending) = await CreateSut().HandleToolCallAsync(Call("update_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString()),
+            ("content", new string('x', KbManagerLimits.MaxInlineContentBytes + 1))), Ct);
+
+        Assert.Null(pending);
+        Assert.StartsWith("Inline content is limited to 32 KB", (string)result!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_Inline_ProposesAndExecutes_AndSaysWhenNothingChanged()
+    {
+        KnowledgeBases(Handbook());
+        Documents(Onboarding());
+        Api.UpdateContentAsync(Kb, Doc, Arg.Any<KbManagerUpdateContentRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Unchanged, new KbManagerWriteResult(Doc, "Ready")));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("update_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString()), ("content", "same text")), Ct);
+
+        Assert.Equal("Msg_KbManager_Summary_Update(Onboarding|Handbook)", pending!.Description);
+        Assert.Equal("The new content is identical to the stored document, so nothing changed.", await pending.Execute());
+        await Api.Received(1).UpdateContentAsync(Kb, Doc,
+            Arg.Is<KbManagerUpdateContentRequest>(r => r.Content == "same text" && r.ContentType == null && r.Title == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Update_FromAFile_SendsItsContentType()
+    {
+        KnowledgeBases(Handbook());
+        Documents(Onboarding());
+        WriteFile("new.txt", "plain");
+        Api.UpdateContentAsync(Kb, Doc, Arg.Any<KbManagerUpdateContentRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Ok, new KbManagerWriteResult(Doc, "Pending")));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("update_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString()), ("path", "new.txt")), Ct);
+        await pending!.Execute();
+
+        await Api.Received(1).UpdateContentAsync(Kb, Doc,
+            Arg.Is<KbManagerUpdateContentRequest>(r => r.ContentType == KbManagerLimits.PlainText),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SetPrompt_OverTheLimit_IsRefused()
+    {
+        var (result, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", new string('p', KbManagerLimits.MaxPromptChars + 1))), Ct);
+
+        Assert.Null(pending);
+        Assert.Equal("The prompt may be at most 8,000 characters.", result);
+    }
+
+    [Fact]
+    public async Task SetPrompt_AnEmptyString_IsAClear_NotAMissingArgument()
+    {
+        KnowledgeBases(Handbook());
+        Api.SetPromptAsync(Kb, "", Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<bool>(KbManagerCallStatus.Ok, true));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", "")), Ct);
+        await pending!.Execute();
+
+        await Api.Received(1).SetPromptAsync(Kb, "", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SetPrompt_OnAnUnsharedKb_CarriesNoWarning()
+    {
+        KnowledgeBases(Handbook(shared: false));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("set_kb_prompt",
+            ("kb_id", Kb.ToString()), ("prompt", "Search for HR questions.")), Ct);
+
+        Assert.Null(pending!.Warning);
+        Assert.Contains("Msg_KbManager_Detail_Prompt: Search for HR questions.", pending.Details, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Delete_ProposesAPendingActionAndIsDestructiveByName()
+    {
+        KnowledgeBases(Handbook(shared: true));
+        Documents(Onboarding());
+        Api.DeleteAsync(Kb, Doc, Arg.Any<CancellationToken>()).Returns(new KbManagerResult<bool>(KbManagerCallStatus.Ok, true));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(Call("delete_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString())), Ct);
+
+        Assert.Equal("delete_kb_document", pending!.ToolName);
+        Assert.True(Pia.Services.ToolPermissionService.IsDeleteLike(pending.ToolName));
+        Assert.Equal("Msg_KbManager_SharedWarning", pending.Warning);
+        Assert.Equal("The document was removed from the knowledge base.", await pending.Execute());
+    }
+
+    [Fact]
+    public async Task Delete_OfADocumentThatIsNotThere_IsRefusedBeforeACard()
+    {
+        KnowledgeBases(Handbook());
+        Documents();
+
+        var (result, pending) = await CreateSut().HandleToolCallAsync(Call("delete_kb_document",
+            ("kb_id", Kb.ToString()), ("document_id", Doc.ToString())), Ct);
+
+        Assert.Null(pending);
+        Assert.Equal("That document is not in this knowledge base. Call list_kb_documents for the ids.", result);
+    }
+}

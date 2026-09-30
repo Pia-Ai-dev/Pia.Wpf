@@ -44,6 +44,21 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
     private const string DownloadNote = "Saved as a new file; an existing file is never overwritten. Read it with read_file.";
     private const string PromptNote = "This text tells the assistant when to search this knowledge base.";
 
+    private const string ExactlyOneSource =
+        "Pass exactly one of path (a .txt or .md file in the files folder) or content (inline text up to 32 KB).";
+
+    private const string InlineTooLong =
+        "Inline content is limited to 32 KB. Save the text to a file in the files folder and pass its path instead.";
+
+    private const string EmptyContent = "content is empty, so nothing was proposed.";
+    private const string PathRequired = "path is required: a .txt or .md file inside the assistant files folder.";
+    private const string PromptRequired = "prompt is required; pass an empty string to clear it.";
+    private const string Unchanged = "The new content is identical to the stored document, so nothing changed.";
+    private const string Deleted = "The document was removed from the knowledge base.";
+    private const string PromptSaved = "The description prompt was saved; the next chat turn uses it.";
+    private const string UploadQueued = "Queued for indexing. It becomes searchable once its status is Ready — check with list_kb_documents.";
+    private const string UpdateQueued = "Replaced. The previous version stays searchable until the new one is indexed.";
+
     private readonly IKnowledgeManagerApiClient _api;
     private readonly IKnowledgeManagerSurfaceCache _surface;
     private readonly IFilesToolHandler _files;
@@ -233,17 +248,166 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
         return new { path = saved, size_bytes = Encoding.UTF8.GetByteCount(content.Value.Content), note = DownloadNote };
     }
 
-    private Task<(object?, KbManagerToolCall?)> PrepareUploadAsync(IDictionary<string, object?> args, CancellationToken ct)
-        => Task.FromResult<(object?, KbManagerToolCall?)>(("Not implemented", null));
+    private async Task<(object?, KbManagerToolCall?)> PrepareUploadAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
 
-    private Task<(object?, KbManagerToolCall?)> PrepareUpdateAsync(IDictionary<string, object?> args, CancellationToken ct)
-        => Task.FromResult<(object?, KbManagerToolCall?)>(("Not implemented", null));
+        var path = GetString(args, "path");
+        if (string.IsNullOrWhiteSpace(path)) return (PathRequired, null);
 
-    private Task<(object?, KbManagerToolCall?)> PrepareSetPromptAsync(IDictionary<string, object?> args, CancellationToken ct)
-        => Task.FromResult<(object?, KbManagerToolCall?)>(("Not implemented", null));
+        var root = _files.ResolveToolRoot();
+        if (root is null) return (NoFilesFolder, null);
+        if (!KbManagerLocalFiles.TryRead(root, path, out var file, out var readError))
+            return (readError, null);
 
-    private Task<(object?, KbManagerToolCall?)> PrepareDeleteAsync(IDictionary<string, object?> args, CancellationToken ct)
-        => Task.FromResult<(object?, KbManagerToolCall?)>(("Not implemented", null));
+        var title = GetString(args, "title")?.Trim();
+        if (string.IsNullOrEmpty(title)) title = System.IO.Path.GetFileNameWithoutExtension(file.FullPath);
+        if (title.Length > KbManagerLimits.MaxTitleChars)
+            return ($"title may be at most {KbManagerLimits.MaxTitleChars} characters.", null);
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } refusal) return (refusal, null);
+
+        var request = new KbManagerUploadRequest(title, SourceUri: null, file.ContentType, file.Content);
+        return (null, new KbManagerToolCall(
+            "upload_kb_document",
+            _localization.Format("Msg_KbManager_Summary_Upload", title, kb.Value!.Name),
+            Details(kb.Value.Name, title, file.SizeBytes),
+            Warning(kb.Value, carriesContent: true),
+            async () =>
+            {
+                var result = await _api.UploadAsync(kbId, request, CancellationToken.None);
+                if (!result.IsOk) return Refusal(result);
+                return new { document_id = result.Value!.DocumentId, status = result.Value.Status, note = UploadQueued };
+            }));
+    }
+
+    private async Task<(object?, KbManagerToolCall?)> PrepareUpdateAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
+        if (!TryGetGuid(args, "document_id", out var documentId)) return (BadDocumentId, null);
+
+        var path = GetString(args, "path");
+        var content = GetString(args, "content");
+        if ((path is null) == (content is null)) return (ExactlyOneSource, null);
+
+        string text;
+        string? contentType = null;
+        long size;
+        if (path is not null)
+        {
+            var root = _files.ResolveToolRoot();
+            if (root is null) return (NoFilesFolder, null);
+            if (!KbManagerLocalFiles.TryRead(root, path, out var file, out var readError)) return (readError, null);
+
+            text = file.Content;
+            contentType = file.ContentType;
+            size = file.SizeBytes;
+        }
+        else
+        {
+            size = Encoding.UTF8.GetByteCount(content!);
+            if (size > KbManagerLimits.MaxInlineContentBytes) return (InlineTooLong, null);
+            if (string.IsNullOrWhiteSpace(content)) return (EmptyContent, null);
+            text = content!;
+        }
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } kbRefusal) return (kbRefusal, null);
+        var document = await FindDocumentAsync(kbId, documentId, ct);
+        if (document.Refusal is { } documentRefusal) return (documentRefusal, null);
+
+        var request = new KbManagerUpdateContentRequest(text, contentType, Title: null);
+        return (null, new KbManagerToolCall(
+            "update_kb_document",
+            _localization.Format("Msg_KbManager_Summary_Update", document.Value!.Title, kb.Value!.Name),
+            Details(kb.Value.Name, document.Value.Title, size),
+            Warning(kb.Value, carriesContent: true),
+            async () =>
+            {
+                var result = await _api.UpdateContentAsync(kbId, documentId, request, CancellationToken.None);
+                if (!result.IsOk) return Refusal(result, documentScoped: true);
+                if (result.Status == KbManagerCallStatus.Unchanged) return Unchanged;
+                return new { document_id = documentId, status = result.Value!.Status, note = UpdateQueued };
+            }));
+    }
+
+    private async Task<(object?, KbManagerToolCall?)> PrepareSetPromptAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
+
+        var prompt = GetString(args, "prompt");
+        if (prompt is null) return (PromptRequired, null);
+        if (prompt.Length > KbManagerLimits.MaxPromptChars)
+            return ($"The prompt may be at most {KbManagerLimits.MaxPromptChars.ToString("N0", CultureInfo.InvariantCulture)} characters.", null);
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } refusal) return (refusal, null);
+
+        var details = $"{_localization["Msg_KbManager_Detail_KnowledgeBase"]}: {OneLine(kb.Value!.Name)}\n"
+            + $"{_localization["Msg_KbManager_Detail_Prompt"]}: {OneLine(Preview(prompt))}";
+        return (null, new KbManagerToolCall(
+            "set_kb_prompt",
+            _localization.Format("Msg_KbManager_Summary_Prompt", kb.Value.Name),
+            details,
+            Warning(kb.Value, carriesContent: false),
+            async () =>
+            {
+                var result = await _api.SetPromptAsync(kbId, prompt, CancellationToken.None);
+                return result.IsOk ? PromptSaved : Refusal(result);
+            }));
+    }
+
+    private async Task<(object?, KbManagerToolCall?)> PrepareDeleteAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
+        if (!TryGetGuid(args, "document_id", out var documentId)) return (BadDocumentId, null);
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } kbRefusal) return (kbRefusal, null);
+        var document = await FindDocumentAsync(kbId, documentId, ct);
+        if (document.Refusal is { } documentRefusal) return (documentRefusal, null);
+
+        return (null, new KbManagerToolCall(
+            "delete_kb_document",
+            _localization.Format("Msg_KbManager_Summary_Delete", document.Value!.Title, kb.Value!.Name),
+            Details(kb.Value.Name, document.Value.Title, document.Value.SizeBytes),
+            Warning(kb.Value, carriesContent: false),
+            async () =>
+            {
+                var result = await _api.DeleteAsync(kbId, documentId, CancellationToken.None);
+                return result.IsOk ? Deleted : Refusal(result, documentScoped: true);
+            }));
+    }
+
+    private string Details(string kbName, string title, long sizeBytes) =>
+        $"{_localization["Msg_KbManager_Detail_KnowledgeBase"]}: {OneLine(kbName)}\n"
+        + $"{_localization["Msg_KbManager_Detail_Document"]}: {OneLine(title)}\n"
+        + $"{_localization["Msg_KbManager_Detail_Size"]}: {FormatSize(sizeBytes)}";
+
+    private string? Warning(KbManagerKnowledgeBase kb, bool carriesContent)
+    {
+        var parts = new List<string>(2);
+        if (carriesContent) parts.Add(_localization["Msg_KbManager_UnencryptedWarning"]);
+        if (kb.Shared) parts.Add(_localization["Msg_KbManager_SharedWarning"]);
+        return parts.Count == 0 ? null : string.Join("\n", parts);
+    }
+
+    // The card parses one "Label: value" pair per line, so a value may not carry a line break.
+    private static string OneLine(string value) => value.Replace('\r', ' ').Replace('\n', ' ');
+
+    private static string Preview(string prompt) => prompt.Length <= 200 ? prompt : prompt[..200] + "…";
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => (bytes / 1024.0).ToString("0.#", CultureInfo.CurrentCulture) + " KB",
+        _ => (bytes / (1024.0 * 1024)).ToString("0.#", CultureInfo.CurrentCulture) + " MB",
+    };
 
     private async Task<(KbManagerKnowledgeBase? Value, string? Refusal)> FindKnowledgeBaseAsync(
         Guid kbId, CancellationToken ct)
@@ -277,7 +441,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
             case KbManagerCallStatus.NotFound:
                 return documentScoped ? UnknownDocument : UnknownKb;
             case KbManagerCallStatus.TooLarge:
-                return "That content is over the 10 MB limit for one document, so nothing was sent.";
+                return "The server refused that content as too large (one document may hold at most 10 MB), so nothing was sent.";
             case KbManagerCallStatus.Conflict:
                 return ConflictSentence(result.Error);
             case KbManagerCallStatus.Invalid:
