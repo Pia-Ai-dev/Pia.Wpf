@@ -21,6 +21,15 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
     private const string NoLongerManager =
         "The server no longer lets you manage knowledge bases, so nothing was read or changed.";
 
+    private const string FeatureNotLicensedCode = "feature_not_licensed";
+
+    private const string NotLicensed =
+        "Your Pia server's license no longer includes knowledge bases, so nothing was read or changed.";
+
+    private const string KnowledgeSwitchedOff =
+        "Knowledge bases are switched off on your Pia server, so nothing was read or changed. "
+        + "Only a server administrator can switch them on.";
+
     private const string UnknownKb =
         "That knowledge base is not one you can manage. Call list_knowledge_bases for the ids.";
 
@@ -481,7 +490,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
                 return NotConnected;
             case KbManagerCallStatus.Forbidden:
                 _surface.Hide();
-                return NoLongerManager;
+                return result.Error?.Code == FeatureNotLicensedCode ? NotLicensed : NoLongerManager;
             case KbManagerCallStatus.NotFound:
                 return documentScoped ? UnknownDocument : UnknownKb;
             case KbManagerCallStatus.TooLarge:
@@ -491,7 +500,7 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
             case KbManagerCallStatus.Invalid:
                 return EndSentence($"The server refused the request: {result.Error?.Message ?? result.Error?.Code ?? "invalid input"}");
             default:
-                return ServerUnavailable;
+                return result.Error?.Code == KbManagerErrorCodes.KnowledgeDisabled ? KnowledgeSwitchedOff : ServerUnavailable;
         }
     }
 

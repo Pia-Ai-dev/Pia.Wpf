@@ -208,6 +208,49 @@ public sealed class KnowledgeManagerToolHandlerReadTests : KnowledgeManagerToolH
     }
 
     [Fact]
+    public async Task KnowledgeDisabledOnTheServer_SaysSoInsteadOfAskingForARetry()
+    {
+        Api.GetStatsAsync(Kb, Arg.Any<CancellationToken>()).Returns(new KbManagerResult<KbManagerStats>(
+            KbManagerCallStatus.Unavailable, null,
+            new KbManagerError(KbManagerErrorCodes.KnowledgeDisabled, "Knowledge bases are disabled.", null, null, null, null)));
+
+        var (result, _) = await CreateSut().HandleToolCallAsync(
+            Call("get_knowledge_base_stats", ("kb_id", Kb.ToString())), Ct);
+
+        Assert.Equal(
+            "Knowledge bases are switched off on your Pia server, so nothing was read or changed. "
+            + "Only a server administrator can switch them on.",
+            result);
+    }
+
+    [Fact]
+    public async Task AFeatureNotLicensedAnswer_NamesTheLicenseAndHidesTheSurface()
+    {
+        Api.GetStatsAsync(Kb, Arg.Any<CancellationToken>()).Returns(new KbManagerResult<KbManagerStats>(
+            KbManagerCallStatus.Forbidden, null,
+            new KbManagerError("feature_not_licensed", null, null, null, null, null)));
+
+        var (result, _) = await CreateSut().HandleToolCallAsync(
+            Call("get_knowledge_base_stats", ("kb_id", Kb.ToString())), Ct);
+
+        Surface.Received(1).Hide();
+        Assert.Equal(
+            "Your Pia server's license no longer includes knowledge bases, so nothing was read or changed.", result);
+    }
+
+    [Fact]
+    public async Task AnUnavailableAnswerWithoutAKnownCode_StillAsksForARetry()
+    {
+        Api.GetStatsAsync(Kb, Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerStats>(KbManagerCallStatus.Unavailable));
+
+        var (result, _) = await CreateSut().HandleToolCallAsync(
+            Call("get_knowledge_base_stats", ("kb_id", Kb.ToString())), Ct);
+
+        Assert.Equal("Your Pia server could not answer, so nothing was read or changed — try again.", result);
+    }
+
+    [Fact]
     public async Task AnyForbiddenAnswer_HidesTheSurface()
     {
         Api.GetStatsAsync(Kb, Arg.Any<CancellationToken>())
