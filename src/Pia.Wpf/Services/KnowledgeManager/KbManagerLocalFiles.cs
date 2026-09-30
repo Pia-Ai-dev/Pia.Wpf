@@ -251,13 +251,19 @@ public static class KbManagerLocalFiles
             return false;
         }
 
+        relative = Path.GetRelativePath(SafeFolderPath.Canonicalize(root), full).Replace('\\', '/');
+        if (relative.Contains(':'))
+        {
+            error = "That path contains ':', which would address an alternate data stream; pass an ordinary file path.";
+            return false;
+        }
+
         if (SensitivePathGuard.IsBlocked(full, out var reason))
         {
             error = BlockedError(reason);
             return false;
         }
 
-        relative = Path.GetRelativePath(SafeFolderPath.Canonicalize(root), full).Replace('\\', '/');
         if (IsIgnored(root, relative, isDirectory: false))
         {
             error = IgnoredError;

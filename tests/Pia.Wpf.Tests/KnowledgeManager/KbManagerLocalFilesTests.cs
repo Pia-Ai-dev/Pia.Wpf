@@ -234,6 +234,39 @@ public sealed class KbManagerLocalFilesTests : IDisposable
         Assert.False(KbManagerLocalFiles.TrySaveNew(_root, "copy.exe", "Plan", KbManagerLimits.Markdown, "x", out _, out _));
     }
 
+    [Theory]
+    [InlineData("README.md:hidden.md")]
+    [InlineData(".env:x.md")]
+    [InlineData("docs:stream.txt")]
+    public void TrySaveNew_AnAlternateDataStreamPath_IsRefusedAndCreatesNothing(string path)
+    {
+        var host = Write(path.Split(':')[0], "host");
+
+        Assert.False(KbManagerLocalFiles.TrySaveNew(_root, path, "Plan", KbManagerLimits.Markdown, "x", out _, out var error));
+
+        Assert.Contains("alternate data stream", error, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(_root, path)));
+        Assert.Equal("host", File.ReadAllText(host));
+    }
+
+    [Fact]
+    public void TryRead_AnAlternateDataStreamPath_IsRefused()
+    {
+        Write("README.md", "host");
+
+        Assert.False(KbManagerLocalFiles.TryRead(_root, "README.md:hidden.md", out _, out var error));
+        Assert.Contains("alternate data stream", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TrySaveNew_AnAbsolutePathInsideTheRoot_IsStillAccepted()
+    {
+        Assert.True(KbManagerLocalFiles.TrySaveNew(
+            _root, Path.Combine(_root, "abs.md"), "Plan", KbManagerLimits.Markdown, "x", out var saved, out _));
+
+        Assert.Equal("abs.md", saved);
+    }
+
     // Windows 10 still maps a device name to the device when an extension follows it.
     [Theory]
     [InlineData("NUL.report", "_NUL.report")]
