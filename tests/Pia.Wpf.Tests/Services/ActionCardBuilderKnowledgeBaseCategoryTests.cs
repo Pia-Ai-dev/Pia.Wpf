@@ -28,7 +28,7 @@ public class ActionCardBuilderKnowledgeBaseCategoryTests
     [InlineData("upload_kb_document", "ActionCard_Action_Upload ActionCard_Category_KnowledgeBase")]
     [InlineData("update_kb_document", "ActionCard_Action_Update ActionCard_Category_KnowledgeBase")]
     [InlineData("set_kb_prompt", "ActionCard_Action_Update ActionCard_Category_KnowledgeBase")]
-    [InlineData("delete_kb_document", "ActionCard_Action_Delete ActionCard_Category_KnowledgeBase")]
+    [InlineData("delete_kb_document", "ActionCard_Action_Delete ActionCard_Category_KbDocument")]
     public void EachWrite_IsAKnowledgeBaseCard_WithItsVerb(string tool, string title)
     {
         var card = CreateBuilder().Build(Call(tool), detokenize: false);

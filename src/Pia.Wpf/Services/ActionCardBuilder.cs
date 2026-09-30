@@ -213,7 +213,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         if (category == ActionCardCategory.Mcp)
             return _localizationService["ActionCard_Category_Mcp"];
 
-        var categoryKey = category switch
+        var categoryKey = toolName == "delete_kb_document" ? "ActionCard_Category_KbDocument" : category switch
         {
             ActionCardCategory.Memory => "ActionCard_Category_Memory",
             ActionCardCategory.Todo => "ActionCard_Category_Todo",

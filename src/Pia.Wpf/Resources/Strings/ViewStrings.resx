@@ -948,6 +948,7 @@
   <data name="ActionCard_Title_Format" xml:space="preserve"><value>{0} {1}</value></data>
   <data name="ActionCard_Action_Capture" xml:space="preserve"><value>Capture</value></data>
   <data name="ActionCard_Category_KnowledgeBase" xml:space="preserve"><value>Knowledge base</value></data>
+  <data name="ActionCard_Category_KbDocument" xml:space="preserve"><value>Document</value></data>
   <data name="ActionCard_Action_Upload" xml:space="preserve"><value>Add to</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copy to Clipboard</value></data>
