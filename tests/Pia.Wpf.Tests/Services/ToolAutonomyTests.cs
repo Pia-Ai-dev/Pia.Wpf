@@ -222,7 +222,7 @@ public class ToolAutonomyTests
 
             var pinned = surface == ToolGateSurface.Voice
                          || (surface == ToolGateSurface.Unattended
-                             && toolClass is ToolClass.External or ToolClass.Screen);
+                             && toolClass is ToolClass.External or ToolClass.Screen or ToolClass.KnowledgeBase);
 
             if ((verdict.Decision == ToolGateDecision.AutoApprovedSessionGrant) == pinned)
                 violations.Add($"{surface}/{toolClass}/{name}/canPark={canPark} => {verdict.Outcome} {verdict.Decision}");
@@ -914,6 +914,25 @@ public class ToolAutonomyTests
             ToolGateSurface.Unattended, "upload_kb_document", ToolClass.KnowledgeBase, standingGrant: true));
 
         Assert.Equal(ToolGateDecision.AutoApprovedStandingGrant, verdict.Decision);
+    }
+
+    /// <summary>Like Screen: a session grant minted on another chat must not let an unattended run change what a group finds.</summary>
+    [Theory]
+    [InlineData("upload_kb_document")]
+    [InlineData("set_kb_prompt")]
+    [InlineData("delete_kb_document")]
+    public void KnowledgeBase_Unattended_ASessionGrantAuthorisesNothing(string tool)
+    {
+        var granted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, tool, ToolClass.KnowledgeBase, sessionGrant: true, canPark: true));
+        var ungranted = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, tool, ToolClass.KnowledgeBase, canPark: true));
+        Assert.NotEqual(ToolGateOutcome.AutoRun, granted.Outcome);
+        Assert.Equal(ungranted, granted);
+
+        var interactive = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Interactive, tool, ToolClass.KnowledgeBase, sessionGrant: true));
+        Assert.Equal(ToolGateDecision.AutoApprovedSessionGrant, interactive.Decision);
     }
 
     [Fact]

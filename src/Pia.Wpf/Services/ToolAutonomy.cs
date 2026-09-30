@@ -113,12 +113,12 @@ public static class ToolAutonomy
         //
         // AND UNATTENDED, NOT FOR ToolClass.External, for the same reason the PARK below refuses to ask about
         // one: an MCP tool's name and effect are server-defined, and every later call's arguments are unseen.
-        // Nor for ToolClass.Screen: the session store keys a grant by tool alone, so "minted inside this run"
-        // is indistinguishable from "minted an hour ago on another chat, and forgotten".
+        // Nor for ToolClass.Screen or KnowledgeBase: the session store keys a grant by tool alone, so "minted
+        // inside this run" is indistinguishable from "minted an hour ago on another chat, and forgotten".
         if (input.HasSessionGrant
             && input.Surface != ToolGateSurface.Voice
             && (input.Surface != ToolGateSurface.Unattended
-                || input.ToolClass is not (ToolClass.External or ToolClass.Screen)))
+                || input.ToolClass is not (ToolClass.External or ToolClass.Screen or ToolClass.KnowledgeBase)))
         {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedSessionGrant);
         }
