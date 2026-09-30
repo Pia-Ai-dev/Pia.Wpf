@@ -87,6 +87,16 @@ public sealed class KbManagerLocalFilesTests : IDisposable
     }
 
     [Fact]
+    public void TryRead_AFileAnotherProcessHoldsOpen_IsARefusalNotAnException()
+    {
+        var full = Write("locked.md", "# Text");
+        using var hold = new FileStream(full, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        Assert.False(KbManagerLocalFiles.TryRead(_root, "locked.md", out _, out var error));
+        Assert.Equal("That file cannot be read right now; nothing was sent.", error);
+    }
+
+    [Fact]
     public void TryRead_AFileThePiaignoreExcludes_IsRefused()
     {
         Write(".piaignore", "private.md\n");

@@ -16,6 +16,8 @@ public static class KbManagerLocalFiles
     private const string IgnoredError =
         "That path is excluded by the folder's ignore rules (.piaignore, .gitignore or the defaults).";
 
+    private const string ReadFailedError = "That file cannot be read right now; nothing was sent.";
+
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
@@ -50,7 +52,17 @@ public static class KbManagerLocalFiles
             return false;
         }
 
-        var size = new FileInfo(full).Length;
+        long size;
+        try
+        {
+            size = new FileInfo(full).Length;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error = ReadFailedError;
+            return false;
+        }
+
         if (size > KbManagerLimits.MaxContentBytes)
         {
             error = $"That file has {size:N0} bytes; a knowledge-base document may have at most {KbManagerLimits.MaxContentBytes:N0}.";
@@ -65,6 +77,11 @@ public static class KbManagerLocalFiles
         catch (DecoderFallbackException)
         {
             error = "That file is not valid UTF-8 text.";
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            error = ReadFailedError;
             return false;
         }
 
@@ -175,7 +192,15 @@ public static class KbManagerLocalFiles
             }
             catch (IOException)
             {
-                File.Delete(candidate);
+                try
+                {
+                    File.Delete(candidate);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // The refusal below still stands; a half-written file we cannot remove is left for the user.
+                }
+
                 error = "Writing the file failed; nothing was saved.";
                 return false;
             }
