@@ -468,9 +468,13 @@ public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
     {
         if (error?.Code == KbManagerErrorCodes.QuotaExceeded)
         {
-            var limit = error.Limit?.ToString("N0", CultureInfo.InvariantCulture) ?? "?";
-            var current = error.Current?.ToString("N0", CultureInfo.InvariantCulture) ?? "?";
-            return $"Quota exceeded: {QuotaLabel(error.Resource)} limit is {limit}, and this would make {current}. Nothing was changed.";
+            if (error.Limit is not { } limit || error.Current is not { } current)
+            {
+                return $"Quota exceeded: {QuotaLabel(error.Resource)} limit was reached. Nothing was changed.";
+            }
+
+            return $"Quota exceeded: {QuotaLabel(error.Resource)} limit is {limit.ToString("N0", CultureInfo.InvariantCulture)}, "
+                + $"and this would make {current.ToString("N0", CultureInfo.InvariantCulture)}. Nothing was changed.";
         }
 
         if (error?.Code == KbManagerErrorCodes.DuplicateContent)

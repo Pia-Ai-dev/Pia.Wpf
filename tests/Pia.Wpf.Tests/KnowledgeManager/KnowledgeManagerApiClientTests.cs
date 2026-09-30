@@ -161,6 +161,20 @@ public sealed class KnowledgeManagerApiClientTests
         Assert.Equal(101, result.Error.Current);
     }
 
+    [Fact]
+    public async Task AQuotaRefusalWithOnlyTheResource_LeavesLimitAndCurrentAbsent()
+    {
+        _handler.Enqueue(HttpStatusCode.Conflict, """{"error":"quota_exceeded","resource":"MonthlyEmbeddingTokens"}""");
+
+        var result = await CreateSut().UploadAsync(
+            Guid.NewGuid(), new KbManagerUploadRequest("t", null, "text/plain", "x"), Ct);
+
+        Assert.Equal(KbManagerCallStatus.Conflict, result.Status);
+        Assert.Equal("MonthlyEmbeddingTokens", result.Error!.Resource);
+        Assert.Null(result.Error.Limit);
+        Assert.Null(result.Error.Current);
+    }
+
     /// <summary>The server's size limit counts UTF-8 bytes; a default encoder would send every umlaut as six.</summary>
     [Fact]
     public async Task Upload_SendsNonAsciiUnescaped_InCamelCase()

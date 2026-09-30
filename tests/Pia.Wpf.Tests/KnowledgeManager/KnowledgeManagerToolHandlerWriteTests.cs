@@ -121,6 +121,27 @@ public sealed class KnowledgeManagerToolHandlerWriteTests : KnowledgeManagerTool
             await pending!.Execute());
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(100L, null)]
+    [InlineData(null, 101L)]
+    public async Task Upload_Execute_QuotaRefusalWithoutBothNumbers_IsOneSentenceWithoutQuestionMarks(
+        long? limit, long? current)
+    {
+        KnowledgeBases(Handbook());
+        WriteFile("a.md", "x");
+        Api.UploadAsync(Kb, Arg.Any<KbManagerUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new KbManagerResult<KbManagerWriteResult>(KbManagerCallStatus.Conflict, null,
+                new KbManagerError(KbManagerErrorCodes.QuotaExceeded, null, "MonthlyEmbeddingTokens", limit, current, null)));
+
+        var (_, pending) = await CreateSut().HandleToolCallAsync(
+            Call("upload_kb_document", ("kb_id", Kb.ToString()), ("path", "a.md")), Ct);
+
+        Assert.Equal(
+            "Quota exceeded: this month's indexing-token limit was reached. Nothing was changed.",
+            await pending!.Execute());
+    }
+
     [Fact]
     public async Task Upload_Execute_TooLargeWithNoErrorBody_IsStillOnePlainSentence()
     {
