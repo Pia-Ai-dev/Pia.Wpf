@@ -110,9 +110,9 @@ moved protection off `main`. Order:
 `actor_id: 5` is the built-in Admin role, the same bypass `Main` uses.
 
 **Signatures.** Both rulesets require signed commits, and GitHub checks every commit a merge brings
-in, not just the merge commit. Commits made on this machine are unsigned, so every PR into
-`develop` or `main` is merged by Pia-Ai-dev through the Admin bypass, as squash merges into `main`
-were. Signing local commits, or dropping the rule from `Develop`, would remove the bypass.
+in, not just the merge commit. Local commits are SSH-signed (`gpg.format ssh`, key registered on
+GitHub as a signing key). `main` still needs Pia-Ai-dev because of its restrict-updates rule, and a
+PR into `develop` needs an approval from someone other than its author.
 
 ## Transition
 
