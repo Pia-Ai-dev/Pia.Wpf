@@ -1,6 +1,6 @@
 # Release flow: develop → release branch → main → back-merge
 
-- **Status:** Implemented on `feature/release-flow`; GitHub settings partly applied (see below)
+- **Status:** Implemented; GitHub settings applied
 - **Owner:** man
 - **Written:** 2026-10-01
 - **Origin:** Owner decision to run Pia.Wpf releases like the Pia repo (`../Pia`, `release-flow`
@@ -76,10 +76,10 @@ The `Main` ruleset used to target `~DEFAULT_BRANCH`, so switching the default br
 moved protection off `main`. Order:
 
 1. [x] `Main` ruleset → target `refs/heads/main`, allowed merge methods **merge** only.
-2. [ ] Create `develop` from `main`.
-3. [ ] Create the `Develop` ruleset (JSON below; Rulesets → New → Import).
-4. [ ] Default branch → `develop`.
-5. [ ] Optional: untick "Allow squash merging" and "Allow rebase merging" in Settings → General.
+2. [x] Create `develop` from `main`.
+3. [x] Create the `Develop` ruleset (JSON below; Rulesets → New → Import).
+4. [x] Default branch → `develop`.
+5. [x] Untick "Allow squash merging" and "Allow rebase merging" in Settings → General.
 
 ```json
 {
@@ -108,6 +108,11 @@ moved protection off `main`. Order:
 ```
 
 `actor_id: 5` is the built-in Admin role, the same bypass `Main` uses.
+
+**Signatures.** Both rulesets require signed commits, and GitHub checks every commit a merge brings
+in, not just the merge commit. Commits made on this machine are unsigned, so every PR into
+`develop` or `main` is merged by Pia-Ai-dev through the Admin bypass, as squash merges into `main`
+were. Signing local commits, or dropping the rule from `Develop`, would remove the bypass.
 
 ## Transition
 
