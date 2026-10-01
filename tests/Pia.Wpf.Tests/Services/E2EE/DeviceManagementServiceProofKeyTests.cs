@@ -300,7 +300,8 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_server, disposeHandler: false));
 
         return new DeviceManagementService(
-            _e2ee, _keys, recovery ?? Substitute.For<IRecoveryCodeService>(), _settings, _auth, factory, _log);
+            _e2ee, _keys, recovery ?? Substitute.For<IRecoveryCodeService>(), _settings, _auth, factory,
+            Substitute.For<IConfirmedApproverStore>(), _log);
     }
 
     private sealed class PassthroughDpapi(ILogger<DpapiHelper> logger) : DpapiHelper(logger)

@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Paths;
 using Pia.Services;
+using Pia.Services.E2EE;
 using Pia.Services.LiveTranscription;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
@@ -151,6 +152,7 @@ public sealed class PiaPathsTests : IDisposable
     [InlineData(DropCacheDirectoryMember)]
     [InlineData(RecordingsDirectoryMember)]
     [InlineData(ScreenCaptureAuditDirectoryMember)]
+    [InlineData(ConfirmedApproversMember)]
     public void RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded(string member)
     {
         var read = ReaderFor(member);
@@ -184,6 +186,7 @@ public sealed class PiaPathsTests : IDisposable
     private const string DropCacheDirectoryMember = "PiaPaths.DropCacheDirectory";
     private const string RecordingsDirectoryMember = "PiaPaths.RecordingsDirectory";
     private const string ScreenCaptureAuditDirectoryMember = "PiaPaths.ScreenCaptureAuditDirectory";
+    private const string ConfirmedApproversMember = "ConfirmedApproverStore.DefaultPath";
     private const string SettingsDirectoryMember = "JsonPersistenceService.SettingsDirectory";
     private const string LegacyWorkdirMember = "AssistantWorkspace.LegacyWorkdir";
     private const string RunsRootMember = "AssistantWorkspace.RunsRoot";
@@ -202,6 +205,7 @@ public sealed class PiaPathsTests : IDisposable
         DropCacheDirectoryMember => () => PiaPaths.DropCacheDirectory,
         RecordingsDirectoryMember => () => PiaPaths.RecordingsDirectory,
         ScreenCaptureAuditDirectoryMember => () => PiaPaths.ScreenCaptureAuditDirectory,
+        ConfirmedApproversMember => () => ConfirmedApproverStore.DefaultPath,
         _ => throw new ArgumentOutOfRangeException(nameof(member), member, "no reader for this member"),
     };
 

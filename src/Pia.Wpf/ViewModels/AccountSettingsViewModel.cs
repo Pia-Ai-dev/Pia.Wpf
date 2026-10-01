@@ -627,6 +627,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             _logger.LogInformation("E2EE enabled on account but UMK not available; onboarding required");
             IsE2EEOnboardingRequired = true;
             _syncClientService.NotifyE2EEOnboardingRequired();
+            await OnboardingViewModel.TryResumeKeyHandoverAsync();
             return;
         }
 

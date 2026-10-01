@@ -73,9 +73,52 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         _logger = logger;
     }
 
+    /// <summary>Offers an already-active device's server copy of the key for confirmation, so it needs no new
+    /// approval round; false when there is none and the normal paths apply.</summary>
+    public async Task<bool> TryResumeKeyHandoverAsync()
+    {
+        if (State != OnboardingState.Initial)
+            return false;
+
+        KeyHandover handover;
+        try
+        {
+            var status = await _deviceMgmt.GetDeviceStatusAsync(_deviceKeys.GetDeviceId());
+            if (status is not { IsApproved: true })
+                return false;
+
+            handover = await _deviceMgmt.FetchKeyHandoverAsync();
+        }
+        catch (UnverifiedApprovalException)
+        {
+            ShowUnverifiedApproval();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not offer this device's existing copy of the key");
+            return false;
+        }
+
+        try
+        {
+            await OfferHandoverAsync(handover);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Accepting this device's own copy of the key failed");
+            ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
+            State = OnboardingState.Error;
+        }
+        return true;
+    }
+
     [RelayCommand]
     private async Task StartDeviceApprovalAsync()
     {
+        if (await TryResumeKeyHandoverAsync())
+            return;
+
         try
         {
             ErrorMessage = null;
@@ -210,6 +253,33 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         State = OnboardingState.Error;
     }
 
+    private async Task OfferHandoverAsync(KeyHandover handover)
+    {
+        if (handover.IsOwnCopy)
+        {
+            await _deviceMgmt.AcceptKeyHandoverAsync(handover);
+            await CompleteOnboardingAsync();
+            return;
+        }
+
+        // The server picks which device counts as the approver, so only a person comparing
+        // fingerprints can tell a device they own from one the server added.
+        StopPolling();
+        _pendingHandover = handover;
+        ApproverFingerprint = handover.ApproverFingerprint ?? "";
+        ApproverDeviceName = handover.ApproverDeviceName ?? "";
+        StatusMessage = "";
+        State = OnboardingState.ConfirmingApprover;
+    }
+
+    private void ShowUnverifiedApproval()
+    {
+        StatusMessage = "";
+        ErrorMessage = "The approval could not be verified, so this device did not accept the key. Use your recovery code instead.";
+        _onboardingSessionId = null;
+        State = OnboardingState.Error;
+    }
+
     private void ForgetPendingHandover()
     {
         _pendingHandover = null;
@@ -292,27 +362,11 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         }
                         catch (UnverifiedApprovalException)
                         {
-                            StatusMessage = "";
-                            ErrorMessage = "The approval could not be verified, so this device did not accept the key. Use your recovery code instead.";
-                            _onboardingSessionId = null;
-                            State = OnboardingState.Error;
+                            ShowUnverifiedApproval();
                             return;
                         }
 
-                        if (handover.IsOwnCopy)
-                        {
-                            await _deviceMgmt.AcceptKeyHandoverAsync(handover);
-                            await CompleteOnboardingAsync();
-                            return;
-                        }
-
-                        // The server picks which device counts as the approver, so only a person comparing
-                        // fingerprints can tell a device they own from one the server added.
-                        _pendingHandover = handover;
-                        ApproverFingerprint = handover.ApproverFingerprint ?? "";
-                        ApproverDeviceName = handover.ApproverDeviceName ?? "";
-                        StatusMessage = "";
-                        State = OnboardingState.ConfirmingApprover;
+                        await OfferHandoverAsync(handover);
                         return;
                     }
                 }

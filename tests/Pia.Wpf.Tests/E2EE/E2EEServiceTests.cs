@@ -75,8 +75,7 @@ public class E2EEServiceTests
     [Fact]
     public async Task StoreUmkAsync_SurvivesCallerArrayClear()
     {
-        // Reproduces the bug where FetchAndUnwrapUmkAsync / ActivateViaRecoveryAsync
-        // call StoreUmkAsync then Array.Clear on the same byte[], zeroing the cache.
+        // AcceptKeyHandoverAsync and ActivateViaRecoveryAsync call StoreUmkAsync, then Array.Clear on the same byte[].
         var umk = _crypto.GenerateRandomBytes(32);
         var originalUmk = umk.ToArray(); // save a copy for comparison
 

@@ -303,19 +303,20 @@ public class E2EEOnboardingViewModelTests
             ServerChallenge = "challenge",
             IsFirstDevice = false
         });
-        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(new DeviceStatusResponse
-        {
-            DeviceId = "device-001",
-            Status = DeviceStatus.Active
-        });
+        // Pending when the person starts waiting, approved on the first poll.
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Pending },
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Active });
         _deviceMgmt.FetchKeyHandoverAsync().Returns(handover);
 
-        var sut = new E2EEOnboardingViewModel(
-            _deviceMgmt, _deviceKeys, _e2ee, _syncService, _settingsService,
-            NullLogger<E2EEOnboardingViewModel>.Instance, pollIntervalOverride: TimeSpan.FromMilliseconds(10));
+        var sut = FastSut();
         await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
         return sut;
     }
+
+    private E2EEOnboardingViewModel FastSut() => new(
+        _deviceMgmt, _deviceKeys, _e2ee, _syncService, _settingsService,
+        NullLogger<E2EEOnboardingViewModel>.Instance, pollIntervalOverride: TimeSpan.FromMilliseconds(10));
 
     // The server decides which device counts as the approver, so the key waits for a person to compare.
     [Fact]
@@ -328,9 +329,53 @@ public class E2EEOnboardingViewModelTests
         Assert.Equal(OnboardingState.ConfirmingApprover, sut.State);
         Assert.Equal("AAAA-BBBB-CCCC-DDDD", sut.ApproverFingerprint);
         Assert.Equal("Laptop", sut.ApproverDeviceName);
+        await _deviceMgmt.Received(1).RegisterPendingDeviceAsync();
         await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
-        await _deviceMgmt.DidNotReceive().FetchAndUnwrapUmkAsync();
         sut.Cleanup();
+    }
+
+    // A device the account still lists as active (re-login after sign-out) already has its copy on the server.
+    [Fact]
+    public async Task AnAlreadyActiveDevice_GoesStraightToConfirmingWithoutANewApprovalRound()
+    {
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Active });
+        _deviceMgmt.FetchKeyHandoverAsync().Returns(Handover("AAAA-BBBB-CCCC-DDDD"));
+        var sut = FastSut();
+
+        Assert.True(await sut.TryResumeKeyHandoverAsync());
+
+        Assert.Equal(OnboardingState.ConfirmingApprover, sut.State);
+        Assert.Equal("AAAA-BBBB-CCCC-DDDD", sut.ApproverFingerprint);
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+        await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
+    }
+
+    [Fact]
+    public async Task WaitingForApprovalOnAnAlreadyActiveDevice_AlsoSkipsRegistration()
+    {
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Active });
+        _deviceMgmt.FetchKeyHandoverAsync().Returns(Handover("AAAA-BBBB-CCCC-DDDD"));
+        var sut = FastSut();
+
+        await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
+
+        Assert.Equal(OnboardingState.ConfirmingApprover, sut.State);
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+    }
+
+    [Fact]
+    public async Task ADeviceThatIsNotActiveYet_HasNothingToResume()
+    {
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Pending });
+        var sut = FastSut();
+
+        Assert.False(await sut.TryResumeKeyHandoverAsync());
+
+        Assert.Equal(OnboardingState.Initial, sut.State);
+        await _deviceMgmt.DidNotReceive().FetchKeyHandoverAsync();
     }
 
     [Fact]

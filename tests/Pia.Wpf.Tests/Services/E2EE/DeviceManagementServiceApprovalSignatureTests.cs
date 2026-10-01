@@ -1,5 +1,6 @@
 namespace Pia.Tests.Services.E2EE;
 
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -32,10 +33,13 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
     private readonly AppSettings _targetSettings = new() { ServerUrl = "https://sync.example" };
     private readonly ScriptedServer _server = new();
     private readonly E2EEService _targetE2ee;
+    private readonly string _approverFile = Path.Combine(Path.GetTempPath(), $"pia-approvers-{Guid.NewGuid():N}.json");
+    private readonly ConfirmedApproverStore _approvers;
 
     public DeviceManagementServiceApprovalSignatureTests()
     {
         _targetE2ee = E2EEFor(_targetKeys, _targetSettings);
+        _approvers = new ConfirmedApproverStore(_approverFile);
         _server.Devices[Approver] = Listed(_approverKeys, Approver, DeviceStatus.Active);
         _server.Devices[Target] = Listed(_targetKeys, Target, DeviceStatus.Active);
     }
@@ -64,7 +68,8 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
     {
         _server.Wrapped = await HandoverAsync(version);
 
-        await TargetSut().FetchAndUnwrapUmkAsync();
+        var sut = TargetSut();
+        await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync());
 
         Assert.Equal(_umk, _targetE2ee.LoadUmk());
         Assert.True(_targetSettings.IsE2EEEnabled);
@@ -131,7 +136,7 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         }
         _server.Wrapped = handover;
 
-        await Assert.ThrowsAsync<UnverifiedApprovalException>(() => TargetSut().FetchAndUnwrapUmkAsync());
+        await Assert.ThrowsAsync<UnverifiedApprovalException>(() => TargetSut().FetchKeyHandoverAsync());
 
         Assert.Null(_targetE2ee.LoadUmk());
         Assert.False(_targetSettings.IsE2EEEnabled);
@@ -152,13 +157,55 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
             DeviceId = Target, Ciphertext = ciphertext, HkdfSalt = salt, CreatedByDeviceId = Target,
         };
 
-        await Assert.ThrowsAnyAsync<CryptographicException>(() => TargetSut().FetchAndUnwrapUmkAsync());
+        var sut = TargetSut();
+        await Assert.ThrowsAnyAsync<CryptographicException>(
+            async () => await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync()));
+
+        Assert.Null(_targetE2ee.LoadUmk());
+    }
+
+    // Sign-out forgets the key; signing back in must not take a copy from a device nobody here compared.
+    [Fact]
+    public async Task Restoring_RefusesAnotherDevicesCopyThatWasNeverConfirmed()
+    {
+        _server.Wrapped = await HandoverAsync(2);
+
+        Assert.False(await TargetSut().TryRestoreKeyAsync());
+
+        Assert.Null(_targetE2ee.LoadUmk());
+        Assert.False(_targetSettings.IsE2EEEnabled);
+    }
+
+    [Fact]
+    public async Task Restoring_TakesBackACopyFromAnApproverConfirmedEarlier()
+    {
+        _server.Wrapped = await HandoverAsync(2);
+        var first = TargetSut();
+        await first.AcceptKeyHandoverAsync(await first.FetchKeyHandoverAsync());
+
+        var afterSignIn = new AppSettings { ServerUrl = "https://sync.example" };
+        var freshE2ee = E2EEFor(_targetKeys, afterSignIn);
+        var restored = await Sut(freshE2ee, _targetKeys, afterSignIn).TryRestoreKeyAsync();
+
+        Assert.True(restored);
+        Assert.Equal(_umk, freshE2ee.LoadUmk());
+        Assert.True(new ConfirmedApproverStore(_approverFile).IsConfirmed(Approver, _approverKeys.GetFingerprint()));
+    }
+
+    [Fact]
+    public async Task Restoring_RefusesAConfirmedApproverWhoseFingerprintChanged()
+    {
+        _server.Wrapped = await HandoverAsync(2);
+        await _approvers.RecordAsync(Approver, _strangerKeys.GetFingerprint());
+
+        Assert.False(await TargetSut().TryRestoreKeyAsync());
 
         Assert.Null(_targetE2ee.LoadUmk());
     }
 
     public void Dispose()
     {
+        TempPath.RemoveFile(_approverFile);
         _targetKeys.Dispose();
         _approverKeys.Dispose();
         _strangerKeys.Dispose();
@@ -218,7 +265,7 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         auth.GetAccessTokenAsync().Returns("token-1");
 
         return new DeviceManagementService(
-            e2ee, keys, Substitute.For<IRecoveryCodeService>(), settings, auth, factory,
+            e2ee, keys, Substitute.For<IRecoveryCodeService>(), settings, auth, factory, _approvers,
             NullLogger<DeviceManagementService>.Instance);
     }
 
