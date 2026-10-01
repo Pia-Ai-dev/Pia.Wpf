@@ -99,7 +99,7 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
 
         return new DeviceManagementService(
             _e2ee, _keys, Substitute.For<IRecoveryCodeService>(), _settings, auth, factory,
-            NullLogger<DeviceManagementService>.Instance);
+            Substitute.For<IConfirmedApproverStore>(), NullLogger<DeviceManagementService>.Instance);
     }
 
     private sealed class PassthroughDpapi(ILogger<DpapiHelper> logger) : DpapiHelper(logger)

@@ -661,6 +661,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             _syncClientService.NotifyE2EEOnboardingRequired();
             OnPropertyChanged(nameof(IsE2EESetupVisible));
             OnPropertyChanged(nameof(VisibleStepCount));
+            await OnboardingViewModel.TryResumeKeyHandoverAsync();
             return;
         }
 

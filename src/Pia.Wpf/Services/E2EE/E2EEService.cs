@@ -71,6 +71,10 @@ public class E2EEService : IE2EEService
     {
         var base64 = Convert.ToBase64String(umk);
         var encrypted = _dpapi.Encrypt(base64);
+        // DpapiHelper reports failure as an empty string; persisting that would read back as "no UMK".
+        if (string.IsNullOrEmpty(encrypted))
+            throw new InvalidOperationException("DPAPI protection of the UMK failed");
+
         var settings = await _settings.GetSettingsAsync();
         settings.E2EEEncryptedUmk = encrypted;
         await _settings.SaveSettingsAsync(settings);

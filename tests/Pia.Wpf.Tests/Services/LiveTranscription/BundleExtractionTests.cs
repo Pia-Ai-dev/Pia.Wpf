@@ -2,6 +2,8 @@ using System.IO;
 using System.Text;
 using Pia.Services.Assets;
 using Pia.Tests.TestInfrastructure;
+using SharpCompress.Common;
+using SharpCompress.Writers;
 using Xunit;
 
 namespace Pia.Tests.Services.LiveTranscription;
@@ -70,5 +72,25 @@ public sealed class BundleExtractionTests : IDisposable
         Assert.Equal(3, Directory.GetFiles(target, "*", SearchOption.AllDirectories).Length);
         Assert.Equal("ONNX-ENCODER-BYTES", File.ReadAllText(Path.Combine(target, "encoder.onnx"), Encoding.UTF8));
         Assert.Equal("tok-a\ntok-b\n", File.ReadAllText(Path.Combine(target, "tokens.txt"), Encoding.UTF8));
+    }
+
+    [Theory]
+    [InlineData("sherpa-onnx-x/../../escaped.txt")]
+    [InlineData("sherpa-onnx-x/sub/../../../escaped.txt")]
+    public void An_entry_that_climbs_out_of_the_target_is_refused(string entryName)
+    {
+        var archive = Path.Combine(_tmpDir, "hostile.tar.bz2");
+        using (var output = File.Create(archive))
+        using (var writer = WriterFactory.OpenWriter(output, ArchiveType.Tar, new WriterOptions(CompressionType.BZip2)))
+        {
+            writer.Write("sherpa-onnx-x/encoder.onnx", new MemoryStream("OK"u8.ToArray()));
+            writer.Write(entryName, new MemoryStream("ESCAPED"u8.ToArray()));
+        }
+
+        var target = Path.Combine(_tmpDir, "nested", "out");
+        Directory.CreateDirectory(target);
+
+        Assert.Throws<InvalidDataException>(() => SherpaBundle.ExtractTarBz2(archive, target));
+        Assert.Empty(Directory.GetFiles(_tmpDir, "escaped.txt", SearchOption.AllDirectories));
     }
 }

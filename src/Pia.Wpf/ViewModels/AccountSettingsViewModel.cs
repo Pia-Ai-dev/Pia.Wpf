@@ -237,6 +237,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     // Sync properties
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsServerUrlEditable))]
+    [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
     private bool _isSyncLoggedIn;
 
     // Enterprise policy enforcement
@@ -297,10 +298,14 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     // E2EE properties
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsE2EEToggleEnabled))]
+    [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
+    [NotifyCanExecuteChangedFor(nameof(EnableE2EEFromNoticeCommand))]
     private bool _isE2EEEnabled;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsE2EEToggleEnabled))]
+    [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
+    [NotifyCanExecuteChangedFor(nameof(EnableE2EEFromNoticeCommand))]
     private bool _canToggleE2EE = true;
 
     /// <summary>
@@ -310,10 +315,18 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     public bool IsE2EEToggleEnabled => CanToggleE2EE && !IsE2EEEnabled;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
+    private bool _isE2EEOffNoticeDismissed;
+
+    public bool IsE2EEOffNoticeVisible =>
+        IsSyncLoggedIn && !IsE2EEEnabled && !IsE2EEOnboardingRequired && CanToggleE2EE && !IsE2EEOffNoticeDismissed;
+
+    [ObservableProperty]
     private string _deviceFingerprint = "";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanSyncNow))]
+    [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
     private bool _isE2EEOnboardingRequired;
 
     // Sync status
@@ -350,6 +363,12 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(5));
         }
     }
+
+    [RelayCommand(CanExecute = nameof(IsE2EEToggleEnabled))]
+    private void EnableE2EEFromNotice() => IsE2EEEnabled = true;
+
+    [RelayCommand]
+    private void DismissE2EEOffNotice() => IsE2EEOffNoticeDismissed = true;
 
     partial void OnTrustSelfSignedCertificatesChanged(bool value)
     {
@@ -608,6 +627,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             _logger.LogInformation("E2EE enabled on account but UMK not available; onboarding required");
             IsE2EEOnboardingRequired = true;
             _syncClientService.NotifyE2EEOnboardingRequired();
+            await OnboardingViewModel.TryResumeKeyHandoverAsync();
             return;
         }
 
@@ -801,30 +821,26 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             try
             {
                 var fingerprint = _deviceKeys.ComputeFingerprint(device.AgreementPublicKey);
-                var message = $"A new device wants to join your account.\n\n" +
-                    $"Device: {device.DeviceName}\n" +
-                    $"Fingerprint: {fingerprint}\n\n" +
-                    $"Verify this fingerprint matches what is shown on the other device before approving.\n\n" +
-                    $"Do you want to approve this device?";
+                var message = _localizationService.Format(
+                    "Settings_E2EE_ApproveDevice_Message", device.DeviceName, fingerprint, _deviceKeys.GetFingerprint());
 
                 var approved = await _dialogService.ShowConfirmationDialogAsync(
-                    "New Device Requesting Access", message);
+                    _localizationService["Settings_E2EE_ApproveDevice_Title"], message);
 
                 if (approved && device.OnboardingSessionId is not null)
                 {
                     device.Fingerprint = fingerprint;
                     await _deviceManagement.ApproveDeviceAsync(
                         device.OnboardingSessionId, device);
-                    _snackbarService.Show("Device Approved",
-                        $"{device.DeviceName} has been approved and can now sync.",
+                    _snackbarService.Show(_localizationService["Settings_E2EE_DeviceApproved_Title"],
+                        _localizationService.Format("Settings_E2EE_DeviceApproved_Message", device.DeviceName),
                         Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
                 }
                 else if (!approved)
                 {
                     var reject = await _dialogService.ShowConfirmationDialogAsync(
-                        "Reject Device?",
-                        $"Do you want to reject and revoke {device.DeviceName}? " +
-                        "If you don't recognize this device, you should revoke it.");
+                        _localizationService["Settings_E2EE_RejectDevice_Title"],
+                        _localizationService.Format("Settings_E2EE_RejectDevice_Message", device.DeviceName));
                     if (reject)
                     {
                         await _deviceManagement.RevokeDeviceAsync(device.DeviceId);

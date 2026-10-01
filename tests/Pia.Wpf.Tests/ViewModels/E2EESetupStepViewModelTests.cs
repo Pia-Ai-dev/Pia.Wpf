@@ -173,7 +173,8 @@ public class E2EESetupStepViewModelTests
 
         await sut.CopyRecoveryCodeCommand.ExecuteAsync(null);
 
-        await _outputService.Received(1).CopyToClipboardAsync("MY-CODE");
+        await _outputService.Received(1).CopySecretToClipboardAsync("MY-CODE");
+        await _outputService.DidNotReceive().CopyToClipboardAsync(Arg.Any<string>());
     }
 
     [Fact]

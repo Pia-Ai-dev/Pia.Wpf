@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -30,9 +31,10 @@ public class AudioRecordingService : IAudioRecordingService
             // which leak paths still fire in the wild.
             _logger.LogWarning("Audio recording state was still active at StartRecording; resetting leaked state before starting a new recording.");
             ForceCleanup();
+            RecordingFileStore.TryDelete(_tempFilePath);
         }
 
-        _tempFilePath = Path.Combine(Path.GetTempPath(), $"pia_recording_{Guid.NewGuid()}.wav");
+        _tempFilePath = RecordingFileStore.NewRecordingPath(PiaPaths.RecordingsDirectory);
 
         try
         {
@@ -51,6 +53,8 @@ public class AudioRecordingService : IAudioRecordingService
         catch
         {
             ForceCleanup();
+            RecordingFileStore.TryDelete(_tempFilePath);
+            _tempFilePath = null;
             throw;
         }
     }

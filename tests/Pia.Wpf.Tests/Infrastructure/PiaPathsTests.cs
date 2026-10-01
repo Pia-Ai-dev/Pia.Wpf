@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Paths;
 using Pia.Services;
+using Pia.Services.E2EE;
 using Pia.Services.LiveTranscription;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
@@ -127,7 +128,9 @@ public sealed class PiaPathsTests : IDisposable
         using (PiaPaths.OverrideForTests(null, local))
         {
             using var context = new SqliteContext();
-            Assert.Equal($"Data Source={Path.Combine(local, "history.db")}", context.ConnectionString);
+            Assert.Equal(
+                Path.Combine(local, "history.db"),
+                new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(context.ConnectionString).DataSource);
         }
     }
 
@@ -147,7 +150,9 @@ public sealed class PiaPathsTests : IDisposable
     [InlineData(LogsDirectoryMember)]
     [InlineData(DiagnosticsDirectoryMember)]
     [InlineData(DropCacheDirectoryMember)]
+    [InlineData(RecordingsDirectoryMember)]
     [InlineData(ScreenCaptureAuditDirectoryMember)]
+    [InlineData(ConfirmedApproversMember)]
     public void RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded(string member)
     {
         var read = ReaderFor(member);
@@ -179,7 +184,9 @@ public sealed class PiaPathsTests : IDisposable
     private const string LogsDirectoryMember = "PiaPaths.LogsDirectory";
     private const string DiagnosticsDirectoryMember = "PiaPaths.DiagnosticsDirectory";
     private const string DropCacheDirectoryMember = "PiaPaths.DropCacheDirectory";
+    private const string RecordingsDirectoryMember = "PiaPaths.RecordingsDirectory";
     private const string ScreenCaptureAuditDirectoryMember = "PiaPaths.ScreenCaptureAuditDirectory";
+    private const string ConfirmedApproversMember = "ConfirmedApproverStore.DefaultPath";
     private const string SettingsDirectoryMember = "JsonPersistenceService.SettingsDirectory";
     private const string LegacyWorkdirMember = "AssistantWorkspace.LegacyWorkdir";
     private const string RunsRootMember = "AssistantWorkspace.RunsRoot";
@@ -196,7 +203,9 @@ public sealed class PiaPathsTests : IDisposable
         LogsDirectoryMember => () => PiaPaths.LogsDirectory,
         DiagnosticsDirectoryMember => () => PiaPaths.DiagnosticsDirectory,
         DropCacheDirectoryMember => () => PiaPaths.DropCacheDirectory,
+        RecordingsDirectoryMember => () => PiaPaths.RecordingsDirectory,
         ScreenCaptureAuditDirectoryMember => () => PiaPaths.ScreenCaptureAuditDirectory,
+        ConfirmedApproversMember => () => ConfirmedApproverStore.DefaultPath,
         _ => throw new ArgumentOutOfRangeException(nameof(member), member, "no reader for this member"),
     };
 

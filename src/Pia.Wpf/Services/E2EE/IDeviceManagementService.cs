@@ -26,12 +26,15 @@ public interface IDeviceManagementService
     /// device's server copy with its own wrap, which needs no onboarding session.</summary>
     Task ActivateViaRecoveryAsync(string recoveryCode, string onboardingSessionId);
 
-    /// <summary>Unwraps this device's server copy of the key; another device's wrap needs that device's valid
-    /// signature, or <see cref="UnverifiedApprovalException"/> is thrown.</summary>
-    Task FetchAndUnwrapUmkAsync();
+    /// <summary>Fetches this device's server copy of the key without storing it; another device's wrap needs that
+    /// device's valid signature, or <see cref="UnverifiedApprovalException"/> is thrown.</summary>
+    Task<KeyHandover> FetchKeyHandoverAsync();
 
-    /// <summary>True when this device holds the key, taking back its own server copy first if the server still
-    /// lists the device as active.</summary>
+    /// <summary>Stores a key a person accepted, remembering another device's fingerprint as confirmed.</summary>
+    Task AcceptKeyHandoverAsync(KeyHandover handover);
+
+    /// <summary>True when this device holds the key, taking back its server copy if the device is still active and
+    /// the copy is its own or comes from an approver confirmed here before.</summary>
     Task<bool> TryRestoreKeyAsync();
 
     /// <summary>Uploads the recovery proof key an existing account lacks, once per account and app run; never throws.</summary>
