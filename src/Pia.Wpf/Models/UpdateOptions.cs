@@ -17,6 +17,7 @@ public class AutoUpdateOptions
     public string[] TrustedPublishers { get; set; } = [];
 
     // neo42 signs everything it builds; the rest arrive pre-signed with the .NET runtime, ONNX Runtime and Playwright.
+    // build-and-release.yml holds the same list and refuses to ship a package outside it.
     public static readonly string[] DefaultTrustedPublishers = ["neo42 GmbH", "Microsoft Corporation", "OpenJS Foundation"];
 
     public IReadOnlyCollection<string> EffectiveTrustedPublishers

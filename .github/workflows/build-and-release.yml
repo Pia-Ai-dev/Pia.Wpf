@@ -182,30 +182,71 @@ jobs:
         shell: pwsh
         run: Move-Item ReleasesUser/Pia.Wpf-win.msi Releases/Pia.Wpf-win.User.msi -Force
 
+      # A signed client refuses an update with any binary outside this signer list, and a refused update
+      # cannot deliver its own fix, so a package the client would reject has to stop the release here.
+      # Keep the list in step with AutoUpdateOptions.DefaultTrustedPublishers.
+      - name: Check the package's binaries are signed by trusted publishers
+        shell: pwsh
+        run: |
+          $version = "${{ steps.info.outputs.version }}"
+          $trusted = 'neo42 GmbH', 'Microsoft Corporation', 'OpenJS Foundation'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $scratch = New-Item -ItemType Directory -Force package-signatures
+          $checked = 0
+          foreach ($package in Get-ChildItem Releases -Filter "Pia.Wpf-$version-full.nupkg") {
+            $zip = [IO.Compression.ZipFile]::OpenRead($package.FullName)
+            try {
+              foreach ($entry in $zip.Entries | Where-Object { $_.FullName -match '\.(exe|dll)$' }) {
+                $file = Join-Path $scratch ([guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($entry.Name))
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $file)
+                $signature = Get-AuthenticodeSignature $file
+                $org = if ($signature.SignerCertificate) {
+                  [regex]::Match($signature.SignerCertificate.Subject, '(?:^|,\s*)O=("[^"]*"|[^,]*)').Groups[1].Value.Trim('"')
+                }
+                Remove-Item $file
+                if ($signature.Status -ne 'Valid' -or $trusted -notcontains $org) {
+                  throw "$($entry.FullName) in $($package.Name): $($signature.Status), signer O=$org"
+                }
+                $checked++
+              }
+            } finally {
+              $zip.Dispose()
+            }
+          }
+          if ($checked -eq 0) { throw "No binaries found in Pia.Wpf-$version-full.nupkg" }
+          "Checked $checked binaries"
+
       # The client checks every downloaded package against this catalog: per-file signatures cover only the
-      # binaries, not the Playwright scripts or appsettings.json inside the same package.
+      # binaries, not the Playwright scripts or appsettings.json inside the same package. Soft until a run
+      # has proven the signing step, matching the client, which only logs the verdict for now.
       - name: Sign a catalog of this release's packages
         shell: pwsh
         run: |
           $version = "${{ steps.info.outputs.version }}"
-          $staging = New-Item -ItemType Directory -Force catalog-staging
-          Get-ChildItem Releases -Filter "Pia.Wpf-$version-*.nupkg" | Copy-Item -Destination $staging
-          if (-not (Get-ChildItem $staging)) { throw "No packages for $version to put in the catalog" }
           $catalog = "Releases/Pia.Wpf-$version.cat"
-          New-FileCatalog -Path $staging -CatalogFilePath $catalog -CatalogVersion 2.0 | Out-Null
-          AzureSignTool sign `
-            -kvu "${{ vars.AZURE_KEY_VAULT_URL }}" `
-            -kvc "${{ vars.AZURE_CERT_NAME }}" `
-            -kvm `
-            -tr http://timestamp.digicert.com `
-            -td sha256 `
-            -fd sha256 `
-            -v `
-            $catalog
-          $signature = Get-AuthenticodeSignature $catalog
-          if ($signature.Status -ne 'Valid') { throw "Catalog signature is $($signature.Status)" }
-          $match = Test-FileCatalog -Path $staging -CatalogFilePath $catalog
-          if ($match -ne 'Valid') { throw "Catalog does not match the packages: $match" }
+          try {
+            $staging = New-Item -ItemType Directory -Force catalog-staging
+            Get-ChildItem Releases -Filter "Pia.Wpf-$version-*.nupkg" | Copy-Item -Destination $staging
+            if (-not (Get-ChildItem $staging)) { throw "No packages for $version to put in the catalog" }
+            New-FileCatalog -Path $staging -CatalogFilePath $catalog -CatalogVersion 2.0 | Out-Null
+            AzureSignTool sign `
+              -kvu "${{ vars.AZURE_KEY_VAULT_URL }}" `
+              -kvc "${{ vars.AZURE_CERT_NAME }}" `
+              -kvm `
+              -tr http://timestamp.digicert.com `
+              -td sha256 `
+              -fd sha256 `
+              -v `
+              $catalog
+            if ($LASTEXITCODE -ne 0) { throw "AzureSignTool exited with $LASTEXITCODE" }
+            $signature = Get-AuthenticodeSignature $catalog
+            if ($signature.Status -ne 'Valid') { throw "Catalog signature is $($signature.Status)" }
+            $match = Test-FileCatalog -Path $staging -CatalogFilePath $catalog
+            if ($match -ne 'Valid') { throw "Catalog does not match the packages: $match" }
+          } catch {
+            Remove-Item $catalog -ErrorAction SilentlyContinue
+            Write-Output "::warning::Release catalog not published: $_"
+          }
 
       - name: Install git-cliff
         shell: pwsh
@@ -250,13 +291,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # The catalog step may publish nothing; without nullglob the literal pattern reaches gh and fails.
+          shopt -s nullglob
+          catalogs=(Releases/*.cat)
           gh release create "${{ steps.info.outputs.tag }}" \
             --target "${{ github.sha }}" \
             --title "${{ steps.info.outputs.title }}" \
             --notes-file release-notes.md \
             Releases/*.msi \
             Releases/*.nupkg \
-            Releases/*.cat \
+            "${catalogs[@]}" \
             Releases/RELEASES \
             Releases/releases.*.json
 
