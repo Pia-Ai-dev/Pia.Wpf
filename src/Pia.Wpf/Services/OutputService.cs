@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Logging;
 using Pia.Native;
 using Pia.Services.Interfaces;
@@ -34,6 +35,17 @@ public class OutputService : IOutputService
         });
 
         _logger.LogDebug("Copied {Length} chars to clipboard", text.Length);
+        return Task.CompletedTask;
+    }
+
+    public Task CopySecretToClipboardAsync(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return Task.CompletedTask;
+
+        Application.Current.Dispatcher.Invoke(() => Clipboard.SetDataObject(ClipboardHistoryExclusion.Wrap(text), copy: true));
+
+        _logger.LogDebug("Copied {Length} chars to clipboard, excluded from history", text.Length);
         return Task.CompletedTask;
     }
 
