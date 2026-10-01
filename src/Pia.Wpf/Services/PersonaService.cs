@@ -187,7 +187,7 @@ public class PersonaService : IPersonaService
         {
             // busy_timeout is PER-CONNECTION: without it, a concurrent write on the shared handle turns a
             // short wait into an immediate "database is locked".
-            pragma.CommandText = "PRAGMA busy_timeout=3000;";
+            pragma.CommandText = SqliteContext.ConnectionPragmas;
             pragma.ExecuteNonQuery();
         }
 

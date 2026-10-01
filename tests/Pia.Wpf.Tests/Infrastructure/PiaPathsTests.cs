@@ -127,7 +127,9 @@ public sealed class PiaPathsTests : IDisposable
         using (PiaPaths.OverrideForTests(null, local))
         {
             using var context = new SqliteContext();
-            Assert.Equal($"Data Source={Path.Combine(local, "history.db")}", context.ConnectionString);
+            Assert.Equal(
+                Path.Combine(local, "history.db"),
+                new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(context.ConnectionString).DataSource);
         }
     }
 

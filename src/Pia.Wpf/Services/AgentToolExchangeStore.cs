@@ -53,7 +53,7 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
             _connection.Open();
 
             using var pragma = _connection.CreateCommand();
-            pragma.CommandText = "PRAGMA busy_timeout=3000;";
+            pragma.CommandText = SqliteContext.ConnectionPragmas;
             pragma.ExecuteNonQuery();
         }
         else if (_connection.State != System.Data.ConnectionState.Open)
