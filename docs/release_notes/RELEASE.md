@@ -1,31 +1,13 @@
 # Pia
 
-## Knowledge bases
-
-- Knowledge-base managers can keep their group's knowledge bases current
-  from the chat: read documents, add .txt or .md files, replace or remove
-  documents and edit the description that tells Pia when to search.
-  Changes ask first, until you pick "Allow this session" or "Always allow".
-- The new "kb-manager" plugin is off by default and only listed for users
-  your administrator or organisation manager made knowledge-base manager.
-- The new persona "Pia · KB Curator" plans and explains knowledge-base
-  changes step by step. It shows in the persona picker only for
-  knowledge-base managers.
-
-## Assistant
-
-- Referring to a file with @Files no longer limits the assistant to file
-  tools: in the same message it can also use MCP servers, Git, memory and
-  the rest. Combined with another tag such as @Todo, the message still gets
-  only the tools of the tagged areas.
-
 ## Agent runs
 
 - The persona editor's "Model type" now also offers budget, overthink and
   plan, so your administrator can route those personas to their own model.
-- Agent runs now plan as "plan" instead of "fast". If your group maps only
-  "fast", planning uses the Assistant default model until a "plan" mapping
-  is added.
+  The list is sorted by name.
+- Administrators can give agent-run planning its own model on Pia Cloud by
+  mapping the "plan" persona type. A group that maps only "fast" plans on
+  its Assistant model until it adds a "plan" mapping.
 
 ## Desktop
 
