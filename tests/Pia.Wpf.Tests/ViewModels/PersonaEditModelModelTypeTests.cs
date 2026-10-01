@@ -25,6 +25,13 @@ public class PersonaEditModelModelTypeTests
         Assert.Contains(modelType, new PersonaEditModel().ModelTypeOptions);
     }
 
+    [Fact]
+    public void ModelTypeOptions_AreSortedByName()
+    {
+        var options = new PersonaEditModel().ModelTypeOptions;
+        Assert.Equal(options.Order(StringComparer.OrdinalIgnoreCase), options);
+    }
+
     [Theory]
     [InlineData("private", true)]
     [InlineData("Private", true)]

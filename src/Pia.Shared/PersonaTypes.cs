@@ -13,5 +13,5 @@ public static class PersonaTypes
     /// <summary>The type the agent spine's planning turns route as.</summary>
     public const string Plan = "plan";
 
-    public static readonly IReadOnlyList<string> Suggested = [Default, "fast", "code", "private", "budget", "overthink", Plan];
+    public static readonly IReadOnlyList<string> Suggested = ["budget", "code", "fast", Default, "overthink", Plan, "private"];
 }
