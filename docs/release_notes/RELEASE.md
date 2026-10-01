@@ -28,9 +28,9 @@
 ## Security
 
 - Your local history (chats, prompts, memories, to-dos) is now encrypted
-  on disk with a key bound to your Windows account. It is converted on the
-  first start of this version; older versions of Pia cannot open it, so do
-  not roll back after updating.
+  on disk with a key bound to your Windows account. The first start of this
+  version converts it and keeps the unencrypted original as a zip in Pia's
+  Backups folder until you delete it; an older version only opens that copy.
 - Links in assistant replies open only web pages and e-mail addresses.
   Links to Windows settings, other programs or files no longer open on a
   click.

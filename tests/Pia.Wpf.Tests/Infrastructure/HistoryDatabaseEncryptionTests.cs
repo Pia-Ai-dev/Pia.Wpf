@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using Microsoft.Data.Sqlite;
 using Pia.Infrastructure;
@@ -95,6 +96,50 @@ public sealed class HistoryDatabaseEncryptionTests : IDisposable
         Assert.False(HasPlaintextHeader(_db));
         Assert.False(FileContains(_db, Marker));
         Assert.False(FileContains(_db + "-wal", Marker));
+        Assert.False(File.Exists(_db + ".encrypting"));
+
+        // The backup is the pre-encryption database with the WAL folded in, so it opens without a key.
+        var backup = Assert.Single(Directory.GetFiles(Path.Combine(_dir, "Backups"), "history-before-encryption-*.zip"));
+        var restored = Path.Combine(_dir, "restored.db");
+        using (var zip = ZipFile.OpenRead(backup))
+            Assert.Single(zip.Entries, e => e.FullName == "history.db").ExtractToFile(restored);
+        Assert.True(HasPlaintextHeader(restored));
+        using (var plain = new SqliteConnection($"Data Source={restored};Pooling=False"))
+        {
+            plain.Open();
+            Assert.Equal(1, Count(plain, $"SELECT count(*) FROM Legacy WHERE Body = '{Marker}'"));
+        }
+    }
+
+    [Fact]
+    public void A_new_database_needs_no_backup()
+    {
+        using (var context = new SqliteContext(_db))
+            context.GetConnection();
+        Release();
+
+        Assert.False(Directory.Exists(Path.Combine(_dir, "Backups")));
+    }
+
+    [Fact]
+    public void Without_a_backup_the_database_is_not_converted()
+    {
+        using (var seed = new SqliteConnection($"Data Source={_db};Pooling=False"))
+        {
+            seed.Open();
+            Exec(seed, $"CREATE TABLE Legacy (Body TEXT); INSERT INTO Legacy VALUES ('{Marker}');");
+        }
+        // A file where the Backups folder belongs makes the backup impossible.
+        File.WriteAllBytes(Path.Combine(_dir, "Backups"), [0]);
+
+        using (var context = new SqliteContext(_db))
+        {
+            Assert.True(string.IsNullOrEmpty(new SqliteConnectionStringBuilder(context.ConnectionString).Password));
+            Assert.Equal(1, Count(context.GetConnection(), "SELECT count(*) FROM Legacy"));
+        }
+        Release();
+
+        Assert.True(HasPlaintextHeader(_db));
         Assert.False(File.Exists(_db + ".encrypting"));
     }
 

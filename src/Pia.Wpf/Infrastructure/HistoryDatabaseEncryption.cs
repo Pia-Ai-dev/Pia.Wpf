@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -145,6 +146,8 @@ public static class HistoryDatabaseEncryption
     private static bool TryEncrypt(string dbPath, byte[] key, ILogger? logger)
     {
         var copyPath = dbPath + ".encrypting";
+        var backupPath = BackupPathFor(dbPath, DateTime.UtcNow);
+        var pendingBackupPath = backupPath + ".tmp";
         try
         {
             DeleteWithSidecars(copyPath);
@@ -153,6 +156,9 @@ public static class HistoryDatabaseEncryption
             Execute(Unpooled(Plain(dbPath)), "PRAGMA wal_checkpoint(TRUNCATE);");
             File.Copy(dbPath, copyPath, overwrite: true);
 
+            // The only way back after a rollback to an older build or a lost DPAPI key, so no backup, no conversion.
+            WriteBackup(copyPath, Path.GetFileName(dbPath), pendingBackupPath);
+
             // rekey refuses WAL mode, and on an unencrypted file it encrypts every page.
             Execute(Unpooled(Plain(copyPath)), "PRAGMA journal_mode=DELETE;", $"PRAGMA rekey = \"{Password(key)}\";");
             Execute(Unpooled(Keyed(copyPath, key)), "PRAGMA journal_mode=WAL;");
@@ -160,19 +166,42 @@ public static class HistoryDatabaseEncryption
             if (!QuickCheckPasses(Unpooled(Keyed(copyPath, key))))
                 throw new InvalidDataException("The encrypted copy of the history database failed its quick check.");
 
+            // Finalized before the swap: a swap that fails afterwards leaves a valid backup and a plaintext original.
+            File.Move(pendingBackupPath, backupPath);
+
             DeleteSidecars(dbPath);
             AtomicBinaryWriter.CommitTempFile(copyPath, dbPath);
             DeleteWithSidecars(copyPath);
 
-            logger?.LogInformation("History database encrypted at rest");
+            logger?.LogInformation(
+                "History database encrypted at rest; the unencrypted original is kept as Backups\\{Backup} until deleted by hand",
+                Path.GetFileName(backupPath));
             return true;
         }
         catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
             logger?.LogWarning(ex, "Encrypting the history database failed; it stays unencrypted until the next launch retries");
             TryDeleteWithSidecars(copyPath);
+            TryDeleteWithSidecars(pendingBackupPath);
             return false;
         }
+    }
+
+    /// <summary>Beside the database, so a test profile's backup stays inside its own temp folder.</summary>
+    public static string BackupPathFor(string dbPath, DateTime utc)
+        => Path.Combine(
+            Path.GetDirectoryName(Path.GetFullPath(dbPath)) ?? string.Empty,
+            "Backups",
+            $"{Path.GetFileNameWithoutExtension(dbPath)}-before-encryption-{utc:yyyyMMddHHmmss}.zip");
+
+    private static void WriteBackup(string sourcePath, string entryName, string zipPath)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(zipPath)!);
+        if (File.Exists(zipPath))
+            File.Delete(zipPath);
+
+        using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+        zip.CreateEntryFromFile(sourcePath, entryName, CompressionLevel.Optimal);
     }
 
     private static bool TrySetAside(string dbPath, string keyPath, ILogger? logger)
