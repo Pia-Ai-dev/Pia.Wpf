@@ -38,6 +38,7 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         if (supportsTools)
         {
             var hasAtCommands = atCommands.Count > 0;
+            var narrowsToolset = NarrowsToolset(atCommands);
 
             var allTools = unattended
                 ? _pluginService.GetAllTools().Where(t => !RoutineToolNames.Contains(t.Name)).ToList()
@@ -46,21 +47,18 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             // Resolved before the prompt so the tree never points at a tool the user has switched off.
             var helpToolsAvailable = allTools.Any(t => t.Name == HelpToolName);
 
-            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: hasAtCommands, webSearchActive: webSearchActive, environmentRoot: environmentRoot, unattended: unattended, helpToolsAvailable: helpToolsAvailable)
+            fullSystemPrompt = BuildSystemPrompt(persona, tokenizationEnabled, skipToolSelectionTree: narrowsToolset, webSearchActive: webSearchActive, environmentRoot: environmentRoot, unattended: unattended, helpToolsAvailable: helpToolsAvailable)
                 + BuildAtCommandHint(atCommands);
-            if (hasAtCommands)
+            if (narrowsToolset)
             {
-                // @-command turns narrow the toolset to the tagged domain — leave suggest_agent_mode out
-                // so those turns stay byte-stable (G1).
                 var allowed = GetAllowedToolNames(atCommands);
                 tools = [.. allTools.Where(t => allowed.Contains(t.Name))];
             }
             else
             {
                 var list = new List<AITool>(allTools);
-                // R7: inject the suggestion tool only for an eligible interactive Chat turn on a tool-capable
-                // provider. supportsTools here already carries ToolScope!=None ∧ provider.SupportsToolCalling.
-                if (suggestAgentModeEligible)
+                // A tagged turn is a concrete request; offering a mode switch would compete with it.
+                if (suggestAgentModeEligible && !hasAtCommands)
                     list.Add(BuildSuggestAgentModeTool());
                 tools = list;
             }
@@ -265,6 +263,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
             $"No tool mapping registered for at-command domain {domain}. Add a row to GetAtCommandToolMapping.")
     };
 
+    // @Files names context, not a domain, so a turn tagged only with files keeps the full toolset.
+    internal static bool NarrowsToolset(IReadOnlyList<Pia.Models.AtCommand> commands) =>
+        commands.Any(c => c.Domain != Pia.Models.AtCommandDomain.Files);
+
     private static IReadOnlySet<string> GetAllowedToolNames(IReadOnlyList<Pia.Models.AtCommand> commands)
     {
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -284,7 +286,10 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         sb.AppendLine();
         sb.AppendLine("## User Tool Hints decision");
         sb.AppendLine();
-        sb.AppendLine("The user explicitly tagged this request with @-commands. These tags identify the item category and target — they are not ambiguous. Only the tools listed below will be loaded for this turn. Do NOT ask the user to clarify which kind of item they mean. Treat the rest of the user's message as the intended action on the tagged item.");
+        var toolScope = NarrowsToolset(commands)
+            ? "Only the tools listed below will be loaded for this turn."
+            : "Tagged files are context or the target of the request, not a limit on the toolset: all your other tools remain available for this turn.";
+        sb.AppendLine($"The user explicitly tagged this request with @-commands. These tags identify the item category and target — they are not ambiguous. {toolScope} Do NOT ask the user to clarify which kind of item they mean. Treat the rest of the user's message as the intended action on the tagged item.");
         sb.AppendLine();
         foreach (var cmd in commands)
         {
