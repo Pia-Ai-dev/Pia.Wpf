@@ -1048,7 +1048,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Gib den Wiederherstellungscode ein, den du beim ersten Aktivieren der Verschlüsselung gespeichert hast. Verwende diesen, wenn dein anderes Gerät nicht verfügbar ist.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Dein Geräte-Fingerabdruck:</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Cloud-Sync &gt; Geräteverwaltung. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Konto und klicke auf Nach Geräteanfragen suchen. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Stattdessen Wiederherstellungscode verwenden</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
@@ -1060,7 +1060,7 @@
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Erneut versuchen</value></data>
   <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Bestätigendes Gerät prüfen</value></data>
-  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>Der Schlüssel ist angekommen, aber dieses Gerät hat ihn noch nicht übernommen. Das bestätigende Gerät zeigt seinen Fingerabdruck im Bestätigungsdialog und unter Einstellungen &gt; Cloud-Sync. Übernimm den Schlüssel nur, wenn er mit dem unten angezeigten übereinstimmt.</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>Der Schlüssel ist angekommen, aber dieses Gerät hat ihn noch nicht übernommen. Das bestätigende Gerät zeigt seinen Fingerabdruck im Bestätigungsdialog und unter Einstellungen &gt; Konto. Übernimm den Schlüssel nur, wenn er mit dem unten angezeigten übereinstimmt.</value></data>
   <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Bestätigt von: </value></data>
   <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>Stimmt überein</value></data>
   <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Stimmt nicht überein</value></data>

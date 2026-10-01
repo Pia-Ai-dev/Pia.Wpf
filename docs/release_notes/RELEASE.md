@@ -25,9 +25,9 @@
 
 ## Privacy
 
-- Settings > Cloud Sync shows "Your synced data is not end-to-end
-  encrypted" while an account syncs without it; "Turn on encryption" starts
-  the usual setup.
+- Settings > Account shows "Your synced data is not end-to-end encrypted"
+  while an account syncs without it; "Turn on encryption" starts the usual
+  setup.
 - Copying your recovery code keeps it out of Windows clipboard history and
   the cloud clipboard.
 - Dictation recordings stay in Pia's own data folder, and leftovers from an

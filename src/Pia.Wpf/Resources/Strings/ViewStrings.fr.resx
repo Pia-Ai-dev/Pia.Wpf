@@ -1048,7 +1048,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Saisissez le code de récupération que vous avez enregistré lors de la première activation du chiffrement. Utilisez-le si votre autre appareil n'est pas disponible.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Saisir le code de récupération</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Empreinte de votre appareil :</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Sur votre autre appareil, allez dans Paramètres &gt; Synchronisation cloud &gt; Gestion des appareils. Vérifiez que cette empreinte correspond avant d'approuver.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Sur votre autre appareil, allez dans Paramètres &gt; Compte et cliquez sur Vérifier les demandes d'appareils. Vérifiez que cette empreinte correspond avant d'approuver.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Annuler</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Utiliser plutôt le code de récupération</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Saisissez votre code de récupération</value></data>
@@ -1060,7 +1060,7 @@
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Réessayer</value></data>
   <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Confirmez l'appareil approbateur</value></data>
-  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>La clé est arrivée, mais cet appareil ne l'a pas encore acceptée. L'appareil approbateur affiche son empreinte dans sa boîte de dialogue d'approbation et sous Paramètres &gt; Synchronisation cloud. N'acceptez la clé que si elle correspond à celle ci-dessous.</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>La clé est arrivée, mais cet appareil ne l'a pas encore acceptée. L'appareil approbateur affiche son empreinte dans sa boîte de dialogue d'approbation et sous Paramètres &gt; Compte. N'acceptez la clé que si elle correspond à celle ci-dessous.</value></data>
   <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Approuvé par : </value></data>
   <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>Elle correspond</value></data>
   <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Elle ne correspond pas</value></data>

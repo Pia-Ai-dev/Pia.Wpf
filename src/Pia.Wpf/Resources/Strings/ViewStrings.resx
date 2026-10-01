@@ -1011,7 +1011,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Enter the recovery code you saved when you first enabled encryption. Use this if your other device is unavailable.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Enter recovery code</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Your device fingerprint:</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Cloud Sync &gt; Device Management. Verify this fingerprint matches before approving.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Account and click Check for device requests. Verify this fingerprint matches before approving.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Use recovery code instead</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Enter your recovery code</value></data>
@@ -1023,7 +1023,7 @@
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Try again</value></data>
   <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Confirm the approving device</value></data>
-  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>The key has arrived, but this device has not accepted it yet. The approving device shows its fingerprint in its approval dialog and under Settings &gt; Cloud Sync. Accept the key only if it matches the one below.</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>The key has arrived, but this device has not accepted it yet. The approving device shows its fingerprint in its approval dialog and under Settings &gt; Account. Accept the key only if it matches the one below.</value></data>
   <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Approved by: </value></data>
   <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>It matches</value></data>
   <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>It doesn't match</value></data>
