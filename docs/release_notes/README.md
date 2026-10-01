@@ -1,7 +1,7 @@
 # Release notes
 
-`RELEASE.md` holds the notes for the **next** release. It is a living file: rewrite it in place as
-work lands, and it ships as-is.
+`RELEASE.md` holds the notes for the **next** release. It is curated on the release branch and
+ships as-is.
 
 ## How it reaches a reader
 
@@ -46,32 +46,36 @@ trailer or an internal batch or spec id.
 The bar is that a reader can tell in one line whether this release affects them. Prose that explains
 itself belongs in the commit message, which is where the reasoning is preserved anyway.
 
-## After a release — archive by hand
+## Where it is written, and where it is archived
 
-Two steps, and the build will not do either for you:
+`RELEASE.md` changes on exactly three kinds of branch (see the `release-flow` skill):
+
+- `release/<yyyy-mm-dd>` and `hotfix/<name>` curate it, just before their PR into `main`.
+- `back-merge/<ver>`, cut from `main` after the release run is green, archives it on its way back into
+  `develop`:
 
 ```bash
-cp docs/release_notes/RELEASE.md "docs/release_notes/$(date +%Y-%m-%d)-<version>.md"
+DATE=$(git log -1 --format=%cs v<ver>)
+{ printf '# Pia %s
+' "<ver>"; tail -n +2 docs/release_notes/RELEASE.md; } > "docs/release_notes/$DATE-<ver>.md"
 : > docs/release_notes/RELEASE.md
-git commit -am "docs: archive <version> release notes [skip ci]"   # [skip ci] or you cut another release
 ```
 
-`build-and-release.yml` used to do this itself and **never could**. It pushed the emptied file to
-`main` as `github-actions[bot]`, and the `Main` ruleset requires a pull request with an approving
-review plus verified signatures, with Admin as the only bypass actor. The push was refused with
-`GH013` *after* the release had already been published — a red run on a shipped release — and it
-took the pia-ai.de step below down with it, so the website silently stayed on the previous version.
-The step is gone; a bypass for the bot was considered and declined, to keep the rules meaning what
-they say.
+A feature PR leaves it alone: an edit on `develop` while a release is open makes the back-merge
+conflict. Pushes to `develop` never build, so the archive commit needs no skip-ci marker.
 
-**What the automation was protecting against, and what replaces it.** If `RELEASE.md` keeps a
-shipped body and someone appends the next entry, the diff-since-last-tag check sees a change, takes
-the curated path, and republishes the old notes alongside the new. That is how the 1.4.0 body shipped
-at v1.4.0 *and* v1.4.5. The **Refuse to republish the last release's notes** step now fails the run
-if the file still contains the whole body released at the previous tag. It sits immediately after
-checkout, so it costs seconds rather than a full signed build.
+CI cannot archive for you. The `Main` ruleset requires a pull request with an approving review plus
+verified signatures, so a push by `github-actions[bot]` is refused with `GH013`.
 
-Leaving `RELEASE.md` empty between edits is safe, and is the point: an unchanged or empty file
+**The guard.** If `RELEASE.md` keeps a shipped body and someone appends the next entry, the
+diff-since-last-tag check sees a change, takes the curated path, and republishes the old notes
+alongside the new. The **Refuse to republish the last release's notes** step fails a `main` run if
+the file still contains the whole body released at the previous tag. It sits immediately after
+checkout, so it costs seconds rather than a full signed build. A hotfix branch therefore archives
+the last shipped body before writing its own — under the same dated name the release's back-merge
+uses, so the two merge cleanly.
+
+Leaving `RELEASE.md` empty between releases is safe, and is the point: an unchanged or empty file
 downgrades to git-cliff rather than shipping the wrong notes.
 
 ## Old releases are pruned
@@ -84,7 +88,7 @@ to a dry run.
 Nothing downstream reads an old release. Velopack resolves the newest non-prerelease release and
 fetches only what its `releases.win.json` names — the current full, the current delta, the previous
 full — and pia-ai.de serves its own uploaded copies rather than linking a GitHub asset. **Tags are
-never deleted.** `changelog.yml` rebuilds all of `CHANGELOG.md` with git-cliff on every publish, and
+never deleted.** `CHANGELOG.md` is rebuilt from all of them with git-cliff on every release branch, and
 the release-notes diff base comes from `git describe --tags`, so dropping a tag would quietly
 rewrite history on the next release.
 
