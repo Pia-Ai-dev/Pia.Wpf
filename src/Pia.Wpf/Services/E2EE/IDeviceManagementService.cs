@@ -30,6 +30,13 @@ public interface IDeviceManagementService
     /// signature, or <see cref="UnverifiedApprovalException"/> is thrown.</summary>
     Task FetchAndUnwrapUmkAsync();
 
+    /// <summary>Fetches and verifies this device's server copy like <see cref="FetchAndUnwrapUmkAsync"/>, but
+    /// stores nothing, so a person can compare the approver's fingerprint first.</summary>
+    Task<KeyHandover> FetchKeyHandoverAsync();
+
+    /// <summary>Unwraps and stores a key returned by <see cref="FetchKeyHandoverAsync"/>.</summary>
+    Task AcceptKeyHandoverAsync(KeyHandover handover);
+
     /// <summary>True when this device holds the key, taking back its own server copy first if the server still
     /// lists the device as active.</summary>
     Task<bool> TryRestoreKeyAsync();

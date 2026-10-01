@@ -70,6 +70,37 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         Assert.True(_targetSettings.IsE2EEEnabled);
     }
 
+    // The joining side shows this fingerprint so a person can tell their own approver from a server-added one.
+    [Fact]
+    public async Task FetchingAHandover_NamesTheApproversFingerprint_AndStoresNothingUntilAccepted()
+    {
+        _server.Wrapped = await HandoverAsync(2);
+        var sut = TargetSut();
+
+        var handover = await sut.FetchKeyHandoverAsync();
+
+        Assert.False(handover.IsOwnCopy);
+        Assert.Equal(_approverKeys.GetFingerprint(), handover.ApproverFingerprint);
+        Assert.Equal(Approver, handover.ApproverDeviceName);
+        Assert.Null(_targetE2ee.LoadUmk());
+        Assert.False(_targetSettings.IsE2EEEnabled);
+
+        await sut.AcceptKeyHandoverAsync(handover);
+
+        Assert.Equal(_umk, _targetE2ee.LoadUmk());
+        Assert.True(_targetSettings.IsE2EEEnabled);
+    }
+
+    [Fact]
+    public async Task FetchingAHandover_RefusesAnUnsignedKeyBeforeAnyoneIsAsked()
+    {
+        var handover = await HandoverAsync(2);
+        handover.ApproverSignature = null;
+        _server.Wrapped = handover;
+
+        await Assert.ThrowsAsync<UnverifiedApprovalException>(() => TargetSut().FetchKeyHandoverAsync());
+    }
+
     [Theory]
     [InlineData("unsigned")]
     [InlineData("signed-over-another-wrap")]

@@ -2,6 +2,7 @@ using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Localization;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -40,6 +41,14 @@ public partial class E2EEOnboardingViewModel : ObservableObject
 
     [ObservableProperty]
     private string _statusMessage = "";
+
+    [ObservableProperty]
+    private string _approverFingerprint = "";
+
+    [ObservableProperty]
+    private string _approverDeviceName = "";
+
+    private KeyHandover? _pendingHandover;
 
     /// <summary>
     /// Raised when onboarding completes successfully and sync should resume.
@@ -155,9 +164,57 @@ public partial class E2EEOnboardingViewModel : ObservableObject
     private void GoBack()
     {
         StopPolling();
+        ForgetPendingHandover();
         ErrorMessage = null;
         _onboardingSessionId = null;
         State = OnboardingState.Initial;
+    }
+
+    [RelayCommand]
+    private async Task ConfirmApproverAsync()
+    {
+        if (_pendingHandover is not { } handover)
+            return;
+        ForgetPendingHandover();
+
+        try
+        {
+            ErrorMessage = null;
+            State = OnboardingState.Activating;
+            StatusMessage = "Device approved! Fetching encryption key...";
+
+            await _deviceMgmt.AcceptKeyHandoverAsync(handover);
+            await CompleteOnboardingAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Accepting the approved key failed");
+            StatusMessage = "";
+            ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
+            _onboardingSessionId = null;
+            State = OnboardingState.Error;
+        }
+    }
+
+    [RelayCommand]
+    private void RejectApprover()
+    {
+        if (_pendingHandover is null)
+            return;
+        ForgetPendingHandover();
+
+        _logger.LogWarning("The approving device's fingerprint did not match; the key was not accepted");
+        StatusMessage = "";
+        ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_Mismatch"];
+        _onboardingSessionId = null;
+        State = OnboardingState.Error;
+    }
+
+    private void ForgetPendingHandover()
+    {
+        _pendingHandover = null;
+        ApproverFingerprint = "";
+        ApproverDeviceName = "";
     }
 
     private async Task EnsureOnboardingSessionAsync()
@@ -228,9 +285,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         _logger.LogInformation("Device approved, fetching UMK");
                         StatusMessage = "Device approved! Fetching encryption key...";
 
+                        KeyHandover handover;
                         try
                         {
-                            await _deviceMgmt.FetchAndUnwrapUmkAsync();
+                            handover = await _deviceMgmt.FetchKeyHandoverAsync();
                         }
                         catch (UnverifiedApprovalException)
                         {
@@ -240,7 +298,21 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                             State = OnboardingState.Error;
                             return;
                         }
-                        await CompleteOnboardingAsync();
+
+                        if (handover.IsOwnCopy)
+                        {
+                            await _deviceMgmt.AcceptKeyHandoverAsync(handover);
+                            await CompleteOnboardingAsync();
+                            return;
+                        }
+
+                        // The server picks which device counts as the approver, so only a person comparing
+                        // fingerprints can tell a device they own from one the server added.
+                        _pendingHandover = handover;
+                        ApproverFingerprint = handover.ApproverFingerprint ?? "";
+                        ApproverDeviceName = handover.ApproverDeviceName ?? "";
+                        StatusMessage = "";
+                        State = OnboardingState.ConfirmingApprover;
                         return;
                     }
                 }
