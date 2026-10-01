@@ -17,6 +17,7 @@ public class DeviceManagementService : IDeviceManagementService
     private readonly ISettingsService _settings;
     private readonly IAuthService _auth;
     private readonly IHttpClientFactory _httpFactory;
+    private readonly IConfirmedApproverStore _confirmedApprovers;
     private readonly ILogger<DeviceManagementService> _logger;
 
     // Server URL and account the proof key is settled for, so a sign-in to another account checks again.
@@ -29,6 +30,7 @@ public class DeviceManagementService : IDeviceManagementService
         ISettingsService settings,
         IAuthService auth,
         IHttpClientFactory httpFactory,
+        IConfirmedApproverStore confirmedApprovers,
         ILogger<DeviceManagementService> logger)
     {
         _e2ee = e2ee;
@@ -37,6 +39,7 @@ public class DeviceManagementService : IDeviceManagementService
         _settings = settings;
         _auth = auth;
         _httpFactory = httpFactory;
+        _confirmedApprovers = confirmedApprovers;
         _logger = logger;
     }
 
@@ -240,7 +243,7 @@ public class DeviceManagementService : IDeviceManagementService
     private static bool MentionsOnboardingSession(string? text) =>
         text?.Contains("onboarding session", StringComparison.OrdinalIgnoreCase) == true;
 
-    public async Task FetchAndUnwrapUmkAsync()
+    public async Task<KeyHandover> FetchKeyHandoverAsync()
     {
         var deviceId = _deviceKeys.GetDeviceId();
         using var client = await CreateAuthorizedClientAsync();
@@ -252,14 +255,30 @@ public class DeviceManagementService : IDeviceManagementService
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
         var devices = await GetDevicesAsync();
-        var senderAgreementKey = wrappedBlob.CreatedByDeviceId == deviceId
-            ? _deviceKeys.GetAgreementPublicKey()
-            : VerifiedApprover(wrappedBlob, devices, deviceId).AgreementPublicKey;
+        if (wrappedBlob.CreatedByDeviceId == deviceId)
+            return new KeyHandover(wrappedBlob, _deviceKeys.GetAgreementPublicKey(), devices.UmkVersion, null, null);
 
+        var approver = VerifiedApprover(wrappedBlob, devices, deviceId);
+        return new KeyHandover(
+            wrappedBlob, approver.AgreementPublicKey, devices.UmkVersion,
+            approver.DeviceName, _deviceKeys.ComputeFingerprint(approver.AgreementPublicKey));
+    }
+
+    public async Task AcceptKeyHandoverAsync(KeyHandover handover)
+    {
+        await StoreHandoverAsync(handover);
+
+        if (!handover.IsOwnCopy)
+            await _confirmedApprovers.RecordAsync(handover.Blob.CreatedByDeviceId!, handover.ApproverFingerprint!);
+    }
+
+    private async Task StoreHandoverAsync(KeyHandover handover)
+    {
+        var deviceId = _deviceKeys.GetDeviceId();
         var umk = _e2ee.UnwrapUmkForDevice(
-            wrappedBlob.Ciphertext,
-            wrappedBlob.HkdfSalt,
-            senderAgreementKey,
+            handover.Blob.Ciphertext,
+            handover.Blob.HkdfSalt,
+            handover.SenderAgreementPublicKey,
             deviceId);
 
         await _e2ee.StoreUmkAsync(umk);
@@ -267,10 +286,10 @@ public class DeviceManagementService : IDeviceManagementService
 
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
-        settings.E2EEUmkVersion = devices.UmkVersion;
+        settings.E2EEUmkVersion = handover.UmkVersion;
         await _settings.SaveSettingsAsync(settings);
 
-        _logger.LogInformation("Fetched and unwrapped UMK from device {Approver}", wrappedBlob.CreatedByDeviceId);
+        _logger.LogInformation("Fetched and unwrapped UMK from device {Approver}", handover.Blob.CreatedByDeviceId);
     }
 
     // A copy this device wrapped for itself needs no signature and is opened with the local agreement key.
@@ -305,7 +324,17 @@ public class DeviceManagementService : IDeviceManagementService
 
         try
         {
-            await FetchAndUnwrapUmkAsync();
+            var handover = await FetchKeyHandoverAsync();
+            if (!handover.IsOwnCopy
+                && !_confirmedApprovers.IsConfirmed(handover.Blob.CreatedByDeviceId!, handover.ApproverFingerprint!))
+            {
+                _logger.LogInformation(
+                    "This device's copy of the key came from device {Approver}, which nobody confirmed here; asking first",
+                    handover.Blob.CreatedByDeviceId);
+                return false;
+            }
+
+            await StoreHandoverAsync(handover);
         }
         catch (Exception ex)
         {

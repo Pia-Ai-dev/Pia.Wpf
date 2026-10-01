@@ -991,6 +991,16 @@
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Updating encryption and syncing data...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Check for device requests</value></data>
+  <data name="Settings_E2EE_OffNotice_Title" xml:space="preserve"><value>Your synced data is not end-to-end encrypted</value></data>
+  <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Content you sync from this account is stored unencrypted on the Pia server. Turn on end-to-end encryption so that only your devices can read it.</value></data>
+  <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Turn on encryption</value></data>
+  <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Not now</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>New device requesting access</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>A new device wants to join your account.&#xA;&#xA;Device: {0}&#xA;Fingerprint: {1}&#xA;&#xA;Compare this fingerprint with the one shown on the new device and approve only if they match. The new device then asks you to compare the fingerprint of this device: {2}&#xA;&#xA;Do you want to approve this device?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Reject device?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke {0}? If you don't recognize this device, revoke it.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Device approved</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} has been approved and can now sync.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>End-to-End Encryption Setup</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>This account uses end-to-end encryption. Set up this device to access your encrypted data.</value></data>
@@ -1001,7 +1011,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Enter the recovery code you saved when you first enabled encryption. Use this if your other device is unavailable.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Enter recovery code</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Your device fingerprint:</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Cloud Sync &gt; Device Management. Verify this fingerprint matches before approving.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Account and click Check for device requests. Verify this fingerprint matches before approving.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Use recovery code instead</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Enter your recovery code</value></data>
@@ -1012,6 +1022,13 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Your data is being synced. This may take a moment.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Try again</value></data>
+  <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Confirm the approving device</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>The key has arrived, but this device has not accepted it yet. The approving device shows its fingerprint in its approval dialog and under Settings &gt; Account. Accept the key only if it matches the one below.</value></data>
+  <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Approved by: </value></data>
+  <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>It matches</value></data>
+  <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>It doesn't match</value></data>
+  <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>This device did not accept the key. The approving device may not be one of yours: reject any request you don't recognize on your other devices, and set up this device with your recovery code instead.</value></data>
+  <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>The approved key could not be opened on this device. Try again, or use your recovery code instead.</value></data>
   <!-- Recovery code dialog (shown when enabling E2EE from settings) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Recovery Code</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Save Your Recovery Code</value></data>

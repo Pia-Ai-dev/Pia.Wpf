@@ -358,6 +358,35 @@
         </StackPanel.Style>
         <TextBlock Text="{loc:Str Settings_E2EE_Title}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+        <!-- A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+        <Border Style="{StaticResource PiaFieldNoticeStyle}"
+                Margin="0,0,0,10"
+                Visibility="{Binding IsE2EEOffNoticeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <StackPanel>
+            <TextBlock Text="{loc:Str Settings_E2EE_OffNotice_Title}"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextDefaultBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,4"/>
+            <TextBlock Text="{loc:Str Settings_E2EE_OffNotice_Message}"
+                       AutomationProperties.AutomationId="Settings_Account_E2EEOffNotice"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextDefaultBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8"/>
+            <StackPanel Orientation="Horizontal">
+              <ui:Button Content="{loc:Str Settings_E2EE_OffNotice_Enable}"
+                         Appearance="Primary"
+                         Command="{Binding EnableE2EEFromNoticeCommand}"
+                         AutomationProperties.AutomationId="Settings_Account_E2EEOffNotice_Enable"
+                         Margin="0,0,8,0"/>
+              <ui:Button Content="{loc:Str Settings_E2EE_OffNotice_Dismiss}"
+                         Appearance="Secondary"
+                         Command="{Binding DismissE2EEOffNoticeCommand}"
+                         AutomationProperties.AutomationId="Settings_Account_E2EEOffNotice_Dismiss"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
         <TextBlock Text="{loc:Str Settings_E2EE_Description}"
                    FontSize="12"
                    Foreground="{DynamicResource TextMutedBrush}"

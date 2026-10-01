@@ -7,5 +7,6 @@ public enum OnboardingState
     EnteringRecoveryCode,
     Activating,
     Success,
-    Error
+    Error,
+    ConfirmingApprover
 }

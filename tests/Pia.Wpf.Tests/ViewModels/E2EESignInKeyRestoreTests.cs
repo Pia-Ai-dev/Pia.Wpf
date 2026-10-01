@@ -59,6 +59,39 @@ public class E2EESignInKeyRestoreTests
         await _sync.Received(restored ? 1 : 0).PerformFirstSyncMigrationAsync();
     }
 
+    // The restore declines a copy from an approver nobody confirmed here; the person is asked, not re-approved.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnUnconfirmedApprover_IsOfferedForConfirmationRightAfterSignIn(bool fromWizard)
+    {
+        _deviceMgmt.TryRestoreKeyAsync().Returns(false);
+        _deviceMgmt.GetDeviceStatusAsync(Arg.Any<string>())
+            .Returns(new DeviceStatusResponse { DeviceId = "dev-self", Status = DeviceStatus.Active });
+        _deviceMgmt.FetchKeyHandoverAsync().Returns(new KeyHandover(
+            new WrappedUmkBlob { DeviceId = "dev-self", Ciphertext = "c", HkdfSalt = "s", CreatedByDeviceId = "dev-other" },
+            "other-agreement-key", 1, "Laptop", "AAAA-BBBB-CCCC-DDDD"));
+
+        E2EEOnboardingViewModel onboarding;
+        if (fromWizard)
+        {
+            var wizard = CreateWizard();
+            await wizard.LoginWithGoogleCommand.ExecuteAsync(null);
+            onboarding = wizard.OnboardingViewModel;
+        }
+        else
+        {
+            var settings = CreateAccountSettings();
+            await settings.LoginWithGoogleCommand.ExecuteAsync(null);
+            onboarding = settings.OnboardingViewModel;
+        }
+
+        Assert.Equal(OnboardingState.ConfirmingApprover, onboarding.State);
+        Assert.Equal("AAAA-BBBB-CCCC-DDDD", onboarding.ApproverFingerprint);
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+        await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
+    }
+
     private E2EEOnboardingViewModel Onboarding() => new(
         _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
         NullLogger<E2EEOnboardingViewModel>.Instance);

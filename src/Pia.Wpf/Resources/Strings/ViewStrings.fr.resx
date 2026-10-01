@@ -1028,6 +1028,16 @@
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Mise à jour du chiffrement et synchronisation des données...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Vérifier les demandes d'appareils</value></data>
+  <data name="Settings_E2EE_OffNotice_Title" xml:space="preserve"><value>Vos données synchronisées ne sont pas chiffrées de bout en bout</value></data>
+  <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Le contenu que vous synchronisez avec ce compte est stocké sans chiffrement sur le serveur Pia. Activez le chiffrement de bout en bout pour que seuls vos appareils puissent le lire.</value></data>
+  <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Activer le chiffrement</value></data>
+  <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Plus tard</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Un nouvel appareil demande l'accès</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>Un nouvel appareil souhaite rejoindre votre compte.&#xA;&#xA;Appareil : {0}&#xA;Empreinte : {1}&#xA;&#xA;Comparez cette empreinte avec celle affichée sur le nouvel appareil et n'approuvez que si elles correspondent. Le nouvel appareil vous demande ensuite de comparer l'empreinte de cet appareil : {2}&#xA;&#xA;Voulez-vous approuver cet appareil ?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Refuser l'appareil ?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Voulez-vous refuser et révoquer {0} ? Si vous ne reconnaissez pas cet appareil, révoquez-le.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Appareil approuvé</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} a été approuvé et peut maintenant synchroniser.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Configuration du chiffrement de bout en bout</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Ce compte utilise le chiffrement de bout en bout. Configurez cet appareil pour accéder à vos données chiffrées.</value></data>
@@ -1038,7 +1048,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Saisissez le code de récupération que vous avez enregistré lors de la première activation du chiffrement. Utilisez-le si votre autre appareil n'est pas disponible.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Saisir le code de récupération</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Empreinte de votre appareil :</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Sur votre autre appareil, allez dans Paramètres &gt; Synchronisation cloud &gt; Gestion des appareils. Vérifiez que cette empreinte correspond avant d'approuver.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Sur votre autre appareil, allez dans Paramètres &gt; Compte et cliquez sur Vérifier les demandes d'appareils. Vérifiez que cette empreinte correspond avant d'approuver.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Annuler</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Utiliser plutôt le code de récupération</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Saisissez votre code de récupération</value></data>
@@ -1049,6 +1059,13 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Vos données sont en cours de synchronisation. Cela peut prendre un moment.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Empreinte de l'appareil : </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Réessayer</value></data>
+  <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Confirmez l'appareil approbateur</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>La clé est arrivée, mais cet appareil ne l'a pas encore acceptée. L'appareil approbateur affiche son empreinte dans sa boîte de dialogue d'approbation et sous Paramètres &gt; Compte. N'acceptez la clé que si elle correspond à celle ci-dessous.</value></data>
+  <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Approuvé par : </value></data>
+  <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>Elle correspond</value></data>
+  <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Elle ne correspond pas</value></data>
+  <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>Cet appareil n'a pas accepté la clé. L'appareil approbateur n'est peut-être pas le vôtre : refusez sur vos autres appareils toute demande que vous ne reconnaissez pas, et configurez plutôt cet appareil avec votre code de récupération.</value></data>
+  <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>La clé approuvée n'a pas pu être ouverte sur cet appareil. Réessayez ou utilisez votre code de récupération.</value></data>
   <!-- Boîte de dialogue du code de récupération (affichée lors de l'activation du E2EE depuis les paramètres) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Code de récupération</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Enregistrez votre code de récupération</value></data>
