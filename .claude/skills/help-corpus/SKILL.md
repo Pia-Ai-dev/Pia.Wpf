@@ -1,13 +1,13 @@
 ---
 name: help-corpus
-description: "Use before every push to main, and whenever the desktop guide in Pia.Docs changes. Checks that Pia.Docs covers what is about to ship, refreshes the bundled help corpus that the assistant's pia_help tool searches, and commits it. Not for editing doc pages — that happens in the Pia repo."
+description: "Use on every release/* branch before its PR into main, and whenever the desktop guide in Pia.Docs changes. Checks that Pia.Docs covers what is about to ship, refreshes the bundled help corpus that the assistant's pia_help tool searches, and commits it. Not for editing doc pages — that happens in the Pia repo."
 ---
 
 # Help corpus refresh
 
 `src/Pia.Wpf/Resources/Help/help-corpus.json.gz` is a checked-in build artifact: 36 English `wpf/**`
 pages, snapshotted out of the sibling Pia.Docs checkout. **CI cannot regenerate it** — the docs repo
-is not on the build agent — and a push to `main` cuts a release, so whatever is committed is what
+is not on the build agent — and merging the release branch into `main` cuts a release, so whatever is committed is what
 ships and what `pia_help` can answer from for that version.
 
 | Thing | Where |
@@ -41,7 +41,7 @@ carries unpushed work, and it moves under you. Read, `fetch`, report.
 ## Step 2 — Does Pia.Docs cover what is about to ship?
 
 `docs/release_notes/RELEASE.md` becomes the release body, so its bullets **are** the list of
-user-visible changes this push ships. Walk them:
+user-visible changes this release ships. Walk them:
 
 ```bash
 grep -ril "<keyword from the bullet>" ../Pia/src/Pia.Docs/src/content/docs/wpf
@@ -99,7 +99,8 @@ The `.gz` alone, naming the docs commit it came from, so a stale snapshot is dia
 Refresh the help corpus from Pia.Docs <short-sha>
 ```
 
-The skill ends here. Pushing is the user's act — and that push cuts the release.
+The skill ends here and hands back to `release-flow cut`. Merging the release PR is the user's act —
+and that merge cuts the release.
 
 ## Hard rules
 

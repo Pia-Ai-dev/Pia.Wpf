@@ -4,11 +4,10 @@ on:
   push:
     branches:
       - main
+  # On main this re-cuts a release; on any other branch it builds signed installers as a run
+  # artifact and publishes nothing, so develop and release/* never take a tag main needs.
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch to build'
-        required: false
       bundle_chromium:
         description: 'Ship Chromium inside the installer (+~400 MB, no first-run download)'
         type: boolean
@@ -19,12 +18,11 @@ permissions:
   contents: write
   id-token: write
 
-# Every push to main cuts a release. Two pushes close together used to race: gh release
-# create had no --target, so a slow-finishing run tagged whatever main's tip had become by
-# the time it published rather than the commit it built. Queue instead of racing.
+# Releases on main queue, so each run tags the commit it built; a newer manual build of another
+# branch supersedes the older one.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build-and-release:
@@ -38,16 +36,10 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      # The archive step this replaces pushed the emptied RELEASE.md to main as github-actions[bot],
-      # and the Main ruleset refuses that: a pull request with an approving review, plus verified
-      # signatures, with Admin as the only bypass actor. It failed after the release was already
-      # published - a red run on a shipped release - and took the pia-ai.de step down with it.
-      #
-      # So archiving stays manual (docs/release_notes/README.md), and this guards the failure that
-      # automation was there to prevent: RELEASE.md keeps a shipped body, someone appends the next
-      # entry, the diff-since-last-tag check sees a change and republishes both. That is how the
-      # 1.4.0 body shipped at v1.4.0 AND v1.4.5. Fails in seconds, before anything is signed.
+      # A shipped body left in RELEASE.md with the next entry appended would pass the curated-notes
+      # check below and republish both. The back-merge branch archives it; this catches a missed one.
       - name: Refuse to republish the last release's notes
+        if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           NOTES=docs/release_notes/RELEASE.md
@@ -63,7 +55,7 @@ jobs:
           # the blank line every body has becomes an empty alternative and the check passes anything.
           NOTES_BODY=$(tail -n +2 "$NOTES" | tr -d '\r')
           if [[ "$NOTES_BODY" == *"$PREV_BODY"* ]]; then
-            echo "::error::$NOTES still contains the body released at $PREV_TAG, so this release would republish it. Archive it first: cp $NOTES docs/release_notes/$(date +%Y-%m-%d)-<version>.md, truncate $NOTES, commit with [skip ci]."
+            echo "::error::$NOTES still contains the body released at $PREV_TAG, so this release would republish it. Archive it first (release-flow skill, ship step 3)."
             exit 1
           fi
           echo "$NOTES does not carry $PREV_TAG's body - safe to release."
@@ -96,12 +88,6 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "title=Pia v${VERSION} (${DATE})" >> "$GITHUB_OUTPUT"
-          BRANCH=${GITHUB_REF_NAME}
-          if [ "$BRANCH" = "main" ]; then
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Publish self-contained
         run: >
@@ -139,6 +125,7 @@ jobs:
         run: dotnet tool install -g vpk --version 1.2.158 --allow-roll-forward
 
       - name: Download previous release (for delta updates)
+        if: github.ref == 'refs/heads/main'
         run: |
           vpk download github --repoUrl https://github.com/Pia-Ai-dev/Pia.Wpf --token ${{ secrets.GITHUB_TOKEN }} -x
         continue-on-error: true
@@ -248,7 +235,20 @@ jobs:
             Write-Output "::warning::Release catalog not published: $_"
           }
 
+      - name: Upload installers as a run artifact
+        if: github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pia.Wpf-${{ steps.info.outputs.version }}-run${{ github.run_number }}
+          path: |
+            Releases/*.msi
+            Releases/*.nupkg
+            Releases/*.cat
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Install git-cliff
+        if: github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
           $version = "2.12.0"
@@ -257,11 +257,10 @@ jobs:
           Expand-Archive git-cliff.zip -DestinationPath git-cliff-bin
           echo "$PWD\git-cliff-bin\git-cliff-$version" | Out-File -Append $env:GITHUB_PATH
 
-      # A hand-written note beats a dump of every commit subject, so docs/release_notes/RELEASE.md
-      # wins when its body actually changed since the last release tag. The build stamps the
-      # version header itself - the old check made a human predict a git-height-derived version
-      # number before it existed, which is why it silently fell back to git-cliff twice in a row.
+      # RELEASE.md wins over git-cliff's commit dump when its body changed since the last release tag;
+      # the version header is stamped here because the git-height version only exists at build time.
       - name: Generate release notes
+        if: github.ref == 'refs/heads/main'
         id: notes
         shell: bash
         env:
@@ -287,6 +286,7 @@ jobs:
           printf "\nFull changelog: https://github.com/Pia-Ai-dev/Pia.Wpf/blob/main/CHANGELOG.md\n" >> release-notes.md
 
       - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -310,6 +310,7 @@ jobs:
       # run summary instead of relying on anyone remembering it. Setting PIA_DISPATCH_TOKEN (fine-grained,
       # Pia only, Contents: read and write) turns the same step into an automatic dispatch.
       - name: Link the pia-ai.de publish step
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           TAG: ${{ steps.info.outputs.tag }}
