@@ -18,3 +18,9 @@
   tools: in the same message it can also use MCP servers, Git, memory and
   the rest. Combined with another tag such as @Todo, the message still gets
   only the tools of the tagged areas.
+
+## Desktop
+
+- Pia now opens centred on the main screen when the monitor it was last on
+  is disconnected, instead of off-screen and out of reach. A window
+  position on a monitor left of or above the main one is now remembered.
