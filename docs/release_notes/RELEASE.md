@@ -19,6 +19,14 @@
   the rest. Combined with another tag such as @Todo, the message still gets
   only the tools of the tagged areas.
 
+## Agent runs
+
+- The persona editor's "Model type" now also offers budget, overthink and
+  plan, so your administrator can route those personas to their own model.
+- Agent runs now plan as "plan" instead of "fast". If your group maps only
+  "fast", planning uses the Assistant default model until a "plan" mapping
+  is added.
+
 ## Desktop
 
 - Pia now opens centred on the main screen when the monitor it was last on
