@@ -97,6 +97,23 @@
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Ce rappel sera définitivement supprimé.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Cette tâche sera définitivement supprimée.</value></data>
   <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>Ce fichier sera définitivement supprimé.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteKbDocument" xml:space="preserve"><value>Le document sera retiré pour toutes les personnes qui consultent cette base de connaissances.</value></data>
+  <data name="Msg_Assistant_StatusReadingKnowledgeBase" xml:space="preserve"><value>Lecture de la base de connaissances...</value></data>
+  <data name="Msg_Assistant_StatusUpdatingKnowledgeBase" xml:space="preserve"><value>Mise à jour de la base de connaissances...</value></data>
+  <data name="Msg_Assistant_KnowledgeBaseUpdated" xml:space="preserve"><value>Base de connaissances mise à jour</value></data>
+  <data name="Msg_KbManager_SharedWarning" xml:space="preserve"><value>Cette base de connaissances est aussi utilisée par d'autres groupes.</value></data>
+  <data name="Msg_KbManager_UnencryptedWarning" xml:space="preserve"><value>Le contenu est stocké sans chiffrement sur le serveur et peut être trouvé par toutes les personnes dont le groupe utilise cette base de connaissances.</value></data>
+  <data name="Msg_KbManager_Detail_KnowledgeBase" xml:space="preserve"><value>Base de connaissances</value></data>
+  <data name="Msg_KbManager_Detail_Document" xml:space="preserve"><value>Document</value></data>
+  <data name="Msg_KbManager_Detail_File" xml:space="preserve"><value>Fichier</value></data>
+  <data name="Msg_KbManager_Detail_Size" xml:space="preserve"><value>Taille</value></data>
+  <data name="Msg_KbManager_Detail_Prompt" xml:space="preserve"><value>Description</value></data>
+  <data name="Msg_KbManager_Summary_Upload" xml:space="preserve"><value>Ajouter « {0} » à {1}</value></data>
+  <data name="Msg_KbManager_Summary_Update" xml:space="preserve"><value>Remplacer le texte de « {0} » dans {1}</value></data>
+  <data name="Msg_KbManager_Summary_Delete" xml:space="preserve"><value>Retirer « {0} » de {1}</value></data>
+  <data name="Msg_KbManager_Summary_Prompt" xml:space="preserve"><value>Modifier la description de {0}</value></data>
+  <data name="Msg_KbManager_Summary_PromptClear" xml:space="preserve"><value>Effacer la description de {0}</value></data>
+  <data name="Msg_KbManager_Detail_PromptRemoved" xml:space="preserve"><value>(sera supprimée)</value></data>
   <data name="Msg_Assistant_PermanentDeleteExternal" xml:space="preserve"><value>Cet outil externe peut modifier ou supprimer des données de façon permanente. À vérifier attentivement.</value></data>
   <data name="Msg_Assistant_GitSwitchWarning" xml:space="preserve"><value>Changer de branche peut supprimer ou masquer des modifications non validées.</value></data>
   <data name="Msg_Assistant_GitRestoreWarning" xml:space="preserve"><value>Cette action supprime des modifications et est irréversible.</value></data>

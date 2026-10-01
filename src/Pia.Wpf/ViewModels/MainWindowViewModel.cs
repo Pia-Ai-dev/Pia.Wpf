@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Logging;
 using Pia.Models;
 using System.Reflection;
@@ -22,6 +23,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private readonly Services.Interfaces.IAuthService _authService;
     private readonly Services.Interfaces.ISyncClientService _syncClientService;
     private readonly Services.Operators.IAssignmentSurfaceCache _assignmentSurfaceCache;
+    private readonly Services.KnowledgeManager.IKnowledgeManagerSurfaceCache _kbManagerSurfaceCache;
     private readonly Services.Interfaces.IPolicyService _policyService;
     private readonly Services.Interfaces.ITourTargetCollector _tourTargetCollector;
     private readonly Services.Interfaces.IClipboardService _clipboardService;
@@ -102,6 +104,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         Pia.Services.Interfaces.IAuthService authService,
         Pia.Services.Interfaces.ISyncClientService syncClientService,
         Pia.Services.Operators.IAssignmentSurfaceCache assignmentSurfaceCache,
+        Pia.Services.KnowledgeManager.IKnowledgeManagerSurfaceCache kbManagerSurfaceCache,
         Pia.Services.Interfaces.IPolicyService policyService,
         Pia.Services.Interfaces.ITourTargetCollector tourTargetCollector,
         Pia.Services.Interfaces.IClipboardService clipboardService)
@@ -117,6 +120,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _authService = authService;
         _syncClientService = syncClientService;
         _assignmentSurfaceCache = assignmentSurfaceCache;
+        _kbManagerSurfaceCache = kbManagerSurfaceCache;
         _policyService = policyService;
         _tourTargetCollector = tourTargetCollector;
         _clipboardService = clipboardService;
@@ -175,6 +179,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         // Started before the pre-navigated early return below, which a chat window opened for a finished
         // assignment takes.
         PendingAssignmentSurfaceProbe = RefreshAssignmentSurfaceAsync();
+        _kbManagerSurfaceCache.RefreshAsync().SafeFireAndForget(_logger);
 
         await RefreshSetupRequiredAsync();
 
@@ -229,6 +234,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     {
         // Signing in is what turns the surface on, and the entry is otherwise probed only at startup.
         PendingAssignmentSurfaceProbe = RefreshAssignmentSurfaceAsync();
+        _kbManagerSurfaceCache.RefreshAsync().SafeFireAndForget(_logger);
 
         Post(() =>
         {

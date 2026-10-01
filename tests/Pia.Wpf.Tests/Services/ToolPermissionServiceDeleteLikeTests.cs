@@ -108,4 +108,33 @@ public class ToolPermissionServiceDeleteLikeTests
     {
         Assert.False(ToolPermissionService.IsReadOnlyBuiltIn(toolName));
     }
+
+    [Theory]
+    [InlineData("list_knowledge_bases")]
+    [InlineData("get_knowledge_base_stats")]
+    [InlineData("list_kb_documents")]
+    [InlineData("get_kb_prompt")]
+    [InlineData("read_kb_document")]
+    [InlineData("download_kb_document")]
+    public void TheKnowledgeBaseReads_AreReadOnlyBuiltIns(string tool)
+    {
+        Assert.True(ToolPermissionService.IsReadOnlyBuiltIn(tool));
+    }
+
+    [Fact]
+    public void DeleteKbDocument_IsDestructive_AndOurOwn()
+    {
+        Assert.True(ToolPermissionService.IsDeleteLike("delete_kb_document"));
+        Assert.False(ToolPermissionService.IsPresumedExternalDeleteLike("delete_kb_document"));
+    }
+
+    [Theory]
+    [InlineData("upload_kb_document")]
+    [InlineData("update_kb_document")]
+    [InlineData("set_kb_prompt")]
+    public void TheOtherKnowledgeBaseWrites_AreNeitherReadOnlyNorDestructive(string tool)
+    {
+        Assert.False(ToolPermissionService.IsReadOnlyBuiltIn(tool));
+        Assert.False(ToolPermissionService.IsDeleteLike(tool));
+    }
 }

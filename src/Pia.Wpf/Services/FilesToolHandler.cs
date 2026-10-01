@@ -202,22 +202,13 @@ public class FilesToolHandler : IFilesToolHandler
 #endif
         var args = toolCall.Arguments ?? new Dictionary<string, object?>();
 
-        // An unattended run supplies its own isolated workspace root (§17.2/G-1): resolve every
-        // file operation against it instead of the interactive folder, so all containment rejections
-        // re-anchor to runs\<runId>. Null (the interactive path) keeps the configured folder.
-        var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
-        var baseRoot = ambientRoot is not null ? SafeFolderPath.NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
-        if (baseRoot is null || !Directory.Exists(baseRoot))
+        var root = ResolveToolRoot();
+        if (root is null)
         {
             return (
                 "Error: No assistant files folder is configured. Ask the user to set one under Settings → Assistant.",
                 null);
         }
-
-        // Narrow the sandbox to the active chat's working directory (if any). The deferred
-        // write closure captures this resolved root at prepare time, so it never reads the
-        // ambient after the approval await.
-        var root = ResolveEffectiveRoot(baseRoot, TaskAmbient.Current?.WorkingSubpath);
 
         return toolCall.Name switch
         {
@@ -230,6 +221,17 @@ public class FilesToolHandler : IFilesToolHandler
             "search_files" => (await HandleSearchFilesAsync(root, args, cancellationToken), null),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (FilesToolCall?)null)
         };
+    }
+
+    // An unattended run's isolated workspace wins over the configured folder; the deferred write
+    // closures capture the returned root at prepare time, so they never re-read the ambient after an approval.
+    public string? ResolveToolRoot()
+    {
+        var ambientRoot = TaskAmbient.Current?.WorkspaceRoot;
+        var baseRoot = ambientRoot is not null ? SafeFolderPath.NormalizeWorkspaceRoot(ambientRoot) : _currentFolder;
+        if (baseRoot is null || !Directory.Exists(baseRoot)) return null;
+
+        return ResolveEffectiveRoot(baseRoot, TaskAmbient.Current?.WorkingSubpath);
     }
 
     /// <summary>

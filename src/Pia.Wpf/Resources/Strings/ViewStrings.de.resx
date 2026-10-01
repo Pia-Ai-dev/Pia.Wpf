@@ -984,6 +984,9 @@
   <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Bildschirm</value></data>
   <data name="ActionCard_Title_Format" xml:space="preserve"><value>{1} {0}</value></data>
   <data name="ActionCard_Action_Capture" xml:space="preserve"><value>aufnehmen</value></data>
+  <data name="ActionCard_Category_KnowledgeBase" xml:space="preserve"><value>Wissensdatenbank</value></data>
+  <data name="ActionCard_Category_KbDocument" xml:space="preserve"><value>Dokument</value></data>
+  <data name="ActionCard_Action_Upload" xml:space="preserve"><value>ergänzen</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>In Zwischenablage kopieren</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Tippen</value></data>

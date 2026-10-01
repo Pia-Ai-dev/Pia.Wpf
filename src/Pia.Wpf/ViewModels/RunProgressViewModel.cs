@@ -1793,7 +1793,14 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             return;
 
         _approvalDetailRead = true;
-        ApplyApprovalDetail(ToolApprovalArguments.DescribeDetail(row.ArgumentsJson), toolName);
+        var detail = ToolApprovalArguments.DescribeDetail(row.ArgumentsJson);
+        if (ToolApprovalArguments.ParkedHeading(row.DisplayArgs, row.ArgumentsJson) is { } heading)
+        {
+            detail = new ToolApprovalArguments.Detail(
+                detail is { } lines ? heading + "\n" + lines.Text : heading, detail?.Shortened ?? false);
+        }
+
+        ApplyApprovalDetail(detail, toolName);
     }
 
     /// <summary>The ONE place the detail's bound state is set, always on the UI thread.</summary>
