@@ -827,7 +827,8 @@ public class PluginService : IPluginService
             localDefinition?.Env,
             localDefinition?.WorkingDirectory,
             localDefinition?.ToolPrefix,
-            localDefinition?.AllowedTools);
+            localDefinition?.AllowedTools,
+            _settingsService);
 
         try
         {

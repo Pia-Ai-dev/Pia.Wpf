@@ -224,6 +224,10 @@ public sealed class HelpSettingsResolver
         rows.Add(new HelpSettingRow("agent", "Time limit per run", settings.AgentWallClockMinutes + " minutes", agent));
         rows.Add(new HelpSettingRow("agent", "Maximum replans", settings.AgentMaxReplans.ToString(), agent));
         rows.Add(new HelpSettingRow("agent", "Tool rounds per step", settings.MaxToolRoundsPerStep.ToString(), agent));
+        rows.Add(new HelpSettingRow("agent", "Limit the size of MCP tool results",
+            settings.McpToolResultCapEnabled ? $"on, at {settings.GetMcpToolResultMaxChars()} characters" : "off", agent));
+        rows.Add(new HelpSettingRow("agent", "Cache the prompt between tool rounds (Anthropic)",
+            OnOff(settings.ToolLoopPromptCacheEnabled), agent));
         rows.Add(new HelpSettingRow("agent", "Approve built-in writes automatically during a run",
             OnOff(settings.AgentRunAutoApproveBuiltInWrites),
             Path("Settings_Tab_Assistant", "Settings_Tab_ToolPermissions")));

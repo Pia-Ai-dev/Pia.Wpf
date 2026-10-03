@@ -19,6 +19,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     private readonly string? _workingDirectory;
     private readonly string? _toolPrefix;
     private readonly IReadOnlyList<string>? _allowedTools;
+    private readonly ISettingsService? _settingsService;
 
     private McpClient? _client;
     private StdioClientTransport? _transport;
@@ -47,7 +48,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         IReadOnlyDictionary<string, string>? env = null,
         string? workingDirectory = null,
         string? toolPrefix = null,
-        IReadOnlyList<string>? allowedTools = null)
+        IReadOnlyList<string>? allowedTools = null,
+        ISettingsService? settingsService = null)
     {
         PluginId = pluginId;
         PluginName = pluginName;
@@ -59,6 +61,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _workingDirectory = workingDirectory;
         _toolPrefix = string.IsNullOrWhiteSpace(toolPrefix) ? null : toolPrefix;
         _allowedTools = allowedTools;
+        _settingsService = settingsService;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -188,6 +191,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
                     toolCall.Arguments is not null
                         ? TruncateText(JsonSerializer.Serialize(toolCall.Arguments), 500)
                         : "<null>");
+                string resultText;
                 try
                 {
                     // McpClientTool.InvokeAsync handles the MCP protocol call internally.
@@ -195,12 +199,10 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
                         ? new AIFunctionArguments(toolCall.Arguments)
                         : null;
                     var result = await tool.InvokeAsync(funcArgs, ct);
-                    var resultText = result?.ToString() ?? "Tool completed with no output.";
+                    resultText = result?.ToString() ?? "Tool completed with no output.";
 
                     _logger.SensitiveDebug("MCP tool {ToolName} result ({Length} chars): {Preview}",
                         toolCall.Name, resultText.Length, TruncateText(resultText, 500));
-
-                    return resultText;
                 }
                 catch (Exception ex)
                 {
@@ -208,6 +210,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
                         toolCall.Name, PluginName);
                     return $"Tool call failed: {ex.Message}";
                 }
+
+                return await CapResultAsync(toolCall.Name, resultText);
             });
 
         return Task.FromResult<(object?, PluginToolCall?)>((null, pending));
@@ -280,6 +284,35 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         if (_disposed) return;
         _disposed = true;
         ShutdownAsync().GetAwaiter().GetResult();
+    }
+
+    private async Task<string> CapResultAsync(string toolName, string resultText)
+    {
+        if (_settingsService is null)
+            return resultText;
+
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!settings.McpToolResultCapEnabled)
+            return resultText;
+
+        var maxChars = settings.GetMcpToolResultMaxChars();
+        if (resultText.Length <= maxChars)
+            return resultText;
+
+        _logger.LogInformation("MCP tool {ToolName} result cut from {ResultChars} to {MaxChars} chars",
+            toolName, resultText.Length, maxChars);
+        return CapResult(resultText, maxChars);
+    }
+
+    /// <summary>Model-facing, so the note is unlocalized and its numbers culture-invariant.</summary>
+    internal static string CapResult(string text, int maxChars)
+    {
+        if (text.Length <= maxChars)
+            return text;
+
+        var kept = char.IsHighSurrogate(text[maxChars - 1]) ? maxChars - 1 : maxChars;
+        return text[..kept] + FormattableString.Invariant(
+            $"\n[truncated: showing the first {kept} of {text.Length} characters. Call the tool again with a narrower query if you need the rest.]");
     }
 
     private static string TruncateText(string value, int max)

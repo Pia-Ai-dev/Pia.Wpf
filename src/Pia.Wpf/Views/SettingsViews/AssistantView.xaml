@@ -753,6 +753,48 @@
                          TextWrapping="Wrap" Margin="0,2,0,0"/>
             </StackPanel>
 
+            <!-- Tool output: applies to every tool-using chat turn and agent step. -->
+            <TextBlock Text="{loc:Str Settings_Agent_ToolOutput_Section_Header}"
+                       Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                       Margin="0,12,0,0"/>
+            <StackPanel Margin="0,0,0,20">
+              <CheckBox Content="{loc:Str Settings_Agent_McpResultCap}"
+                        IsChecked="{Binding McpToolResultCapEnabled}"
+                        IsEnabled="{Binding Policy[McpToolResultCapEnabled]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[McpToolResultCapEnabled]}"
+                        AutomationProperties.AutomationId="Settings_Assistant_McpToolResultCapEnabled"
+                        Margin="0,8,0,0"/>
+              <StackPanel Margin="22,6,0,0" IsEnabled="{Binding McpToolResultCapEnabled}">
+                <Slider HorizontalAlignment="Left" Width="378"
+                        Minimum="5000" Maximum="200000"
+                        TickFrequency="5000" IsSnapToTickEnabled="True"
+                        Value="{Binding McpToolResultMaxChars, Mode=TwoWay}"
+                        IsEnabled="{Binding Policy[McpToolResultMaxChars]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[McpToolResultMaxChars]}"
+                        AutomationProperties.AutomationId="Settings_Assistant_McpToolResultMaxChars"/>
+                <TextBlock Text="{Binding McpToolResultMaxCharsDisplay}"
+                           Style="{StaticResource PiaSettingsDescriptionStyle}"/>
+              </StackPanel>
+              <TextBlock Text="{loc:Str Settings_Agent_McpResultCap_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="22,4,0,0"/>
+
+              <CheckBox Content="{loc:Str Settings_Agent_ToolLoopPromptCache}"
+                        IsChecked="{Binding ToolLoopPromptCacheEnabled}"
+                        IsEnabled="{Binding Policy[ToolLoopPromptCacheEnabled]}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTip="{Binding Policy.Reason[ToolLoopPromptCacheEnabled]}"
+                        AutomationProperties.AutomationId="Settings_Assistant_ToolLoopPromptCacheEnabled"
+                        Margin="0,16,0,0"/>
+              <TextBlock Text="{loc:Str Settings_Agent_ToolLoopPromptCache_Description}"
+                         Style="{StaticResource PiaSettingsDescriptionStyle}"
+                         TextWrapping="Wrap"
+                         Margin="22,4,0,0"/>
+            </StackPanel>
+
             <!-- Planning: global, applies to interactive AND unattended runs. -->
             <TextBlock Text="{loc:Str Settings_Agent_Planning_Section_Header}"
                        Style="{StaticResource PiaSettingsSectionLabelStyle}"

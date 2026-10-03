@@ -341,6 +341,37 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         SaveSettingsAsync().SafeFireAndForget(_logger);
     }
 
+    [ObservableProperty]
+    private bool _mcpToolResultCapEnabled = true;
+
+    [ObservableProperty]
+    private int _mcpToolResultMaxChars = 50_000;
+
+    [ObservableProperty]
+    private bool _toolLoopPromptCacheEnabled;
+
+    public string McpToolResultMaxCharsDisplay => _localizationService.Format(
+        "Settings_Agent_McpResultCap_Value", McpToolResultMaxChars, McpToolResultMaxChars / 4);
+
+    partial void OnMcpToolResultCapEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnMcpToolResultMaxCharsChanged(int value)
+    {
+        if (_isLoading) return;
+        var clamped = Math.Clamp(value, AppSettings.MinMcpToolResultMaxChars, AppSettings.MaxMcpToolResultMaxChars);
+        if (clamped != value) { McpToolResultMaxChars = clamped; return; }
+        OnPropertyChanged(nameof(McpToolResultMaxCharsDisplay));
+        SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
+    partial void OnToolLoopPromptCacheEnabledChanged(bool value)
+    {
+        if (!_isLoading) SaveSettingsAsync().SafeFireAndForget(_logger);
+    }
+
     // Scheduled/headless-run budget knobs (§17.5) — the caps an unattended run (a "Run in background"
     // detach or a scheduled AgentTask job) stops at. Separate envelope from the interactive Agent* knobs
     // (no user is watching). Clamped on the same RunProfile bounds + persisted. Defaults = RunProfile.Scheduled.
@@ -558,6 +589,9 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         AgentMaxReplans = Math.Clamp(settings.AgentMaxReplans, RunProfile.MinReplans, RunProfile.MaxReplansCap);
         AgentWallClockMinutes = Math.Clamp(settings.AgentWallClockMinutes, RunProfile.MinWallClockMinutes, RunProfile.MaxWallClockMinutes);
         MaxToolRoundsPerStep = Math.Clamp(settings.MaxToolRoundsPerStep, RunProfile.MinToolRounds, RunProfile.MaxToolRoundsCap);
+        McpToolResultCapEnabled = settings.McpToolResultCapEnabled;
+        McpToolResultMaxChars = settings.GetMcpToolResultMaxChars();
+        ToolLoopPromptCacheEnabled = settings.ToolLoopPromptCacheEnabled;
         AgentPlanReasoningTurnEnabled = settings.AgentPlanReasoningTurnEnabled;
         AssistantNewChatAgentMode = settings.AssistantNewChatAgentMode;
         AgentRunAutoApproveBuiltInWrites = settings.AgentRunAutoApproveBuiltInWrites;
@@ -589,6 +623,7 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         OnPropertyChanged(nameof(AgentMaxReplansDisplay));
         OnPropertyChanged(nameof(AgentWallClockDisplay));
         OnPropertyChanged(nameof(MaxToolRoundsDisplay));
+        OnPropertyChanged(nameof(McpToolResultMaxCharsDisplay));
         OnPropertyChanged(nameof(ScheduledMaxStepsDisplay));
         OnPropertyChanged(nameof(ScheduledMaxReplansDisplay));
         OnPropertyChanged(nameof(ScheduledWallClockDisplay));
@@ -697,6 +732,9 @@ public partial class AssistantSettingsViewModel : UiThreadViewModel, IDisposable
         settings.AgentMaxReplans = AgentMaxReplans;
         settings.AgentWallClockMinutes = AgentWallClockMinutes;
         settings.MaxToolRoundsPerStep = MaxToolRoundsPerStep;
+        settings.McpToolResultCapEnabled = McpToolResultCapEnabled;
+        settings.McpToolResultMaxChars = McpToolResultMaxChars;
+        settings.ToolLoopPromptCacheEnabled = ToolLoopPromptCacheEnabled;
         settings.AgentPlanReasoningTurnEnabled = AgentPlanReasoningTurnEnabled;
         settings.AssistantNewChatAgentMode = AssistantNewChatAgentMode;
         settings.AgentRunAutoApproveBuiltInWrites = AgentRunAutoApproveBuiltInWrites;

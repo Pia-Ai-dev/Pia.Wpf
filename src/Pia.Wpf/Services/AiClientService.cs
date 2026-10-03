@@ -86,6 +86,15 @@ public class AiClientService : IAiClientService
         return withoutSearch;
     }
 
+    internal const string ToolLoopPromptCache = "tool-loop";
+
+    /// <summary>Who turns the prompt cache on for this exchange; <see cref="ToolLoopPromptCache"/> means the caller must.</summary>
+    internal static string PromptCacheLabel(AiProvider provider, bool toolLoopCacheEnabled, bool useTools) =>
+        provider.ProviderType != AiProviderType.Anthropic ? "n/a"
+        : provider.EnablePromptCache ? "provider"
+        : toolLoopCacheEnabled && useTools ? ToolLoopPromptCache
+        : "off";
+
     /// <summary>The caller's timeoutCts owns the request bound; HttpClient's 100s default would fire first and surface as a bare cancellation.</summary>
     private HttpClient CreateAiHttpClient()
     {
@@ -228,12 +237,29 @@ public class AiClientService : IAiClientService
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
         provider = await EnforcePolicyAsync(provider);
+        var settings = await _settingsService.GetSettingsAsync();
+        var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
+
+        // Before the client is built: the Anthropic handler reads the cache flag at creation.
+        var promptCache = PromptCacheLabel(provider, settings.ToolLoopPromptCacheEnabled, useTools);
+        if (promptCache == ToolLoopPromptCache)
+        {
+            provider = provider.Clone();
+            provider.EnablePromptCache = true;
+        }
+
+        var meter = new ToolLoopUsageMeter(
+            provider.ProviderType,
+            settings.McpToolResultCapEnabled
+                ? settings.GetMcpToolResultMaxChars().ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : "off",
+            promptCache);
+
         var providerHandler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await providerHandler.CreateChatClientAsync(
             provider, apiKey, httpClient, mode, managedPersonaId, personaModelType, cancellationToken);
 
-        var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
         var options = providerHandler.CreateChatOptions(provider, hasTools: useTools);
         if (useTools)
         {
@@ -249,7 +275,6 @@ public class AiClientService : IAiClientService
 
         // Clamped here as well, not only in the settings UI, so a hand-edited settings file can neither
         // starve a step (0 rounds = the model may never call a tool) nor run an unbounded loop.
-        var settings = await _settingsService.GetSettingsAsync();
         var maxToolRounds = Math.Clamp(
             settings.MaxToolRoundsPerStep, RunProfile.MinToolRounds, RunProfile.MaxToolRoundsCap);
         var workingMessages = new List<Microsoft.Extensions.AI.ChatMessage>(messages);
@@ -288,6 +313,8 @@ public class AiClientService : IAiClientService
                     .CompactAsync(workingMessages, budget, _logger, linkedCts.Token)
                     .ConfigureAwait(false);
             }
+
+            meter.RecordRequest(workingMessages);
 
             _logger.LogDebug("Round {Round}: request carries {ImageCount} image message(s)",
                 round + 1, ToolLoopImageMessages.CountImageMessages(workingMessages));
@@ -420,6 +447,7 @@ public class AiClientService : IAiClientService
 
             if (response.Usage is { } roundUsage)
             {
+                meter.RecordUsage(roundUsage);
                 if (roundUsage.InputTokenCount is long input) { aggregatedInput += input; hasUsage = true; }
                 if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
                 _logger.LogDebug("Round {Round} token usage: input={Input}, output={Output}, cached={Cached}",
@@ -461,7 +489,7 @@ public class AiClientService : IAiClientService
                 yield return new ToolRoundCompleted();
                 var appendedFrom = workingMessages.Count;
                 var stopRequested = await DispatchToolCallsAsync(
-                    toolCalls, response, workingMessages, toolHandler, round, provider.ProviderType);
+                    toolCalls, response, workingMessages, toolHandler, round, provider.ProviderType, meter);
                 // Materialized, not deferred: the next iteration's compaction REASSIGNS workingMessages, so
                 // a lazy Skip() would enumerate a list this round never appended to. Capped here because a
                 // step executor carries this slice into the NEXT step and pays for it for the rest of the run.
@@ -472,6 +500,7 @@ public class AiClientService : IAiClientService
                     // No wrap-up round: that one is for round exhaustion, and spending a provider round-trip
                     // on a turn a gate already stopped is the delay this arm exists to remove.
                     _logger.LogInformation("Round {Round}: a tool handler stopped the loop; finishing the exchange", round + 1);
+                    meter.LogSummary(_logger);
                     yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
                         protectedRoute || protectedContributedText, lastModelId);
                     yield break;
@@ -490,13 +519,14 @@ public class AiClientService : IAiClientService
                 var retry = await RunToolRoundWrapUpAsync(
                     chatClient, providerHandler, provider, workingMessages, contextBudget, timeout,
                     protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId,
-                    EmptyAnswerNudge, cancellationToken);
+                    EmptyAnswerNudge, meter, cancellationToken);
 
                 if (!string.IsNullOrEmpty(retry.Text))
                 {
                     yield return new TextDelta(retry.Text);
                 }
 
+                meter.LogSummary(_logger);
                 yield return BuildFinishedItem(
                     provider, retry.HasUsage, retry.AggregatedInput, retry.AggregatedOutput,
                     retry.ProtectedRoute || protectedContributedText, retry.ModelId);
@@ -511,6 +541,7 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
+            meter.LogSummary(_logger);
             yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
                 protectedRoute || protectedContributedText, lastModelId);
             yield break;
@@ -521,7 +552,7 @@ public class AiClientService : IAiClientService
         var wrapUp = await RunToolRoundWrapUpAsync(
             chatClient, providerHandler, provider, workingMessages, contextBudget, timeout,
             protectedRoute, aggregatedInput, aggregatedOutput, hasUsage, lastModelId,
-            ToolRoundsExhaustedNudge, cancellationToken);
+            ToolRoundsExhaustedNudge, meter, cancellationToken);
 
         if (!string.IsNullOrEmpty(wrapUp.Text))
         {
@@ -530,6 +561,7 @@ public class AiClientService : IAiClientService
 
         // Before the throw below, not instead of it: this carries the aggregated usage and the flags, and
         // the tokenizing decorator flushes its pending detokenize buffer on it.
+        meter.LogSummary(_logger);
         yield return BuildFinishedItem(
             provider, wrapUp.HasUsage, wrapUp.AggregatedInput, wrapUp.AggregatedOutput,
             wrapUp.ProtectedRoute || protectedContributedText, wrapUp.ModelId, toolRoundsExhausted: true);
@@ -682,7 +714,8 @@ public class AiClientService : IAiClientService
         List<Microsoft.Extensions.AI.ChatMessage> workingMessages,
         ToolCallHandler toolHandler,
         int round,
-        AiProviderType providerType)
+        AiProviderType providerType,
+        ToolLoopUsageMeter meter)
     {
         _logger.LogInformation("Round {Round}: {ToolCallCount} tool call(s) detected: {ToolNames}",
             round + 1, toolCalls.Count, string.Join(", ", toolCalls.Select(t => t.Name)));
@@ -743,6 +776,8 @@ public class AiClientService : IAiClientService
                 // Never broken out of on a stop: the round's remaining calls must still be answered, or the
                 // captured slice carries a FunctionCallContent with no matching result.
                 var result = await toolHandler(toolCall, dispatch);
+                _logger.LogInformation("Round {Round}: tool {ToolName} returned {ResultChars} chars",
+                    round + 1, toolCall.Name, meter.RecordResult(toolCall.Name, toolCall.CallId, result));
                 var resultPreview = result?.ToString() ?? "<null>";
                 _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
                     toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
@@ -794,6 +829,7 @@ public class AiClientService : IAiClientService
         bool hasUsage,
         string? modelId,
         string nudge,
+        ToolLoopUsageMeter meter,
         CancellationToken cancellationToken)
     {
         string? wrapUpText = null;
@@ -813,6 +849,7 @@ public class AiClientService : IAiClientService
 
             // Tools are off for this call, so only words can stop the model reaching for one again.
             workingMessages.Add(new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, nudge));
+            meter.RecordRequest(workingMessages);
 
             var wrapUpOptions = providerHandler.CreateChatOptions(provider, hasTools: false);
             try
@@ -836,6 +873,7 @@ public class AiClientService : IAiClientService
                     modelId = wrapUpResponse.ModelId;
                 if (wrapUpResponse.Usage is { } wrapUpUsage)
                 {
+                    meter.RecordUsage(wrapUpUsage);
                     if (wrapUpUsage.InputTokenCount is long wrapUpInput) { aggregatedInput += wrapUpInput; hasUsage = true; }
                     if (wrapUpUsage.OutputTokenCount is long wrapUpOutput) { aggregatedOutput += wrapUpOutput; hasUsage = true; }
                 }

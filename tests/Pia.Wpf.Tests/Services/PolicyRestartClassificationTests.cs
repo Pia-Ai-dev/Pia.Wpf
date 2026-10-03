@@ -36,6 +36,8 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.MaxParallelRequestsPerProvider),
         nameof(AppSettings.MaxToolRoundsPerStep),
         nameof(AppSettings.MaxTopicsPerSource),
+        nameof(AppSettings.McpToolResultCapEnabled),
+        nameof(AppSettings.McpToolResultMaxChars),
         nameof(AppSettings.MeetingAttendeeDisplayName),
         nameof(AppSettings.MeetingAttendeeRosterSnapshotMinutes),
         nameof(AppSettings.MeetingAttendeeShowBrowserWindow),
@@ -57,6 +59,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.SttBackend),
         nameof(AppSettings.TargetSpeechLanguage),
         nameof(AppSettings.Theme),
+        nameof(AppSettings.ToolLoopPromptCacheEnabled),
         nameof(AppSettings.UserOperatingMode),
         nameof(AppSettings.UseSameProviderForAllModes),
         nameof(AppSettings.WhisperModel),
@@ -186,7 +189,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 51 && LiveWithWork.Length == 24
+            LiveAlready.Length == 54 && LiveWithWork.Length == 24
                 && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 28,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

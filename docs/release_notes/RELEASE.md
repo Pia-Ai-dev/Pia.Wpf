@@ -18,6 +18,13 @@
   tools: in the same message it can also use MCP servers, Git, memory and
   the rest. Combined with another tag such as @Todo, the message still gets
   only the tools of the tagged areas.
+- Results from MCP servers are now cut at 50,000 characters, so one oversized
+  answer can no longer crowd out the rest of the conversation. Change the size
+  or switch it off with "Limit the size of MCP tool results" under Settings →
+  Assistant → Agent runs.
+- New option "Cache the prompt between tool rounds (Anthropic)" in the same
+  place makes long tool-using answers on Anthropic providers cheaper: each
+  further tool round reads the earlier ones at the cached price. Off by default.
 
 ## Desktop
 

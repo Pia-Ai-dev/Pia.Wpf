@@ -253,6 +253,18 @@ public class AppSettings
     // The model↔tool loop cap inside one step (AiClientService); shared by all run shapes, clamped at read.
     public int MaxToolRoundsPerStep { get; set; } = 24;
 
+    // Built-in tools carry their own caps; an MCP server's result is bounded only by this.
+    public bool McpToolResultCapEnabled { get; set; } = true;
+    public int McpToolResultMaxChars { get; set; } = 50_000;
+    public const int MinMcpToolResultMaxChars = 5_000;
+    public const int MaxMcpToolResultMaxChars = 200_000;
+
+    public int GetMcpToolResultMaxChars() =>
+        Math.Clamp(McpToolResultMaxChars, MinMcpToolResultMaxChars, MaxMcpToolResultMaxChars);
+
+    // Default OFF: it changes Anthropic billing, and a custom Anthropic-compatible endpoint may reject cache_control.
+    public bool ToolLoopPromptCacheEnabled { get; set; } = false;
+
     // Reason-then-emit planning. When true, a plan turn on a provider whose handler DROPS the configured
     // reasoning effort as soon as tools are attached (AzureOpenAI / Ollama / Mistral — see
     // IAiProviderHandler.DropsReasoningEffortWithTools) is split into TWO provider turns: a tool-FREE

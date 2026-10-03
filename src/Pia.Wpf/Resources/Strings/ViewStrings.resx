@@ -1222,6 +1222,12 @@
   <data name="Settings_Agent_Planning_Section_Header" xml:space="preserve"><value>Planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn" xml:space="preserve"><value>Think before planning</value></data>
   <data name="Settings_Agent_PlanReasoningTurn_Description" xml:space="preserve"><value>Adds a short tool-free thinking turn before the plan is created, so the model can reason at the effort you configured. Helps on providers that switch reasoning off while tools are attached — and doubles the cost of the planning turn.</value></data>
+  <data name="Settings_Agent_ToolOutput_Section_Header" xml:space="preserve"><value>Tool output</value></data>
+  <data name="Settings_Agent_McpResultCap" xml:space="preserve"><value>Limit the size of MCP tool results</value></data>
+  <data name="Settings_Agent_McpResultCap_Value" xml:space="preserve"><value>{0:N0} characters (about {1:N0} tokens)</value></data>
+  <data name="Settings_Agent_McpResultCap_Description" xml:space="preserve"><value>An MCP server can return far more text than the model needs, and every tool result is sent again on each later tool round. Longer results are cut to this size, and the model is told to ask again with a narrower query.</value></data>
+  <data name="Settings_Agent_ToolLoopPromptCache" xml:space="preserve"><value>Cache the prompt between tool rounds (Anthropic)</value></data>
+  <data name="Settings_Agent_ToolLoopPromptCache_Description" xml:space="preserve"><value>Marks requests that offer tools for Anthropic's prompt cache, so each further tool round reads the earlier ones at the cached price instead of the full input price. Writing the cache costs a little more on the first request. Has no effect on other providers, or on an Anthropic provider that already uses the prompt cache.</value></data>
   <data name="Settings_Agent_Autonomy_Section_Header" xml:space="preserve"><value>Autonomy</value></data>
   <data name="Settings_Agent_AutoApproveBuiltInWrites" xml:space="preserve"><value>Auto-approve Pia's own write tools during agent runs and in voice mode</value></data>
   <data name="Settings_Agent_AutoApproveBuiltInWrites_Description" xml:space="preserve"><value>During an agent run and in voice mode, let Pia create and change files, notes, tasks, reminders and scheduled jobs without asking each time. Deleting anything, Git commands and external (MCP) tools are never covered by this permission. Off by default: a run with this permission can overwrite files in your assistant folder unattended.</value></data>

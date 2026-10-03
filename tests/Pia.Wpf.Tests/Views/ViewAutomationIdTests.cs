@@ -47,7 +47,7 @@ public class ViewAutomationIdTests
     // The playbook's "Known gaps" section is the single source of truth for what still has no row here.
     [Theory]
     [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 35, 5, "")]
-    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 48, 6, "McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 51, 6,"McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView's one DataTemplate (the credit rows) holds no interactive control, so no per-item floor.
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 16, 0, "E2EEOnboardingView")]
