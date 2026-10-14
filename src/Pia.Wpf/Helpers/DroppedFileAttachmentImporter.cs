@@ -16,10 +16,10 @@ public static class DroppedFileAttachmentImporter
     public const int MaxFileChars = 20_000;
     public const int MaxTotalChars = 40_000;
 
-    /// <summary>The kinds this staging path can read. A drop target's accepted-extension list is checked
-    /// against this, so widening one without the other cannot silently discard a supported file.</summary>
+    /// <summary>A drop target's accepted-extension list is checked against this, so widening one without the
+    /// other cannot silently discard a supported file.</summary>
     public static readonly IReadOnlySet<FileKind> ReadableKinds =
-        new HashSet<FileKind> { FileKind.Text, FileKind.Docx, FileKind.Xlsx, FileKind.Pdf, FileKind.Email };
+        Enum.GetValues<FileKind>().Where(kind => DroppedFileReader.ReaderFor(kind) is not null).ToHashSet();
 
     public sealed record StageResult(
         IReadOnlyList<PendingFileAttachment> Staged,
@@ -52,7 +52,7 @@ public static class DroppedFileAttachmentImporter
                 continue;
             }
 
-            if (!ReadableKinds.Contains(kind))
+            if (DroppedFileReader.ReaderFor(kind) is not { } read)
             {
                 logger.LogInformation("File attach rejected for kind {Kind}", kind);
                 Caution(snackbarService, localizationService,
@@ -74,25 +74,7 @@ public static class DroppedFileAttachmentImporter
                 continue;
             }
 
-            DroppedFileReader.ReadResult result;
-            switch (kind)
-            {
-                case FileKind.Text:
-                    result = await DroppedFileReader.ReadTextAsync(path, ct);
-                    break;
-                case FileKind.Docx:
-                    result = await DroppedFileReader.ReadDocxAsync(path, ct);
-                    break;
-                case FileKind.Xlsx:
-                    result = await DroppedFileReader.ReadXlsxAsync(path, ct);
-                    break;
-                case FileKind.Pdf:
-                    result = await DroppedFileReader.ReadPdfAsync(path, ct);
-                    break;
-                default:
-                    result = await DroppedFileReader.ReadEmailAsync(path, ct);
-                    break;
-            }
+            var result = await read(path, ct);
 
             if (result.Status == DroppedFileReader.ReadStatus.TooLarge)
             {
@@ -173,12 +155,17 @@ public static class DroppedFileAttachmentImporter
         alreadyPending.Any(p => string.Equals(p.FullPath, path, StringComparison.OrdinalIgnoreCase))
         || staged.Any(p => string.Equals(p.FullPath, path, StringComparison.OrdinalIgnoreCase));
 
+    // No discard arm, for the same reason as DroppedFileReader.ReaderFor: a new FileKind must pick its chip.
+#pragma warning disable CS8524 // an unnamed FileKind value is a caller bug; throwing on it is right
     private static PendingFileKind ToPendingKind(FileKind kind) => kind switch
     {
+        FileKind.Text => PendingFileKind.Text,
         FileKind.Email => PendingFileKind.Email,
         FileKind.Docx or FileKind.Xlsx or FileKind.Pdf => PendingFileKind.Document,
-        _ => PendingFileKind.Text,
+        FileKind.Image or FileKind.Audio or FileKind.Unsupported =>
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a staged text kind."),
     };
+#pragma warning restore CS8524
 
     private static void Caution(ISnackbarService snackbarService, ILocalizationService localizationService, string message) =>
         snackbarService.Show(

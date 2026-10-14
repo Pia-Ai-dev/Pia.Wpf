@@ -30,7 +30,7 @@ public class FilesToolHandler : IFilesToolHandler
     // search_files caps (mirror the MaxListEntries convention + its truncation message).
     private const int MaxMatches = 500;          // hard stop on collected matches
     private const int MaxFilesScanned = 20_000;  // hard stop on files visited during the walk
-    private const int MaxExtractions = 200;      // hard stop on .docx/.xlsx/.msg/.eml extractions per search
+    private const int MaxExtractions = 200;      // hard stop on document/mail extractions per search
     private const int SkippedNamesShown = 5;     // unsearchable files named in the diagnostic before "…"
 
     // find_files result window.
@@ -57,13 +57,6 @@ public class FilesToolHandler : IFilesToolHandler
     private static readonly HashSet<string> MacroOrTemplateWriteExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".docm", ".dotm", ".dotx", ".xlsm", ".xltm", ".xltx",
-    };
-
-    // read_file renders these rather than returning the file's own bytes, so an edit round-trip would
-    // write the rendering over the original. Unlike docx/xlsx there is no patch-in-place path to add.
-    private static readonly HashSet<string> RenderedReadOnlyExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".msg", ".eml",
     };
 
     private readonly ISettingsService _settingsService;
@@ -163,7 +156,8 @@ public class FilesToolHandler : IFilesToolHandler
                 "Read the contents of a text file inside the assistant files folder. Use this before summarizing or updating a file. " +
                 "Locate the file with find_files first if you do not already know its path. " +
                 "Also reads .docx (one line per paragraph), .xlsx/.xlsm (each sheet as a '## Sheet: name' header followed by " +
-                "tab-separated rows) and .msg/.eml (headers, then the message body) as plain text — .docm and other " +
+                "tab-separated rows), .pdf (the text of every page, pages separated by a blank line; a scan has no " +
+                "text layer and so nothing to read) and .msg/.eml (headers, then the message body) as plain text — .docm and other " +
                 "macro-enabled Word/template variants are not supported. An image file is shown to you as a " +
                 "picture attached to your next message, once; offset/limit are ignored for it."),
 
@@ -188,7 +182,7 @@ public class FilesToolHandler : IFilesToolHandler
                 "Delete a file inside the assistant files folder."),
 
             AIFunctionFactory.Create(SearchFilesSchema, "search_files",
-                "Scan the CONTENT of files inside the assistant files folder for a regular-expression pattern — text files, and .docx/.xlsx/.msg/.eml as the same extracted text read_file returns, so a hit's line number is the read_file line number. Read-only; returns matching lines, matching file paths, or a count. Narrow it with 'include' to a file glob. To find a file by its name or path instead, use find_files.")
+                "Scan the CONTENT of files inside the assistant files folder for a regular-expression pattern — text files, and .docx/.xlsx/.xlsm/.pdf/.msg/.eml as the same extracted text read_file returns, so a hit's line number is the read_file line number. Read-only; returns matching lines, matching file paths, or a count. Narrow it with 'include' to a file glob. To find a file by its name or path instead, use find_files.")
         ];
     }
 
@@ -574,15 +568,8 @@ public class FilesToolHandler : IFilesToolHandler
 
     private static readonly TimeSpan SearchRegexTimeout = TimeSpan.FromSeconds(1);
 
-    /// <summary>
-    /// Hand-rolled, in-process regex search over the sandbox. Walks the tree with a manual stack
-    /// (pruning directories matched by the ignore matcher before descending so we never spend the
-    /// scan budget on .git/bin/obj/node_modules or the user's ignored trees), reads each file through
-    /// <see cref="ReadFileTextAsync"/> so .docx/.xlsx/.msg/.eml are searched as extracted text rather
-    /// than skipped as binary, matches each line against the user regex (guarded by a match timeout
-    /// against catastrophic backtracking), and emits a diagnostics block followed by a results body.
-    /// Read-only: the caller wraps the return as (result, null) — no action card.
-    /// </summary>
+    /// <summary>Ignored directories are pruned before descending, so the scan budget is never spent on
+    /// .git/bin/obj/node_modules or the user's ignored trees.</summary>
     private async Task<object> HandleSearchFilesAsync(
         string root, IDictionary<string, object?> args, CancellationToken cancellationToken)
     {
@@ -751,8 +738,8 @@ public class FilesToolHandler : IFilesToolHandler
                     // extensionless image still lands in the skipped bucket, as binary.
                     if (IsImageExtension(Path.GetExtension(canon))) { imageCount++; continue; }
 
-                    // Opening an OpenXml/mail container costs orders of magnitude more than a byte
-                    // read, so extraction gets a budget of its own.
+                    // Opening a container costs orders of magnitude more than a byte read, so
+                    // extraction gets a budget of its own.
                     bool extracts = IsExtractedKind(DroppedFileReader.Classify(canon));
                     if (extracts && extractions >= MaxExtractions) { extractionTruncated = true; continue; }
                     if (extracts) extractions++;
@@ -760,8 +747,7 @@ public class FilesToolHandler : IFilesToolHandler
                     string[] lines;
                     try
                     {
-                        // Same routing read_file uses, so .docx/.xlsx/.msg/.eml are searched as extracted
-                        // text and the size/binary/image guards stay in one place.
+                        // Same routing as read_file, so a hit's line number is the read_file line number.
                         var (text, readError) = await ReadFileTextAsync(canon, rel, cancellationToken);
                         if (readError is not null) { RecordSkipped(rel); continue; }
                         lines = text!.Split('\n');
@@ -824,7 +810,7 @@ public class FilesToolHandler : IFilesToolHandler
         if (scanTruncated)
             diagnostics.Add($"Warning: stopped after scanning {MaxFilesScanned} files; results may be incomplete. Narrow the search with a 'path'.");
         if (extractionTruncated)
-            diagnostics.Add($"Warning: stopped extracting .docx/.xlsx/.msg/.eml after {MaxExtractions} file(s); the rest were not searched. Narrow the search with a 'path' or 'include'.");
+            diagnostics.Add($"Warning: stopped extracting documents and mail after {MaxExtractions} file(s); the rest were not searched. Narrow the search with a 'path' or 'include'.");
         if (imageCount > 0)
             diagnostics.Add($"Note: {imageCount} image file(s) were not searched (an image has no text to match). " +
                             "read_file can show you one.");
@@ -1126,32 +1112,22 @@ public class FilesToolHandler : IFilesToolHandler
         }
     }
 
-    /// <summary>
-    /// Resolves the raw text of a sandbox file, routing by extension FIRST (structured docs are zip
-    /// containers full of NUL bytes — sniffing them as binary would falsely reject them; NUL-sniff
-    /// only on the plain-text path). Returns <c>(text, null)</c> on success or <c>(null, error)</c>
-    /// for an oversized/binary/unsupported file. Shared by <see cref="HandleReadFileAsync"/> (which
-    /// then windows + records staleness), <see cref="HandleSearchFilesAsync"/> and
-    /// <see cref="ReadPromptPreviewAsync"/> (which caps for the prompt) — it does NOT record
-    /// staleness, so a search hit can never satisfy the read-before-edit gate.
-    /// <paramref name="requested"/> is the model-supplied path, used only in error text.
-    /// </summary>
+    /// <summary>A sandbox file's text, or an error. Records no staleness, so a search hit cannot satisfy the
+    /// read-before-edit gate; <paramref name="requested"/> is the model's path, for error text only.</summary>
     private async Task<(string? Text, string? Error)> ReadFileTextAsync(
         string safePath, string requested, CancellationToken cancellationToken)
     {
         var ext = Path.GetExtension(safePath);
 
+        // Before the NUL sniff: a container is full of NUL bytes and would be refused as binary.
         var kind = DroppedFileReader.Classify(safePath);
         if (IsExtractedKind(kind))
         {
-            var extracted = kind switch
-            {
-                FileKind.Docx => await DroppedFileReader.ReadDocxAsync(safePath, cancellationToken),
-                FileKind.Xlsx => await DroppedFileReader.ReadXlsxAsync(safePath, cancellationToken),
-                _             => await DroppedFileReader.ReadEmailAsync(safePath, cancellationToken),
-            };
+            var extracted = await DroppedFileReader.ReaderFor(kind)!(safePath, cancellationToken);
             if (extracted.Status == DroppedFileReader.ReadStatus.TooLarge)
                 return (null, $"Error: File is too large to read (max {MaxReadFileBytes / 1024} KB of extracted text).");
+            if (extracted.Error == DroppedFileReader.NoTextLayer)
+                return (null, $"Error: '{requested}' has no text layer — it looks like a scan, so there is no text to read.");
             if (extracted.Status == DroppedFileReader.ReadStatus.Failed)
                 return (null, $"Error: Could not read file ({extracted.Error}).");
             return (extracted.Text ?? string.Empty, null);
@@ -1406,8 +1382,13 @@ public class FilesToolHandler : IFilesToolHandler
            "into one would destroy it. read_file shows you the picture; write to a new .md or .txt file instead.";
 
     /// <summary>Formats whose text is extracted from a container rather than read as the file's own bytes.</summary>
-    private static bool IsExtractedKind(FileKind kind)
-        => kind is FileKind.Docx or FileKind.Xlsx or FileKind.Email;
+    internal static bool IsExtractedKind(FileKind kind)
+        => kind != FileKind.Text && DroppedFileReader.ReaderFor(kind) is not null;
+
+    // read_file returns extracted text, not the file's bytes, so writing it back would destroy the original —
+    // unless the format has a patch-in-place engine. A newly extracted format stays read-only until it gets one.
+    private static bool IsReadOnlyExtraction(FileKind kind)
+        => IsExtractedKind(kind) && kind is not (FileKind.Docx or FileKind.Xlsx);
 
     /// <summary>NUL-byte content sniff: a NUL in the first 8 KB strongly implies a binary file.</summary>
     private static bool LooksBinary(byte[] bytes)
@@ -1554,11 +1535,11 @@ public class FilesToolHandler : IFilesToolHandler
                 "formats are read-only here (regenerating any part of the package risks losing the macro " +
                 "project). Save a .docx/.xlsx copy and edit that instead.");
 
-        if (RenderedReadOnlyExtensions.Contains(ext))
+        if (IsReadOnlyExtraction(DroppedFileReader.Classify(safePath)))
             return WriteFailure(
-                $"Error: '{ext}' files are read-only here — read_file returns a rendered view of the " +
-                "message (headers, then body), not the file's own bytes, so writing that back would " +
-                "destroy the original. Write the text to a new .md or .txt file instead.");
+                $"Error: '{ext}' files are read-only here — read_file returns text extracted from the " +
+                "file, not the file's own bytes, so writing that back would destroy the original. " +
+                "Write the text to a new .md or .txt file instead.");
 
         if (IsImageExtension(ext))
             return WriteFailure(ImageWriteRefusal(ext));
@@ -2140,7 +2121,7 @@ public class FilesToolHandler : IFilesToolHandler
     private static string ListFilesSchema(
         [Description("Optional file-name glob, e.g. '*.md' or 'notes*' (matched against file names at any depth). Must not contain a path separator. Defaults to all files.")] string? pattern = null) => "";
 
-    [Description("Read the contents of a text file (also .docx/.xlsx/.msg/.eml, extracted as text) in the assistant files folder. Output is line-numbered as LINE|CONTENT (1-indexed), windowed by offset/limit, and prefixed with total_lines.")]
+    [Description("Read the contents of a text file (also .docx/.xlsx/.pdf/.msg/.eml, extracted as text) in the assistant files folder. Output is line-numbered as LINE|CONTENT (1-indexed), windowed by offset/limit, and prefixed with total_lines.")]
     private static string ReadFileSchema(
         [Description("Relative path to the file. Must stay inside the assistant files folder.")] string path,
         [Description("1-indexed line to start reading from (default 1, minimum 1).")] int offset = 1,

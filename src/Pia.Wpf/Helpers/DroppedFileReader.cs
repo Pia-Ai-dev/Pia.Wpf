@@ -45,7 +45,7 @@ public static class DroppedFileReader
         ".wav", ".mp3", ".m4a", ".flac", ".ogg"
     };
 
-    private static readonly FrozenDictionary<string, FileKind> KindByExtension =
+    internal static readonly FrozenDictionary<string, FileKind> KindByExtension =
         new Dictionary<string, FileKind>(StringComparer.OrdinalIgnoreCase)
         {
             [".docx"] = FileKind.Docx,
@@ -71,6 +71,20 @@ public static class DroppedFileReader
         if (string.IsNullOrEmpty(ext)) return FileKind.Unsupported;
         return KindByExtension.GetValueOrDefault(ext, FileKind.Unsupported);
     }
+
+    /// <summary>The kind→reader table every read path dispatches through; null for a kind with no text.</summary>
+    // No discard arm: a new FileKind warns (CS8509) and so fails the zero-warning build until it is decided here.
+#pragma warning disable CS8524 // an unnamed FileKind value is a caller bug; throwing on it is right
+    public static Func<string, CancellationToken, Task<ReadResult>>? ReaderFor(FileKind kind) => kind switch
+    {
+        FileKind.Text => ReadTextAsync,
+        FileKind.Docx => ReadDocxAsync,
+        FileKind.Xlsx => ReadXlsxAsync,
+        FileKind.Pdf => ReadPdfAsync,
+        FileKind.Email => ReadEmailAsync,
+        FileKind.Image or FileKind.Audio or FileKind.Unsupported => null,
+    };
+#pragma warning restore CS8524
 
     public enum ReadStatus { Ok, TooLarge, Failed }
 

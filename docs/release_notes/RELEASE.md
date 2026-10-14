@@ -18,6 +18,9 @@
   tools: in the same message it can also use MCP servers, Git, memory and
   the rest. Combined with another tag such as @Todo, the message still gets
   only the tools of the tagged areas.
+- The assistant can now read and search PDFs in your files folder, with
+  @Files as well as when it looks a file up itself. PDFs stay read-only.
+  A scanned PDF has no text to read, and the assistant now says so.
 
 ## Desktop
 

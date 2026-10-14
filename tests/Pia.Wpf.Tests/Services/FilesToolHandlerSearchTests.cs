@@ -389,10 +389,12 @@ public class FilesToolHandlerSearchTests : IDisposable
     [Theory]
     [InlineData("rezepte.docx")]
     [InlineData("mail.eml")]
+    [InlineData("rezept.pdf")]
     public async Task Search_HitLineNumberIsTheReadFileLineNumber(string name)
     {
         OfficeDocuments.CreateDocx(Path.Combine(_root, "rezepte.docx"), "Vorspeise", "Kekse mit Zimt", "Nachtisch");
         File.WriteAllText(Path.Combine(_root, "mail.eml"), "Subject: Rezept\r\n\r\nKekse mit Zimt\r\n");
+        PdfDocuments.Create(Path.Combine(_root, "rezept.pdf"), "Vorspeise", "Kekse mit Zimt");
 
         var hit = (await SearchAsync("Kekse")).Split('\n')
             .Single(l => l.StartsWith(name + ":", StringComparison.Ordinal));

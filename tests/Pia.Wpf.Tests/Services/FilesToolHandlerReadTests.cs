@@ -6,6 +6,7 @@ using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Paths;
@@ -265,6 +266,29 @@ public class FilesToolHandlerReadTests : IDisposable
         Assert.Contains("a1\tb1", result);
     }
 
+    [Fact]
+    public async Task Read_Pdf_NumbersExtractedText()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "paper.pdf"), "Quarterly figures", "Signed in Hamburg");
+
+        var result = (string)(await ReadAsync("paper.pdf"))!;
+
+        Assert.Contains("1|Quarterly figures", result);
+        Assert.Contains("|Signed in Hamburg", result);
+    }
+
+    [Fact]
+    public async Task Read_ScanPdf_SaysItHasNoTextLayer()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "scan.pdf"), [null]);
+
+        var result = (string)(await ReadAsync("scan.pdf"))!;
+
+        Assert.StartsWith("Error:", result);
+        Assert.Contains("no text layer", result);
+        Assert.DoesNotContain(DroppedFileReader.NoTextLayer, result);
+    }
+
     // ---- @Files prompt-preview injection (ReadPromptPreviewAsync + CapForPrompt) ----
 
     [Fact]
@@ -332,6 +356,28 @@ public class FilesToolHandlerReadTests : IDisposable
         Assert.Contains("binary", preview.Error!, StringComparison.OrdinalIgnoreCase);
         // The shared reader's "Error: " prefix is stripped so the preview reason reads plainly.
         Assert.False(preview.Error!.StartsWith("Error: ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Preview_Pdf_ReadsExtractedText()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "paper.pdf"), "Quarterly figures");
+
+        var preview = await _handler.ReadPromptPreviewAsync("paper.pdf", workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
+
+        Assert.True(preview.Found);
+        Assert.Equal("Quarterly figures", preview.Text);
+    }
+
+    [Fact]
+    public async Task Preview_ScanPdf_ReturnsFoundFalse_NamingTheMissingTextLayer()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "scan.pdf"), [null]);
+
+        var preview = await _handler.ReadPromptPreviewAsync("scan.pdf", workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
+
+        Assert.False(preview.Found);
+        Assert.Contains("no text layer", preview.Error!);
     }
 
     [Fact]

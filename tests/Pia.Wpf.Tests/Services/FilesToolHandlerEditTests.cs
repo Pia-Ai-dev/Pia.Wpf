@@ -226,4 +226,19 @@ public class FilesToolHandlerEditTests : IDisposable
         Assert.Contains("read-only here", error, StringComparison.Ordinal);
         Assert.DoesNotContain("attach the image", error, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task EditFile_OnAPdf_IsRefused_AndTheFileIsUntouched()
+    {
+        var full = Path.Combine(_root, "paper.pdf");
+        PdfDocuments.Create(full, "Quarterly figures");
+        var before = File.ReadAllBytes(full);
+
+        var (result, pending) = await Edit("paper.pdf", "Quarterly", "Annual");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("read-only here", Prop<string?>(result!, "error")!, StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllBytes(full));
+    }
 }
