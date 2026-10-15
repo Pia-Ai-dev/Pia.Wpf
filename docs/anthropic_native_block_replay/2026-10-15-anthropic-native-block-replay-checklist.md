@@ -1,6 +1,6 @@
 # Anthropic native block replay — checklist
 
-**Status:** In progress — server S0–S9 (Pia `feature/7836` @ `1edad6db`) and client C1–C3, C6, D0–D6 landed 2026-10-15; S6b blocked on G6; C7 and D7 (e2e gates) wait for the testing phase
+**Status:** In progress — server S0–S9 (Pia `feature/7836` @ `1edad6db`) and client C1–C3, C6, D0–D6 landed 2026-10-15; S6b blocked on G6; C7 and D7 (e2e gates) passed live 2026-10-15
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md)
@@ -55,7 +55,7 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - ~~**C4 — Other chat clients tolerate it.**~~ Dropped under A (no new content type); kept as B-C4 in the client plan's Appendix B.
 - ~~**C5 — Across user turns.**~~ Dropped under A: no persistence or sync is needed. Cross-turn replay (G2b) would be a new step.
 - [x] **C6 — Release-note text.** Drafted in the client plan, applied at the release cut (`RELEASE.md` is edited only on `release/*` / `hotfix/*`). *Deps:* C2 · *Effort:* XS · *Value:* Med
-- [ ] **C7 — Client gate.** Zero-warning rebuild in Debug and Release, test exe `Failed: 0`, and the MongoDB routine end to end on the e2e stack with native WEB on (key from the User-scope `PIA_TEST_CLAUDE_KEY`). *Deps:* C1–C3, C6, S9 · *Effort:* XS · *Value:* High
+- [x] **C7 — Client gate.** Zero-warning rebuild in Debug and Release, test exe `Failed: 0`, and the MongoDB routine end to end on the e2e stack with native WEB on (key from the User-scope `PIA_TEST_CLAUDE_KEY`). *Deps:* C1–C3, C6, S9 · *Effort:* XS · *Value:* High — gate green at `5e4b4496` (0 warnings both configurations, 8678 tests, 0 failed). On Pia `feature/7836` @ `418310ad`, default persona (plan on Opus 5.5, steps on Sonnet 5.5): the MongoDB routine's search was replayed verbatim on its step's follow-ups and across the step boundary; a 3-step agent run captured five searches in its research step — including a live pending → orphan pair — and replayed all of them verbatim on every later round and across the next step boundary. 0 pair drops, no 400/413, no retraction, repeat search or run-together text, answers cited.
 - [x] **D0 — Spike and fixture.** Scratchpad only: does `ToChatResponse` keep streamed thinking signatures; record a real two-search fixture for D1/D3. *Deps:* — · *Effort:* XS · *Value:* Enabler — yes: MEAI 10.9 coalesces the signature-only `TextReasoningContent` into the preceding thinking and keeps `ProtectedData`; fixtures `anthropic-two-search-{stream.sse,buffered.json}` (Sonnet 5.5).
 - [x] **D1 — Native content accumulator.** `AnthropicRequestHandler` tees the response without buffering and rebuilds its content blocks. *Deps:* D0 · *Effort:* M · *Value:* Enabler
 - [x] **D2 — Store.** Store keyed by `toolu_` id — one per endpoint + API key, not one per process — 120-min sliding TTL, char-bounded LRU. *Deps:* D1 · *Effort:* S · *Value:* Enabler
