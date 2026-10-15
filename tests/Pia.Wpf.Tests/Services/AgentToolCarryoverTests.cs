@@ -156,4 +156,38 @@ public class AgentToolCarryoverTests
 
         Assert.Equal("[result cleared; call list_files again if you need it]", Body(cleared[1]));
     }
+
+    // The server's native-content store matches on the toolu_ id alone, so a carried id must never change.
+    [Fact]
+    public void Capture_KeepsEveryCallIdVerbatim_EvenWhenItCapsTheResult()
+    {
+        var round = new[]
+        {
+            Call("toolu_01AbC-dEf_9", "read_file", "big.csv"),
+            Result("toolu_01AbC-dEf_9", new string('x', AgentToolCarryover.MaxCarriedResultChars + 1)),
+        };
+
+        var captured = AgentToolCarryover.Capture(round);
+
+        Assert.Equal("toolu_01AbC-dEf_9", captured[0].Contents.OfType<FunctionCallContent>().Single().CallId);
+        Assert.Equal("toolu_01AbC-dEf_9", captured[1].Contents.OfType<FunctionResultContent>().Single().CallId);
+    }
+
+    [Fact]
+    public void ClearOldResults_KeepsEveryCallIdVerbatim_InOrder()
+    {
+        var messages = Rounds(AgentToolCarryover.KeptResults + 3);
+        var before = messages.SelectMany(m => m.Contents).Select(IdOf).ToList();
+
+        var cleared = AgentToolCarryover.ClearOldResults(messages);
+
+        Assert.Equal(before, cleared.SelectMany(m => m.Contents).Select(IdOf));
+    }
+
+    private static string? IdOf(AIContent content) => content switch
+    {
+        FunctionCallContent c => "call:" + c.CallId,
+        FunctionResultContent r => "result:" + r.CallId,
+        _ => null,
+    };
 }
