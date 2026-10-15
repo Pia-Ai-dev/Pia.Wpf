@@ -1,7 +1,7 @@
 # Anthropic native block replay — client plan (Pia.Wpf)
 
-**Status:** Planned — not started. G1 decided: **Option A** (server-side store keyed by the tool call id).
-Appendix B keeps the client-carried envelope plan in case A is ever reversed. G2a/G2b, G4, G5, G6 open.
+**Status:** Planned — not started. All owner gates decided 2026-10-15 (table below). Appendix B keeps the
+client-carried envelope plan in case G1 is ever reopened.
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md)
@@ -18,17 +18,30 @@ plan: Pia `feature/7836`, `docs/plans/2026-10-15-anthropic-native-block-replay.m
 | Worktree | `G:\Git\Pia.Wpf-anthropic-native-replay` — never switch the main checkout `G:\Git\Pia.Wpf` |
 | e2e | stack on port **18081** only; 8081 is the owner's real-data stack — never touch it |
 
-Gates (decisions are the owner's, relayed by the coordinator session PIACOORDINATOR):
+Owner gate decisions, 2026-10-15 (relayed by the coordinator session PIACOORDINATOR):
 
-| Gate | State | Client position |
+| Gate | Decision | Client consequence |
 |---|---|---|
-| G1 store vs. envelope | **decided: A** (one server instance per tenant in prod) | no wire change on the client |
-| G2a across steps of one agent run | open — server is defining the replay rule for calls without their text | recommend yes; under A it needs no client code (§5) |
-| G2b across chat user turns | open | recommend defer (§5) |
+| G1 store vs. envelope | **A** — server-side store keyed by the `toolu_` id; one server instance per tenant | no wire change on the client |
+| G2a across steps of one agent run | **yes** | no client code: carried calls keep their ids (§5) |
+| G2b across chat user turns | **deferred** — on the checklist's "not yet planned" list | — |
 | G3 seal | moot under A | — |
-| G4 `pause_turn` | open | server only |
-| G5 direct Anthropic provider | open | **same flaw** → recommend a third plan (§6) |
-| G6 thinking replay | open | server only |
+| G4 `pause_turn` | resume inside the server stream, cap 3 (server S8) | none |
+| G5 direct Anthropic provider | **third plan**, including the probe defect: [2026-10-15-anthropic-direct-provider-replay-plan.md](2026-10-15-anthropic-direct-provider-replay-plan.md), issue #71 | D steps, same branch and PR |
+| G6 thinking replay | deferred; S6b blocked | none |
+| Store TTL | **120 min sliding**; memory bounded by `MaxChars`; park → resume misses accepted | — |
+
+Server facts the client relies on (Pia `feature/7836` @ 44f7653a): ids are the only match key — `tool_use`
+input comes from the store, `tool_result` content from the client; at most 8 messages are replayed per
+request (`AnthropicNativeReplayMaxMessages`, mirroring `KeptResults`); S5 keeps the **last** occurrence of a
+repeated id, which drops the `"Paused:"` placeholder pair — defence in depth only, C2 stays the primary fix;
+server S0 case 8 checks whether a duplicate id is a 400 today. Carried messages with `tool_calls` but no text
+replay blocks-only, so `AgentToolCarryover` stays as it is.
+
+**e2e key:** the owner set `PIA_TEST_CLAUDE_KEY` in the **User** environment scope. Load it with
+`[Environment]::GetEnvironmentVariable('PIA_TEST_CLAUDE_KEY','User')`, never print it; a process started
+before it was set (and a `/clear`) does not see it in `$env:`. Provisioning the Anthropic row on the 18081
+stack is part of C7.
 
 **What to do first:** C2 — prove or refute the duplicate-id defect on headless resume (§2.2) with a failing
 test; it is live on `develop` regardless of this feature. Then C1's pinning tests, then C3.
@@ -95,11 +108,11 @@ ambiguous key for the server store. Found by reading only; C2 proves or refutes 
 | Steps of one run (earlier steps' ids re-sent) | wall clock 20 min agent / 45 min scheduled, max 120 min, checked between steps (`RunContext.cs:150`) |
 | Park for approval or input, then resume | **unbounded** — days; a parent run waits on its child the same way (`HeadlessRunLauncher.cs:268`) |
 
-No TTL covers every case. **Gap figure: within one step's loop, minutes (bounded by the user, not the
-code); across the steps of one run, up to 120 min.** A sliding 60-min TTL covers every in-step loop short of
-a user leaving an approval card open for an hour; it covers G2a only for runs under an hour between the
-first and last reuse of an id. Recommendation: **120 min** if the store's memory bound allows, so a
-maximum-length run stays covered; park → resume after hours is accepted as a miss.
+No TTL covers every case. **Gap figure:** within one step's loop, minutes (bounded by the user, not the
+code). Across the steps of one run, every later step re-sends every carried id (`HeadlessTurnExecutor.cs:738`,
+`ChatSession.cs:1043`; `ClearOldResults` keeps ids), so a sliding TTL only has to span the longest single gap
+— except where a tool-less step or compaction skips a group for a while, which can approach the run's
+120-min ceiling. **Decided: 120 min sliding**; park → resume after longer is an accepted miss.
 
 ## 3. Steps
 
@@ -168,9 +181,9 @@ The search fix belongs in the server's release notes; if the client release goes
   "Detailrecherche pro Security-Layer" agent run for the step-boundary case once G2a ships. Record input
   token totals against the Linkup run.
 
-## 5. G2 — recommendation: split it
+## 5. G2 — decided: G2a yes, G2b deferred
 
-**G2a — across steps of one agent run: recommend yes.** Under A it needs no client code:
+**G2a — across steps of one agent run: yes.** Under A it needs no client code:
 `AgentToolCarryover.Capture` already carries each round's calls and results with their ids into the next
 step, so a store hit replays the native blocks at the step boundary too, while the TTL holds (§2.3). Open on
 the server: `Capture` drops a round's text on purpose, so a carried message has `tool_calls` but no
@@ -178,12 +191,14 @@ the server: `Capture` drops a round's text on purpose, so a carried message has 
 server is defining that rule; the client needs nothing either way. Under "no", the step boundary keeps
 today's behaviour, and the reported 36-minute loop is still fixed — it ran inside one step.
 
-**G2b — across chat user turns: recommend defer.** Under A there is no anchor: a finished turn is re-sent as
+**G2b — across chat user turns: deferred.** Under A there is no anchor: a finished turn is re-sent as
 text only (`ViewModels/Models/ChatSession.cs:1036`, `Models/AssistantMessage.cs:386-410`), so no earlier
 turn's ids reach the server, and the final answer never has one. Making it work means persisting and
 re-sending each turn's tool exchanges in chat history — a new step, not planned here.
 
-## 6. G5 — recommendation: yes, a third plan
+## 6. G5 — decided: a third plan
+
+Planned in [2026-10-15-anthropic-direct-provider-replay-plan.md](2026-10-15-anthropic-direct-provider-replay-plan.md) (issue #71). The evidence that led there:
 
 The direct Anthropic provider loses the same evidence, by a different mechanism (decompiled `Anthropic`
 12.48.0, `AnthropicClientExtensions.AnthropicChatClient`):
@@ -220,13 +235,10 @@ on every turn and the provider is never marked capable. Belongs in the third pla
 - Id-less providers: `pia_call_N` repeats across rounds of one loop (`PiaCloudChatClient.cs:327`). Harmless
   on Anthropic rows; worth a look if a server-side store ever serves an id-less provider.
 
-## 8. Open questions (to the coordinator)
+## 8. Open questions
 
-1. TTL: 120 min instead of 60 (§2.3)?
-2. Does the server accept the same id twice in one request with different arguments and results, in case
-   C2 cannot remove every duplicate — or does the pair-integrity pass dedupe?
-3. G2a: the replay rule for a message with `tool_calls` but no `content` (§5).
-4. Who provisions an Anthropic row with native WEB on for the 18081 e2e stack (C7).
+None for the client steps. The direct-provider mechanism (D-store vs. D-content) is open in
+[2026-10-15-anthropic-direct-provider-replay-plan.md](2026-10-15-anthropic-direct-provider-replay-plan.md) §3.
 
 ## Appendix B — client steps if Option B is ever chosen
 

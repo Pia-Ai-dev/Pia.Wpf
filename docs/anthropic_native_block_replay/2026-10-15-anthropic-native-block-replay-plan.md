@@ -1,8 +1,11 @@
 # Anthropic native block replay: keep server-side web search (and thinking) in the history Pia Cloud replays
 
-**Status:** Planned — G1 decided 2026-10-15: **Option A**, a server-side store keyed by the tool call id
-(server plan: Pia `feature/7836`, `docs/plans/2026-10-15-anthropic-native-block-replay.md`; client plan:
-[2026-10-15-anthropic-native-block-replay-client-plan.md](2026-10-15-anthropic-native-block-replay-client-plan.md)).
+**Status:** Planned — all gates decided by the owner 2026-10-15: G1 **A** (server-side store keyed by the tool
+call id), G2a yes / G2b deferred, G3 moot, G4 resume in the server stream (cap 3), G5 a third plan, G6
+deferred; store TTL 120 min sliding. Plans: server — Pia `feature/7836`,
+`docs/plans/2026-10-15-anthropic-native-block-replay.md`; client —
+[2026-10-15-anthropic-native-block-replay-client-plan.md](2026-10-15-anthropic-native-block-replay-client-plan.md);
+direct provider — [2026-10-15-anthropic-direct-provider-replay-plan.md](2026-10-15-anthropic-direct-provider-replay-plan.md).
 §5.1 below describes Option B and is kept as its appendix; §5.3's client parse/serialize applies only to B.
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
