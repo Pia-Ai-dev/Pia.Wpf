@@ -734,4 +734,25 @@ public class AgentContextCompactorTests
         for (var i = firstTool; i <= lastTool; i++)
             Assert.NotEqual(ChatRole.User, roles[i]);
     }
+
+    [Fact]
+    public void EstimateInputTokens_CountsTextCallsAndResults_AndSurvivesAnUnserializableResult()
+    {
+        List<ChatMessage> messages =
+        [
+            new(ChatRole.User, Bulk(100)),
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file", new Dictionary<string, object?> { ["path"] = Bulk(50) })]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", Bulk(200))]),
+            new(ChatRole.Tool, [new FunctionResultContent("c2", new Unserializable())]),
+        ];
+
+        var estimate = AgentContextCompactor.EstimateInputTokens(messages);
+
+        Assert.InRange(estimate, 350, 360);
+    }
+
+    private sealed class Unserializable
+    {
+        public Unserializable Self => this;
+    }
 }

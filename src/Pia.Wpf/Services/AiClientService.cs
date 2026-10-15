@@ -291,6 +291,7 @@ public class AiClientService : IAiClientService
 
             _logger.LogDebug("Round {Round}: request carries {ImageCount} image message(s)",
                 round + 1, ToolLoopImageMessages.CountImageMessages(workingMessages));
+            var estimatedInput = AgentContextCompactor.EstimateInputTokens(workingMessages);
 
             ChatResponse response;
 
@@ -424,6 +425,9 @@ public class AiClientService : IAiClientService
                 if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
                 _logger.LogDebug("Round {Round} token usage: input={Input}, output={Output}, cached={Cached}",
                     round + 1, roundUsage.InputTokenCount, roundUsage.OutputTokenCount, roundUsage.CachedInputTokenCount);
+                // Server-side replay adds input the client never sees; this is how that gap gets measured.
+                _logger.LogInformation("Round {Round} input tokens: estimated={EstimatedInput}, reported={ReportedInput}",
+                    round + 1, estimatedInput, roundUsage.InputTokenCount);
             }
 
             // Detect truncation by output token cap. Surfaced to the UI as a friendly hint
