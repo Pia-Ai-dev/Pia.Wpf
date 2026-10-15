@@ -237,7 +237,7 @@ on every turn and the provider is never marked capable. Belongs in the third pla
 
 ## 8. Open questions
 
-None for the client steps. The direct-provider mechanism (D-store vs. D-content) is open in
+None. The direct-provider mechanism is decided (D-store), see
 [2026-10-15-anthropic-direct-provider-replay-plan.md](2026-10-15-anthropic-direct-provider-replay-plan.md) §3.
 
 ## Appendix B — client steps if Option B is ever chosen

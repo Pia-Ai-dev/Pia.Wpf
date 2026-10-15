@@ -1,6 +1,6 @@
 # Anthropic native block replay — checklist
 
-**Status:** Planned — steps not started; all gates decided 2026-10-15 except the D-store / D-content choice (D plan §3)
+**Status:** Planned — steps not started; all gates decided 2026-10-15, including the D mechanism (D-store)
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md)
@@ -32,7 +32,7 @@ here by hand once that commit exists, naming the Pia commit in the line.
 | G2b | Replay across chat user turns? **Deferred** — see "Not yet planned". | — |
 | G3 | Data Protection or HMAC? **Moot under A.** | — |
 | G4 | Resume `pause_turn` in the server stream, or a distinct finish reason for the client? **Decided: resume in the server stream, cap 3.** | S8 |
-| G5 | Does the direct Anthropic provider have the same flaw? **Yes — decided: a third plan (group D), including the tool-call probe defect.** Open inside it: D-store (recommended) or D-content. | D1–D4 |
+| G5 | Does the direct Anthropic provider have the same flaw? **Yes — decided: a third plan (group D), including the tool-call probe defect.** Mechanism decided: **D-store** (client-side store keyed by `toolu_` id, the server's replay rule). | D1–D4 |
 | G6 | Replay thinking blocks at all? **Deferred.** | S6b |
 
 ## Steps
@@ -55,8 +55,8 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - ~~**C5 — Across user turns.**~~ Dropped under A: no persistence or sync is needed. Cross-turn replay (G2b) would be a new step.
 - [ ] **C6 — Release-note text.** Drafted in the client plan, applied at the release cut (`RELEASE.md` is edited only on `release/*` / `hotfix/*`). *Deps:* C2 · *Effort:* XS · *Value:* Med
 - [ ] **C7 — Client gate.** Zero-warning rebuild in Debug and Release, test exe `Failed: 0`, and the MongoDB routine end to end on the e2e stack with native WEB on (key from the User-scope `PIA_TEST_CLAUDE_KEY`). *Deps:* C1–C3, C6, S9 · *Effort:* XS · *Value:* High
-- [ ] **D0 — Spike the SDK unknowns.** Scratchpad only: does the SDK pass any `ContentBlockParam` raw through, does `ToChatResponse` keep streamed citations and signatures, and record a real two-search fixture. *Deps:* — · *Effort:* XS · *Value:* Enabler
-- [ ] **D1 — Native content accumulator.** `AnthropicRequestHandler` tees the response without buffering and rebuilds its content blocks. *Deps:* D0, D-mechanism · *Effort:* M · *Value:* Enabler
+- [ ] **D0 — Spike and fixture.** Scratchpad only: does `ToChatResponse` keep streamed thinking signatures; record a real two-search fixture for D1/D3. *Deps:* — · *Effort:* XS · *Value:* Enabler
+- [ ] **D1 — Native content accumulator.** `AnthropicRequestHandler` tees the response without buffering and rebuilds its content blocks. *Deps:* D0 · *Effort:* M · *Value:* Enabler
 - [ ] **D2 — Store.** Process-wide store keyed by `toolu_` id, 120-min sliding TTL, char-bounded LRU. *Deps:* D1 · *Effort:* S · *Value:* Enabler
 - [ ] **D3 — Replay rewrite.** `Rewrite` replays stored blocks with the server's rule (verbatim when the text matches, else blocks-only), at most 8 messages, thinking untouched. *Deps:* D2 · *Effort:* S · *Value:* High
 - [ ] **D4 — Thinking-binding guard.** A replayed entry is never evicted while live; `drop_block` binding only if e2e shows a mismatch 400. *Deps:* D3 · *Effort:* XS · *Value:* High
@@ -68,10 +68,10 @@ here by hand once that commit exists, naming the Pia commit in the line.
 
 1. **S0** first — measures the real size and confirms the pending-search and duplicate-id shapes.
 2. Quick wins, independent of everything else: **S1**, **C2** (live defect), **D5 + D6** (live defect),
-   **D0** (settles the D mechanism question with evidence).
+   **D0** (fixture for D1/D3).
 3. **S2 → S3 → S4 → S5 → S6a** — the server slice; it fixes the reported loop for shipped clients too.
    **C1** alongside — locks the id guarantee the server relies on.
-4. **D1 → D2 → D3 → D4** once the owner confirms D-store (or the smaller D-content path).
+4. **D1 → D2 → D3 → D4** — D-store.
 5. **S7**, **S8**.
 6. **S9**, then **C3, C6, C7, D7** — one client PR.
 

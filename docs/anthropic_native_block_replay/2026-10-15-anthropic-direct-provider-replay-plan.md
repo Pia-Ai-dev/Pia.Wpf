@@ -1,6 +1,6 @@
 # Direct Anthropic provider: replay web-search blocks and fix the tool-call probe (steps D0–D7)
 
-**Status:** Planned — not started. Mechanism recommended (D-store, §3), not yet confirmed by the owner.
+**Status:** Planned — mechanism decided (D-store)
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** Gate G5 of [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md);
@@ -19,10 +19,6 @@ owner decision 2026-10-15: one plan for the replay flaw and the probe defect. Tr
 
 **What to do first:** D0 (spike, scratchpad only), then the probe fix D5 + D6 — small, independent, and live
 on `develop`. Then D1 → D2 → D3 → D4.
-
-**Open for the owner (via the coordinator):** D-store (recommended) or D-content (§3). The deciding
-question: should G2a (replay across agent-run steps, decided yes for Pia Cloud) also reach the direct
-provider? Yes → D-store. No → D-content is smaller.
 
 ## 1. The two defects
 
@@ -71,9 +67,9 @@ Same symptom as #70: from round 2 on, the model sees itself citing searches that
   a change invalidates the cache (`:70-71`). A per-request thinking change must stay scoped to the probe.
 - **Streaming UX.** Response parsing must not buffer the stream the SDK reads.
 
-## 3. Mechanism — recommendation: D-store
+## 3. Mechanism — D-store (owner decision 2026-10-15)
 
-**D-store (recommended):** mirror the server's Option A inside `AnthropicRequestHandler`, which is already
+**D-store:** mirror the server's Option A inside `AnthropicRequestHandler`, which is already
 the `DelegatingHandler` that rewrites every request body. Tee each response (SSE or buffered), accumulate the
 native content blocks, store them keyed by the response's client `tool_use` ids, and on later requests
 rewrite each assistant message whose `tool_use` ids hit the store, with **the server's replay rule**:
@@ -93,30 +89,22 @@ SDK's content model, so an SDK bump cannot silently break it.
 Cost: a second implementation of the server's S2 accumulator and replay rule (in this repo, C#), and a
 process-wide store with eviction.
 
-**D-content (alternative):** a `DelegatingChatClient` around the SDK client in
-`AnthropicProviderHandler.CreateChatClientAsync` (`:47-51`) that, before each call, swaps the raw
-`ServerToolUseBlock` / `WebSearchToolResultBlock` for `ServerToolUseBlockParam` /
-`WebSearchToolResultBlockParam` and re-attaches citations as `TextBlockParam` citations. No store, no miss,
-deterministic by construction within a step. What changes: D1–D3 become one S step ("convert contents");
-D4 is unnecessary; but G2a does **not** reach the direct path — `Capture` drops `WebSearch*` contents at the
-step boundary, and teaching it to keep them sends those contents to whatever provider the next step resolves
-(`HeadlessTurnExecutor.cs:915-920`), which reopens the "other clients tolerate it" problem (client plan B-C4).
-It also hinges on the two SDK unknowns D0 settles.
+**Considered, not chosen — D-content:** a `DelegatingChatClient` converting the SDK's response-side
+web-search blocks to `*Param` blocks before each call. Smaller and deterministic within a step, but G2a
+would not reach the direct provider: `Capture` drops `WebSearch*` contents at the step boundary, and keeping
+them would hand them to whatever provider the next step resolves.
 
 ## 4. Steps
 
 Effort/Value scales as in the checklist. Tests in `tests/Pia.Wpf.Tests/Services/Providers/` unless named.
 
-### D0 — Spike the SDK unknowns · *Deps:* — · XS · Enabler
+### D0 — Spike and fixture · *Deps:* — · XS · Enabler
 
 Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) and settle:
 
-1. Does `CreateMessageParams`' `RawRepresentation is ContentBlockParam` check run before the per-type switch,
-   so any content with a `ContentBlockParam` raw passes through? (Decides D-content's feasibility.)
-2. Does `ToChatResponse()` keep `CitationAnnotation`s when the stream delivers each citation as a separate
-   empty `TextContent`, and merge the signature-only `TextReasoningContent` into the preceding thinking?
-   (Thinking survival on the streaming path.)
-3. Record one real streamed response with two searches and a client tool call (key from §0), byte-for-byte,
+1. Does `ToChatResponse()` merge the streamed signature-only `TextReasoningContent` into the preceding
+   thinking, so the SDK rebuilds signed thinking blocks on the streaming path? (D3's tests pin the answer.)
+2. Record one real streamed response with two searches and a client tool call (key from §0), byte-for-byte,
    as the fixture for D1 and D3 (`tests/Pia.Wpf.Tests/TestData/`). Use a neutral public query; the fixture
    holds no user data.
 
