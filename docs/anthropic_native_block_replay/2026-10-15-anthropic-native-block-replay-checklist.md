@@ -1,9 +1,13 @@
 # Anthropic native block replay — checklist
 
-**Status:** Draft — steps not started; gates G1–G4 and G6 open
+**Status:** Planned — steps not started; all gates open (client recommendations for G2 and G5 in the client plan)
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md)
+
+Client detail (C steps, file and test level, cold-start header):
+[2026-10-15-anthropic-native-block-replay-client-plan.md](2026-10-15-anthropic-native-block-replay-client-plan.md).
+Client issue: https://github.com/Pia-Ai-dev/Pia.Wpf/issues/70 · branch `feature/anthropic-native-replay`.
 
 `S` steps live in the server repository `G:\Git\Pia`, `C` steps in this repository. A `C` box is ticked in
 the commit that lands its step. An `S` step's commit lands in the other repository, so its box is ticked
@@ -20,10 +24,11 @@ here by hand once that commit exists, naming the Pia commit in the line.
 | Gate | Question it answers | Blocks |
 |---|---|---|
 | G1 | Envelope size on a real 5-search round — client-carried sealed envelope or server-side store with a reference id? | S3, and every step after it |
-| G2 | Replay within a turn only, or across user turns (persist + sync)? | C5 |
+| G2a | Carry the envelope across the steps of one agent run (in-memory carry-over + local exchange rows)? Client recommends yes, bounded. | C3 rows marked † |
+| G2b | Carry it across chat user turns (persist + sync)? Client recommends defer: 5 MB per-chat sync cap, whole-chat re-upload, key rotation. | C5 |
 | G3 | Data Protection (shared keyring?) or HMAC with a dedicated secret? | S3 |
 | G4 | Resume `pause_turn` in the server stream, or a distinct finish reason for the client? | S8 |
-| G5 | Does the direct Anthropic provider in Pia.Wpf have the same flaw? | — (may spawn a third plan) |
+| G5 | Does the direct Anthropic provider in Pia.Wpf have the same flaw? Client finding: yes — the SDK adapter drops both web-search blocks and citations on the way back; thinking survives. | — (recommend a third plan) |
 | G6 | Replay thinking blocks at all, given `drop_block` is a beta and Pia's prefix is not byte-stable? | S6b |
 
 ## Steps
@@ -39,12 +44,12 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - [ ] **S7 — Orchestrator carries the envelope.** In-loop rounds, the client handback, the final round and the cap path; the sensitive-hit model switch falls back cleanly. *Deps:* S4, S6a · *Effort:* S · *Value:* High
 - [ ] **S8 — `pause_turn` continuation.** Resume a paused turn by re-sending its native content instead of ending it as `stop`. *Deps:* G4, S6a · *Effort:* S · *Value:* Med
 - [ ] **S9 — Server gate.** The Pia repository's own build, test and doc rules. *Deps:* S1–S7 · *Effort:* XS · *Value:* High
-- [ ] **C1 — Parse the envelope.** `PiaCloudChatClient` yields `pia_native` from stream and buffered responses as a dedicated `AIContent` subtype. *Deps:* S4 (contract) · *Effort:* XS · *Value:* Enabler
-- [ ] **C2 — Send it back.** `SerializeMessages` writes it on the assistant message; a test proves `ToChatResponse()` keeps it through the tool loop. *Deps:* C1 · *Effort:* XS · *Value:* High
-- [ ] **C3 — Hand-built assistant messages.** `HeadlessTurnExecutor`, `AgentToolCarryover`, `AgentToolExchangeSerializer` (row cap), `AgentContextCompactor` and `BackgroundAssistantTurnRunner` each carry the content or drop it on purpose. *Deps:* C2 · *Effort:* M · *Value:* High
+- [ ] **C1 — Parse the envelope.** `PiaCloudChatClient` yields `pia_native` from stream and buffered responses as a `PiaNativeContent` on the same assistant message (no `MessageId`, `Role` Assistant). *Deps:* S4 (contract) · *Effort:* XS · *Value:* Enabler
+- [ ] **C2 — Send it back.** `SerializeMessages` writes it on the assistant message; a loop test proves round 2's request carries round 1's envelope (spike: `ToChatResponse()` keeps it). *Deps:* C1 · *Effort:* XS · *Value:* High
+- [ ] **C3 — Hand-built and rewriting paths.** `TokenizingAiClientService` (buffered detokenize wipes non-text), `AgentContextCompactor` (charge envelopes the library counts as 0 bytes), `AgentToolCarryover` / `AgentToolExchangeSerializer` (carry under G2a), `HeadlessTurnExecutor` and `BackgroundAssistantTurnRunner` each carry the content or drop it on purpose. *Deps:* C2, G2a for the carry-over rows · *Effort:* M · *Value:* High
 - [ ] **C4 — Other chat clients tolerate it.** No other `IChatClient` throws on the content or serializes it. *Deps:* C1 · *Effort:* XS · *Value:* Enabler
-- [ ] **C5 — Across user turns.** Persist the envelope with the chat and carry it through sync. *Deps:* G2, C3 · *Effort:* M · *Value:* Med
-- [ ] **C6 — Release note.** One bullet in `docs/release_notes/RELEASE.md`. *Deps:* C2 · *Effort:* XS · *Value:* Med
+- [ ] **C5 — Across user turns.** Persist the envelope with the chat and carry it through sync (SQLite column, `SyncAssistantChatMessage` field, per-chat envelope budget). *Deps:* G2b, C3 · *Effort:* M · *Value:* Med
+- [ ] **C6 — Release-note text.** Drafted in the client plan, applied at the release cut (`RELEASE.md` is edited only on `release/*` / `hotfix/*`). *Deps:* C2 · *Effort:* XS · *Value:* Med
 - [ ] **C7 — Client gate.** Zero-warning rebuild in Debug and Release, test exe `Failed: 0`, and the MongoDB routine end to end on the e2e stack with native WEB on. *Deps:* C1–C4, C6, S9 · *Effort:* XS · *Value:* High
 
 ## Suggested order
@@ -54,7 +59,7 @@ here by hand once that commit exists, naming the Pia commit in the line.
 3. **S2 → S3 → S4 → S5 → S6a** — the server slice.
 4. **C1 → C2 → C4** — the client slice; after C2 the within-turn loop from the bug report is fixed end to end.
 5. **S7, C3** — orchestrator rounds and the agent-run / headless paths.
-6. **S8**, then **G2 → C5**, then **G6 → S6b**.
+6. **G2a → C3 carry-over rows**, **S8**, then **G2b → C5**, then **G6 → S6b**.
 7. **S9, C6, C7.**
 
 ## Not yet planned
@@ -63,4 +68,5 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - `knowledge_citations` has no client consumer either.
 - `web_search_20260209` / `web_fetch_20260209` on 5.5-family rows.
 - `display: "updates"` for 5.5-family progress notes.
-- Forced tool choice (`required` → `any`) is a 400 on Opus 5.5 / Sonnet 5.5 — check the direct-provider path.
+- Direct Anthropic provider replay (G5): convert the SDK's response-side web-search blocks back to `*Param` blocks and keep citations — a third plan.
+- Forced tool choice on the direct path: the tool-call probe (`AiClientService.cs:1364`, `RequireAny`) 400s with adaptive thinking, returns `Unknown`, and `Unknown` is never cached — a paid probe per turn.

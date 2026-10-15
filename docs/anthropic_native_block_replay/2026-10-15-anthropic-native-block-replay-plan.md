@@ -185,6 +185,9 @@ One opaque value per assistant message, working name `pia_native`:
 
 ### 5.3 Client (`G:\Git\Pia.Wpf`)
 
+Worked out at file and test level, with the spike results, in
+[2026-10-15-anthropic-native-block-replay-client-plan.md](2026-10-15-anthropic-native-block-replay-client-plan.md).
+
 - **Parse:** `PiaCloudChatClient` reads `pia_native` from the stream (choiceless chunk) and from the buffered
   message, and yields it as a dedicated `AIContent` subtype (working name `PiaNativeContent`).
   `AiClientService` builds the round's assistant message with `updates.ToChatResponse()` (`:371`) and adds
@@ -216,7 +219,8 @@ Linkup as the search provider.
 | Gate | Question it answers | Blocks |
 |---|---|---|
 | G1 | How large is a real envelope (5-search research round: raw, compressed, sealed) against `KestrelMaxRequestBodyMb` = 5 and the per-round upload? Client-carried envelope (stateless, as sketched) or a server-side store keyed by a reference id (small wire; costs retention, multi-instance sharing, regenerate/edit semantics)? | S3 and every step after it |
-| G2 | Replay within a turn's tool loop only, or across user turns too (persist + sync)? Search results are re-billed as input on every later turn. | C5 |
+| G2a | Carry the envelope across the steps of one agent run (local only)? | C3 carry-over rows |
+| G2b | Carry it across chat user turns too (persist + sync)? Search results are re-billed as input on every later turn. | C5 |
 | G3 | Seal with Data Protection (is the keyring shared across instances?) or HMAC with a dedicated secret? Either way, rotation degrades to the fallback. | S3 |
 | G4 | Resume `pause_turn` inside the server stream, or hand the client a distinct finish reason? | S8 |
 | G5 | Does the direct Anthropic provider in Pia.Wpf (`Anthropic` SDK 12.48.0 adapter plus `AnthropicRequestHandler` adding `web_search_20250305`) drop the same blocks? If yes, a third plan. | — |
