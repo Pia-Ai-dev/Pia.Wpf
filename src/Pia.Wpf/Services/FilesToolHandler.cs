@@ -44,7 +44,7 @@ public class FilesToolHandler : IFilesToolHandler
     private const long MaxReadFileBytes = DroppedFileReader.MaxTextBytes; // 1 MB raw text ceiling
     private const int DefaultReadLimit = 500;             // default window line count
     private const int MaxReadLimit = 2000;                // hard cap on window line count
-    private const int MaxFormattedWindowChars = 100 * 1024; // ~100K-char cap on formatted output
+    private const int MaxFormattedWindowTokens = 25_000;
 
     // docx/xlsx patch-in-place caps: bound how much of a single write_file call's OpenXml mutation
     // work can cost, and guard against a write built from a partial (windowed) read of the document.
@@ -262,6 +262,20 @@ public class FilesToolHandler : IFilesToolHandler
         if (baseRoot is null || !Directory.Exists(baseRoot)) return null;
 
         return ResolveEffectiveRoot(baseRoot, workingSubpath);
+    }
+
+    public string? ToReadFilePath(string path, string? workingSubpath)
+    {
+        var baseRoot = _currentFolder;
+        if (!IsAvailable || baseRoot is null || !Directory.Exists(baseRoot)) return null;
+
+        var root = ResolveEffectiveRoot(baseRoot, workingSubpath);
+        // A relative path is the attached-file store's form: relative to the files folder, not the working dir.
+        var candidate = Path.IsPathRooted(path) ? path : Path.Combine(baseRoot, path);
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(root, candidate, out var safePath)) return null;
+        if (SensitivePathGuard.IsBlocked(safePath, out _) || !File.Exists(safePath)) return null;
+
+        return Path.GetRelativePath(root, safePath).Replace('\\', '/');
     }
 
     public async Task<object?> ExecutePendingActionAsync(FilesToolCall pendingAction)
@@ -1149,10 +1163,8 @@ public class FilesToolHandler : IFilesToolHandler
         return (DecodeText(bytes), null);
     }
 
-    // @Files prompt-injection cap regime. The line cap is the caller's policy lever; this char
-    // ceiling is the safety net that bounds tokens when a file has very long lines (e.g. minified
-    // code), so a 100-line preview can never blow the context.
-    private const int PromptPreviewMaxChars = 12 * 1024; // ~3K-token safety net
+    // Bounds a preview of very long lines (minified code, wide sheets), which the line cap alone would not.
+    private const int PromptPreviewMaxTokens = 3_000;
 
     public async Task<FilePromptPreview> ReadPromptPreviewAsync(
         string relativePath, string? workingSubpath, int maxLines, CancellationToken cancellationToken = default)
@@ -1195,7 +1207,7 @@ public class FilesToolHandler : IFilesToolHandler
             // ReadFileTextAsync prefixes "Error: "; strip it so the preview's Error reads as a plain reason.
             return Fail(readError.StartsWith("Error: ", StringComparison.Ordinal) ? readError["Error: ".Length..] : readError);
 
-        var (preview, total, shown, truncated) = CapForPrompt(text!, maxLines, PromptPreviewMaxChars);
+        var (preview, total, shown, truncated) = CapForPrompt(text!, maxLines, PromptPreviewMaxTokens);
 
         // Deliberately no _stalenessStore.RecordRead here — a preview is partial and runs during turn
         // setup (TaskAmbient is not yet this session's), so the model must still read_file before editing.
@@ -1204,15 +1216,9 @@ public class FilesToolHandler : IFilesToolHandler
         return new FilePromptPreview(relativePath, Found: true, preview, total, shown, truncated, Error: null, AbsolutePath: safePath);
     }
 
-    /// <summary>
-    /// Caps <paramref name="text"/> to the first <paramref name="maxLines"/> lines AND
-    /// <paramref name="maxChars"/> characters (whichever binds first), returning the raw content
-    /// (no line-number prefixes, trailing CR stripped) plus the file's true line count and whether
-    /// anything was withheld. Always emits at least the first line, even if it alone exceeds the
-    /// char budget, so a single huge line is never silently dropped.
-    /// </summary>
+    /// <summary>The first lines within both caps; the first line always shows, however long.</summary>
     internal static (string Text, int TotalLines, int ShownLines, bool Truncated) CapForPrompt(
-        string text, int maxLines, int maxChars)
+        string text, int maxLines, int maxTokens)
     {
         var lines = text.Split('\n');
         for (int i = 0; i < lines.Length; i++)
@@ -1225,24 +1231,21 @@ public class FilesToolHandler : IFilesToolHandler
 
         var sb = new StringBuilder();
         int shown = 0;
+        int used = 0;
         for (int i = 0; i < totalLines && shown < maxLines; i++)
         {
-            int addition = (shown == 0 ? 0 : 1) + lines[i].Length; // +1 for the joining '\n'
-            if (shown > 0 && sb.Length + addition > maxChars) break;
+            int cost = TokenEstimator.Estimate(lines[i]) + (shown == 0 ? 0 : 1); // +1 for the joining '\n'
+            if (shown > 0 && used + cost > maxTokens) break;
             if (shown > 0) sb.Append('\n');
             sb.Append(lines[i]);
+            used += cost;
             shown++;
         }
 
         return (sb.ToString(), totalLines, shown, shown < totalLines);
     }
 
-    /// <summary>
-    /// Slices <paramref name="text"/> to the window <c>[offset, offset+limit)</c> (1-indexed),
-    /// emits each kept line as <c>LINE|CONTENT</c> (no padding), and prefixes a header with
-    /// <c>total_lines</c>. Returns narrow-window guidance (not a truncated body) when the formatted
-    /// window would exceed the char/line caps; appends a pagination hint when more lines remain.
-    /// </summary>
+    /// <summary>The window as <c>LINE|CONTENT</c> under a <c>total_lines</c> header; narrowing guidance, never a cut body, over the token or line cap.</summary>
     private static string FormatWindow(string text, int offset, int limit, bool windowRequested)
     {
         // Split on LF and strip a trailing CR so CONTENT never carries \r (matters for docx/xlsx,
@@ -1267,6 +1270,7 @@ public class FilesToolHandler : IFilesToolHandler
 
         var sb = new StringBuilder();
         sb.Append("total_lines=").Append(totalLines).Append('\n');
+        int estimated = 0;
 
         if (startIdx >= totalLines)
         {
@@ -1279,15 +1283,15 @@ public class FilesToolHandler : IFilesToolHandler
         for (int i = startIdx; i < endIdx; i++)
         {
             sb.Append(i + 1).Append('|').Append(lines[i]).Append('\n');
+            estimated += TokenEstimator.Estimate(lines[i]) + 3; // the "N|" prefix and the newline
 
-            if (sb.Length > MaxFormattedWindowChars)
-                return $"Error: The requested window is too large to return (over {MaxFormattedWindowChars / 1024}K chars). " +
+            if (estimated > MaxFormattedWindowTokens)
+                return $"Error: The requested window is too large to return (over ~{MaxFormattedWindowTokens / 1000}K tokens). " +
                        $"Narrow the read with a smaller 'limit' or a more specific 'offset'. total_lines={totalLines}.";
         }
 
-        // Pagination hint: window fine, but more lines remain beyond it. (With the default
-        // limit of 500 this also covers the "large file read without a narrow window" case,
-        // since a >500-line file always has lines past the default window.)
+        // More lines remain past the window; with the default limit of 500 this also covers a large file
+        // read without a narrow window.
         if (endIdx < totalLines)
         {
             var prefix = windowRequested ? "..." : "... (large file)";

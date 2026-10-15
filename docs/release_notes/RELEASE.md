@@ -21,6 +21,10 @@
 - The assistant can now read and search PDFs in your files folder, with
   @Files as well as when it looks a file up itself. PDFs stay read-only.
   A scanned PDF has no text to read, and the assistant now says so.
+- Files you attach in the Assistant now arrive whole far more often: how
+  much fits grows with the model's context window. A file that is still
+  too long says how much of it fits and shows "shortened" on its chip;
+  save it to the working directory and the assistant can read the rest.
 
 ## Desktop
 

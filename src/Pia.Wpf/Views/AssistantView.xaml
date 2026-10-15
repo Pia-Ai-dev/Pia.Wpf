@@ -556,20 +556,38 @@
                                  MaxWidth="180"
                                  TextTrimming="CharacterEllipsis"
                                  VerticalAlignment="Center" />
+                      <StackPanel Orientation="Horizontal"
+                                  Margin="6,0,0,0"
+                                  VerticalAlignment="Center"
+                                  ToolTip="{loc:Str Assistant_PendingFileCut_Tooltip}"
+                                  Visibility="{Binding Truncated, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock Text="{loc:Str Assistant_PendingFileCut_Badge}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WarningBrush}" />
+                        <TextBlock Text="{Binding Cut.ShownPercent, StringFormat='· ~{0} %'}"
+                                   Margin="3,0,0,0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WarningBrush}" />
+                      </StackPanel>
                       <ui:Button Command="{Binding DataContext.SavePendingFileCommand,
                                                    RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                  CommandParameter="{Binding}"
-                                 Appearance="Transparent"
                                  Padding="4"
                                  Margin="4,0,0,0"
                                  VerticalAlignment="Center"
                                  AutomationProperties.Name="{loc:Str Assistant_SavePendingFile_Tooltip}"
-                                 AutomationProperties.AutomationId="{Binding FullPath, StringFormat='Assistant_SavePendingFile_{0}'}"
-                                 ToolTip="{loc:Str Assistant_SavePendingFile_Tooltip}">
+                                 AutomationProperties.AutomationId="{Binding FullPath, StringFormat='Assistant_SavePendingFile_{0}'}">
                         <ui:Button.Style>
                           <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
                             <Setter Property="Visibility" Value="Visible" />
+                            <Setter Property="Appearance" Value="Transparent" />
+                            <Setter Property="ToolTip" Value="{loc:Str Assistant_SavePendingFile_Tooltip}" />
                             <Style.Triggers>
+                              <!-- A cut file's rest is reachable only once saved. -->
+                              <DataTrigger Binding="{Binding Truncated}" Value="True">
+                                <Setter Property="Appearance" Value="Caution" />
+                                <Setter Property="ToolTip" Value="{loc:Str Assistant_SavePendingFile_CutTooltip}" />
+                              </DataTrigger>
                               <!-- Saved, or nothing to save into: the tick below takes over. -->
                               <DataTrigger Binding="{Binding IsSaved}" Value="True">
                                 <Setter Property="Visibility" Value="Collapsed" />

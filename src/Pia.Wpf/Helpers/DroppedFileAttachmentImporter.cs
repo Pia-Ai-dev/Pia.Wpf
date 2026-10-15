@@ -13,8 +13,8 @@ namespace Pia.Helpers;
 public static class DroppedFileAttachmentImporter
 {
     public const int MaxPendingFiles = 5;
-    public const int MaxFileChars = 20_000;
-    public const int MaxTotalChars = 40_000;
+    // Below this a cut file is a few words, not context.
+    public const int MinShownTokens = 200;
 
     /// <summary>A drop target's accepted-extension list is checked against this, so widening one without the
     /// other cannot silently discard a supported file.</summary>
@@ -30,6 +30,7 @@ public static class DroppedFileAttachmentImporter
     public static async Task<StageResult> TryStageAsync(
         IReadOnlyList<string> paths,
         IReadOnlyCollection<PendingFileAttachment> alreadyPending,
+        Func<Task<int>> availableTokens,
         ILogger logger,
         ISnackbarService snackbarService,
         ILocalizationService localizationService,
@@ -37,9 +38,7 @@ public static class DroppedFileAttachmentImporter
     {
         var staged = new List<PendingFileAttachment>();
         var images = new List<string>();
-        if (paths.Count == 0) return new StageResult(staged, images);
-
-        var usedChars = alreadyPending.Sum(p => p.Text.Length);
+        var readable = new List<(string Path, string FileName, FileKind Kind, string Text)>();
 
         foreach (var path in paths)
         {
@@ -60,14 +59,14 @@ public static class DroppedFileAttachmentImporter
                 continue;
             }
 
-            if (IsStaged(alreadyPending, staged, path))
+            if (IsStaged(alreadyPending, readable, path))
             {
                 Caution(snackbarService, localizationService,
                     localizationService.Format("Msg_File_DuplicateAttachment", fileName));
                 continue;
             }
 
-            if (alreadyPending.Count + staged.Count >= MaxPendingFiles)
+            if (alreadyPending.Count + readable.Count >= MaxPendingFiles)
             {
                 Caution(snackbarService, localizationService,
                     localizationService.Format("Msg_File_AttachLimit", MaxPendingFiles, fileName));
@@ -110,38 +109,53 @@ public static class DroppedFileAttachmentImporter
                 continue;
             }
 
-            var remaining = MaxTotalChars - usedChars;
-            if (remaining <= 0)
+            readable.Add((path, fileName, kind, text));
+        }
+
+        if (readable.Count == 0) return new StageResult(staged, images);
+
+        var remaining = await availableTokens() - alreadyPending.Sum(p => TokenEstimator.Estimate(p.Text));
+        var needs = readable.Select(r => TokenEstimator.Estimate(r.Text)).ToArray();
+        var grants = AttachmentBudget.Distribute(needs, remaining);
+
+        for (var i = 0; i < readable.Count; i++)
+        {
+            var (path, fileName, kind, text) = readable[i];
+            var cut = grants[i] >= needs[i] || grants[i] >= MinShownTokens
+                ? TokenEstimator.CutToBudget(text, Math.Max(grants[i], 1))
+                : default;
+
+            if (string.IsNullOrWhiteSpace(cut.Text))
             {
+                logger.LogInformation("File attach skipped: ~{Needed} tokens against {Remaining} left in the chat budget",
+                    needs[i], Math.Max(remaining, 0));
                 Caution(snackbarService, localizationService,
                     localizationService.Format("Msg_File_AttachBudget", fileName));
                 continue;
             }
 
-            var originalCharCount = text.Length;
-            var allowed = Math.Min(MaxFileChars, remaining);
-            if (text.Length > allowed) text = text[..allowed];
-            var truncated = text.Length < originalCharCount;
+            var attachmentCut = cut.Truncated
+                ? new AttachmentCut(cut.ShownLines, cut.TotalLines, cut.EndsMidLine,
+                    Math.Clamp((int)Math.Round(100.0 * TokenEstimator.Estimate(cut.Text) / needs[i]), 1, 99))
+                : null;
 
             staged.Add(new PendingFileAttachment
             {
                 FullPath = path,
                 FileName = fileName,
                 Kind = ToPendingKind(kind),
-                Text = text,
-                Truncated = truncated,
-                OriginalCharCount = originalCharCount,
+                Text = cut.Text,
+                Cut = attachmentCut,
             });
-            usedChars += text.Length;
 
-            logger.LogInformation(
-                "Attached a {Kind} file ({Chars} chars, truncated={Truncated})", kind, text.Length, truncated);
+            logger.LogInformation("Attached a {Kind} file (~{Shown} of ~{Needed} tokens, grant {Grant})",
+                kind, TokenEstimator.Estimate(cut.Text), needs[i], grants[i]);
             logger.SensitiveDebug("Attached {FileName}", fileName);
 
-            if (truncated)
+            if (attachmentCut is not null)
             {
                 Caution(snackbarService, localizationService,
-                    localizationService.Format("Msg_File_Truncated", fileName));
+                    localizationService.Format("Msg_File_Truncated", fileName, attachmentCut.ShownPercent));
             }
         }
 
@@ -150,10 +164,10 @@ public static class DroppedFileAttachmentImporter
 
     private static bool IsStaged(
         IReadOnlyCollection<PendingFileAttachment> alreadyPending,
-        List<PendingFileAttachment> staged,
+        List<(string Path, string FileName, FileKind Kind, string Text)> readable,
         string path) =>
         alreadyPending.Any(p => string.Equals(p.FullPath, path, StringComparison.OrdinalIgnoreCase))
-        || staged.Any(p => string.Equals(p.FullPath, path, StringComparison.OrdinalIgnoreCase));
+        || readable.Any(r => string.Equals(r.Path, path, StringComparison.OrdinalIgnoreCase));
 
     // No discard arm, for the same reason as DroppedFileReader.ReaderFor: a new FileKind must pick its chip.
 #pragma warning disable CS8524 // an unnamed FileKind value is a caller bug; throwing on it is right

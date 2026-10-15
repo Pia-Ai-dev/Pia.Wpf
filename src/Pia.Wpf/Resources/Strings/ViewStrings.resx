@@ -1274,6 +1274,9 @@
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML document (*.html)|*.html|All files (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Open containing folder</value></data>
   <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Save to the working directory</value></data>
+  <data name="Assistant_SavePendingFile_CutTooltip" xml:space="preserve"><value>Save to the working directory so Pia can read the rest</value></data>
+  <data name="Assistant_PendingFileCut_Badge" xml:space="preserve"><value>shortened</value></data>
+  <data name="Assistant_PendingFileCut_Tooltip" xml:space="preserve"><value>Only part of this file fits in the message. Save it to the working directory so Pia can read the rest.</value></data>
   <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Saved to the working directory</value></data>
   <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>This file was not saved to the working directory, so only its name was kept.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Open in VS Code</value></data>

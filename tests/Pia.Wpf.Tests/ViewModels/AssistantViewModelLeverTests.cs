@@ -556,7 +556,7 @@ public class AssistantViewModelLeverTests
         var vm = CreateSut();
         vm.InputText = "meanwhile, what is the weather";
         _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
-            Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
+            Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>()).Returns(false);
 
         await vm.SendMessageCommand.ExecuteAsync(null);
 
@@ -569,7 +569,7 @@ public class AssistantViewModelLeverTests
         var vm = CreateSut();
         vm.InputText = "hello";
         _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
-            Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
+            Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>()).Returns(true);
 
         await vm.SendMessageCommand.ExecuteAsync(null);
 

@@ -41,8 +41,6 @@ public sealed class AssistantViewModelHotkeyDismissTests
                 FileName = "notes.txt",
                 Kind = Pia.Models.PendingFileKind.Text,
                 Text = "body",
-                Truncated = false,
-                OriginalCharCount = 4,
             });
             return vm.CanDismissWithHotkey;
         });

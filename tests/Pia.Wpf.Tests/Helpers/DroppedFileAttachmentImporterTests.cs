@@ -41,20 +41,26 @@ public sealed class DroppedFileAttachmentImporterTests : IDisposable
         return path;
     }
 
-    private Task<DroppedFileAttachmentImporter.StageResult> StageAsync(
-        IReadOnlyList<string> paths, params PendingFileAttachment[] alreadyPending) =>
-        DroppedFileAttachmentImporter.TryStageAsync(
-            paths, alreadyPending, NullLogger.Instance, _snackbar, _loc, TestContext.Current.CancellationToken);
+    private int _budgetReads;
 
-    private static PendingFileAttachment Pending(string fullPath, int chars) => new()
+    private Task<DroppedFileAttachmentImporter.StageResult> StageAsync(
+        IReadOnlyList<string> paths, int availableTokens = AttachmentBudget.MaxTokens,
+        params PendingFileAttachment[] alreadyPending) =>
+        DroppedFileAttachmentImporter.TryStageAsync(
+            paths, alreadyPending,
+            () => { _budgetReads++; return Task.FromResult(availableTokens); },
+            NullLogger.Instance, _snackbar, _loc, TestContext.Current.CancellationToken);
+
+    private static PendingFileAttachment Pending(string fullPath, string text) => new()
     {
         FullPath = fullPath,
         FileName = Path.GetFileName(fullPath),
         Kind = PendingFileKind.Text,
-        Text = new string('x', chars),
-        Truncated = false,
-        OriginalCharCount = chars,
+        Text = text,
     };
+
+    private static string Report(int lines) =>
+        string.Join('\n', Enumerable.Range(1, lines).Select(i => $"line {i} of the report"));
 
     private void AssertShown(string messageKey, int times = 1) =>
         _snackbar.Received(times).Show(
@@ -74,7 +80,7 @@ public sealed class DroppedFileAttachmentImporterTests : IDisposable
         Assert.Equal(PendingFileKind.Text, staged.Kind);
         Assert.Equal("the quarterly numbers", staged.Text);
         Assert.False(staged.Truncated);
-        Assert.Equal("the quarterly numbers".Length, staged.OriginalCharCount);
+        Assert.Null(staged.Cut);
         Assert.Empty(result.ImagePaths);
     }
 
@@ -113,40 +119,6 @@ public sealed class DroppedFileAttachmentImporterTests : IDisposable
 
         Assert.Equal(DroppedFileAttachmentImporter.MaxPendingFiles, result.Staged.Count);
         AssertShown("Msg_File_AttachLimit");
-    }
-
-    [Fact]
-    public async Task TryStageAsync_TruncatesAFileOverMaxFileChars()
-    {
-        var chars = DroppedFileAttachmentImporter.MaxFileChars + 500;
-        var path = Write("big.txt", new string('a', chars));
-
-        var result = await StageAsync([path]);
-
-        var staged = Assert.Single(result.Staged);
-        Assert.Equal(DroppedFileAttachmentImporter.MaxFileChars, staged.Text.Length);
-        Assert.True(staged.Truncated);
-        Assert.Equal(chars, staged.OriginalCharCount);
-        AssertShown("Msg_File_Truncated");
-    }
-
-    [Fact]
-    public async Task TryStageAsync_TruncatesAgainstTheRunningTotal()
-    {
-        // Three files each well under the per-file cap: only the running total can cut the third.
-        const int each = 15_000;
-        var paths = Enumerable.Range(0, 3)
-            .Select(i => Write($"part{i}.txt", new string('a', each)))
-            .ToList();
-
-        var result = await StageAsync(paths);
-
-        Assert.Equal(3, result.Staged.Count);
-        Assert.False(result.Staged[0].Truncated);
-        Assert.False(result.Staged[1].Truncated);
-        Assert.True(result.Staged[2].Truncated);
-        Assert.Equal(DroppedFileAttachmentImporter.MaxTotalChars - (2 * each), result.Staged[2].Text.Length);
-        Assert.Equal(each, result.Staged[2].OriginalCharCount);
     }
 
     [Fact]
@@ -190,27 +162,6 @@ public sealed class DroppedFileAttachmentImporterTests : IDisposable
     }
 
     [Fact]
-    public async Task TryStageAsync_CountsAlreadyPendingFilesTowardBothCaps()
-    {
-        var pending = Enumerable.Range(0, DroppedFileAttachmentImporter.MaxPendingFiles - 1)
-            .Select(i => Pending($@"C:\work\earlier{i}.txt", 8_750))
-            .ToArray();
-        var first = Write("next.txt", new string('a', 15_000));
-        var second = Write("last.txt", new string('a', 100));
-
-        var result = await StageAsync([first, second], pending);
-
-        // The total cap cut the one file that fitted under the count cap…
-        var staged = Assert.Single(result.Staged);
-        Assert.Equal("next.txt", staged.FileName);
-        Assert.True(staged.Truncated);
-        Assert.Equal(
-            DroppedFileAttachmentImporter.MaxTotalChars - (pending.Length * 8_750), staged.Text.Length);
-        // …and the count cap refused the next one outright.
-        AssertShown("Msg_File_AttachLimit");
-    }
-
-    [Fact]
     public async Task TryStageAsync_OverTheReadCeiling_SaysTooLargeToAttach()
     {
         var path = Write("huge.txt", new string('a', DroppedFileReader.MaxTextBytes + 1));
@@ -224,39 +175,122 @@ public sealed class DroppedFileAttachmentImporterTests : IDisposable
     }
 
     [Fact]
-    public async Task TryStageAsync_WithTheCharacterBudgetSpent_NamesTheBudgetNotTheFileCount()
+    public async Task TryStageAsync_AFileFarOverTheOldCharacterCaps_ArrivesWhole()
     {
-        var pending = new[]
-        {
-            Pending(@"C:\work\first.txt", DroppedFileAttachmentImporter.MaxFileChars),
-            Pending(@"C:\work\second.txt", DroppedFileAttachmentImporter.MaxFileChars),
-        };
-        var path = Write("third.txt", "still worth reading");
+        var text = Report(3000);
+        Assert.True(text.Length > 40_000);
+        var path = Write("long.txt", text);
 
-        var result = await StageAsync([path], pending);
+        var staged = Assert.Single((await StageAsync([path], availableTokens: 32_000)).Staged);
+
+        Assert.Null(staged.Cut);
+        Assert.Equal(text, staged.Text);
+    }
+
+    [Fact]
+    public async Task TryStageAsync_CutsAFileOverTheBudget_AtALineBoundary_AndSaysHowMuchFits()
+    {
+        var path = Write("big.txt", Report(2000));
+
+        var staged = Assert.Single((await StageAsync([path], availableTokens: 1_000)).Staged);
+
+        var cut = Assert.IsType<AttachmentCut>(staged.Cut);
+        Assert.Equal(2000, cut.TotalLines);
+        Assert.InRange(cut.ShownLines, 1, 1999);
+        Assert.False(cut.EndsMidLine);
+        Assert.InRange(cut.ShownPercent, 1, 99);
+        Assert.True(TokenEstimator.Estimate(staged.Text) <= 1_000);
+        AssertShown("Msg_File_Truncated");
+        _loc.Received(1).Format("Msg_File_Truncated",
+            Arg.Is<object[]>(a => a.Length == 2 && (string)a[0] == "big.txt" && (int)a[1] == cut.ShownPercent));
+    }
+
+    [Fact]
+    public async Task TryStageAsync_SharesTheBudgetFairlyAcrossOneDrop()
+    {
+        var small = Write("small.txt", "a short note");
+        var first = Write("first.txt", Report(2000));
+        var second = Write("second.txt", Report(2000));
+
+        var result = await StageAsync([first, small, second], availableTokens: 3_000);
+
+        Assert.Equal(3, result.Staged.Count);
+        Assert.Null(result.Staged.Single(s => s.FileName == "small.txt").Cut);
+        var a = result.Staged.Single(s => s.FileName == "first.txt");
+        var b = result.Staged.Single(s => s.FileName == "second.txt");
+        Assert.NotNull(a.Cut);
+        Assert.NotNull(b.Cut);
+        Assert.InRange(Math.Abs(TokenEstimator.Estimate(a.Text) - TokenEstimator.Estimate(b.Text)), 0, 10);
+    }
+
+    [Fact]
+    public async Task TryStageAsync_CountsOpenChipsAgainstTheBudget()
+    {
+        var chip = Pending(@"C:\work\earlier.txt", new string('x', 4_000));
+        var path = Write("next.txt", Report(2000));
+
+        var staged = Assert.Single((await StageAsync([path], 1_000 + TokenEstimator.Estimate(chip.Text), chip)).Staged);
+
+        Assert.True(TokenEstimator.Estimate(staged.Text) <= 1_000);
+    }
+
+    [Fact]
+    public async Task TryStageAsync_WithTheBudgetSpent_SkipsTheFile_AndNamesTheBudget()
+    {
+        var chip = Pending(@"C:\work\first.txt", new string('x', 4_000));
+        var path = Write("second.txt", "still worth reading");
+
+        var result = await StageAsync([path], availableTokens: 100, chip);
 
         Assert.Empty(result.Staged);
-        // Two attached files are nowhere near the five-file ceiling, so the count message would be a lie.
-        AssertShown("Msg_File_AttachBudget");
-        _loc.Received(1).Format(
-            "Msg_File_AttachBudget",
-            Arg.Is<object[]>(args => args.Length == 1 && (string)args[0] == "third.txt"));
+        _loc.Received(1).Format("Msg_File_AttachBudget",
+            Arg.Is<object[]>(a => a.Length == 1 && (string)a[0] == "second.txt"));
         _loc.DidNotReceive().Format("Msg_File_AttachLimit", Arg.Any<object[]>());
     }
 
     [Fact]
-    public async Task TryStageAsync_ThreeFilesInOneDrop_RefuseTheThirdOnTheBudget()
+    public async Task TryStageAsync_ASliverOfBudget_SkipsRatherThanAttachAFewWords()
     {
-        var first = Write("a.txt", new string('a', 25_000));
-        var second = Write("b.txt", new string('b', 25_000));
-        var third = Write("c.txt", "short enough on its own");
+        var path = Write("big.txt", Report(2000));
 
-        var result = await StageAsync([first, second, third]);
+        var result = await StageAsync([path], availableTokens: DroppedFileAttachmentImporter.MinShownTokens - 1);
 
-        // Two truncated files exhaust the 40,000-character message budget; the third has three of the
-        // five slots free, so a count message would name a limit nothing here came near.
-        Assert.Equal(2, result.Staged.Count);
+        Assert.Empty(result.Staged);
         AssertShown("Msg_File_AttachBudget");
-        _loc.DidNotReceive().Format("Msg_File_AttachLimit", Arg.Any<object[]>());
+    }
+
+    [Fact]
+    public async Task TryStageAsync_ASingleHugeLine_ArrivesCutMidLine()
+    {
+        var path = Write("export.json", string.Join(',', Enumerable.Range(0, 50_000)));
+
+        var staged = Assert.Single((await StageAsync([path], availableTokens: 1_000)).Staged);
+
+        Assert.True(staged.Cut!.EndsMidLine);
+        Assert.False(string.IsNullOrWhiteSpace(staged.Text));
+    }
+
+    [Fact]
+    public async Task TryStageAsync_ABlankLineBeforeAHugeLine_ArrivesCutInsideIt_WithoutBlamingTheBudget()
+    {
+        var path = Write("export.csv", "\n" + string.Join(',', Enumerable.Range(0, 50_000)));
+
+        var staged = Assert.Single((await StageAsync([path], availableTokens: 1_000)).Staged);
+
+        Assert.True(staged.Cut!.EndsMidLine);
+        Assert.Equal(2, staged.Cut.ShownLines);
+        Assert.True(TokenEstimator.Estimate(staged.Text) > 500);
+        _loc.DidNotReceive().Format("Msg_File_AttachBudget", Arg.Any<object[]>());
+    }
+
+    [Fact]
+    public async Task TryStageAsync_DoesNotAskForTheBudget_WithoutAReadableFile()
+    {
+        var archive = Write("bundle.zip", "PK");
+        var image = Path.Combine(_dir, "shot.png");
+
+        await StageAsync([archive, image]);
+
+        Assert.Equal(0, _budgetReads);
     }
 }

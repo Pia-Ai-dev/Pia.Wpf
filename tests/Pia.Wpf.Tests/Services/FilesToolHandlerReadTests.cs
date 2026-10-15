@@ -153,8 +153,7 @@ public class FilesToolHandlerReadTests : IDisposable
     [Fact]
     public async Task Read_FormattedWindowOverflow_ReturnsGuidance_NotTruncated()
     {
-        // ~200 chars/line x 800 lines ~= 160K formatted: over the ~100K cap but well under the
-        // 1 MB raw-byte ceiling and the 2000-line cap, so it exercises the formatted-window guard.
+        // 800 lines of 200 chars ≈ 42K estimated tokens: over the 25K cap, under the 2000-line cap.
         var line = new string('x', 200);
         WriteFile("wide.txt", string.Join('\n', Enumerable.Repeat(line, 800)));
 
@@ -394,17 +393,16 @@ public class FilesToolHandlerReadTests : IDisposable
     }
 
     [Fact]
-    public void CapForPrompt_CharBudgetBinds_BeforeLineCap()
+    public void CapForPrompt_TokenBudgetBinds_BeforeLineCap()
     {
-        // 100 lines of 100 chars each; a 1000-char budget admits far fewer than the 100-line cap.
         var text = string.Join('\n', Enumerable.Range(1, 100).Select(_ => new string('x', 100)));
 
-        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(text, maxLines: 100, maxChars: 1000);
+        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(text, maxLines: 100, maxTokens: 250);
 
         Assert.Equal(100, total);
         Assert.True(truncated);
         Assert.True(shown < 100);
-        Assert.True(capped.Length <= 1000);
+        Assert.True(TokenEstimator.Estimate(capped) <= 250);
     }
 
     [Fact]
@@ -412,12 +410,36 @@ public class FilesToolHandlerReadTests : IDisposable
     {
         var huge = new string('y', 5000);
 
-        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(huge, maxLines: 100, maxChars: 1000);
+        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(huge, maxLines: 100, maxTokens: 250);
 
         Assert.Equal(1, total);
         Assert.Equal(1, shown);
-        Assert.False(truncated); // the whole single-line file is shown
+        Assert.False(truncated);
         Assert.Equal(huge, capped);
+    }
+
+    [Fact]
+    public void CapForPrompt_ShowsFewerRowsOfNumbersThanOfWords_AtTheSameLength()
+    {
+        const string numbers = "2026-10-14\t13\t238\t111\t127\t0.318";
+        const string words = "the quarterly report is in here";
+        Assert.Equal(numbers.Length, words.Length);
+
+        var numberRows = FilesToolHandler.CapForPrompt(string.Join('\n', Enumerable.Repeat(numbers, 100)), 100, 500).ShownLines;
+        var wordRows = FilesToolHandler.CapForPrompt(string.Join('\n', Enumerable.Repeat(words, 100)), 100, 500).ShownLines;
+
+        Assert.True(numberRows < wordRows, $"numbers {numberRows} rows, words {wordRows} rows");
+    }
+
+    [Fact]
+    public async Task Read_NumericWindow_IsRefusedOnTokens_ThoughUnderTheOldCharCap()
+    {
+        // ≈ 74K formatted chars (under the former 100K-char cap) but ≈ 42K estimated tokens.
+        WriteFile("sheet.txt", string.Join('\n', Enumerable.Repeat("2026-10-14\t13\t238\t111\t127\t0.318", 2000)));
+
+        var result = (string)(await ReadAsync("sheet.txt", offset: 1, limit: 2000))!;
+
+        Assert.Contains("too large to return", result);
     }
 
     [Theory]

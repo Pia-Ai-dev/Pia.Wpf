@@ -1339,12 +1339,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PendingAttachments.Clear();
         // Captured above the Clear, and read again at the planned line below.
         var files = PendingFiles.ToArray();
-        var attachedFileContext = files.Length > 0
-            ? AssistantPromptComposer.BuildAttachedFileBlock(files)
-            : null;
-        // Names (and the sandbox path of the ones that were saved) outlive the send as chips under the
-        // bubble; the extracted text above does not, so a resumed chat shows what was attached but no
-        // longer feeds it to the model.
+        // Names (and saved sandbox paths) outlive the send as chips under the bubble; the extracted text
+        // does not, so a resumed chat shows what was attached but no longer feeds it to the model.
         var attachedFiles = files.Length == 0
             ? null
             : files.Select(f => new AttachedFileRef(f.FileName, f.SavedRelativePath)).ToArray();
@@ -1359,10 +1355,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
 
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
-        // returns once the turn is fire-and-forgotten (Step 4-compatible).
+        // returns once the turn is fire-and-forgotten.
         var accepted = await _chatSessionManager.StartTurnAsync(
             session, userText, attachments, planned: planned,
-            attachedFileContext: attachedFileContext, attachedFiles: attachedFiles);
+            attachedFiles: attachedFiles, files: files.Length > 0 ? files : null);
 
         // A refused send consumed nothing, so put the composer back rather than dropping what was typed —
         // reachable in the window between a plan-approval park releasing the session and the flag landing.
@@ -2053,13 +2049,33 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (IsStreaming) return;
 
         var result = await DroppedFileAttachmentImporter.TryStageAsync(
-            paths, PendingFiles, _logger, _snackbarService, _localizationService);
+            paths, PendingFiles, AvailableAttachmentTokensAsync,
+            _logger, _snackbarService, _localizationService);
 
         foreach (var file in result.Staged)
             PendingFiles.Add(file);
 
         if (result.ImagePaths.Count > 0)
             await AttachImagesAsync(result.ImagePaths);
+    }
+
+    // What the chat budget leaves after the attachments this live chat already re-sends every turn.
+    private async Task<int> AvailableAttachmentTokensAsync()
+    {
+        AiProvider? provider = null;
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            var persona = await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+            provider = await AssistantTurnProvider.ResolveAsync(persona, _providerService);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve the Assistant provider for the attachment budget; using the default window");
+        }
+
+        return AttachmentBudget.ForChat(provider) - Messages.Sum(m => TokenEstimator.Estimate(m.AttachedFileContext));
     }
 
     /// <summary>Copies a staged file into the chat's working directory so it survives the send and stays
