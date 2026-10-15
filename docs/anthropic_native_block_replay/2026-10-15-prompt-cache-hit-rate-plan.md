@@ -106,8 +106,8 @@ Without it every replayed search is billed at full input price on every later ro
 
 1. In the prod admin console, open every Anthropic row (`claude-opus-high` and its siblings) and switch
    prompt cache on. **Done by the owner on 2026-10-15 for every existing Anthropic row.**
-2. **G7, owner:** should new Anthropic rows default to prompt cache on? If yes, it is a one-line server
-   change in the create defaults plus its test, on `feature/7836`.
+2. **G7, decided by the owner 2026-10-15: yes.** New Anthropic rows default to prompt cache on — a
+   one-line server change in the create defaults plus its test, on `feature/7836`.
 3. DSB: prompt caching means Anthropic keeps the cached prefix for the TTL (5 minutes, refreshed on every
    read). Add that to the open DSB item next to the in-RAM native-content store; do not edit
    `docs/dsb` from this plan.
@@ -141,10 +141,12 @@ The divergence points, each to be removed or accepted explicitly:
    text and calls. (On Opus 5.5 and Sonnet 5.5 between-tool text mostly arrives as thinking, so this is
    often empty — but not always.)
 3. **Results are capped at capture time** (4,000 chars, `CapResult`), while the loop sent them in full.
-   **G8, default kept:** keep the cap, applied at the boundary. Then the prefix still matches up to step
-   N's first oversized result and is re-written from there — one finished step's tail, once — and context
-   growth stays bounded as today. The alternative, carrying results uncapped while they are inside the
-   kept window, removes that rewrite at the cost of larger carried context; owner's call.
+   **G8, decided by the owner 2026-10-15: carry uncapped inside the kept window.** A result inside
+   `ClearOldResults`' kept window is carried in the live step history exactly as the loop sent it, with
+   no `CapResult`; a result outside the window is placeholdered as today. So the boundary re-writes
+   nothing for oversized results, at the cost of a larger carried context. `Capture` →
+   `AgentToolExchangeStore` / `RecordAsync` and the resume path keep the capped 4,000-char shape —
+   persistence is unchanged and C1's persisted-shape tests stay untouched.
 4. **The step reply is `exchange.Visible`**, which `BackgroundAssistantTurnRunner` builds by joining every
    round's text with `\n\n`, parsing think tags and stripping citations — not the final assistant
    message the model produced. Carry the final round's assistant message as received instead, and keep
@@ -271,11 +273,13 @@ Billing: Haiku runs are cheap (input $0.10/MTok). Sonnet/Opus validation: one ru
 only with the owner's approval. At most two attempts per failed run. Tick P0–P5 in the checklist (server
 steps naming the Pia commit) and add both tables to this plan.
 
-## 4. Decisions taken in this plan (owner may override)
+## 4. Decisions taken in this plan
 
 - P2 carries the instruction, the round messages and the final assistant message as sent and received; the
   UI, persistence and resume keep today's shapes.
-- G8: the 4,000-char cap on carried results stays, applied at the boundary.
+- G8 (owner, 2026-10-15): carried results are uncapped while inside the kept window and placeholdered
+  outside it; the persisted and resumed shape keeps the 4,000-char cap.
+- G7 (owner, 2026-10-15): new Anthropic catalog rows default to prompt cache on (server).
 - `ClearOldResults` and the server replay cap both cut in chunks (8 at a time above 16 on the client,
   `M / 2` on the server), stateless.
 - Thinking is never carried across a step boundary.
