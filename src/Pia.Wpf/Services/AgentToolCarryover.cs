@@ -31,6 +31,9 @@ internal static class AgentToolCarryover
     /// The prose a round produced is already in the exchange's visible reply, so carrying it here too would
     /// cost tokens and read as the model having said it twice.
     /// </summary>
+    internal static string CapResult(string result) =>
+        result.Length > MaxCarriedResultChars ? result[..MaxCarriedResultChars] + TruncationSuffix : result;
+
     internal static IReadOnlyList<ChatMessage> Capture(IEnumerable<ChatMessage> roundMessages)
     {
         var captured = new List<ChatMessage>();
@@ -42,7 +45,7 @@ internal static class AgentToolCarryover
                 switch (content)
                 {
                     case FunctionResultContent { Result: string s } result when s.Length > MaxCarriedResultChars:
-                        contents.Add(new FunctionResultContent(result.CallId, s[..MaxCarriedResultChars] + TruncationSuffix));
+                        contents.Add(new FunctionResultContent(result.CallId, CapResult(s)));
                         break;
                     case FunctionCallContent or FunctionResultContent:
                         contents.Add(content);

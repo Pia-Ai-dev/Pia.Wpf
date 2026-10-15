@@ -93,8 +93,10 @@ A run that parks for tool approval records the parking round as an ordinary call
 (`HeadlessTurnExecutor.cs:378`), and `ReplayApprovedParkedCallsAsync` (`:554-586`) seeds a second assistant
 message with the **same CallId**, capped args and the real result. The guard comment at
 `AgentToolExchangeStore.cs:191` covers re-reading the parked row, not this. No test covers it. If it holds,
-the request carries two `tool_use` blocks with one id — a 400 on the direct Anthropic provider today, and an
-ambiguous key for the server store. Found by reading only; C2 proves or refutes it.
+the request carries two `tool_use` blocks with one id — the model sees the call both paused and done, and the
+server store gets an ambiguous key. Server S0 case 8 measured a duplicate id as accepted (200), so this is a
+model-confusion defect, not an API error. **C2 confirmed it** and fixed it; C2a fixes the second-resume
+variant (the carried result row kept `"Paused:"` after the call ran).
 
 ### 2.3 Longest gap between two requests that resend the same ids
 
@@ -163,8 +165,9 @@ The chat-client tolerance step exists only under B; see B-C4.
 so this step drafts the text here and the release cut applies it. Under A the search fix ships with the
 server, so the client note covers C2 only — and only if C2 found the defect:
 
-> - Agent runs resumed after a tool approval no longer send the approved
->   call twice, which some providers rejected.
+> - Agent runs resumed after a tool approval no longer show the model the
+>   approved call twice, once as paused and once as done, and a later resume
+>   no longer shows it as still paused.
 
 The search fix belongs in the server's release notes; if the client release goes out together, add:
 

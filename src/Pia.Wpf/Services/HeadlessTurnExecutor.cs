@@ -583,6 +583,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 var resultText = await ExecuteReplayAsync(call, timeline).ConfigureAwait(false);
                 _logger.SensitiveDebug("Replayed {ToolName} result: {Result}", toolName, resultText);
                 await _exchangeStore.SetResultAsync(row.Id, resultText, ct).ConfigureAwait(false);
+                if (row.CallId is { Length: > 0 })
+                {
+                    await _exchangeStore.SetCarriedResultAsync(
+                        _runId, row.CallId, AgentToolCarryover.CapResult(Tokenize(resultText)), ct).ConfigureAwait(false);
+                }
                 SeedReplayedCall(call, resultText);
                 replayed.Add(toolName);
             }
@@ -641,7 +646,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             [new FunctionResultContent(call.CallId, Tokenize(resultText))]));
     }
 
-    /// <summary>The parking round was carried with its <c>Paused:</c> result; a second call under one id is a 400 on Anthropic.</summary>
+    /// <summary>The parking round was carried with its <c>Paused:</c> result; the seed below is the only copy the model may see.</summary>
     private void DropCarriedPair(string callId)
     {
         for (var i = _messages.Count - 1; i >= 0; i--)

@@ -571,6 +571,35 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>The carried rows outlive the resume, so a second park must not bring the first call back as paused.</summary>
+    [Fact]
+    public async Task ASecondResume_CarriesTheReplayedCallWithItsRealResult_NotThePause()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, recordRounds: true, dispatchScript:
+        [
+            [new ScriptedCall("write_file", "report.md")],
+            [new ScriptedCall("create_source", "sources/first.md")],
+            [],
+        ]);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitParkedAsync(handle.RunId);
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var contents = probe.Dispatches[2].Request.SelectMany(m => m.Contents).ToList();
+        var first = Assert.Single(contents.OfType<FunctionResultContent>(), r => r.CallId == "call-1");
+        Assert.Equal(ExecuteResult, first.Result as string);
+        Assert.Single(contents.OfType<FunctionCallContent>(), c => c.CallId == "call-1");
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>The exact loss from the reported run: the run parked on <c>write_file</c> and the
     /// <c>create_source</c> holding the document body was discarded with it. One Continue grants ONE tool, so
     /// that call is not replayed here — but it survives whole, and a later park on it is what replays it.</summary>
@@ -1559,8 +1588,10 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 var calls = dispatchScript is null
                     ? everyDispatch
                     : dispatchScript.ElementAtOrDefault(probe.Dispatches.Count - 1) ?? [];
+                // Later dispatches mint their own ids: a carried call must not collide with the re-run's.
+                var idPrefix = probe.Dispatches.Count == 1 ? "call-" : $"call-d{probe.Dispatches.Count}-";
                 return DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe, calls, faultAfterFirstCall,
-                    recordRounds);
+                    recordRounds, idPrefix);
             });
 
         var plugins = Substitute.For<IPluginService>();
@@ -1660,7 +1691,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
         ToolCallHandler? handler, ToolProbe probe, IReadOnlyList<ScriptedCall> calls,
-        bool faultAfterFirstCall = false, bool recordRounds = false)
+        bool faultAfterFirstCall = false, bool recordRounds = false, string idPrefix = "call-")
     {
         await Task.Yield();
         if (handler is not null)
@@ -1675,7 +1706,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 // Round-tripped through the SAME handler, because that is the only way the store's
                 // first-wins rule is observable, and unconditional on the stop: the production loop answers
                 // the round's remaining calls too.
-                var call = new FunctionCallContent($"call-{i + 1}", calls[i].ToolName,
+                var call = new FunctionCallContent($"{idPrefix}{i + 1}", calls[i].ToolName,
                     PathArgs(calls[i].Path, calls[i].Content));
                 var result = await handler(call, new ToolDispatchContext(1, stop));
                 probe.Record(result);
