@@ -126,14 +126,15 @@ Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) an
 
 - New `AnthropicNativeStore` (singleton, owned by `AnthropicProviderHandler`, registered at
   `Bootstrapper.cs:538`; passed into `AnthropicRequestHandler`'s constructor). Key: each client `tool_use` id
-  of a response → that response's content + model id. Sliding TTL 120 min (same as the server), bounded by
+  of a response → that response's content. No model in the key: pairs carry no model binding (server S0
+  case 3 verifies). Sliding TTL 120 min (same as the server), bounded by
   total chars with least-recently-used eviction. Responses with no search pair and no citation are not stored.
-- Tests, new `AnthropicNativeStoreTests.cs`: hit/miss, slide on read, eviction order, model mismatch is a miss.
+- Tests, new `AnthropicNativeStoreTests.cs`: hit/miss, slide on read, eviction order.
 
 ### D3 — Replay rewrite · *Deps:* D2 · S · High
 
 - `AnthropicRequestHandler.Rewrite` gains the store: for each assistant message whose `tool_use` ids hit the
-  store (same model), apply the §3 rule. Ids are the only match key; the client's `tool_result` content is
+  store, apply the §3 rule. Ids are the only match key; the client's `tool_result` content is
   never touched; `tool_use` input comes from the store.
 - At most 8 replayed messages per request, newest first (mirrors the server's
   `AnthropicNativeReplayMaxMessages` and `AgentToolCarryover.KeptResults`).
