@@ -83,8 +83,6 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
         AnthropicNativeStore? nativeStore = null, ILogger? logger = null)
     {
         if (string.IsNullOrEmpty(requestBody)) return null;
-        if (!enableWebSearch && !enablePromptCache && effort is null && !disableThinking && nativeStore is null)
-            return null;
 
         JsonNode? root;
         try { root = JsonNode.Parse(requestBody); }
@@ -103,10 +101,11 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
             obj["tools"] = tools;
         }
 
+        var downgraded = DowngradeForcedToolChoice(obj);
+
         // From the provider row alone, never the turn: changing it between requests invalidates the cache.
-        // Effort and thinking are separate fields — an effort alone never turns thinking off. A forced tool
-        // choice (the planning probe) is the exception: with thinking on it is a 400.
-        if (disableThinking || (effort is not null && HasForcedToolChoice(obj)))
+        // Effort and thinking are separate fields — an effort alone never turns thinking off.
+        if (disableThinking)
         {
             obj["thinking"] = new JsonObject { ["type"] = "disabled" };
         }
@@ -128,7 +127,8 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
                 logger?.LogInformation("Replayed native content into {MessageCount} assistant message(s)", replayed);
         }
 
-        if (!enableWebSearch && !enablePromptCache && effort is null && !disableThinking && replayed == 0 && !deduped)
+        if (!enableWebSearch && !enablePromptCache && effort is null && !disableThinking && replayed == 0 && !deduped
+            && !downgraded)
             return null;
 
         if (enablePromptCache)
@@ -161,11 +161,26 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
         }
     }
 
-    private static bool HasForcedToolChoice(JsonObject body) =>
-        body["tool_choice"] is JsonObject { } choice
-        && choice["type"] is JsonValue type
-        && type.TryGetValue<string>(out var value)
-        && value is "any" or "tool";
+    // These reject "any" and "tool" with a 400, with or without thinking; the planning probe's prompt asks for the call.
+    private static readonly string[] ForcedChoiceRejectingModels = ["claude-opus-5-5", "claude-sonnet-5-5"];
+
+    private static bool DowngradeForcedToolChoice(JsonObject body)
+    {
+        if (body["model"] is not JsonValue model
+            || !model.TryGetValue<string>(out var modelName)
+            || !ForcedChoiceRejectingModels.Any(p => modelName.StartsWith(p, StringComparison.Ordinal)))
+            return false;
+
+        if (body["tool_choice"] is not JsonObject choice
+            || choice["type"] is not JsonValue type
+            || !type.TryGetValue<string>(out var value)
+            || value is not ("any" or "tool"))
+            return false;
+
+        choice["type"] = "auto";
+        choice.Remove("name");
+        return true;
+    }
 
     private static JsonObject Ephemeral() => new() { ["type"] = "ephemeral" };
 

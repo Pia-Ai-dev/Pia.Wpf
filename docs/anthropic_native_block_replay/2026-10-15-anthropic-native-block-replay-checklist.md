@@ -61,7 +61,7 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - [x] **D2 — Store.** Store keyed by `toolu_` id — one per endpoint + API key, not one per process — 120-min sliding TTL, char-bounded LRU. *Deps:* D1 · *Effort:* S · *Value:* Enabler
 - [x] **D3 — Replay rewrite.** `Rewrite` replays stored blocks with the server's rule (verbatim when the text matches, else blocks-only), at most 8 entries replayed for the first time and every once-replayed message kept replayed (unlike the server's flat newest-8, for the thinking binding), thinking untouched. *Deps:* D2 · *Effort:* S · *Value:* High — also: last occurrence of a duplicate id wins; a search pair replays only whole within one message, so a pending `server_tool_use` is dropped; verbatim and blocks-only shapes (with `caller` kept) verified 200 live on Sonnet 5.5.
 - [x] **D4 — Thinking-binding guard.** A replayed entry is never evicted while live; `drop_block` binding only if e2e shows a mismatch 400. *Deps:* D3 · *Effort:* XS · *Value:* High — eviction prefers never-replayed entries and a hit slides the whole entry (`AnthropicNativeStoreTests`, landed with D2). No `drop_block`: the live replay check with a signed thinking block returned 200 in both shapes; D7 re-checks it over a three-round loop.
-- [x] **D5 — Probe without thinking.** A forced-tool request (`tool_choice` `any`/`tool`) gets `thinking: disabled`; ordinary turns unchanged. *Deps:* — · *Effort:* XS · *Value:* High
+- [x] **D5 — Probe without a forced choice.** On Opus 5.5 / Sonnet 5.5 a forced-tool request (`tool_choice` `any`/`tool`) is sent as `auto` with the row's thinking; other models and ordinary turns unchanged. *Deps:* — · *Effort:* XS · *Value:* High — first shipped as `thinking: disabled`, which Opus 5.5 and Sonnet 5.5 reject with a 400 along with any forced choice (found in D7).
 - [x] **D6 — Don't re-pay a failed probe.** `ProviderCapabilityService` caches `Unknown` for a short expiry. *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **D7 — Direct-provider gate.** Rides with C7, plus e2e on a direct Anthropic row with thinking and web search: no retraction, no 400, probe reports `Capable`. *Deps:* D0–D6 · *Effort:* XS · *Value:* High
 
@@ -79,6 +79,10 @@ here by hand once that commit exists, naming the Pia commit in the line.
 ## Not yet planned
 
 - Live `pause_turn` is unverified: S0 case 6 was never provoked. Check it in the testing phase.
+- A direct Anthropic row with reasoning effort `None` sends `thinking: disabled`, a 400 on every turn
+  on Opus 5.5 and Sonnet 5.5 (Opus 5 and Haiku 5.5 accept it). Sonnet 5.5's error says to send
+  `{"type": "between_tools"}` instead. Opus 5.5's says `disabled` is unsupported and to use `adaptive`
+  plus `output_config.effort`, so it has no "off" — its lowest is presumably effort `low`. Owner decision.
 - No paragraph break across `pause_turn` legs.
 - A resumed turn that ends in `tool_use` keeps only its last leg's evidence.
 - The DSB wording against the in-RAM server store (owner).

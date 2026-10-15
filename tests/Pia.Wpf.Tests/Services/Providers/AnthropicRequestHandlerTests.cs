@@ -80,16 +80,42 @@ public class AnthropicRequestHandlerTests
         Assert.Null(obj["output_config"]);
     }
 
-    // Forced tool choice plus thinking is a 400, which is what made the planning probe fail on every turn.
+    // Opus 5.5 and Sonnet 5.5 answer "any" and "tool" with a 400, with or without thinking.
     [Theory]
-    [InlineData("""{"type":"any"}""")]
-    [InlineData("""{"type":"tool","name":"get_weather"}""")]
-    public void Rewrite_ForcedToolChoiceWithEffort_DisablesThinking(string toolChoice)
+    [InlineData("claude-opus-5-5", """{"type":"any"}""")]
+    [InlineData("claude-sonnet-5-5", """{"type":"tool","name":"get_weather"}""")]
+    [InlineData("claude-sonnet-5-5-20260901", """{"type":"any"}""")]
+    public void Rewrite_ForcedToolChoiceOnA55Model_AsksForAutoAndKeepsAdaptiveThinking(string model, string toolChoice)
     {
-        var obj = Parse(AnthropicRequestHandler.Rewrite(WithToolChoice(toolChoice), false, false, effort: "high"));
+        var obj = Parse(AnthropicRequestHandler.Rewrite(WithToolChoice(toolChoice, model), false, false, effort: "high"));
 
-        Assert.Equal("disabled", obj["thinking"]!["type"]!.GetValue<string>());
-        Assert.Null(obj["output_config"]);
+        Assert.Equal("auto", obj["tool_choice"]!["type"]!.GetValue<string>());
+        Assert.Null(obj["tool_choice"]!["name"]);
+        Assert.Equal("adaptive", obj["thinking"]!["type"]!.GetValue<string>());
+        Assert.Equal("high", obj["output_config"]!["effort"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Rewrite_ForcedToolChoiceOnA55Model_KeepsTheChoiceFlags()
+    {
+        var obj = Parse(AnthropicRequestHandler.Rewrite(
+            WithToolChoice("""{"type":"any","disable_parallel_tool_use":true}""", "claude-opus-5-5"), false, false));
+
+        Assert.Equal("auto", obj["tool_choice"]!["type"]!.GetValue<string>());
+        Assert.True(obj["tool_choice"]!["disable_parallel_tool_use"]!.GetValue<bool>());
+    }
+
+    // Opus 5 and Haiku 5.5 take a forced choice with adaptive thinking on.
+    [Theory]
+    [InlineData("claude-opus-5", "high")]
+    [InlineData("claude-haiku-5-5", "high")]
+    [InlineData("claude-opus-5", null)]
+    public void Rewrite_ForcedToolChoiceElsewhere_IsKept(string model, string? effort)
+    {
+        var json = AnthropicRequestHandler.Rewrite(WithToolChoice("""{"type":"any"}""", model), false, false, effort: effort);
+
+        var choice = json is null ? "any" : Parse(json)["tool_choice"]!["type"]!.GetValue<string>();
+        Assert.Equal("any", choice);
     }
 
     [Fact]
@@ -102,9 +128,12 @@ public class AnthropicRequestHandlerTests
     }
 
     [Fact]
-    public void Rewrite_ForcedToolChoiceWithoutEffort_AddsNoThinking()
+    public void Rewrite_ForcedToolChoiceOnA55ModelWithoutEffort_AsksForAutoAndAddsNoThinking()
     {
-        Assert.Null(AnthropicRequestHandler.Rewrite(WithToolChoice("""{"type":"any"}"""), false, false));
+        var obj = Parse(AnthropicRequestHandler.Rewrite(WithToolChoice("""{"type":"any"}""", "claude-opus-5-5"), false, false));
+
+        Assert.Equal("auto", obj["tool_choice"]!["type"]!.GetValue<string>());
+        Assert.Null(obj["thinking"]);
     }
 
     [Fact]
@@ -113,8 +142,8 @@ public class AnthropicRequestHandlerTests
         Assert.Null(AnthropicRequestHandler.Rewrite("not json", true, true));
     }
 
-    private static string WithToolChoice(string toolChoice) => $$$"""
-        {"model":"claude-opus-5","max_tokens":1024,
+    private static string WithToolChoice(string toolChoice, string model = "claude-opus-5") => $$$"""
+        {"model":"{{{model}}}","max_tokens":1024,
          "tools":[{"name":"get_weather","input_schema":{"type":"object"}}],
          "tool_choice":{{{toolChoice}}},
          "messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}

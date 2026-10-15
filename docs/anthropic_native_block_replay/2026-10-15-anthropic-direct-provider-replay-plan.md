@@ -162,14 +162,22 @@ Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) an
   provider's `Endpoint` is `api.anthropic.com` or confirmed to support the beta.
 - Test: a replayed entry survives an eviction pass that removes an un-hit one.
 
-### D5 — Probe: no thinking with forced tool choice · *Deps:* — · XS · High
+### D5 — Probe: no forced tool choice · *Deps:* — · XS · High
 
-- `AnthropicRequestHandler.Rewrite`: when the body's `tool_choice.type` is `any` or `tool`, write
-  `thinking: {type: "disabled"}` instead of adaptive for that request (the existing `disableThinking` path).
-  Only forced-tool requests change, so the prompt cache of ordinary turns is untouched. The probe already
-  sends `NoThinkSystemPrompt`, so intent matches.
-- Tests in `AnthropicRequestHandlerTests.cs`: `any` + effort → disabled; `auto` + effort → adaptive as today;
-  no `tool_choice` → unchanged.
+- `AnthropicRequestHandler.Rewrite`: on a `claude-opus-5-5*` / `claude-sonnet-5-5*` model, a
+  `tool_choice.type` of `any` or `tool` is rewritten to `auto` (dropping `name`, keeping other flags);
+  thinking stays as the row sets it. Every other model keeps the forced choice. Only the planning probe
+  forces a choice (`AiClientService.TestToolCallEmittedAsync`); its prompt asks for the call, and the probe
+  still checks one was made.
+- Measured in the D7 testing phase against the live API: Opus 5.5 and Sonnet 5.5 answer a forced choice
+  with a 400 with adaptive thinking, with `thinking: disabled`, and with no thinking field at all. Opus 5
+  and Haiku 5.5 return `tool_use` for a forced choice with adaptive thinking, with `disabled` and with
+  none — so the rejection is the model's, not thinking's. `auto` with adaptive thinking returns `tool_use`
+  on all four.
+- Tests in `AnthropicRequestHandlerTests.cs`: forced + effort on a 5.5 model → `auto` + adaptive; flags kept;
+  without effort → `auto`, no thinking; forced kept on Opus 5 / Haiku 5.5; `auto` + effort → adaptive.
+- Still open, not fixed here: `ReasoningEffort.None` sends `thinking: disabled`, a 400 on every turn for a
+  5.5 row; the right "off" differs per model.
 
 ### D6 — Probe: don't re-pay a failed probe every turn · *Deps:* — · XS · Med
 
