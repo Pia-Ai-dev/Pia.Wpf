@@ -1,6 +1,6 @@
 # Direct Anthropic provider: replay web-search blocks and fix the tool-call probe (steps D0–D7)
 
-**Status:** Planned — mechanism decided (D-store)
+**Status:** Implemented 2026-10-15 — D0–D6 landed on `feature/anthropic-native-replay`; D7 (e2e gate) open for the testing phase
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** Gate G5 of [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md);
@@ -115,8 +115,9 @@ Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) an
   `text` + `citations_delta`, `thinking` + `signature_delta`, `redacted_thinking`, `tool_use` /
   `server_tool_use` from `input_json_delta`, `web_search_tool_result` verbatim. Also the buffered JSON
   `content` array as-is.
-- `AnthropicRequestHandler.SendAsync`: wrap the response content in a pass-through stream that feeds lines to
-  the accumulator as the SDK reads them (no buffering); on end of stream hand the result to the store (D2).
+- `AnthropicRequestHandler.SendAsync`: wrap the response content (`AnthropicNativeResponseRecorder`, an
+  `HttpContent` around `AnthropicNativeStreamRecorder`) in a pass-through stream that feeds lines to the
+  builder as the SDK reads them (no buffering); at `message_stop` or end of stream hand the result to the store (D2).
 - Logging: block counts and byte sizes only; never content (CLAUDE.md Privacy-First Logging).
 - Tests, new `AnthropicNativeContentBuilderTests.cs`: the D0 fixture rebuilds exactly; a pending
   `server_tool_use` (parallel search + client tool, `stop_reason` `tool_use`); a `max_uses_exceeded` result;
@@ -124,11 +125,13 @@ Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) an
 
 ### D2 — Store · *Deps:* D1 · S · Enabler
 
-- New `AnthropicNativeStore` (singleton, owned by `AnthropicProviderHandler`, registered at
-  `Bootstrapper.cs:538`; passed into `AnthropicRequestHandler`'s constructor). Key: each client `tool_use` id
+- New `AnthropicNativeStore`, owned by `AnthropicProviderHandler` (a DI singleton, `Bootstrapper.cs:538`) — one
+  per endpoint + API-key hash, so encrypted search content never reaches another account; passed into
+  `AnthropicRequestHandler`'s constructor. Key: each client `tool_use` id
   of a response → that response's content. No model in the key: pairs carry no model binding (server S0
   case 3 verifies). Sliding TTL 120 min (same as the server), bounded by
-  total chars with least-recently-used eviction. Responses with no search pair and no citation are not stored.
+  total chars with least-recently-used eviction (never-replayed entries first; a new entry is never its own
+  victim). Responses with no search pair and no citation are not stored.
 - Tests, new `AnthropicNativeStoreTests.cs`: hit/miss, slide on read, eviction order.
 
 ### D3 — Replay rewrite · *Deps:* D2 · S · High
@@ -136,8 +139,12 @@ Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) an
 - `AnthropicRequestHandler.Rewrite` gains the store: for each assistant message whose `tool_use` ids hit the
   store, apply the §3 rule. Ids are the only match key; the client's `tool_result` content is
   never touched; `tool_use` input comes from the store.
-- At most 8 replayed messages per request, newest first (mirrors the server's
-  `AnthropicNativeReplayMaxMessages` and `AgentToolCarryover.KeptResults`).
+- A message replayed once stays replayed on every later request; at most 8 entries per request are replayed
+  for the **first** time, newest first. This differs from the server's flat newest-8
+  (`AnthropicNativeReplayMaxMessages`) on purpose: the direct path carries signed thinking, and flipping an older
+  message back would change the prefix every later thinking block is bound to. Request size stays bounded by the
+  store's char cap, compaction and the 48-round loop ceiling.
+- A search pair replays only whole within one message; a pending `server_tool_use` or an orphan result is dropped.
 - A duplicate id in one request: the last occurrence wins (mirrors server S5) — defence in depth behind
   client step C2.
 - Tests, extend `AnthropicRequestHandlerTests.cs`: verbatim replay restores search pairs and citations;

@@ -1,6 +1,6 @@
 # Anthropic native block replay — checklist
 
-**Status:** Planned — steps not started; all gates decided 2026-10-15, including the D mechanism (D-store)
+**Status:** In progress — client C1–C3, C6 and D0–D6 landed 2026-10-15; C7 and D7 (e2e gates) wait for the testing phase; S steps are ticked by hand from PIASERVER's commits
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md)
@@ -58,8 +58,8 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - [ ] **C7 — Client gate.** Zero-warning rebuild in Debug and Release, test exe `Failed: 0`, and the MongoDB routine end to end on the e2e stack with native WEB on (key from the User-scope `PIA_TEST_CLAUDE_KEY`). *Deps:* C1–C3, C6, S9 · *Effort:* XS · *Value:* High
 - [x] **D0 — Spike and fixture.** Scratchpad only: does `ToChatResponse` keep streamed thinking signatures; record a real two-search fixture for D1/D3. *Deps:* — · *Effort:* XS · *Value:* Enabler — yes: MEAI 10.9 coalesces the signature-only `TextReasoningContent` into the preceding thinking and keeps `ProtectedData`; fixtures `anthropic-two-search-{stream.sse,buffered.json}` (Sonnet 5.5).
 - [x] **D1 — Native content accumulator.** `AnthropicRequestHandler` tees the response without buffering and rebuilds its content blocks. *Deps:* D0 · *Effort:* M · *Value:* Enabler
-- [x] **D2 — Store.** Process-wide store keyed by `toolu_` id, 120-min sliding TTL, char-bounded LRU. *Deps:* D1 · *Effort:* S · *Value:* Enabler
-- [x] **D3 — Replay rewrite.** `Rewrite` replays stored blocks with the server's rule (verbatim when the text matches, else blocks-only), at most 8 messages, thinking untouched. *Deps:* D2 · *Effort:* S · *Value:* High — also: last occurrence of a duplicate id wins; a search pair replays only whole within one message, so a pending `server_tool_use` is dropped; verbatim and blocks-only shapes (with `caller` kept) verified 200 live on Sonnet 5.5.
+- [x] **D2 — Store.** Store keyed by `toolu_` id — one per endpoint + API key, not one per process — 120-min sliding TTL, char-bounded LRU. *Deps:* D1 · *Effort:* S · *Value:* Enabler
+- [x] **D3 — Replay rewrite.** `Rewrite` replays stored blocks with the server's rule (verbatim when the text matches, else blocks-only), at most 8 entries replayed for the first time and every once-replayed message kept replayed (unlike the server's flat newest-8, for the thinking binding), thinking untouched. *Deps:* D2 · *Effort:* S · *Value:* High — also: last occurrence of a duplicate id wins; a search pair replays only whole within one message, so a pending `server_tool_use` is dropped; verbatim and blocks-only shapes (with `caller` kept) verified 200 live on Sonnet 5.5.
 - [x] **D4 — Thinking-binding guard.** A replayed entry is never evicted while live; `drop_block` binding only if e2e shows a mismatch 400. *Deps:* D3 · *Effort:* XS · *Value:* High — eviction prefers never-replayed entries and a hit slides the whole entry (`AnthropicNativeStoreTests`, landed with D2). No `drop_block`: the live replay check with a signed thinking block returned 200 in both shapes; D7 re-checks it over a three-round loop.
 - [x] **D5 — Probe without thinking.** A forced-tool request (`tool_choice` `any`/`tool`) gets `thinking: disabled`; ordinary turns unchanged. *Deps:* — · *Effort:* XS · *Value:* High
 - [x] **D6 — Don't re-pay a failed probe.** `ProviderCapabilityService` caches `Unknown` for a short expiry. *Deps:* — · *Effort:* XS · *Value:* Med

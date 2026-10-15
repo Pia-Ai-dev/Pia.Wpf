@@ -1,6 +1,6 @@
 # Anthropic native block replay — client plan (Pia.Wpf)
 
-**Status:** Planned — not started. All owner gates decided 2026-10-15 (table below). Appendix B keeps the
+**Status:** Implemented 2026-10-15 — C1–C3 and C6 landed (C2 confirmed and fixed, plus C2a); C7 open for the testing phase. All owner gates decided 2026-10-15 (table below). Appendix B keeps the
 client-carried envelope plan in case G1 is ever reopened.
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
