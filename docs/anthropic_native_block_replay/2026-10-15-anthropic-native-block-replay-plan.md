@@ -1,6 +1,6 @@
 # Anthropic native block replay: keep server-side web search (and thinking) in the history Pia Cloud replays
 
-**Status:** Implemented 2026-10-15 except S6b (G6) — server Pia `feature/7836` @ `1edad6db`, client `feature/anthropic-native-replay`; e2e gates C7/D7 open. All gates decided by the owner 2026-10-15: G1 **A** (server-side store keyed by the tool
+**Status:** Implemented 2026-10-15 except S6b (G6) — server Pia `feature/7836` @ `1edad6db`, client `feature/anthropic-native-replay`; e2e gates C7/D7 passed 2026-10-15. Round 2, the prompt-cache hit rate, is planned in [2026-10-15-prompt-cache-hit-rate-plan.md](2026-10-15-prompt-cache-hit-rate-plan.md) and open. All gates decided by the owner 2026-10-15: G1 **A** (server-side store keyed by the tool
 call id), G2a yes / G2b deferred, G3 moot, G4 resume in the server stream (cap 3), G5 a third plan, G6
 deferred; store TTL 120 min sliding. Plans: server — Pia `feature/7836`,
 `docs/plans/2026-10-15-anthropic-native-block-replay.md`; client —

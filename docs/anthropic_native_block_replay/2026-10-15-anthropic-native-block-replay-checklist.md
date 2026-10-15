@@ -1,6 +1,6 @@
 # Anthropic native block replay — checklist
 
-**Status:** In progress — server S0–S9 (Pia `feature/7836` @ `1edad6db`, replay summary log `418310ad`) and client C1–C3, C6, D0–D6 landed 2026-10-15; S6b blocked on G6; C7 and D7 (e2e gates) passed live 2026-10-15
+**Status:** In progress — server S0–S9 (Pia `feature/7836` @ `1edad6db`, replay summary log `418310ad`) and client C1–C3, C6, D0–D6 landed 2026-10-15; S6b blocked on G6; C7 and D7 (e2e gates) passed live 2026-10-15. Round 2, group P (prompt-cache hit rate), planned 2026-10-15 and open; it lands in the same two PRs
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md)
@@ -10,8 +10,10 @@
 | S | Pia `docs/plans/2026-10-15-anthropic-native-block-replay.md` (branch `feature/7836`) | `G:\Git\Pia` | Azure DevOps #7836 |
 | C | [2026-10-15-anthropic-native-block-replay-client-plan.md](2026-10-15-anthropic-native-block-replay-client-plan.md) | this one | https://github.com/Pia-Ai-dev/Pia.Wpf/issues/70 |
 | D | [2026-10-15-anthropic-direct-provider-replay-plan.md](2026-10-15-anthropic-direct-provider-replay-plan.md) | this one | https://github.com/Pia-Ai-dev/Pia.Wpf/issues/71 |
+| P | [2026-10-15-prompt-cache-hit-rate-plan.md](2026-10-15-prompt-cache-hit-rate-plan.md) | both — P0, P2 here; P3, P4 in `G:\Git\Pia`; P1 is the owner's ops step | #70 (client steps), Azure DevOps #7836 (server steps) |
 
-C and D land on `feature/anthropic-native-replay` as one client PR.
+C, D and the client P steps land on `feature/anthropic-native-replay` as one client PR; the server P steps
+join `feature/7836`. A server P box is ticked here by hand, naming the Pia commit, like an S box.
 
 `S` steps live in the server repository `G:\Git\Pia`, `C` and `D` steps in this repository. A `C` or `D` box is ticked in
 the commit that lands its step. An `S` step's commit lands in the other repository, so its box is ticked
@@ -34,6 +36,8 @@ here by hand once that commit exists, naming the Pia commit in the line.
 | G4 | Resume `pause_turn` in the server stream, or a distinct finish reason for the client? **Decided: resume in the server stream, cap 3.** | S8 |
 | G5 | Does the direct Anthropic provider have the same flaw? **Yes — decided: a third plan (group D), including the tool-call probe defect.** Mechanism decided: **D-store** (client-side store keyed by `toolu_` id, the server's replay rule). | D1–D4 |
 | G6 | Replay thinking blocks at all? **Deferred.** | S6b |
+| G7 | Should new Anthropic catalog rows default to prompt cache on? **Open — owner.** | P1 step 2 |
+| G8 | Keep the 4,000-char cap on carried tool results at a step boundary (bounded context, one re-write of the finished step's tail), or carry them uncapped inside the kept window (no re-write, larger context)? **Default: keep the cap** — owner may override. | P2 |
 
 ## Steps
 
@@ -64,6 +68,12 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - [x] **D5 — Probe without a forced choice.** On Opus 5.5 / Sonnet 5.5 a forced-tool request (`tool_choice` `any`/`tool`) is sent as `auto` with the row's thinking; other models and ordinary turns unchanged. *Deps:* — · *Effort:* XS · *Value:* High — first shipped as `thinking: disabled`, which Opus 5.5 and Sonnet 5.5 reject with a 400 along with any forced choice (found in D7).
 - [x] **D6 — Don't re-pay a failed probe.** `ProviderCapabilityService` caches `Unknown` for a short expiry. *Deps:* — · *Effort:* XS · *Value:* Med
 - [x] **D7 — Direct-provider gate.** Rides with C7, plus e2e on a direct Anthropic row with thinking and web search: no retraction, no 400, probe reports `Capable`. *Deps:* D0–D6 · *Effort:* XS · *Value:* High — passed on Opus 5.5 (effort medium) after the D5 rework: probe `Capable`; a planned 3-step agent run (search → `write_file` → search → append → summary) completed in 13 tool rounds, stored native blocks on 3 responses, replayed them on 11 requests including both step boundaries; 0 errors, 0 400s; no retraction, repeat search or run-together text; answers cite `[1]`/`[2]`.
+- [ ] **P0 — Prefix test and doc re-check.** A red-first test that step N+1's first request equals step N's last in-loop request plus its final assistant message and the new instruction, for both step executors; the live caching docs re-checked for the facts P4 relies on. *Deps:* — · *Effort:* XS · *Value:* Enabler
+- [ ] **P1 — Prompt cache on for the prod Anthropic rows.** The owner switches `EnablePromptCache` on for every prod Anthropic row and records the provider-side cache retention with the open DSB item; G7 decides the default for new rows. *Deps:* — · *Effort:* XS · *Value:* High
+- [ ] **P2 — Append-only step history.** Both executors carry the step instruction as sent, each round's assistant message with its text, and the final assistant message as received, never thinking; `ClearOldResults` cuts in chunks of 8 above 16; persistence and resume keep today's shapes. *Deps:* P0, G8 · *Effort:* M · *Value:* High
+- [ ] **P3 — Replay cap in chunks.** The server's newest-8 replay cap moves its cut once per 4 new anchored turns instead of every round, stateless. *Deps:* — · *Effort:* XS · *Value:* Med
+- [ ] **P4 — Breakpoint placement.** Markers only on eligible block types (fixes a latent 400 on an S8 resume ending in `server_tool_use`), plus a marker on the previous request's final message against the 20-position lookback. *Deps:* P0 (doc re-check) · *Effort:* S · *Value:* Med
+- [ ] **P5 — Gates and measurement.** Both repositories' gates, then one C7b-shaped run on 18081: every step boundary reads the carried prefix, the run above 90% cache reads (baseline 82.4%), no 400/413. *Deps:* P2, P3, P4 · *Effort:* S · *Value:* High
 
 ## Suggested order
 
@@ -75,6 +85,13 @@ here by hand once that commit exists, naming the Pia commit in the line.
 4. **D1 → D2 → D3 → D4** — D-store.
 5. **S7 → S8**.
 6. **S9**, then **C3, C6, C7, D7** — one client PR.
+
+Round 2 (group P):
+
+1. **P1** whenever the owner gets to it — it needs no code and pays off at once in prod.
+2. **P0** — the free test that shows every divergence point before P2 is built.
+3. **P3** and **P4** on the server alongside **P2** on the client.
+4. **P5** last.
 
 ## Not yet planned
 
@@ -94,3 +111,7 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - `knowledge_citations` has no client consumer either.
 - `web_search_20260209` / `web_fetch_20260209` on 5.5-family rows.
 - `display: "updates"` for 5.5-family progress notes.
+- A 1-hour cache TTL for agent runs with long tool calls or approval waits.
+- The agent compactor's token estimate cannot see search results (4–5.6k estimated against 43–95k reported).
+- Chat titles run on Opus 5.5; a cheaper model would do.
+- Carrying thinking across steps on the direct path when system prompt and tools are unchanged.
