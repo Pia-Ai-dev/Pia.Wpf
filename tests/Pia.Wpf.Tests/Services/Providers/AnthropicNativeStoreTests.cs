@@ -93,6 +93,39 @@ public class AnthropicNativeStoreTests
         Assert.True(store.TryGet("toolu_c", out _));
     }
 
+    // A store full of replayed entries must still take a new response rather than evicting it in the same call.
+    [Fact]
+    public void ANewEntry_IsNeverItsOwnEvictionVictim()
+    {
+        var oneEntry = new JsonArray([.. Response("toolu_a").Select(b => (JsonNode)b)]).ToJsonString().Length;
+        var clock = new MovableClock(DateTimeOffset.UnixEpoch);
+        var store = new AnthropicNativeStore(clock, maxChars: oneEntry * 2 + 10);
+        store.TryAdd(Response("toolu_a"));
+        store.TryAdd(Response("toolu_b"));
+        Assert.True(store.TryGet("toolu_a", out _));
+        Assert.True(store.TryGet("toolu_b", out _));
+        clock.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.True(store.TryAdd(Response("toolu_c")));
+        Assert.True(store.TryFind("toolu_c", out _, out _));
+        Assert.Equal(2, store.Count);
+    }
+
+    [Fact]
+    public void TryFind_NeitherMarksReplayedNorSlidesTheExpiry()
+    {
+        var clock = new MovableClock(DateTimeOffset.UnixEpoch);
+        var store = new AnthropicNativeStore(clock);
+        store.TryAdd(Response("toolu_a"));
+
+        clock.Advance(AnthropicNativeStore.SlidingExpiry - TimeSpan.FromMinutes(1));
+        Assert.True(store.TryFind("toolu_a", out _, out var replayed));
+        Assert.False(replayed);
+        clock.Advance(TimeSpan.FromMinutes(2));
+
+        Assert.False(store.TryFind("toolu_a", out _, out _));
+    }
+
     private sealed class MovableClock(DateTimeOffset start) : TimeProvider
     {
         private DateTimeOffset _now = start;

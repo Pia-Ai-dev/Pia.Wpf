@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using Anthropic;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -14,20 +17,20 @@ public sealed class AnthropicProviderHandler : IAiProviderHandler
     // Every Claude model accepts at least this; the provider's own Max output tokens raises it.
     private const int DefaultMaxOutputTokens = 8192;
 
-    // One per process, not per row: a step may switch Anthropic rows and still replay what the last one stored.
-    private readonly AnthropicNativeStore _nativeStore;
+    // One per endpoint and key, not per row: a step may switch models and still replay what the last one stored,
+    // but encrypted search content from another account would not be accepted.
+    private readonly ConcurrentDictionary<string, AnthropicNativeStore> _nativeStores = new(StringComparer.Ordinal);
     private readonly ILogger<AnthropicProviderHandler>? _logger;
 
     public AnthropicProviderHandler(ILogger<AnthropicProviderHandler>? logger = null)
-        : this(new AnthropicNativeStore(), logger)
     {
-    }
-
-    internal AnthropicProviderHandler(AnthropicNativeStore nativeStore, ILogger<AnthropicProviderHandler>? logger = null)
-    {
-        _nativeStore = nativeStore;
         _logger = logger;
     }
+
+    internal AnthropicNativeStore NativeStoreFor(string? endpoint, string? apiKey) =>
+        _nativeStores.GetOrAdd(
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{endpoint}\n{apiKey}"))),
+            _ => new AnthropicNativeStore());
 
     public AiProviderType ProviderType => AiProviderType.Anthropic;
 
@@ -50,7 +53,7 @@ public sealed class AnthropicProviderHandler : IAiProviderHandler
                 provider.EnablePromptCache,
                 ReasoningEffortMapping.ToAnthropic(provider.ReasoningEffort),
                 disableThinking: provider.ReasoningEffort == Pia.Models.ReasoningEffort.None,
-                _nativeStore,
+                NativeStoreFor(provider.Endpoint, apiKey),
                 _logger)
             {
                 InnerHandler = new HttpClientHandler(),

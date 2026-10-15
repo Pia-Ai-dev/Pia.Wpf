@@ -156,6 +156,67 @@ public class AnthropicNativeReplayTests
         Assert.Equal([false, false, .. Enumerable.Repeat(true, AnthropicRequestHandler.MaxReplayedMessages)], replayed);
     }
 
+    // Flipping an older message back to its unreplayed shape would change the prefix its later thinking is bound to.
+    [Fact]
+    public void AMessageReplayedOnce_StaysReplayed_WhenNewerHitsPassTheCap()
+    {
+        var store = new AnthropicNativeStore();
+        var turns = new List<JsonObject>();
+        void AddTurn(int i)
+        {
+            var id = $"toolu_{i:D2}";
+            store.TryAdd(
+            [
+                new JsonObject { ["type"] = "server_tool_use", ["id"] = "srv_" + i, ["name"] = "web_search", ["input"] = new JsonObject() },
+                new JsonObject { ["type"] = "web_search_tool_result", ["tool_use_id"] = "srv_" + i, ["content"] = new JsonArray() },
+                new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = "f", ["input"] = new JsonObject() },
+            ]);
+            turns.Add(new JsonObject
+            {
+                ["role"] = "assistant",
+                ["content"] = new JsonArray { new JsonObject { ["type"] = "tool_use", ["id"] = id, ["name"] = "f", ["input"] = new JsonObject() } },
+            });
+            turns.Add(ToolResult(id));
+        }
+
+        for (var i = 0; i < AnthropicRequestHandler.MaxReplayedMessages; i++)
+            AddTurn(i);
+        AnthropicRequestHandler.Rewrite(Body([.. turns.Select(t => (JsonObject)t.DeepClone())]), false, false, nativeStore: store);
+        AddTurn(AnthropicRequestHandler.MaxReplayedMessages);
+        AddTurn(AnthropicRequestHandler.MaxReplayedMessages + 1);
+
+        var messages = Messages(AnthropicRequestHandler.Rewrite(Body([.. turns]), false, false, nativeStore: store));
+
+        Assert.All(messages.Where(m => (string?)m!["role"] == "assistant"),
+            m => Assert.Contains((JsonArray)m!["content"]!, b => Type(b) == "web_search_tool_result"));
+    }
+
+    // A miss on one of a message's ids leaves the message alone and must not count as a replay of the other.
+    [Fact]
+    public void APartialHit_IsNotReplayed_AndDoesNotProtectTheEntry()
+    {
+        var store = new AnthropicNativeStore();
+        store.TryAdd(
+        [
+            new JsonObject { ["type"] = "server_tool_use", ["id"] = "srv_1", ["name"] = "web_search", ["input"] = new JsonObject() },
+            new JsonObject { ["type"] = "web_search_tool_result", ["tool_use_id"] = "srv_1", ["content"] = new JsonArray() },
+            new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_hit", ["name"] = "f", ["input"] = new JsonObject() },
+        ]);
+        var assistant = new JsonObject
+        {
+            ["role"] = "assistant",
+            ["content"] = new JsonArray
+            {
+                new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_hit", ["name"] = "f", ["input"] = new JsonObject() },
+                new JsonObject { ["type"] = "tool_use", ["id"] = "toolu_miss", ["name"] = "f", ["input"] = new JsonObject() },
+            },
+        };
+
+        Assert.Null(AnthropicRequestHandler.Rewrite(Body(assistant), false, false, nativeStore: store));
+        Assert.True(store.TryFind("toolu_hit", out _, out var replayed));
+        Assert.False(replayed);
+    }
+
     [Fact]
     public void ADuplicateToolUseId_KeepsOnlyItsLastOccurrence()
     {

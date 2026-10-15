@@ -73,6 +73,7 @@ internal sealed class AnthropicNativeStreamRecorder : Stream
 
         var chars = new char[_decoder.GetCharCount(bytes, flush: false)];
         _decoder.GetChars(bytes, chars, flush: false);
+        var appendedAt = _pending.Length;
         _pending.Append(chars);
 
         if (!_isEventStream)
@@ -86,14 +87,16 @@ internal sealed class AnthropicNativeStreamRecorder : Stream
             return;
         }
 
+        // Only the new chars are searched, so a long line is not rescanned on every read.
         var start = 0;
-        for (var i = 0; i < _pending.Length; i++)
+        for (var j = 0; j < chars.Length; j++)
         {
-            if (_pending[i] != '\n')
+            if (chars[j] != '\n')
                 continue;
 
-            _events.FeedLine(_pending.ToString(start, i - start).TrimEnd('\r'));
-            start = i + 1;
+            var end = appendedAt + j;
+            _events.FeedLine(_pending.ToString(start, end - start).TrimEnd('\r'));
+            start = end + 1;
             // The reader may stop at message_stop without draining to end of stream.
             if (_events.IsComplete)
             {

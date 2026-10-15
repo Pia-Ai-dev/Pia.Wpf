@@ -7,13 +7,14 @@ namespace Pia.Services.Providers.Http;
 internal static class AnthropicNativeReplay
 {
     /// <summary>
-    /// Rewrites the newest assistant messages whose <c>tool_use</c> ids all hit one stored response: verbatim when
-    /// their text still matches the stored text, else blocks-only. Returns how many messages were rewritten.
+    /// Rewrites assistant messages whose <c>tool_use</c> ids all hit one stored response: verbatim when their text
+    /// still matches the stored text, else blocks-only. Returns how many messages were rewritten.
     /// </summary>
     public static int Apply(JsonArray messages, AnthropicNativeStore store, int maxMessages)
     {
         var replayed = 0;
-        for (var i = messages.Count - 1; i >= 0 && replayed < maxMessages; i--)
+        var newlyReplayed = 0;
+        for (var i = messages.Count - 1; i >= 0; i--)
         {
             if (messages[i] is not JsonObject { } message
                 || Str(message["role"]) != "assistant"
@@ -26,10 +27,19 @@ internal static class AnthropicNativeReplay
                 .Where(b => Type(b) == "tool_use")
                 .Select(b => Str(b["id"]))
                 .ToList();
-            if (ids.Count == 0 || ids.Any(id => id is null) || !TryGetOne(store, ids!, out var stored))
+            if (ids.Count == 0 || ids.Any(id => id is null) || !TryFindOne(store, ids!, out var key, out var wasReplayed))
                 continue;
 
-            message["content"] = Rebuild(content, stored.Blocks, ids.ToHashSet()!);
+            // Once replayed, always replayed: flipping a message back would change the prefix every later thinking
+            // block is bound to. The cap only limits entries replayed for the first time.
+            if (!wasReplayed)
+            {
+                if (newlyReplayed >= maxMessages)
+                    continue;
+                newlyReplayed++;
+            }
+
+            message["content"] = Rebuild(content, store.Take(key), ids.ToHashSet()!);
             replayed++;
         }
 
@@ -82,14 +92,15 @@ internal static class AnthropicNativeReplay
         return changed;
     }
 
-    private static bool TryGetOne(AnthropicNativeStore store, IReadOnlyList<string> ids, out StoredResponse stored)
+    private static bool TryFindOne(AnthropicNativeStore store, IReadOnlyList<string> ids, out object key, out bool replayed)
     {
-        stored = default;
+        key = null!;
+        replayed = false;
         foreach (var id in ids)
         {
-            if (!store.TryGet(id, out var hit) || (stored.Key is not null && !ReferenceEquals(stored.Key, hit.Key)))
+            if (!store.TryFind(id, out var hit, out replayed) || (key is not null && !ReferenceEquals(key, hit)))
                 return false;
-            stored = hit;
+            key = hit;
         }
 
         return true;

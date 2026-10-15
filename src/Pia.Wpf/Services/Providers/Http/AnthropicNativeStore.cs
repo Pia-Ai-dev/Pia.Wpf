@@ -57,29 +57,48 @@ internal sealed class AnthropicNativeStore
                 _byId[id] = entry;
             _entries.Add(entry);
             _chars += json.Length;
-            Evict();
-            return true;
+            Evict(entry);
+            return _entries.Contains(entry);
         }
     }
 
-    /// <summary>A fresh copy of the entry holding <paramref name="toolUseId"/>; a hit slides the expiry of the whole entry.</summary>
-    public bool TryGet(string toolUseId, out StoredResponse response)
+    /// <summary>Which live entry holds <paramref name="toolUseId"/>, and whether it was replayed before; no side effects.</summary>
+    public bool TryFind(string toolUseId, out object key, out bool replayed)
     {
         lock (_gate)
         {
-            if (_byId.TryGetValue(toolUseId, out var entry))
+            if (_byId.TryGetValue(toolUseId, out var entry) && _clock.GetUtcNow() - entry.LastUsed < SlidingExpiry)
             {
-                var now = _clock.GetUtcNow();
-                if (now - entry.LastUsed < SlidingExpiry)
-                {
-                    entry.LastUsed = now;
-                    entry.Replayed = true;
-                    response = new StoredResponse(entry.Key, ParseBlocks(entry.Json));
-                    return true;
-                }
-
-                Remove(entry);
+                key = entry;
+                replayed = entry.Replayed;
+                return true;
             }
+        }
+
+        key = null!;
+        replayed = false;
+        return false;
+    }
+
+    /// <summary>A fresh copy of a found entry's blocks; marks it replayed and slides its expiry.</summary>
+    public IReadOnlyList<JsonObject> Take(object key)
+    {
+        var entry = (Entry)key;
+        lock (_gate)
+        {
+            entry.LastUsed = _clock.GetUtcNow();
+            entry.Replayed = true;
+        }
+
+        return ParseBlocks(entry.Json);
+    }
+
+    public bool TryGet(string toolUseId, out StoredResponse response)
+    {
+        if (TryFind(toolUseId, out var key, out _))
+        {
+            response = new StoredResponse(key, Take(key));
+            return true;
         }
 
         response = default;
@@ -97,7 +116,8 @@ internal sealed class AnthropicNativeStore
 
     // Never-replayed entries go first: evicting one a live loop replays would flip it to the unreplayed shape and
     // invalidate every later thinking block.
-    private void Evict()
+    // The entry just added is never its own victim, or a store full of replayed entries would refuse every new one.
+    private void Evict(Entry added)
     {
         var now = _clock.GetUtcNow();
         foreach (var stale in _entries.Where(e => now - e.LastUsed >= SlidingExpiry).ToList())
@@ -105,8 +125,8 @@ internal sealed class AnthropicNativeStore
 
         while (_chars > _maxChars && _entries.Count > 1)
         {
-            var victim = _entries.Where(e => !e.Replayed).MinBy(e => e.LastUsed)
-                ?? _entries.MinBy(e => e.LastUsed)!;
+            var older = _entries.Where(e => !ReferenceEquals(e, added)).ToList();
+            var victim = older.Where(e => !e.Replayed).MinBy(e => e.LastUsed) ?? older.MinBy(e => e.LastUsed)!;
             Remove(victim);
         }
     }
@@ -137,7 +157,6 @@ internal sealed class AnthropicNativeStore
 
     private sealed class Entry(string json, IReadOnlyList<string> ids, DateTimeOffset now)
     {
-        public object Key { get; } = new();
         public string Json { get; } = json;
         public IReadOnlyList<string> Ids { get; } = ids;
         public DateTimeOffset LastUsed { get; set; } = now;

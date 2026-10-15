@@ -291,7 +291,9 @@ public class AiClientService : IAiClientService
 
             _logger.LogDebug("Round {Round}: request carries {ImageCount} image message(s)",
                 round + 1, ToolLoopImageMessages.CountImageMessages(workingMessages));
-            var estimatedInput = AgentContextCompactor.EstimateInputTokens(workingMessages);
+            long? estimatedInput = _logger.IsEnabled(LogLevel.Information)
+                ? AgentContextCompactor.EstimateInputTokens(workingMessages)
+                : null;
 
             ChatResponse response;
 

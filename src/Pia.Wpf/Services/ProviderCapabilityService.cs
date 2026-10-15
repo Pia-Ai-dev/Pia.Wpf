@@ -26,7 +26,7 @@ public sealed class ProviderCapabilityService : IProviderCapabilityService
 
     public async Task<PlanningCapability> GetPlanningCapabilityAsync(AiProvider provider, CancellationToken ct = default)
     {
-        // R10: a provider with tool calling disabled is Weak without probing (never Capable).
+        // A provider with tool calling disabled is Weak without probing, never Capable.
         if (!provider.SupportsToolCalling)
             return PlanningCapability.Weak;
 

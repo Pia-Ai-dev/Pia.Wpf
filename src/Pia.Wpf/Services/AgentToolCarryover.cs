@@ -26,14 +26,14 @@ internal static class AgentToolCarryover
         "Tool results from earlier steps that are shown cleared are not in your context — read the file again "
         + "before using its content; never reconstruct it from memory.";
 
+    internal static string CapResult(string result) =>
+        result.Length > MaxCarriedResultChars ? result[..MaxCarriedResultChars] + TruncationSuffix : result;
+
     /// <summary>
     /// Snapshots the messages one tool round appended: TOOL CONTENT ONLY, each result capped at capture time.
     /// The prose a round produced is already in the exchange's visible reply, so carrying it here too would
     /// cost tokens and read as the model having said it twice.
     /// </summary>
-    internal static string CapResult(string result) =>
-        result.Length > MaxCarriedResultChars ? result[..MaxCarriedResultChars] + TruncationSuffix : result;
-
     internal static IReadOnlyList<ChatMessage> Capture(IEnumerable<ChatMessage> roundMessages)
     {
         var captured = new List<ChatMessage>();
