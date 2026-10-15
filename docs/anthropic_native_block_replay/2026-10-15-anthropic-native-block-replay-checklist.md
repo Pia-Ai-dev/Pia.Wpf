@@ -61,7 +61,7 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - [ ] **D3 — Replay rewrite.** `Rewrite` replays stored blocks with the server's rule (verbatim when the text matches, else blocks-only), at most 8 messages, thinking untouched. *Deps:* D2 · *Effort:* S · *Value:* High
 - [ ] **D4 — Thinking-binding guard.** A replayed entry is never evicted while live; `drop_block` binding only if e2e shows a mismatch 400. *Deps:* D3 · *Effort:* XS · *Value:* High
 - [x] **D5 — Probe without thinking.** A forced-tool request (`tool_choice` `any`/`tool`) gets `thinking: disabled`; ordinary turns unchanged. *Deps:* — · *Effort:* XS · *Value:* High
-- [ ] **D6 — Don't re-pay a failed probe.** `ProviderCapabilityService` caches `Unknown` for a short expiry. *Deps:* — · *Effort:* XS · *Value:* Med
+- [x] **D6 — Don't re-pay a failed probe.** `ProviderCapabilityService` caches `Unknown` for a short expiry. *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **D7 — Direct-provider gate.** Rides with C7, plus e2e on a direct Anthropic row with thinking and web search: no retraction, no 400, probe reports `Capable`. *Deps:* D0–D6 · *Effort:* XS · *Value:* High
 
 ## Suggested order
