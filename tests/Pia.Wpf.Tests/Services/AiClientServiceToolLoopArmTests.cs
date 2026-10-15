@@ -78,6 +78,48 @@ public class AiClientServiceToolLoopArmTests
         Assert.Equal("tool output", result.Result);
     }
 
+    // The server's native-content store matches on the toolu_ id alone, so every round re-sends every earlier id.
+    [Fact]
+    public async Task EveryRound_ResendsEveryEarlierCallId_VerbatimAndInOrder()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        var round = 0;
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                harness.Sent.Add([.. ci.ArgAt<IEnumerable<ChatMessage>>(0)]);
+                return round++ switch
+                {
+                    0 => CallsRound("toolu_01AbC-dEf_9", "toolu_01XyZ"),
+                    1 => CallsRound("toolu_02Qrs"),
+                    _ => TextRound("done"),
+                };
+            });
+
+        await harness.RunAsync(WithTools());
+
+        Assert.Equal(3, harness.Sent.Count);
+        Assert.Equal(["toolu_01AbC-dEf_9", "toolu_01XyZ"], CallIds(harness.Sent[1]));
+        Assert.Equal(["toolu_01AbC-dEf_9", "toolu_01XyZ", "toolu_02Qrs"], CallIds(harness.Sent[2]));
+        Assert.Equal(CallIds(harness.Sent[2]), harness.Sent[2]
+            .SelectMany(m => m.Contents.OfType<FunctionResultContent>()).Select(r => r.CallId));
+    }
+
+    private static List<string> CallIds(List<ChatMessage> request) =>
+        [.. request.SelectMany(m => m.Contents.OfType<FunctionCallContent>()).Select(c => c.CallId)];
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> CallsRound(params string[] callIds)
+    {
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents = [.. callIds.Select(id => (AIContent)new FunctionCallContent(
+                id, "read_file", new Dictionary<string, object?> { ["path"] = id + ".cs" }))],
+        };
+        await Task.Yield();
+    }
+
     [Fact]
     public async Task ToolRoundsExhausted_SpendOneToolFreeWrapUpRound()
     {

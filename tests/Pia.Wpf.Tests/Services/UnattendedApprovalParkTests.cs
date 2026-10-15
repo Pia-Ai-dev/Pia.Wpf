@@ -596,6 +596,9 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         var first = Assert.Single(contents.OfType<FunctionResultContent>(), r => r.CallId == "call-1");
         Assert.Equal(ExecuteResult, first.Result as string);
         Assert.Single(contents.OfType<FunctionCallContent>(), c => c.CallId == "call-1");
+        // Every earlier dispatch's id comes back verbatim and once: the server's native-content store keys on it.
+        Assert.Equal(["call-1", "call-d2-1"],
+            contents.OfType<FunctionCallContent>().Select(c => c.CallId).Order(StringComparer.Ordinal));
 
         await launcher.StopAsync(CancellationToken.None);
     }
