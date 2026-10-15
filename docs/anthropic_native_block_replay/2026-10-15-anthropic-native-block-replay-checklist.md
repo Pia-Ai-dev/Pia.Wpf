@@ -54,7 +54,7 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - [x] **C3 — Measure what the client cannot see.** Log the compactor's estimate against the provider-reported input tokens per round (counts only), so S0/C7 can size the replayed input. *Deps:* — · *Effort:* XS · *Value:* Med
 - ~~**C4 — Other chat clients tolerate it.**~~ Dropped under A (no new content type); kept as B-C4 in the client plan's Appendix B.
 - ~~**C5 — Across user turns.**~~ Dropped under A: no persistence or sync is needed. Cross-turn replay (G2b) would be a new step.
-- [ ] **C6 — Release-note text.** Drafted in the client plan, applied at the release cut (`RELEASE.md` is edited only on `release/*` / `hotfix/*`). *Deps:* C2 · *Effort:* XS · *Value:* Med
+- [x] **C6 — Release-note text.** Drafted in the client plan, applied at the release cut (`RELEASE.md` is edited only on `release/*` / `hotfix/*`). *Deps:* C2 · *Effort:* XS · *Value:* Med
 - [ ] **C7 — Client gate.** Zero-warning rebuild in Debug and Release, test exe `Failed: 0`, and the MongoDB routine end to end on the e2e stack with native WEB on (key from the User-scope `PIA_TEST_CLAUDE_KEY`). *Deps:* C1–C3, C6, S9 · *Effort:* XS · *Value:* High
 - [ ] **D0 — Spike and fixture.** Scratchpad only: does `ToChatResponse` keep streamed thinking signatures; record a real two-search fixture for D1/D3. *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **D1 — Native content accumulator.** `AnthropicRequestHandler` tees the response without buffering and rebuilds its content blocks. *Deps:* D0 · *Effort:* M · *Value:* Enabler
