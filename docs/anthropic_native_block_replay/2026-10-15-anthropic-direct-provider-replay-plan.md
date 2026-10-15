@@ -110,7 +110,7 @@ Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) an
 
 ### D1 — Native content accumulator · *Deps:* D0 · M · Enabler
 
-- New `src/Pia.Wpf/Services/Providers/Http/AnthropicNativeAccumulator.cs`: consumes Messages API SSE events
+- New `src/Pia.Wpf/Services/Providers/Http/AnthropicNativeContentBuilder.cs`: consumes Messages API SSE events
   (`content_block_start` / `_delta` / `_stop`, `message_delta`) and rebuilds the response's content array —
   `text` + `citations_delta`, `thinking` + `signature_delta`, `redacted_thinking`, `tool_use` /
   `server_tool_use` from `input_json_delta`, `web_search_tool_result` verbatim. Also the buffered JSON
@@ -118,7 +118,7 @@ Scratchpad only, never the branch. Regenerate the decompile (recipe in §1.1) an
 - `AnthropicRequestHandler.SendAsync`: wrap the response content in a pass-through stream that feeds lines to
   the accumulator as the SDK reads them (no buffering); on end of stream hand the result to the store (D2).
 - Logging: block counts and byte sizes only; never content (CLAUDE.md Privacy-First Logging).
-- Tests, new `AnthropicNativeAccumulatorTests.cs`: the D0 fixture rebuilds exactly; a pending
+- Tests, new `AnthropicNativeContentBuilderTests.cs`: the D0 fixture rebuilds exactly; a pending
   `server_tool_use` (parallel search + client tool, `stop_reason` `tool_use`); a `max_uses_exceeded` result;
   a stream cancelled mid-block stores nothing; the tee yields byte-identical output to the SDK.
 

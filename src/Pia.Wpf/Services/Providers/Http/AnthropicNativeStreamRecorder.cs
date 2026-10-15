@@ -6,21 +6,21 @@ using System.Text;
 namespace Pia.Services.Providers.Http;
 
 /// <summary>Hands every byte to the SDK unchanged while feeding a copy to the accumulator; reports once, at end of stream.</summary>
-internal sealed class AnthropicNativeTeeStream : Stream
+internal sealed class AnthropicNativeStreamRecorder : Stream
 {
     // A buffered body larger than this is not worth replaying; the SDK still reads all of it.
     private const int MaxBufferedChars = 4 * 1024 * 1024;
 
     private readonly Stream _inner;
     private readonly bool _isEventStream;
-    private readonly Action<AnthropicNativeAccumulator> _onComplete;
+    private readonly Action<AnthropicNativeContentBuilder> _onComplete;
     private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
-    private readonly AnthropicNativeAccumulator _events = new();
+    private readonly AnthropicNativeContentBuilder _events = new();
     private readonly StringBuilder _pending = new();
     private bool _reported;
     private bool _overflowed;
 
-    public AnthropicNativeTeeStream(Stream inner, bool isEventStream, Action<AnthropicNativeAccumulator> onComplete)
+    public AnthropicNativeStreamRecorder(Stream inner, bool isEventStream, Action<AnthropicNativeContentBuilder> onComplete)
     {
         _inner = inner;
         _isEventStream = isEventStream;
@@ -111,7 +111,7 @@ internal sealed class AnthropicNativeTeeStream : Stream
         if (_overflowed)
             return;
 
-        var result = _isEventStream ? _events : AnthropicNativeAccumulator.FromBuffered(_pending.ToString());
+        var result = _isEventStream ? _events : AnthropicNativeContentBuilder.FromBuffered(_pending.ToString());
         _pending.Clear();
         if (result.IsComplete)
             _onComplete(result);
@@ -133,14 +133,14 @@ internal sealed class AnthropicNativeTeeStream : Stream
     }
 }
 
-/// <summary>Wraps a response body in <see cref="AnthropicNativeTeeStream"/> without buffering it; headers are copied over.</summary>
-internal sealed class AnthropicNativeTeeContent : HttpContent
+/// <summary>Wraps a response body in <see cref="AnthropicNativeStreamRecorder"/> without buffering it; headers are copied over.</summary>
+internal sealed class AnthropicNativeResponseRecorder : HttpContent
 {
     private readonly HttpContent _original;
     private readonly bool _isEventStream;
-    private readonly Action<AnthropicNativeAccumulator> _onComplete;
+    private readonly Action<AnthropicNativeContentBuilder> _onComplete;
 
-    public AnthropicNativeTeeContent(HttpContent original, bool isEventStream, Action<AnthropicNativeAccumulator> onComplete)
+    public AnthropicNativeResponseRecorder(HttpContent original, bool isEventStream, Action<AnthropicNativeContentBuilder> onComplete)
     {
         _original = original;
         _isEventStream = isEventStream;
@@ -150,13 +150,13 @@ internal sealed class AnthropicNativeTeeContent : HttpContent
     }
 
     protected override async Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken) =>
-        new AnthropicNativeTeeStream(
+        new AnthropicNativeStreamRecorder(
             await _original.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), _isEventStream, _onComplete);
 
     protected override Task<Stream> CreateContentReadStreamAsync() => CreateContentReadStreamAsync(CancellationToken.None);
 
     protected override Stream CreateContentReadStream(CancellationToken cancellationToken) =>
-        new AnthropicNativeTeeStream(_original.ReadAsStream(cancellationToken), _isEventStream, _onComplete);
+        new AnthropicNativeStreamRecorder(_original.ReadAsStream(cancellationToken), _isEventStream, _onComplete);
 
     protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
     {

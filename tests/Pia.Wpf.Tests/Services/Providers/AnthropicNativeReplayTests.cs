@@ -12,8 +12,8 @@ namespace Pia.Tests.Services.Providers;
 /// <summary>The direct provider replays the search pairs and citations the SDK adapter drops, by the server's rule.</summary>
 public class AnthropicNativeReplayTests
 {
-    private static readonly List<JsonObject> Recorded = AnthropicNativeAccumulator
-        .FromBuffered(AnthropicNativeAccumulatorTests.Fixture("anthropic-two-search-buffered.json")).Blocks.ToList();
+    private static readonly List<JsonObject> Recorded = AnthropicNativeContentBuilder
+        .FromBuffered(AnthropicNativeContentBuilderTests.Fixture("anthropic-two-search-buffered.json")).Blocks.ToList();
 
     private static string? Type(JsonNode? block) => (string?)block?["type"];
 
@@ -228,7 +228,7 @@ public class AnthropicNativeReplayTests
     {
         var ct = TestContext.Current.CancellationToken;
         var transport = new ScriptedTransport(
-            (AnthropicNativeAccumulatorTests.Fixture("anthropic-two-search-stream.sse"), "text/event-stream"),
+            (AnthropicNativeContentBuilderTests.Fixture("anthropic-two-search-stream.sse"), "text/event-stream"),
             ("""{"id":"msg_2","type":"message","role":"assistant","model":"claude-sonnet-5-5","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}""", "application/json"));
         var store = new AnthropicNativeStore();
         var http = new HttpClient(new AnthropicRequestHandler(false, false, null, false, store) { InnerHandler = transport });
@@ -245,7 +245,7 @@ public class AnthropicNativeReplayTests
         Assert.Equal(1, store.Count);
         var sent = (JsonArray)JsonNode.Parse(transport.Bodies[1])!["messages"]!;
         var assistant = (JsonArray)sent.Single(m => (string?)m!["role"] == "assistant")!["content"]!;
-        var streamed = AnthropicNativeAccumulatorTests.Accumulate(AnthropicNativeAccumulatorTests.Fixture("anthropic-two-search-stream.sse")).Blocks;
+        var streamed = AnthropicNativeContentBuilderTests.Accumulate(AnthropicNativeContentBuilderTests.Fixture("anthropic-two-search-stream.sse")).Blocks;
         Assert.Equal(Json(streamed), Json(assistant));
     }
 

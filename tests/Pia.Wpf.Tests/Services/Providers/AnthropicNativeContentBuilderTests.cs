@@ -6,14 +6,14 @@ using Xunit;
 
 namespace Pia.Tests.Services.Providers;
 
-public class AnthropicNativeAccumulatorTests
+public class AnthropicNativeContentBuilderTests
 {
     internal static string Fixture(string name) =>
         File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", name));
 
-    internal static AnthropicNativeAccumulator Accumulate(string sse)
+    internal static AnthropicNativeContentBuilder Accumulate(string sse)
     {
-        var accumulator = new AnthropicNativeAccumulator();
+        var accumulator = new AnthropicNativeContentBuilder();
         foreach (var line in sse.Split('\n'))
             accumulator.FeedLine(line.TrimEnd('\r'));
         return accumulator;
@@ -45,7 +45,7 @@ public class AnthropicNativeAccumulatorTests
     public void TheRecordedStream_MatchesTheShapeOfTheBufferedBody()
     {
         var streamed = Accumulate(Fixture("anthropic-two-search-stream.sse")).Blocks;
-        var buffered = AnthropicNativeAccumulator.FromBuffered(Fixture("anthropic-two-search-buffered.json"));
+        var buffered = AnthropicNativeContentBuilder.FromBuffered(Fixture("anthropic-two-search-buffered.json"));
 
         Assert.True(buffered.IsComplete);
         Assert.Equal(KeysOf(buffered.Blocks.Where(b => Type(b) != "text")),
@@ -134,8 +134,8 @@ public class AnthropicNativeAccumulatorTests
         var name = isEventStream ? "anthropic-two-search-stream.sse" : "anthropic-two-search-buffered.json";
         var bytes = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "TestData", name),
             TestContext.Current.CancellationToken);
-        var reports = new List<AnthropicNativeAccumulator>();
-        await using var tee = new AnthropicNativeTeeStream(new MemoryStream(bytes), isEventStream, reports.Add);
+        var reports = new List<AnthropicNativeContentBuilder>();
+        await using var tee = new AnthropicNativeStreamRecorder(new MemoryStream(bytes), isEventStream, reports.Add);
 
         var copy = new MemoryStream();
         var buffer = new byte[chunk];
@@ -152,8 +152,8 @@ public class AnthropicNativeAccumulatorTests
     public async Task TheTee_ReportsNothing_WhenTheReaderStopsMidStream()
     {
         var bytes = Encoding.UTF8.GetBytes(Fixture("anthropic-two-search-stream.sse"));
-        var reports = new List<AnthropicNativeAccumulator>();
-        await using (var tee = new AnthropicNativeTeeStream(new MemoryStream(bytes), true, reports.Add))
+        var reports = new List<AnthropicNativeContentBuilder>();
+        await using (var tee = new AnthropicNativeStreamRecorder(new MemoryStream(bytes), true, reports.Add))
         {
             var buffer = new byte[bytes.Length / 2];
             await tee.ReadExactlyAsync(buffer, TestContext.Current.CancellationToken);

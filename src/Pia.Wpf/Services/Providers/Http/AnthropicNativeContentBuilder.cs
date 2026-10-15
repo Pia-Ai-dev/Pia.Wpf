@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 namespace Pia.Services.Providers.Http;
 
 /// <summary>Rebuilds a Messages API response's content array from its SSE events, or reads it from a buffered body.</summary>
-internal sealed class AnthropicNativeAccumulator
+internal sealed class AnthropicNativeContentBuilder
 {
     private readonly SortedDictionary<int, JsonObject> _blocks = new();
     private readonly Dictionary<int, StringBuilder> _partialInput = new();
@@ -16,9 +16,9 @@ internal sealed class AnthropicNativeAccumulator
 
     public IReadOnlyList<JsonObject> Blocks => [.. _blocks.Values];
 
-    public static AnthropicNativeAccumulator FromBuffered(string body)
+    public static AnthropicNativeContentBuilder FromBuffered(string body)
     {
-        var accumulator = new AnthropicNativeAccumulator();
+        var accumulator = new AnthropicNativeContentBuilder();
         try
         {
             if (JsonNode.Parse(body) is JsonObject { } root && root["content"] is JsonArray content)

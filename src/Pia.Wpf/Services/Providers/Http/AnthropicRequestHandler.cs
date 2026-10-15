@@ -60,7 +60,7 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
     {
         var original = response.Content;
         var isEventStream = original.Headers.ContentType?.MediaType is "text/event-stream";
-        var tee = new AnthropicNativeTeeContent(original, isEventStream, accumulator =>
+        var tee = new AnthropicNativeResponseRecorder(original, isEventStream, accumulator =>
         {
             var blocks = accumulator.Blocks;
             if (store.TryAdd(blocks))
