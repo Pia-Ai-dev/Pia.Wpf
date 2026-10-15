@@ -1,6 +1,9 @@
 # Anthropic native block replay: keep server-side web search (and thinking) in the history Pia Cloud replays
 
-**Status:** Draft — first cut, to be elaborated and then implemented in separate sessions
+**Status:** Planned — G1 decided 2026-10-15: **Option A**, a server-side store keyed by the tool call id
+(server plan: Pia `feature/7836`, `docs/plans/2026-10-15-anthropic-native-block-replay.md`; client plan:
+[2026-10-15-anthropic-native-block-replay-client-plan.md](2026-10-15-anthropic-native-block-replay-client-plan.md)).
+§5.1 below describes Option B and is kept as its appendix; §5.3's client parse/serialize applies only to B.
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** Owner bug report 2026-10-15: Pia Cloud chats on `claude-opus-5-5` / `claude-sonnet-5-5`
@@ -121,7 +124,7 @@ each point against the live docs before anything is built on it.
 
 ## 5. Design sketch
 
-### 5.1 Wire contract (owned by the server; both sessions implement it)
+### 5.1 Option B — client-carried envelope (not chosen; see the server plan for Option A)
 
 One opaque value per assistant message, working name `pia_native`:
 

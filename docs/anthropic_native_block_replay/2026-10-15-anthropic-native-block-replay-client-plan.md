@@ -1,208 +1,164 @@
-# Anthropic native block replay — client plan (Pia.Wpf, steps C1–C7)
+# Anthropic native block replay — client plan (Pia.Wpf)
 
-**Status:** Planned — not started; wire contract pending from the server session; gates G1–G6 open
+**Status:** Planned — not started. G1 decided: **Option A** (server-side store keyed by the tool call id).
+Appendix B keeps the client-carried envelope plan in case A is ever reversed. G2a/G2b, G4, G5, G6 open.
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** [2026-10-15-anthropic-native-block-replay-plan.md](2026-10-15-anthropic-native-block-replay-plan.md)
-(overview, root cause, server half) and its
-[checklist](2026-10-15-anthropic-native-block-replay-checklist.md).
+(overview, root cause) and its [checklist](2026-10-15-anthropic-native-block-replay-checklist.md). Server
+plan: Pia `feature/7836`, `docs/plans/2026-10-15-anthropic-native-block-replay.md`.
 
 ## 0. Cold start — read this first
 
 | What | Where |
 |---|---|
 | Issue | https://github.com/Pia-Ai-dev/Pia.Wpf/issues/70 |
+| Server work item | Azure DevOps #7836 (Bug); branch `feature/7836` in `G:\Git\Pia`, worktree `G:\Git\Pia-7836` |
 | Branch | `feature/anthropic-native-replay` (from `origin/develop` 18e06e3d) |
 | Worktree | `G:\Git\Pia.Wpf-anthropic-native-replay` — never switch the main checkout `G:\Git\Pia.Wpf` |
-| Server half | `G:\Git\Pia`, steps S0–S9; owns the wire contract (§2) |
 | e2e | stack on port **18081** only; 8081 is the owner's real-data stack — never touch it |
 
-Gate state at writing (decisions are the owner's, relayed by the coordinator session):
+Gates (decisions are the owner's, relayed by the coordinator session PIACOORDINATOR):
 
-| Gate | State | Client recommendation |
+| Gate | State | Client position |
 |---|---|---|
-| G1 envelope size / store | open | — (server measures in S0); the client needs the number for the carry-over cap (§4.3) |
-| G2 across turns | open | **split it**: G2a cross-step inside an agent run → yes, bounded; G2b across chat user turns → defer (§5) |
-| G3 seal | open | — (server) |
-| G4 `pause_turn` | open | — (server); a distinct finish reason would need a C1 mapping line |
-| G5 direct Anthropic provider | open | **yes, same flaw** → third plan (§6) |
-| G6 thinking replay | open | — (server); no client change either way: the envelope is opaque |
+| G1 store vs. envelope | **decided: A** (one server instance per tenant in prod) | no wire change on the client |
+| G2a across steps of one agent run | open — server is defining the replay rule for calls without their text | recommend yes; under A it needs no client code (§5) |
+| G2b across chat user turns | open | recommend defer (§5) |
+| G3 seal | moot under A | — |
+| G4 `pause_turn` | open | server only |
+| G5 direct Anthropic provider | open | **same flaw** → recommend a third plan (§6) |
+| G6 thinking replay | open | server only |
 
-**What to do first:** check whether the coordinator has relayed the final wire contract (§2 lists the
-assumptions to replace). Then C1 → C2 → C4 test-first; they are independent of every open gate. C3
-follows; its carry-over rows wait on G2a.
+**What to do first:** C2 — prove or refute the duplicate-id defect on headless resume (§2.2) with a failing
+test; it is live on `develop` regardless of this feature. Then C1's pinning tests, then C3.
 
-## 1. What the client must do
+## 1. Option A in one paragraph
 
-Pia Cloud will send one opaque sealed string per assistant response. The client must keep it attached to
-the assistant message that produced it, through every list that message travels in, and send it back on
-that message. It never opens, logs or edits it. Any site that rewrites an assistant message's **text or
-tool calls** must drop it: the server replays the envelope's blocks *instead of* the message's content, so
-an envelope on an edited message would silently undo the edit.
+The server keeps each Anthropic response's native blocks (`server_tool_use`, `web_search_tool_result`,
+cited text) in an in-process, size-bounded store with a sliding TTL (default 60 min), keyed by the
+`toolu_…` id of the client tool calls in that response. When a later request's assistant message carries
+that id in `tool_calls`, the server replays the stored blocks instead of reconstructing the message. No wire
+field and no new client type; already-shipped clients benefit. A message without a tool call (the final
+answer) has no anchor; a miss (TTL, restart) falls back to today's reconstruction.
 
-Invariant for every C-step: **an envelope rides only on the unmodified assistant message it arrived on.**
+So the client's whole job is the **id guarantee**: every `tool_calls[].id` goes back verbatim on every path
+for as long as the loop lives. Rewritten arguments or results keep their id (§2.1), so the server must match
+on the id alone, and native content wins over the client's copy of those blocks.
 
-## 2. Wire contract — assumptions to confirm
+## 2. Tool call id guarantee (audit 2026-10-15, against `origin/develop`)
 
-Owned by the server (overview §5.1). Until the coordinator relays the final shape, the client plan assumes:
+### 2.1 Where an id is created, kept, rewritten or dropped
 
-1. Stream: one choiceless chunk `data: {"pia_native":"<sealed>"}` after the last content chunk, before
-   `data: [DONE]`. May arrive after the `finish_reason` chunk and after the usage chunk.
-2. Buffered: `choices[0].message.pia_native` (string).
-3. Request: the assistant message object carries `"pia_native": "<sealed>"` beside `content` / `tool_calls`.
-4. At most one envelope per response. Absent when reconstruction suffices.
-5. Envelope `tool_use` ids are the Anthropic-issued ids the client sees in `tool_calls`. (The client
-   synthesizes `pia_call_N` only for a provider that omits ids — `PiaCloudChatClient.cs:327` — which
-   Anthropic never does.)
+| Site | Id | Arguments / result |
+|---|---|---|
+| `PiaCloudChatClient.cs:208`, `:222` (stream), `:654` (buffered) | verbatim from the wire | — |
+| `PiaCloudChatClient.cs:327` | **synthesized** `pia_call_N`, only when the stream has no id (N per request, repeats across rounds) | — |
+| `PiaCloudChatClient.cs:343`, `:654` | **`""`** when the provider sends none | — |
+| `PiaCloudChatClient.SerializeMessages` (`:482`, `:505`) | verbatim | args re-serialized from the dictionary (bytes may differ; null → `"{}"`) |
+| `AiClientService.cs:701-704`, `:732` (malformed args), `:751` | verbatim | — |
+| `TokenizingAiClientService.cs:353` | verbatim | args detokenized on a copy only the handler sees; never sent |
+| `AgentToolCarryover.Capture` (`:45`) / `ClearOldResults` (`:121`) | verbatim | results capped at 4000 chars / replaced by a placeholder |
+| `AgentToolExchangeSerializer` (`:84`/`:114` → `:148`/`:152`) | saved and restored verbatim, no length limit | args over 1 MiB not saved → `{}`; a malformed call restores as `{}` |
+| `HeadlessTurnExecutor.cs:579` (approved-call replay) | stored id; a new Guid only if it is empty | args capped at 400 chars and tokenized (`SeedReplayedCall`, `:635-656`); new result |
+| `BackgroundAssistantTurnRunner.cs:712` → `HeadlessTurnExecutor.cs:1020` (parked rows) | verbatim | — |
+| `AgentTimelineScope.SanitizeCallId` (`IAgentTimelineService.cs:137`) | timeline only; never sent back | — |
+| `AgentContextCompactor` (`AiClientService.cs:285-290`, `:809`) | **dropped** — call and result vanish together | — |
+| Store caps 500 rows / 4 M chars (`AgentToolExchangeStore.cs:18`, `:21`) | **dropped** — rounds past the cap are not carried | — |
+| `AgentToolCarryover.WithoutToolExchanges` (`:66`) | **dropped** — tool-less turns | — |
+| Chat history across user turns (`ViewModels/Models/ChatSession.cs:1036`) | **never sent** — finished turns re-send text only | — |
 
-Asked of the server, see §8: a plain-text size hint next to the sealed value (for compaction), and whether
-a G4 "paused" finish reason reaches the client.
+Result: every Anthropic `toolu_` id goes back verbatim. Ids are invented only when the wire has none
+(`pia_call_N`, `""`, Guid) — never on an Anthropic row. Every drop removes call and result together, which
+is safe for the server's pair-integrity pass.
 
-## 3. Research results (2026-10-15, against `origin/develop`)
+### 2.2 Suspected defect: the same id twice after a headless resume
 
-### 3.1 Microsoft.Extensions.AI 10.9.0 keeps an unknown `AIContent`
+A run that parks for tool approval records the parking round as an ordinary call (`Kind` 1) with its
+`"Paused:"` result (`Kind` 2) via `BackgroundAssistantTurnRunner.cs:391-394`. On resume, `ReadCarriedAsync`
+(`AgentToolExchangeStore.cs:189-197`, `Kind IN (1, 2)`) puts that pair at the tail
+(`HeadlessTurnExecutor.cs:378`), and `ReplayApprovedParkedCallsAsync` (`:554-586`) seeds a second assistant
+message with the **same CallId**, capped args and the real result. The guard comment at
+`AgentToolExchangeStore.cs:191` covers re-reading the parked row, not this. No test covers it. If it holds,
+the request carries two `tool_use` blocks with one id — a 400 on the direct Anthropic provider today, and an
+ambiguous key for the server store. Found by reading only; C2 proves or refutes it.
 
-Scratch spike (not on the branch) plus decompiled `ChatResponseExtensions`:
+### 2.3 Longest gap between two requests that resend the same ids
 
-- `ToChatResponse()` starts a new message only when `AuthorName`, `MessageId` or `Role` is set on **both**
-  sides and differs. `PiaCloudChatClient` sets `Role = Assistant` on every update and never sets
-  `MessageId`, so the envelope update joins the one assistant message — also when it trails the
-  `FinishReason` and `UsageContent` updates. A different `Role` or non-empty `MessageId` on the envelope
-  update would split it into its own message.
-- `CoalesceContent` merges only built-in types; a custom subtype is never merged or dropped.
-- `AiClientService.cs:371` (`ToChatResponse`) and `:701-704` (`workingMessages.Add`) carry it into the next
-  round unchanged. `FunctionInvokingChatClient` keeps it too (not used by Pia).
-- **JSON:** `AIContent` is a closed `[JsonPolymorphic]` hierarchy. Serializing a `ChatMessage` holding the
-  subtype throws `NotSupportedException` unless `AIJsonUtilities.AddAIContentType<PiaNativeContent>` is
-  registered. Nothing in `src/` serializes `ChatMessage` today; C4 adds a test that keeps it that way or
-  registers the type.
-- Do **not** carry the envelope in `AdditionalProperties`: without a `MessageId` those land on
-  `response.AdditionalProperties`, not on the message.
+| Gap | Bound |
+|---|---|
+| Provider round-trip | `provider.TimeoutSeconds`, default 300 s (`AiClientService.cs:228`, `:261`) |
+| Tool dispatch inside the loop | **unbounded** — the handler gets no token (`AiClientService.cs:745`, remarks `:672-678`) |
+| Interactive approval card | **unbounded** — completion source with no timer (`ChatSession.cs:1465-1477`) |
+| MCP tool call | **unbounded** — `ct = default` (`McpPluginToolHandler.cs:151`, `:197`) |
+| Rounds per loop | ≤ 48 (`IAgentTurnExecutor.cs:18`) |
+| Steps of one run (earlier steps' ids re-sent) | wall clock 20 min agent / 45 min scheduled, max 120 min, checked between steps (`RunContext.cs:150`) |
+| Park for approval or input, then resume | **unbounded** — days; a parent run waits on its child the same way (`HeadlessRunLauncher.cs:268`) |
 
-### 3.2 Microsoft.Agents.AI 1.19.0 compaction
+No TTL covers every case. **Gap figure: within one step's loop, minutes (bounded by the user, not the
+code); across the steps of one run, up to 120 min.** A sliding 60-min TTL covers every in-step loop short of
+a user leaving an approval card open for an hour; it covers G2a only for runs under an hour between the
+first and last reuse of an id. Recommendation: **120 min** if the store's memory bound allows, so a
+maximum-length run stays covered; park → resume after hours is accepted as a miss.
 
-`AgentContextCompactor` (`ContextWindowCompactionStrategy(window, maxOut, 0.45, 0.70)`), run each round at
-`AiClientService.cs:288`:
-
-- An assistant message **without** tool calls survives as the same instance — envelope intact.
-- An assistant message **with** `FunctionCallContent` is grouped with its results; tool-result eviction
-  replaces the whole group with a new text-only summary. Envelope and `tool_use` vanish together, so the
-  server's id check never sees a mismatch. Acceptable.
-- **Size estimate:** `CompactionMessageIndex.ComputeContentByteCount` is a type switch; an unknown subtype
-  counts **0 bytes**. Replayed search results are input tokens the budget does not see → C3 adds a charge.
-
-## 4. Steps
+## 3. Steps
 
 Effort/Value scales as in the checklist. Tests live in `tests/Pia.Wpf.Tests/Services/` unless named.
 
-### C1 — Parse the envelope · *Deps:* S4 contract · XS · Enabler
+### C1 — Pin the id guarantee · *Deps:* — · S · High
 
-- New `src/Pia.Wpf/Models/PiaNativeContent.cs`: `public sealed class PiaNativeContent(string sealedValue) :
-  AIContent` with `SealedValue`; `ToString()` returns a length-only marker so a stray log line cannot leak
-  it. No `<summary>` beyond one line (CLAUDE.md).
-- `PiaCloudChatClient.GetStreamingResponseAsync`: read `json["pia_native"]` after the `error` check
-  (`:162-163`) and before the `choices` early-continue (`:165-166`). Buffer it like `pendingUsage`
-  (`:132`, `:147-148`) and yield it **once after the loop**, next to the usage flush (`:272-279`), as
-  `new ChatResponseUpdate { Role = ChatRole.Assistant, Contents = [new PiaNativeContent(v)] }` — no
-  `MessageId`. A second envelope in one stream replaces the first and logs a warning (count only).
-- `ParseMessageObject` (`:632-664`): read `message["pia_native"]`, append `PiaNativeContent` last.
-- Logging: never the value; `SensitiveDebug` of its length at most.
-- Tests — new `PiaCloudChatClientNativeContentTests.cs`, using the stub-handler pattern of
-  `PiaCloudChatClientReasoningTests.cs`: stream with envelope after finish + usage → exactly one assistant
-  message, envelope last, usage intact; stream without envelope → no `PiaNativeContent`; envelope with
-  tool calls → same message as the `FunctionCallContent`s; buffered response with `message.pia_native`;
-  malformed (non-string) `pia_native` ignored, no throw.
+Tests only; no production change expected. Each fails if a path renames, regenerates or drops an id it
+should keep.
 
-### C2 — Send it back · *Deps:* C1 · XS · High
+- `PiaCloudChatClientToolCallTests.cs`: a `toolu_…` id from stream and from buffered JSON survives
+  `ToChatResponse()` and `SerializeMessages` byte-for-byte in round 2's request.
+- New `AiClientServiceToolCallIdTests.cs` on the fake-client pattern of `AiClientServiceToolLoopArmTests.cs`:
+  a three-round loop with parallel calls — every request repeats every earlier id in order; again with
+  tokenization on (`TokenizedToolPipelineTests.cs` pattern) and with in-step compaction
+  (`AiClientServiceInStepCompactionTests.cs` pattern: an evicted pair leaves no orphan id).
+- `AgentToolCarryoverTests.cs`: `Capture` and `ClearOldResults` keep ids.
+- `AgentToolExchangeSerializerTests.cs` / `AgentToolExchangeStoreTests.cs`: save → restore keeps ids and the
+  parallel-call grouping; an over-cap args row keeps its id.
+- `HeadlessTurnExecutorTests.cs`: a resumed run's first request carries the earlier steps' ids verbatim.
 
-- `SerializeMessages` (`:455-559`): in the assistant branch, `case PiaNativeContent n:` remembers the last
-  one; after `content` / `tool_calls` are set (`:542-553`), write `msgObj["pia_native"] = n.SealedValue`.
-  User, system and tool messages never carry it, even if one slipped in.
-- Tests (same file): serialize round-trip — assistant message with text + calls + envelope → JSON has
-  `pia_native` beside `content` / `tool_calls`; no envelope → no key; two envelopes → last wins.
-- Loop test, new `AiClientServiceNativeContentTests.cs` on the fake-client pattern of
-  `AiClientServiceToolLoopArmTests.cs`: a two-round tool loop where round 1's stream carries an envelope
-  → round 2's request JSON (captured by the stub handler) holds it on the round-1 assistant message. This
-  is the test that proves the reported bug's within-step loop is fixed end to end on the client.
+### C2 — Duplicate id after a headless resume · *Deps:* — · S · High
 
-### C3 — Hand-built and rewriting paths · *Deps:* C2, G2a for rows marked † · M · High
+- Failing test first, in `UnattendedApprovalParkTests.cs` or `HeadlessTurnExecutorTests.cs`: park a run on
+  an approval, approve, resume; assert no request holds two `FunctionCallContent`s with one `CallId`.
+- If it fails: drop the carried `"Paused:"` pair for every call `ReplayApprovedParkedCallsAsync` re-seeds
+  (filter `carried.Trailing` by the replayed ids before `HeadlessTurnExecutor.cs:378` adds it), so the seeded
+  call with its real result is the only copy. Withheld calls (`Kind` 4) the same way.
+- If it passes: the test stays as the guard; record the reason in its name.
 
-Each site carries the envelope or drops it on purpose; each gets a test pinning which.
+### C3 — Measure what the client cannot see · *Deps:* — · XS · Med
 
-| Site | Today | Plan |
-|---|---|---|
-| `TokenizingAiClientService.cs:136-141` (buffered detokenize) | `Contents.Clear()` + one `TextContent` — drops every non-text content | Rebuild text only, keep non-text contents, **drop** `PiaNativeContent` (text changed). No tool loop follows this path, so dropping costs nothing; the fix is for `FunctionCallContent`'s sake and the invariant |
-| `TokenizingAiClientService.TokenizeMessages` (`:277-294`) | Keeps non-text, re-tokenizes text | **Keep.** The envelope holds the model's own tokenized output and `workingMessages` (inside the inner service) holds tokenized text, so the two agree. Test: tokenized request still carries it |
-| `AgentContextCompactor.CompactAsync` (`:84`) | Library counts the envelope as 0 bytes | Charge envelope size against the budget the way `ImageTokenCharge` (`:72`) charges images: a per-envelope estimate from the size hint (§8) or `SealedValue.Length` as a fallback bound. Test in `AgentContextCompactorTests.cs`: an over-budget list caused only by envelopes compacts |
-| `AgentToolCarryover.Capture` (`:34-57`) † | Keeps `FunctionCallContent` / `FunctionResultContent` only | **G2a yes:** also keep `PiaNativeContent` on the message that holds the calls, capped (drop when `SealedValue.Length` > a cap set from G1's measurement). **G2a no:** drop, as today. Tests in `AgentToolCarryoverTests.cs` |
-| `AgentToolCarryover.ClearOldResults` (`:79-127`) | Rewrites results only; keeps call messages | Keep — the call message is copied as-is. Test that it survives |
-| `AgentToolCarryover.WithoutToolExchanges` (`:66-74`) | Drops tool-content messages | Envelope goes with them — correct for a tool-less turn |
-| `AgentToolExchangeSerializer.ToRows` (`:29`) / `AgentToolExchangeStore` † | Persists call/result rows only (`MaxRowChars` 1 MiB) | **G2a yes:** a new exchange `Kind` (append-only enum `AgentToolExchangeKind`, `Models/AgentToolExchange.cs:7`) for the envelope row, anchored to the round; idempotent column add per `SqliteContext.cs:893-942` only if `ResultText` cannot hold it. Counts against `MaxCharsPerRun` (4 M). Read back in `HeadlessTurnExecutor.ReadCarriedAsync` (`:386-438`). **G2a no:** nothing |
-| `HeadlessTurnExecutor.SeedReplayedCall` (`:637`) | Synthetic call + result | **Drop on purpose** — a re-run replay has no native response. Comment-free; the test says it |
-| `HeadlessTurnExecutor` step reply (`:938-941`) | Adds carried exchanges, then `exchange.Visible` as a text-only assistant message | `Visible` stays text-only. Under G2a the envelope rides on the carried call message (row above), not here |
-| `HeadlessTurnExecutor` history rebuild (`:337-361`) / `BackgroundAssistantTurnRunner` (`:235`, `:767`) | Rebuild from `SyncAssistantChatMessage` text | No change unless G2b opens (C5) |
-| `BackgroundAssistantTurnRunner` round capture (`:391-394`) | `toolExchanges.AddRange(round.Messages)` + `RecordAsync` | Inherits whatever `Capture` returns; one test that the envelope reaches `RecordAsync` under G2a |
-| `AdvancedCreationService.cs:109` | Text-only assistant message | Not a tool loop; no change |
+Replayed search results are input the client never sees, so `AgentContextCompactor` under-counts the real
+request (it also counts nothing it does not know). No client estimate is possible. One `LogInformation`
+per round, counts only, comparing the compactor's estimate with the provider-reported input tokens, so S0
+and C7 can measure the gap before anyone builds a correction. If it overflows windows in practice, the
+server reports the replayed size rather than the client guessing.
 
-Why G2a matters (§5): the reported agent step ran inside one step's tool loop, which C2 fixes. But a step
-boundary recreates the bug once per step: `:938` carries the calls without their search evidence and
-`:941` adds prose that cites it.
+### C4 — (folded into C1 under A)
 
-Known cost under G2a: the envelope also holds the round's interim prose, which `Capture` drops today on
-purpose ("would read as the model having said it twice"). Replaying the envelope brings that prose back
-next to `Visible`. Accepted unless the server can replay the server-tool pairs without the text — open
-question §8.
+The chat-client tolerance step exists only under B; see B-C4.
 
-### C4 — Other chat clients tolerate it · *Deps:* C1; must land before C3's † rows · XS · Enabler
-
-Under G2a this is a hard prerequisite, not a nicety: an agent run resolves provider and persona **per
-step** (`HeadlessTurnExecutor.cs:915-920`, `:763`), so step N's carried call message — envelope included —
-goes into step N+1's request on whatever `IChatClient` that step resolved, including the direct OpenAI,
-Mistral and Anthropic adapters. Without G2a it reaches another client only through a chat whose provider
-changes between turns (G2b). A different Pia Cloud *model* at step N+1 is the server's concern: its model
-check (overview §5.2, condition b) falls back to reconstruction.
-
-- New `NativeContentForeignClientTests.cs`: for each handler in `src/Pia.Wpf/Services/Providers/`
-  (OpenAI, Azure OpenAI, OpenAI-compatible, OpenRouter, vLLM, Mistral, Ollama, Anthropic), build the
-  `IChatClient` against a capturing `HttpMessageHandler`, send a history holding a `PiaNativeContent` →
-  no throw, and the request body contains neither the sealed value nor a `pia_native` key.
-- JSON: nothing on `develop` serializes a `ChatMessage`, so no registration now. If a later change adds
-  one (cache, OTel with sensitive data, persistence), it registers
-  `AIJsonUtilities.AddAIContentType<PiaNativeContent>` on its options; a test there round-trips the type.
-
-### C5 — Across chat user turns (G2b) · *Deps:* G2b, C3 · M · Med
-
-Planned only to price it; recommended **deferred** (§5). If G2b opens:
-
-- `AssistantMessage` gains an in-memory-plus-persisted `NativeEnvelope` string; `BuildChatMessage`
-  (`Models/AssistantMessage.cs:386-410`) appends `PiaNativeContent` when set.
-- SQLite: `AssistantChatMessages.NativeEnvelope TEXT` via the idempotent `PRAGMA table_info` / `ALTER`
-  pattern (`Infrastructure/SqliteContext.cs:893-942`) and in the `CREATE TABLE` (`:430-447`); write path
-  `AssistantChatService.cs:257-285`, read path `:1106-1150`.
-- Mapping: `ViewModels/AssistantMessageMapper.cs:14-52`; DTO `src/Pia.Shared/Models/SyncAssistantChat.cs`
-  new property. The server needs no change — its `AssistantChatDto` round-trips unknown fields through
-  `[JsonExtensionData]`, and under E2EE the whole chat is one AES-GCM blob (`SyncMapper.cs:1099-1146`).
-  The server repo sees the DTO through its `lib/Pia.Wpf` submodule, so a submodule bump follows.
-- Rebuild sites: `ViewModels/Models/ChatSession.cs:414-443` (and `:1045`),
-  `ViewModels/AssistantViewModel.cs:2700`, `HeadlessTurnExecutor.cs:337-361`,
-  `BackgroundAssistantTurnRunner.cs:235` / `:767`.
-- Edit / regenerate: an edited or regenerated assistant message drops its envelope (invariant §1).
-- Size: every save re-upserts the whole chat (`AssistantChatSyncService.cs:285-312`) against the server's
-  5 MB `MaxBodyBytes` with no chunking; +33 % under E2EE base64. Needs a per-chat envelope budget that
-  evicts the oldest envelopes first.
+## 4. Release text and gate
 
 ### C6 — Release-note text · *Deps:* C2 · XS · Med
 
 `RELEASE.md` is edited only on `release/*` / `hotfix/*` (develop's `.claude/skills/release-flow/SKILL.md`),
-so this step drafts the text here and the release cut applies it:
+so this step drafts the text here and the release cut applies it. Under A the search fix ships with the
+server, so the client note covers C2 only — and only if C2 found the defect:
 
-> - Pia Cloud: with Claude and native web search, answers no longer retract or
->   repeat searches they already made after a tool call. Pia now keeps
->   Claude's search results in the conversation it sends back.
+> - Agent runs resumed after a tool approval no longer send the approved
+>   call twice, which some providers rejected.
 
-Adjust once G2a/G2b are decided (add "across agent-run steps" if G2a ships).
+The search fix belongs in the server's release notes; if the client release goes out together, add:
 
-### C7 — Client gate · *Deps:* C1–C4, C6, S9 · XS · High
+> - With Claude and native web search on Pia Cloud, answers no longer retract
+>   or repeat searches they already made after a tool call.
+
+### C7 — Client gate · *Deps:* C1–C3, C6, S9 · XS · High
 
 - `dotnet build -t:Rebuild -v:n` in Debug and Release: `0 Warning(s)`, `0 Error(s)`.
 - `tests/Pia.Wpf.Tests/bin/Debug/net10.0-windows10.0.17763.0/Pia.Wpf.Tests.exe > test.log 2>&1` →
@@ -214,17 +170,18 @@ Adjust once G2a/G2b are decided (add "across agent-run steps" if G2a ships).
 
 ## 5. G2 — recommendation: split it
 
-**G2a — across steps of one agent run: recommend yes, bounded.** Client-only: `AgentToolCarryover.Capture`
-plus one exchange row kind; the data is local, never synced (`SqliteContext.cs:604`), no E2EE touch, no
-server change. It closes the bug's shape at step boundaries (§4 C3). Cost: replayed search results are
-re-billed per step (prompt cache softens it), and the cap needs G1's measured size. Under "no", C3's †
-rows drop the envelope and the step boundary keeps today's behaviour.
+**G2a — across steps of one agent run: recommend yes.** Under A it needs no client code:
+`AgentToolCarryover.Capture` already carries each round's calls and results with their ids into the next
+step, so a store hit replays the native blocks at the step boundary too, while the TTL holds (§2.3). Open on
+the server: `Capture` drops a round's text on purpose, so a carried message has `tool_calls` but no
+`content`; replaying the stored text there brings back interim prose next to the step's visible reply. The
+server is defining that rule; the client needs nothing either way. Under "no", the step boundary keeps
+today's behaviour, and the reported 36-minute loop is still fixed — it ran inside one step.
 
-**G2b — across chat user turns: recommend defer.** Cheap locally (one column), free on the server DTO,
-but: the whole chat re-uploads on every save against a 5 MB per-chat cap with no chunking; the envelope
-is sealed with a server key that rotates, so an envelope replayed days later often falls back anyway;
-and every later turn re-bills the search results. Under "yes", C5 as written, plus the per-chat envelope
-budget.
+**G2b — across chat user turns: recommend defer.** Under A there is no anchor: a finished turn is re-sent as
+text only (`ViewModels/Models/ChatSession.cs:1036`, `Models/AssistantMessage.cs:386-410`), so no earlier
+turn's ids reach the server, and the final answer never has one. Making it work means persisting and
+re-sending each turn's tool exchanges in chat history — a new step, not planned here.
 
 ## 6. G5 — recommendation: yes, a third plan
 
@@ -259,15 +216,146 @@ on every turn and the provider is never marked capable. Belongs in the third pla
 
 ## 7. Not in this plan
 
-- Source chips from `web_citations` — cheap once C1 reads choiceless chunks.
-- Rendering anything from the envelope; it stays opaque.
+- Source chips from `web_citations` — a separate small client change.
+- Id-less providers: `pia_call_N` repeats across rounds of one loop (`PiaCloudChatClient.cs:327`). Harmless
+  on Anthropic rows; worth a look if a server-side store ever serves an id-less provider.
 
 ## 8. Open questions (to the coordinator)
 
-1. Final wire contract — field name, chunk position, buffered location (§2).
-2. A plain size hint beside the sealed value (e.g. `pia_native_tokens` or raw byte count) for the
-   compactor charge — or the client uses `SealedValue.Length` as a bound.
-3. G2a interim-prose duplication: can the server replay server-tool pairs and `tool_use` without the
-   envelope's text blocks when asked, or is the duplication accepted?
-4. G4: if the server hands the client a distinct finish reason, its name, so C1 maps it.
-5. Who provisions an Anthropic row with native WEB on for the 18081 e2e stack (C7).
+1. TTL: 120 min instead of 60 (§2.3)?
+2. Does the server accept the same id twice in one request with different arguments and results, in case
+   C2 cannot remove every duplicate — or does the pair-integrity pass dedupe?
+3. G2a: the replay rule for a message with `tool_calls` but no `content` (§5).
+4. Who provisions an Anthropic row with native WEB on for the 18081 e2e stack (C7).
+
+## Appendix B — client steps if Option B is ever chosen
+
+Not current. Kept because G1 could be reopened (e.g. multi-instance deployments).
+
+### B.1 Contract v1 (as frozen by the server for Option B)
+
+- Field `pia_native`, an opaque string; never parsed, logged or modified by the client.
+- Stream: one extra SSE line per upstream response, after the finish chunk, before `data: [DONE]`, with
+  `"choices":[]` and `"pia_native":"<sealed>"`; never an `error` key. Accepted anywhere before `[DONE]`,
+  including after a `knowledge_citations` chunk. Last one wins; at most one per assistant message.
+- Buffered: `choices[0].message.pia_native` (string).
+- Request: on the **assistant** message object, beside `content` / `tool_calls`, echoed verbatim. Nothing
+  when the client rewrites that message (compaction, carry-over rebuild, edit). Never on another role.
+- Emitted only for a `server_tool_use` (also a pending one), a `web_search_tool_result` or cited text. Over
+  the server's cap → none. Unseal failure → silent fallback, never a 400.
+- Estimated ~130–330 KB per 5-search round; a carried loop re-uploads every earlier envelope and nears
+  `KestrelMaxRequestBodyMb` = 5 → 413, hence B-C2's newest-N rule.
+
+### B.2 Research results (2026-10-15, against `origin/develop`)
+
+#### B.2.1 Microsoft.Extensions.AI 10.9.0 keeps an unknown `AIContent`
+
+Scratch spike (not on the branch) plus decompiled `ChatResponseExtensions`:
+
+- `ToChatResponse()` starts a new message only when `AuthorName`, `MessageId` or `Role` is set on **both**
+  sides and differs. `PiaCloudChatClient` sets `Role = Assistant` on every update and never sets
+  `MessageId`, so the envelope update joins the one assistant message — also when it trails the
+  `FinishReason` and `UsageContent` updates. A different `Role` or non-empty `MessageId` on the envelope
+  update would split it into its own message.
+- `CoalesceContent` merges only built-in types; a custom subtype is never merged or dropped.
+- `AiClientService.cs:371` (`ToChatResponse`) and `:701-704` (`workingMessages.Add`) carry it into the next
+  round unchanged. `FunctionInvokingChatClient` keeps it too (not used by Pia).
+- **JSON:** `AIContent` is a closed `[JsonPolymorphic]` hierarchy. Serializing a `ChatMessage` holding the
+  subtype throws `NotSupportedException` unless `AIJsonUtilities.AddAIContentType<PiaNativeContent>` is
+  registered. Nothing in `src/` serializes `ChatMessage` today; B-C4 adds a test that keeps it that way or
+  registers the type.
+- Do **not** carry the envelope in `AdditionalProperties`: without a `MessageId` those land on
+  `response.AdditionalProperties`, not on the message.
+
+#### B.2.2 Microsoft.Agents.AI 1.19.0 compaction
+
+`AgentContextCompactor` (`ContextWindowCompactionStrategy(window, maxOut, 0.45, 0.70)`), run each round at
+`AiClientService.cs:288`:
+
+- An assistant message **without** tool calls survives as the same instance — envelope intact.
+- An assistant message **with** `FunctionCallContent` is grouped with its results; tool-result eviction
+  replaces the whole group with a new text-only summary. Envelope and `tool_use` vanish together, so the
+  server's id check never sees a mismatch. Acceptable.
+- **Size estimate:** `CompactionMessageIndex.ComputeContentByteCount` is a type switch; an unknown subtype
+  counts **0 bytes**. Replayed search results are input tokens the budget does not see → B-C3 adds a charge.
+
+### B.3 Steps
+
+### B-C1 — Parse the envelope · *Deps:* contract v1 · XS · Enabler
+
+- New `src/Pia.Wpf/Models/PiaNativeContent.cs`: `public sealed class PiaNativeContent(string sealedValue) :
+  AIContent` with `SealedValue`; `ToString()` returns a length-only marker so a stray log line cannot leak
+  it. No `<summary>` beyond one line (CLAUDE.md).
+- `PiaCloudChatClient.GetStreamingResponseAsync`: read `json["pia_native"]` after the `error` check
+  (`:162-163`) and before the `choices` early-continue (`:165-166`). Buffer it like `pendingUsage`
+  (`:132`, `:147-148`) and yield it **once after the loop**, next to the usage flush (`:272-279`), as
+  `new ChatResponseUpdate { Role = ChatRole.Assistant, Contents = [new PiaNativeContent(v)] }` — no
+  `MessageId`. A second envelope in one stream replaces the first and logs a warning (count only).
+- `ParseMessageObject` (`:632-664`): read `message["pia_native"]`, append `PiaNativeContent` last.
+- Logging: never the value; `SensitiveDebug` of its length at most.
+- Tests — new `PiaCloudChatClientNativeContentTests.cs`, using the stub-handler pattern of
+  `PiaCloudChatClientReasoningTests.cs`: stream with envelope after finish + usage → exactly one assistant
+  message, envelope last, usage intact; stream without envelope → no `PiaNativeContent`; envelope with
+  tool calls → same message as the `FunctionCallContent`s; buffered response with `message.pia_native`;
+  malformed (non-string) `pia_native` ignored, no throw.
+
+### B-C2 — Send it back · *Deps:* B-C1 · XS · High
+
+- `SerializeMessages` (`:455-559`): in the assistant branch, `case PiaNativeContent n:` remembers the last
+  one; after `content` / `tool_calls` are set (`:542-553`), write `msgObj["pia_native"] = n.SealedValue`.
+  User, system and tool messages never carry it, even if one slipped in.
+- Request-size bound: only the newest N envelopes of one request are written (N from S0's measured size,
+  N × size well under 5 MB; start at 4); older ones are omitted, which is the server's fallback. Test: a
+  10-round history writes exactly N, newest last.
+- Tests (same file): serialize round-trip — assistant message with text + calls + envelope → JSON has
+  `pia_native` beside `content` / `tool_calls`; no envelope → no key; two envelopes → last wins.
+- Loop test, new `AiClientServiceNativeContentTests.cs` on the fake-client pattern of
+  `AiClientServiceToolLoopArmTests.cs`: a two-round tool loop where round 1's stream carries an envelope
+  → round 2's request JSON (captured by the stub handler) holds it on the round-1 assistant message. This
+  is the test that proves the reported bug's within-step loop is fixed end to end on the client.
+
+### B-C3 — Hand-built and rewriting paths · *Deps:* B-C2, G2a for rows marked † · M · High
+
+Each site carries the envelope or drops it on purpose; each gets a test pinning which.
+
+| Site | Today | Plan |
+|---|---|---|
+| `TokenizingAiClientService.cs:136-141` (buffered detokenize) | `Contents.Clear()` + one `TextContent` — drops every non-text content | Rebuild text only, keep non-text contents, **drop** `PiaNativeContent` (text changed). No tool loop follows this path, so dropping costs nothing; the fix is for `FunctionCallContent`'s sake and the invariant |
+| `TokenizingAiClientService.TokenizeMessages` (`:277-294`) | Keeps non-text, re-tokenizes text | **Keep.** The envelope holds the model's own tokenized output and `workingMessages` (inside the inner service) holds tokenized text, so the two agree. Test: tokenized request still carries it |
+| `AgentContextCompactor.CompactAsync` (`:84`) | Library counts the envelope as 0 bytes | Charge envelope size against the budget the way `ImageTokenCharge` (`:72`) charges images: a per-envelope estimate from the size hint (§8) or `SealedValue.Length` as a fallback bound. Test in `AgentContextCompactorTests.cs`: an over-budget list caused only by envelopes compacts |
+| `AgentToolCarryover.Capture` (`:34-57`) † | Keeps `FunctionCallContent` / `FunctionResultContent` only | **G2a yes:** also keep `PiaNativeContent` on the message that holds the calls, capped (drop when `SealedValue.Length` > a cap set from G1's measurement). **G2a no:** drop, as today. Tests in `AgentToolCarryoverTests.cs` |
+| `AgentToolCarryover.ClearOldResults` (`:79-127`) | Rewrites results only; keeps call messages | Keep — the call message is copied as-is. Test that it survives |
+| `AgentToolCarryover.WithoutToolExchanges` (`:66-74`) | Drops tool-content messages | Envelope goes with them — correct for a tool-less turn |
+| `AgentToolExchangeSerializer.ToRows` (`:29`) / `AgentToolExchangeStore` † | Persists call/result rows only (`MaxRowChars` 1 MiB) | **G2a yes:** a new exchange `Kind` (append-only enum `AgentToolExchangeKind`, `Models/AgentToolExchange.cs:7`) for the envelope row, anchored to the round; idempotent column add per `SqliteContext.cs:893-942` only if `ResultText` cannot hold it. Counts against `MaxCharsPerRun` (4 M). Read back in `HeadlessTurnExecutor.ReadCarriedAsync` (`:386-438`). **G2a no:** nothing |
+| `HeadlessTurnExecutor.SeedReplayedCall` (`:637`) | Synthetic call + result | **Drop on purpose** — a re-run replay has no native response. Comment-free; the test says it |
+| `HeadlessTurnExecutor` step reply (`:938-941`) | Adds carried exchanges, then `exchange.Visible` as a text-only assistant message | `Visible` stays text-only. Under G2a the envelope rides on the carried call message (row above), not here |
+| `HeadlessTurnExecutor` history rebuild (`:337-361`) / `BackgroundAssistantTurnRunner` (`:235`, `:767`) | Rebuild from `SyncAssistantChatMessage` text | No change unless G2b opens (C5) |
+| `BackgroundAssistantTurnRunner` round capture (`:391-394`) | `toolExchanges.AddRange(round.Messages)` + `RecordAsync` | Inherits whatever `Capture` returns; one test that the envelope reaches `RecordAsync` under G2a |
+| `AdvancedCreationService.cs:109` | Text-only assistant message | Not a tool loop; no change |
+
+Why G2a matters (§5): the reported agent step ran inside one step's tool loop, which C2 fixes. But a step
+boundary recreates the bug once per step: `:938` carries the calls without their search evidence and
+`:941` adds prose that cites it.
+
+Known cost under G2a: the envelope also holds the round's interim prose, which `Capture` drops today on
+purpose ("would read as the model having said it twice"). Replaying the envelope brings that prose back
+next to `Visible`. Accepted unless the server can replay the server-tool pairs without the text — open
+question §8.
+
+### B-C4 — Other chat clients tolerate it · *Deps:* B-C1; must land before B-C3's † rows · XS · Enabler
+
+Under G2a this is a hard prerequisite, not a nicety: an agent run resolves provider and persona **per
+step** (`HeadlessTurnExecutor.cs:915-920`, `:763`), so step N's carried call message — envelope included —
+goes into step N+1's request on whatever `IChatClient` that step resolved, including the direct OpenAI,
+Mistral and Anthropic adapters. Without G2a it reaches another client only through a chat whose provider
+changes between turns (G2b). A different Pia Cloud *model* at step N+1 is the server's concern: its model
+check (overview §5.2, condition b) falls back to reconstruction.
+
+- New `NativeContentForeignClientTests.cs`: for each handler in `src/Pia.Wpf/Services/Providers/`
+  (OpenAI, Azure OpenAI, OpenAI-compatible, OpenRouter, vLLM, Mistral, Ollama, Anthropic), build the
+  `IChatClient` against a capturing `HttpMessageHandler`, send a history holding a `PiaNativeContent` →
+  no throw, and the request body contains neither the sealed value nor a `pia_native` key.
+- JSON: nothing on `develop` serializes a `ChatMessage`, so no registration now. If a later change adds
+  one (cache, OTel with sensitive data, persistence), it registers
+  `AIJsonUtilities.AddAIContentType<PiaNativeContent>` on its options; a test there round-trips the type.
+
