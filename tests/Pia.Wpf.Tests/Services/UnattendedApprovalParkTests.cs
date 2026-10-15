@@ -540,6 +540,37 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>The parking round is carried with its <c>Paused:</c> result, and the replay seeds the same call again —
+    /// two <c>tool_use</c> blocks under one id are a 400 on Anthropic.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AResumedRun_SendsEachReplayedCallIdOnce_WithItsRealResult(bool withheldSibling)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, secondToolName: withheldSibling ? "write_file" : null,
+            firstPath: "first.md", secondPath: "second.md", recordRounds: true);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.Contains(probe.Results, r => r?.StartsWith("Paused:", StringComparison.Ordinal) == true);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var contents = probe.Dispatches[1].Request.SelectMany(m => m.Contents).ToList();
+        var callIds = contents.OfType<FunctionCallContent>().Select(c => c.CallId).ToList();
+        var resultIds = contents.OfType<FunctionResultContent>().Select(r => r.CallId).ToList();
+        Assert.Equal(withheldSibling ? 2 : 1, callIds.Count);
+        Assert.Equal(callIds.Distinct(), callIds);
+        Assert.Equal(callIds, resultIds);
+        Assert.All(contents.OfType<FunctionResultContent>(), r => Assert.Equal(ExecuteResult, r.Result as string));
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>The exact loss from the reported run: the run parked on <c>write_file</c> and the
     /// <c>create_source</c> holding the document body was discarded with it. One Continue grants ONE tool, so
     /// that call is not replayed here — but it survives whole, and a later park on it is what replays it.</summary>
@@ -1491,6 +1522,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     /// <param name="tokenMap">Omitted ⇒ a pass-through map, i.e. tokenization that changes nothing.</param>
     /// <param name="dispatchScript">One entry per provider dispatch, so a two-park scenario is expressible; a
     /// dispatch past its end makes no call. Omitted ⇒ every dispatch drives the same two calls as before.</param>
+    /// <param name="recordRounds">The stream also yields the round's <see cref="ToolRoundExchange"/>, as the real
+    /// loop does, so the parking round's Call/Result rows are persisted and carried into the resume.</param>
     private (HeadlessRunLauncher Launcher, OneStepPlanner Planner) Build(
         ToolProbe probe, bool routed = true, bool isMcpTool = false, AppSettings? appSettings = null,
         string? secondToolName = null, bool faultAfterFirstCall = false,
@@ -1499,7 +1532,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         string? firstPath = null, string? secondPath = null, string? firstContent = null,
         bool faultOnExecute = false, string executeResult = ExecuteResult, ITokenMapService? tokenMap = null,
         IReadOnlyList<IReadOnlyList<ScriptedCall>>? dispatchScript = null,
-        string? pluginName = null, string description = "desc", string? warning = null)
+        string? pluginName = null, string description = "desc", string? warning = null,
+        bool recordRounds = false)
     {
         List<ScriptedCall> everyDispatch = [new(probe.ToolName, firstPath, firstContent)];
         if (secondToolName is not null)
@@ -1525,7 +1559,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 var calls = dispatchScript is null
                     ? everyDispatch
                     : dispatchScript.ElementAtOrDefault(probe.Dispatches.Count - 1) ?? [];
-                return DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe, calls, faultAfterFirstCall);
+                return DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe, calls, faultAfterFirstCall,
+                    recordRounds);
             });
 
         var plugins = Substitute.For<IPluginService>();
@@ -1625,23 +1660,27 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
         ToolCallHandler? handler, ToolProbe probe, IReadOnlyList<ScriptedCall> calls,
-        bool faultAfterFirstCall = false)
+        bool faultAfterFirstCall = false, bool recordRounds = false)
     {
         await Task.Yield();
         if (handler is not null)
         {
             // ONE signal for the round, as the real loop builds it: every call below is the same round.
             var stop = new ToolLoopStopSignal();
+            var callContents = new List<AIContent>();
+            var resultMessages = new List<ChatMessage>();
             for (var i = 0; i < calls.Count; i++)
             {
                 // Every call after the first is a model that keeps going after being told the run is parking.
                 // Round-tripped through the SAME handler, because that is the only way the store's
                 // first-wins rule is observable, and unconditional on the stop: the production loop answers
                 // the round's remaining calls too.
-                probe.Record(await handler(
-                    new FunctionCallContent($"call-{i + 1}", calls[i].ToolName,
-                        PathArgs(calls[i].Path, calls[i].Content)),
-                    new ToolDispatchContext(1, stop)));
+                var call = new FunctionCallContent($"call-{i + 1}", calls[i].ToolName,
+                    PathArgs(calls[i].Path, calls[i].Content));
+                var result = await handler(call, new ToolDispatchContext(1, stop));
+                probe.Record(result);
+                callContents.Add(call);
+                resultMessages.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent(call.CallId, result)]));
 
                 if (i > 0) continue;
 
@@ -1651,6 +1690,12 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 // transport error, a timeout and a truncation all surface.
                 if (faultAfterFirstCall)
                     throw new InvalidOperationException("provider faulted after the park");
+            }
+
+            if (recordRounds && callContents.Count > 0)
+            {
+                yield return new ToolRoundExchange(1, AgentToolCarryover.Capture(
+                    [new ChatMessage(ChatRole.Assistant, callContents), .. resultMessages]));
             }
         }
 

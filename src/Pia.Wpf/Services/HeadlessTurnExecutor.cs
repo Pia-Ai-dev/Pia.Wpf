@@ -634,10 +634,35 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// </summary>
     private void SeedReplayedCall(FunctionCallContent call, string resultText)
     {
+        DropCarriedPair(call.CallId);
         _messages.Add(new ChatMessage(ChatRole.Assistant,
             [new FunctionCallContent(call.CallId, call.Name, SeedArguments(call.Arguments))]));
         _messages.Add(new ChatMessage(ChatRole.Tool,
             [new FunctionResultContent(call.CallId, Tokenize(resultText))]));
+    }
+
+    /// <summary>The parking round was carried with its <c>Paused:</c> result; a second call under one id is a 400 on Anthropic.</summary>
+    private void DropCarriedPair(string callId)
+    {
+        for (var i = _messages.Count - 1; i >= 0; i--)
+        {
+            var message = _messages[i];
+            var kept = message.Contents
+                .Where(c => c switch
+                {
+                    FunctionCallContent fc => fc.CallId != callId,
+                    FunctionResultContent fr => fr.CallId != callId,
+                    _ => true,
+                })
+                .ToList();
+            if (kept.Count == message.Contents.Count)
+                continue;
+
+            if (kept.Count == 0)
+                _messages.RemoveAt(i);
+            else
+                _messages[i] = new ChatMessage(message.Role, kept);
+        }
     }
 
     private IDictionary<string, object?>? SeedArguments(IDictionary<string, object?>? arguments)
