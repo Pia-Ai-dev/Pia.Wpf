@@ -153,10 +153,14 @@ purpose ("would read as the model having said it twice"). Replaying the envelope
 next to `Visible`. Accepted unless the server can replay the server-tool pairs without the text — open
 question §8.
 
-### C4 — Other chat clients tolerate it · *Deps:* C1 · XS · Enabler
+### C4 — Other chat clients tolerate it · *Deps:* C1; must land before C3's † rows · XS · Enabler
 
-The envelope only reaches another client if a history built on Pia Cloud is sent elsewhere — today only
-through a chat whose provider is switched between turns, which needs G2b. Still pinned now:
+Under G2a this is a hard prerequisite, not a nicety: an agent run resolves provider and persona **per
+step** (`HeadlessTurnExecutor.cs:915-920`, `:763`), so step N's carried call message — envelope included —
+goes into step N+1's request on whatever `IChatClient` that step resolved, including the direct OpenAI,
+Mistral and Anthropic adapters. Without G2a it reaches another client only through a chat whose provider
+changes between turns (G2b). A different Pia Cloud *model* at step N+1 is the server's concern: its model
+check (overview §5.2, condition b) falls back to reconstruction.
 
 - New `NativeContentForeignClientTests.cs`: for each handler in `src/Pia.Wpf/Services/Providers/`
   (OpenAI, Azure OpenAI, OpenAI-compatible, OpenRouter, vLLM, Mistral, Ollama, Anthropic), build the
@@ -241,7 +245,9 @@ The direct Anthropic provider loses the same evidence, by a different mechanism 
 So the direct path reproduces "claims without evidence" in round 2, with thinking intact. Fix direction for
 the third plan: a client-side `DelegatingChatClient` (or a pre-round pass) that converts the two raw
 blocks to `ServerToolUseBlockParam` / `WebSearchToolResultBlockParam` and re-attaches citations — no server
-involvement. Unverified: whether `ToChatResponse` coalesces the streamed signature-only
+involvement. Reproduce the evidence with `ilspycmd` 9.1 over `~/.nuget/packages/anthropic/12.48.0/lib/net9.0`, nested
+class `AnthropicChatClient` in `AnthropicClientExtensions` (`ContentBlockValueToAIContent`,
+`CreateMessageParams`). Unverified: whether `ToChatResponse` coalesces the streamed signature-only
 `TextReasoningContent` into the preceding thinking correctly.
 
 Side finding, same provider: `AiClientService.cs:1364` sets `ChatToolMode.RequireAny` on the tool-call
