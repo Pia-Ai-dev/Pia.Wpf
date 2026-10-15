@@ -69,11 +69,12 @@ here by hand once that commit exists, naming the Pia commit in the line.
 - [x] **D6 — Don't re-pay a failed probe.** `ProviderCapabilityService` caches `Unknown` for a short expiry. *Deps:* — · *Effort:* XS · *Value:* Med
 - [x] **D7 — Direct-provider gate.** Rides with C7, plus e2e on a direct Anthropic row with thinking and web search: no retraction, no 400, probe reports `Capable`. *Deps:* D0–D6 · *Effort:* XS · *Value:* High — passed on Opus 5.5 (effort medium) after the D5 rework: probe `Capable`; a planned 3-step agent run (search → `write_file` → search → append → summary) completed in 13 tool rounds, stored native blocks on 3 responses, replayed them on 11 requests including both step boundaries; 0 errors, 0 400s; no retraction, repeat search or run-together text; answers cite `[1]`/`[2]`.
 - [ ] **P0 — Prefix test and doc re-check.** A red-first test that step N+1's first request equals step N's last in-loop request plus its final assistant message and the new instruction, for both step executors; the live caching docs re-checked for the facts P4 relies on. *Deps:* — · *Effort:* XS · *Value:* Enabler
-- [ ] **P1 — Prompt cache on for the prod Anthropic rows.** The owner switches `EnablePromptCache` on for every prod Anthropic row and records the provider-side cache retention with the open DSB item; G7 decides the default for new rows. *Deps:* — · *Effort:* XS · *Value:* High
+- [x] **P1 — Prompt cache on for the prod Anthropic rows.** The owner switches `EnablePromptCache` on for every prod Anthropic row and records the provider-side cache retention with the open DSB item; G7 decides the default for new rows. *Deps:* — · *Effort:* XS · *Value:* High — done by the owner 2026-10-15 for every existing Anthropic row; G7 and the DSB note still open.
 - [ ] **P2 — Append-only step history.** Both executors carry the step instruction as sent, each round's assistant message with its text, and the final assistant message as received, never thinking; `ClearOldResults` cuts in chunks of 8 above 16; persistence and resume keep today's shapes. *Deps:* P0, G8 · *Effort:* M · *Value:* High
 - [ ] **P3 — Replay cap in chunks.** The server's newest-8 replay cap moves its cut once per 4 new anchored turns instead of every round, stateless. *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **P4 — Breakpoint placement.** Markers only on eligible block types (fixes a latent 400 on an S8 resume ending in `server_tool_use`), plus a marker on the previous request's final message against the 20-position lookback. *Deps:* P0 (doc re-check) · *Effort:* S · *Value:* Med
-- [ ] **P5 — Gates and measurement.** Both repositories' gates, then one C7b-shaped run on 18081: every step boundary reads the carried prefix, the run above 90% cache reads (baseline 82.4%), no 400/413. *Deps:* P2, P3, P4 · *Effort:* S · *Value:* High
+- [ ] **P5a — Instrumentation and before-measurement.** A count-only usage log (input, cache write, cache read, output) on the server, a Claude Haiku 5.5 row on 18081, and the fixed scenarios A/B/C run three times each on Haiku plus A once on Opus/Sonnet — all before P2, P3 or P4 reach the stack. *Deps:* — · *Effort:* S · *Value:* Enabler
+- [ ] **P5 — Gates and after-measurement.** Both repositories' gates, then the same scenarios on the new code with the same counts; a change counts as a benefit only if the Haiku median beats the before median by more than the run-to-run spread and the Opus/Sonnet run agrees. *Deps:* P2, P3, P4, P5a · *Effort:* S · *Value:* High
 
 ## Suggested order
 
@@ -88,9 +89,10 @@ here by hand once that commit exists, naming the Pia commit in the line.
 
 Round 2 (group P):
 
-1. **P1** whenever the owner gets to it — it needs no code and pays off at once in prod.
-2. **P0** — the free test that shows every divergence point before P2 is built.
-3. **P3** and **P4** on the server alongside **P2** on the client.
+1. **P1** — done by the owner.
+2. **P0** and **P5a** — the free test that shows every divergence point, and the before-measurement on
+   Haiku, which must finish before any of P2–P4 reaches the stack.
+3. **P3** and **P4** on the server alongside **P2** on the client (they can be written during P5a).
 4. **P5** last.
 
 ## Not yet planned

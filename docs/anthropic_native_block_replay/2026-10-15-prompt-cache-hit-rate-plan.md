@@ -18,8 +18,10 @@ the four levers it pointed at. Tracked in
 | e2e | the throwaway stack on **18081** (left running, recipe in `G:\Git\Pia-7836\artifacts\native-replay-testing\README.md`); **8081 is the owner's real data — never touch it** |
 | Key for billed runs | `[Environment]::GetEnvironmentVariable('PIA_TEST_CLAUDE_KEY','User')` — never print it |
 
-**What to do first:** P0's prefix test (client, free, red first). P3 and P4 are small and independent of
-it. No PR is open yet; these commits join the existing branches.
+**What to do first:** P0's prefix test (client, free, red first) and P5a, the server's usage
+instrumentation and the **before** measurement on Claude Haiku 5.5. P5a must run before any of P2, P3 or P4
+reaches the 18081 stack. P3 and P4 can be written meanwhile. No PR is open yet; these commits join the
+existing branches.
 
 Line numbers below are from client `bd9cc6d8` and server `10958637`; re-check them before editing.
 
@@ -103,7 +105,7 @@ The biggest lever, and no code. `EnablePromptCache` is opt-in per catalog row an
 Without it every replayed search is billed at full input price on every later round.
 
 1. In the prod admin console, open every Anthropic row (`claude-opus-high` and its siblings) and switch
-   prompt cache on.
+   prompt cache on. **Done by the owner on 2026-10-15 for every existing Anthropic row.**
 2. **G7, owner:** should new Anthropic rows default to prompt cache on? If yes, it is a one-line server
    change in the create defaults plus its test, on `feature/7836`.
 3. DSB: prompt caching means Anthropic keeps the cached prefix for the TTL (5 minutes, refreshed on every
@@ -212,27 +214,62 @@ tool) and `content[^1]` of the final message, whatever its type. Two changes:
    exactly on the earlier entry whatever the turn adds. That makes three markers (system or tools,
    previous-final, final) of the four allowed. Skip it when that message is the final message.
 
-The baseline shows no lookback miss — in-step reads were 98–99.7% — so part 2 is insurance, and P5 checks
-that it costs nothing. Tests: marker positions for a tool-loop request, a fresh user turn, an S8 resume
+The baseline shows no lookback miss — in-step reads were 98–99.7% — so part 2 is insurance, and P5's
+before/after comparison checks that it costs nothing. Tests: marker positions for a tool-loop request, a fresh user turn, an S8 resume
 body and a request with no assistant message; never more than four markers; never on an ineligible block.
 
-### P5 — Gates and measurement (both, S)
+### P5 — Before/after measurement and gates (both, S)
 
-1. Server: the S9 gate again (fast subset, Release build, format on touched files) and the replay summary
-   line unchanged in shape.
-2. Client: Debug and Release rebuild at 0 warnings / 0 errors, the test exe at `Failed: 0`.
-3. Rebuild the 18081 stack from the new server HEAD with the existing override; the rows already have
-   prompt cache on.
-4. One C7b-shaped agent run on Pia Cloud (3 steps, research in step 2). Read the per-request cache share
-   from `token_usage_logs`, as in §1. Targets:
-   - each step boundary reads at least the previous step's last request's input, minus the tail P2's G8
-     cap re-writes;
-   - the whole run above 90% cache reads (baseline 82.4%);
-   - no 400, no 413, replay summary with 0 pair drops.
-5. A run with more than 8 search turns, to watch P3's cut move live, only if the owner funds it;
-   otherwise P3 rests on its unit tests.
-6. Billing: a C7b-shaped run was about 0.75M input tokens, now mostly cache reads. At most two attempts.
-7. Tick P0–P5 in the checklist (server steps naming the Pia commit) and add the measured numbers here.
+The benefit must be measured, not assumed: the same scenarios run once on the code **before** P2–P4 and
+once **after**, cheaply on Claude Haiku 5.5, then validated on Sonnet 5.5 / Opus 5.5. Caches are
+model-scoped, so only like is compared with like.
+
+**P5a — Instrumentation and baseline. Runs before P2, P3 or P4 reach the stack.**
+
+1. Server: `token_usage_logs` records cache reads but not cache writes (input = uncached + write + read).
+   Add a count-only Debug line per Anthropic upstream response with `input_tokens`,
+   `cache_creation_input_tokens`, `cache_read_input_tokens` and `output_tokens` — no ids, no content, like
+   the replay summary in `418310ad` — and commit it on its own, before P3/P4.
+2. Rows on 18081, all with prompt cache and native web search on: add a `claude-haiku-5-5` row next to the
+   Opus and Sonnet ones. Basic runs route every role of the test account (default, Assistant, persona type
+   `fast`) to Haiku; validation runs restore the Opus/Sonnet routing of round 1. First, one smoke call to
+   confirm native web search works on the Haiku row; if it doesn't, tell the coordinator before going on.
+3. Build the stack from the server commit that has the instrumentation and nothing of P3/P4, and the client
+   Debug exe from a commit without P2 (P0's test-only commits are fine).
+4. Fixed scenarios, saved on the throwaway profile so before and after send the same prompt, persona and
+   tools:
+   - **A** — a C7b-shaped agent run: 3 steps, web research on several items in step 2, a note written per
+     item.
+   - **B** — the C7a-shaped routine: one search, a client tool call, an answer.
+   - **C** — a long run with at least 10 search turns, so P3's cut has to move.
+5. Haiku: A, B and C three times each. Validation: A once on the round-1 routing (Opus plans, Sonnet runs
+   the steps).
+6. For every run keep the per-request table (time, role, model, input, write, read, uncached, output) and
+   the replay summary lines, under `artifacts\native-replay-testing\cache-before\` in each worktree.
+
+**P5b — Gates.** Server: the S9 gate (fast subset, Release build, format on touched files). Client: Debug
+and Release rebuild at 0 warnings / 0 errors, the test exe at `Failed: 0`.
+
+**P5c — After.** Rebuild the stack from the new server HEAD, and the client from its new HEAD. Run the same
+scenarios with the same counts on Haiku, then A once on the validation routing; same tables, under
+`…\cache-after\`.
+
+**Comparison** — one table per scenario and model, before against after:
+
+- the read share of the whole run, and per step boundary (the first request of each step);
+- the cache-write tokens per step boundary;
+- cost-equivalent input per run: uncached × 1 + write × 1.25 + read × the model's read rate (0.1× Haiku and
+  Sonnet 5.5, 0.05× Opus 5.5), and per completed step, since runs differ in round count;
+- for C, how often the replay cut moved (the replay summary's `capped`).
+
+A change counts as a benefit only if the Haiku median beats the before median by more than the spread
+between runs, and the validation run points the same way. Report any of P2, P3 or P4 that shows no
+measurable benefit; the owner decides whether it stays. The bar from §1 still holds: step boundaries read
+the carried prefix, the run is above 90% cache reads, no 400 or 413, 0 pair drops.
+
+Billing: Haiku runs are cheap (input $0.10/MTok). Sonnet/Opus validation: one run before and one after; more
+only with the owner's approval. At most two attempts per failed run. Tick P0–P5 in the checklist (server
+steps naming the Pia commit) and add both tables to this plan.
 
 ## 4. Decisions taken in this plan (owner may override)
 
