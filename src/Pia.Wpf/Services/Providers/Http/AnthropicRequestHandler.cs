@@ -68,8 +68,9 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
         }
 
         // From the provider row alone, never the turn: changing it between requests invalidates the cache.
-        // Effort and thinking are separate fields — an effort alone never turns thinking off.
-        if (disableThinking)
+        // Effort and thinking are separate fields — an effort alone never turns thinking off. A forced tool
+        // choice (the planning probe) is the exception: with thinking on it is a 400.
+        if (disableThinking || (effort is not null && HasForcedToolChoice(obj)))
         {
             obj["thinking"] = new JsonObject { ["type"] = "disabled" };
         }
@@ -110,6 +111,12 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
             lastBlock["cache_control"] = Ephemeral();
         }
     }
+
+    private static bool HasForcedToolChoice(JsonObject body) =>
+        body["tool_choice"] is JsonObject { } choice
+        && choice["type"] is JsonValue type
+        && type.TryGetValue<string>(out var value)
+        && value is "any" or "tool";
 
     private static JsonObject Ephemeral() => new() { ["type"] = "ephemeral" };
 

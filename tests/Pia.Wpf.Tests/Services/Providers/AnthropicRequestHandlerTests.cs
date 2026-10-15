@@ -80,11 +80,45 @@ public class AnthropicRequestHandlerTests
         Assert.Null(obj["output_config"]);
     }
 
+    // Forced tool choice plus thinking is a 400, which is what made the planning probe fail on every turn.
+    [Theory]
+    [InlineData("""{"type":"any"}""")]
+    [InlineData("""{"type":"tool","name":"get_weather"}""")]
+    public void Rewrite_ForcedToolChoiceWithEffort_DisablesThinking(string toolChoice)
+    {
+        var obj = Parse(AnthropicRequestHandler.Rewrite(WithToolChoice(toolChoice), false, false, effort: "high"));
+
+        Assert.Equal("disabled", obj["thinking"]!["type"]!.GetValue<string>());
+        Assert.Null(obj["output_config"]);
+    }
+
+    [Fact]
+    public void Rewrite_AutoToolChoiceWithEffort_KeepsAdaptiveThinking()
+    {
+        var obj = Parse(AnthropicRequestHandler.Rewrite(WithToolChoice("""{"type":"auto"}"""), false, false, effort: "high"));
+
+        Assert.Equal("adaptive", obj["thinking"]!["type"]!.GetValue<string>());
+        Assert.Equal("high", obj["output_config"]!["effort"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Rewrite_ForcedToolChoiceWithoutEffort_AddsNoThinking()
+    {
+        Assert.Null(AnthropicRequestHandler.Rewrite(WithToolChoice("""{"type":"any"}"""), false, false));
+    }
+
     [Fact]
     public void Rewrite_MalformedBody_IsLeftAlone()
     {
         Assert.Null(AnthropicRequestHandler.Rewrite("not json", true, true));
     }
+
+    private static string WithToolChoice(string toolChoice) => $$$"""
+        {"model":"claude-opus-5","max_tokens":1024,
+         "tools":[{"name":"get_weather","input_schema":{"type":"object"}}],
+         "tool_choice":{{{toolChoice}}},
+         "messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}
+        """;
 
     private static JsonObject Parse(string? json)
     {
