@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging;
 
 namespace Pia.Services.Providers.Http;
 
@@ -15,18 +16,26 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
 
     private const int MaxWebSearchUses = 5;
 
+    // Mirrors the server's AnthropicNativeReplayMaxMessages and AgentToolCarryover.KeptResults.
+    internal const int MaxReplayedMessages = 8;
+
     private readonly bool _enableWebSearch;
     private readonly bool _enablePromptCache;
     private readonly string? _effort;
     private readonly bool _disableThinking;
+    private readonly AnthropicNativeStore? _nativeStore;
+    private readonly ILogger? _logger;
 
     public AnthropicRequestHandler(
-        bool enableWebSearch, bool enablePromptCache, string? effort, bool disableThinking)
+        bool enableWebSearch, bool enablePromptCache, string? effort, bool disableThinking,
+        AnthropicNativeStore? nativeStore = null, ILogger? logger = null)
     {
         _enableWebSearch = enableWebSearch;
         _enablePromptCache = enablePromptCache;
         _effort = effort;
         _disableThinking = disableThinking;
+        _nativeStore = nativeStore;
+        _logger = logger;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(
@@ -35,20 +44,47 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
         if (request.Content is not null && IsJsonRequest(request))
         {
             var body = await request.Content.ReadAsStringAsync(cancellationToken);
-            var rewritten = Rewrite(body, _enableWebSearch, _enablePromptCache, _effort, _disableThinking);
+            var rewritten = Rewrite(body, _enableWebSearch, _enablePromptCache, _effort, _disableThinking,
+                _nativeStore, _logger);
             if (rewritten is not null)
                 request.Content = new StringContent(rewritten, Encoding.UTF8, "application/json");
         }
 
-        return await base.SendAsync(request, cancellationToken);
+        var response = await base.SendAsync(request, cancellationToken);
+        if (_nativeStore is { } store && response.IsSuccessStatusCode && IsMessagesCall(request))
+            TeeResponse(response, store);
+        return response;
     }
+
+    private void TeeResponse(HttpResponseMessage response, AnthropicNativeStore store)
+    {
+        var original = response.Content;
+        var isEventStream = original.Headers.ContentType?.MediaType is "text/event-stream";
+        var tee = new AnthropicNativeTeeContent(original, isEventStream, accumulator =>
+        {
+            var blocks = accumulator.Blocks;
+            if (store.TryAdd(blocks))
+            {
+                _logger?.LogInformation(
+                    "Stored native content of an Anthropic response: {BlockCount} block(s), {NativeCount} native",
+                    blocks.Count, blocks.Count(AnthropicNativeStore.IsNative));
+            }
+        });
+        response.Content = tee;
+    }
+
+    private static bool IsMessagesCall(HttpRequestMessage request) =>
+        request.Method == HttpMethod.Post
+        && request.RequestUri?.AbsolutePath.EndsWith("/messages", StringComparison.Ordinal) == true;
 
     internal static string? Rewrite(
         string requestBody, bool enableWebSearch, bool enablePromptCache,
-        string? effort = null, bool disableThinking = false)
+        string? effort = null, bool disableThinking = false,
+        AnthropicNativeStore? nativeStore = null, ILogger? logger = null)
     {
         if (string.IsNullOrEmpty(requestBody)) return null;
-        if (!enableWebSearch && !enablePromptCache && effort is null && !disableThinking) return null;
+        if (!enableWebSearch && !enablePromptCache && effort is null && !disableThinking && nativeStore is null)
+            return null;
 
         JsonNode? root;
         try { root = JsonNode.Parse(requestBody); }
@@ -81,6 +117,19 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
             outputConfig["effort"] = effort;
             obj["output_config"] = outputConfig;
         }
+
+        var replayed = 0;
+        var deduped = false;
+        if (nativeStore is not null && obj["messages"] is JsonArray messages)
+        {
+            deduped = AnthropicNativeReplay.DropEarlierDuplicateToolUses(messages);
+            replayed = AnthropicNativeReplay.Apply(messages, nativeStore, MaxReplayedMessages);
+            if (replayed > 0)
+                logger?.LogInformation("Replayed native content into {MessageCount} assistant message(s)", replayed);
+        }
+
+        if (!enableWebSearch && !enablePromptCache && effort is null && !disableThinking && replayed == 0 && !deduped)
+            return null;
 
         if (enablePromptCache)
             ApplyCacheBreakpoints(obj);
