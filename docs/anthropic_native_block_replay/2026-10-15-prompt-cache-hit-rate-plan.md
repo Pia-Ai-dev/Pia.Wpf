@@ -79,6 +79,21 @@ Source: the `claude-api` skill's `shared/prompt-caching.md` (bundled with Claude
   message are byte-identical to when it was produced; accounts created on or after 2026-08-31 get a 400
   otherwise. This is why P2 never carries thinking across a step boundary.
 
+**Re-checked against the live docs on 2026-10-15 (P0)** — the prompt-caching page and "Tool use with
+prompt caching":
+
+- 4 breakpoints: confirmed; top-level automatic caching takes one of the four slots.
+- Eligible blocks: the live page lists tools, system, `text`, `image`, `document`, `tool_use` and
+  `tool_result`, and excludes `thinking`, sub-content blocks (citations) and **empty `text` blocks**. It
+  names neither `server_tool_use` nor `web_search_tool_result`, so their exclusion above is the bundled
+  skill's claim, not the docs'. P4 part 1 therefore needs its live confirmation call before calling the
+  S8 case a 400, and its walk-back must also skip empty `text` blocks.
+- Lookback: confirmed, and the 20 positions count the breakpoint itself as the first; with no entry in
+  the window the check stops, or resumes from the next explicit breakpoint.
+- Server tools: confirmed. With at least one `cache_control` marker in the request, the API places a
+  5-minute breakpoint on a server tool's result before the next in-request iteration. Whether it takes
+  one of the four slots is not stated.
+
 ## 3. Steps
 
 ### P0 — Prefix test and doc re-check (client, XS)

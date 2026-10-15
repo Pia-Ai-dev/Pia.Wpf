@@ -562,7 +562,7 @@ public sealed class HeadlessTurnExecutorTests
         public readonly CountingChatService Chats;
         public readonly AiProvider Provider = new() { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         public readonly Persona Persona = new() { Name = "Pia", SystemPrompt = "sys" };
-        public readonly IAiClientService Ai = Substitute.For<IAiClientService>();
+        public readonly IAiClientService Ai;
 
         /// <summary>The executor's log, so a fixture can assert on the compaction diff LINE.</summary>
         public readonly CapturingLogger<HeadlessTurnExecutor> ExecutorLog = new();
@@ -602,9 +602,11 @@ public sealed class HeadlessTurnExecutorTests
         /// </summary>
         public Action<int>? OnTurn;
 
-        public DurabilityHarness()
+        /// <param name="ai">A real tool loop to run the steps through; null stubs one text reply per turn.</param>
+        public DurabilityHarness(IAiClientService? ai = null)
         {
-            _dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+            Ai = ai ?? Substitute.For<IAiClientService>();
+            _dir =Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_dir);
             Ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
             Runs = new AgentRunService(Ctx, NullLogger<AgentRunService>.Instance);
@@ -622,6 +624,9 @@ public sealed class HeadlessTurnExecutorTests
             Personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(Persona);
             Providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider);
             SettingsService.GetSettingsAsync().Returns(_ => Task.FromResult(Settings));
+
+            if (ai is not null)
+                return;
 
             // One distinct reply per step turn, so the persisted transcript is order-verifiable.
             Ai.GetChatCompletionWithToolsAsync(
@@ -1797,6 +1802,50 @@ public sealed class HeadlessTurnExecutorTests
 
     private static IEnumerable<string> ResultBodies(IEnumerable<ChatMessage> messages) =>
         messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.Result as string ?? string.Empty);
+
+    /// <summary>A step boundary only reads the prompt cache when the new request extends the last one.</summary>
+    [Fact(Explicit = true)]
+    public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest()
+    {
+        var recorder = new StepBoundaryRecorder();
+        using var h = new DurabilityHarness(recorder.Ai) { SupportsTools = true };
+        StepBoundaryRecorder.RouteReads(h.Plugins);
+
+        await RunTwoRecordedStepsAsync(h, CarryStep(0), CarryStep(1));
+
+        recorder.AssertStepTwoExtendsStepOne();
+    }
+
+    [Fact(Explicit = true)]
+    public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest_UnderAnotherPersona()
+    {
+        var recorder = new StepBoundaryRecorder();
+        using var h = new DurabilityHarness(recorder.Ai) { SupportsTools = true };
+        StepBoundaryRecorder.RouteReads(h.Plugins);
+        var researcher = RosterPersona("Researcher");
+        var writer = RosterPersona("Writer");
+        WithRoster(h, researcher, writer);
+        var first = CarryStep(0);
+        first.AssignedPersonaId = researcher.Id;
+        var second = CarryStep(1);
+        second.AssignedPersonaId = writer.Id;
+
+        await RunTwoRecordedStepsAsync(h, first, second);
+
+        recorder.AssertStepTwoExtendsStepOne(from: 1);
+    }
+
+    private static async Task RunTwoRecordedStepsAsync(DurabilityHarness h, AgentStep first, AgentStep second)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("inventory report");
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, first, ctx, ct);
+        await executor.ExecuteStepAsync(run, second, ctx, ct);
+    }
 
     /// <summary>The finding: a step that read a file in step 1 and wrote a report in step 3 had nothing but its
     /// own prose to write from, and invented every row. The raw result must survive the boundary.</summary>
