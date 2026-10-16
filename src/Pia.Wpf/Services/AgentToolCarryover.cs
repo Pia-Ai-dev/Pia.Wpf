@@ -10,14 +10,38 @@ namespace Pia.Services;
 /// </summary>
 internal static class AgentToolCarryover
 {
-    /// <summary>Up to this many results nothing is cleared; past it the newest 9–16 keep their body.</summary>
-    internal const int ClearThreshold = 16;
-
-    /// <summary>The cut moves once per this many new results, so consecutive step requests share a prefix.</summary>
+    /// <summary>The cut moves in steps of this many results and never reaches the newest this many.</summary>
     internal const int ClearChunk = 8;
 
-    internal static int ClearedCount(int results) =>
-        results <= ClearThreshold ? 0 : (results - ClearThreshold + ClearChunk - 1) / ClearChunk * ClearChunk;
+    /// <summary>Carried result bodies are cleared only once their total passes this, so tiny acks never cost a re-write.</summary>
+    internal const int CarriedResultBudgetChars = 48_000;
+
+    /// <summary>
+    /// The smallest multiple of <see cref="ClearChunk"/> whose uncleared tail fits the budget, capped so the newest
+    /// <see cref="ClearChunk"/> keep their body. A pure function of the sizes, so a boundary that adds small results
+    /// keeps the cut, and with it the cached prefix.
+    /// </summary>
+    internal static int ClearedCount(IReadOnlyList<int> resultChars)
+    {
+        var cap = resultChars.Count < ClearChunk ? 0 : (resultChars.Count - ClearChunk) / ClearChunk * ClearChunk;
+        var tail = resultChars.Sum(c => (long)c);
+        var cut = 0;
+        while (cut < cap && tail > CarriedResultBudgetChars)
+        {
+            for (var i = cut; i < cut + ClearChunk; i++)
+                tail -= resultChars[i];
+            cut += ClearChunk;
+        }
+
+        return cut;
+    }
+
+    private static int ResultChars(FunctionResultContent result) => result.Result switch
+    {
+        string s => s.Length,
+        null => 0,
+        var other => JsonSerializer.Serialize(other).Length,
+    };
 
     /// <summary>Cap on a persisted result; the live carry keeps results as sent.</summary>
     internal const int MaxCarriedResultChars = 4000;
@@ -109,6 +133,7 @@ internal static class AgentToolCarryover
     {
         var calls = new Dictionary<string, FunctionCallContent>(StringComparer.Ordinal);
         var results = new List<(int Message, int Content)>();
+        var sizes = new List<int>();
         for (var i = 0; i < messages.Count; i++)
         {
             var contents = messages[i].Contents;
@@ -119,14 +144,15 @@ internal static class AgentToolCarryover
                     case FunctionCallContent call:
                         calls[call.CallId] = call;
                         break;
-                    case FunctionResultContent:
+                    case FunctionResultContent result:
                         results.Add((i, j));
+                        sizes.Add(ResultChars(result));
                         break;
                 }
             }
         }
 
-        var cleared = ClearedCount(results.Count);
+        var cleared = ClearedCount(sizes);
         if (cleared == 0)
             return messages;
 

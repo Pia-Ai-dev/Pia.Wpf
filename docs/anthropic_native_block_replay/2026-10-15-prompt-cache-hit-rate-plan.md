@@ -170,9 +170,13 @@ The divergence points, each to be removed or accepted explicitly:
 5. **`ClearOldResults` re-cuts every step.** It placeholders every result older than the newest 8
    (`AgentToolCarryover.KeptResults`, `:85-133`), recomputed on each step copy, so once a run has more
    than 8 results the earliest newly cleared result moves at every boundary and the prefix breaks there.
-   Clear in chunks instead: `cleared = n <= 16 ? 0 : ceil((n - 16) / 8) * 8` for `n` results — a pure
-   function of the count that keeps the newest 9–16 once clearing starts and moves the cut once per 8 new
-   results.
+   **Clear by size (owner, 2026-10-16):** the cut is the smallest multiple of 8 for which the summed chars
+   of the uncleared tail fit `CarriedResultBudgetChars` = 48,000, capped so the newest 8 always keep their
+   body — a pure function of the result sizes. It replaces the first, count-based chunk rule
+   (`n <= 16 ? 0 : ceil((n - 16) / 8) * 8`), which the AFTER C″ runs showed re-writing every boundary from
+   s3 on: C″'s steps add 7–10 tiny write/read acks each, so the count crossed a chunk at every boundary
+   (C″2: the boundaries where the cut stayed read 98.6% and 99.3%, the two where it moved 20.7% and 22.9%).
+   Tiny acks cost almost nothing to carry, so under the size rule they never clear.
 
 Constraints:
 
@@ -192,9 +196,10 @@ Constraints:
 - Tool-call ids stay verbatim (C1); the server's native replay keys on them and now sees the assistant
   text it stored, so carried turns replay verbatim rather than blocks-only.
 
-Tests: P0's prefix test goes green for both executors. Add a `ClearOldResults` table test (counts 1–40:
-nothing is cleared up to 16, the cut only moves at 17, 25 and 33, and 9–16 results keep their body after
-that). The existing C1 and carryover tests
+Tests: P0's prefix test goes green for both executors. `ClearOldResults` table tests by size: tiny results
+never clear for 1–60 results; with bodies of 1/20 of the budget the cut moves only in multiples of 8 and only
+once the tail exceeds the budget (20 → 0, 21 → 8, 29 → 16, 60 → 40); a result larger than the budget never
+clears the newest 8. The existing C1 and carryover tests
 stay green; C1's persisted-shape tests must not change.
 
 ### P3 — Replay cap in chunks (server, XS)
@@ -295,8 +300,9 @@ steps naming the Pia commit) and add both tables to this plan.
 - G8 (owner, 2026-10-15): carried results are uncapped while inside the kept window and placeholdered
   outside it; the persisted and resumed shape keeps the 4,000-char cap.
 - G7 (owner, 2026-10-15): new Anthropic catalog rows default to prompt cache on (server).
-- `ClearOldResults` and the server replay cap both cut in chunks (8 at a time above 16 on the client,
-  `M / 2` on the server), stateless.
+- `ClearOldResults` and the server replay cap both cut in chunks, stateless: the client in multiples of 8
+  once the carried result bodies pass 48,000 chars, never the newest 8 (owner, 2026-10-16, replacing the
+  count rule); the server in steps of `M / 2`.
 - Thinking is never carried across a step boundary.
 
 ## 5. Not in this plan

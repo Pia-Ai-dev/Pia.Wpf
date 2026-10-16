@@ -75,7 +75,7 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         var run = await MakeRunAsync();
 
-        var rounds = AgentToolCarryover.ClearThreshold + 4;
+        var rounds = 20;
         for (var i = 0; i < rounds; i++)
             await _store.RecordAsync(run.Id, null, i + 1, Round(i), ct);
 

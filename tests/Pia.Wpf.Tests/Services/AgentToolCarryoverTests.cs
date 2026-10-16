@@ -125,49 +125,72 @@ public class AgentToolCarryoverTests
         Assert.Same(stripped, AgentToolCarryover.WithoutToolExchanges(stripped));
     }
 
+    // One sixth of the budget, so 17 such results clear exactly the oldest 8.
+    private const int Big = AgentToolCarryover.CarriedResultBudgetChars / 6;
+
+    private static List<string> Bodies(IReadOnlyList<ChatMessage> messages) =>
+        [.. AgentToolCarryover.ClearOldResults(messages).Select(Body).Where(b => b is not null).Select(b => b!)];
+
+    private static int ClearedPrefix(IReadOnlyList<ChatMessage> messages)
+    {
+        var bodies = Bodies(messages);
+        var cut = bodies.TakeWhile(b => b.StartsWith("[result cleared;", StringComparison.Ordinal)).Count();
+        Assert.DoesNotContain(bodies.Skip(cut), b => b.StartsWith("[result cleared;", StringComparison.Ordinal));
+        return cut;
+    }
+
     [Fact]
     public void ClearOldResults_ReturnsTheInput_WhenNothingIsStaleYet()
     {
-        var messages = Rounds(AgentToolCarryover.ClearThreshold);
+        var messages = Rounds(60);
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
         Assert.Same(messages, cleared);
     }
 
-    /// <summary>The cut is a pure function of the count that moves only at 17, 25 and 33, so a step boundary
-    /// that adds a few results leaves the earlier prefix byte-identical.</summary>
+    /// <summary>Tiny results cost nothing to carry; clearing them would only re-write the cached prefix.</summary>
     [Theory]
-    [MemberData(nameof(ClearedCounts))]
-    public void ClearedCount_MovesOnlyOncePerChunk(int results, int expected)
+    [MemberData(nameof(OneToSixty))]
+    public void ClearOldResults_NeverClearsTinyResults(int results)
     {
-        Assert.Equal(expected, AgentToolCarryover.ClearedCount(results));
+        Assert.Equal(0, ClearedPrefix(Rounds(results)));
     }
 
-    public static TheoryData<int, int> ClearedCounts()
+    public static TheoryData<int> OneToSixty() => [.. Enumerable.Range(1, 60)];
+
+    /// <summary>A pure function of the result sizes: the cut moves only in multiples of 8, and only once the
+    /// uncleared tail would exceed the budget (here 20 bodies fit).</summary>
+    [Theory]
+    [InlineData(20, 0)]
+    [InlineData(21, 8)]
+    [InlineData(28, 8)]
+    [InlineData(29, 16)]
+    [InlineData(36, 16)]
+    [InlineData(37, 24)]
+    [InlineData(60, 40)]
+    public void ClearOldResults_CutsInChunksOfEight_OnlyWhenTheTailExceedsTheBudget(int results, int expected)
     {
-        var data = new TheoryData<int, int>();
-        for (var n = 1; n <= 40; n++)
-            data.Add(n, n switch { <= 16 => 0, <= 24 => 8, <= 32 => 16, _ => 24 });
-        return data;
+        var messages = Rounds(results, AgentToolCarryover.CarriedResultBudgetChars / 20);
+
+        Assert.Equal(expected, ClearedPrefix(messages));
+        Assert.Equal(expected, ClearedPrefix(messages));
     }
 
+    /// <summary>A result larger than the whole budget clears what it can but never the newest 8.</summary>
     [Theory]
-    [InlineData(16, 0)]
-    [InlineData(17, 8)]
-    [InlineData(19, 8)]
-    [InlineData(24, 8)]
-    [InlineData(25, 16)]
-    [InlineData(33, 24)]
-    public void ClearOldResults_ClearsTheOldestChunk_AndKeepsNineToSixteenBodies(int results, int expected)
+    [InlineData(9, 0)]
+    [InlineData(21, 8)]
+    public void ClearOldResults_KeepsTheNewest8_EvenWhenOneOfThemExceedsTheBudget(int results, int expected)
     {
-        var bodies = AgentToolCarryover.ClearOldResults(Rounds(results)).Select(Body).Where(b => b is not null).ToList();
+        var messages = Rounds(results - 1);
+        messages.Add(Call("huge", "read_file", "huge.csv"));
+        messages.Add(Result("huge", new string('h', AgentToolCarryover.CarriedResultBudgetChars + 1)));
 
-        Assert.Equal(results, bodies.Count);
-        Assert.All(bodies.Take(expected), b => Assert.StartsWith("[result cleared;", b!, StringComparison.Ordinal));
-        Assert.DoesNotContain(bodies.Skip(expected), b => b!.StartsWith("[result cleared;", StringComparison.Ordinal));
-        if (expected > 0)
-            Assert.InRange(results - expected, 9, 16);
+        var cut = ClearedPrefix(messages);
+
+        Assert.Equal(expected, cut);
+        Assert.True(results - cut >= 8);
     }
 
     /// <summary>Build, never mutate: the input list is the executor's accumulating transcript, and an in-place
@@ -175,7 +198,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_DoesNotMutateTheInput()
     {
-        var messages = Rounds(AgentToolCarryover.ClearThreshold + 2);
+        var messages = Rounds(18, Big);
         var before = messages.Select(Body).ToList();
 
         AgentToolCarryover.ClearOldResults(messages);
@@ -187,7 +210,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_KeepsTheCallAndNamesItsPath()
     {
-        var messages = Rounds(AgentToolCarryover.ClearThreshold + 1);
+        var messages = Rounds(17, Big);
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
@@ -199,7 +222,7 @@ public class AgentToolCarryoverTests
     public void ClearOldResults_OmitsThePath_WhenTheCallCarriedNone()
     {
         var messages = new List<ChatMessage> { Call("listing", "list_files"), Result("listing", "a listing") };
-        messages.AddRange(Rounds(AgentToolCarryover.ClearThreshold));
+        messages.AddRange(Rounds(16, Big));
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
@@ -225,7 +248,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_KeepsEveryCallIdVerbatim_InOrder()
     {
-        var messages = Rounds(AgentToolCarryover.ClearThreshold + 3);
+        var messages = Rounds(19, Big);
         var before = messages.SelectMany(m => m.Contents).Select(IdOf).ToList();
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);

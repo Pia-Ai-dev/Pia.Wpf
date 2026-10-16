@@ -1879,26 +1879,32 @@ public sealed class HeadlessTurnExecutorTests
         Assert.DoesNotContain(chat.Messages, m => (m.Content ?? string.Empty).Contains("SKU-1001"));
     }
 
-    /// <summary>Past K, the oldest bodies go but the calls stay, and the placeholder says what to re-issue —
-    /// otherwise a run's whole file history rides along forever.</summary>
+    // A sixth of the carry budget, so 17 rounds of these clear exactly the oldest 8.
+    private static string BigBody(int i) => $"body {i}|" + new string('x', AgentToolCarryover.CarriedResultBudgetChars / 6);
+
+    private static bool HasBody(IEnumerable<ChatMessage> messages, int i) =>
+        ResultBodies(messages).Any(b => b.StartsWith($"body {i}|", StringComparison.Ordinal));
+
+    /// <summary>Past the carry budget the oldest bodies go but the calls stay, and the placeholder says what to
+    /// re-issue — otherwise a run's whole file history rides along forever.</summary>
     [Fact]
-    public async Task PastTheKeptCount_TheOldestResultIsClearedAndNamesItsCall()
+    public async Task PastTheBudget_TheOldestResultIsClearedAndNamesItsCall()
     {
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("inventory report");
 
-        var rounds = Enumerable.Range(0, AgentToolCarryover.ClearThreshold + 1)
-            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
+        var rounds = Enumerable.Range(0, 17)
+            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, BigBody(i)) })
             .ToArray();
 
         var captured = await RunTwoStepsAsync(h, run, rounds);
         var second = captured[1];
 
         Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(second));
-        Assert.DoesNotContain("body 0", ResultBodies(second));
-        Assert.DoesNotContain("body " + (AgentToolCarryover.ClearChunk - 1), ResultBodies(second));
-        Assert.Contains("body " + AgentToolCarryover.ClearChunk, ResultBodies(second));
-        Assert.Contains("body " + AgentToolCarryover.ClearThreshold, ResultBodies(second));
+        Assert.False(HasBody(second, 0));
+        Assert.False(HasBody(second, 7));
+        Assert.True(HasBody(second, 8));
+        Assert.True(HasBody(second, 16));
         Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionCallContent>(), c => c.CallId == "c0");
     }
 
@@ -2250,23 +2256,23 @@ public sealed class HeadlessTurnExecutorTests
     /// <summary>Clearing still runs downstream of the re-seed, so the post-resume context budget is the
     /// pre-park one — re-seeding full bodies does not defeat it.</summary>
     [Fact]
-    public async Task PastTheKeptCount_AResumedRunStillClearsTheOldestResult()
+    public async Task PastTheBudget_AResumedRunStillClearsTheOldestResult()
     {
         using var h = new DurabilityHarness();
         using var store = ExchangeStore(h);
         h.Exchanges = store;
         var run = await h.NewRunAsync("inventory report");
 
-        var rounds = Enumerable.Range(0, AgentToolCarryover.ClearThreshold + 1)
-            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
+        var rounds = Enumerable.Range(0, 17)
+            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, BigBody(i)) })
             .ToArray();
 
         var captured = await RunThenResumeAsync(h, run, rounds);
         var resumed = captured[1];
 
         Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(resumed));
-        Assert.DoesNotContain("body 0", ResultBodies(resumed));
-        Assert.Contains("body " + AgentToolCarryover.ClearThreshold, ResultBodies(resumed));
+        Assert.False(HasBody(resumed, 0));
+        Assert.True(HasBody(resumed, 16));
     }
 
     /// <summary>The detokenized rows must not outlive the run — and a park is not terminal, so it keeps them.</summary>
