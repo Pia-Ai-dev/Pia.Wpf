@@ -107,14 +107,12 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
         // Effort and thinking are separate fields — an effort alone never turns thinking off.
         if (disableThinking)
         {
-            obj["thinking"] = new JsonObject { ["type"] = "disabled" };
+            TurnThinkingOff(obj);
         }
         else if (effort is not null)
         {
             obj["thinking"] = new JsonObject { ["type"] = "adaptive", ["display"] = "summarized" };
-            var outputConfig = obj["output_config"] as JsonObject ?? [];
-            outputConfig["effort"] = effort;
-            obj["output_config"] = outputConfig;
+            SetEffort(obj, effort);
         }
 
         var replayed = 0;
@@ -161,13 +159,44 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
         }
     }
 
+    private const string Opus55 = "claude-opus-5-5";
+    private const string Sonnet55 = "claude-sonnet-5-5";
+
     // These reject "any" and "tool" with a 400, with or without thinking; the planning probe's prompt asks for the call.
-    private static readonly string[] ForcedChoiceRejectingModels = ["claude-opus-5-5", "claude-sonnet-5-5"];
+    private static readonly string[] ForcedChoiceRejectingModels = [Opus55, Sonnet55];
+
+    // Both 400 on "disabled": Opus 5.5 has no off, so its lowest effort stands in; Sonnet 5.5 names between_tools.
+    private static void TurnThinkingOff(JsonObject body)
+    {
+        var model = ModelName(body);
+        if (model?.StartsWith(Opus55, StringComparison.Ordinal) == true)
+        {
+            body.Remove("thinking");
+            SetEffort(body, "low");
+        }
+        else if (model?.StartsWith(Sonnet55, StringComparison.Ordinal) == true)
+        {
+            body["thinking"] = new JsonObject { ["type"] = "between_tools" };
+        }
+        else
+        {
+            body["thinking"] = new JsonObject { ["type"] = "disabled" };
+        }
+    }
+
+    private static void SetEffort(JsonObject body, string effort)
+    {
+        var outputConfig = body["output_config"] as JsonObject ?? [];
+        outputConfig["effort"] = effort;
+        body["output_config"] = outputConfig;
+    }
+
+    private static string? ModelName(JsonObject body) =>
+        body["model"] is JsonValue model && model.TryGetValue<string>(out var name) ? name : null;
 
     private static bool DowngradeForcedToolChoice(JsonObject body)
     {
-        if (body["model"] is not JsonValue model
-            || !model.TryGetValue<string>(out var modelName)
+        if (ModelName(body) is not { } modelName
             || !ForcedChoiceRejectingModels.Any(p => modelName.StartsWith(p, StringComparison.Ordinal)))
             return false;
 

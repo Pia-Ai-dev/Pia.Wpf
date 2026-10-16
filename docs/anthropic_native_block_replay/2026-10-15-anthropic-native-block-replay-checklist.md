@@ -99,10 +99,10 @@ Round 2 (group P):
 
 - Live `pause_turn` is unverified: neither S0 case 6 nor the testing phase provoked it, and with
   `MaxWebSearchUses` hard-coded to 5 no ordinary run will.
-- A direct Anthropic row with reasoning effort `None` sends `thinking: disabled`, a 400 on every turn
-  on Opus 5.5 and Sonnet 5.5 (Opus 5 and Haiku 5.5 accept it). Sonnet 5.5's error says to send
-  `{"type": "between_tools"}` instead. Opus 5.5's says `disabled` is unsupported and to use `adaptive`
-  plus `output_config.effort`, so it has no "off" — its lowest is presumably effort `low`. Owner decision.
+- ~~A direct Anthropic row with reasoning effort `None` sends `thinking: disabled`, a 400 on every turn
+  on Opus 5.5 and Sonnet 5.5.~~ Fixed this round (owner decision, D5's model scoping): Opus 5.5 omits
+  `thinking` and sends `output_config.effort` `low`, Sonnet 5.5 sends `thinking: between_tools`, other
+  models keep `disabled`.
 - No paragraph break across `pause_turn` legs.
 - A resumed turn that ends in `tool_use` keeps only its last leg's evidence.
 - The DSB wording against the in-RAM server store (owner).

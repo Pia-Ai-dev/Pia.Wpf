@@ -80,6 +80,45 @@ public class AnthropicRequestHandlerTests
         Assert.Null(obj["output_config"]);
     }
 
+    // Opus 5.5 rejects "disabled" at every effort and has no off, so effort None becomes its lowest effort.
+    [Theory]
+    [InlineData("claude-opus-5-5")]
+    [InlineData("claude-opus-5-5-20261001")]
+    public void Rewrite_DisableThinkingOnOpus55_OmitsThinkingAndSendsLowEffort(string model)
+    {
+        var obj = Parse(AnthropicRequestHandler.Rewrite(WithModel(model), false, false, effort: "high", disableThinking: true));
+
+        Assert.Null(obj["thinking"]);
+        Assert.Equal("low", obj["output_config"]!["effort"]!.GetValue<string>());
+    }
+
+    // Sonnet 5.5 rejects "disabled" and names between_tools, which takes no other thinking field.
+    [Fact]
+    public void Rewrite_DisableThinkingOnSonnet55_SendsBetweenToolsAlone()
+    {
+        var obj = Parse(AnthropicRequestHandler.Rewrite(WithModel("claude-sonnet-5-5"), false, false, disableThinking: true));
+
+        var thinking = Assert.IsType<JsonObject>(obj["thinking"]);
+        Assert.Equal("between_tools", thinking["type"]!.GetValue<string>());
+        Assert.Single(thinking);
+        Assert.Null(obj["output_config"]);
+    }
+
+    // Haiku 5.5 and older models accept "disabled".
+    [Theory]
+    [InlineData("claude-haiku-5-5")]
+    [InlineData("claude-opus-5")]
+    [InlineData("claude-sonnet-5")]
+    public void Rewrite_DisableThinkingOnOtherModels_StaysDisabled(string model)
+    {
+        var obj = Parse(AnthropicRequestHandler.Rewrite(WithModel(model), false, false, disableThinking: true));
+
+        Assert.Equal("disabled", obj["thinking"]!["type"]!.GetValue<string>());
+        Assert.Null(obj["output_config"]);
+    }
+
+    private static string WithModel(string model) => Body.Replace("claude-opus-5", model, StringComparison.Ordinal);
+
     // Opus 5.5 and Sonnet 5.5 answer "any" and "tool" with a 400, with or without thinking.
     [Theory]
     [InlineData("claude-opus-5-5", """{"type":"any"}""")]
