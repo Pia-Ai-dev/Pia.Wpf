@@ -1389,10 +1389,10 @@ public sealed class HeadlessTurnExecutorTests
 
         Assert.Equal(6, captured.Count);
 
-        // The last step's request would carry system + goal + 5 prior replies + the step instruction
-        // if nothing compacted. It must be smaller than that.
+        // Uncompacted, the last step's request carries system + goal + 5 prior steps' instruction and reply + the
+        // step instruction. It must be smaller than that.
         var last = captured[^1];
-        Assert.True(last.Count < 8,
+        Assert.True(last.Count < 13,
             $"the final step's request must be compacted, but it still carried {last.Count} messages");
 
         // ...and the pin held: the system prompt and the run goal are still the first two messages.
@@ -1429,9 +1429,9 @@ public sealed class HeadlessTurnExecutorTests
             new RunProfile(MaxSteps: 6, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20)),
             TestContext.Current.CancellationToken);
 
-        // system + goal + 5 prior replies + the step instruction - the full 8 the compacted run cut down.
+        // system + goal + 5 prior steps' instruction and reply + the step instruction, uncut.
         Assert.Equal(6, captured.Count);
-        Assert.Equal(8, captured[^1].Count);
+        Assert.Equal(13, captured[^1].Count);
 
         // Keyed on the seam's own signature (run id AND "compaction"): the compactor logs through this same logger
         // instance, so a bare substring would couple this guard to the compactor's wording.
@@ -1767,7 +1767,7 @@ public sealed class HeadlessTurnExecutorTests
         for (var round = 0; round < rounds.Length; round++)
         {
             yield return new ToolRoundCompleted();
-            yield return new ToolRoundExchange(round + 1, rounds[round]);
+            yield return new ToolRoundExchange(round + 1, rounds[round], rounds[round]);
         }
 
         yield return new TextDelta(answer);
@@ -1804,7 +1804,7 @@ public sealed class HeadlessTurnExecutorTests
         messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.Result as string ?? string.Empty);
 
     /// <summary>A step boundary only reads the prompt cache when the new request extends the last one.</summary>
-    [Fact(Explicit = true)]
+    [Fact]
     public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest()
     {
         var recorder = new StepBoundaryRecorder();
@@ -1816,7 +1816,7 @@ public sealed class HeadlessTurnExecutorTests
         recorder.AssertStepTwoExtendsStepOne();
     }
 
-    [Fact(Explicit = true)]
+    [Fact]
     public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest_UnderAnotherPersona()
     {
         var recorder = new StepBoundaryRecorder();
@@ -1887,7 +1887,7 @@ public sealed class HeadlessTurnExecutorTests
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("inventory report");
 
-        var rounds = Enumerable.Range(0, AgentToolCarryover.KeptResults + 1)
+        var rounds = Enumerable.Range(0, AgentToolCarryover.ClearThreshold + 1)
             .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
             .ToArray();
 
@@ -1896,8 +1896,9 @@ public sealed class HeadlessTurnExecutorTests
 
         Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(second));
         Assert.DoesNotContain("body 0", ResultBodies(second));
-        Assert.Contains("body 1", ResultBodies(second));
-        Assert.Contains("body " + AgentToolCarryover.KeptResults, ResultBodies(second));
+        Assert.DoesNotContain("body " + (AgentToolCarryover.ClearChunk - 1), ResultBodies(second));
+        Assert.Contains("body " + AgentToolCarryover.ClearChunk, ResultBodies(second));
+        Assert.Contains("body " + AgentToolCarryover.ClearThreshold, ResultBodies(second));
         Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionCallContent>(), c => c.CallId == "c0");
     }
 
@@ -2256,7 +2257,7 @@ public sealed class HeadlessTurnExecutorTests
         h.Exchanges = store;
         var run = await h.NewRunAsync("inventory report");
 
-        var rounds = Enumerable.Range(0, AgentToolCarryover.KeptResults + 1)
+        var rounds = Enumerable.Range(0, AgentToolCarryover.ClearThreshold + 1)
             .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
             .ToArray();
 
@@ -2265,7 +2266,7 @@ public sealed class HeadlessTurnExecutorTests
 
         Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(resumed));
         Assert.DoesNotContain("body 0", ResultBodies(resumed));
-        Assert.Contains("body " + AgentToolCarryover.KeptResults, ResultBodies(resumed));
+        Assert.Contains("body " + AgentToolCarryover.ClearThreshold, ResultBodies(resumed));
     }
 
     /// <summary>The detokenized rows must not outlive the run — and a park is not terminal, so it keeps them.</summary>
@@ -2373,7 +2374,8 @@ public sealed class HeadlessTurnExecutorTests
             var (callId, tool, path) = rounds[i];
             var stop = new ToolLoopStopSignal();
             yield return new ToolRoundCompleted();
-            yield return new ToolRoundExchange(i + 1, await GateRoundAsync(handler, stop, i + 1, callId, tool, path));
+            var gated = await GateRoundAsync(handler, stop, i + 1, callId, tool, path);
+            yield return new ToolRoundExchange(i + 1, gated, gated);
             if (stop.IsStopRequested)
                 break;
         }

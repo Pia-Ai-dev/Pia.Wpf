@@ -275,7 +275,7 @@ public class AgentContextCompactorTests
     [Fact]
     public async Task ACarriedAndClearedToolHistory_StillNeverOrphansAToolCall()
     {
-        var messages = ToolLoopShapedMessages(rounds: AgentToolCarryover.KeptResults + 4);
+        var messages = ToolLoopShapedMessages(rounds: AgentToolCarryover.ClearThreshold + 4);
         var carried = AgentToolCarryover.ClearOldResults(messages);
         Assert.NotSame(messages, carried);
 

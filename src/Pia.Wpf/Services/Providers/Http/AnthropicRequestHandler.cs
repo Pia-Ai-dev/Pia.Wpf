@@ -16,7 +16,7 @@ internal sealed class AnthropicRequestHandler : DelegatingHandler
 
     private const int MaxWebSearchUses = 5;
 
-    // Mirrors the server's AnthropicNativeReplayMaxMessages and AgentToolCarryover.KeptResults.
+    // Mirrors the server's AnthropicNativeReplayMaxMessages.
     internal const int MaxReplayedMessages = 8;
 
     private readonly bool _enableWebSearch;

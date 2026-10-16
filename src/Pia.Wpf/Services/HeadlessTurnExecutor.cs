@@ -753,22 +753,16 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             ? null
             : new UserInputRequestStore(AgentStepTools.OffersRequestUserInputTool(turnSetup.Tools));
 
-        // Append the EPHEMERAL step instruction to a COPY — the accumulating _messages keeps the
-        // transcript (system + goal + each step's tool exchanges and assistant reply).
-        //
-        // Batch 07 G6, and this is the line that makes a per-step persona real rather than cosmetic: element 0
-        // of the copy is THIS STEP's system prompt, not the run's. _messages[0] is left alone on purpose — it
-        // stays the RUN persona's prompt, so the accumulating transcript keeps one well-defined system message
-        // and the next step (whatever persona it resolves to) starts from the same place. Mutating _messages[0]
-        // instead would leak step N's persona into step N+1 and into a resume's re-seed.
+        // Element 0 is THIS step's system prompt; _messages[0] stays the run persona's, so a per-step persona
+        // never leaks into the next step or a resume's re-seed. The instruction object is the one appended to
+        // _messages after the step, so the next step's request extends this one byte for byte.
+        var instructionMessage = new ChatMessage(ChatRole.User, AssistantPromptComposer.AppendTimeNote(instruction));
         var exchangeMessages = new List<ChatMessage>(_messages.Count + 1)
         {
             new(ChatRole.System, turnSetup.SystemPrompt),
         };
         exchangeMessages.AddRange(_messages.Skip(1));
-        // The time note rides the copy too: _setup is resolved once per RUN, so a run spanning hours
-        // would otherwise carry the minute it started at.
-        exchangeMessages.Add(new ChatMessage(ChatRole.User, AssistantPromptComposer.AppendTimeNote(instruction)));
+        exchangeMessages.Add(instructionMessage);
 
         // ONE compaction seam covers all three Headless entry points: ExecuteStepAsync, the R10
         // degrade turn (RunSingleTurnFallbackAsync) — both funnel through here — and the RESUME path.
@@ -962,13 +956,14 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
         var assistantMsgId = Guid.NewGuid();
 
-        // This step's tool calls and their results, ahead of the reply so call and result stay adjacent and in
-        // round order. Model context only: _persisted is a different list of a different type and does not grow
-        // here, so the chat and a resume's re-seed are unchanged.
-        _messages.AddRange(exchange.ToolExchanges);
-
-        // Carried forward as context either way, so a later step still sees that this one ran.
-        _messages.Add(new ChatMessage(ChatRole.Assistant, exchange.Visible));
+        // Append-only model context: the instruction, the rounds and the answer exactly as sent and received, so
+        // the next step's request extends this step's last one. _persisted is a separate list and does not grow.
+        _messages.Add(instructionMessage);
+        _messages.AddRange(exchange.SentRounds ?? exchange.ToolExchanges);
+        if (exchange.FinalAnswer is { Count: > 0 } answer)
+            _messages.AddRange(answer);
+        else
+            _messages.Add(new ChatMessage(ChatRole.Assistant, exchange.Visible));
 
         // A step may finish without prose — an emit_step_result{true} claim needs none — and a chat row with
         // no content renders as a bare avatar forever. Skipped rather than filled with "didn't respond" text,

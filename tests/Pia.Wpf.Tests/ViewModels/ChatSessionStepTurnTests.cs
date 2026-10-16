@@ -90,7 +90,7 @@ public sealed class ChatSessionStepTurnTests
     {
         await Task.Yield();
         yield return new ToolRoundCompleted();
-        yield return new ToolRoundExchange(1, roundMessages);
+        yield return new ToolRoundExchange(1, roundMessages, roundMessages);
         yield return new TextDelta(answer);
         yield return new Finished(null, "m");
     }
@@ -137,7 +137,7 @@ public sealed class ChatSessionStepTurnTests
 
     /// <summary>The live twin of the headless prefix test: a step boundary only reads the prompt cache when
     /// the new request extends the last one.</summary>
-    [Fact(Explicit = true)]
+    [Fact]
     public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest()
     {
         var recorder = await RunTwoRecordedStepsAsync("system", "system");
@@ -145,7 +145,7 @@ public sealed class ChatSessionStepTurnTests
         recorder.AssertStepTwoExtendsStepOne();
     }
 
-    [Fact(Explicit = true)]
+    [Fact]
     public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest_UnderAnotherPersona()
     {
         var recorder = await RunTwoRecordedStepsAsync("you are Researcher", "you are Writer");

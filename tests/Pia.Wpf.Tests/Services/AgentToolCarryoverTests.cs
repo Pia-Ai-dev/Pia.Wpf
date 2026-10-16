@@ -61,8 +61,7 @@ public class AgentToolCarryoverTests
         Assert.Equal("two rows", Body(captured[1]));
     }
 
-    /// <summary>The prose a round produced is already in the exchange's visible reply; carrying it here too
-    /// would cost tokens and read as the model having said it twice.</summary>
+    /// <summary>The persisted shape holds tool content only; the live carry keeps the prose (AsSent).</summary>
     [Fact]
     public void Capture_DropsTheProseThatCameWithTheCall()
     {
@@ -79,6 +78,34 @@ public class AgentToolCarryoverTests
 
         Assert.DoesNotContain(captured.SelectMany(m => m.Contents), c => c is TextContent);
         Assert.Single(captured.SelectMany(m => m.Contents).OfType<FunctionCallContent>());
+    }
+
+    /// <summary>The live carry is the round as the next request sends it: prose, calls and the full result.</summary>
+    [Fact]
+    public void AsSent_KeepsProseCallsAndFullResults_AndDropsOnlyReasoning()
+    {
+        var long_ = new string('x', AgentToolCarryover.MaxCarriedResultChars + 500);
+        var round = new ChatMessage[]
+        {
+            new(ChatRole.Assistant, [
+                new TextReasoningContent("weighing it"),
+                new TextContent("Let me read that file."),
+                new FunctionCallContent("c0", "read_file", new Dictionary<string, object?> { ["path"] = "a.csv" }),
+            ]),
+            Result("c0", long_),
+            new(ChatRole.Assistant, [new TextReasoningContent("only thinking")]),
+        };
+
+        var sent = AgentToolCarryover.AsSent(round);
+
+        Assert.Equal(2, sent.Count);
+        Assert.DoesNotContain(sent.SelectMany(m => m.Contents), c => c is TextReasoningContent);
+        Assert.Equal("Let me read that file.", sent[0].Text);
+        Assert.Equal("c0", sent[0].Contents.OfType<FunctionCallContent>().Single().CallId);
+        Assert.Same(round[1], sent[1]);
+        Assert.Equal(long_, Body(sent[1]));
+        // The tool loop still holds its own thinking-bearing message.
+        Assert.Contains(round[0].Contents, c => c is TextReasoningContent);
     }
 
     /// <summary>A turn that sends no tools gets the transcript without them — a provider handed tool_calls with
@@ -101,24 +128,46 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_ReturnsTheInput_WhenNothingIsStaleYet()
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults);
+        var messages = Rounds(AgentToolCarryover.ClearThreshold);
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
         Assert.Same(messages, cleared);
     }
 
-    [Fact]
-    public void ClearOldResults_KeepsTheNewestKeptCount_AndClearsTheRest()
+    /// <summary>The cut is a pure function of the count that moves only at 17, 25 and 33, so a step boundary
+    /// that adds a few results leaves the earlier prefix byte-identical.</summary>
+    [Theory]
+    [MemberData(nameof(ClearedCounts))]
+    public void ClearedCount_MovesOnlyOncePerChunk(int results, int expected)
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults + 3);
+        Assert.Equal(expected, AgentToolCarryover.ClearedCount(results));
+    }
 
-        var cleared = AgentToolCarryover.ClearOldResults(messages);
+    public static TheoryData<int, int> ClearedCounts()
+    {
+        var data = new TheoryData<int, int>();
+        for (var n = 1; n <= 40; n++)
+            data.Add(n, n switch { <= 16 => 0, <= 24 => 8, <= 32 => 16, _ => 24 });
+        return data;
+    }
 
-        var bodies = cleared.Select(Body).Where(b => b is not null).ToList();
-        Assert.Equal(AgentToolCarryover.KeptResults + 3, bodies.Count);
-        Assert.Equal(3, bodies.Count(b => b!.StartsWith("[result cleared;", StringComparison.Ordinal)));
-        Assert.All(bodies.Take(3), b => Assert.StartsWith("[result cleared;", b!, StringComparison.Ordinal));
+    [Theory]
+    [InlineData(16, 0)]
+    [InlineData(17, 8)]
+    [InlineData(19, 8)]
+    [InlineData(24, 8)]
+    [InlineData(25, 16)]
+    [InlineData(33, 24)]
+    public void ClearOldResults_ClearsTheOldestChunk_AndKeepsNineToSixteenBodies(int results, int expected)
+    {
+        var bodies = AgentToolCarryover.ClearOldResults(Rounds(results)).Select(Body).Where(b => b is not null).ToList();
+
+        Assert.Equal(results, bodies.Count);
+        Assert.All(bodies.Take(expected), b => Assert.StartsWith("[result cleared;", b!, StringComparison.Ordinal));
+        Assert.DoesNotContain(bodies.Skip(expected), b => b!.StartsWith("[result cleared;", StringComparison.Ordinal));
+        if (expected > 0)
+            Assert.InRange(results - expected, 9, 16);
     }
 
     /// <summary>Build, never mutate: the input list is the executor's accumulating transcript, and an in-place
@@ -126,7 +175,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_DoesNotMutateTheInput()
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults + 2);
+        var messages = Rounds(AgentToolCarryover.ClearThreshold + 2);
         var before = messages.Select(Body).ToList();
 
         AgentToolCarryover.ClearOldResults(messages);
@@ -138,7 +187,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_KeepsTheCallAndNamesItsPath()
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults + 1);
+        var messages = Rounds(AgentToolCarryover.ClearThreshold + 1);
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
@@ -150,7 +199,7 @@ public class AgentToolCarryoverTests
     public void ClearOldResults_OmitsThePath_WhenTheCallCarriedNone()
     {
         var messages = new List<ChatMessage> { Call("listing", "list_files"), Result("listing", "a listing") };
-        messages.AddRange(Rounds(AgentToolCarryover.KeptResults));
+        messages.AddRange(Rounds(AgentToolCarryover.ClearThreshold));
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
@@ -176,7 +225,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_KeepsEveryCallIdVerbatim_InOrder()
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults + 3);
+        var messages = Rounds(AgentToolCarryover.ClearThreshold + 3);
         var before = messages.SelectMany(m => m.Contents).Select(IdOf).ToList();
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);

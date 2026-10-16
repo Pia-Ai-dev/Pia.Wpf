@@ -1728,8 +1728,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
             if (recordRounds && callContents.Count > 0)
             {
-                yield return new ToolRoundExchange(1, AgentToolCarryover.Capture(
-                    [new ChatMessage(ChatRole.Assistant, callContents), .. resultMessages]));
+                List<ChatMessage> roundMessages = [new ChatMessage(ChatRole.Assistant, callContents), .. resultMessages];
+                yield return new ToolRoundExchange(1, AgentToolCarryover.Capture(roundMessages), roundMessages);
             }
         }
 

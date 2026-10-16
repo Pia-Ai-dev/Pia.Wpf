@@ -468,11 +468,10 @@ public class AiClientService : IAiClientService
                 var appendedFrom = workingMessages.Count;
                 var stopRequested = await DispatchToolCallsAsync(
                     toolCalls, response, workingMessages, toolHandler, round, provider.ProviderType);
-                // Materialized, not deferred: the next iteration's compaction REASSIGNS workingMessages, so
-                // a lazy Skip() would enumerate a list this round never appended to. Capped here because a
-                // step executor carries this slice into the NEXT step and pays for it for the rest of the run.
+                // Materialized: the next iteration's compaction reassigns workingMessages.
+                var appended = workingMessages.Skip(appendedFrom).ToList();
                 yield return new ToolRoundExchange(
-                    round + 1, AgentToolCarryover.Capture(workingMessages.Skip(appendedFrom)));
+                    round + 1, AgentToolCarryover.Capture(appended), AgentToolCarryover.AsSent(appended));
                 if (stopRequested)
                 {
                     // No wrap-up round: that one is for round exhaustion, and spending a provider round-trip
@@ -517,6 +516,9 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
+            var answer = AgentToolCarryover.AsSent(response.Messages);
+            if (answer.Any(m => !string.IsNullOrEmpty(m.Text)))
+                yield return new FinalAnswer(answer);
             yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
                 protectedRoute || protectedContributedText, lastModelId);
             yield break;

@@ -106,6 +106,56 @@ public class AiClientServiceToolLoopArmTests
             .SelectMany(m => m.Contents.OfType<FunctionResultContent>()).Select(r => r.CallId));
     }
 
+    /// <summary>A step carries the round as sent and the answer as received, so its next request extends this one.</summary>
+    [Fact]
+    public async Task ToolRound_CarriesTheRoundAsSent_AndTheAnswerAsReceived()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        var round = 0;
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => round++ == 0 ? TextAndCallRound("Reading it.") : TextRound("done"));
+
+        var items = await harness.RunAsync(WithTools());
+
+        var exchange = Assert.Single(items.OfType<ToolRoundExchange>());
+        Assert.DoesNotContain(exchange.Messages.SelectMany(m => m.Contents), c => c is TextContent);
+        Assert.Equal("Reading it.", exchange.Sent[0].Text);
+        Assert.Equal("tool output", exchange.Sent[1].Contents.OfType<FunctionResultContent>().Single().Result);
+        Assert.Equal("done", Assert.Single(Assert.Single(items.OfType<FinalAnswer>()).Messages).Text);
+    }
+
+    /// <summary>A re-asked answer follows a nudge the next step will not carry, so it yields no FinalAnswer.</summary>
+    [Fact]
+    public async Task ReAskedAnswer_YieldsNoFinalAnswer()
+    {
+        var harness = new Harness { SupportsStreaming = true };
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => EmptyRound());
+        harness.ChatClient.GetResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(Answer("second time lucky")));
+
+        var items = await harness.RunAsync(WithTools());
+
+        Assert.Empty(items.OfType<FinalAnswer>());
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> TextAndCallRound(string text)
+    {
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            Contents =
+            [
+                new TextContent(text),
+                new FunctionCallContent("call-1", "read_file", new Dictionary<string, object?> { ["path"] = "A.cs" }),
+            ],
+        };
+        await Task.Yield();
+    }
+
     private static List<string> CallIds(List<ChatMessage> request) =>
         [.. request.SelectMany(m => m.Contents.OfType<FunctionCallContent>()).Select(c => c.CallId)];
 

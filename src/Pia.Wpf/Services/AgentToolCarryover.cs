@@ -10,12 +10,16 @@ namespace Pia.Services;
 /// </summary>
 internal static class AgentToolCarryover
 {
-    /// <summary>How many of the newest tool results keep their body. Covers a read-then-write pair and the
-    /// searches around it; a re-callable tool can simply be called again, which is what the placeholder says.</summary>
-    internal const int KeptResults = 8;
+    /// <summary>Up to this many results nothing is cleared; past it the newest 9–16 keep their body.</summary>
+    internal const int ClearThreshold = 16;
 
-    /// <summary>A carried result is context, not the deliverable — the step that needed it in full already had
-    /// it inside its own tool loop.</summary>
+    /// <summary>The cut moves once per this many new results, so consecutive step requests share a prefix.</summary>
+    internal const int ClearChunk = 8;
+
+    internal static int ClearedCount(int results) =>
+        results <= ClearThreshold ? 0 : (results - ClearThreshold + ClearChunk - 1) / ClearChunk * ClearChunk;
+
+    /// <summary>Cap on a persisted result; the live carry keeps results as sent.</summary>
     internal const int MaxCarriedResultChars = 4000;
 
     private const string TruncationSuffix = "\n[truncated]";
@@ -29,11 +33,7 @@ internal static class AgentToolCarryover
     internal static string CapResult(string result) =>
         result.Length > MaxCarriedResultChars ? result[..MaxCarriedResultChars] + TruncationSuffix : result;
 
-    /// <summary>
-    /// Snapshots the messages one tool round appended: TOOL CONTENT ONLY, each result capped at capture time.
-    /// The prose a round produced is already in the exchange's visible reply, so carrying it here too would
-    /// cost tokens and read as the model having said it twice.
-    /// </summary>
+    /// <summary>The persisted and resumed shape of a round: calls and results only, each result capped.</summary>
     internal static IReadOnlyList<ChatMessage> Capture(IEnumerable<ChatMessage> roundMessages)
     {
         var captured = new List<ChatMessage>();
@@ -61,6 +61,30 @@ internal static class AgentToolCarryover
     }
 
     /// <summary>
+    /// Messages as a later request sends them: reasoning removed, since a thinking block replayed under another
+    /// system prompt is a history edit, and tool images already swapped for their placeholder. Never mutates.
+    /// </summary>
+    internal static IReadOnlyList<ChatMessage> AsSent(IEnumerable<ChatMessage> messages)
+    {
+        var sent = new List<ChatMessage>();
+        foreach (var message in messages)
+        {
+            if (!message.Contents.Any(c => c is TextReasoningContent))
+            {
+                sent.Add(message);
+                continue;
+            }
+
+            var contents = message.Contents.Where(c => c is not TextReasoningContent).ToList();
+            if (contents.Count > 0)
+                sent.Add(new ChatMessage(message.Role, contents) { AdditionalProperties = message.AdditionalProperties });
+        }
+
+        ToolLoopImageMessages.Consume(sent);
+        return sent;
+    }
+
+    /// <summary>
     /// The step request with every carried call and result dropped, for a turn that sends NO tools — the grace
     /// turn, and any step whose persona resolved a provider without tool calling. A provider handed
     /// <c>tool_calls</c> with no tools declared can reject the request outright, and a turn that cannot call
@@ -78,9 +102,8 @@ internal static class AgentToolCarryover
         message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
 
     /// <summary>
-    /// Replaces the body of every tool result older than the newest <see cref="KeptResults"/> with a
-    /// placeholder naming the call to re-issue. The <see cref="FunctionCallContent"/> is left alone: it is the
-    /// record that the call was made, and what the model needs to make it again.
+    /// Replaces the oldest <see cref="ClearedCount"/> result bodies with a placeholder naming the call to
+    /// re-issue; the calls stay, since they are what the model needs to make the call again.
     /// </summary>
     internal static IReadOnlyList<ChatMessage> ClearOldResults(IReadOnlyList<ChatMessage> messages)
     {
@@ -103,10 +126,11 @@ internal static class AgentToolCarryover
             }
         }
 
-        if (results.Count <= KeptResults)
+        var cleared = ClearedCount(results.Count);
+        if (cleared == 0)
             return messages;
 
-        var stale = results.Take(results.Count - KeptResults).ToLookup(r => r.Message, r => r.Content);
+        var stale = results.Take(cleared).ToLookup(r => r.Message, r => r.Content);
         var rewritten = new List<ChatMessage>(messages.Count);
         for (var i = 0; i < messages.Count; i++)
         {

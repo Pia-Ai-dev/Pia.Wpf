@@ -65,7 +65,7 @@ public class AgentToolExchangeSerializerTests
         [
             new ChatMessage(ChatRole.Assistant, [rebuiltCall]),
             new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c0", "body")]),
-            .. Enumerable.Range(0, AgentToolCarryover.KeptResults).SelectMany(i => new[]
+            .. Enumerable.Range(0, AgentToolCarryover.ClearThreshold).SelectMany(i => new[]
             {
                 new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("k" + i, "read_file", null)]),
                 new ChatMessage(ChatRole.Tool, [new FunctionResultContent("k" + i, "later")]),
