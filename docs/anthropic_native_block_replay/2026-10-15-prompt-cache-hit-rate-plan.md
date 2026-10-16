@@ -1,6 +1,6 @@
 # Prompt-cache hit rate on Anthropic rows: append-only agent steps, chunked replay cap, safe breakpoints (steps P0–P5)
 
-**Status:** Planned — not started. Round 2 of the native-replay work; lands on the same two branches and PRs.
+**Status:** Done — measured 2026-10-16; P2 (size-based clearing), P3, P4 landed; PRs not yet opened.
 **Owner:** Marco Altmann
 **Written:** 2026-10-15
 **Origin:** The cache-read measurement of the testing phase (agent run `83c6d629` on the 18081 e2e stack,
@@ -293,6 +293,87 @@ Billing: Haiku runs are cheap (input $0.10/MTok). Sonnet/Opus validation: one ru
 only with the owner's approval. At most two attempts per failed run. Tick P0–P5 in the checklist (server
 steps naming the Pia commit) and add both tables to this plan.
 
+### P5 results — measured 2026-10-16 (coordinator-verified)
+
+Evidence: `G:\Git\Pia-7836\artifacts\native-replay-testing\` (`cache-before\`, `cache-after\`, `cache-fix\`,
+`comparison.md`, generator `compare.py`); every counted run was recomputed from its CSV by the coordinator.
+BEFORE: server 074a22e5 (image 72a02f00), client 5083b7da. AFTER: server 382fe727 (image 466e0502), client
+96802ba0. Haiku 5.5 ran A, B and C″ three times each per phase; the validation ran A once per phase (Opus plans,
+Sonnet runs the steps). Cost-eq = uncached + 1.25 × write + r × read (r = 0.1 Haiku and Sonnet, 0.05 Opus).
+Rule: the AFTER median beats the BEFORE median by more than the larger of the two ranges, and the validation run
+points the same way. "Suppl." columns are supplementary and do not decide. Figures are quoted from
+`comparison.md`, which sums per-row rounded cost-eq, so totals can differ by ±2 from the per-run tables.
+
+Protocol changes made during BEFORE, applied to both phases: MaxReplans 0; every run cold (≥ 6 min) with a gap
+audit; requests attributed by matching client and server (input, output) pairs; ping and title kept out of the
+sums; C replaced by C″ (14 licence lookups over 6 steps, at most 4 searches per step) after the original C hit
+the max_uses regression and the version-based C′ hit the PII tokenizer; PII tokenization on.
+
+**A — 3-step research run (P2)**
+
+| metric | BEFORE median (range) | AFTER median (range) | rule |
+|---|---|---|---|
+| run read share | 78.8% (5.0) | 89.3% (4.0) | pass, +10.4 pts |
+| s2 boundary read / write | 29.8% (5.1) / 42,040 (9,103) | 98.8% (0.3) / 706 (51) | pass |
+| cost-eq per run | 216,954 (51,774) | 200,311 (80,898) | not significant |
+| cost-eq per step | 72,318 (17,258) | 66,770 (26,966) | not significant |
+| suppl. boundary cost-eq | 59,003 (22,659) | 33,559 (25,315) | pass, narrowly |
+| suppl. cost-eq per round | 16,689 (1,370) | 13,541 (2,439) | pass, −18.9% |
+| validation, 1 run each | 81.4%; s2 37.0% / 30,309; 158,035 | 90.7%; s2 98.6% / 772; 156,893 | agrees |
+
+AFTER used more rounds (Haiku 19/18/13 against 15/13/13, validation 17 against 13), which keeps the run cost flat
+while the cost per round falls; with three runs the cause cannot be attributed.
+
+**B — routine (P4, no regression)**
+
+The like-for-like unit is s0's first two rounds: round 1 read 56.7% → 52.9% and round 2 40.0% → 40.1% (medians),
+median writes within ±300 tokens, all inside BEFORE's spread; no 400 in any run. Run totals are not comparable (BEFORE planned
+1/1/1 steps, AFTER 2/1/2): 61.3% / 113,584 → 56.4% / 124,148. AFTER's two extra boundaries read 98.5% and 98.4%.
+
+**C″ — 6 steps, 14 searches (P2 and P3)**
+
+| metric | BEFORE median (range) | AFTER median (range) | rule |
+|---|---|---|---|
+| run read share | 76.5% (1.4) | 87.4% (5.7) | pass |
+| cost-eq per run | 1,244,891 (21,284) | 798,157 (216,326) | pass, −36% |
+| cost-eq per step | 207,482 (3,547) | 133,026 (36,054) | pass |
+| replay-cut moves | 6 (1) | 2 (1) | pass |
+| suppl. cost-eq per round | 33,061 (2,079) | 20,466 (4,488) | pass |
+| suppl. boundary cost-eq | 300,289 (11,770) | 191,456 (134,814) | not significant |
+| suppl. write: cut-move / boundary / other / total | 433,101 / 233,093 / 129,609 / 797,538 | 105,766 / 136,524 / 121,762 / 392,313 | P3 −327k, P2 −97k |
+
+Apart from s1 (83–84% in both phases, a search inside the request), every AFTER boundary miss in C″ (20–58% read,
+37–74k write) fell on a step where the count-based ClearOldResults cut moved; where it stayed, the boundary read
+91–99%. The validation scenario never passes 8 anchored hits, so no
+Opus/Sonnet run speaks to P3.
+
+**Fix phase (single runs, observations)** — server 5bc4b685 (image 8bf5f8eb), Haiku:
+
+- C0-maxuses (4b05947c, client 96802ba0, tokenization off): 16 searches in one tool loop where the old code
+  stopped at 5; the budget was ≥ replayed + 5 on every request (16, with at most 8 replayed under the cap of 8);
+  0 pair drops. The run failed on the client's 24-round step cap, not on search.
+- C″-fix (326ad7cd, client 1343deec, size-based ClearOldResults): boundaries s1–s4 read 97.0 / 98.6 / 98.9 /
+  99.1% with 584–713 write — s3 and s4 are where the count rule would have moved; run read share 89.6% over
+  s0–s4; cut moved 3×, 0 pair drops. s5 was not reached: Pia.Server's own per-user AI rate limit (30 requests per
+  60 s) answered 429 once Haiku's rounds ran at about 2 s.
+
+**Verdicts**
+
+- **P2 — benefit under the rule.** Its target, the step boundary, passes on Haiku and the validation agrees (A s2:
+  29.8% → 98.8% read, 42,040 → 706 write). Run cost in A is not significant because AFTER used more rounds; P2's
+  declared behaviour change (earlier steps' instructions stay visible) is a candidate cause, and settling it would
+  take about three more Haiku A runs per phase. The count-based clearing that limited it in C″ is replaced by the
+  size rule (1343deec), whose fix run hit every boundary it reached.
+- **P3 — benefit on Haiku only; the rule's validation clause cannot be met.** Haiku C″ passes clearly (cut moves
+  6 → 2, write at cut moves −75%, run cost −36% together with P2), but scenario A never passes 8 anchored hits, so
+  no Opus/Sonnet run speaks to it. The owner accepted it on the Haiku evidence (2026-10-16).
+- **P4 — no measurable benefit, as expected.** It is insurance; part 1 turned out to be hygiene (a marker on
+  `server_tool_use` is accepted). No regression in B's in-step rounds and no 400 anywhere. The owner kept it
+  (2026-10-16).
+- **Bar from §1:** no 400 or 413 in any counted run; run read share above 90% only on the validation (90.7%) —
+  Haiku medians 89.3% (A), 87.4% (C″), 56.4% (B); one pending→orphan pair drop in BEFORE C″1 and AFTER C″1,
+  pre-existing from round 1 and fixed by 5bc4b685 (unit-tested; no live split occurred in the fix runs).
+
 ## 4. Decisions taken in this plan
 
 - P2 carries the instruction, the round messages and the final assistant message as sent and received; the
@@ -304,6 +385,10 @@ steps naming the Pia commit) and add both tables to this plan.
   once the carried result bodies pass 48,000 chars, never the newest 8 (owner, 2026-10-16, replacing the
   count rule); the server in steps of `M / 2`.
 - Thinking is never carried across a step boundary.
+- Owner, 2026-10-16, after the P5 measurement: P3 accepted on the Haiku evidence (no Opus/Sonnet scenario
+  passes 8 anchored hits); P4 kept as insurance; `ClearOldResults` clears by size (client 1343deec); the
+  pair-aware replay cut (Pia 5bc4b685) and the max_uses budget that counts replayed searches (Pia 8399675f)
+  landed on the server.
 
 ## 5. Not in this plan
 
