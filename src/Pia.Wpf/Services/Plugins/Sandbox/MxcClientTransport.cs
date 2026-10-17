@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Pia.Logging;
+using Pia.Paths;
 using Pia.Services.Exceptions;
 
 namespace Pia.Services.Plugins.Sandbox;
@@ -57,6 +58,7 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
         if (Interlocked.Exchange(ref _connected, 1) != 0)
             throw new InvalidOperationException("The transport is already connected.");
 
+        CreateOwnedFolders();
         var grants = _verifier.Verify(_spec);
         if (!grants.Ok)
         {
@@ -79,6 +81,14 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
             await launched.ShutdownAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    // The editor proposes a folder under Pia's own sandbox root without creating it; nothing else is created.
+    private void CreateOwnedFolders()
+    {
+        var root = Path.TrimEndingDirectorySeparator(PiaPaths.McpSandboxRoot) + Path.DirectorySeparatorChar;
+        foreach (var folder in _spec.ReadwritePaths.Where(p => p.StartsWith(root, StringComparison.OrdinalIgnoreCase)))
+            Directory.CreateDirectory(folder);
     }
 
     private async Task PumpStderrAsync(Stream stderr)

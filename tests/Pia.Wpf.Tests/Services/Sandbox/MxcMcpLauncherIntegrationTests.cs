@@ -55,6 +55,20 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
         await again.ShutdownAsync();
     }
 
+    /// <summary>The runtime directory is Pia's own loading detail; a contained server must never see it.</summary>
+    [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
+    public async Task TheContainedServer_DoesNotInheritPiasRuntimeDirectory()
+    {
+        Assert.False(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MXC_FFI_DIR")), "the test host must have it set");
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance);
+
+        var launched = await launcher.LaunchAsync(Spec("/c", "echo [%MXC_FFI_DIR%]"), TestContext.Current.CancellationToken);
+        var output = await new StreamReader(launched.StandardOutput).ReadToEndAsync(TestContext.Current.CancellationToken);
+        await launched.ShutdownAsync();
+
+        Assert.Contains("[%MXC_FFI_DIR%]", output);
+    }
+
     [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
     public async Task AWorkspaceFile_IsWritableFromInside_AndNothingOutsideIs()
     {

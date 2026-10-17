@@ -115,6 +115,19 @@ public sealed class SandboxLaunchSpecBuilderTests
         Assert.Contains("script launcher", plan.Error);
     }
 
+    [Theory]
+    [InlineData("npx")]
+    [InlineData("uvx")]
+    [InlineData(@"C:\Users\me\.local\bin\uvx.exe")]
+    public void AShimByName_IsRefused_EvenWhenItIsARealExe_OrNotOnPath(string command)
+    {
+        var plan = SandboxLaunchSpecBuilder.Build(
+            Request(command), @"C:\nowhere", fileExists: p => p.EndsWith("uvx.exe", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Null(plan.Spec);
+        Assert.Contains("script launcher", plan.Error);
+    }
+
     [Fact]
     public void ContainerName_IsStablePerServer_AndProbesGetTheirOwn()
     {

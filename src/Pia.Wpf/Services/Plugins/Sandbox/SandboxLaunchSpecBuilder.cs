@@ -19,12 +19,16 @@ public static class SandboxLaunchSpecBuilder
         var policy = request.Sandbox ?? throw new ArgumentException("A sandboxed launch needs a policy.", nameof(request));
         var exists = fileExists ?? File.Exists;
 
+        if (SandboxCommandRules.IsShimCommand(request.Command))
+            return SandboxLaunchPlan.Fail(string.Format(ScriptLauncherError, Path.GetFileName(request.Command.Trim().Trim('"'))));
+
         var resolved = ResolveCommand(request.Command, pathVariable ?? Environment.GetEnvironmentVariable("PATH"), exists);
         if (resolved.Error is not null)
             return SandboxLaunchPlan.Fail(resolved.Error);
 
         var command = resolved.Path!;
-        if (!string.Equals(Path.GetExtension(command), ".exe", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(Path.GetExtension(command), ".exe", StringComparison.OrdinalIgnoreCase)
+            || SandboxCommandRules.IsShimCommand(command))
             return SandboxLaunchPlan.Fail(string.Format(ScriptLauncherError, Path.GetFileName(command)));
 
         var readwrite = Distinct(policy.ReadwritePaths.Select(Normalize));
