@@ -24,6 +24,7 @@
     RemoveRuntime  delete the downloaded MXC runtime on the real local root (-Force)
     TamperRuntime  flip one byte of the extracted mxc_ffi.dll so the signature check must refuse it; -Undo
                    restores the byte (Pia must be stopped: a loaded dll cannot be written)
+    Baseline       take the pia-mcp-* container profiles and mappings that exist now as the "existed at Init" set
     MirrorLocal    point the Debug exe's Assets:MirrorBaseUrl at the e2e stack's storage (-Url overrides,
                    -NoMirror blanks it so downloads go upstream), through appsettings.Development.json
                    beside the exe; -Off puts the original back
@@ -38,7 +39,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet('Init', 'Seed', 'StageServer', 'Launch', 'Status', 'Stop', 'Verify', 'RemoveRuntime', 'TamperRuntime', 'MirrorLocal')]
+    [ValidateSet('Init', 'Seed', 'StageServer', 'Launch', 'Status', 'Stop', 'Verify', 'RemoveRuntime', 'TamperRuntime', 'MirrorLocal', 'Baseline')]
     [string]$Action,
 
     # Where the throwaway profile, fixture, staged servers and launch files live. Default: <repo>\artifacts\mxc-sandbox-e2e.
@@ -528,14 +529,14 @@ function Invoke-Status {
     Write-Section 'Container profiles (%LOCALAPPDATA%\Packages\pia-mcp-*)'
     $profiles = Get-ContainerProfiles
     $baseline = @($state['baselinePackages'])
-    foreach ($name in $profiles) { Write-Host ("{0}{1}" -f $name, $(if ($baseline -contains $name) { '  (existed at Init)' } else { '  (new)' })) }
+    foreach ($name in $profiles) { Write-Host ("{0}  {1}" -f $name, (Get-ContainerLabel $name $baseline)) }
     if (-not $profiles) { Write-Host 'none' }
     $report.containerProfiles = @($profiles)
 
     Write-Section 'Container mappings (HKCU AppContainer\Mappings, pia-mcp-* monikers)'
     $mappings = Get-ContainerMappings
     $baselineMappings = if ($state.ContainsKey('baselineMappings')) { @($state['baselineMappings']) } else { @() }
-    foreach ($name in $mappings) { Write-Host ("{0}{1}" -f $name, $(if ($baselineMappings -contains $name) { '  (existed at Init)' } else { '  (new)' })) }
+    foreach ($name in $mappings) { Write-Host ("{0}  {1}" -f $name, (Get-ContainerLabel $name $baselineMappings)) }
     if (-not $mappings) { Write-Host 'none' }
     $report.containerMappings = @($mappings)
 
@@ -659,6 +660,21 @@ function Invoke-MirrorLocal {
     Write-Host 'applies to the next Launch (appsettings is read once at startup).'
 }
 
+# The real-container unit tests name theirs pia-mcp-test-*; those are not the app's.
+function Get-ContainerLabel([string]$name, $baseline) {
+    if ($baseline -contains $name) { return '(existed at Init)' }
+    if ($name -like 'pia-mcp-test*') { return '(known test artefact)' }
+    '(new)'
+}
+
+function Invoke-Baseline {
+    $state = Read-State
+    $state['baselinePackages'] = @(Get-ContainerProfiles)
+    $state['baselineMappings'] = @(Get-ContainerMappings)
+    Write-State $state
+    Write-Host "baseline:  $($state['baselinePackages'].Count) container profile(s), $($state['baselineMappings'].Count) mapping(s)"
+}
+
 function Write-LeftoverWarnings($state) {
     if ($state.ContainsKey('mirror') -and $state['mirror']) {
         Write-Host "warning: Assets:MirrorBaseUrl is still overridden in $devSettingsPath. Run: MirrorLocal -Off" -ForegroundColor Yellow
@@ -679,4 +695,5 @@ switch ($Action) {
     'RemoveRuntime' { Invoke-RemoveRuntime }
     'TamperRuntime' { Invoke-TamperRuntime }
     'MirrorLocal'   { Invoke-MirrorLocal }
+    'Baseline'      { Invoke-Baseline }
 }

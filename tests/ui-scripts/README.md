@@ -305,7 +305,9 @@ profile roots, because the path guard refuses a Pia data root.
 - **Verdicts come from `Status`**, never from the model's text: `protected\` and `secret\` hashes against
   the baseline, explicit `S-1-15-2-*` ACEs on the fixture and server copies (the two well-known
   `ALL (RESTRICTED) APPLICATION PACKAGES` SIDs are not leaks), helper processes with no live Pia, and the
-  `%LOCALAPPDATA%\Packages\pia-mcp-*` container profiles against those present at `Init`.
+  `%LOCALAPPDATA%\Packages\pia-mcp-*` container profiles against those present at `Init` (`Baseline`
+  retakes that set; the `pia-mcp-test-*` ones the real-container unit tests leave behind are labelled as
+  known test artefacts, not as new).
 - **MXC runtime.** `RemoveRuntime -Force` deletes `%LOCALAPPDATA%\Pia\Runtimes\Mxc` on the real local
   root. It is a downloaded artifact, so that is safe, and it is the only way to re-run the first-download
   scenario.
