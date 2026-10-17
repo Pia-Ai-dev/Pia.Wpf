@@ -42,7 +42,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* none · *Effort:* S · *Value:* Enabler
 - [x] **C1 Launcher and transport (worker1).** `CommandLine`, `MxcMcpLauncher` (recipe, command-dir rule, container naming per S1, graceful shutdown), `MxcClientTransport` (stderr tail), `McpTransportFactory` used by both `McpPluginToolHandler` and `McpServerProbe`.
   *Deps:* C0, S2 · *Effort:* M · *Value:* High
-- [ ] **C2 Path guard (worker1).** `SandboxPathGuard` with every rule from the plan, localisable messages, unit tests per rule.
+- [x] **C2 Path guard (worker1).** `SandboxPathGuard` with every rule from the plan, localisable messages, unit tests per rule.
   *Deps:* C0 · *Effort:* S · *Value:* High
 - [ ] **C3 Fail closed and availability (worker1).** `MxcAvailability` (cached, reason, the D1 states). `PluginService` refuses to start a sandboxed server uncontained, reports a specific `Not running` reason, and starts a missing runtime's download at startup. Same for the probe.
   *Deps:* C1, D1 · *Effort:* S · *Value:* High

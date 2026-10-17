@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using NSubstitute;
@@ -13,9 +14,42 @@ public sealed class McpTransportFactoryTests
     private static McpTransportRequest Request(McpSandboxPolicy? sandbox, string command = @"C:\Tools\fs\fs.exe", bool probe = false) =>
         new("Files", command, ["--x"], new Dictionary<string, string> { ["TOKEN"] = "t" }, null, sandbox, "fs", probe);
 
+    private static readonly SandboxGuardEnvironment EverythingExists =
+        SandboxGuardEnvironment.Current() with { PathExists = _ => true };
+
     private static McpTransportFactory WithLauncher(FakeMxcProcessLauncher? launcher = null) =>
         new(launcher ?? new FakeMxcProcessLauncher(), Substitute.For<ISandboxGrantVerifier>(),
-            NullLoggerFactory.Instance, fileExists: _ => true);
+            NullLoggerFactory.Instance, fileExists: _ => true, guardEnvironment: EverythingExists);
+
+    [Theory]
+    [InlineData(@"relative\folder")]
+    [InlineData(@"C:\Windows\System32")]
+    [InlineData(@"\\server\share")]
+    public void ASandboxedRequest_WithAPathTheGuardRefuses_IsRefused_NotRunWithIt(string readwrite)
+    {
+        var ex = Assert.Throws<SandboxStartException>(
+            () => WithLauncher().Create(Request(new McpSandboxPolicy([readwrite], [], false))));
+
+        Assert.StartsWith("Pia can't sandbox this server:", ex.Message);
+        Assert.DoesNotContain(readwrite, ex.Message);
+    }
+
+    [Fact]
+    public void ASandboxedRequest_WithAProgramInAWideFolder_IsRefused()
+    {
+        var downloads = Path.Combine(SandboxGuardEnvironment.Current().ProfileRoot, "Downloads");
+
+        var ex = Assert.Throws<SandboxStartException>(
+            () => WithLauncher().Create(Request(McpSandboxPolicy.Empty, Path.Combine(downloads, "server.exe"))));
+
+        Assert.Contains("Put the server in its own folder", ex.Message);
+    }
+
+    [Fact]
+    public void ASandboxedRequest_WithNoFolders_IsAccepted()
+    {
+        Assert.IsType<MxcClientTransport>(WithLauncher().Create(Request(McpSandboxPolicy.Empty)));
+    }
 
     [Fact]
     public void WithoutASandbox_ItIsAPlainStdioTransport()

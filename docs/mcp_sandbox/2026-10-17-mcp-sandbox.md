@@ -122,16 +122,32 @@ exact string `allow`; anything else is deny.
 
 ### Sandbox path guard
 
-Rejected with a message naming the path:
+`SandboxPathGuard.Validate(policy, command)` returns issues, each `(Path, Kind, Message)`. The message is
+plain user-language text that never repeats the path (the issue carries it, so a UI can mark the matching
+entry). The factory runs the same guard before every start and every probe, so a policy edited by hand
+cannot get past it. Refused:
 
-- Not rooted, or does not exist (the editor offers to create rw dirs under `McpSandboxRoot`).
+- A path that is not fully qualified, or that does not exist. A missing **read-write** folder strictly
+  under `McpSandboxRoot` is fine: Pia creates it at start. A missing read-only one is refused.
 - `%WINDIR%`, `Program Files`, `Program Files (x86)`, or anything below them.
-- The user-profile root itself, a drive root, or a `PiaPaths` data root (Pia's own data dirs) or
-  anything below one, except `McpSandboxRoot`.
+- The user-profile root, anything above it (a drive root, `C:\Users`), or a `PiaPaths` data root (Pia's
+  own data dirs, real and routed), anything below one, or anything above one (`AppData\Local`). The
+  exception is a folder strictly below `McpSandboxRoot`. `McpSandboxRoot` itself is refused: it holds
+  every sandboxed server's data.
 - A readonly path equal to or nested inside a readwrite path. Nested, it would be read-write, because
   `DeniedPaths`-style carving does not work.
-- A readwrite path nested inside another readwrite path (collapse instead).
+- A readwrite path nested inside, or equal to, another readwrite path (collapse instead).
 - A UNC path. Not tested under MXC, so refused for now.
+- **The program's own folder, when it is granted and too wide.** The command dir is granted read-only
+  (see below), so a program in `Downloads`, `Desktop` or `Documents` themselves, the profile root, a
+  drive root or a Pia data root would share all of that folder: "Put the server in its own folder: Pia
+  would have to share all of <folder> with it." The issue's `Path` is that folder, so a UI can show
+  "Also readable: the server's own folder".
+- A command that resolves to a reparse point (the Microsoft Store `python.exe` alias): its folder is not
+  the program's own. Refused by the launch-spec builder with a plain reason.
+
+A policy with **no** folders at all is valid: it is the most restrictive case, for a server that needs no
+files (a time server).
 
 ### Command dir rule
 

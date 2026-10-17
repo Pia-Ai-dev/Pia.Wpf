@@ -20,12 +20,13 @@ public sealed class McpTransportFactory : IMcpTransportFactory
     private readonly ISandboxGrantVerifier _verifier;
     private readonly ILoggerFactory _loggerFactory;
     private readonly Func<string, bool>? _fileExists;
+    private readonly SandboxGuardEnvironment? _guardEnvironment;
 
     public McpTransportFactory(
         IMxcProcessLauncher? launcher = null,
         ISandboxGrantVerifier? verifier = null,
         ILoggerFactory? loggerFactory = null)
-        : this(launcher, verifier, loggerFactory, fileExists: null)
+        : this(launcher, verifier, loggerFactory, fileExists: null, guardEnvironment: null)
     {
     }
 
@@ -33,12 +34,14 @@ public sealed class McpTransportFactory : IMcpTransportFactory
         IMxcProcessLauncher? launcher,
         ISandboxGrantVerifier? verifier,
         ILoggerFactory? loggerFactory,
-        Func<string, bool>? fileExists)
+        Func<string, bool>? fileExists,
+        SandboxGuardEnvironment? guardEnvironment = null)
     {
         _launcher = launcher;
         _verifier = verifier ?? new SandboxGrantVerifier();
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _fileExists = fileExists;
+        _guardEnvironment = guardEnvironment;
     }
 
     public IClientTransport Create(McpTransportRequest request)
@@ -52,6 +55,11 @@ public sealed class McpTransportFactory : IMcpTransportFactory
         var plan = SandboxLaunchSpecBuilder.Build(request, fileExists: _fileExists);
         if (plan.Spec is null)
             throw new SandboxStartException(plan.Error!);
+
+        var issues = SandboxPathGuard.Validate(
+            request.Sandbox, request.Command, _guardEnvironment ?? SandboxGuardEnvironment.Current(), _fileExists);
+        if (issues.Count > 0)
+            throw new SandboxStartException($"Pia can't sandbox this server: {string.Join(" ", issues.Select(i => i.Message))}");
 
         return new MxcClientTransport(
             plan.Spec, _launcher, _verifier, _loggerFactory.CreateLogger<MxcClientTransport>(), _loggerFactory);
