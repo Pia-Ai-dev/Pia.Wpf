@@ -1720,6 +1720,10 @@
   <data name="McpServers_WorkingDirectoryHint" xml:space="preserve"><value>Optional. Der Ordner, in dem der Server startet.</value></data>
   <data name="ActionCard_Sandbox_NetworkOff" xml:space="preserve"><value>Läuft in der Sandbox: {0} Ordner mit Lese- und Schreibzugriff, {1} nur lesbar, Netzwerk aus</value></data>
   <data name="ActionCard_Sandbox_NetworkOn" xml:space="preserve"><value>Läuft in der Sandbox: {0} Ordner mit Lese- und Schreibzugriff, {1} nur lesbar, Netzwerk ein</value></data>
+  <data name="McpServers_Sandbox_Summary_NetworkOff" xml:space="preserve"><value>In der Sandbox · rw={0} ro={1} Netz aus</value></data>
+  <data name="McpServers_Sandbox_Summary_NetworkOn" xml:space="preserve"><value>In der Sandbox · rw={0} ro={1} Netz an</value></data>
+  <data name="McpServers_Sandbox_NotSandboxed" xml:space="preserve"><value>Nicht in der Sandbox</value></data>
+  <data name="McpServers_Detail_SandboxAlsoReadable" xml:space="preserve"><value>Zusätzlich lesbar: der eigene Ordner des Servers</value></data>
   <data name="McpServers_Sandbox_Title" xml:space="preserve"><value>Sandbox</value></data>
   <data name="McpServers_Sandbox_Hint" xml:space="preserve"><value>Startet den Server in einem isolierten Container, der nur die hier aufgeführten Ordner erreicht. Jeder Tool-Aufruf braucht weiterhin deine Freigabe.</value></data>
   <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>In der Sandbox ausführen</value></data>

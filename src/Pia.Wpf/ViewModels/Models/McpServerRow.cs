@@ -20,6 +20,9 @@ public partial class McpServerRow : ObservableObject
     private string _statusText = string.Empty;
 
     [ObservableProperty]
+    private string _sandboxText = string.Empty;
+
+    [ObservableProperty]
     private bool _isRunning;
 
     /// <summary>Switched on but not up — a different badge from the user having switched it off.</summary>

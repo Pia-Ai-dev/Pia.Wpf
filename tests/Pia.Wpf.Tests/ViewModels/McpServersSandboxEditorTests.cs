@@ -38,7 +38,8 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
     private static Fixture Create(
         LocalMcpDefinition? stored = null,
         MxcRuntimeState state = MxcRuntimeState.Ready,
-        string? reason = null)
+        string? reason = null,
+        LocalMcpStatus? status = null)
     {
         var plugins = Substitute.For<IPluginService>();
         plugins.AreLocalMcpServersAllowed.Returns(true);
@@ -53,7 +54,7 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
                 UserEnabled = true
             }]);
         plugins.GetLocalMcpDefinition(ServerId).Returns(stored);
-        plugins.GetLocalMcpStatus(ServerId).Returns(new LocalMcpStatus(false, [], [], null));
+        plugins.GetLocalMcpStatus(ServerId).Returns(status ?? new LocalMcpStatus(false, [], [], null));
 
         // Echoing localizer: the assertions are about WHICH string a state picks, not its wording.
         var localization = Substitute.For<ILocalizationService>();
@@ -508,6 +509,83 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
 
         Assert.False(vm.IsSandboxToggleEnabled);
         Assert.Equal("Gone.", vm.SandboxDisabledReason);
+    }
+
+    // ---- list row and detail pane ----------------------------------------------------------------------
+
+    [Fact]
+    public void ASandboxedServersRow_SaysSandboxedWithItsFolderCounts()
+    {
+        var (vm, _, _, _) = Create(Stored(Policy()));
+
+        Assert.Equal("McpServers_Sandbox_Summary_NetworkOff:1,1", vm.Servers.Single().SandboxText);
+    }
+
+    [Fact]
+    public void ASandboxedServersRow_SaysWhenTheNetworkIsOn()
+    {
+        var (vm, _, _, _) = Create(Stored(Policy(network: true)));
+
+        Assert.Equal("McpServers_Sandbox_Summary_NetworkOn:1,1", vm.Servers.Single().SandboxText);
+    }
+
+    [Fact]
+    public void AnUncontainedServersRow_SaysNotSandboxed()
+    {
+        var (vm, _, _, _) = Create(Stored(sandbox: null));
+
+        Assert.Equal("McpServers_Sandbox_NotSandboxed", vm.Servers.Single().SandboxText);
+    }
+
+    [Fact]
+    public void TheDetailPaneListsTheGrantedFolders_OfTheSelectedSandboxedServer()
+    {
+        var (vm, _, _, _) = Create(Stored(new McpSandboxPolicy([@"C:\a", @"C:\b"], [@"C:\c"], false)));
+
+        Assert.True(vm.HasSelectedSandbox);
+        Assert.Equal("McpServers_Sandbox_Summary_NetworkOff:2,1", vm.SelectedSandboxSummary);
+        Assert.Equal($@"C:\a{Environment.NewLine}C:\b", vm.SelectedSandboxReadwrite);
+        Assert.Equal(@"C:\c", vm.SelectedSandboxReadonly);
+    }
+
+    [Fact]
+    public void TheDetailPane_ShowsNoFolders_ForAZeroFolderPolicyAndForAnUncontainedServer()
+    {
+        var (zero, _, _, _) = Create(Stored(McpSandboxPolicy.Empty));
+        var (open, _, _, _) = Create(Stored(sandbox: null));
+
+        Assert.True(zero.HasSelectedSandbox);
+        Assert.Null(zero.SelectedSandboxReadwrite);
+        Assert.Null(zero.SelectedSandboxReadonly);
+        Assert.False(open.HasSelectedSandbox);
+        Assert.Equal("McpServers_Sandbox_NotSandboxed", open.SelectedSandboxSummary);
+        Assert.Null(open.SelectedSandboxAlsoReadable);
+    }
+
+    [Fact]
+    public void ADisabledSandboxedServer_StillShowsItsSandbox()
+    {
+        var (vm, plugins, _, _) = Create(Stored(Policy()));
+        plugins.GetLocalMcpPlugins().Returns([new SyncPlugin
+        {
+            Id = ServerId, Kind = "mcp_server", Name = "files", UserEnabled = false,
+            ConfigJson = """{"source":"local","transport":"stdio","command":"x"}"""
+        }]);
+
+        plugins.PluginsChanged += Raise.Event<EventHandler>(plugins, EventArgs.Empty);
+
+        Assert.Equal("McpServers_Sandbox_Summary_NetworkOff:1,1", vm.Servers.Single().SandboxText);
+    }
+
+    [Fact]
+    public void AFailClosedRefusal_ShowsItsReasonVerbatimInTheDetailNotice()
+    {
+        const string reason = "Pia can't sandbox this server: 3 file(s) in its folder belong to an administrator.";
+        var (vm, _, _, _) = Create(Stored(Policy()), status: new LocalMcpStatus(false, [], [], reason));
+
+        Assert.True(vm.Servers.Single().IsFailed);
+        Assert.Equal(reason, vm.SelectedError);
+        Assert.Contains(reason, vm.Servers.Single().StatusText);
     }
 
     // ---- the "created when the server starts" hint ----------------------------------------------------

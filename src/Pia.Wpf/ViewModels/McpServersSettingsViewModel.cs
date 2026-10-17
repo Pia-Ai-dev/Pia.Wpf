@@ -172,6 +172,22 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private string? _selectedError;
 
     [ObservableProperty]
+    private string? _selectedSandboxSummary;
+
+    [ObservableProperty]
+    private string? _selectedSandboxReadwrite;
+
+    [ObservableProperty]
+    private string? _selectedSandboxReadonly;
+
+    /// <summary>The server's own folder, which the sandbox always lets it read; null until the launch spec reports it.</summary>
+    [ObservableProperty]
+    private string? _selectedSandboxAlsoReadable;
+
+    [ObservableProperty]
+    private bool _hasSelectedSandbox;
+
+    [ObservableProperty]
     private string? _selectedToolsSummary;
 
     [ObservableProperty]
@@ -289,7 +305,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
                 IsRunning = !pending && enabled && status.IsRunning,
                 IsFailed = !pending && enabled && !status.IsRunning,
                 IsToggling = pending,
-                StatusText = pending ? PendingStatus(target) : DescribeStatus(enabled, status)
+                StatusText = pending ? PendingStatus(target) : DescribeStatus(enabled, status),
+                SandboxText = DescribeSandbox(definition?.Sandbox)
             });
         }
 
@@ -319,8 +336,21 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         SelectedEnvironmentKeys = definition is { Env.Count: > 0 } ? string.Join(", ", definition.Env.Keys) : null;
         SelectedError = SelectedServer is { IsFailed: true } ? NullIfBlank(status?.Error) : null;
 
+        var sandbox = definition?.Sandbox;
+        SelectedSandboxSummary = DescribeSandbox(sandbox);
+        SelectedSandboxReadwrite = sandbox is { ReadwritePaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadwritePaths) : null;
+        SelectedSandboxReadonly = sandbox is { ReadonlyPaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadonlyPaths) : null;
+        HasSelectedSandbox = sandbox is not null;
+
         FillSelectedTools(definition?.AllowedTools, status?.DiscoveredTools ?? []);
     }
+
+    private string DescribeSandbox(McpSandboxPolicy? sandbox) => sandbox is null
+        ? _localizationService["McpServers_Sandbox_NotSandboxed"]
+        : _localizationService.Format(
+            sandbox.AllowNetwork ? "McpServers_Sandbox_Summary_NetworkOn" : "McpServers_Sandbox_Summary_NetworkOff",
+            sandbox.ReadwritePaths.Count,
+            sandbox.ReadonlyPaths.Count);
 
     private void FillSelectedTools(IReadOnlyList<string>? allowed, IReadOnlyList<McpProbeTool> discovered)
     {

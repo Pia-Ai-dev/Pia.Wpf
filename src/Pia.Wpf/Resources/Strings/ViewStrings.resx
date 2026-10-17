@@ -1730,6 +1730,10 @@
   <data name="McpServers_WorkingDirectoryHint" xml:space="preserve"><value>Optional. The folder the server starts in.</value></data>
   <data name="ActionCard_Sandbox_NetworkOff" xml:space="preserve"><value>Runs sandboxed: {0} read-write, {1} read-only folder(s), network off</value></data>
   <data name="ActionCard_Sandbox_NetworkOn" xml:space="preserve"><value>Runs sandboxed: {0} read-write, {1} read-only folder(s), network on</value></data>
+  <data name="McpServers_Sandbox_Summary_NetworkOff" xml:space="preserve"><value>Sandboxed · rw={0} ro={1} net=off</value></data>
+  <data name="McpServers_Sandbox_Summary_NetworkOn" xml:space="preserve"><value>Sandboxed · rw={0} ro={1} net=on</value></data>
+  <data name="McpServers_Sandbox_NotSandboxed" xml:space="preserve"><value>Not sandboxed</value></data>
+  <data name="McpServers_Detail_SandboxAlsoReadable" xml:space="preserve"><value>Also readable: the server's own folder</value></data>
   <data name="McpServers_Sandbox_Title" xml:space="preserve"><value>Sandbox</value></data>
   <data name="McpServers_Sandbox_Hint" xml:space="preserve"><value>Runs the server in an isolated container that can only reach the folders listed here. Every tool call still asks for your approval.</value></data>
   <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>Run in sandbox</value></data>
