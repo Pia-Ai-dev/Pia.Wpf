@@ -11,6 +11,7 @@ using Pia.Logging;
 using Pia.Services.Interfaces;
 using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
+using Pia.Services.Plugins.Sandbox;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Plugins;
@@ -39,6 +40,8 @@ public class PluginService : IPluginService
     private readonly CabManagerService? _cabManager;
     private readonly DpapiHelper? _dpapiHelper;
     private readonly IMcpTransportFactory _transportFactory;
+    private readonly IMxcAvailability? _mxcAvailability;
+    private readonly IAppContainerProfileService? _profileService;
 
     private readonly Dictionary<Guid, IPluginToolHandler> _handlers = new();
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
@@ -48,6 +51,7 @@ public class PluginService : IPluginService
     /// <summary>Why a server never got as far as a handler, so the settings row can say so.</summary>
     private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
 
+    private const string UnreadableSettingsReason = "The saved settings of this server could not be read, so it was not started.";
     private const string LocalMcpBlockedReason = "Your organization's policy does not allow local MCP servers.";
 
     private const string SseWithoutCommandReason = "This server uses the sse transport but names no command to launch.";
@@ -82,7 +86,9 @@ public class PluginService : IPluginService
         SqliteContext sqliteContext,
         CabManagerService? cabManager = null,
         DpapiHelper? dpapiHelper = null,
-        IMcpTransportFactory? transportFactory = null)
+        IMcpTransportFactory? transportFactory = null,
+        IMxcAvailability? mxcAvailability = null,
+        IAppContainerProfileService? profileService = null)
     {
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
@@ -104,6 +110,8 @@ public class PluginService : IPluginService
         _cabManager = cabManager;
         _dpapiHelper = dpapiHelper;
         _transportFactory = transportFactory ?? new McpTransportFactory();
+        _mxcAvailability = mxcAvailability;
+        _profileService = profileService;
 
         InitializeBuiltInPlugins();
         LoadPersistedPlugins();
@@ -115,6 +123,9 @@ public class PluginService : IPluginService
             RebuildToolNameRoutes();
             ApplyLocalMcpPolicyAsync(settings.AllowLocalMcpServers).SafeFireAndForget(_logger);
         };
+
+        if (_mxcAvailability is not null)
+            _mxcAvailability.StatusChanged += (_, status) => OnSandboxRuntimeChangedAsync(status).SafeFireAndForget(_logger);
 
         // The assignment pack's availability is a server probe, not a setting, so it flips outside every
         // other rebuild trigger. Without this the first probe that turns it on offers tools with no route.
@@ -486,10 +497,17 @@ public class PluginService : IPluginService
             _startFailures.TryGetValue(pluginId, out var failure) ? failure : null);
     }
 
-    public async Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
-        (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers
-            ? await McpServerProbe.ProbeAsync(definition, _transportFactory, timeout: null, ct)
-            : McpProbeResult.Failed(LocalMcpBlockedReason);
+    public async Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default)
+    {
+        if (!(await _settingsService.GetSettingsAsync()).AllowLocalMcpServers)
+            return McpProbeResult.Failed(LocalMcpBlockedReason);
+
+        // A probe never starts the download: the editor offers it, and the user clicks.
+        if (definition.Sandbox is not null && SandboxUnavailableReason() is { } unavailable)
+            return McpProbeResult.Failed(unavailable);
+
+        return await McpServerProbe.ProbeAsync(definition, _transportFactory, timeout: null, ct);
+    }
 
     public async Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default)
     {
@@ -537,9 +555,15 @@ public class PluginService : IPluginService
         if (!_pluginConfigs.TryGetValue(pluginId, out var plugin) || !LocalMcpConfig.IsLocal(plugin.ConfigJson))
             return;
 
+        var prefix = ReadLocalDefinition(plugin)?.ToolPrefix;
+
         await ShutdownHandlerAsync(pluginId);
         _pluginConfigs.Remove(pluginId);
         DeletePluginFromDb(pluginId);
+
+        // Every container name leaves a profile behind; the server may have been sandboxed at some point.
+        if (_profileService is not null && !string.IsNullOrEmpty(prefix))
+            _profileService.DeleteServerProfiles(prefix);
 
         lock (_pendingPrefs)
             _pendingPrefs.RemoveAll(p => p.PluginId == pluginId);
@@ -696,6 +720,22 @@ public class PluginService : IPluginService
             return;
         }
 
+        if (localDefinition is null && LocalMcpConfig.IsLocal(plugin.ConfigJson))
+        {
+            // Without its definition the sandbox policy is unknown, and the raw command below would start it bare.
+            _logger.LogWarning("Local MCP server {PluginId} not started: its saved settings could not be read", plugin.Id);
+            _startFailures[plugin.Id] = UnreadableSettingsReason;
+            return;
+        }
+
+        if (localDefinition?.Sandbox is not null && SandboxUnavailableReason() is { } unavailable)
+        {
+            _logger.LogInformation("Sandboxed MCP server {PluginId} not started: the sandbox runtime is not ready", plugin.Id);
+            _startFailures[plugin.Id] = unavailable;
+            StartSandboxRuntimeDownload();
+            return;
+        }
+
         if (localDefinition is not null && transport != "stdio")
         {
             _logger.LogWarning("Local MCP server {PluginId}: transport '{Transport}' is not supported, only stdio",
@@ -837,6 +877,59 @@ public class PluginService : IPluginService
             _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginId}", plugin.Id);
             handler.Dispose();
         }
+    }
+
+    /// <summary>Why a sandboxed server cannot start right now; null when the runtime is ready.</summary>
+    private string? SandboxUnavailableReason()
+    {
+        if (_mxcAvailability is null)
+            return SandboxUnavailableText(new MxcAvailabilityStatus(MxcRuntimeState.Unsupported));
+
+        var status = _mxcAvailability.Status;
+        return status.IsReady ? null : SandboxUnavailableText(status);
+    }
+
+    private static string SandboxUnavailableText(MxcAvailabilityStatus status) => status.State switch
+    {
+        MxcRuntimeState.Downloading => "Downloading the sandbox runtime. This server starts when it is done.",
+        MxcRuntimeState.NotInstalled => status.Reason ?? "The sandbox runtime is not installed yet. Pia is downloading it.",
+        MxcRuntimeState.Unsupported when !string.IsNullOrEmpty(status.Reason) => status.Reason,
+        _ => "Sandboxing is not available on this PC, so this server was not started."
+    };
+
+    // A saved, enabled sandboxed server is the user's consent to need the runtime; no other path starts a download.
+    private void StartSandboxRuntimeDownload()
+    {
+        if (_mxcAvailability is null || _mxcAvailability.Status.State != MxcRuntimeState.NotInstalled)
+            return;
+
+        Task.Run(() => _mxcAvailability.InstallRuntimeAsync()).SafeFireAndForget(_logger);
+    }
+
+    private async Task OnSandboxRuntimeChangedAsync(MxcAvailabilityStatus status)
+    {
+        var waiting = _pluginConfigs.Values
+            .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson) && IsPluginEnabled(p) && !HasHandler(p.Id))
+            .Where(p => ReadLocalDefinition(p)?.Sandbox is not null)
+            .ToList();
+        if (waiting.Count == 0)
+            return;
+
+        foreach (var plugin in waiting)
+        {
+            if (status.IsReady)
+            {
+                _startFailures.TryRemove(plugin.Id, out _);
+                await ActivateMcpPluginAsync(plugin);
+            }
+            else
+            {
+                _startFailures[plugin.Id] = SandboxUnavailableText(status);
+            }
+        }
+
+        RebuildToolNameRoutes();
+        PluginsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>False when the admin's command is neither on PATH nor recoverable from the plugin's cab.</summary>

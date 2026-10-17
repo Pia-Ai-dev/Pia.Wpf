@@ -44,7 +44,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* C0, S2 · *Effort:* M · *Value:* High
 - [x] **C2 Path guard (worker1).** `SandboxPathGuard` with every rule from the plan, localisable messages, unit tests per rule.
   *Deps:* C0 · *Effort:* S · *Value:* High
-- [ ] **C3 Fail closed and availability (worker1).** `MxcAvailability` (cached, reason, the D1 states). `PluginService` refuses to start a sandboxed server uncontained, reports a specific `Not running` reason, and starts a missing runtime's download at startup. Same for the probe.
+- [x] **C3 Fail closed and availability (worker1).** `MxcAvailability` (cached, reason, the D1 states). `PluginService` refuses to start a sandboxed server uncontained, reports a specific `Not running` reason, and starts a missing runtime's download at startup. Same for the probe.
   *Deps:* C1, D1 · *Effort:* S · *Value:* High
 - [ ] **C4 ACE sweep (worker1).** Port `AceSweeper`, shallow-first, refuse system paths, run at startup before the first activation, count in Information and paths in `SensitiveDebug`.
   *Deps:* C1 · *Effort:* S · *Value:* High

@@ -122,7 +122,7 @@ public static class LocalMcpConfig
                 prefix.Length > 0 ? prefix : DeriveToolPrefix(name), allowed, description, defaultEnabled,
                 ReadSandbox(root));
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
         {
             return null;
         }

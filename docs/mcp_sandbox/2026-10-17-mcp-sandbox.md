@@ -231,11 +231,17 @@ of them are Microsoft-signed (checked 2026-10-17).
   is stripped from the environment of every MCP child, sandboxed or not, and a contained child does not
   inherit it (tested with a real container).
 - **When the download happens.** The first time the user turns **Run in sandbox** on, the editor says
-  "Pia needs to download the sandbox runtime (15 MB) from Pia's storage" and shows progress. At
-  startup, a saved sandboxed server whose runtime is missing triggers the same download. The row reads
-  `Not running: downloading sandbox runtime` and then starts. Fail closed applies throughout: no
-  runtime means no start, and never an uncontained one. `IMxcAvailability` reports `NotInstalled`,
-  `Downloading`, `Unsupported` (the OS cannot spawn) or `Ready`.
+  "Pia needs to download the sandbox runtime (15 MB) from Pia's storage" and shows progress. A saved,
+  **enabled** sandboxed server whose runtime is missing triggers the same download when it is activated,
+  at startup or on save: that is the user's consent. A bare start, a disabled server, a probe and the
+  editor never start one by themselves. The row reads `Not running: downloading sandbox runtime` and
+  starts by itself when the runtime turns `Ready`. Fail closed applies throughout: no runtime means no
+  start, and never an uncontained one. A local row whose saved settings cannot be read is not started
+  either (its sandbox policy is unknown), and a damaged `sandbox` block reads as an empty, contained
+  policy. `IMxcAvailability` (`MxcAvailabilityService`) reports `NotInstalled`, `Downloading`,
+  `Unsupported` (the OS cannot spawn) or `Ready`, and asks the SDK (even `GetPlatformSupport`) only once
+  the runtime is installed and verified. Removing a server deletes the AppContainer profiles of its
+  container and its probe container.
 - **Publishing.** `scripts/RuntimeAssetCatalogue.ps1` gains the `Mxc` group, so
   `Publish-RuntimeAssets.ps1 -Include Mxc` mirrors it and `Save-RuntimeAssets.ps1 -Include Mxc`
   pre-fetches it for air-gapped machines. `RuntimeAssetCatalogTests` pins the key on both sides. The

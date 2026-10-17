@@ -99,6 +99,35 @@ public static class SandboxPathGuard
         return issues;
     }
 
+    /// <summary>The program's folder when the sandbox is given read access to it and the guard accepts that; otherwise null.</summary>
+    public static string? GrantedCommandFolder(McpSandboxPolicy policy, string? command) =>
+        GrantedCommandFolder(policy, command, SandboxGuardEnvironment.Current(), File.Exists);
+
+    internal static string? GrantedCommandFolder(
+        McpSandboxPolicy policy,
+        string? command,
+        SandboxGuardEnvironment environment,
+        Func<string, bool> fileExists)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return null;
+
+        var resolved = SandboxLaunchSpecBuilder.ResolveCommand(command, null, fileExists);
+        if (resolved.Path is null)
+            return null;
+
+        var directory = SandboxLaunchSpecBuilder.Normalize(Path.GetDirectoryName(resolved.Path)!);
+        var granted = SandboxLaunchSpecBuilder.CommandDirectoryToGrant(
+            directory,
+            SandboxLaunchSpecBuilder.Distinct(policy.ReadwritePaths.Where(IsUsable).Select(SandboxLaunchSpecBuilder.Normalize)),
+            SandboxLaunchSpecBuilder.Distinct(policy.ReadonlyPaths.Where(IsUsable).Select(SandboxLaunchSpecBuilder.Normalize)),
+            SystemRoots(environment));
+        return granted is null || IsTooWide(granted, environment) ? null : granted;
+    }
+
+    private static bool IsUsable(string path) =>
+        !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path.Trim());
+
     private static void Check(
         string raw,
         bool isReadwrite,
