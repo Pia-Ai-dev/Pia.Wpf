@@ -737,19 +737,14 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <StackPanel Orientation="Horizontal" Margin="0,2">
-                      <CheckBox Content="{Binding Name}"
-                                FontFamily="Consolas"
+                      <CheckBox FontFamily="Consolas"
                                 FontSize="12"
                                 VerticalAlignment="Center"
                                 IsChecked="{Binding IsAllowed, Mode=TwoWay}"
                                 AutomationProperties.AutomationId="{Binding Name, StringFormat='McpServers_Tool_{0}'}"
                                 AutomationProperties.Name="{Binding Name}">
-                        <!-- A string Content would read each underscore of a tool name as an access key and drop it. -->
-                        <CheckBox.ContentTemplate>
-                          <DataTemplate>
-                            <TextBlock Text="{Binding}"/>
-                          </DataTemplate>
-                        </CheckBox.ContentTemplate>
+                        <!-- Not a string Content: its first underscore becomes an access key, in the label and in the UIA name. -->
+                        <TextBlock Text="{Binding Name}"/>
                       </CheckBox>
                       <shared:PiaHelpHint Text="{Binding Description}" IconSize="14"/>
                       <ui:Badge Content="{loc:Str McpServers_Destructive}"
