@@ -592,6 +592,12 @@ function Invoke-TamperRuntime {
     if ($Undo) {
         if (-not (Test-Path -LiteralPath $tamperRecord)) { Write-Host 'nothing tampered'; return }
         $record = Get-Content -LiteralPath $tamperRecord -Raw | ConvertFrom-Json
+        # A reinstall replaces the file, so flipping the byte again would tamper it instead of restoring it.
+        if ((Test-Path -LiteralPath $record.path) -and (Get-AuthenticodeSignature -LiteralPath $record.path).Status -eq 'Valid') {
+            Remove-Item -LiteralPath $tamperRecord
+            Write-Host 'the runtime verifies again (it was reinstalled); cleared the stale tamper record'
+            return
+        }
         $stream = [IO.File]::Open($record.path, 'Open', 'ReadWrite', 'None')
         try { $stream.Position = $record.offset; $stream.WriteByte([byte]$record.original) } finally { $stream.Dispose() }
         Remove-Item -LiteralPath $tamperRecord
@@ -680,7 +686,10 @@ function Write-LeftoverWarnings($state) {
         Write-Host "warning: Assets:MirrorBaseUrl is still overridden in $devSettingsPath. Run: MirrorLocal -Off" -ForegroundColor Yellow
     }
     if (Test-Path -LiteralPath $tamperRecord) {
-        Write-Host 'warning: the MXC runtime is still tampered. Run: TamperRuntime -Undo, or RemoveRuntime -Force' -ForegroundColor Yellow
+        $record = Get-Content -LiteralPath $tamperRecord -Raw | ConvertFrom-Json
+        $stillBroken = -not (Test-Path -LiteralPath $record.path) -or (Get-AuthenticodeSignature -LiteralPath $record.path).Status -ne 'Valid'
+        $text = if ($stillBroken) { 'the MXC runtime is still tampered' } else { 'a tamper record is left over, but the runtime verifies again (it was reinstalled)' }
+        Write-Host "warning: $text. Run: TamperRuntime -Undo, or RemoveRuntime -Force" -ForegroundColor Yellow
     }
 }
 
