@@ -139,7 +139,28 @@ The PoC always adds the command's own dir to `ReadonlyPaths`, because .NET needs
 the DACL of every policy path. A non-admin cannot do that on `Program Files`, and the PoC says never
 to put it in a policy. So the dir is added **only when it is not** under `%WINDIR%` or
 `Program Files*`. Those are readable inside the AppContainer anyway, through the inherited
-`ALL APPLICATION PACKAGES:(RX)` ACE. Gate G1 confirms this.
+`ALL APPLICATION PACKAGES:(RX)` ACE. Gate G1 confirms this. The dir is also skipped when a read-write or
+read-only path already covers it. The command must resolve to an `.exe` (a bare name is looked up on
+`PATH`); `.cmd`, `.bat`, `.ps1` and shims such as `npx` are refused at start with a reason.
+
+### Grant preflight
+
+Tier 3 grants access by rewriting ACLs, and it skips without any warning the files it may not rewrite.
+The spawn then succeeds and the server dies on load with "access denied" (gate G1: files an elevated
+build left owned by `Administrators`). So before every start, and for the probe too, Pia opens each
+target with `WRITE_DAC` (`CreateFileW`, `FILE_FLAG_BACKUP_SEMANTICS` for folders) and counts the ones it
+cannot open. The access right is the test, not ownership: owner equals user is both too strict and too
+loose.
+
+- The command dir is walked **recursively**, only when it is granted at all (outside `%WINDIR%` and
+  `Program Files*`), capped at 5000 entries. Past the cap Pia trusts the rest and the stderr tail speaks.
+- A policy path is checked **shallow**: the folder and its direct files. A file deeper down that the
+  sandbox misses only means less access, which is the safe direction.
+- Any blocked item means the server does not start. The reason names counts, never paths: "Pia can't
+  sandbox this server: N file(s) in its folder belong to an administrator or another account. Install
+  or copy the server into a folder you own." The count goes to the Information log.
+- It runs inside the transport, behind `ISandboxGrantVerifier`, so one unit test covers the refusal
+  without an administrator-owned file.
 
 ### Container name
 

@@ -38,6 +38,7 @@ public class PluginService : IPluginService
     private readonly SqliteContext _sqliteContext;
     private readonly CabManagerService? _cabManager;
     private readonly DpapiHelper? _dpapiHelper;
+    private readonly IMcpTransportFactory _transportFactory;
 
     private readonly Dictionary<Guid, IPluginToolHandler> _handlers = new();
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
@@ -80,7 +81,8 @@ public class PluginService : IPluginService
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
         CabManagerService? cabManager = null,
-        DpapiHelper? dpapiHelper = null)
+        DpapiHelper? dpapiHelper = null,
+        IMcpTransportFactory? transportFactory = null)
     {
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
@@ -101,6 +103,7 @@ public class PluginService : IPluginService
         _sqliteContext = sqliteContext;
         _cabManager = cabManager;
         _dpapiHelper = dpapiHelper;
+        _transportFactory = transportFactory ?? new McpTransportFactory();
 
         InitializeBuiltInPlugins();
         LoadPersistedPlugins();
@@ -485,7 +488,7 @@ public class PluginService : IPluginService
 
     public async Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
         (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers
-            ? await McpServerProbe.ProbeAsync(definition, timeout: null, ct)
+            ? await McpServerProbe.ProbeAsync(definition, _transportFactory, timeout: null, ct)
             : McpProbeResult.Failed(LocalMcpBlockedReason);
 
     public async Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default)
@@ -818,7 +821,9 @@ public class PluginService : IPluginService
             localDefinition?.Env,
             localDefinition?.WorkingDirectory,
             localDefinition?.ToolPrefix,
-            localDefinition?.AllowedTools);
+            localDefinition?.AllowedTools,
+            _transportFactory,
+            localDefinition?.Sandbox);
 
         try
         {

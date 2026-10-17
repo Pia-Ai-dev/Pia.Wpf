@@ -38,6 +38,8 @@ public class NamingConventionTests
             // An audit trail and a user-facing state signal are named for what they are; "…LogService" would
             // name the layer instead of the thing.
             "Log", "Indicator",
+            // A transport is named for the wire it speaks, as the MCP SDK's own StdioClientTransport is.
+            "Transport",
         };
 
         var serviceTypes = Types.InAssembly(PiaAssembly)

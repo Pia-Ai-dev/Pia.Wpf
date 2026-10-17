@@ -40,7 +40,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* S1 · *Effort:* XS · *Value:* Enabler
 - [ ] **F1 Test MCP server (worker2).** `tests/Pia.TestMcpServer`, ported from Mxc's `DemoMcp.FileServer` (list/read/write/delete file and dir, server info) plus `export` (HTTP POST, the egress probe). Logs to stderr only, returns `ERROR <Type>: <msg>` as `isError`, never validates paths. Wired into the test project with `ReferenceOutputAssembly=false` so its output sits under the test bin.
   *Deps:* none · *Effort:* S · *Value:* Enabler
-- [ ] **C1 Launcher and transport (worker1).** `CommandLine`, `MxcMcpLauncher` (recipe, command-dir rule, container naming per S1, graceful shutdown), `MxcClientTransport` (stderr tail), `McpTransportFactory` used by both `McpPluginToolHandler` and `McpServerProbe`.
+- [x] **C1 Launcher and transport (worker1).** `CommandLine`, `MxcMcpLauncher` (recipe, command-dir rule, container naming per S1, graceful shutdown), `MxcClientTransport` (stderr tail), `McpTransportFactory` used by both `McpPluginToolHandler` and `McpServerProbe`.
   *Deps:* C0, S2 · *Effort:* M · *Value:* High
 - [ ] **C2 Path guard (worker1).** `SandboxPathGuard` with every rule from the plan, localisable messages, unit tests per rule.
   *Deps:* C0 · *Effort:* S · *Value:* High
