@@ -8,6 +8,20 @@
 - Administrators can give agent-run planning its own model on Pia Cloud by
   mapping the "plan" persona type. A group that maps only "fast" plans on
   its Assistant model until it adds a "plan" mapping.
+- Agent runs resumed after a tool approval no longer show the model the
+  approved call twice, once as paused and once as done, and a later resume
+  no longer shows it as still paused.
+- Multi-step agent runs on Claude with "Cache the prompt prefix (5 min)"
+  on read almost all of each new step from the cache, so later steps cost
+  less.
+
+## Claude
+
+- With your own Anthropic API key and "Enable web search", answers no
+  longer retract or repeat searches they already made after a tool call.
+- Claude Opus 5.5 and Sonnet 5.5 on your own Anthropic API key now answer
+  when the provider's "Reasoning effort" is None, instead of failing every
+  request.
 
 ## Desktop
 
