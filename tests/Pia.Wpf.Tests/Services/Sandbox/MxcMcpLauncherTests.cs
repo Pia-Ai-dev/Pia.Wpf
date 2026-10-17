@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Mxc.Sdk.V1;
+using Pia.Services.Exceptions;
 using Pia.Services.Plugins.Sandbox;
 using Xunit;
 
@@ -14,6 +16,28 @@ public sealed class MxcMcpLauncherTests
         new("pia-mcp-fs", @"C:\Tools\fs\fs.exe", ["--root", @"C:\a b"],
             env ?? new Dictionary<string, string> { ["TOKEN"] = "t" }, @"C:\box\rw",
             [@"C:\box\rw"], ro ?? [@"C:\box\ro"], network, grantedCommandDirectory);
+
+    private sealed class UnavailableRuntime(string reason) : IMxcRuntime
+    {
+        public bool TryLoad(out string? why)
+        {
+            why = reason;
+            return false;
+        }
+    }
+
+    [Fact]
+    public async Task WithoutAVerifiedRuntime_NothingIsLaunched_AndTheContainerNameStaysFree()
+    {
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, new UnavailableRuntime("The sandbox runtime is not installed."));
+        var spec = Spec() with { ContainerName = "pia-mcp-unverified-" + Guid.NewGuid().ToString("N") };
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(
+            () => launcher.LaunchAsync(spec, TestContext.Current.CancellationToken));
+
+        Assert.Equal("The sandbox runtime is not installed.", ex.Message);
+        SandboxContainerLease.Acquire(spec.ContainerName).Dispose();
+    }
 
     [Fact]
     public void Request_CarriesTheCommandLineAndTheContainerIdentity()

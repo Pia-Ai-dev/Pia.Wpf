@@ -81,6 +81,7 @@ public sealed class PiaPathsTests : IDisposable
         Assert.Equal(Path.Combine(RealLocal, "ConsentAudit"), PiaPaths.ConsentAuditDirectory);
         Assert.Equal(Path.Combine(RealLocal, "ConsentEvidence"), PiaPaths.ConsentEvidenceDirectory);
         Assert.Equal(Path.Combine(RealLocal, "Runtimes", "Mxc", "1.0.1"), PiaPaths.MxcRuntimeDirectory);
+        Assert.Equal(Path.Combine(RealLocal, "Runtimes", "Mxc", "microsoft.mxc.sdk.1.0.1.nupkg"), PiaPaths.MxcRuntimeArchivePath);
     }
 
     [Fact]

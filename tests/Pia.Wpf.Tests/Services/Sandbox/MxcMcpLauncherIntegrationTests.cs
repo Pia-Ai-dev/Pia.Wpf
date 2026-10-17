@@ -8,6 +8,7 @@ using Xunit;
 namespace Pia.Tests.Services.Sandbox;
 
 /// <summary>Real containers; skipped on a host that cannot create one.</summary>
+[Collection("MxcRuntimeEnvironment")]
 public sealed class MxcMcpLauncherIntegrationTests : IDisposable
 {
     private const string SkipReason = "MXC cannot create a container on this host (see MxcTestHost.Reason).";
@@ -32,7 +33,7 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
     [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
     public async Task ARealContainer_RunsTheProgram_AndHandsBackItsOutput()
     {
-        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance);
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
 
         var launched = await launcher.LaunchAsync(Spec("/c", "echo", "hello-from-the-container"), TestContext.Current.CancellationToken);
         var output = await new StreamReader(launched.StandardOutput).ReadToEndAsync(TestContext.Current.CancellationToken);
@@ -44,7 +45,7 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
     [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
     public async Task TheContainerName_IsFreeAgainOnceTheServerIsShutDown()
     {
-        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance);
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
         var ct = TestContext.Current.CancellationToken;
 
         var first = await launcher.LaunchAsync(Spec("/c", "echo", "one"), ct);
@@ -60,7 +61,7 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
     public async Task TheContainedServer_DoesNotInheritPiasRuntimeDirectory()
     {
         Assert.False(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MXC_FFI_DIR")), "the test host must have it set");
-        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance);
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
 
         var launched = await launcher.LaunchAsync(Spec("/c", "echo [%MXC_FFI_DIR%]"), TestContext.Current.CancellationToken);
         var output = await new StreamReader(launched.StandardOutput).ReadToEndAsync(TestContext.Current.CancellationToken);
@@ -72,7 +73,7 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
     [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
     public async Task AWorkspaceFile_IsWritableFromInside_AndNothingOutsideIs()
     {
-        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance);
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
         var inside = Path.Combine(_workspace, "inside.txt");
         var outside = Path.Combine(Path.GetDirectoryName(_workspace)!, "pia-mxc-outside-" + Guid.NewGuid().ToString("N") + ".txt");
 

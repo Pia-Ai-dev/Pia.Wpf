@@ -628,6 +628,8 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
         services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();
         services.AddSingleton<IMxcAvailability, Pia.Services.Plugins.Sandbox.UnavailableMxcAvailabilityService>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.MxcRuntimeProvisioner>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.IMxcRuntime>(sp => sp.GetRequiredService<Pia.Services.Plugins.Sandbox.MxcRuntimeProvisioner>());
         services.AddSingleton<Pia.Services.Plugins.Sandbox.IMxcProcessLauncher, Pia.Services.Plugins.Sandbox.MxcMcpLauncher>();
         services.AddSingleton<Pia.Services.Plugins.Sandbox.ISandboxGrantVerifier, Pia.Services.Plugins.Sandbox.SandboxGrantVerifier>();
         services.AddSingleton<Pia.Services.Plugins.Sandbox.IAppContainerProfileService, Pia.Services.Plugins.Sandbox.AppContainerProfileService>();
