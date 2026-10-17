@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Pia.Services.Plugins;
+using Pia.Services.Plugins.Sandbox;
 using Xunit;
 
 namespace Pia.Tests.Services;
@@ -153,6 +155,121 @@ public class LocalMcpConfigTests
             var definition = new LocalMcpDefinition("n", "cmd", [], new Dictionary<string, string>(), null, "n", allowed);
             return LocalMcpConfig.FromConfigJson("n", null, LocalMcpConfig.ToConfigJson(definition, v => v), v => v)!;
         }
+    }
+
+    private static LocalMcpDefinition WithSandbox(McpSandboxPolicy? sandbox) =>
+        new("n", "cmd", [], new Dictionary<string, string>(), null, "n", null, Sandbox: sandbox);
+
+    private static McpSandboxPolicy? RoundTrip(McpSandboxPolicy? sandbox) =>
+        LocalMcpConfig.FromConfigJson("n", null, LocalMcpConfig.ToConfigJson(WithSandbox(sandbox), v => v), v => v)!.Sandbox;
+
+    [Fact]
+    public void Sandbox_RoundTrips_PathsAndNetwork()
+    {
+        var policy = new McpSandboxPolicy([@"C:\box\rw"], [@"C:\box\ro1", @"C:\box\ro2"], AllowNetwork: true);
+
+        var json = LocalMcpConfig.ToConfigJson(WithSandbox(policy), v => v);
+
+        using var doc = JsonDocument.Parse(json);
+        var sandbox = doc.RootElement.GetProperty("sandbox");
+        Assert.Equal([@"C:\box\rw"], sandbox.GetProperty("readwrite").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal([@"C:\box\ro1", @"C:\box\ro2"], sandbox.GetProperty("readonly").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal("allow", sandbox.GetProperty("network").GetString());
+
+        var back = RoundTrip(policy)!;
+        Assert.Equal(policy.ReadwritePaths, back.ReadwritePaths);
+        Assert.Equal(policy.ReadonlyPaths, back.ReadonlyPaths);
+        Assert.True(back.AllowNetwork);
+    }
+
+    [Fact]
+    public void Sandbox_WithNetworkOff_WritesDeny()
+    {
+        var json = LocalMcpConfig.ToConfigJson(WithSandbox(new McpSandboxPolicy([], [], false)), v => v);
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("deny", doc.RootElement.GetProperty("sandbox").GetProperty("network").GetString());
+        Assert.False(RoundTrip(new McpSandboxPolicy([], [], false))!.AllowNetwork);
+    }
+
+    [Fact]
+    public void NoSandbox_WritesNoKey_AndReadsAsUncontained()
+    {
+        var json = LocalMcpConfig.ToConfigJson(WithSandbox(null), v => v);
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.False(doc.RootElement.TryGetProperty("sandbox", out _));
+        Assert.Null(RoundTrip(null));
+    }
+
+    [Fact]
+    public void ConfigSavedBeforeSandboxExisted_ReadsAsUncontained()
+    {
+        var back = LocalMcpConfig.FromConfigJson(
+            "n", null, """{"source":"local","transport":"stdio","command":"npx","args":["-y","x"]}""", v => v)!;
+
+        Assert.Null(back.Sandbox);
+    }
+
+    [Theory]
+    [InlineData("allow", true)]
+    [InlineData("ALLOW", true)]
+    [InlineData("deny", false)]
+    [InlineData("", false)]
+    [InlineData("yes", false)]
+    public void SandboxNetwork_IsDenyUnlessItSaysAllow(string network, bool expected)
+    {
+        var back = LocalMcpConfig.FromConfigJson("n", null,
+            """{"source":"local","command":"x","sandbox":{"network":""" + $"\"{network}\"" + "}}", v => v)!;
+
+        Assert.Equal(expected, back.Sandbox!.AllowNetwork);
+    }
+
+    [Fact]
+    public void SandboxNetwork_NotAString_IsDeny()
+    {
+        var back = LocalMcpConfig.FromConfigJson("n", null,
+            """{"source":"local","command":"x","sandbox":{"network":true}}""", v => v)!;
+
+        Assert.False(back.Sandbox!.AllowNetwork);
+    }
+
+    [Fact]
+    public void SandboxPaths_KeepOnlyNonBlankStrings()
+    {
+        var back = LocalMcpConfig.FromConfigJson("n", null,
+            """{"source":"local","command":"x","sandbox":{"readwrite":["C:\\a",5,"","  "],"readonly":"C:\\b"}}""", v => v)!;
+
+        Assert.Equal([@"C:\a"], back.Sandbox!.ReadwritePaths);
+        Assert.Empty(back.Sandbox.ReadonlyPaths);
+    }
+
+    /// <summary>A block that cannot be read must not become "no sandbox": the server would start uncontained.</summary>
+    [Theory]
+    [InlineData("true")]
+    [InlineData("false")]
+    [InlineData("\"yes\"")]
+    [InlineData("5")]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    public void SandboxBlock_ThatIsNotAnObjectWithPolicy_StaysContained(string block)
+    {
+        var back = LocalMcpConfig.FromConfigJson("n", null,
+            """{"source":"local","command":"x","sandbox":""" + block + "}", v => v)!;
+
+        Assert.NotNull(back.Sandbox);
+        Assert.Empty(back.Sandbox.ReadwritePaths);
+        Assert.Empty(back.Sandbox.ReadonlyPaths);
+        Assert.False(back.Sandbox.AllowNetwork);
+    }
+
+    [Fact]
+    public void EmptyPolicy_GrantsNothing()
+    {
+        Assert.Empty(McpSandboxPolicy.Empty.ReadwritePaths);
+        Assert.Empty(McpSandboxPolicy.Empty.ReadonlyPaths);
+        Assert.False(McpSandboxPolicy.Empty.AllowNetwork);
     }
 
     [Fact]

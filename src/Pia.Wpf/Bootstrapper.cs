@@ -627,6 +627,7 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
         services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();
+        services.AddSingleton<IMxcAvailability, Pia.Services.Plugins.Sandbox.UnavailableMxcAvailabilityService>();
         services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();

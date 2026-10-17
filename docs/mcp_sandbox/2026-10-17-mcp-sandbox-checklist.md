@@ -28,15 +28,15 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
 
 ## Steps
 
-- [ ] **S1 Non-elevated spike (worker1).** A throwaway console spike (outside the repo, scratch dir) launched at medium IL spawns Mxc's `artifacts/servers/files` exe under MXC and checks the four denials, a Program-Files command without its dir granted, and `%LOCALAPPDATA%\Packages` profile growth across three spawns.
+- [x] **S1 Non-elevated spike (worker1).** A throwaway console spike (outside the repo, scratch dir) launched at medium IL spawns Mxc's `artifacts/servers/files` exe under MXC and checks the four denials, a Program-Files command without its dir granted, and `%LOCALAPPDATA%\Packages` profile growth across three spawns.
   *Deps:* none · *Effort:* XS · *Value:* Enabler (gate G1)
-- [ ] **S2 Native-outside-app-dir check (worker1).** Add `Microsoft.Mxc.Sdk` 1.0.1 to `Pia.Wpf` with `ExcludeAssets="native"`. Confirm `dotnet publish -r win-x64 --self-contained` then carries **no** `mxc_ffi.dll`. With the four native files placed in a separate dir and a `NativeLibrary.SetDllImportResolver`, confirm a Tier 3 spawn works from the app process, and record which files it actually needs and where it looks for `plm.exe`.
+- [x] **S2 Native-outside-app-dir check (worker1).** Add `Microsoft.Mxc.Sdk` 1.0.1 to `Pia.Wpf` with `ExcludeAssets="native"`. Confirm `dotnet publish -r win-x64 --self-contained` then carries **no** `mxc_ffi.dll`. With the four native files placed in a separate dir and a `NativeLibrary.SetDllImportResolver`, confirm a Tier 3 spawn works from the app process, and record which files it actually needs and where it looks for `plm.exe`.
   *Deps:* S1 · *Effort:* XS · *Value:* Enabler (gate G2)
 - [ ] **D1 Runtime provisioner (worker1).** `RuntimeAssetCatalog.MxcRuntime` (mirror key `runtimes/microsoft.mxc.sdk.1.0.1.nupkg`, nuget.org upstream, pinned SHA-256), `PiaPaths.MxcRuntimeDirectory`, and `MxcRuntimeProvisioner`: download through `IAssetDownloader`, pin check, `.tmp` extract of `runtimes/win-x64/native/*`, WinTrust plus trusted-publisher check, resolver registration, progress. `IMxcAvailability` states `NotInstalled` / `Downloading` / `Unsupported` / `Ready`. Unit tests for every failure path.
   *Deps:* S2, C0 · *Effort:* S · *Value:* High
 - [ ] **D2 Catalogue scripts (worker1).** `Mxc` group in `scripts/RuntimeAssetCatalogue.ps1`, so `Publish-RuntimeAssets.ps1 -Include Mxc` and `Save-RuntimeAssets.ps1 -Include Mxc` work, and `RuntimeAssetCatalogTests` holds both sides. `-ListOnly` only: the real upload to `storage.pia-ai.de` is the owner's step.
   *Deps:* D1 · *Effort:* XS · *Value:* Enabler
-- [ ] **C0 Contract commit (worker1).** `McpSandboxPolicy`, `LocalMcpDefinition.Sandbox`, the `sandbox` ConfigJson round-trip with tests, the `IMxcAvailability` interface, `PiaPaths.McpSandboxRoot`. No behaviour yet. worker2 merges it next.
+- [x] **C0 Contract commit (worker1).** `McpSandboxPolicy`, `LocalMcpDefinition.Sandbox`, the `sandbox` ConfigJson round-trip with tests, the `IMxcAvailability` interface, `PiaPaths.McpSandboxRoot`. No behaviour yet. worker2 merges it next.
   *Deps:* S1 · *Effort:* XS · *Value:* Enabler
 - [x] **F1 Test MCP server (worker2).** `tests/Pia.TestMcpServer`, ported from Mxc's `DemoMcp.FileServer` (list/read/write/delete file and dir, server info) plus `export` (HTTP POST, the egress probe). Logs to stderr only, returns `ERROR <Type>: <msg>` as `isError`, never validates paths. Wired into the test project with `ReferenceOutputAssembly=false` so its output sits under the test bin.
   *Deps:* none · *Effort:* S · *Value:* Enabler

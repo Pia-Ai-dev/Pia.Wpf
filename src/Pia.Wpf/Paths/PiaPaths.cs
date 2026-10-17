@@ -44,6 +44,9 @@ public static class PiaPaths
     /// leave rows in the user's real trail.</summary>
     public static string ScreenCaptureAuditDirectory => Path.Combine(LocalDataDirectory, "ScreenCaptureAudit");
 
+    /// <summary>Per-server read-write folders for sandboxed MCP servers. Routed: the files are user data.</summary>
+    public static string McpSandboxRoot => Path.Combine(LocalDataDirectory, "McpSandbox");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);
@@ -72,6 +75,11 @@ public static class PiaPaths
     public static string ConsentAuditDirectory => Path.Combine(RealLocalRoot, "ConsentAudit");
 
     public static string ConsentEvidenceDirectory => Path.Combine(RealLocalRoot, "ConsentEvidence");
+
+    /// <summary>Version of the downloaded MXC native runtime; equals the referenced Microsoft.Mxc.Sdk package.</summary>
+    public const string MxcRuntimeVersion = "1.0.1";
+
+    public static string MxcRuntimeDirectory => Path.Combine(RealLocalRoot, "Runtimes", "Mxc", MxcRuntimeVersion);
 
     private static string RealLocalRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductFolder);

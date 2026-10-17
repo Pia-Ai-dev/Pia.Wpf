@@ -6,6 +6,7 @@ using Pia.Services.Interfaces;
 using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Services.Plugins;
+using Pia.Services.Plugins.Sandbox;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
 
@@ -81,6 +82,26 @@ public sealed class LocalMcpPersistenceTests : IDisposable
         Assert.Equal(["--stdio"], definition.Args);
         Assert.Equal(["create_issue"], definition.AllowedTools);
         Assert.Equal("github", definition.ToolPrefix);
+    }
+
+    /// <summary>The save path rebuilds the definition around a unique prefix; a rebuild that forgot the policy
+    /// would persist a sandboxed server as uncontained.</summary>
+    [Fact]
+    public async Task ASandboxedServer_StaysSandboxed_AcrossSaveEditAndRestart()
+    {
+        var policy = new McpSandboxPolicy([@"C:\box\rw"], [@"C:\box\ro"], AllowNetwork: true);
+        var service = CreateService();
+        var id = await service.SaveLocalMcpAsync(
+            null, Definition() with { Sandbox = policy }, TestContext.Current.CancellationToken);
+
+        await service.SaveLocalMcpAsync(
+            id, service.GetLocalMcpDefinition(id)! with { AllowedTools = null }, TestContext.Current.CancellationToken);
+
+        var back = CreateService().GetLocalMcpDefinition(id)!.Sandbox;
+        Assert.NotNull(back);
+        Assert.Equal(policy.ReadwritePaths, back.ReadwritePaths);
+        Assert.Equal(policy.ReadonlyPaths, back.ReadonlyPaths);
+        Assert.True(back.AllowNetwork);
     }
 
     [Fact]
