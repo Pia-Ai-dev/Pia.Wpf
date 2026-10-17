@@ -642,10 +642,18 @@
                 <Border Style="{StaticResource PiaRequiredHintStyle}"
                         Margin="0,10,0,0"
                         Visibility="{Binding SandboxGuardMessage, Converter={StaticResource NullToVisibilityConverter}}">
-                  <TextBlock Text="{Binding SandboxGuardMessage}"
-                             TextWrapping="Wrap"
-                             Foreground="{DynamicResource PiaDangerBrush}"
-                             AutomationProperties.AutomationId="McpServers_Sandbox_GuardMessage"/>
+                  <StackPanel>
+                    <TextBlock Text="{loc:Str McpServers_Sandbox_GuardLead}"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource PiaDangerBrush}"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_GuardLead"/>
+                    <TextBlock Text="{Binding SandboxGuardMessage}"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource PiaDangerBrush}"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_GuardMessage"/>
+                  </StackPanel>
                 </Border>
               </StackPanel>
 

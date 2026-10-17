@@ -1749,6 +1749,7 @@
   <data name="McpServers_Sandbox_ReadOnly" xml:space="preserve"><value>Folders it can only read</value></data>
   <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Keep these apart from the read and write folders: a folder inside one of those would be writable too.</value></data>
   <data name="McpServers_Sandbox_FolderCreatedHint" xml:space="preserve"><value>Pia creates a folder here when the server starts if it does not exist yet.</value></data>
+  <data name="McpServers_Sandbox_GuardLead" xml:space="preserve"><value>This server won't start until these are fixed:</value></data>
   <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Full path of an existing folder</value></data>
   <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Add</value></data>
   <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Browse…</value></data>
