@@ -431,7 +431,14 @@ public partial class App : Application
     protected override async void OnExit(ExitEventArgs e)
     {
         // Before the first await: nothing after one in this async void is certain to run before the process ends.
-        Bootstrapper.ServiceProvider.GetRequiredService<Services.Plugins.PluginShutdownService>().ShutDownBounded();
+        try
+        {
+            Bootstrapper.ServiceProvider.GetRequiredService<Services.Plugins.PluginShutdownService>().ShutDownBounded();
+        }
+        catch (InvalidOperationException)
+        {
+            // A startup crash can end Pia before the container exists; base.OnExit must still run.
+        }
 
         base.OnExit(e);
 

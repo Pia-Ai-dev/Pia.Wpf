@@ -1729,9 +1729,11 @@
   <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>In der Sandbox ausführen</value></data>
   <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Starter wie npx und uvx sowie .cmd- oder .bat-Skripte laufen noch nicht in einer Sandbox. Lass den Befehl direkt auf das Server-Programm zeigen.</value></data>
   <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Sandboxing ist auf diesem Gerät nicht verfügbar.</value></data>
-  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia muss die Sandbox-Laufzeit (etwa 15 MB) aus dem Pia-Speicher herunterladen, bevor dieser Server starten kann.</value></data>
+  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia muss die Sandbox-Laufzeit (etwa 15 MB) aus dem Pia-Speicher herunterladen, bevor dieser Server starten kann. Beim Speichern eines aktivierten Sandbox-Servers wird sie automatisch heruntergeladen; sie kann auch jetzt heruntergeladen werden.</value></data>
   <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Sandbox-Laufzeit wird heruntergeladen … {0} %</value></data>
+  <data name="McpServers_Sandbox_Installing" xml:space="preserve"><value>Sandbox-Laufzeit wird eingerichtet …</value></data>
   <data name="McpServers_Sandbox_Download" xml:space="preserve"><value>Herunterladen</value></data>
+  <data name="McpServers_Sandbox_HideProgress" xml:space="preserve"><value>Ausblenden</value></data>
   <data name="McpServers_Sandbox_DownloadFailed" xml:space="preserve"><value>Die Sandbox-Laufzeit konnte nicht heruntergeladen werden.</value></data>
   <data name="McpServers_Sandbox_DownloadFailedWithReason" xml:space="preserve"><value>Die Sandbox-Laufzeit konnte nicht heruntergeladen werden: {0}</value></data>
   <data name="McpServers_Sandbox_ReadWrite" xml:space="preserve"><value>Ordner mit Lese- und Schreibzugriff</value></data>

@@ -3,6 +3,8 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
+using Pia.Logging;
 using Pia.Paths;
 using Pia.Services.Interfaces;
 using Pia.Services.Plugins;
@@ -31,6 +33,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private bool _reloading;
 
     private CancellationTokenSource? _sandboxDownloadCts;
+    private CancellationTokenSource? _sandboxGuardCts;
 
     /// <summary>True while a new server's sandbox settings are still the defaults: until the user touches the
     /// toggle or a folder list, the name and command keep re-deriving them.</summary>
@@ -136,6 +139,12 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private int _sandboxDownloadPercent;
 
     [ObservableProperty]
+    private ModelDownloadPhase _sandboxDownloadPhase;
+
+    [ObservableProperty]
+    private bool _isSandboxProgressHidden;
+
+    [ObservableProperty]
     private string? _sandboxDownloadError;
 
     [ObservableProperty]
@@ -232,9 +241,12 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         EditReadwritePaths.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(ShowSandboxFolderCreatedHint));
-            UpdateSandboxGuard();
+            if (!_applyingSandboxDefaults) UpdateSandboxGuard();
         };
-        EditReadonlyPaths.CollectionChanged += (_, _) => UpdateSandboxGuard();
+        EditReadonlyPaths.CollectionChanged += (_, _) =>
+        {
+            if (!_applyingSandboxDefaults) UpdateSandboxGuard();
+        };
         Reload();
     }
 
@@ -245,6 +257,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         _pluginService.PluginsChanged -= OnPluginsChanged;
         _mxcAvailability.StatusChanged -= OnMxcStatusChanged;
         _sandboxDownloadCts?.Cancel();
+        _sandboxGuardCts?.Cancel();
         GC.SuppressFinalize(this);
     }
 
@@ -719,11 +732,17 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         EditSandboxEnabled && SandboxStatus.State == MxcRuntimeState.NotInstalled && !IsSandboxDownloading;
 
     public bool ShowSandboxDownloadProgress =>
-        EditSandboxEnabled && (IsSandboxDownloading || SandboxStatus.State == MxcRuntimeState.Downloading);
+        EditSandboxEnabled && !IsSandboxProgressHidden
+        && (IsSandboxDownloading || SandboxStatus.State == MxcRuntimeState.Downloading);
 
-    public string SandboxDownloadMessage => ShowSandboxDownloadProgress
-        ? _localizationService.Format("McpServers_Sandbox_Downloading", SandboxDownloadPercent)
-        : _localizationService["McpServers_Sandbox_NotInstalled"];
+    /// <summary>No percentage exists for an install another caller drives, nor once the file is fetched and being unpacked.</summary>
+    public bool IsSandboxDownloadIndeterminate =>
+        !IsSandboxDownloading || SandboxDownloadPhase != ModelDownloadPhase.Downloading;
+
+    public string SandboxDownloadMessage =>
+        !ShowSandboxDownloadProgress ? _localizationService["McpServers_Sandbox_NotInstalled"]
+        : IsSandboxDownloadIndeterminate ? _localizationService["McpServers_Sandbox_Installing"]
+        : _localizationService.Format("McpServers_Sandbox_Downloading", SandboxDownloadPercent);
 
     partial void OnEditSandboxEnabledChanged(bool value)
     {
@@ -734,7 +753,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         }
 
         RaiseSandboxStateChanged();
-        UpdateSandboxGuard();
+        if (!_applyingSandboxDefaults) UpdateSandboxGuard();
     }
 
     partial void OnEditNameChanged(string value)
@@ -747,29 +766,61 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         ApplySandboxDefaults();
         RaiseSandboxStateChanged();
-        UpdateSandboxGuard();
+        UpdateSandboxGuardAfterTyping();
     }
 
     /// <summary>The early warning for what the launcher would refuse at start. It never blocks a save: a policy
     /// saved with an issue simply does not start, and says why.</summary>
     private void UpdateSandboxGuard()
     {
+        _sandboxGuardCts?.Cancel();
+        SandboxGuardMessage = GuardMessageFor(BuildSandboxPolicy(), EditCommand);
+    }
+
+    internal int SandboxGuardDebounceMs { get; set; } = 250;
+
+    // The command check searches PATH and may count a whole folder, so a keystroke waits for a pause and runs off the UI thread.
+    private void UpdateSandboxGuardAfterTyping()
+    {
+        _sandboxGuardCts?.Cancel();
+        var cts = _sandboxGuardCts = new CancellationTokenSource();
         var policy = BuildSandboxPolicy();
-        var issues = policy is null ? [] : SandboxPathGuard.Validate(policy, EditCommand);
-        SandboxGuardMessage = issues.Count == 0
+        var command = EditCommand;
+        ValidateSandboxGuardAsync(policy, command, cts.Token).SafeFireAndForget(_logger);
+    }
+
+    private async Task ValidateSandboxGuardAsync(McpSandboxPolicy? policy, string command, CancellationToken token)
+    {
+        await Task.Delay(SandboxGuardDebounceMs, token);
+        var message = await Task.Run(() => GuardMessageFor(policy, command), token);
+        PostOrRun(() =>
+        {
+            if (!token.IsCancellationRequested) SandboxGuardMessage = message;
+        });
+    }
+
+    private static string? GuardMessageFor(McpSandboxPolicy? policy, string command)
+    {
+        var issues = policy is null ? [] : SandboxPathGuard.Validate(policy, command);
+        return issues.Count == 0
             ? null
             : string.Join(Environment.NewLine, issues.Select(i => $"{i.Path}: {i.Message}"));
     }
 
     partial void OnSandboxStatusChanged(MxcAvailabilityStatus value)
     {
+        if (value.State != MxcRuntimeState.Downloading) IsSandboxProgressHidden = false;
         ApplySandboxDefaults();
         RaiseSandboxStateChanged();
     }
 
     partial void OnIsSandboxDownloadingChanged(bool value) => RaiseSandboxStateChanged();
 
+    partial void OnIsSandboxProgressHiddenChanged(bool value) => RaiseSandboxStateChanged();
+
     partial void OnSandboxDownloadPercentChanged(int value) => OnPropertyChanged(nameof(SandboxDownloadMessage));
+
+    partial void OnSandboxDownloadPhaseChanged(ModelDownloadPhase value) => RaiseSandboxStateChanged();
 
     private void RaiseSandboxStateChanged()
     {
@@ -778,6 +829,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         OnPropertyChanged(nameof(SandboxDisabledReason));
         OnPropertyChanged(nameof(ShowSandboxDownloadPrompt));
         OnPropertyChanged(nameof(ShowSandboxDownloadProgress));
+        OnPropertyChanged(nameof(IsSandboxDownloadIndeterminate));
         OnPropertyChanged(nameof(SandboxDownloadMessage));
         DownloadSandboxRuntimeCommand.NotifyCanExecuteChanged();
     }
@@ -802,6 +854,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         {
             _applyingSandboxDefaults = false;
         }
+
+        UpdateSandboxGuardAfterTyping();
     }
 
     private void ProposeReadwritePath()
@@ -824,6 +878,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         _sandboxPristine = false;
         _proposedReadwritePath = null;
+        _sandboxGuardCts?.Cancel();
         _applyingSandboxDefaults = true;
         try
         {
@@ -859,6 +914,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         {
             _applyingSandboxDefaults = false;
         }
+
+        UpdateSandboxGuard();
     }
 
     private bool CanAddReadwritePath() => !string.IsNullOrWhiteSpace(NewReadwritePath);
@@ -930,7 +987,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.LogWarning(ex, "Could not create the sandbox folder for a local MCP server");
+            _logger.LogWarning("Could not create the sandbox folder for a local MCP server ({ExceptionType})", ex.GetType().Name);
+            _logger.SensitiveDebug("Sandbox folder failure: {Message}", ex.Message);
             SetMessage(_localizationService.Format("McpServers_Sandbox_CreateFolderFailed", ex.Message), isError: true);
             return;
         }
@@ -949,11 +1007,17 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         using var cts = new CancellationTokenSource();
         _sandboxDownloadCts = cts;
         SandboxDownloadPercent = 0;
+        SandboxDownloadPhase = ModelDownloadPhase.Downloading;
         SandboxDownloadError = null;
+        IsSandboxProgressHidden = false;
         IsSandboxDownloading = true;
         try
         {
-            var progress = new Progress<ModelDownloadProgress>(p => SandboxDownloadPercent = p.PercentComplete);
+            var progress = new Progress<ModelDownloadProgress>(p =>
+            {
+                SandboxDownloadPercent = p.PercentComplete;
+                SandboxDownloadPhase = p.Phase;
+            });
             var status = await _mxcAvailability.InstallRuntimeAsync(progress, cts.Token);
             SandboxStatus = status;
             if (!status.IsReady)
@@ -967,7 +1031,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Downloading the sandbox runtime failed");
+            _logger.LogWarning("Downloading the sandbox runtime failed ({ExceptionType})", ex.GetType().Name);
+            _logger.SensitiveDebug("Sandbox runtime download failure: {Message}", ex.Message);
             SandboxDownloadError = _localizationService.Format("McpServers_Sandbox_DownloadFailedWithReason", ex.Message);
         }
         finally
@@ -977,8 +1042,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         }
     }
 
+    // The install is shared with the rest of Pia and keeps going, so the panel can only be put away.
     [RelayCommand]
-    private void CancelSandboxDownload() => _sandboxDownloadCts?.Cancel();
+    private void HideSandboxProgress() => IsSandboxProgressHidden = true;
 
     private static string FormatEnvironment(IReadOnlyDictionary<string, string> env) =>
         string.Join(Environment.NewLine, env.Select(e => $"{e.Key}={e.Value}"));

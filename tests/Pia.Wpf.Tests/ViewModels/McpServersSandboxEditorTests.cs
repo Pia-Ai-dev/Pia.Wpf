@@ -495,6 +495,58 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
         Assert.True(vm.ShowSandboxDownloadProgress);
         Assert.False(vm.ShowSandboxDownloadPrompt);
         Assert.False(vm.DownloadSandboxRuntimeCommand.CanExecute(null));
+        Assert.True(vm.IsSandboxDownloadIndeterminate);
+        Assert.Equal("McpServers_Sandbox_Installing", vm.SandboxDownloadMessage);
+    }
+
+    [Fact]
+    public async Task ThisEditorsDownload_ShowsAPercentage_UntilTheFileIsFetched()
+    {
+        var (vm, _, mxc, _) = Create(Stored(Policy()), MxcRuntimeState.NotInstalled);
+        var finish = new TaskCompletionSource<MxcAvailabilityStatus>();
+        IProgress<ModelDownloadProgress>? reporter = null;
+        mxc.InstallRuntimeAsync(Arg.Any<IProgress<ModelDownloadProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                reporter = call.Arg<IProgress<ModelDownloadProgress>?>();
+                return finish.Task;
+            });
+        vm.EditSelectedCommand.Execute(null);
+
+        var download = vm.DownloadSandboxRuntimeCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsSandboxDownloadIndeterminate);
+        reporter!.Report(new ModelDownloadProgress(40, 100));
+        Assert.True(SpinWait.SpinUntil(() => vm.SandboxDownloadPercent == 40, TimeSpan.FromSeconds(5)));
+        Assert.False(vm.IsSandboxDownloadIndeterminate);
+        Assert.Equal("McpServers_Sandbox_Downloading:40", vm.SandboxDownloadMessage);
+
+        reporter.Report(new ModelDownloadProgress(0, 100, ModelDownloadPhase.Extracting));
+        Assert.True(SpinWait.SpinUntil(() => vm.IsSandboxDownloadIndeterminate, TimeSpan.FromSeconds(5)));
+        Assert.Equal("McpServers_Sandbox_Installing", vm.SandboxDownloadMessage);
+
+        finish.SetResult(new MxcAvailabilityStatus(MxcRuntimeState.Ready));
+        await download;
+    }
+
+    [Fact]
+    public void HidingTheProgress_PutsThePanelAway_WhileTheInstallContinues_AndItReturnsForTheNextOne()
+    {
+        var (vm, _, mxc, _) = Create(Stored(Policy()), MxcRuntimeState.Downloading);
+        vm.EditSelectedCommand.Execute(null);
+        Assert.True(vm.ShowSandboxDownloadProgress);
+
+        vm.HideSandboxProgressCommand.Execute(null);
+
+        Assert.False(vm.ShowSandboxDownloadProgress);
+        Assert.False(vm.DownloadSandboxRuntimeCommand.CanExecute(null));
+
+        mxc.StatusChanged += Raise.Event<EventHandler<MxcAvailabilityStatus>>(
+            mxc, new MxcAvailabilityStatus(MxcRuntimeState.NotInstalled, "Offline."));
+        mxc.StatusChanged += Raise.Event<EventHandler<MxcAvailabilityStatus>>(
+            mxc, new MxcAvailabilityStatus(MxcRuntimeState.Downloading));
+
+        Assert.True(vm.ShowSandboxDownloadProgress);
     }
 
     [Fact]
@@ -750,6 +802,59 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
 
         Assert.True(vm.ShowSandboxFolderCreatedHint);
         Assert.Null(vm.SandboxGuardMessage);
+    }
+
+    // A program inside Pia's own data folder makes the guard ask for a folder of its own; a real file is needed
+    // because the check resolves the command on disk.
+    private static string MakeProgramInPiaData()
+    {
+        Directory.CreateDirectory(PiaPaths.LocalDataDirectory);
+        var program = Path.Combine(PiaPaths.LocalDataDirectory, "wide-" + Guid.NewGuid().ToString("N") + ".exe");
+        File.WriteAllBytes(program, []);
+        return program;
+    }
+
+    [Fact]
+    public void ATypedCommand_IsNotCheckedOnTheKeystroke()
+    {
+        var program = MakeProgramInPiaData();
+        try
+        {
+            var (vm, _, _, _) = Create();
+            vm.SandboxGuardDebounceMs = 60_000;
+            vm.AddServerCommand.Execute(null);
+            vm.EditName = "Typed";
+
+            vm.EditCommand = program;
+
+            Assert.Null(vm.SandboxGuardMessage);
+        }
+        finally
+        {
+            File.Delete(program);
+        }
+    }
+
+    [Fact]
+    public void ATypedCommand_IsCheckedOnceTheTypingPauses()
+    {
+        var program = MakeProgramInPiaData();
+        try
+        {
+            var (vm, _, _, _) = Create();
+            vm.SandboxGuardDebounceMs = 10;
+            vm.AddServerCommand.Execute(null);
+            vm.EditName = "Typed";
+
+            vm.EditCommand = program;
+
+            Assert.True(SpinWait.SpinUntil(() => vm.SandboxGuardMessage is not null, TimeSpan.FromSeconds(10)));
+            Assert.Contains("its own folder", vm.SandboxGuardMessage);
+        }
+        finally
+        {
+            File.Delete(program);
+        }
     }
 
     [Fact]

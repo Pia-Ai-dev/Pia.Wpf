@@ -1739,9 +1739,11 @@
   <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>Run in sandbox</value></data>
   <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Launchers such as npx and uvx, and .cmd or .bat scripts, cannot run in a sandbox yet. Point the command at the server program itself.</value></data>
   <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Sandboxing is not available on this device.</value></data>
-  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia needs to download the sandbox runtime (about 15 MB) from Pia's storage before it can start this server.</value></data>
+  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia needs to download the sandbox runtime (about 15 MB) from Pia's storage before it can start this server. Saving an enabled sandboxed server downloads it automatically; you can also download it now.</value></data>
   <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Downloading the sandbox runtime… {0}%</value></data>
+  <data name="McpServers_Sandbox_Installing" xml:space="preserve"><value>Setting up the sandbox runtime…</value></data>
   <data name="McpServers_Sandbox_Download" xml:space="preserve"><value>Download</value></data>
+  <data name="McpServers_Sandbox_HideProgress" xml:space="preserve"><value>Hide</value></data>
   <data name="McpServers_Sandbox_DownloadFailed" xml:space="preserve"><value>The sandbox runtime could not be downloaded.</value></data>
   <data name="McpServers_Sandbox_DownloadFailedWithReason" xml:space="preserve"><value>The sandbox runtime could not be downloaded: {0}</value></data>
   <data name="McpServers_Sandbox_ReadWrite" xml:space="preserve"><value>Folders it can read and write</value></data>

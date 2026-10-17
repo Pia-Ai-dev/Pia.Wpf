@@ -475,13 +475,14 @@
                              TextWrapping="Wrap"
                              AutomationProperties.AutomationId="McpServers_Sandbox_Progress"/>
                   <ProgressBar Minimum="0" Maximum="100" Margin="0,6,0,0"
+                               IsIndeterminate="{Binding IsSandboxDownloadIndeterminate, Mode=OneWay}"
                                Value="{Binding SandboxDownloadPercent, Mode=OneWay}"/>
-                  <ui:Button Content="{loc:Str Common_Cancel}"
+                  <ui:Button Content="{loc:Str McpServers_Sandbox_HideProgress}"
                              Appearance="Secondary"
                              Margin="0,8,0,0"
                              HorizontalAlignment="Left"
-                             AutomationProperties.AutomationId="McpServers_Sandbox_CancelDownload"
-                             Command="{Binding CancelSandboxDownloadCommand}"/>
+                             AutomationProperties.AutomationId="McpServers_Sandbox_HideProgress"
+                             Command="{Binding HideSandboxProgressCommand}"/>
                 </StackPanel>
 
                 <Border Style="{StaticResource PiaRequiredHintStyle}"

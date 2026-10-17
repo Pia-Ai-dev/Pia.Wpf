@@ -1729,9 +1729,11 @@
   <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>Exécuter dans le bac à sable</value></data>
   <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Les lanceurs comme npx et uvx, et les scripts .cmd ou .bat, ne peuvent pas encore s'exécuter dans un bac à sable. Faites pointer la commande directement vers le programme du serveur.</value></data>
   <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Le bac à sable n'est pas disponible sur cet appareil.</value></data>
-  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia doit télécharger l'environnement du bac à sable (environ 15 Mo) depuis le stockage de Pia avant de pouvoir démarrer ce serveur.</value></data>
+  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia doit télécharger l'environnement du bac à sable (environ 15 Mo) depuis le stockage de Pia avant de pouvoir démarrer ce serveur. L'enregistrement d'un serveur en bac à sable activé le télécharge automatiquement ; vous pouvez aussi le télécharger maintenant.</value></data>
   <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Téléchargement de l'environnement du bac à sable… {0} %</value></data>
+  <data name="McpServers_Sandbox_Installing" xml:space="preserve"><value>Préparation de l'environnement du bac à sable…</value></data>
   <data name="McpServers_Sandbox_Download" xml:space="preserve"><value>Télécharger</value></data>
+  <data name="McpServers_Sandbox_HideProgress" xml:space="preserve"><value>Masquer</value></data>
   <data name="McpServers_Sandbox_DownloadFailed" xml:space="preserve"><value>L'environnement du bac à sable n'a pas pu être téléchargé.</value></data>
   <data name="McpServers_Sandbox_DownloadFailedWithReason" xml:space="preserve"><value>L'environnement du bac à sable n'a pas pu être téléchargé : {0}</value></data>
   <data name="McpServers_Sandbox_ReadWrite" xml:space="preserve"><value>Dossiers en lecture et écriture</value></data>
