@@ -627,6 +627,15 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Plugins.TrustedCertificateCacheService>();
         services.AddSingleton<Pia.Services.Plugins.CabManagerService>();
         services.AddSingleton<IPluginIconLoader, Pia.Services.Plugins.PluginIconLoaderService>();
+        services.AddSingleton<IMxcAvailability, Pia.Services.Plugins.Sandbox.MxcAvailabilityService>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.MxcRuntimeProvisioner>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.IMxcRuntime>(sp => sp.GetRequiredService<Pia.Services.Plugins.Sandbox.MxcRuntimeProvisioner>());
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.IMxcProcessLauncher, Pia.Services.Plugins.Sandbox.MxcMcpLauncher>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.ISandboxGrantVerifier, Pia.Services.Plugins.Sandbox.SandboxGrantVerifier>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.IAppContainerProfileService, Pia.Services.Plugins.Sandbox.AppContainerProfileService>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.IPiaContainerSidResolver, Pia.Services.Plugins.Sandbox.PiaContainerSidResolver>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.IAceSweeper, Pia.Services.Plugins.Sandbox.AceSweepService>();
+        services.AddSingleton<Pia.Services.Plugins.IMcpTransportFactory, Pia.Services.Plugins.McpTransportFactory>();
         services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
         services.AddSingleton<ISettingsService, SettingsService>();

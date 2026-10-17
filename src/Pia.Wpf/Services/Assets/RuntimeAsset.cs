@@ -1,4 +1,5 @@
 using Pia.Models;
+using Pia.Paths;
 using Pia.Services.LiveTranscription;
 using Pia.Services.Tts;
 
@@ -23,6 +24,10 @@ public static class RuntimeAssetCatalog
     public const string ModelsPrefix = "models/";
     public const string EmbeddingsPrefix = "embeddings/";
     public const string TtsVoicesPrefix = "tts/";
+    public const string RuntimesPrefix = "runtimes/";
+
+    /// <summary>SHA-256 of the Microsoft.Mxc.Sdk package named by <see cref="MxcRuntime"/>; it holds native code, so a mismatch is never loaded.</summary>
+    public const string MxcRuntimeSha256 = "D47B1F70C3FCAAED1705A0C3872807E2878FE8C1B778C0DD9EB9325BF421A672";
 
     public static RuntimeAsset SileroVad { get; } = new(
         ModelsPrefix + "silero_vad.onnx", LiveTranscriptionModels.SileroVadUrl);
@@ -33,6 +38,11 @@ public static class RuntimeAssetCatalog
 
     public static RuntimeAsset Whisper(WhisperModelSize size) => Bundle(
         LiveTranscriptionModels.WhisperBundleUrl(size));
+
+    /// <summary>The whole nupkg, mirrored verbatim, so the extract step is identical on the mirror and upstream paths.</summary>
+    public static RuntimeAsset MxcRuntime { get; } = new(
+        $"{RuntimesPrefix}microsoft.mxc.sdk.{PiaPaths.MxcRuntimeVersion}.nupkg",
+        $"https://api.nuget.org/v3-flatcontainer/microsoft.mxc.sdk/{PiaPaths.MxcRuntimeVersion}/microsoft.mxc.sdk.{PiaPaths.MxcRuntimeVersion}.nupkg");
 
     public static RuntimeAsset Parakeet { get; } = Bundle(LiveTranscriptionModels.ParakeetBundleUrl);
 
@@ -65,6 +75,7 @@ public static class RuntimeAssetCatalog
         Whisper(WhisperModelSize.Large),
         Parakeet,
         .. TtsVoiceCatalog.Curated.Select(v => PiperVoice(v.Key)),
+        MxcRuntime,
     ];
 
     // A sherpa bundle keeps its released archive name: mirroring the archive rather than the extracted

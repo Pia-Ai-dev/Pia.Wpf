@@ -92,7 +92,10 @@ public sealed record McpSandboxPolicy(
     bool AllowNetwork);
 ```
 
-A missing `sandbox` key reads as null, so every existing row round-trips unchanged.
+A missing `sandbox` key reads as null, so every existing row round-trips unchanged. A key that is present
+but unreadable (not an object, `null`, `{}`) reads as `McpSandboxPolicy.Empty`: contained, nothing
+granted, network off. Dropping it would start the server uncontained. Network is `allow` only for the
+exact string `allow`; anything else is deny.
 
 ### New and changed types
 
@@ -119,16 +122,43 @@ A missing `sandbox` key reads as null, so every existing row round-trips unchang
 
 ### Sandbox path guard
 
-Rejected with a message naming the path:
+`SandboxPathGuard.Validate(policy, command)` returns issues, each `(Path, Kind, Message)`. The message is
+plain user-language text that never repeats the path (the issue carries it, so a UI can mark the matching
+entry). The factory runs the same guard before every start and every probe, so a policy edited by hand
+cannot get past it. Refused:
 
-- Not rooted, or does not exist (the editor offers to create rw dirs under `McpSandboxRoot`).
+- A path that is not fully qualified, or that does not exist. A missing **read-write** folder strictly
+  under `McpSandboxRoot` is fine: Pia creates it at start. A missing read-only one is refused.
 - `%WINDIR%`, `Program Files`, `Program Files (x86)`, or anything below them.
-- The user-profile root itself, a drive root, or a `PiaPaths` data root (Pia's own data dirs) or
-  anything below one, except `McpSandboxRoot`.
+- The user-profile root, anything above it (a drive root, `C:\Users`), or a `PiaPaths` data root (Pia's
+  own data dirs, real and routed), anything below one, or anything above one (`AppData\Local`). The
+  exception is a folder strictly below `McpSandboxRoot`. `McpSandboxRoot` itself is refused: it holds
+  every sandboxed server's data.
 - A readonly path equal to or nested inside a readwrite path. Nested, it would be read-write, because
   `DeniedPaths`-style carving does not work.
-- A readwrite path nested inside another readwrite path (collapse instead).
+- A readwrite path nested inside, or equal to, another readwrite path (collapse instead).
 - A UNC path. Not tested under MXC, so refused for now.
+- **A documents-style root as a policy path:** `Desktop`, `Documents`, `Downloads` and the `OneDrive`,
+  `OneDriveConsumer` and `OneDriveCommercial` roots when set. Tier 3 changes the ACL of every entry below
+  a policy path on every start, and a hard kill leaves them all to be swept, so these roots mean slow
+  starts, ACL churn on thousands of user files and sync noise. Subfolders stay allowed: "Share a
+  subfolder instead: Pia would have to change the permissions of everything in <folder>."
+- **A folder with more than 20,000 entries** (counted up to one past the cap, cached for 20 s because an
+  editor asks on every change): "This folder holds too many files to share with a sandboxed server. Pick a
+  smaller subfolder." Folders under `McpSandboxRoot` are exempt. The program's own folder is not counted.
+- **The program's own folder, when it is granted and too wide.** The command dir is granted read-only
+  (see below), so a program in `Downloads`, `Desktop` or `Documents` themselves, the profile root, a
+  drive root or a Pia data root would share all of that folder: "Put the server in its own folder: Pia
+  would have to share all of <folder> with it." The issue's `Path` is that folder, so a UI can show
+  "Also readable: the server's own folder".
+- **A program's folder with more than 20,000 entries**, for the same reason as a policy folder: "The
+  server's folder holds too many files to share with a sandboxed server. Put the server in a smaller
+  folder." It is not counted when a policy folder already covers it.
+- A command that resolves to a reparse point (the Microsoft Store `python.exe` alias): its folder is not
+  the program's own. Refused by the launch-spec builder with a plain reason.
+
+A policy with **no** folders at all is valid: it is the most restrictive case, for a server that needs no
+files (a time server).
 
 ### Command dir rule
 
@@ -136,7 +166,28 @@ The PoC always adds the command's own dir to `ReadonlyPaths`, because .NET needs
 the DACL of every policy path. A non-admin cannot do that on `Program Files`, and the PoC says never
 to put it in a policy. So the dir is added **only when it is not** under `%WINDIR%` or
 `Program Files*`. Those are readable inside the AppContainer anyway, through the inherited
-`ALL APPLICATION PACKAGES:(RX)` ACE. Gate G1 confirms this.
+`ALL APPLICATION PACKAGES:(RX)` ACE. Gate G1 confirms this. The dir is also skipped when a read-write or
+read-only path already covers it. The command must resolve to an `.exe` (a bare name is looked up on
+`PATH`); `.cmd`, `.bat`, `.ps1` and shims such as `npx` are refused at start with a reason.
+
+### Grant preflight
+
+Tier 3 grants access by rewriting ACLs, and it skips without any warning the files it may not rewrite.
+The spawn then succeeds and the server dies on load with "access denied" (gate G1: files an elevated
+build left owned by `Administrators`). So before every start, and for the probe too, Pia opens each
+target with `WRITE_DAC` (`CreateFileW`, `FILE_FLAG_BACKUP_SEMANTICS` for folders) and counts the ones it
+cannot open. The access right is the test, not ownership: owner equals user is both too strict and too
+loose.
+
+- The command dir is walked **recursively**, only when it is granted at all (outside `%WINDIR%` and
+  `Program Files*`), capped at 5000 entries. Past the cap Pia trusts the rest and the stderr tail speaks.
+- A policy path is checked **shallow**: the folder and its direct files. A file deeper down that the
+  sandbox misses only means less access, which is the safe direction.
+- Any blocked item means the server does not start. The reason names counts, never paths: "Pia can't
+  sandbox this server: N file(s) in its folder belong to an administrator or another account. Install
+  or copy the server into a folder you own." The count goes to the Information log.
+- It runs inside the transport, behind `ISandboxGrantVerifier`, so one unit test covers the refusal
+  without an administrator-owned file.
 
 ### Container name
 
@@ -148,11 +199,30 @@ after a hard kill, so leaked ACEs do not pile up. Removing the server deletes it
 
 ### ACE sweep
 
-At startup, before the first activation, sweep every sandboxed server's policy roots, its cwd and its
-command dir (skipping `%WINDIR%` and `Program Files*`). The PoC walks the whole tree, and a user who
-grants `Documents` would make every start crawl it. So check each **root** first and descend only
-below a root that carries an explicit non-well-known `S-1-15-2-*` ACE. Removed ACEs are logged by
-count. Paths are user-named, so they go through `SensitiveDebug`.
+`AceSweepService` runs at startup, before the first activation, over every sandboxed server's policy
+roots, its working directory and its granted command folder (disabled servers too, because their leak is
+still there), and when a server is removed, before its profile is deleted. It refuses `%WINDIR%` and
+`Program Files*`.
+
+- **Only Pia's own SIDs.** The PoC removes every explicit `S-1-15-2-*` ACE. A policy path here is a user
+  folder, where other packaged apps may hold container ACEs of their own, so only the SIDs of containers
+  named `pia-mcp-*` go. `PiaContainerSidResolver` reads them from the profile mappings
+  (`HKCU\...\AppContainer\Mappings\<SID>`, value `Moniker`), adds the SIDs derived from the names in use
+  (`DeriveAppContainerSidFromAppContainerName`), and never touches the well-known `S-1-15-2-1` and
+  `S-1-15-2-2`. A leaked ACE of a removed server can only be recognised while its profile exists, which is
+  why removal sweeps first.
+- **Shallow first.** A root that carries none of our ACEs is trusted: one ACL read, no walk, so granting a
+  big folder does not make starts crawl. A root that does is walked.
+- **Bottom up, root last.** Files, then their folder, deepest folders first, and the root only when
+  nothing below it failed. A sweep cut off half way (a fault, a kill) therefore leaves the root ACE in place,
+  which is what makes the next sweep look below it again. Links are not followed.
+- The log carries counts (`N folder(s) checked, M ACE(s) removed, K entry(ies) failed`); paths only through
+  `SensitiveDebug`. A failing sweep never keeps a server from starting.
+- **A normal close does not leak, but only because Pia shuts its servers down on exit** (a clean dispose
+  removes the container's ACEs itself): `IPluginService.ShutdownAllAsync` has to be called from the app's
+  exit and session-ending paths, which belongs to the app shell, not to this sweep. The sweep is what
+  remains for a crash or a kill. `ShutdownAllAsync` closes the servers in parallel and off the caller's
+  context, so a caller that blocks the UI thread on it cannot deadlock and N servers cost the slowest one.
 
 ## Shipping the MXC runtime via Pia's storage
 
@@ -173,21 +243,35 @@ of them are Microsoft-signed (checked 2026-10-17).
   and like `ModelsDirectory` it sits on the real profile, because downloaded artifacts deliberately
   ignore `PIA_LOCAL_DATA_DIR`.
 - **This is executable code, so it is verified, not just size-checked.** The nupkg's SHA-256 is
-  **pinned in code** next to the catalog entry. A mismatch deletes the download and fails closed.
-  Before the first load in each process, every extracted file must pass `WinTrust.HasValidSignature`
-  with a signer in `UpdateOptions.DefaultTrustedPublishers` (Microsoft). Extraction goes to a `.tmp`
-  dir and is renamed into place only after both checks pass.
-- **Loading.** A `NativeLibrary.SetDllImportResolver` on the MXC assembly resolves `mxc_ffi` from
-  `MxcRuntimeDirectory`. Whether `mxc_ffi.dll` then finds `plm.exe` and the WSL files beside itself, or
-  looks next to the host exe, is part of gate G2. If it looks next to the exe, the fallback is
-  `AddDllDirectory` plus whatever lookup MXC documents. Bundling is **not** the fallback; that question
-  goes back to the owner.
+  **pinned in code** next to the catalog entry (`RuntimeAssetCatalog.MxcRuntimeSha256`, and a test pins
+  it against the package NuGet restored). A mismatch deletes the download and fails closed. Only
+  `runtimes/win-x64/native/mxc_ffi.dll` is extracted (G2: the other three files are not needed), into a
+  `.tmp` dir that is renamed into place only after the extracted file passes `WinTrust.HasValidSignature`
+  with the signer `Microsoft Corporation`. An interrupted extract leaves only `.tmp`, which the next run
+  discards. A package pre-fetched to `PiaPaths.MxcRuntimeArchivePath` (the air-gapped path) is checked
+  against the same pin and consumed instead of downloading.
+- **Loading.** The SDK probes the `MXC_FFI_DIR` environment variable first, so Pia owns it (G2 found no
+  need for a custom `SetDllImportResolver`, which cannot be registered once the SDK has touched its
+  native). Constructing the provisioner removes any inherited value, before any SDK call. `IMxcRuntime.TryLoad`
+  sets it to `MxcRuntimeDirectory` only after `mxc_ffi.dll` passes the signature and publisher check **in
+  this process**, once per process, and otherwise removes it. The nupkg hash is not re-checked on each
+  start; it was pinned when the file was extracted. `MxcMcpLauncher`, the only SDK caller, refuses to
+  run until `TryLoad` succeeds, and the availability service must not call the SDK (not even
+  `GetPlatformSupport`) before that either: with no native present every SDK call throws. `MXC_FFI_DIR`
+  is stripped from the environment of every MCP child, sandboxed or not, and a contained child does not
+  inherit it (tested with a real container).
 - **When the download happens.** The first time the user turns **Run in sandbox** on, the editor says
-  "Pia needs to download the sandbox runtime (15 MB) from Pia's storage" and shows progress. At
-  startup, a saved sandboxed server whose runtime is missing triggers the same download. The row reads
-  `Not running: downloading sandbox runtime` and then starts. Fail closed applies throughout: no
-  runtime means no start, and never an uncontained one. `IMxcAvailability` reports `NotInstalled`,
-  `Downloading`, `Unsupported` (the OS cannot spawn) or `Ready`.
+  "Pia needs to download the sandbox runtime (15 MB) from Pia's storage" and shows progress. A saved,
+  **enabled** sandboxed server whose runtime is missing triggers the same download when it is activated,
+  at startup or on save: that is the user's consent. A bare start, a disabled server, a probe and the
+  editor never start one by themselves. The row reads `Not running: downloading sandbox runtime` and
+  starts by itself when the runtime turns `Ready`. Fail closed applies throughout: no runtime means no
+  start, and never an uncontained one. A local row whose saved settings cannot be read is not started
+  either (its sandbox policy is unknown), and a damaged `sandbox` block reads as an empty, contained
+  policy. `IMxcAvailability` (`MxcAvailabilityService`) reports `NotInstalled`, `Downloading`,
+  `Unsupported` (the OS cannot spawn) or `Ready`, and asks the SDK (even `GetPlatformSupport`) only once
+  the runtime is installed and verified. Removing a server deletes the AppContainer profiles of its
+  container and its probe container.
 - **Publishing.** `scripts/RuntimeAssetCatalogue.ps1` gains the `Mxc` group, so
   `Publish-RuntimeAssets.ps1 -Include Mxc` mirrors it and `Save-RuntimeAssets.ps1 -Include Mxc`
   pre-fetches it for air-gapped machines. `RuntimeAssetCatalogTests` pins the key on both sides. The

@@ -80,6 +80,29 @@ public sealed class PiaPathsTests : IDisposable
         Assert.Equal(Path.Combine(RealLocal, "plugins"), PiaPaths.PluginsDirectory);
         Assert.Equal(Path.Combine(RealLocal, "ConsentAudit"), PiaPaths.ConsentAuditDirectory);
         Assert.Equal(Path.Combine(RealLocal, "ConsentEvidence"), PiaPaths.ConsentEvidenceDirectory);
+        Assert.Equal(Path.Combine(RealLocal, "Runtimes", "Mxc", "1.0.1"), PiaPaths.MxcRuntimeDirectory);
+        Assert.Equal(Path.Combine(RealLocal, "Runtimes", "Mxc", "microsoft.mxc.sdk.1.0.1.nupkg"), PiaPaths.MxcRuntimeArchivePath);
+    }
+
+    [Fact]
+    public void MxcRuntimeVersion_IsTheReferencedSdkVersion()
+    {
+        var sdk = typeof(Microsoft.Mxc.Sdk.V1.MxcContainer).Assembly.GetName().Version!;
+
+        Assert.Equal(PiaPaths.MxcRuntimeVersion, $"{sdk.Major}.{sdk.Minor}.{sdk.Build}");
+    }
+
+    [Fact]
+    public void McpSandboxRoot_SitsUnderTheLocalDataRoot()
+    {
+        var local = TempRoot("local");
+
+        using (PiaPaths.OverrideForTests(null, local))
+        {
+            Assert.Equal(Path.Combine(local, "McpSandbox"), PiaPaths.McpSandboxRoot);
+        }
+
+        Assert.Equal(Path.Combine(RealLocal, "McpSandbox"), PiaPaths.McpSandboxRoot);
     }
 
     [Fact]
@@ -152,6 +175,7 @@ public sealed class PiaPathsTests : IDisposable
     [InlineData(DropCacheDirectoryMember)]
     [InlineData(RecordingsDirectoryMember)]
     [InlineData(ScreenCaptureAuditDirectoryMember)]
+    [InlineData(McpSandboxRootMember)]
     [InlineData(ConfirmedApproversMember)]
     public void RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded(string member)
     {
@@ -186,6 +210,7 @@ public sealed class PiaPathsTests : IDisposable
     private const string DropCacheDirectoryMember = "PiaPaths.DropCacheDirectory";
     private const string RecordingsDirectoryMember = "PiaPaths.RecordingsDirectory";
     private const string ScreenCaptureAuditDirectoryMember = "PiaPaths.ScreenCaptureAuditDirectory";
+    private const string McpSandboxRootMember = "PiaPaths.McpSandboxRoot";
     private const string ConfirmedApproversMember = "ConfirmedApproverStore.DefaultPath";
     private const string SettingsDirectoryMember = "JsonPersistenceService.SettingsDirectory";
     private const string LegacyWorkdirMember = "AssistantWorkspace.LegacyWorkdir";
@@ -205,6 +230,7 @@ public sealed class PiaPathsTests : IDisposable
         DropCacheDirectoryMember => () => PiaPaths.DropCacheDirectory,
         RecordingsDirectoryMember => () => PiaPaths.RecordingsDirectory,
         ScreenCaptureAuditDirectoryMember => () => PiaPaths.ScreenCaptureAuditDirectory,
+        McpSandboxRootMember => () => PiaPaths.McpSandboxRoot,
         ConfirmedApproversMember => () => ConfirmedApproverStore.DefaultPath,
         _ => throw new ArgumentOutOfRangeException(nameof(member), member, "no reader for this member"),
     };

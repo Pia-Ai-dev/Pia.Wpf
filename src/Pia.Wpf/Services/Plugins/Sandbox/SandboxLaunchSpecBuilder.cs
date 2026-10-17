@@ -1,0 +1,196 @@
+using System.IO;
+
+namespace Pia.Services.Plugins.Sandbox;
+
+/// <summary>Turns a sandboxed transport request into the exact program, folders and environment the container gets.</summary>
+public static class SandboxLaunchSpecBuilder
+{
+    public const string RuntimeDirectoryVariable = "MXC_FFI_DIR";
+
+    private const string ScriptLauncherError =
+        "Pia can't sandbox this server yet: '{0}' starts through a script launcher (npx, uvx, .cmd, .bat). "
+        + "Point the command at the server's own .exe.";
+
+    private const string AliasError =
+        "Pia can't sandbox this server yet: '{0}' is a Microsoft Store alias or a link, not the program itself. "
+        + "Point the command at the real {0}.";
+
+    private static bool IsReparsePoint(string path) =>
+        File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+
+    public static string ContainerName(string prefix, bool isProbe) =>
+        isProbe ? $"pia-mcp-{prefix}-probe" : $"pia-mcp-{prefix}";
+
+    public static SandboxLaunchPlan Build(
+        McpTransportRequest request,
+        string? pathVariable = null,
+        Func<string, bool>? fileExists = null,
+        Func<string, bool>? isReparsePoint = null)
+    {
+        var policy = request.Sandbox ?? throw new ArgumentException("A sandboxed launch needs a policy.", nameof(request));
+        var exists = fileExists ?? File.Exists;
+
+        if (SandboxCommandRules.IsShimCommand(request.Command))
+            return SandboxLaunchPlan.Fail(string.Format(ScriptLauncherError, Path.GetFileName(request.Command.Trim().Trim('"'))));
+
+        var resolved = ResolveCommand(request.Command, pathVariable ?? Environment.GetEnvironmentVariable("PATH"), exists);
+        if (resolved.Error is not null)
+            return SandboxLaunchPlan.Fail(resolved.Error);
+
+        var command = resolved.Path!;
+        if ((isReparsePoint ?? IsReparsePoint)(command))
+            return SandboxLaunchPlan.Fail(string.Format(AliasError, Path.GetFileName(command)));
+
+        if (!string.Equals(Path.GetExtension(command), ".exe", StringComparison.OrdinalIgnoreCase)
+            || SandboxCommandRules.IsShimCommand(command))
+            return SandboxLaunchPlan.Fail(string.Format(ScriptLauncherError, Path.GetFileName(command)));
+
+        var readwrite = Distinct(policy.ReadwritePaths.Select(Normalize));
+        var readonlyPaths = Distinct(policy.ReadonlyPaths.Select(Normalize));
+        var grantedCommandDirectory = CommandDirectoryToGrant(Normalize(Path.GetDirectoryName(command)!), readwrite, readonlyPaths);
+
+        var prefix = string.IsNullOrWhiteSpace(request.ToolPrefix)
+            ? LocalMcpConfig.DeriveToolPrefix(request.Name)
+            : request.ToolPrefix;
+
+        return SandboxLaunchPlan.Ok(new SandboxLaunchSpec(
+            ContainerName(prefix, request.IsProbe),
+            command,
+            [.. request.Args],
+            CopyEnvironment(request.Env),
+            WorkingDirectoryFor(request.WorkingDirectory, readwrite, readonlyPaths, grantedCommandDirectory),
+            readwrite,
+            readonlyPaths,
+            policy.AllowNetwork,
+            grantedCommandDirectory));
+    }
+
+    internal static (string? Path, string? Error) ResolveCommand(string command, string? pathVariable, Func<string, bool> exists)
+    {
+        command = command.Trim().Trim('"');
+        if (command.Length == 0)
+            return (null, "No command specified.");
+
+        if (Path.IsPathRooted(command))
+        {
+            var full = Path.GetFullPath(command);
+            return exists(full) ? (full, null) : (null, NotFound(command));
+        }
+
+        if (command.Contains('\\') || command.Contains('/'))
+            return (null, "Give the full path to the program, e.g. C:\\Tools\\server\\server.exe.");
+
+        string[] extensions = Path.HasExtension(command) ? [""] : [".exe", ".cmd", ".bat"];
+        foreach (var directory in (pathVariable ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            foreach (var extension in extensions)
+            {
+                string candidate;
+                try
+                {
+                    candidate = Path.Combine(directory.Trim('"'), command + extension);
+                }
+                catch (ArgumentException)
+                {
+                    break;
+                }
+
+                if (exists(candidate))
+                    return (Path.GetFullPath(candidate), null);
+            }
+        }
+
+        return (null, NotFound(command));
+    }
+
+    private static string NotFound(string command) => $"Command not found: {Path.GetFileName(command)}.";
+
+    /// <summary>Every folder the sandbox gives its container access to: the policy folders, the working directory and
+    /// the program's own folder when it is granted.</summary>
+    internal static IReadOnlyList<string> PolicyRoots(McpSandboxPolicy policy, string command, string? workingDirectory)
+    {
+        var readwrite = Distinct(policy.ReadwritePaths.Where(IsFullyQualified).Select(Normalize));
+        var readonlyPaths = Distinct(policy.ReadonlyPaths.Where(IsFullyQualified).Select(Normalize));
+        var roots = readwrite.Concat(readonlyPaths).ToList();
+
+        if (IsFullyQualified(workingDirectory))
+            roots.Add(Normalize(workingDirectory!));
+
+        var resolved = ResolveCommand(command, null, File.Exists);
+        if (resolved.Path is not null
+            && CommandDirectoryToGrant(Normalize(Path.GetDirectoryName(resolved.Path)!), readwrite, readonlyPaths) is { } granted)
+            roots.Add(granted);
+
+        return Distinct(roots);
+    }
+
+    private static bool IsFullyQualified(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path.Trim());
+
+    internal static string? CommandDirectoryToGrant(
+        string commandDirectory,
+        IReadOnlyList<string> readwrite,
+        IReadOnlyList<string> readonlyPaths,
+        IEnumerable<string>? systemRoots = null)
+    {
+        if ((systemRoots ?? SystemRoots()).Any(root => IsSameOrUnder(commandDirectory, root)))
+            return null;
+
+        return readwrite.Concat(readonlyPaths).Any(granted => IsSameOrUnder(commandDirectory, granted))
+            ? null
+            : commandDirectory;
+    }
+
+    private static string WorkingDirectoryFor(
+        string? requested,
+        IReadOnlyList<string> readwrite,
+        IReadOnlyList<string> readonlyPaths,
+        string? grantedCommandDirectory)
+    {
+        if (!string.IsNullOrWhiteSpace(requested))
+        {
+            var directory = Normalize(requested);
+            var granted = readwrite.Concat(readonlyPaths).Append(grantedCommandDirectory);
+            if (granted.Any(root => root is not null && IsSameOrUnder(directory, root)))
+                return directory;
+        }
+
+        return readwrite.FirstOrDefault()
+            ?? readonlyPaths.FirstOrDefault()
+            ?? grantedCommandDirectory
+            ?? Environment.SystemDirectory;
+    }
+
+    private static Dictionary<string, string> CopyEnvironment(IReadOnlyDictionary<string, string>? env) =>
+        (env ?? new Dictionary<string, string>())
+            .Where(e => !string.Equals(e.Key, RuntimeDirectoryVariable, StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(e => e.Key, e => e.Value, StringComparer.OrdinalIgnoreCase);
+
+    private static IEnumerable<string> SystemRoots()
+    {
+        foreach (var folder in new[]
+        {
+            Environment.SpecialFolder.Windows,
+            Environment.SpecialFolder.ProgramFiles,
+            Environment.SpecialFolder.ProgramFilesX86
+        })
+        {
+            var path = Environment.GetFolderPath(folder);
+            if (!string.IsNullOrEmpty(path))
+                yield return Normalize(path);
+        }
+    }
+
+    internal static List<string> Distinct(IEnumerable<string> paths) =>
+        [.. paths.Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    internal static string Normalize(string path)
+    {
+        var full = Path.GetFullPath(path.Trim());
+        return full.Length > 3 ? full.TrimEnd('\\', '/') : full;
+    }
+
+    internal static bool IsSameOrUnder(string path, string root) =>
+        string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+}

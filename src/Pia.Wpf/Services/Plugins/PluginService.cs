@@ -11,6 +11,7 @@ using Pia.Logging;
 using Pia.Services.Interfaces;
 using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
+using Pia.Services.Plugins.Sandbox;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Plugins;
@@ -38,6 +39,10 @@ public class PluginService : IPluginService
     private readonly SqliteContext _sqliteContext;
     private readonly CabManagerService? _cabManager;
     private readonly DpapiHelper? _dpapiHelper;
+    private readonly IMcpTransportFactory _transportFactory;
+    private readonly IMxcAvailability? _mxcAvailability;
+    private readonly IAppContainerProfileService? _profileService;
+    private readonly IAceSweeper? _aceSweeper;
 
     private readonly Dictionary<Guid, IPluginToolHandler> _handlers = new();
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
@@ -47,6 +52,7 @@ public class PluginService : IPluginService
     /// <summary>Why a server never got as far as a handler, so the settings row can say so.</summary>
     private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
 
+    private const string UnreadableSettingsReason = "The saved settings of this server could not be read, so it was not started.";
     private const string LocalMcpBlockedReason = "Your organization's policy does not allow local MCP servers.";
 
     private const string SseWithoutCommandReason = "This server uses the sse transport but names no command to launch.";
@@ -80,7 +86,11 @@ public class PluginService : IPluginService
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
         CabManagerService? cabManager = null,
-        DpapiHelper? dpapiHelper = null)
+        DpapiHelper? dpapiHelper = null,
+        IMcpTransportFactory? transportFactory = null,
+        IMxcAvailability? mxcAvailability = null,
+        IAppContainerProfileService? profileService = null,
+        IAceSweeper? aceSweeper = null)
     {
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
@@ -101,6 +111,10 @@ public class PluginService : IPluginService
         _sqliteContext = sqliteContext;
         _cabManager = cabManager;
         _dpapiHelper = dpapiHelper;
+        _transportFactory = transportFactory ?? new McpTransportFactory();
+        _mxcAvailability = mxcAvailability;
+        _profileService = profileService;
+        _aceSweeper = aceSweeper;
 
         InitializeBuiltInPlugins();
         LoadPersistedPlugins();
@@ -112,6 +126,9 @@ public class PluginService : IPluginService
             RebuildToolNameRoutes();
             ApplyLocalMcpPolicyAsync(settings.AllowLocalMcpServers).SafeFireAndForget(_logger);
         };
+
+        if (_mxcAvailability is not null)
+            _mxcAvailability.StatusChanged += (_, status) => OnSandboxRuntimeChangedAsync(status).SafeFireAndForget(_logger);
 
         // The assignment pack's availability is a server probe, not a setting, so it flips outside every
         // other rebuild trigger. Without this the first probe that turns it on offers tools with no route.
@@ -230,6 +247,11 @@ public class PluginService : IPluginService
     public async Task InitializePersistedPluginsAsync()
     {
         _localMcpAllowed = (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers;
+
+        // Before the first activation: a start after a hard kill must not run over the ACEs it left behind.
+        await SweepSandboxLeaksAsync(_pluginConfigs.Values
+            .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson))
+            .Select(ReadLocalDefinition));
 
         // A switched-off server, local or distributed, is skipped rather than started-then-hidden: activation
         // spawns its process, which the user switched off precisely to avoid.
@@ -483,10 +505,17 @@ public class PluginService : IPluginService
             _startFailures.TryGetValue(pluginId, out var failure) ? failure : null);
     }
 
-    public async Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
-        (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers
-            ? await McpServerProbe.ProbeAsync(definition, timeout: null, ct)
-            : McpProbeResult.Failed(LocalMcpBlockedReason);
+    public async Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default)
+    {
+        if (!(await _settingsService.GetSettingsAsync()).AllowLocalMcpServers)
+            return McpProbeResult.Failed(LocalMcpBlockedReason);
+
+        // A probe never starts the download: the editor offers it, and the user clicks.
+        if (definition.Sandbox is not null && SandboxUnavailableReason() is { } unavailable)
+            return McpProbeResult.Failed(unavailable);
+
+        return await McpServerProbe.ProbeAsync(definition, _transportFactory, timeout: null, ct);
+    }
 
     public async Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default)
     {
@@ -516,6 +545,7 @@ public class PluginService : IPluginService
         };
 
         await ShutdownHandlerAsync(id);
+        await CleanUpReplacedContainersAsync(existing, stored);
 
         _pluginConfigs[id] = plugin;
         SavePluginToDb(plugin);
@@ -534,9 +564,20 @@ public class PluginService : IPluginService
         if (!_pluginConfigs.TryGetValue(pluginId, out var plugin) || !LocalMcpConfig.IsLocal(plugin.ConfigJson))
             return;
 
+        var definition = ReadLocalDefinition(plugin);
+        var prefix = definition?.ToolPrefix;
+
         await ShutdownHandlerAsync(pluginId);
+
+        // While its profile still exists: the profile is what lets a leaked ACE be recognised as ours.
+        await SweepSandboxLeaksAsync([definition]);
+
         _pluginConfigs.Remove(pluginId);
         DeletePluginFromDb(pluginId);
+
+        // Every container name leaves a profile behind; the server may have been sandboxed at some point.
+        if (_profileService is not null && !string.IsNullOrEmpty(prefix))
+            _profileService.DeleteServerProfiles(prefix);
 
         lock (_pendingPrefs)
             _pendingPrefs.RemoveAll(p => p.PluginId == pluginId);
@@ -544,6 +585,22 @@ public class PluginService : IPluginService
         RebuildToolNameRoutes();
         PluginsChanged?.Invoke(this, EventArgs.Empty);
         _logger.LogInformation("Local MCP server {PluginId} removed", pluginId);
+    }
+
+    private async Task CleanUpReplacedContainersAsync(SyncPlugin? existing, LocalMcpDefinition stored)
+    {
+        var previous = existing is null ? null : ReadLocalDefinition(existing);
+        if (previous is null || string.IsNullOrEmpty(previous.ToolPrefix))
+            return;
+
+        if (string.Equals(previous.ToolPrefix, stored.ToolPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            await SweepSandboxLeaksAsync([previous], stillGranted: stored);
+            return;
+        }
+
+        await SweepSandboxLeaksAsync([previous]);
+        _profileService?.DeleteServerProfiles(previous.ToolPrefix);
     }
 
     private async Task ShutdownHandlerAsync(Guid pluginId)
@@ -693,6 +750,22 @@ public class PluginService : IPluginService
             return;
         }
 
+        if (localDefinition is null && LocalMcpConfig.IsLocal(plugin.ConfigJson))
+        {
+            // Without its definition the sandbox policy is unknown, and the raw command below would start it bare.
+            _logger.LogWarning("Local MCP server {PluginId} not started: its saved settings could not be read", plugin.Id);
+            _startFailures[plugin.Id] = UnreadableSettingsReason;
+            return;
+        }
+
+        if (localDefinition?.Sandbox is not null && SandboxUnavailableReason() is { } unavailable)
+        {
+            _logger.LogInformation("Sandboxed MCP server {PluginId} not started: the sandbox runtime is not ready", plugin.Id);
+            _startFailures[plugin.Id] = unavailable;
+            StartSandboxRuntimeDownload();
+            return;
+        }
+
         if (localDefinition is not null && transport != "stdio")
         {
             _logger.LogWarning("Local MCP server {PluginId}: transport '{Transport}' is not supported, only stdio",
@@ -818,7 +891,9 @@ public class PluginService : IPluginService
             localDefinition?.Env,
             localDefinition?.WorkingDirectory,
             localDefinition?.ToolPrefix,
-            localDefinition?.AllowedTools);
+            localDefinition?.AllowedTools,
+            _transportFactory,
+            localDefinition?.Sandbox);
 
         try
         {
@@ -832,6 +907,95 @@ public class PluginService : IPluginService
             _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginId}", plugin.Id);
             handler.Dispose();
         }
+    }
+
+    private async Task SweepSandboxLeaksAsync(IEnumerable<LocalMcpDefinition?> definitions, LocalMcpDefinition? stillGranted = null)
+    {
+        if (_aceSweeper is null)
+            return;
+
+        var sandboxed = definitions.OfType<LocalMcpDefinition>().Where(d => d.Sandbox is not null).ToList();
+        if (sandboxed.Count == 0)
+            return;
+
+        var kept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (stillGranted?.Sandbox is { } policy)
+            kept.UnionWith(SandboxLaunchSpecBuilder.PolicyRoots(policy, stillGranted.Command, stillGranted.WorkingDirectory));
+
+        var roots = sandboxed
+            .SelectMany(d => SandboxLaunchSpecBuilder.PolicyRoots(d.Sandbox!, d.Command, d.WorkingDirectory))
+            .Where(root => !kept.Contains(root))
+            .ToList();
+        if (roots.Count == 0)
+            return;
+
+        var names = sandboxed
+            .SelectMany(d => new[] { SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, false), SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, true) })
+            .ToList();
+
+        try
+        {
+            await Task.Run(() => _aceSweeper.Sweep(roots, names));
+        }
+        catch (Exception ex)
+        {
+            // A sweep that cannot run must not keep the servers from starting; the next start tries again.
+            _logger.LogWarning("The sandbox ACE sweep failed: {ExceptionType}", ex.GetType().Name);
+            _logger.SensitiveDebug("The sandbox ACE sweep failure: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>Why a sandboxed server cannot start right now; null when the runtime is ready.</summary>
+    private string? SandboxUnavailableReason()
+    {
+        if (_mxcAvailability is null)
+            return SandboxUnavailableText(new MxcAvailabilityStatus(MxcRuntimeState.Unsupported));
+
+        var status = _mxcAvailability.Status;
+        return status.IsReady ? null : SandboxUnavailableText(status);
+    }
+
+    private static string SandboxUnavailableText(MxcAvailabilityStatus status) => status.State switch
+    {
+        MxcRuntimeState.Downloading => "Downloading the sandbox runtime. This server starts when it is done.",
+        MxcRuntimeState.NotInstalled => status.Reason ?? "The sandbox runtime is not installed yet. Pia is downloading it.",
+        MxcRuntimeState.Unsupported when !string.IsNullOrEmpty(status.Reason) => status.Reason,
+        _ => "Sandboxing is not available on this PC, so this server was not started."
+    };
+
+    // A saved, enabled sandboxed server is the user's consent to need the runtime; no other path starts a download.
+    private void StartSandboxRuntimeDownload()
+    {
+        if (_mxcAvailability is null || _mxcAvailability.Status.State != MxcRuntimeState.NotInstalled)
+            return;
+
+        _mxcAvailability.InstallRuntimeAsync().SafeFireAndForget(_logger);
+    }
+
+    private async Task OnSandboxRuntimeChangedAsync(MxcAvailabilityStatus status)
+    {
+        var waiting = _pluginConfigs.Values
+            .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson) && IsPluginEnabled(p) && !HasHandler(p.Id))
+            .Where(p => ReadLocalDefinition(p)?.Sandbox is not null)
+            .ToList();
+        if (waiting.Count == 0)
+            return;
+
+        foreach (var plugin in waiting)
+        {
+            if (status.IsReady)
+            {
+                _startFailures.TryRemove(plugin.Id, out _);
+                await ActivateMcpPluginAsync(plugin);
+            }
+            else
+            {
+                _startFailures[plugin.Id] = SandboxUnavailableText(status);
+            }
+        }
+
+        RebuildToolNameRoutes();
+        PluginsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>False when the admin's command is neither on PATH nor recoverable from the plugin's cab.</summary>
@@ -998,11 +1162,13 @@ public class PluginService : IPluginService
         lock (_handlers)
             handlers = _handlers.Values.ToList();
 
-        foreach (var handler in handlers)
+        // Off the caller's context and in parallel: a caller blocking the UI thread on this must not wait on a continuation
+        // that needs that thread, and several sandboxed servers should cost the slowest one rather than the sum.
+        await Task.WhenAll(handlers.Select(handler => Task.Run(async () =>
         {
-            try { await handler.ShutdownAsync(); }
+            try { await handler.ShutdownAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogError(ex, "Error shutting down plugin {PluginId}", handler.PluginId); }
-        }
+        }))).ConfigureAwait(false);
     }
 
     private void RebuildToolNameRoutes()

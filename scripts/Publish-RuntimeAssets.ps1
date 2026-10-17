@@ -59,9 +59,9 @@ param(
     # here publishes nothing and costs a silent fallback to upstream, the exact outcome this exists to
     # prevent.
     [ArgumentCompletions('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices')]
+                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices', 'Mxc')]
     [string[]]$Include = @('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                           'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices'),
+                           'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices', 'Mxc'),
 
     [string]$StorageBase = 'https://storage.pia-ai.de',
     [string]$Prefix = 'assets',
@@ -135,6 +135,13 @@ function Save-Staged($Asset, [Nullable[long]]$RemoteLength) {
         throw "Truncated download: got $got bytes, upstream said $RemoteLength."
     }
 
+    # An asset the client pins by checksum is not uploaded unless it is the pinned file: the mirror is a
+    # public write, and the client would refuse the bytes anyway.
+    if (-not (Test-AssetChecksum $Asset $tmp)) {
+        Remove-Item -LiteralPath $tmp -Force
+        throw "Checksum mismatch: the download is not the file the client pins ($($Asset.Sha256))."
+    }
+
     Move-Item -LiteralPath $tmp -Destination $target -Force
     return $got
 }
@@ -164,7 +171,8 @@ $plan = foreach ($a in $assets) {
     $upstream = Get-RemoteLength $a.Url
     $staged = Get-StagingPath $a
     $have = (Test-Path -LiteralPath $staged) -and
-            ($null -eq $upstream -or (Get-Item -LiteralPath $staged).Length -eq $upstream)
+            ($null -eq $upstream -or (Get-Item -LiteralPath $staged).Length -eq $upstream) -and
+            (Test-AssetChecksum $a $staged)
     [pscustomobject]@{
         Name     = $a.Name
         Key      = $a.MirrorKey

@@ -5,4 +5,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <Import Project="MxcSdk.props" />
+
 </Project>
