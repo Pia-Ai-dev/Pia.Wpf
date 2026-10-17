@@ -508,19 +508,25 @@ function Invoke-Status {
         }
     }
 
-    Write-Section 'AppContainer ACEs (S-1-15-2-*; explicit ones are leaks)'
+    # A running sandbox legitimately holds explicit ACEs on its policy paths; once nothing runs they are leaks.
+    $procs = @(Get-SandboxProcesses)
+    $sandboxRunning = $null -ne $pia -and $procs.Count -gt 0
+
+    Write-Section 'AppContainer ACEs (S-1-15-2-*; explicit ones are active while a sandbox runs, leaks after)'
     $aces = @(Get-AppContainerAces @($paths.Fixture, $paths.Server, $paths.ServerAdmin, (Join-Path $paths.Local 'McpSandbox')))
-    $leaked = @($aces | Where-Object { $_.Explicit -and -not $_.WellKnown })
-    foreach ($ace in $aces) {
-        $kind = if ($ace.Explicit -and -not $ace.WellKnown) { 'LEAK' } elseif ($ace.Explicit) { 'explicit-wellknown' } else { 'inherited' }
-        Write-Host ("{0,-18} {1}  {2}" -f $kind, $ace.Sid, $ace.Path)
+    $explicit = @($aces | Where-Object { $_.Explicit -and -not $_.WellKnown })
+    foreach ($ace in $explicit) {
+        Write-Host ("{0,-8} {1}  {2}" -f $(if ($sandboxRunning) { 'active' } else { 'LEAK' }), $ace.Sid, $ace.Path)
     }
+    $inherited = @($aces | Where-Object { -not $_.Explicit })
+    if ($inherited.Count -gt 0) { Write-Host "inherited: $($inherited.Count) item(s) below the explicit ones carry the same SID" }
     if (-not $aces) { Write-Host 'none' }
-    Write-Host "leaked explicit ACEs: $($leaked.Count)"
-    $report.leakedAces = $leaked.Count
+    $leakedCount = if ($sandboxRunning) { 0 } else { $explicit.Count }
+    Write-Host "explicit ACEs: $($explicit.Count)  leaked: $leakedCount"
+    $report.leakedAces = $leakedCount
+    $report.activeAces = if ($sandboxRunning) { $explicit.Count } else { 0 }
 
     Write-Section 'Sandbox helper processes'
-    $procs = @(Get-SandboxProcesses)
     foreach ($p in $procs) { Write-Host ("pid {0,-6} parent {1,-6} {2}  {3}" -f $p.Pid, $p.Parent, $p.Name, $p.Path) }
     $orphans = @(if ($pia) { @() } else { $procs })
     Write-Host "helpers: $($procs.Count)  orphans (Pia not running): $($orphans.Count)"
