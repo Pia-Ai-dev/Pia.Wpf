@@ -211,6 +211,38 @@ public sealed class SandboxPathGuardTests
         Assert.Empty(issues);
     }
 
+    private static string? Granted(IReadOnlyList<string> rw, IReadOnlyList<string> ro, string? command, Func<string, bool>? fileExists = null) =>
+        SandboxPathGuard.GrantedCommandFolder(new McpSandboxPolicy(rw, ro, false), command, Fake, fileExists ?? (_ => true));
+
+    [Fact]
+    public void TheGrantedCommandFolder_IsTheProgramsOwnFolder()
+    {
+        Assert.Equal(@"C:\Tools\fs", Granted([@"C:\Work\box"], [], @"C:\Tools\fs\fs.exe"));
+        Assert.Equal(@"C:\Tools\fs", Granted([], [], @"c:\tools\fs\FS.EXE"), ignoreCase: true);
+    }
+
+    [Fact]
+    public void TheGrantedCommandFolder_IsNull_WhenNothingIsGranted()
+    {
+        Assert.Null(Granted([], [], @"C:\Program Files\dotnet\dotnet.exe"));
+        Assert.Null(Granted([@"C:\Tools"], [], @"C:\Tools\fs\fs.exe"));
+        Assert.Null(Granted([], [@"C:\Tools\fs"], @"C:\Tools\fs\fs.exe"));
+    }
+
+    [Fact]
+    public void TheGrantedCommandFolder_IsNull_ForAWideFolder_WhichIsRefusedInstead()
+    {
+        Assert.Null(Granted([], [], @"C:\Users\me\Downloads\server.exe"));
+    }
+
+    [Fact]
+    public void TheGrantedCommandFolder_IsNull_ForACommandThatCannotBeResolved()
+    {
+        Assert.Null(Granted([], [], "nope", fileExists: _ => false));
+        Assert.Null(Granted([], [], null));
+        Assert.Null(Granted([], [], "  "));
+    }
+
     [Fact]
     public void AMessage_NeverRepeatsTheUsersPath()
     {

@@ -272,6 +272,16 @@ public class LocalMcpConfigTests
         Assert.False(McpSandboxPolicy.Empty.AllowNetwork);
     }
 
+    /// <summary>A throw here would crash activation; null lets the caller refuse the row instead of guessing.</summary>
+    [Theory]
+    [InlineData("""{"source":"local","command":"x","env":{"A":5}}""")]
+    [InlineData("""{"source":"local","command":5}""")]
+    [InlineData("""{"source":"local","command":"x","args":[1,2]}""")]
+    public void AFieldOfTheWrongType_ReadsAsNoDefinition_NotAnException(string json)
+    {
+        Assert.Null(LocalMcpConfig.FromConfigJson("n", null, json, v => v));
+    }
+
     [Fact]
     public void ServerPushedConfig_IsNotLocal()
     {

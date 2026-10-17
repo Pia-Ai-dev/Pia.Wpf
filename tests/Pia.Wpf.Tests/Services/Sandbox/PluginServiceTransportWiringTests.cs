@@ -60,7 +60,24 @@ public sealed class PluginServiceTransportWiringTests : IDisposable
             sqlite,
             cabManager: null,
             dpapiHelper: new DpapiHelper(NullLogger<DpapiHelper>.Instance),
-            transportFactory: factory);
+            transportFactory: factory,
+            mxcAvailability: new ReadyAvailability());
+    }
+
+    private sealed class ReadyAvailability : IMxcAvailability
+    {
+        public MxcAvailabilityStatus Status { get; } = new(MxcRuntimeState.Ready);
+
+        public event EventHandler<MxcAvailabilityStatus>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public Task<MxcAvailabilityStatus> RefreshAsync(CancellationToken cancellationToken = default) => Task.FromResult(Status);
+
+        public Task<MxcAvailabilityStatus> InstallRuntimeAsync(IProgress<ModelDownloadProgress>? progress = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Status);
     }
 
     private sealed class RecordingFactory : IMcpTransportFactory
