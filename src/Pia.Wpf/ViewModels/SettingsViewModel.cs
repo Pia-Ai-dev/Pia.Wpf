@@ -62,7 +62,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IAdvancedCreationLauncher advancedCreation,
         IAccountDataService accountData,
         IFileDialogService fileDialogs,
-        ICreditStatusService creditStatus)
+        ICreditStatusService creditStatus,
+        IMxcAvailability mxcAvailability)
     {
         _logger = logger;
 
@@ -77,7 +78,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(
             toolPermissionService, pluginService, logger, screenCaptureAllowlistStore, dialogService);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService, policyService);
-        var mcpServersVm = new McpServersSettingsViewModel(pluginService, dialogService, localizationService, snackbarService, logger);
+        var mcpServersVm = new McpServersSettingsViewModel(pluginService, dialogService, localizationService, snackbarService, mxcAvailability, fileDialogs, logger);
         AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, mcpServersVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, policyService, personaService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);

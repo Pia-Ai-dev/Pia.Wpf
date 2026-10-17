@@ -442,7 +442,8 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<IAdvancedCreationLauncher>(),
             Substitute.For<IAccountDataService>(),
             Substitute.For<IFileDialogService>(),
-            Substitute.For<ICreditStatusService>());
+            Substitute.For<ICreditStatusService>(),
+            SettingsSubViewModels.Mxc());
 
         return new Page(root, settings, policy);
     }

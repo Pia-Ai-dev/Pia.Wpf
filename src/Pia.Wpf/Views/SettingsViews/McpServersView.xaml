@@ -385,6 +385,220 @@
                           FontFamily="Consolas"
                           AutomationProperties.AutomationId="McpServers_Edit_WorkingDirectory"/>
 
+              <TextBlock Text="{loc:Str McpServers_Sandbox_Title}"
+                         Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                         Margin="0,18,0,6"/>
+              <TextBlock Text="{loc:Str McpServers_Sandbox_Hint}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,0,0,6"/>
+              <ui:ToggleSwitch Content="{loc:Str McpServers_Sandbox_Toggle}"
+                               IsChecked="{Binding EditSandboxEnabled, Mode=TwoWay}"
+                               IsEnabled="{Binding IsSandboxToggleEnabled}"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_Toggle"/>
+              <TextBlock Text="{Binding SandboxDisabledReason}"
+                         Style="{StaticResource PiaMetaTextStyle}"
+                         TextWrapping="Wrap"
+                         Margin="0,6,0,0"
+                         AutomationProperties.AutomationId="McpServers_Sandbox_DisabledReason"
+                         Visibility="{Binding SandboxDisabledReason, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+              <StackPanel Visibility="{Binding EditSandboxEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+                <Border Style="{StaticResource PiaFieldNoticeStyle}"
+                        Margin="0,10,0,0"
+                        Visibility="{Binding ShowSandboxDownloadPrompt, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <StackPanel>
+                    <TextBlock Text="{Binding SandboxDownloadMessage}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextDefaultBrush}"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_DownloadMessage"/>
+                    <ui:Button Content="{loc:Str McpServers_Sandbox_Download}"
+                               Icon="{ui:SymbolIcon ArrowDownload24}"
+                               Appearance="Secondary"
+                               Margin="0,8,0,0"
+                               HorizontalAlignment="Left"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_Download"
+                               Command="{Binding DownloadSandboxRuntimeCommand}"/>
+                  </StackPanel>
+                </Border>
+
+                <StackPanel Margin="0,10,0,0"
+                            Visibility="{Binding ShowSandboxDownloadProgress, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <TextBlock Text="{Binding SandboxDownloadMessage}"
+                             Style="{StaticResource PiaMetaTextStyle}"
+                             TextWrapping="Wrap"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_Progress"/>
+                  <ProgressBar Minimum="0" Maximum="100" Margin="0,6,0,0"
+                               Value="{Binding SandboxDownloadPercent, Mode=OneWay}"/>
+                  <ui:Button Content="{loc:Str Common_Cancel}"
+                             Appearance="Secondary"
+                             Margin="0,8,0,0"
+                             HorizontalAlignment="Left"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_CancelDownload"
+                             Command="{Binding CancelSandboxDownloadCommand}"/>
+                </StackPanel>
+
+                <Border Style="{StaticResource PiaRequiredHintStyle}"
+                        Margin="0,10,0,0"
+                        Visibility="{Binding SandboxDownloadError, Converter={StaticResource NullToVisibilityConverter}}">
+                  <TextBlock Text="{Binding SandboxDownloadError}"
+                             TextWrapping="Wrap"
+                             Foreground="{DynamicResource PiaDangerBrush}"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_DownloadError"/>
+                </Border>
+
+                <TextBlock Text="{loc:Str McpServers_Sandbox_ReadWrite}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                           Margin="0,14,0,6"/>
+                <TextBlock Text="{loc:Str McpServers_Sandbox_ReadWriteHint}"
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,6"/>
+                <ItemsControl ItemsSource="{Binding EditReadwritePaths}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Margin="0,2">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding}"
+                                   Foreground="{DynamicResource TextDefaultBrush}"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding}"
+                                   VerticalAlignment="Center"/>
+                        <ui:Button Grid.Column="1"
+                                   Icon="{ui:SymbolIcon Dismiss16}"
+                                   Appearance="Transparent"
+                                   Padding="6,2"
+                                   AutomationProperties.Name="{loc:Str McpServers_Sandbox_Remove}"
+                                   AutomationProperties.AutomationId="{Binding StringFormat='McpServers_Sandbox_RemoveReadwrite_{0}'}"
+                                   Command="{Binding DataContext.RemoveReadwritePathCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                   CommandParameter="{Binding}"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid Margin="0,6,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <ui:TextBox Grid.Column="0"
+                              Text="{Binding NewReadwritePath, UpdateSourceTrigger=PropertyChanged}"
+                              PlaceholderText="{loc:Str McpServers_Sandbox_PathPlaceholder}"
+                              FontFamily="Consolas"
+                              AutomationProperties.AutomationId="McpServers_Sandbox_NewReadwrite"/>
+                  <ui:Button Grid.Column="1"
+                             Content="{loc:Str McpServers_Sandbox_Add}"
+                             Appearance="Secondary"
+                             Margin="6,0,0,0"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_AddReadwrite"
+                             Command="{Binding AddReadwritePathCommand}"/>
+                  <ui:Button Grid.Column="2"
+                             Content="{loc:Str McpServers_Sandbox_Browse}"
+                             Icon="{ui:SymbolIcon Folder24}"
+                             Appearance="Secondary"
+                             Margin="6,0,0,0"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_BrowseReadwrite"
+                             Command="{Binding BrowseReadwriteFolderCommand}"/>
+                </Grid>
+                <ui:Button Content="{loc:Str McpServers_Sandbox_CreateFolder}"
+                           Appearance="Transparent"
+                           Margin="0,6,0,0"
+                           HorizontalAlignment="Left"
+                           AutomationProperties.AutomationId="McpServers_Sandbox_CreateFolder"
+                           Command="{Binding CreateDefaultFolderCommand}"/>
+
+                <TextBlock Text="{loc:Str McpServers_Sandbox_ReadOnly}"
+                           Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                           Margin="0,14,0,6"/>
+                <TextBlock Text="{loc:Str McpServers_Sandbox_ReadOnlyHint}"
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,6"/>
+                <ItemsControl ItemsSource="{Binding EditReadonlyPaths}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Grid Margin="0,2">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding}"
+                                   Foreground="{DynamicResource TextDefaultBrush}"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding}"
+                                   VerticalAlignment="Center"/>
+                        <ui:Button Grid.Column="1"
+                                   Icon="{ui:SymbolIcon Dismiss16}"
+                                   Appearance="Transparent"
+                                   Padding="6,2"
+                                   AutomationProperties.Name="{loc:Str McpServers_Sandbox_Remove}"
+                                   AutomationProperties.AutomationId="{Binding StringFormat='McpServers_Sandbox_RemoveReadonly_{0}'}"
+                                   Command="{Binding DataContext.RemoveReadonlyPathCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                   CommandParameter="{Binding}"/>
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid Margin="0,6,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <ui:TextBox Grid.Column="0"
+                              Text="{Binding NewReadonlyPath, UpdateSourceTrigger=PropertyChanged}"
+                              PlaceholderText="{loc:Str McpServers_Sandbox_PathPlaceholder}"
+                              FontFamily="Consolas"
+                              AutomationProperties.AutomationId="McpServers_Sandbox_NewReadonly"/>
+                  <ui:Button Grid.Column="1"
+                             Content="{loc:Str McpServers_Sandbox_Add}"
+                             Appearance="Secondary"
+                             Margin="6,0,0,0"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_AddReadonly"
+                             Command="{Binding AddReadonlyPathCommand}"/>
+                  <ui:Button Grid.Column="2"
+                             Content="{loc:Str McpServers_Sandbox_Browse}"
+                             Icon="{ui:SymbolIcon Folder24}"
+                             Appearance="Secondary"
+                             Margin="6,0,0,0"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_BrowseReadonly"
+                             Command="{Binding BrowseReadonlyFolderCommand}"/>
+                </Grid>
+
+                <ui:ToggleSwitch Content="{loc:Str McpServers_Sandbox_AllowNetwork}"
+                                 IsChecked="{Binding EditSandboxAllowNetwork, Mode=TwoWay}"
+                                 Margin="0,14,0,0"
+                                 AutomationProperties.AutomationId="McpServers_Sandbox_AllowNetwork"/>
+                <Border Style="{StaticResource PiaRequiredHintStyle}"
+                        Margin="0,6,0,0"
+                        Visibility="{Binding EditSandboxAllowNetwork, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <TextBlock Text="{loc:Str McpServers_Sandbox_NetworkWarning}"
+                             TextWrapping="Wrap"
+                             Foreground="{DynamicResource TextDefaultBrush}"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_NetworkWarning"/>
+                </Border>
+
+                <Border Style="{StaticResource PiaRequiredHintStyle}"
+                        Margin="0,10,0,0"
+                        Visibility="{Binding SandboxGuardMessage, Converter={StaticResource NullToVisibilityConverter}}">
+                  <TextBlock Text="{Binding SandboxGuardMessage}"
+                             TextWrapping="Wrap"
+                             Foreground="{DynamicResource PiaDangerBrush}"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_GuardMessage"/>
+                </Border>
+              </StackPanel>
+
               <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
                 <ui:Button Content="{loc:Str McpServers_TestConnection}"
                            Icon="{ui:SymbolIcon PlugConnected24}"

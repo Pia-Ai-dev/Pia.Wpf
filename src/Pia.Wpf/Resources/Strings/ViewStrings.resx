@@ -1728,6 +1728,30 @@
   <data name="McpServers_EnvironmentHint" xml:space="preserve"><value>One KEY=value per line. Values are stored encrypted for your Windows account.</value></data>
   <data name="McpServers_WorkingDirectory" xml:space="preserve"><value>Working directory</value></data>
   <data name="McpServers_WorkingDirectoryHint" xml:space="preserve"><value>Optional. The folder the server starts in.</value></data>
+  <data name="McpServers_Sandbox_Title" xml:space="preserve"><value>Sandbox</value></data>
+  <data name="McpServers_Sandbox_Hint" xml:space="preserve"><value>Runs the server in an isolated container that can only reach the folders listed here. Every tool call still asks for your approval.</value></data>
+  <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>Run in sandbox</value></data>
+  <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Launchers such as npx and uvx, and .cmd or .bat scripts, cannot run in a sandbox yet. Point the command at the server program itself.</value></data>
+  <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Sandboxing is not available on this device.</value></data>
+  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia needs to download the sandbox runtime (about 15 MB) from Pia's storage before it can start this server.</value></data>
+  <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Downloading the sandbox runtime… {0}%</value></data>
+  <data name="McpServers_Sandbox_Download" xml:space="preserve"><value>Download</value></data>
+  <data name="McpServers_Sandbox_DownloadFailed" xml:space="preserve"><value>The sandbox runtime could not be downloaded.</value></data>
+  <data name="McpServers_Sandbox_DownloadFailedWithReason" xml:space="preserve"><value>The sandbox runtime could not be downloaded: {0}</value></data>
+  <data name="McpServers_Sandbox_ReadWrite" xml:space="preserve"><value>Folders it can read and write</value></data>
+  <data name="McpServers_Sandbox_ReadWriteHint" xml:space="preserve"><value>The server can create, change and delete files in these folders.</value></data>
+  <data name="McpServers_Sandbox_ReadOnly" xml:space="preserve"><value>Folders it can only read</value></data>
+  <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Keep these apart from the read and write folders: a folder inside one of those would be writable too.</value></data>
+  <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Full path of an existing folder</value></data>
+  <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Add</value></data>
+  <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Browse…</value></data>
+  <data name="McpServers_Sandbox_Remove" xml:space="preserve"><value>Remove folder</value></data>
+  <data name="McpServers_Sandbox_CreateFolder" xml:space="preserve"><value>Create a folder for this server</value></data>
+  <data name="McpServers_Sandbox_CreateFolderFailed" xml:space="preserve"><value>The folder could not be created: {0}</value></data>
+  <data name="McpServers_Sandbox_BrowseReadwriteTitle" xml:space="preserve"><value>Choose a folder the server can read and write</value></data>
+  <data name="McpServers_Sandbox_BrowseReadonlyTitle" xml:space="preserve"><value>Choose a folder the server can only read</value></data>
+  <data name="McpServers_Sandbox_AllowNetwork" xml:space="preserve"><value>Allow network access</value></data>
+  <data name="McpServers_Sandbox_NetworkWarning" xml:space="preserve"><value>This allows connections to every host. A sandbox cannot limit the server to individual hosts.</value></data>
   <data name="McpServers_PasteJson" xml:space="preserve"><value>Paste a configuration</value></data>
   <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Paste an mcpServers entry from another client to fill the fields in.</value></data>
   <data name="McpServers_ApplyJson" xml:space="preserve"><value>Fill in from JSON</value></data>

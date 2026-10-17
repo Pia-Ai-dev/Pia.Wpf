@@ -77,6 +77,8 @@ public class McpServersSettingsViewModelTests
             Substitute.For<IDialogService>(),
             localization,
             snackbar,
+            SettingsSubViewModels.Mxc(),
+            Substitute.For<IFileDialogService>(),
             NullLogger<SettingsViewModel>.Instance);
 
         return new Fixture(vm, plugins, snackbar);

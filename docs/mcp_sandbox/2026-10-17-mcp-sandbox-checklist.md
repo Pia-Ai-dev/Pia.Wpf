@@ -50,7 +50,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* C1 · *Effort:* S · *Value:* High
 - [ ] **T1 MXC integration tests (worker1).** Spawn `Pia.TestMcpServer` through the real factory on a temp fixture: allowed, denied and egress cases, the uncontained control, and ACE hygiene including a simulated leak. Runtime-skipped with a reason when MXC cannot spawn.
   *Deps:* C1, C4, F1 · *Effort:* S · *Value:* High
-- [ ] **U1 Editor sandbox section (worker2).** Toggle, rw/ro lists (add/remove, folder picker, "create under sandbox root"), network switch with its warning, guard errors inline, the "why disabled" line (MXC unsupported, or shim command), and the runtime-download prompt with progress when the runtime is not installed. Default on for a new server. AutomationIds `McpServers_Sandbox*` and their `ViewAutomationIdTests` rows. Strings localised like the rest of the view.
+- [x] **U1 Editor sandbox section (worker2).** Toggle, rw/ro lists (add/remove, folder picker, "create under sandbox root"), network switch with its warning, guard errors inline, the "why disabled" line (MXC unsupported, or shim command), and the runtime-download prompt with progress when the runtime is not installed. Default on for a new server. AutomationIds `McpServers_Sandbox*` and their `ViewAutomationIdTests` rows. Strings localised like the rest of the view.
   *Deps:* C0 (C2 for live errors) · *Effort:* M · *Value:* High
 - [ ] **U2 Status and detail pane (worker2).** The list row and detail pane show `Sandboxed · rw=N ro=M net=off` or `Not sandboxed`, and a fail-closed reason in the existing notice block.
   *Deps:* C3, U1 · *Effort:* S · *Value:* Med

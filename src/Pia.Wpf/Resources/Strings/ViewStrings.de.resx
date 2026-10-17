@@ -1718,6 +1718,30 @@
   <data name="McpServers_EnvironmentHint" xml:space="preserve"><value>Ein SCHLÜSSEL=Wert pro Zeile. Werte werden für dein Windows-Konto verschlüsselt gespeichert.</value></data>
   <data name="McpServers_WorkingDirectory" xml:space="preserve"><value>Arbeitsverzeichnis</value></data>
   <data name="McpServers_WorkingDirectoryHint" xml:space="preserve"><value>Optional. Der Ordner, in dem der Server startet.</value></data>
+  <data name="McpServers_Sandbox_Title" xml:space="preserve"><value>Sandbox</value></data>
+  <data name="McpServers_Sandbox_Hint" xml:space="preserve"><value>Startet den Server in einem isolierten Container, der nur die hier aufgeführten Ordner erreicht. Jeder Tool-Aufruf braucht weiterhin deine Freigabe.</value></data>
+  <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>In der Sandbox ausführen</value></data>
+  <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Starter wie npx und uvx sowie .cmd- oder .bat-Skripte laufen noch nicht in einer Sandbox. Lass den Befehl direkt auf das Server-Programm zeigen.</value></data>
+  <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Sandboxing ist auf diesem Gerät nicht verfügbar.</value></data>
+  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia muss die Sandbox-Laufzeit (etwa 15 MB) aus dem Pia-Speicher herunterladen, bevor dieser Server starten kann.</value></data>
+  <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Sandbox-Laufzeit wird heruntergeladen … {0} %</value></data>
+  <data name="McpServers_Sandbox_Download" xml:space="preserve"><value>Herunterladen</value></data>
+  <data name="McpServers_Sandbox_DownloadFailed" xml:space="preserve"><value>Die Sandbox-Laufzeit konnte nicht heruntergeladen werden.</value></data>
+  <data name="McpServers_Sandbox_DownloadFailedWithReason" xml:space="preserve"><value>Die Sandbox-Laufzeit konnte nicht heruntergeladen werden: {0}</value></data>
+  <data name="McpServers_Sandbox_ReadWrite" xml:space="preserve"><value>Ordner mit Lese- und Schreibzugriff</value></data>
+  <data name="McpServers_Sandbox_ReadWriteHint" xml:space="preserve"><value>Der Server kann in diesen Ordnern Dateien anlegen, ändern und löschen.</value></data>
+  <data name="McpServers_Sandbox_ReadOnly" xml:space="preserve"><value>Ordner nur mit Lesezugriff</value></data>
+  <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Halte sie getrennt von den Ordnern mit Schreibzugriff: Ein Ordner darin wäre ebenfalls beschreibbar.</value></data>
+  <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Vollständiger Pfad eines vorhandenen Ordners</value></data>
+  <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Hinzufügen</value></data>
+  <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Durchsuchen …</value></data>
+  <data name="McpServers_Sandbox_Remove" xml:space="preserve"><value>Ordner entfernen</value></data>
+  <data name="McpServers_Sandbox_CreateFolder" xml:space="preserve"><value>Ordner für diesen Server anlegen</value></data>
+  <data name="McpServers_Sandbox_CreateFolderFailed" xml:space="preserve"><value>Der Ordner konnte nicht angelegt werden: {0}</value></data>
+  <data name="McpServers_Sandbox_BrowseReadwriteTitle" xml:space="preserve"><value>Ordner mit Lese- und Schreibzugriff wählen</value></data>
+  <data name="McpServers_Sandbox_BrowseReadonlyTitle" xml:space="preserve"><value>Ordner nur mit Lesezugriff wählen</value></data>
+  <data name="McpServers_Sandbox_AllowNetwork" xml:space="preserve"><value>Netzwerkzugriff erlauben</value></data>
+  <data name="McpServers_Sandbox_NetworkWarning" xml:space="preserve"><value>Das erlaubt Verbindungen zu jedem Host. Eine Sandbox kann den Server nicht auf einzelne Hosts beschränken.</value></data>
   <data name="McpServers_PasteJson" xml:space="preserve"><value>Konfiguration einfügen</value></data>
   <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Füge einen mcpServers-Eintrag aus einem anderen Client ein, um die Felder zu füllen.</value></data>
   <data name="McpServers_ApplyJson" xml:space="preserve"><value>Aus JSON übernehmen</value></data>
