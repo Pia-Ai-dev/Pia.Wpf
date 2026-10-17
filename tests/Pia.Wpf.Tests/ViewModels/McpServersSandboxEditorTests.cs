@@ -614,4 +614,108 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
 
         Assert.False(vm.ShowSandboxFolderCreatedHint);
     }
+
+    // ---- the path guard, live ---------------------------------------------------------------------------
+
+    private static string MakeFolders(params string[] relative)
+    {
+        var root = Directory.CreateTempSubdirectory("pia-guard-").FullName;
+        foreach (var path in relative)
+            Directory.CreateDirectory(Path.Combine(root, path));
+        return root;
+    }
+
+    [Fact]
+    public void AReadOnlyFolderInsideAReadWriteFolder_IsFlaggedAsItIsAdded_AndClearsWhenRemoved()
+    {
+        var root = MakeFolders(@"work\inner");
+        try
+        {
+            var work = Path.Combine(root, "work");
+            var inner = Path.Combine(work, "inner");
+            var (vm, _, _, _) = Create(Stored(new McpSandboxPolicy([work], [], false)));
+            vm.EditSelectedCommand.Execute(null);
+            Assert.Null(vm.SandboxGuardMessage);
+
+            vm.NewReadonlyPath = inner;
+            vm.AddReadonlyPathCommand.Execute(null);
+
+            Assert.NotNull(vm.SandboxGuardMessage);
+            Assert.Contains(inner, vm.SandboxGuardMessage);
+
+            vm.RemoveReadonlyPathCommand.Execute(inner);
+
+            Assert.Null(vm.SandboxGuardMessage);
+        }
+        finally
+        {
+            TempPath.Remove(root);
+        }
+    }
+
+    [Fact]
+    public void AMissingReadOnlyFolder_IsFlaggedWithItsPath()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "pia-missing-" + Guid.NewGuid().ToString("N"));
+        var (vm, _, _, _) = Create(Stored(new McpSandboxPolicy([], [missing], false)));
+
+        vm.EditSelectedCommand.Execute(null);
+
+        Assert.NotNull(vm.SandboxGuardMessage);
+        Assert.Contains(missing, vm.SandboxGuardMessage);
+    }
+
+    [Fact]
+    public void ANotRootedFolder_IsFlagged_OnlyWhileTheSandboxIsOn()
+    {
+        var (vm, _, _, _) = Create(Stored(sandbox: null));
+        vm.EditSelectedCommand.Execute(null);
+
+        vm.NewReadonlyPath = @"relative\folder";
+        vm.AddReadonlyPathCommand.Execute(null);
+        Assert.Null(vm.SandboxGuardMessage);
+
+        vm.EditSandboxEnabled = true;
+        Assert.NotNull(vm.SandboxGuardMessage);
+        Assert.Contains(@"relative\folder", vm.SandboxGuardMessage);
+
+        vm.EditSandboxEnabled = false;
+        Assert.Null(vm.SandboxGuardMessage);
+    }
+
+    [Fact]
+    public void AZeroFolderPolicy_IsAcceptable()
+    {
+        var (vm, _, _, _) = Create(Stored(McpSandboxPolicy.Empty));
+
+        vm.EditSelectedCommand.Execute(null);
+
+        Assert.True(vm.EditSandboxEnabled);
+        Assert.Null(vm.SandboxGuardMessage);
+    }
+
+    [Fact]
+    public void ANewServersMissingDefaultFolder_IsAcceptable_BecausePiaCreatesIt()
+    {
+        var (vm, _, _, _) = Create();
+        vm.AddServerCommand.Execute(null);
+        vm.EditName = "Fresh";
+        vm.EditCommand = ExePath;
+
+        Assert.True(vm.ShowSandboxFolderCreatedHint);
+        Assert.Null(vm.SandboxGuardMessage);
+    }
+
+    [Fact]
+    public async Task SavingIsNotBlockedByAGuardIssue()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "pia-missing-" + Guid.NewGuid().ToString("N"));
+        var (vm, plugins, _, _) = Create(Stored(new McpSandboxPolicy([], [missing], false)));
+        vm.EditSelectedCommand.Execute(null);
+        Assert.NotNull(vm.SandboxGuardMessage);
+
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.Equal([missing], SavedDefinition(plugins).Sandbox!.ReadonlyPaths);
+    }
 }

@@ -122,7 +122,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     [NotifyCanExecuteChangedFor(nameof(AddReadonlyPathCommand))]
     private string _newReadonlyPath = string.Empty;
 
-    /// <summary>Why the folders cannot be used as entered; stays null until the path guard is wired in.</summary>
+    /// <summary>What the path guard objects to, one issue per line; null when the policy is acceptable.</summary>
     [ObservableProperty]
     private string? _sandboxGuardMessage;
 
@@ -229,7 +229,12 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
         _pluginService.PluginsChanged += OnPluginsChanged;
         _mxcAvailability.StatusChanged += OnMxcStatusChanged;
-        EditReadwritePaths.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ShowSandboxFolderCreatedHint));
+        EditReadwritePaths.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(ShowSandboxFolderCreatedHint));
+            UpdateSandboxGuard();
+        };
+        EditReadonlyPaths.CollectionChanged += (_, _) => UpdateSandboxGuard();
         Reload();
     }
 
@@ -728,6 +733,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         }
 
         RaiseSandboxStateChanged();
+        UpdateSandboxGuard();
     }
 
     partial void OnEditNameChanged(string value)
@@ -740,6 +746,18 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         ApplySandboxDefaults();
         RaiseSandboxStateChanged();
+        UpdateSandboxGuard();
+    }
+
+    /// <summary>The early warning for what the launcher would refuse at start. It never blocks a save: a policy
+    /// saved with an issue simply does not start, and says why.</summary>
+    private void UpdateSandboxGuard()
+    {
+        var policy = BuildSandboxPolicy();
+        var issues = policy is null ? [] : SandboxPathGuard.Validate(policy, EditCommand);
+        SandboxGuardMessage = issues.Count == 0
+            ? null
+            : string.Join(Environment.NewLine, issues.Select(i => $"{i.Path}: {i.Message}"));
     }
 
     partial void OnSandboxStatusChanged(MxcAvailabilityStatus value)
