@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:shared="clr-namespace:Pia.Controls.Shared"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:loc="clr-namespace:Pia.Localization">
   <UserControl.Resources>
     <Style TargetType="ui:Button" BasedOn="{StaticResource PiaHandCursorButtonStyle}"/>
@@ -501,7 +502,8 @@
                            Style="{StaticResource PiaMetaTextStyle}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,6"/>
-                <ItemsControl ItemsSource="{Binding EditReadwritePaths}">
+                <ItemsControl ItemsSource="{Binding EditReadwritePaths}"
+                              behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
                       <Grid Margin="0,2">
@@ -574,7 +576,8 @@
                            Style="{StaticResource PiaMetaTextStyle}"
                            TextWrapping="Wrap"
                            Margin="0,0,0,6"/>
-                <ItemsControl ItemsSource="{Binding EditReadonlyPaths}">
+                <ItemsControl ItemsSource="{Binding EditReadonlyPaths}"
+                              behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
                       <Grid Margin="0,2">
@@ -729,23 +732,19 @@
                          Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
               <ItemsControl ItemsSource="{Binding Tools}"
+                            behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True"
                             Visibility="{Binding HasTools, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <StackPanel Orientation="Horizontal" Margin="0,2">
-                      <CheckBox Content="{Binding Name}"
-                                FontFamily="Consolas"
+                      <CheckBox FontFamily="Consolas"
                                 FontSize="12"
                                 VerticalAlignment="Center"
                                 IsChecked="{Binding IsAllowed, Mode=TwoWay}"
                                 AutomationProperties.AutomationId="{Binding Name, StringFormat='McpServers_Tool_{0}'}"
                                 AutomationProperties.Name="{Binding Name}">
-                        <!-- A string Content would read each underscore of a tool name as an access key and drop it. -->
-                        <CheckBox.ContentTemplate>
-                          <DataTemplate>
-                            <TextBlock Text="{Binding}"/>
-                          </DataTemplate>
-                        </CheckBox.ContentTemplate>
+                        <!-- Not a string Content: its first underscore becomes an access key, in the label and in the UIA name. -->
+                        <TextBlock Text="{Binding Name}"/>
                       </CheckBox>
                       <shared:PiaHelpHint Text="{Binding Description}" IconSize="14"/>
                       <ui:Badge Content="{loc:Str McpServers_Destructive}"

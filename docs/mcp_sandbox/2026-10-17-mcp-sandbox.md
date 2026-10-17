@@ -385,37 +385,80 @@ Record the results in this doc under *Live verification*, the way the local-MCP 
 
 ## Live verification
 
-**Status:** not run yet. Filled in by step E2 on the merged branch. The harness is
+**Status:** run 2026-10-17, scenarios 0-12 all pass; scenario 9 is covered by code path for its
+`TrayMenu_Exit` leg. One defect found and fixed during the run (finding 1). The harness is
 `tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1`
 ([README](../../tests/ui-scripts/README.md)).
 
-Run setup, to be completed: build and commit SHA, Windows build, the `Status` output at the start (integrity
-`S-1-16-8192`, fixture hashes, container baseline), stack `https://localhost:18081`, and whether the runtime
-came from the e2e storage mirror (`MirrorLocal`) or from nuget.org. The verdict for each scenario is a fixture
-SHA-256, an `icacls`/`Status` reading or a Pia log line, never the model's wording.
+Run setup:
+- **Build:** integration `65e673d3` plus `da11032f` (the peer-refresh fix below), Debug exe, 0 warnings.
+- **Host:** Windows Server 2025 Standard 10.0.26100, German locale. Pia ran de-elevated through `explorer.exe`:
+  integrity Medium `S-1-16-8192`, `elevated=False`, read off the process token by the harness.
+- **Stack:** `https://localhost:18081` (`pia-e2e`), signed in through the Account page as the e2e test account.
+  The assistant answered through Pia Cloud, which routes to `claude-haiku-5-5` on this stack.
+- **Runtime source:** the e2e storage mirror, `Assets:MirrorBaseUrl=http://localhost:18090/f/assets/` through
+  `MirrorLocal` (HTTP 200 for the nupkg at the start), removed again with `MirrorLocal -Off`. Nothing touched
+  `storage.pia-ai.de`.
+- **`Status` at the start:** fixture `protected\important.txt` A1BB64043718, `protected\policy.txt` E86871589859,
+  `secret\passwords.txt` DBE2A99E856E, `workspace\readme.txt` 8B560DDD0EEA, `workspace\notes\todo.txt`
+  EF8183650EE0; owner of `fixture` and `server` is the user, `server-admin` is Administrators-owned; 0 explicit
+  and 0 leaked `S-1-15-2-*` ACEs; 0 helper processes; container baseline `pia-mcp-files` and
+  `pia-mcp-test-probe` (2 profiles, 2 mappings).
+- **Profile hygiene:** the built-in file and git tools were switched off in the throwaway profile and no
+  non-MCP card was approved (finding 2). The verdict for each scenario is a fixture SHA-256, an
+  `icacls`/`Status` reading or a Pia log line, never the model's wording. Log times are local, `2026-10-17`.
 
 | # | Scenario | Verdict source | Result | Evidence |
 |---|---|---|---|---|
-| 0 | Runtime delivery: download prompt and progress, hash check, signature check; a tampered runtime is refused at load and not started, then an explicit install repairs it and the server starts sandboxed | log lines; `TamperRuntime` | pending | |
-| 1 | Add the test server sandboxed (rw `workspace`, ro `protected`, network off); Test connection; row `Running` | list row, log | pending | |
-| 2 | List and read the workspace readme | tool result, log | pending | |
-| 3 | Delete `protected/important.txt` after approving the card (the card shows the sandbox line) | SHA-256 unchanged; access-denied result | pending | |
-| 4 | Read `secret/passwords.txt` | access-denied result | pending | |
-| 5 | Write a note into the workspace | file exists, `Status` | pending | |
-| 6 | Export to `http://example.com`, and to a literal IP (`http://1.1.1.1/`) | `HttpRequestException` with inner `SocketException` (by type, not wording) | pending | |
-| 7 | Control: same server saved uncontained on a reseeded fixture; scenario 3 deletes the file, the literal-IP export reaches the host | SHA-256 changed; any HTTP status | pending | |
-| 8 | Restart Pia; the server re-activates sandboxed | container log line | pending | |
-| 9 | Graceful exit through `TrayMenu_Exit` | no orphan process, no `S-1-15-2-*` ACE | pending | |
-| 10 | `Stop -Kill`, start again | sweep log line, `icacls` clean | pending | |
-| 11 | Guard UX: a read-only path inside the read-write path is refused; `npx` shows the toggle disabled with its reason | editor message, toggle state | pending | |
-| 12 | Ownership: the same server in the Administrators-owned `server-admin` folder is refused and never started uncontained | `Not running` reason, no process | pending | |
+| 0 | Runtime delivery: download prompt and progress, hash check, signature check; a tampered runtime is refused at load and not started, then an explicit install repairs it and the server starts sandboxed | log lines; `TamperRuntime` | pass | **Delivery** (runtime removed, server added in the editor): the prompt read "Pia needs to download the sandbox runtime (about 15 MB) from Pia's storage… Saving an enabled sandboxed server downloads it automatically; you can also download it now."; after Download the progress text read `Downloading the sandbox runtime… 0%`. Log: 20:41:39.685 `MXC sandbox availability: Downloading`; 20:41:41.913 `Fetched runtimes/microsoft.mxc.sdk.1.0.1.nupkg from http://localhost:18090/f/assets/runtimes/microsoft.mxc.sdk.1.0.1.nupkg`; 20:41:41.981 `MXC runtime 1.0.1 installed`; 20:41:42.002 `MXC sandbox availability: Ready`. Only failures log, so `installed` stands for pin, extract and signature all passing. **Tamper** (one byte of `mxc_ffi.dll` flipped at offset 1530830, Authenticode `HashMismatch`, saved enabled sandboxed server present): 21:00:06.703 `WARN … The installed MXC runtime failed its signature check and was not loaded`; 21:00:06.704 `Sandboxed MCP server 2f58ccd7-… not started: the sandbox runtime is not ready`; 21:00:06.705 `availability: Downloading`; 21:00:08.892 `Fetched …`; 21:00:08.955 `MXC runtime 1.0.1 installed`; 21:00:09.003 `availability: Ready`; 21:00:09.021 `Starting pia-mcp-files under MXC: rw=1 ro=2 net=deny`; 21:00:09.321 `activated with 7 tools`. The repair was the startup download for the saved server, not the Download button; `TamperRuntime -Undo` then found the runtime valid again. The startup path was also seen earlier: a leftover saved server downloaded and started the runtime at launch (20:37:04-20:37:07). |
+| 1 | Add the test server sandboxed (rw `workspace`, ro `protected`, network off); Test connection; row `Running` | list row, log | pass | Test connection in the editor: `Connected. 7 tool(s) available.` Saved: the row read `Running · 7 tool(s)` and `Sandboxed · rw=1 ro=1 net=off`; the detail pane listed the workspace as read-write, `protected` as read-only and the server's own folder as "Also readable". Log 20:49:41.244 `MCP plugin 2f58ccd7-… initialized with 7 of 7 tools`; `sandboxed, rw=1 ro=1 network=deny`; `Starting pia-mcp-files under MXC: rw=1 ro=2 net=deny` (the second read-only entry is the server's folder). `Status` while it ran: 3 explicit ACEs (`fixture\workspace`, `fixture\protected`, `server\Pia.TestMcpServer`), 1 helper child of Pia, 0 leaked. `secret` got no ACE. |
+| 2 | List and read the workspace readme | tool result, log | pass | The model called `files__list_directory`, then `files__read_file`; both cards read "Runs sandboxed: 1 read-write, 1 read-only folder(s), network off". 20:51:16.298 `MCP tool files__read_file result (81 chars): Pia sandbox e2e workspace.` |
+| 3 | Delete `protected/important.txt` after approving the card (the card shows the sandbox line) | SHA-256 unchanged; access-denied result | pass | The `files__delete_file` card carried the sandbox line; approved with Allow once. 20:51:55.371 `MCP tool files__delete_file result (356 chars): … "ERROR UnauthorizedAccessException: Access to the path '…\fixture\protected\important.txt' is denied." … "isError":true`. SHA-256 of `important.txt` A1BB64043718807B93B16894DC3D00B7960BB5972913D1392E15DFDF31BAA055 before and after. |
+| 4 | Read `secret/passwords.txt` | access-denied result | pass | 20:52:30.322 `MCP tool files__read_file result (353 chars): … "ERROR UnauthorizedAccessException: Access to the path '…\fixture\secret\passwords.txt' is denied." … "isError":true`. `secret` never held an ACE for the container. |
+| 5 | Write a note into the workspace | file exists, `Status` | pass | 20:53:02.618 `MCP tool files__write_file result (115 chars): Wrote 21 bytes to …\fixture\workspace\e2e-note.txt`; the file exists on disk with 21 bytes and the text sent. |
+| 6 | Export to `http://example.com`, and to a literal IP (`http://1.1.1.1/`) | `HttpRequestException` with inner `SocketException` (by type, not wording) | pass | Hostname, 20:53:31.227 `files__export result: "ERROR HttpRequestException: Der angegebene Host ist unbekannt. (example.com:80) (inner SocketException: Der angegebene Host ist unbekannt.)"` (DNS failure inside the container). Literal IP, 20:54:01.484 `files__export result: "ERROR HttpRequestException: Der Zugriff auf einen Socket war aufgrund der Zugriffsrechte des Sockets unzulässig. (1.1.1.1:80) (inner SocketException: …)"` (access forbidden, not name resolution). |
+| 7 | Control: same server saved uncontained on a reseeded fixture; scenario 3 deletes the file, the literal-IP export reaches the host | SHA-256 changed; any HTTP status | pass | Sandbox toggled off and saved: 20:54:30.598 the server restarted with no `sandboxed` line and no MXC launcher line, and the container's ACE sweep had just run (3 folders, 0 leaked). Fixture reseeded (5 files, hashes as at the start). The `files__delete_file` card showed no sandbox line. 20:55:19.821 `files__delete_file result (106 chars): Deleted …\fixture\protected\important.txt` (the file is gone; `protected` holds only `policy.txt`). 20:55:50.218 `files__export result (46 chars): Exported 19 bytes to http://1.1.1.1/: HTTP 200`. Same prompts, same server, sandbox off: delete succeeds and the IP is reachable, so scenario 3's block and scenario 6's denial are MXC's. |
+| 8 | Restart Pia; the server re-activates sandboxed | container log line | pass | After a graceful exit and `Launch`: 20:59:26.313 `ACE sweep: 3 folder(s) checked, 0 leaked sandbox ACE(s) removed, 0 entry(ies) failed`; 20:59:26.359 `MCP plugin 2f58ccd7-…: sandboxed, rw=1 ro=1 network=deny`; 20:59:26.373 `Starting pia-mcp-files under MXC: rw=1 ro=2 net=deny`; 20:59:26.685 `activated with 7 tools`. |
+| 9 | Graceful exit through `TrayMenu_Exit` | no orphan process, no `S-1-15-2-*` ACE | pass (`TrayMenu_Exit` itself covered by code path, not driven) | The tray menu is the notification icon's context menu, which needs a physical right-click, and `SendInput` is denied here. Its handler is `TrayIconService.cs` `_exitMenuItem.Click` → `ExitApplication` → `Application.Shutdown` → `App.OnExit`, whose first statement is `PluginShutdownService.ShutDownBounded`. The same `OnExit` and plugin shutdown ran through `EndSession` (logoff messages to Pia's own windows, by process id) four times with the sandboxed server running: 20:46:06 `Stopped 1 MCP server(s) in 20 ms`, 20:59:17 23 ms, 21:00:03 43 ms, 21:00:32 28 ms; each with `pia-mcp-files exited with code 0`, the process gone after about 860 ms, and `after: explicit S-1-15-2-* ACEs=0 helper processes=0`, result clean. A fifth, with no server running, logged `Stopped 0 MCP server(s) in 1 ms`. |
+| 10 | `Stop -Kill`, start again | sweep log line, `icacls` clean | pass | After `Stop -Kill` (taskkill /F with the server running): `Status` showed 3 explicit ACEs marked LEAK (`fixture\protected`, `fixture\workspace`, `server\Pia.TestMcpServer`), 0 helpers, 0 orphans. Next start: 20:59:49.060 `ACE sweep: 3 folder(s) checked, 3 leaked sandbox ACE(s) removed, 0 entry(ies) failed`; 20:59:49.124 `Starting pia-mcp-files under MXC`; 20:59:49.422 `activated with 7 tools`. `Status` then showed only the new run's 3 active ACEs and `leaked: 0`; after the final graceful stop, `explicit ACEs: 0`. |
+| 11 | Guard UX: a read-only path inside the read-write path is refused; `npx` shows the toggle disabled with its reason | editor message, toggle state | pass | Read-write `…\fixture\workspace` plus read-only `…\fixture\workspace\notes`: `McpServers_Sandbox_GuardLead` read "This server won't start until these are fixed:" and `McpServers_Sandbox_GuardMessage` read "…\fixture\workspace\notes: This read-only folder is inside a read-write folder, so it would be writable. Move it out or remove it."; both disappeared once the folder was removed. Command `npx`: `McpServers_Sandbox_DisabledReason` read "Launchers such as npx and uvx, and .cmd or .bat scripts, cannot run in a sandbox yet. Point the command at the server program itself."; with the toggle off, `McpServers_Sandbox_Toggle` reported `isEnabled=false`. With the toggle on it stays enabled, by design, so it can be switched off. |
+| 12 | Ownership: the same server in the Administrators-owned `server-admin` folder is refused and never started uncontained | `Not running` reason, no process | pass | Same server and policy with the command in `server-admin`: 20:58:07.761 `pia-mcp-files not started: 45 item(s) the sandbox cannot be given access to`; `FAIL … Failed to initialize MCP plugin 2f58ccd7-…SandboxStartException: Pia can't sandbox this server: 45 file(s) in its folder belong to an administrator or another account. Install or copy the server into a folder you own.`; 20:58:07.772 `activated with 0 tools`. The detail pane read "Not running: Pia can't sandbox this server: 45 file(s) in its folder belong to an administrator or another account…". No `Pia.TestMcpServer` process existed and no uncontained start was logged. |
 
 First-use cost, from a de-elevated dry run of the provisioner and launcher on this host (nuget.org
 fallback, a console outside the repo): downloading, pinning, extracting and signature-checking the
 14.6 MB runtime took about 0.5 s, and loading it 7 ms. The first sandboxed start took about 1.7 s, because
 it also created the AppContainer profile; later starts took 0.3-0.4 s and a dispose 25-50 ms. A tampered
-`mxc_ffi.dll` was refused at load in 18 ms and repaired by the next install in about 0.5 s. To be
-confirmed by E2 through the real app.
+`mxc_ffi.dll` was refused at load in 18 ms and repaired by the next install in about 0.5 s.
+
+Through the real app (E2, local mirror, Debug build): the 14.6 MB package arrived in about 2.0 s over HTTP
+(`HttpLoggingHandler` 2034 ms); pin, extract, signature and install took 0.07 s after `Fetched`, and
+`Ready` followed 0.02-0.05 s later. A first sandboxed start in a fresh process took 0.30 s (profile already
+there). After the tamper, refusal to `Ready` took 2.3 s end to end, almost all of it the download.
+
+Findings:
+1. **Fixed during the run: the per-row Remove buttons and tool checkboxes of the editor were invisible to UIA.**
+   Rows added while a UIA client was attached cached an empty automation subtree (the rw row was a bare
+   `DataItem` with no children; one of seven tool checkboxes was exposed), which a screen reader would hit
+   too. Fix `da11032f` attaches `AutomationPeerRefreshBehavior` to the three lists and locks the wiring in
+   `McpServersPeerRefreshTests`; afterwards every Remove button and all seven tool checkboxes were present.
+2. **Not fixed, pre-existing: the assistant files folder ignores the data-dir override.** The default,
+   `AssistantWorkspace.DefaultRoot` (`src/Pia.Wpf/Infrastructure/AssistantWorkspace.cs:24-26`), is a
+   `{ get; } =` initializer over `SpecialFolder.UserProfile` + `Documents\Pia Assistant`, so with
+   `PIA_DATA_DIR` and `PIA_LOCAL_DATA_DIR` on a throwaway profile the Assistant settings page still showed the
+   real `Documents\Pia Assistant` as the files folder, with the vault under it. The run switched the
+   built-in file and git tools off and approved only MCP cards. Checked at the end: the folder is unchanged
+   (2 files, newest write 2026-09-02 10:45:52 as before the run, `Playground` and the root 2026-08-04);
+   `Verify` reported "real profile untouched".
+3. **Not fixed, minor: tool checkboxes report a wrong UIA name.** `McpServers_Tool_get_server_info` has the
+   name `getserver_info`: the first underscore of the `Content` string is consumed as an access key. The
+   `CheckBox` in `McpServersView.xaml` (editor tool list) has no `AutomationProperties.Name`.
+4. **Observation: `pia-mcp-files-probe` outlives Test connection.** The probe profile stays while the server
+   exists and goes with it: deleting the server logged `AppContainer profile pia-mcp-files: deleted` and
+   `pia-mcp-files-probe: deleted` (20:39:41).
+5. **Deleting a running sandboxed server** stopped it (`exited with code 0`), swept
+   (`4 folder(s) checked, 0 leaked`), removed both profiles and logged `Local MCP server … removed`.
+6. **Scope of the run:** 8 chat prompts on the e2e stack for scenarios 2 to 7, spaced by the approval
+   cards and well inside the 30 requests per 60 s limit. Each tool card was approved with Allow once.
 
 ## Not yet planned
 
