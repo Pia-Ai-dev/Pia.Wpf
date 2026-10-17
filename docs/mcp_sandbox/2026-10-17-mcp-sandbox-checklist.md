@@ -34,7 +34,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* S1 · *Effort:* XS · *Value:* Enabler (gate G2)
 - [x] **D1 Runtime provisioner (worker1).** `RuntimeAssetCatalog.MxcRuntime` (mirror key `runtimes/microsoft.mxc.sdk.1.0.1.nupkg`, nuget.org upstream, pinned SHA-256), `PiaPaths.MxcRuntimeDirectory`, and `MxcRuntimeProvisioner`: download through `IAssetDownloader`, pin check, `.tmp` extract of `runtimes/win-x64/native/*`, WinTrust plus trusted-publisher check, resolver registration, progress. `IMxcAvailability` states `NotInstalled` / `Downloading` / `Unsupported` / `Ready`. Unit tests for every failure path.
   *Deps:* S2, C0 · *Effort:* S · *Value:* High
-- [ ] **D2 Catalogue scripts (worker1).** `Mxc` group in `scripts/RuntimeAssetCatalogue.ps1`, so `Publish-RuntimeAssets.ps1 -Include Mxc` and `Save-RuntimeAssets.ps1 -Include Mxc` work, and `RuntimeAssetCatalogTests` holds both sides. `-ListOnly` only: the real upload to `storage.pia-ai.de` is the owner's step.
+- [x] **D2 Catalogue scripts (worker1).** `Mxc` group in `scripts/RuntimeAssetCatalogue.ps1`, so `Publish-RuntimeAssets.ps1 -Include Mxc` and `Save-RuntimeAssets.ps1 -Include Mxc` work, and `RuntimeAssetCatalogTests` holds both sides. `-ListOnly` only: the real upload to `storage.pia-ai.de` is the owner's step.
   *Deps:* D1 · *Effort:* XS · *Value:* Enabler
 - [x] **C0 Contract commit (worker1).** `McpSandboxPolicy`, `LocalMcpDefinition.Sandbox`, the `sandbox` ConfigJson round-trip with tests, the `IMxcAvailability` interface, `PiaPaths.McpSandboxRoot`. No behaviour yet. worker2 merges it next.
   *Deps:* S1 · *Effort:* XS · *Value:* Enabler

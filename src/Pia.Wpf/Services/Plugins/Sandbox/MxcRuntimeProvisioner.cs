@@ -160,7 +160,6 @@ public sealed class MxcRuntimeProvisioner : IMxcRuntime
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, recursive: true);
         Directory.Move(staging, _directory);
-        File.Delete(package);
 
         _logger.LogInformation("MXC runtime {Version} installed", PiaPaths.MxcRuntimeVersion);
         return new MxcInstallResult(true, null);

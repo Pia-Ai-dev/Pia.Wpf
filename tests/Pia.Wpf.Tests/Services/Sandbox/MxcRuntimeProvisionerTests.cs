@@ -195,7 +195,7 @@ public sealed class MxcRuntimeProvisionerTests : IDisposable
     }
 
     [Fact]
-    public async Task APrestagedArchive_IsUsedWithoutDownloading_AndConsumed()
+    public async Task APrestagedArchive_IsUsedWithoutDownloading_AndKept()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(ArchivePath)!);
         await File.WriteAllBytesAsync(ArchivePath, Package(), TestContext.Current.CancellationToken);
@@ -205,7 +205,25 @@ public sealed class MxcRuntimeProvisionerTests : IDisposable
 
         Assert.True(result.Installed, result.Reason);
         Assert.Equal(0, downloader.Calls);
-        Assert.False(File.Exists(ArchivePath));
+        Assert.True(File.Exists(ArchivePath));
+    }
+
+    /// <summary>An air-gapped machine has nowhere else to get the package from.</summary>
+    [Fact]
+    public async Task APrestagedArchive_ReinstallsTheRuntime_WhenTheInstalledFileLaterFailsVerification()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(ArchivePath)!);
+        await File.WriteAllBytesAsync(ArchivePath, Package(), TestContext.Current.CancellationToken);
+        var downloader = new FakeDownloader(() => Package());
+        var provisioner = Provisioner(downloader);
+        await provisioner.InstallAsync(ct: TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Combine(RuntimeDirectory, "mxc_ffi.dll"), "corrupted", TestContext.Current.CancellationToken);
+
+        var again = await provisioner.InstallAsync(ct: TestContext.Current.CancellationToken);
+
+        Assert.True(again.Installed, again.Reason);
+        Assert.Equal(0, downloader.Calls);
+        Assert.Equal(GoodDll, await File.ReadAllBytesAsync(Path.Combine(RuntimeDirectory, "mxc_ffi.dll"), TestContext.Current.CancellationToken));
     }
 
     [Fact]

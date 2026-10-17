@@ -1,5 +1,6 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Paths;
 using Pia.Services.Assets;
@@ -41,6 +42,40 @@ public sealed class MxcRuntimeAssetTests : IDisposable
             "https://api.nuget.org/v3-flatcontainer/microsoft.mxc.sdk/1.0.1/microsoft.mxc.sdk.1.0.1.nupkg",
             RuntimeAssetCatalog.MxcRuntime.UpstreamUrl);
         Assert.Matches("^[A-Za-z0-9._/-]+$", RuntimeAssetCatalog.MxcRuntime.MirrorKey);
+    }
+
+    private static readonly string Catalogue = File.ReadAllText(Path.Combine(
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..")),
+        "scripts", "RuntimeAssetCatalogue.ps1"));
+
+    [Fact]
+    public void TheCatalogue_AppearsInTheMirrorSet()
+    {
+        Assert.Contains(RuntimeAssetCatalog.MxcRuntime, RuntimeAssetCatalog.All);
+    }
+
+    /// <summary>The publishing script checks a staged package against this before uploading it, so a mirror
+    /// can never be fed bytes the client would refuse.</summary>
+    [Fact]
+    public void TheScriptsPin_IsTheOneTheClientChecks()
+    {
+        var pin = Regex.Match(Catalogue, @"Sha256\s*=\s*'([0-9A-Fa-f]{64})'");
+
+        Assert.True(pin.Success, "the Mxc group has no Sha256");
+        Assert.Equal(RuntimeAssetCatalog.MxcRuntimeSha256, pin.Groups[1].Value, ignoreCase: true);
+    }
+
+    /// <summary>Pre-fetching on an air-gapped machine only works if the package lands where the provisioner looks.</summary>
+    [Fact]
+    public void ThePrefetchTarget_IsWhereTheClientLooksForAStagedPackage()
+    {
+        var group = Catalogue[Catalogue.IndexOf("Mxc = @(", StringComparison.Ordinal)..];
+        var target = Regex.Match(group, @"Target\s*=\s*(Join-Path[^
+]+)").Groups[1].Value;
+
+        Assert.Contains("'Runtimes'", target);
+        Assert.Contains("'Mxc'", target);
+        Assert.Contains($"'{Path.GetFileName(PiaPaths.MxcRuntimeArchivePath)}'", target);
     }
 
     [Fact]
