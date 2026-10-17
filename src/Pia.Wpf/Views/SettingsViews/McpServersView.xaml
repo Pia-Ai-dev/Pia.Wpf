@@ -332,6 +332,7 @@
                            AutomationProperties.AutomationId="McpServers_Detail_Message">
                   <TextBlock.Style>
                     <Style TargetType="TextBlock">
+                      <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
                       <Style.Triggers>
                         <DataTrigger Binding="{Binding DetailMessageIsError}" Value="True">
                           <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}"/>
@@ -679,6 +680,7 @@
                            AutomationProperties.AutomationId="McpServers_Edit_Message">
                   <TextBlock.Style>
                     <Style TargetType="TextBlock">
+                      <Setter Property="Foreground" Value="{DynamicResource TextDefaultBrush}"/>
                       <Style.Triggers>
                         <DataTrigger Binding="{Binding EditorMessageIsError}" Value="True">
                           <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}"/>
@@ -736,7 +738,14 @@
                                 VerticalAlignment="Center"
                                 IsChecked="{Binding IsAllowed, Mode=TwoWay}"
                                 AutomationProperties.AutomationId="{Binding Name, StringFormat='McpServers_Tool_{0}'}"
-                                AutomationProperties.Name="{Binding Name}"/>
+                                AutomationProperties.Name="{Binding Name}">
+                        <!-- A string Content would read each underscore of a tool name as an access key and drop it. -->
+                        <CheckBox.ContentTemplate>
+                          <DataTemplate>
+                            <TextBlock Text="{Binding}"/>
+                          </DataTemplate>
+                        </CheckBox.ContentTemplate>
+                      </CheckBox>
                       <shared:PiaHelpHint Text="{Binding Description}" IconSize="14"/>
                       <ui:Badge Content="{loc:Str McpServers_Destructive}"
                                 Appearance="Caution"
