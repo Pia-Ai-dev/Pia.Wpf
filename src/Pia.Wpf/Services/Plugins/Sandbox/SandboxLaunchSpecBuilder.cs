@@ -11,10 +11,21 @@ public static class SandboxLaunchSpecBuilder
         "Pia can't sandbox this server yet: '{0}' starts through a script launcher (npx, uvx, .cmd, .bat). "
         + "Point the command at the server's own .exe.";
 
+    private const string AliasError =
+        "Pia can't sandbox this server yet: '{0}' is a Microsoft Store alias or a link, not the program itself. "
+        + "Point the command at the real {0}.";
+
+    private static bool IsReparsePoint(string path) =>
+        File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+
     public static string ContainerName(string prefix, bool isProbe) =>
         isProbe ? $"pia-mcp-{prefix}-probe" : $"pia-mcp-{prefix}";
 
-    public static SandboxLaunchPlan Build(McpTransportRequest request, string? pathVariable = null, Func<string, bool>? fileExists = null)
+    public static SandboxLaunchPlan Build(
+        McpTransportRequest request,
+        string? pathVariable = null,
+        Func<string, bool>? fileExists = null,
+        Func<string, bool>? isReparsePoint = null)
     {
         var policy = request.Sandbox ?? throw new ArgumentException("A sandboxed launch needs a policy.", nameof(request));
         var exists = fileExists ?? File.Exists;
@@ -27,6 +38,9 @@ public static class SandboxLaunchSpecBuilder
             return SandboxLaunchPlan.Fail(resolved.Error);
 
         var command = resolved.Path!;
+        if ((isReparsePoint ?? IsReparsePoint)(command))
+            return SandboxLaunchPlan.Fail(string.Format(AliasError, Path.GetFileName(command)));
+
         if (!string.Equals(Path.GetExtension(command), ".exe", StringComparison.OrdinalIgnoreCase)
             || SandboxCommandRules.IsShimCommand(command))
             return SandboxLaunchPlan.Fail(string.Format(ScriptLauncherError, Path.GetFileName(command)));
@@ -51,7 +65,7 @@ public static class SandboxLaunchSpecBuilder
             grantedCommandDirectory));
     }
 
-    private static (string? Path, string? Error) ResolveCommand(string command, string? pathVariable, Func<string, bool> exists)
+    internal static (string? Path, string? Error) ResolveCommand(string command, string? pathVariable, Func<string, bool> exists)
     {
         command = command.Trim().Trim('"');
         if (command.Length == 0)
@@ -91,9 +105,13 @@ public static class SandboxLaunchSpecBuilder
 
     private static string NotFound(string command) => $"Command not found: {Path.GetFileName(command)}.";
 
-    private static string? CommandDirectoryToGrant(string commandDirectory, IReadOnlyList<string> readwrite, IReadOnlyList<string> readonlyPaths)
+    internal static string? CommandDirectoryToGrant(
+        string commandDirectory,
+        IReadOnlyList<string> readwrite,
+        IReadOnlyList<string> readonlyPaths,
+        IEnumerable<string>? systemRoots = null)
     {
-        if (SystemRoots().Any(root => IsSameOrUnder(commandDirectory, root)))
+        if ((systemRoots ?? SystemRoots()).Any(root => IsSameOrUnder(commandDirectory, root)))
             return null;
 
         return readwrite.Concat(readonlyPaths).Any(granted => IsSameOrUnder(commandDirectory, granted))
@@ -141,16 +159,16 @@ public static class SandboxLaunchSpecBuilder
         }
     }
 
-    private static List<string> Distinct(IEnumerable<string> paths) =>
+    internal static List<string> Distinct(IEnumerable<string> paths) =>
         [.. paths.Distinct(StringComparer.OrdinalIgnoreCase)];
 
-    private static string Normalize(string path)
+    internal static string Normalize(string path)
     {
         var full = Path.GetFullPath(path.Trim());
         return full.Length > 3 ? full.TrimEnd('\\', '/') : full;
     }
 
-    private static bool IsSameOrUnder(string path, string root) =>
+    internal static bool IsSameOrUnder(string path, string root) =>
         string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
         || path.StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
 }

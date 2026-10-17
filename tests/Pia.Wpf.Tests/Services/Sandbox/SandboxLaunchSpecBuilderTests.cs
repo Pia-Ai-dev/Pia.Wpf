@@ -115,6 +115,27 @@ public sealed class SandboxLaunchSpecBuilderTests
         Assert.Contains("script launcher", plan.Error);
     }
 
+    /// <summary>A bare `python` can resolve to the Store's zero-byte alias, whose folder would then be the one shared.</summary>
+    [Fact]
+    public void AStoreAliasOrLink_IsRefused_BecauseItsFolderIsNotTheProgramsOwn()
+    {
+        var plan = SandboxLaunchSpecBuilder.Build(
+            Request(@"C:\Users\me\AppData\Local\Microsoft\WindowsApps\python.exe"), null,
+            fileExists: _ => true, isReparsePoint: _ => true);
+
+        Assert.Null(plan.Spec);
+        Assert.Contains("Microsoft Store alias", plan.Error);
+        Assert.Contains("real python.exe", plan.Error);
+    }
+
+    [Fact]
+    public void ARealProgram_IsNotMistakenForAnAlias()
+    {
+        var plan = SandboxLaunchSpecBuilder.Build(Request(@"C:\Tools\fs\fs.exe"), null, fileExists: _ => true, isReparsePoint: _ => false);
+
+        Assert.NotNull(plan.Spec);
+    }
+
     [Theory]
     [InlineData("npx")]
     [InlineData("uvx")]
