@@ -608,21 +608,47 @@ function Invoke-EndSession {
     $pia = Get-OurPiaProcess $state
     if (-not $pia) { Fail 'Pia from this harness is not running.' }
 
-    $windows = @([MxcE2eWindowProbe]::TopLevelWindows($pia.Id))
-    if ($windows.Count -eq 0) { Fail "pid $($pia.Id) has no top-level window to send the session messages to." 3 }
-    $target = $windows[0].Split('|')
-    $hwnd = [long]$target[1]
-    Write-Host "target:    pid $($pia.Id) hwnd 0x$($hwnd.ToString('x')) class $($target[2]) visible=$($target[0] -eq '1')"
+    # Windows asks every top-level window of a process, and WPF listens on its own hidden HwndWrapper windows,
+    # not only on the visible one. Only windows of this one process are addressed, by process id.
+    $windows = @([MxcE2eWindowProbe]::TopLevelWindows($pia.Id) | Where-Object { $_.Split('|')[2] -like 'HwndWrapper[[]*' })
+    if ($windows.Count -eq 0) { Fail "pid $($pia.Id) has no WPF top-level window to send the session messages to." 3 }
+    $targets = @($windows | ForEach-Object { $parts = $_.Split('|'); [pscustomobject]@{ Hwnd = [long]$parts[1]; Class = $parts[2]; Visible = $parts[0] -eq '1' } })
+    Write-Host "targets:   pid $($pia.Id), $($targets.Count) window(s) of its own: $(($targets | ForEach-Object { '0x' + $_.Hwnd.ToString('x') }) -join ', ')"
     $helpersBefore = @(Get-SandboxProcesses).Count
     Write-Host "helpers:   $helpersBefore running before"
 
     $logoff = [long]2147483648
     $sentAt = Get-Date
-    $query = [MxcE2eWindowProbe]::Send($hwnd, 0x11, 0, $logoff, 10000)
-    Write-Host "WM_QUERYENDSESSION (logoff) -> $query"
-    if ($query -ne 1) { Fail "Pia did not agree to the session ending (result $query). WM_ENDSESSION was not sent." 3 }
-    $end = [MxcE2eWindowProbe]::Send($hwnd, 0x16, 1, $logoff, 10000)
-    Write-Host "WM_ENDSESSION (TRUE, logoff) -> $end"
+    # One window at a time, as the system does, and no further once Pia has gone: its SessionEnding handler runs
+    # during the query, so a window asked after that point answers nothing useful.
+    $shutdownLogged = {
+        $current = Get-ChildItem (Join-Path $paths.Local 'Logs') -Filter 'pia-*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
+        if (-not $current) { return $false }
+        $null -ne (Get-Content -LiteralPath $current.FullName | Where-Object {
+                $parsed = [datetimeoffset]::MinValue
+                [datetimeoffset]::TryParse(($_ -split "`t", 2)[0], [ref]$parsed) -and $parsed.LocalDateTime -ge $sentAt -and $_ -match 'PluginShutdownService'
+            } | Select-Object -First 1)
+    }
+    $queries = New-Object System.Collections.Generic.List[long]
+    $shutdownStarted = $false
+    foreach ($target in $targets) {
+        $answer = [MxcE2eWindowProbe]::Send($target.Hwnd, 0x11, 0, $logoff, 10000)
+        $queries.Add($answer)
+        if ($answer -ne 0 -and $answer -ne -1) { continue }
+
+        # A window that answers nothing is only a refusal while Pia is not already shutting down: its
+        # SessionEnding handler runs during the query and tears the windows down behind it.
+        Start-Sleep -Milliseconds 800
+        if ($pia.HasExited -or (& $shutdownLogged)) { $shutdownStarted = $true; break }
+        Write-Host "WM_QUERYENDSESSION (logoff) -> $($queries -join ',')"
+        Fail "Pia refused the session ending (window 0x$($target.Hwnd.ToString('x')) answered $answer). WM_ENDSESSION was not sent." 3
+    }
+    if (-not $shutdownStarted) { $shutdownStarted = $pia.HasExited -or (& $shutdownLogged) }
+    Write-Host "WM_QUERYENDSESSION (logoff) -> $($queries -join ',')  (Pia began shutting down during the query: $shutdownStarted)"
+    if (-not $shutdownStarted) {
+        $ends = @($targets | ForEach-Object { [MxcE2eWindowProbe]::Send($_.Hwnd, 0x16, 1, $logoff, 10000) })
+        Write-Host "WM_ENDSESSION (TRUE, logoff) -> $($ends -join ',')"
+    }
 
     $exited = $pia.WaitForExit(30000)
     $took = [int]((Get-Date) - $sentAt).TotalMilliseconds
@@ -785,7 +811,7 @@ function Invoke-MirrorLocal {
 # The real-container unit tests name theirs pia-mcp-test-*; those are not the app's.
 function Get-ContainerLabel([string]$name, $baseline) {
     if ($baseline -contains $name) { return '(existed at Init)' }
-    if ($name -like 'pia-mcp-test*') { return '(known test artefact)' }
+    if ($name -like 'pia-mcp-test*' -or $name -like 'pia-mcp-t1-*') { return '(known test artefact)' }
     '(new)'
 }
 
