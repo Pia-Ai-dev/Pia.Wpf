@@ -19,6 +19,7 @@ public sealed class SandboxPathGuardTests
         [@"C:\Work\exactly"] = SandboxPathGuard.MaxEntriesPerRoot,
         [@"C:\Work\one-over"] = SandboxPathGuard.MaxEntriesPerRoot + 1,
         [@"C:\Users\me\AppData\Local\Pia\McpSandbox\big"] = 90_000,
+        [@"C:\Tools\venv"] = 30_000,
     };
 
     private static readonly SandboxGuardEnvironment Fake = new(
@@ -254,6 +255,26 @@ public sealed class SandboxPathGuardTests
         Assert.Equal(SandboxPathIssueKind.CommandFolderTooWide, issue.Kind);
         Assert.Equal(Path.GetDirectoryName(command), issue.Path);
         Assert.Equal($"Put the server in its own folder: Pia would have to share all of {folder} with it.", issue.Message);
+    }
+
+    /// <summary>Its folder is granted read-only too, so a 30,000-file virtual environment would make every start crawl.</summary>
+    [Fact]
+    public void AProgramWhoseFolderHoldsTooManyFiles_IsRefused()
+    {
+        var issue = Single(Validate([], [], @"C:\Tools\venv\python.exe"));
+
+        Assert.Equal(SandboxPathIssueKind.CommandFolderTooLarge, issue.Kind);
+        Assert.Equal(@"C:\Tools\venv", issue.Path);
+        Assert.Equal("The server's folder holds too many files to share with a sandboxed server. Put the server in a smaller folder.", issue.Message);
+        Assert.Null(Granted([], [], @"C:\Tools\venv\python.exe"));
+    }
+
+    [Fact]
+    public void AProgramInABigFolderTheUserAlreadyGranted_NeedsNoSecondGrant_SoItIsNotCounted()
+    {
+        Assert.DoesNotContain(
+            Validate([@"C:\Tools"], [], @"C:\Tools\venv\python.exe"),
+            issue => issue.Kind == SandboxPathIssueKind.CommandFolderTooLarge);
     }
 
     [Fact]

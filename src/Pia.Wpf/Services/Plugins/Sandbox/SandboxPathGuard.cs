@@ -16,7 +16,8 @@ public enum SandboxPathIssueKind
     NestedReadwrite,
     CommandFolderTooWide,
     WideFolder,
-    TooManyFiles
+    TooManyFiles,
+    CommandFolderTooLarge
 }
 
 /// <param name="Path">The path as the policy holds it, so a UI can mark the matching entry. The message never repeats it.</param>
@@ -162,7 +163,7 @@ public static class SandboxPathGuard
             SandboxLaunchSpecBuilder.Distinct(policy.ReadwritePaths.Where(IsUsable).Select(SandboxLaunchSpecBuilder.Normalize)),
             SandboxLaunchSpecBuilder.Distinct(policy.ReadonlyPaths.Where(IsUsable).Select(SandboxLaunchSpecBuilder.Normalize)),
             SystemRoots(environment));
-        return granted is null || IsTooWide(granted, environment) ? null : granted;
+        return granted is null || IsTooWide(granted, environment) || IsTooLarge(granted, environment) ? null : granted;
     }
 
     private static bool IsUsable(string path) =>
@@ -258,13 +259,25 @@ public static class SandboxPathGuard
 
         var directory = SandboxLaunchSpecBuilder.Normalize(Path.GetDirectoryName(resolved.Path)!);
         var granted = SandboxLaunchSpecBuilder.CommandDirectoryToGrant(directory, readwrite, readonlyPaths, SystemRoots(environment));
-        if (granted is null || !IsTooWide(granted, environment))
+        if (granted is null)
             return;
 
-        var name = Path.GetFileName(granted.TrimEnd('\\', '/'));
-        issues.Add(new(granted, SandboxPathIssueKind.CommandFolderTooWide,
-            $"Put the server in its own folder: Pia would have to share all of {(name.Length == 0 ? granted : name)} with it."));
+        if (IsTooWide(granted, environment))
+        {
+            var name = Path.GetFileName(granted.TrimEnd('\\', '/'));
+            issues.Add(new(granted, SandboxPathIssueKind.CommandFolderTooWide,
+                $"Put the server in its own folder: Pia would have to share all of {(name.Length == 0 ? granted : name)} with it."));
+        }
+        else if (IsTooLarge(granted, environment))
+        {
+            issues.Add(new(granted, SandboxPathIssueKind.CommandFolderTooLarge,
+                "The server's folder holds too many files to share with a sandboxed server. Put the server in a smaller folder."));
+        }
     }
+
+    private static bool IsTooLarge(string directory, SandboxGuardEnvironment environment) =>
+        !IsStrictlyUnder(directory, SandboxLaunchSpecBuilder.Normalize(environment.SandboxRoot))
+        && environment.CountEntries(directory, MaxEntriesPerRoot + 1) > MaxEntriesPerRoot;
 
     private static bool IsTooWide(string directory, SandboxGuardEnvironment environment)
     {

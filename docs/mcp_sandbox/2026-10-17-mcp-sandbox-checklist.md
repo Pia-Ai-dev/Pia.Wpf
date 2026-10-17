@@ -46,7 +46,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* C0 · *Effort:* S · *Value:* High
 - [x] **C3 Fail closed and availability (worker1).** `MxcAvailability` (cached, reason, the D1 states). `PluginService` refuses to start a sandboxed server uncontained, reports a specific `Not running` reason, and starts a missing runtime's download at startup. Same for the probe.
   *Deps:* C1, D1 · *Effort:* S · *Value:* High
-- [ ] **C4 ACE sweep (worker1).** Port `AceSweeper`, shallow-first, refuse system paths, run at startup before the first activation, count in Information and paths in `SensitiveDebug`.
+- [x] **C4 ACE sweep (worker1).** Port `AceSweeper`, shallow-first, refuse system paths, run at startup before the first activation, count in Information and paths in `SensitiveDebug`.
   *Deps:* C1 · *Effort:* S · *Value:* High
 - [ ] **T1 MXC integration tests (worker1).** Spawn `Pia.TestMcpServer` through the real factory on a temp fixture: allowed, denied and egress cases, the uncontained control, and ACE hygiene including a simulated leak. Runtime-skipped with a reason when MXC cannot spawn.
   *Deps:* C1, C4, F1 · *Effort:* S · *Value:* High

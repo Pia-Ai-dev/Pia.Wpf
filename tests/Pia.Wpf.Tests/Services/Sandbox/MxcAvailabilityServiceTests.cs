@@ -36,7 +36,9 @@ public sealed class MxcAvailabilityServiceTests : IDisposable
         using var stream = new MemoryStream();
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
-            using var entry = zip.CreateEntry("runtimes/win-x64/native/mxc_ffi.dll").Open();
+            var created = zip.CreateEntry("runtimes/win-x64/native/mxc_ffi.dll");
+            created.LastWriteTime = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            using var entry = created.Open();
             entry.Write(GoodDll);
         }
         return stream.ToArray();

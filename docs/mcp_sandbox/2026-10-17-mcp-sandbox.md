@@ -151,6 +151,9 @@ cannot get past it. Refused:
   drive root or a Pia data root would share all of that folder: "Put the server in its own folder: Pia
   would have to share all of <folder> with it." The issue's `Path` is that folder, so a UI can show
   "Also readable: the server's own folder".
+- **A program's folder with more than 20,000 entries**, for the same reason as a policy folder: "The
+  server's folder holds too many files to share with a sandboxed server. Put the server in a smaller
+  folder." It is not counted when a policy folder already covers it.
 - A command that resolves to a reparse point (the Microsoft Store `python.exe` alias): its folder is not
   the program's own. Refused by the launch-spec builder with a plain reason.
 
@@ -196,11 +199,25 @@ after a hard kill, so leaked ACEs do not pile up. Removing the server deletes it
 
 ### ACE sweep
 
-At startup, before the first activation, sweep every sandboxed server's policy roots, its cwd and its
-command dir (skipping `%WINDIR%` and `Program Files*`). The PoC walks the whole tree, and a user who
-grants `Documents` would make every start crawl it. So check each **root** first and descend only
-below a root that carries an explicit non-well-known `S-1-15-2-*` ACE. Removed ACEs are logged by
-count. Paths are user-named, so they go through `SensitiveDebug`.
+`AceSweepService` runs at startup, before the first activation, over every sandboxed server's policy
+roots, its working directory and its granted command folder (disabled servers too, because their leak is
+still there), and when a server is removed, before its profile is deleted. It refuses `%WINDIR%` and
+`Program Files*`.
+
+- **Only Pia's own SIDs.** The PoC removes every explicit `S-1-15-2-*` ACE. A policy path here is a user
+  folder, where other packaged apps may hold container ACEs of their own, so only the SIDs of containers
+  named `pia-mcp-*` go. `PiaContainerSidResolver` reads them from the profile mappings
+  (`HKCU\...\AppContainer\Mappings\<SID>`, value `Moniker`), adds the SIDs derived from the names in use
+  (`DeriveAppContainerSidFromAppContainerName`), and never touches the well-known `S-1-15-2-1` and
+  `S-1-15-2-2`. A leaked ACE of a removed server can only be recognised while its profile exists, which is
+  why removal sweeps first.
+- **Shallow first.** A root that carries none of our ACEs is trusted: one ACL read, no walk, so granting a
+  big folder does not make starts crawl. A root that does is walked.
+- **Bottom up, root last.** Files, then their folder, deepest folders first, and the root only when
+  nothing below it failed. A sweep cut off half way (a fault, a kill) therefore leaves the root ACE in place,
+  which is what makes the next sweep look below it again. Links are not followed.
+- The log carries counts (`N folder(s) checked, M ACE(s) removed, K entry(ies) failed`); paths only through
+  `SensitiveDebug`. A failing sweep never keeps a server from starting.
 
 ## Shipping the MXC runtime via Pia's storage
 

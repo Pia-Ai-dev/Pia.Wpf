@@ -105,6 +105,28 @@ public static class SandboxLaunchSpecBuilder
 
     private static string NotFound(string command) => $"Command not found: {Path.GetFileName(command)}.";
 
+    /// <summary>Every folder the sandbox gives its container access to: the policy folders, the working directory and
+    /// the program's own folder when it is granted.</summary>
+    internal static IReadOnlyList<string> PolicyRoots(McpSandboxPolicy policy, string command, string? workingDirectory)
+    {
+        var readwrite = Distinct(policy.ReadwritePaths.Where(IsFullyQualified).Select(Normalize));
+        var readonlyPaths = Distinct(policy.ReadonlyPaths.Where(IsFullyQualified).Select(Normalize));
+        var roots = readwrite.Concat(readonlyPaths).ToList();
+
+        if (IsFullyQualified(workingDirectory))
+            roots.Add(Normalize(workingDirectory!));
+
+        var resolved = ResolveCommand(command, null, File.Exists);
+        if (resolved.Path is not null
+            && CommandDirectoryToGrant(Normalize(Path.GetDirectoryName(resolved.Path)!), readwrite, readonlyPaths) is { } granted)
+            roots.Add(granted);
+
+        return Distinct(roots);
+    }
+
+    private static bool IsFullyQualified(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path.Trim());
+
     internal static string? CommandDirectoryToGrant(
         string commandDirectory,
         IReadOnlyList<string> readwrite,

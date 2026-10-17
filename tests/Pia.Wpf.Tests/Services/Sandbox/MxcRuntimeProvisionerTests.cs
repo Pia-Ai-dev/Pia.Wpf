@@ -43,7 +43,10 @@ public sealed class MxcRuntimeProvisionerTests : IDisposable
 
     private static void Add(ZipArchive zip, string name, byte[] content)
     {
-        using var entry = zip.CreateEntry(name).Open();
+        // A fixed timestamp: the pinned hash is taken from one build of the package and checked against another.
+        var created = zip.CreateEntry(name);
+        created.LastWriteTime = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        using var entry = created.Open();
         entry.Write(content);
     }
 

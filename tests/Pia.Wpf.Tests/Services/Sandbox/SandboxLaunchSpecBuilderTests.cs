@@ -115,6 +115,59 @@ public sealed class SandboxLaunchSpecBuilderTests
         Assert.Contains("script launcher", plan.Error);
     }
 
+    private static string TempProgram(out string directory)
+    {
+        directory = Path.Combine(Path.GetTempPath(), "pia-roots-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var exe = Path.Combine(directory, "server.exe");
+        File.WriteAllText(exe, "x");
+        return exe;
+    }
+
+    [Fact]
+    public void PolicyRoots_AreEveryFolderTheContainerGetsAccessTo()
+    {
+        var exe = TempProgram(out var programFolder);
+        try
+        {
+            var work = Path.Combine(Path.GetTempPath(), "pia-roots-work-" + Guid.NewGuid().ToString("N"));
+            var roots = SandboxLaunchSpecBuilder.PolicyRoots(
+                new McpSandboxPolicy([@"C:\box\rw"], [@"C:\box\ro"], false), exe, work);
+
+            Assert.Equal([@"C:\box\rw", @"C:\box\ro", work, programFolder], roots);
+        }
+        finally
+        {
+            Directory.Delete(programFolder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PolicyRoots_LeaveOutTheProgramsFolder_WhenAPolicyFolderAlreadyCoversIt()
+    {
+        var exe = TempProgram(out var programFolder);
+        try
+        {
+            var roots = SandboxLaunchSpecBuilder.PolicyRoots(new McpSandboxPolicy([Path.GetDirectoryName(programFolder)!], [], false), exe, null);
+
+            Assert.DoesNotContain(programFolder, roots);
+        }
+        finally
+        {
+            Directory.Delete(programFolder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PolicyRoots_LeaveOutASystemProgramsFolder_AndIgnoreRelativePaths()
+    {
+        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+
+        var roots = SandboxLaunchSpecBuilder.PolicyRoots(new McpSandboxPolicy([@"relative", @"C:\box"], [], false), cmd, "also-relative");
+
+        Assert.Equal([@"C:\box"], roots);
+    }
+
     /// <summary>A bare `python` can resolve to the Store's zero-byte alias, whose folder would then be the one shared.</summary>
     [Fact]
     public void AStoreAliasOrLink_IsRefused_BecauseItsFolderIsNotTheProgramsOwn()

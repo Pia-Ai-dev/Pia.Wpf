@@ -42,6 +42,7 @@ public class PluginService : IPluginService
     private readonly IMcpTransportFactory _transportFactory;
     private readonly IMxcAvailability? _mxcAvailability;
     private readonly IAppContainerProfileService? _profileService;
+    private readonly IAceSweeper? _aceSweeper;
 
     private readonly Dictionary<Guid, IPluginToolHandler> _handlers = new();
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
@@ -88,7 +89,8 @@ public class PluginService : IPluginService
         DpapiHelper? dpapiHelper = null,
         IMcpTransportFactory? transportFactory = null,
         IMxcAvailability? mxcAvailability = null,
-        IAppContainerProfileService? profileService = null)
+        IAppContainerProfileService? profileService = null,
+        IAceSweeper? aceSweeper = null)
     {
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
@@ -112,6 +114,7 @@ public class PluginService : IPluginService
         _transportFactory = transportFactory ?? new McpTransportFactory();
         _mxcAvailability = mxcAvailability;
         _profileService = profileService;
+        _aceSweeper = aceSweeper;
 
         InitializeBuiltInPlugins();
         LoadPersistedPlugins();
@@ -244,6 +247,11 @@ public class PluginService : IPluginService
     public async Task InitializePersistedPluginsAsync()
     {
         _localMcpAllowed = (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers;
+
+        // Before the first activation: a start after a hard kill must not run over the ACEs it left behind.
+        await SweepSandboxLeaksAsync(_pluginConfigs.Values
+            .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson))
+            .Select(ReadLocalDefinition));
 
         // A switched-off server, local or distributed, is skipped rather than started-then-hidden: activation
         // spawns its process, which the user switched off precisely to avoid.
@@ -555,9 +563,14 @@ public class PluginService : IPluginService
         if (!_pluginConfigs.TryGetValue(pluginId, out var plugin) || !LocalMcpConfig.IsLocal(plugin.ConfigJson))
             return;
 
-        var prefix = ReadLocalDefinition(plugin)?.ToolPrefix;
+        var definition = ReadLocalDefinition(plugin);
+        var prefix = definition?.ToolPrefix;
 
         await ShutdownHandlerAsync(pluginId);
+
+        // While its profile still exists: the profile is what lets a leaked ACE be recognised as ours.
+        await SweepSandboxLeaksAsync([definition]);
+
         _pluginConfigs.Remove(pluginId);
         DeletePluginFromDb(pluginId);
 
@@ -876,6 +889,31 @@ public class PluginService : IPluginService
         {
             _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginId}", plugin.Id);
             handler.Dispose();
+        }
+    }
+
+    private async Task SweepSandboxLeaksAsync(IEnumerable<LocalMcpDefinition?> definitions)
+    {
+        if (_aceSweeper is null)
+            return;
+
+        var sandboxed = definitions.OfType<LocalMcpDefinition>().Where(d => d.Sandbox is not null).ToList();
+        if (sandboxed.Count == 0)
+            return;
+
+        var roots = sandboxed.SelectMany(d => SandboxLaunchSpecBuilder.PolicyRoots(d.Sandbox!, d.Command, d.WorkingDirectory)).ToList();
+        var names = sandboxed
+            .SelectMany(d => new[] { SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, false), SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, true) })
+            .ToList();
+
+        try
+        {
+            await Task.Run(() => _aceSweeper.Sweep(roots, names));
+        }
+        catch (Exception ex)
+        {
+            // A sweep that cannot run must not keep the servers from starting; the next start tries again.
+            _logger.LogWarning(ex, "The sandbox ACE sweep failed");
         }
     }
 
