@@ -925,7 +925,8 @@ public class PluginService : IPluginService
         catch (Exception ex)
         {
             // A sweep that cannot run must not keep the servers from starting; the next start tries again.
-            _logger.LogWarning(ex, "The sandbox ACE sweep failed");
+            _logger.LogWarning("The sandbox ACE sweep failed: {ExceptionType}", ex.GetType().Name);
+            _logger.SensitiveDebug("The sandbox ACE sweep failure: {Message}", ex.Message);
         }
     }
 

@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services.Assets;
 using Pia.Services.Interfaces;
@@ -55,8 +56,9 @@ public sealed class MxcRuntimeProvisionerTests : IDisposable
     private static string? SignedByMicrosoft(string path) =>
         File.ReadAllBytes(path).AsSpan().SequenceEqual(GoodDll) ? "Microsoft Corporation" : null;
 
-    private MxcRuntimeProvisioner Provisioner(FakeDownloader downloader, byte[]? pinned = null, Func<string, string?>? publisherOf = null) =>
-        new(downloader, NullLogger<MxcRuntimeProvisioner>.Instance, RuntimeDirectory, ArchivePath, _asset,
+    private MxcRuntimeProvisioner Provisioner(
+        FakeDownloader downloader, byte[]? pinned = null, Func<string, string?>? publisherOf = null, ILogger<MxcRuntimeProvisioner>? logger = null) =>
+        new(downloader, logger ?? NullLogger<MxcRuntimeProvisioner>.Instance, RuntimeDirectory, ArchivePath, _asset,
             Sha(pinned ?? Package()), publisherOf ?? SignedByMicrosoft);
 
     private sealed class FakeDownloader(Func<byte[]> content) : IAssetDownloader
@@ -270,6 +272,25 @@ public sealed class MxcRuntimeProvisionerTests : IDisposable
         public List<ModelDownloadProgress> Reports { get; } = [];
 
         public void Report(ModelDownloadProgress value) => Reports.Add(value);
+    }
+
+    /// <summary>A path in an exception message must not reach a release log; the type says what happened.</summary>
+    [Fact]
+    public async Task AFailedDownload_LogsTheExceptionTypeNotItsMessage()
+    {
+        var logger = new CapturingLogger<MxcRuntimeProvisioner>();
+        var downloader = new FakeDownloader(() => Package()) { Fail = new IOException(@"Access to the path 'C:\Users\me\Secret\box' is denied.") };
+
+        var result = await Provisioner(downloader, logger: logger).InstallAsync(ct: TestContext.Current.CancellationToken);
+
+        Assert.False(result.Installed);
+        var warnings = logger.Entries.Where(e => e.Level >= LogLevel.Warning).ToList();
+        Assert.Contains(warnings, e => e.Message.Contains(nameof(IOException)));
+        Assert.All(warnings, e =>
+        {
+            Assert.Null(e.Exception);
+            Assert.DoesNotContain("Secret", e.Message);
+        });
     }
 
     [Fact]

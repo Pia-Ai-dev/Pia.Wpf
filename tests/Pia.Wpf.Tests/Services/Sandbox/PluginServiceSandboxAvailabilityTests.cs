@@ -469,6 +469,26 @@ public sealed class PluginServiceSandboxAvailabilityTests : IDisposable
         Assert.Equal(1, factory.Count);
     }
 
+    /// <summary>A path in an exception message must not reach a release log; the type says what happened.</summary>
+    [Fact]
+    public async Task ASweepThatFails_LogsTheExceptionTypeNotItsMessage()
+    {
+        var logger = new CapturingLogger<PluginService>();
+        var sweeper = new RecordingSweeper { Failure = new IOException(@"Access to the path 'C:\Users\me\Secret\box' is denied.") };
+        SeedRow(ConfigJson(Definition(Policy, enabled: false)), enabled: false);
+
+        await CreateService(new RecordingFactory(), new FakeAvailability(Ready), sweeper: sweeper, logger: logger)
+            .InitializePersistedPluginsAsync();
+
+        var warnings = logger.Entries.Where(e => e.Level >= LogLevel.Warning).ToList();
+        Assert.Contains(warnings, e => e.Message.Contains(nameof(IOException)));
+        Assert.All(warnings, e =>
+        {
+            Assert.Null(e.Exception);
+            Assert.DoesNotContain("Secret", e.Message);
+        });
+    }
+
     [Fact]
     public async Task RemovingASandboxedServer_SweepsItsFolders_BeforeItsProfilesAreDeleted()
     {

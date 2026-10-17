@@ -119,7 +119,8 @@ public sealed class MxcRuntimeProvisioner : IMxcRuntime
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Installing the MXC runtime failed");
+                _logger.LogWarning("Installing the MXC runtime failed: {ExceptionType}", ex.GetType().Name);
+                _logger.SensitiveDebug("Installing the MXC runtime failure: {Message}", ex.Message);
                 return new MxcInstallResult(false, $"The sandbox runtime could not be downloaded: {ex.Message}");
             }
             finally

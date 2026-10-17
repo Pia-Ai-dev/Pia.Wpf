@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services.Assets;
 using Pia.Services.Interfaces;
@@ -63,7 +64,8 @@ public sealed class MxcAvailabilityServiceTests : IDisposable
     }
 
     private (MxcAvailabilityService Service, SlowDownloader Downloader, Counter Platform) Create(
-        SlowDownloader? downloader = null, bool supported = true, Func<string, string?>? publisherOf = null)
+        SlowDownloader? downloader = null, bool supported = true, Func<string, string?>? publisherOf = null,
+        ILogger<MxcAvailabilityService>? logger = null, Exception? platformFailure = null)
     {
         downloader ??= new SlowDownloader();
         var provisioner = new MxcRuntimeProvisioner(
@@ -71,9 +73,11 @@ public sealed class MxcAvailabilityServiceTests : IDisposable
             Path.Combine(_root, "Mxc", "x.nupkg"), _asset, Convert.ToHexString(SHA256.HashData(Package())),
             publisherOf ?? (path => File.ReadAllBytes(path).AsSpan().SequenceEqual(GoodDll) ? "Microsoft Corporation" : null));
         var platform = new Counter();
-        var service = new MxcAvailabilityService(provisioner, NullLogger<MxcAvailabilityService>.Instance, () =>
+        var service = new MxcAvailabilityService(provisioner, logger ?? NullLogger<MxcAvailabilityService>.Instance, () =>
         {
             platform.Calls++;
+            if (platformFailure is not null)
+                throw platformFailure;
             return (supported, supported ? null : "This edition of Windows cannot create sandboxes.");
         });
         return (service, downloader, platform);
@@ -211,6 +215,25 @@ public sealed class MxcAvailabilityServiceTests : IDisposable
 
         Assert.All(results, r => Assert.Equal(MxcRuntimeState.Ready, r.State));
         Assert.Equal(1, downloader.Calls);
+    }
+
+    /// <summary>A path in an exception message must not reach a release log; the type says what happened.</summary>
+    [Fact]
+    public async Task AnInstallThatThrowsUnexpectedly_LogsTheExceptionTypeNotItsMessage()
+    {
+        var logger = new CapturingLogger<MxcAvailabilityService>();
+        var (service, _, _) = Create(logger: logger, platformFailure: new InvalidOperationException(@"No access to 'C:\Users\me\Secret\box'."));
+
+        var result = await service.InstallRuntimeAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(MxcRuntimeState.NotInstalled, result.State);
+        var warnings = logger.Entries.Where(e => e.Level >= LogLevel.Warning).ToList();
+        Assert.Contains(warnings, e => e.Message.Contains(nameof(InvalidOperationException)));
+        Assert.All(warnings, e =>
+        {
+            Assert.Null(e.Exception);
+            Assert.DoesNotContain("Secret", e.Message);
+        });
     }
 
     [Fact]

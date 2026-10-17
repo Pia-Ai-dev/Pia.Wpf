@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Mxc.Sdk.V1;
+using Pia.Logging;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services.Plugins.Sandbox;
@@ -88,7 +89,8 @@ public sealed class MxcAvailabilityService : IMxcAvailability
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Installing the MXC runtime failed unexpectedly");
+            _logger.LogWarning("Installing the MXC runtime failed unexpectedly: {ExceptionType}", ex.GetType().Name);
+            _logger.SensitiveDebug("Installing the MXC runtime failure: {Message}", ex.Message);
             outcome = Publish(new MxcAvailabilityStatus(MxcRuntimeState.NotInstalled, $"The sandbox runtime could not be installed: {ex.Message}"));
         }
 
