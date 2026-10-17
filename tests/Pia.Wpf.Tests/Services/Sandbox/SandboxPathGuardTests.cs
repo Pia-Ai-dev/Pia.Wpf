@@ -13,14 +13,23 @@ public sealed class SandboxPathGuardTests
         @"C:\Users\me\AppData\Local\Pia\McpSandbox\ro-fresh",
     };
 
+    private static readonly Dictionary<string, int> Counts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [@"C:\Work\huge"] = 50_000,
+        [@"C:\Work\exactly"] = SandboxPathGuard.MaxEntriesPerRoot,
+        [@"C:\Work\one-over"] = SandboxPathGuard.MaxEntriesPerRoot + 1,
+        [@"C:\Users\me\AppData\Local\Pia\McpSandbox\big"] = 90_000,
+    };
+
     private static readonly SandboxGuardEnvironment Fake = new(
         WindowsDirectory: @"C:\Windows",
         ProgramFilesDirectories: [@"C:\Program Files", @"C:\Program Files (x86)"],
         ProfileRoot: @"C:\Users\me",
         PiaDataRoots: [@"C:\Users\me\AppData\Roaming\Pia", @"C:\Users\me\AppData\Local\Pia"],
         SandboxRoot: @"C:\Users\me\AppData\Local\Pia\McpSandbox",
-        WideFolders: [@"C:\Users\me\Desktop", @"C:\Users\me\Documents", @"C:\Users\me\Downloads"],
-        PathExists: path => !Missing.Contains(path));
+        WideFolders: [@"C:\Users\me\Desktop", @"C:\Users\me\Documents", @"C:\Users\me\Downloads", @"C:\Users\me\OneDrive - Contoso"],
+        PathExists: path => !Missing.Contains(path),
+        CountEntries: (path, limit) => Math.Min(Counts.GetValueOrDefault(path, 10), limit));
 
     private static IReadOnlyList<SandboxPathIssue> Validate(
         IReadOnlyList<string> rw, IReadOnlyList<string> ro, string? command = null) =>
@@ -105,11 +114,80 @@ public sealed class SandboxPathGuardTests
     }
 
     [Theory]
-    [InlineData(@"C:\Users\me\Documents")]
     [InlineData(@"C:\Users\me\Documents\Reference")]
+    [InlineData(@"C:\Users\me\Downloads\server")]
+    [InlineData(@"C:\Users\me\OneDrive - Contoso\Reference")]
     public void AFolderInsideTheProfile_IsTheUsersChoice(string path)
     {
         Assert.Empty(Validate([], [path]));
+    }
+
+    /// <summary>Granting a folder changes the permissions of every file below it, on every start.</summary>
+    [Theory]
+    [InlineData(@"C:\Users\me\Documents", "Documents")]
+    [InlineData(@"C:\Users\me\Desktop\", "Desktop")]
+    [InlineData(@"c:\users\ME\downloads", "downloads")]
+    [InlineData(@"C:\Users\me\OneDrive - Contoso", "OneDrive - Contoso")]
+    public void ADocumentsStyleRoot_IsRefusedAsAPolicyPath_ForBothKinds(string path, string name)
+    {
+        var expected = $"Share a subfolder instead: Pia would have to change the permissions of everything in {name}.";
+
+        var readwrite = Single(Validate([path], []));
+        var readOnly = Single(Validate([], [path]));
+
+        Assert.Equal(SandboxPathIssueKind.WideFolder, readwrite.Kind);
+        Assert.Equal(SandboxPathIssueKind.WideFolder, readOnly.Kind);
+        Assert.Equal(expected, readwrite.Message, ignoreCase: true);
+    }
+
+    [Fact]
+    public void TheCurrentEnvironment_KnowsTheOneDriveRoots_WhenTheyAreSet()
+    {
+        var original = Environment.GetEnvironmentVariable("OneDriveCommercial");
+        try
+        {
+            Environment.SetEnvironmentVariable("OneDriveCommercial", @"C:\Users\me\OneDrive - Fabrikam");
+
+            Assert.Contains(@"C:\Users\me\OneDrive - Fabrikam", SandboxGuardEnvironment.Current().WideFolders);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OneDriveCommercial", original);
+        }
+    }
+
+    [Fact]
+    public void AFolderWithTooManyEntries_IsRefused_ForBothKinds()
+    {
+        var readwrite = Single(Validate([@"C:\Work\huge"], []));
+        var readOnly = Single(Validate([], [@"C:\Work\one-over"]));
+
+        Assert.Equal(SandboxPathIssueKind.TooManyFiles, readwrite.Kind);
+        Assert.Equal(SandboxPathIssueKind.TooManyFiles, readOnly.Kind);
+        Assert.Equal("This folder holds too many files to share with a sandboxed server. Pick a smaller subfolder.", readwrite.Message);
+    }
+
+    [Fact]
+    public void AFolderAtExactlyTheCap_IsFine()
+    {
+        Assert.Empty(Validate([@"C:\Work\exactly"], []));
+    }
+
+    [Fact]
+    public void TheSandboxRoot_IsExemptFromTheCap_BecausePiaOwnsWhatIsInIt()
+    {
+        Assert.Empty(Validate([@"C:\Users\me\AppData\Local\Pia\McpSandbox\big"], []));
+    }
+
+    [Fact]
+    public void TheCount_IsAskedForOnlyOnePastTheCap_AndNotForFoldersThatAreAlreadyRefused()
+    {
+        var asked = new List<(string Path, int Limit)>();
+        var environment = Fake with { CountEntries = (path, limit) => { asked.Add((path, limit)); return 1; } };
+
+        SandboxPathGuard.Validate(new McpSandboxPolicy([@"C:\Work\box", @"C:\Windows"], [@"C:\gone"], false), null, environment, _ => true);
+
+        Assert.Equal([(@"C:\Work\box", SandboxPathGuard.MaxEntriesPerRoot + 1)], asked);
     }
 
     [Theory]

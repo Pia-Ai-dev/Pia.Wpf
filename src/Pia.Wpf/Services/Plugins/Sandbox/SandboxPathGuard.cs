@@ -14,7 +14,9 @@ public enum SandboxPathIssueKind
     SandboxRootItself,
     ReadonlyInsideReadwrite,
     NestedReadwrite,
-    CommandFolderTooWide
+    CommandFolderTooWide,
+    WideFolder,
+    TooManyFiles
 }
 
 /// <param name="Path">The path as the policy holds it, so a UI can mark the matching entry. The message never repeats it.</param>
@@ -28,8 +30,12 @@ public sealed record SandboxGuardEnvironment(
     IReadOnlyList<string> PiaDataRoots,
     string SandboxRoot,
     IReadOnlyList<string> WideFolders,
-    Func<string, bool> PathExists)
+    Func<string, bool> PathExists,
+    Func<string, int, int> CountEntries)
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, long Ticks)> CountCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly long CountCacheTicks = TimeSpan.FromSeconds(20).Ticks;
+
     public static SandboxGuardEnvironment Current()
     {
         var profile = PiaPaths.UserProfileRoot;
@@ -50,15 +56,49 @@ public sealed record SandboxGuardEnvironment(
             [
                 Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                Path.Combine(profile, "Downloads")
+                Path.Combine(profile, "Downloads"),
+                .. new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" }
+                    .Select(Environment.GetEnvironmentVariable)
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Select(path => path!)
             ],
-            path => Directory.Exists(path) || File.Exists(path));
+            path => Directory.Exists(path) || File.Exists(path),
+            CountEntriesCached);
+    }
+
+    // Typed into an editor, so the same folder is judged on every keystroke; a recount per keystroke would stall it.
+    private static int CountEntriesCached(string path, int limit)
+    {
+        var now = DateTime.UtcNow.Ticks;
+        if (CountCache.TryGetValue(path, out var cached) && now - cached.Ticks < CountCacheTicks && cached.Count < limit)
+            return cached.Count;
+
+        int count;
+        if (File.Exists(path))
+            count = 1;
+        else if (!Directory.Exists(path))
+            count = 0;
+        else
+            count = Directory.EnumerateFileSystemEntries(path, "*", new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.ReparsePoint
+            }).Take(limit).Count();
+
+        if (count < limit)
+            CountCache[path] = (count, now);
+        return count;
     }
 }
 
 /// <summary>Judges a sandbox policy, and the folder its program would have to share, before anything is shared.</summary>
 public static class SandboxPathGuard
 {
+    /// <summary>The sandbox rewrites the ACL of every entry below a policy folder on each start, so a folder this
+    /// large would make starts slow and churn the files.</summary>
+    public const int MaxEntriesPerRoot = 20_000;
+
     public static IReadOnlyList<SandboxPathIssue> Validate(McpSandboxPolicy policy, string? command) =>
         Validate(policy, command, SandboxGuardEnvironment.Current());
 
@@ -159,9 +199,23 @@ public static class SandboxPathGuard
             return;
         }
 
+        if (environment.WideFolders.Any(wide => string.Equals(full, SandboxLaunchSpecBuilder.Normalize(wide), StringComparison.OrdinalIgnoreCase)))
+        {
+            issues.Add(new(raw, SandboxPathIssueKind.WideFolder,
+                $"Share a subfolder instead: Pia would have to change the permissions of everything in {Path.GetFileName(full)}."));
+            return;
+        }
+
         if (!(isReadwrite && insideSandboxRoot) && !environment.PathExists(full))
         {
             issues.Add(new(raw, SandboxPathIssueKind.Missing, "This folder does not exist."));
+            return;
+        }
+
+        if (!insideSandboxRoot && environment.CountEntries(full, MaxEntriesPerRoot + 1) > MaxEntriesPerRoot)
+        {
+            issues.Add(new(raw, SandboxPathIssueKind.TooManyFiles,
+                "This folder holds too many files to share with a sandboxed server. Pick a smaller subfolder."));
             return;
         }
 

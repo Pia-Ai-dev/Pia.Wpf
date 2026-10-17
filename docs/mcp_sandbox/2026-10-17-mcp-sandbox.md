@@ -138,6 +138,14 @@ cannot get past it. Refused:
   `DeniedPaths`-style carving does not work.
 - A readwrite path nested inside, or equal to, another readwrite path (collapse instead).
 - A UNC path. Not tested under MXC, so refused for now.
+- **A documents-style root as a policy path:** `Desktop`, `Documents`, `Downloads` and the `OneDrive`,
+  `OneDriveConsumer` and `OneDriveCommercial` roots when set. Tier 3 changes the ACL of every entry below
+  a policy path on every start, and a hard kill leaves them all to be swept, so these roots mean slow
+  starts, ACL churn on thousands of user files and sync noise. Subfolders stay allowed: "Share a
+  subfolder instead: Pia would have to change the permissions of everything in <folder>."
+- **A folder with more than 20,000 entries** (counted up to one past the cap, cached for 20 s because an
+  editor asks on every change): "This folder holds too many files to share with a sandboxed server. Pick a
+  smaller subfolder." Folders under `McpSandboxRoot` are exempt. The program's own folder is not counted.
 - **The program's own folder, when it is granted and too wide.** The command dir is granted read-only
   (see below), so a program in `Downloads`, `Desktop` or `Documents` themselves, the profile root, a
   drive root or a Pia data root would share all of that folder: "Put the server in its own folder: Pia

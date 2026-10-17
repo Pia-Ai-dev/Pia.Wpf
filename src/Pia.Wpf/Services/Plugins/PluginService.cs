@@ -903,7 +903,7 @@ public class PluginService : IPluginService
         if (_mxcAvailability is null || _mxcAvailability.Status.State != MxcRuntimeState.NotInstalled)
             return;
 
-        Task.Run(() => _mxcAvailability.InstallRuntimeAsync()).SafeFireAndForget(_logger);
+        _mxcAvailability.InstallRuntimeAsync().SafeFireAndForget(_logger);
     }
 
     private async Task OnSandboxRuntimeChangedAsync(MxcAvailabilityStatus status)
