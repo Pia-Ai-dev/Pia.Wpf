@@ -17,11 +17,15 @@ internal sealed class FakeMxcProcessLauncher : IMxcProcessLauncher
 
     public List<SandboxLaunchSpec> Launched { get; } = [];
 
-    public int ShutdownCalls { get; private set; }
+    private int _shutdownCalls;
+
+    public int ShutdownCalls => Volatile.Read(ref _shutdownCalls);
 
     public bool StdinWasClosed { get; private set; }
 
     public Exception? FailWith { get; set; }
+
+    public TimeSpan ShutdownDelay { get; init; }
 
     public Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken)
     {
@@ -46,7 +50,9 @@ internal sealed class FakeMxcProcessLauncher : IMxcProcessLauncher
         var stdin = new ObservedStream(clientToServer, () => StdinWasClosed = true);
         return Task.FromResult(new LaunchedMxcProcess(stdin, serverToClient, stderrPipe, 4242, async () =>
         {
-            ShutdownCalls++;
+            Interlocked.Increment(ref _shutdownCalls);
+            if (ShutdownDelay > TimeSpan.Zero)
+                await Task.Delay(ShutdownDelay);
             await stdin.DisposeAsync();
             await task.WaitAsync(TimeSpan.FromSeconds(5));
         }));

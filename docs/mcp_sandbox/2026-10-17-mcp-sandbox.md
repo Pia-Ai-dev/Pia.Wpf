@@ -218,6 +218,11 @@ still there), and when a server is removed, before its profile is deleted. It re
   which is what makes the next sweep look below it again. Links are not followed.
 - The log carries counts (`N folder(s) checked, M ACE(s) removed, K entry(ies) failed`); paths only through
   `SensitiveDebug`. A failing sweep never keeps a server from starting.
+- **A normal close does not leak, but only because Pia shuts its servers down on exit** (a clean dispose
+  removes the container's ACEs itself): `IPluginService.ShutdownAllAsync` has to be called from the app's
+  exit and session-ending paths, which belongs to the app shell, not to this sweep. The sweep is what
+  remains for a crash or a kill. `ShutdownAllAsync` closes the servers in parallel and off the caller's
+  context, so a caller that blocks the UI thread on it cannot deadlock and N servers cost the slowest one.
 
 ## Shipping the MXC runtime via Pia's storage
 

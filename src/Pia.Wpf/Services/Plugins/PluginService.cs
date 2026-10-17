@@ -1134,11 +1134,13 @@ public class PluginService : IPluginService
         lock (_handlers)
             handlers = _handlers.Values.ToList();
 
-        foreach (var handler in handlers)
+        // Off the caller's context and in parallel: a caller blocking the UI thread on this must not wait on a continuation
+        // that needs that thread, and several sandboxed servers should cost the slowest one rather than the sum.
+        await Task.WhenAll(handlers.Select(handler => Task.Run(async () =>
         {
-            try { await handler.ShutdownAsync(); }
+            try { await handler.ShutdownAsync().ConfigureAwait(false); }
             catch (Exception ex) { _logger.LogError(ex, "Error shutting down plugin {PluginId}", handler.PluginId); }
-        }
+        }))).ConfigureAwait(false);
     }
 
     private void RebuildToolNameRoutes()
