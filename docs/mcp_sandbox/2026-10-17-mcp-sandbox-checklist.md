@@ -1,6 +1,6 @@
 # Sandboxed local MCP servers: checklist
 
-**Status:** Open
+**Status:** All build steps done. Only O1 (owner's mirror upload, blocks the release) is open.
 **Owner:** Marco Altmann
 **Written:** 2026-10-17
 **Origin:** [2026-10-17-mcp-sandbox.md](2026-10-17-mcp-sandbox.md)

@@ -1,6 +1,6 @@
 # Sandboxed local MCP servers (MXC)
 
-**Status:** Planned, first shot. Defaults marked *owner to confirm* were chosen while the owner was away.
+**Status:** Implemented on `feature/mxc-sandboxed-mcp`. End-to-end scenarios 0–12 passed. Not pushed, no PR yet. The mirror upload (O1) is open and blocks the release. Defaults marked *owner to confirm* were chosen while the owner was away (see *Known gaps*).
 **Owner:** Marco Altmann
 **Written:** 2026-10-17
 **Origin:** Owner request: "in mxc we made a poc for sandboxed gated mcp calling. please create a first
@@ -459,6 +459,80 @@ Findings:
    (`4 folder(s) checked, 0 leaked`), removed both profiles and logged `Local MCP server … removed`.
 6. **Scope of the run:** 8 chat prompts on the e2e stack for scenarios 2 to 7, spaced by the approval
    cards and well inside the 30 requests per 60 s limit. Each tool card was approved with Allow once.
+
+## Known gaps
+
+**Release blocker**
+- The MXC runtime package must be on `storage.pia-ai.de` before a release ships this (checklist O1,
+  owner). With the shipped mirror configured, `AssetDownloader` never goes upstream, so an install
+  fails until the upload exists. It fails closed: sandboxed servers stay `Not running`.
+
+**Not proven yet**
+- Whether the `windows-latest` CI runner can create an AppContainer. The real-container tests skip at
+  runtime when a spawn isn't possible, so a green CI run may have skipped them. Local runs used one
+  host, Windows Server 2025 build 26100. Windows 10/11 client editions were not tried.
+
+**What the sandbox is not**
+- Network access is all or nothing. `Allow` reaches every host, there are no per-host rules, and there
+  is no host loopback. The UI says so.
+- MXC does not enforce `DeniedPaths` on this tier. A protected folder is safe only because it is
+  never granted and never nested inside a granted folder. The path guard enforces that.
+- The UI policy stays on. With `Ui.Disable = true`, .NET servers fail to start (`0x80008089`). What
+  that leaves reachable (clipboard, desktop) was not measured.
+- Script launchers (`npx`, `uvx`, `.cmd`, `.bat`, `.ps1`) are refused with a reason. Sandboxing them
+  is a follow-up.
+- Refused as shared folders: Desktop, Documents, Downloads and OneDrive roots themselves (their
+  subfolders are allowed), the profile root and above, system roots, UNC paths, and any folder over
+  20,000 entries.
+- Not sandboxed: MCP plugins pushed by an organisation. There is no `RequireMcpSandbox` policy key.
+  The approval card is unchanged for sandboxed tools.
+
+**Partial protection**
+- The ownership check is shallow on shared folders. Tier 3 silently skips files it cannot rewrite.
+  The check walks the program's own folder recursively (first 5,000 entries) but shared folders only
+  at their top level. A nested file the user doesn't own is just unreadable to the server.
+- Our checks skip junctions and symlinks. What MXC does with them was not verified.
+- A server that an elevated installer put outside `Program Files` cannot be sandboxed by a
+  non-elevated Pia. It is refused with "install or copy into a folder you own".
+
+**Cleanup is best effort**
+- A hard kill leaves temporary `S-1-15-2-*` ACEs on the shared folders. The next start removes them
+  for every saved sandboxed server, disabled ones included, and so do remove, rename and policy
+  changes. Only Pia's own `pia-mcp-*` container SIDs are touched. A server whose settings row is gone
+  (a wiped profile) is no longer in any sweep.
+- MXC never deletes AppContainer profiles. Pia deletes them on remove and rename. A wiped profile
+  leaves them.
+- Shutting one server down takes at most 3 s grace plus 3 s to kill it, and servers close in
+  parallel. Exit and logoff wait at most 5 s. Anything still running then is cleaned by the next
+  start. The rest of `App.OnExit` (async void) after its first await was already unreliable before
+  this branch and is not changed here.
+- The container-name lease is per process. Two Pia processes with the same server prefix rely on
+  MXC's own error, which was not exercised.
+
+**Separate, not fixed here**
+- Uncontained stdio servers: `StdioClientTransport` (MCP SDK 2.2.0) waits its 5 s shutdown timeout
+  before it closes stdin. This comes from reading the SDK source and was not measured. The sandboxed
+  transport closes stdin first, so it is not affected.
+- On this dev machine, Defender breaks `File.Replace` right after a write. The full test run
+  therefore redirects `TEMP`/`TMP`. The xunit exe sometimes stalls after the `MeetingAttendee` skip
+  line and needs a kill and rerun. Both predate this branch.
+
+**Logging and coverage**
+- The end-to-end run used the build before the last fix, which renders the tool checkbox content as a
+  `TextBlock`. That fix is covered by a peer-name test and the full test run, not by a live run.
+- A spawn failure's SDK message reaches the release log through the existing
+  `LogError(ex, ...)` in `McpPluginToolHandler.InitializeAsync`. Pia's own refusal messages carry no
+  paths, but whether MXC's `MxcException` text can name a policy path was not verified.
+
+**Owner to confirm** (defaults chosen while the owner was away): sandbox on by default for a new
+sandboxable server, network `Deny` by default, the runtime download only on a click or on saving an
+enabled sandboxed server, script launchers refused, Desktop/Documents/Downloads/OneDrive roots refused
+as shared folders, the 20,000-entry cap, and the approval gate unchanged for sandboxed tools.
+
+**Found on the way, not in this change:** `AssistantWorkspace.DefaultRoot`
+(`src/Pia.Wpf/Infrastructure/AssistantWorkspace.cs`) is a `{ get; } =` initializer built from the real
+`Documents`, so `PIA_DATA_DIR` doesn't reach it, and a throwaway profile still points its assistant files at
+the real folder.
 
 ## Not yet planned
 
