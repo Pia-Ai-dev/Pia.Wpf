@@ -18,6 +18,9 @@
     StageServer    copy Pia.TestMcpServer into <Root>\server (user-owned) and <Root>\server-admin (admin-owned)
     Launch         start the Debug exe through explorer.exe (medium IL) and print its integrity level
     Status         integrity level, fixture verdicts, ACEs, orphans, container profiles
+    EndSession     send WM_QUERYENDSESSION then WM_ENDSESSION (logoff) to Pia's own window, then check the log,
+                   ACEs and helper processes; exits 3 unless Pia exited and left nothing behind
+    ResetSandboxRoot  delete <Root>\profile\local\McpSandbox so the editor's "Pia creates this folder" hint shows (Pia stopped)
     Stop           wait for a graceful exit done from the UI (TrayMenu_Exit); -Kill ends Pia hard, leaving ACEs
                    for the next start to sweep
     Verify         the real profile (settings.json, history.db) is untouched
@@ -39,7 +42,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet('Init', 'Seed', 'StageServer', 'Launch', 'Status', 'Stop', 'Verify', 'RemoveRuntime', 'TamperRuntime', 'MirrorLocal', 'Baseline')]
+    [ValidateSet('Init', 'Seed', 'StageServer', 'Launch', 'Status', 'Stop', 'EndSession', 'ResetSandboxRoot', 'Verify', 'RemoveRuntime', 'TamperRuntime', 'MirrorLocal', 'Baseline')]
     [string]$Action,
 
     # Where the throwaway profile, fixture, staged servers and launch files live. Default: <repo>\artifacts\mxc-sandbox-e2e.
@@ -178,6 +181,53 @@ public static class MxcE2eTokenProbe
             finally { Marshal.FreeHGlobal(buffer); }
         }
         finally { CloseHandle(token); }
+    }
+}
+'@
+}
+
+if (-not ('MxcE2eWindowProbe' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class MxcE2eWindowProbe
+{
+    delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc proc, IntPtr lParam);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder text, int count);
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, uint flags, uint timeoutMs, out IntPtr result);
+
+    // The top-level windows of ONE process, visible ones first. Nothing here ever addresses another process.
+    public static string[] TopLevelWindows(int pid)
+    {
+        var found = new List<string>();
+        EnumWindows((hwnd, _) =>
+        {
+            uint owner;
+            GetWindowThreadProcessId(hwnd, out owner);
+            if (owner != pid) return true;
+            var cls = new StringBuilder(256);
+            GetClassName(hwnd, cls, cls.Capacity);
+            found.Add((IsWindowVisible(hwnd) ? "1" : "0") + "|" + hwnd.ToInt64() + "|" + cls);
+            return true;
+        }, IntPtr.Zero);
+        found.Sort((a, b) => string.CompareOrdinal(b, a));
+        return found.ToArray();
+    }
+
+    // Returns the window procedure's result, or -1 when the window did not answer within the timeout.
+    public static long Send(long hwnd, uint msg, long wParam, long lParam, uint timeoutMs)
+    {
+        IntPtr result;
+        var ok = SendMessageTimeout(new IntPtr(hwnd), msg, new IntPtr(wParam), new IntPtr(lParam), 0x2, timeoutMs, out result);
+        return ok == IntPtr.Zero ? -1 : result.ToInt64();
     }
 }
 '@
@@ -551,6 +601,66 @@ function Invoke-Status {
     if ($Json) { $report | ConvertTo-Json -Depth 6 }
 }
 
+# The logoff path: what Windows sends every top-level window when a user signs out with Pia running. Sent to
+# Pia's own window only, by process id, never broadcast.
+function Invoke-EndSession {
+    $state = Read-State
+    $pia = Get-OurPiaProcess $state
+    if (-not $pia) { Fail 'Pia from this harness is not running.' }
+
+    $windows = @([MxcE2eWindowProbe]::TopLevelWindows($pia.Id))
+    if ($windows.Count -eq 0) { Fail "pid $($pia.Id) has no top-level window to send the session messages to." 3 }
+    $target = $windows[0].Split('|')
+    $hwnd = [long]$target[1]
+    Write-Host "target:    pid $($pia.Id) hwnd 0x$($hwnd.ToString('x')) class $($target[2]) visible=$($target[0] -eq '1')"
+    $helpersBefore = @(Get-SandboxProcesses).Count
+    Write-Host "helpers:   $helpersBefore running before"
+
+    $logoff = [long]2147483648
+    $sentAt = Get-Date
+    $query = [MxcE2eWindowProbe]::Send($hwnd, 0x11, 0, $logoff, 10000)
+    Write-Host "WM_QUERYENDSESSION (logoff) -> $query"
+    if ($query -ne 1) { Fail "Pia did not agree to the session ending (result $query). WM_ENDSESSION was not sent." 3 }
+    $end = [MxcE2eWindowProbe]::Send($hwnd, 0x16, 1, $logoff, 10000)
+    Write-Host "WM_ENDSESSION (TRUE, logoff) -> $end"
+
+    $exited = $pia.WaitForExit(30000)
+    $took = [int]((Get-Date) - $sentAt).TotalMilliseconds
+    Write-Host "process:   exited=$exited after $took ms"
+
+    Write-Host 'log lines since the message (shutdown and container disposal):'
+    $log = Get-ChildItem (Join-Path $paths.Local 'Logs') -Filter 'pia-*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
+    if ($log) {
+        $lines = Get-Content -LiteralPath $log.FullName | Where-Object {
+            $stamp = ($_ -split "`t", 2)[0]
+            $parsed = [datetimeoffset]::MinValue
+            [datetimeoffset]::TryParse($stamp, [ref]$parsed) -and $parsed.LocalDateTime -ge $sentAt -and
+                $_ -match 'pia-mcp-|Exited|exit code|ispos|hutdown|hutting|stopp|Removed|Application is'
+        }
+        foreach ($line in ($lines | Select-Object -Last 12)) { Write-Host ("  " + ($line.Length -gt 200 ? $line.Substring(0, 200) : $line)) }
+        if (-not $lines) { Write-Host '  (none)' }
+    }
+
+    $explicit = @(Get-AppContainerAces @($paths.Fixture, $paths.Server, $paths.ServerAdmin, (Join-Path $paths.Local 'McpSandbox')) |
+            Where-Object { $_.Explicit -and -not $_.WellKnown })
+    $helpersAfter = @(Get-SandboxProcesses).Count
+    Write-Host "after:     explicit S-1-15-2-* ACEs=$($explicit.Count)  helper processes=$helpersAfter"
+    foreach ($ace in $explicit) { Write-Host "  ACE on $($ace.Path)" }
+
+    if ($exited -and $explicit.Count -eq 0 -and $helpersAfter -eq 0) { Write-Host 'result:    clean'; return }
+    Write-Host 'result:    NOT clean' -ForegroundColor Red
+    exit 3
+}
+
+function Invoke-ResetSandboxRoot {
+    $state = Read-State
+    if (Get-OurPiaProcess $state) { Fail 'Pia from this harness is running. Stop it first: its sandbox folders are in use.' }
+    $root = Join-Path $paths.Local 'McpSandbox'
+    if (-not (Test-Path -LiteralPath $root)) { Write-Host "nothing at $root"; return }
+    Remove-Item -LiteralPath $root -Recurse -Force
+    Write-Host "removed $root (the next start or probe creates a server's folder again, so the editor's hint shows first)"
+}
+
 function Invoke-Stop {
     $state = Read-State
     $pia = Get-OurPiaProcess $state
@@ -706,6 +816,8 @@ switch ($Action) {
     'Launch'        { Invoke-Launch }
     'Status'        { Invoke-Status }
     'Stop'          { Invoke-Stop }
+    'EndSession'    { Invoke-EndSession }
+    'ResetSandboxRoot' { Invoke-ResetSandboxRoot }
     'Verify'        { Invoke-Verify }
     'RemoveRuntime' { Invoke-RemoveRuntime }
     'TamperRuntime' { Invoke-TamperRuntime }

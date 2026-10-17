@@ -264,6 +264,8 @@ tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch    # explorer.e
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Status    # IL, hashes, ACEs, orphans, containers
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Seed      # reseed the fixture (scenario 7)
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Stop      # waits for TrayMenu_Exit; -Kill is the hard kill
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 EndSession       # logoff messages to Pia's window, then verify
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 ResetSandboxRoot # forget the server folders under the sandbox root
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 MirrorLocal   # runtime from the e2e storage; -Off undoes
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 TamperRuntime # scenario 0 tamper; -Undo restores
 ```
@@ -288,6 +290,13 @@ profile roots, because the path guard refuses a Pia data root.
   start the server rather than run it uncontained. `Status` prints owner, write and WRITE_DAC per path.
 - **Exit.** Closing Pia's window only hides it to the tray (explicit shutdown mode), so a graceful exit is
   the tray menu's `TrayMenu_Exit`, driven through WinWright; `Stop` then waits for the process to end.
+  Where physical input is denied (`ww_click` fails with `SetCursorPos`), `EndSession` sends
+  `WM_QUERYENDSESSION` and then `WM_ENDSESSION` (logoff) to Pia's own main window, found by process id and
+  never broadcast, waits for the process, and checks the log, the explicit AppContainer ACEs and the
+  helper processes. It exits 3 unless Pia exited and left nothing behind.
+- **Sandbox folder.** The core creates a server's missing folder under the sandbox root at its first start
+  or probe, so the editor's "Pia creates a folder here" hint only shows before that. `ResetSandboxRoot`
+  deletes `profile\local\McpSandbox` (with Pia stopped) so a run can check the hint again.
 - **Localised Windows.** `icacls /setowner 'BUILTIN\Administrators'` fails with 1332 on a German install,
   so the script names principals by SID (`*S-1-5-32-544`), and it reads the integrity level off the
   token instead of parsing `whoami` text.
