@@ -1,3 +1,5 @@
+using System.IO;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services.Plugins.Sandbox;
 using Xunit;
@@ -48,6 +50,24 @@ public sealed class AppContainerProfileServiceTests
             NullLogger<AppContainerProfileService>.Instance, _ => throw new DllNotFoundException("userenv"));
 
         Assert.False(service.DeleteServerProfiles("fs"));
+    }
+
+    /// <summary>A path in an exception message must not reach a release log; the type says what happened.</summary>
+    [Fact]
+    public void ANativeCallThatThrows_LogsTheExceptionTypeNotItsMessage()
+    {
+        var logger = new CapturingLogger<AppContainerProfileService>();
+        var service = new AppContainerProfileService(logger, _ => throw new IOException(@"Access to 'C:\Users\me\Secret\box' is denied."));
+
+        service.DeleteServerProfiles("fs");
+
+        var warnings = logger.Entries.Where(e => e.Level >= LogLevel.Warning).ToList();
+        Assert.Contains(warnings, e => e.Message.Contains(nameof(IOException)));
+        Assert.All(warnings, e =>
+        {
+            Assert.Null(e.Exception);
+            Assert.DoesNotContain("Secret", e.Message);
+        });
     }
 
     [Fact]

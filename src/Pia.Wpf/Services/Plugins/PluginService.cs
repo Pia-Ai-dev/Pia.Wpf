@@ -545,7 +545,7 @@ public class PluginService : IPluginService
         };
 
         await ShutdownHandlerAsync(id);
-        await CleanUpRenamedContainersAsync(existing, stored);
+        await CleanUpReplacedContainersAsync(existing, stored);
 
         _pluginConfigs[id] = plugin;
         SavePluginToDb(plugin);
@@ -587,12 +587,17 @@ public class PluginService : IPluginService
         _logger.LogInformation("Local MCP server {PluginId} removed", pluginId);
     }
 
-    private async Task CleanUpRenamedContainersAsync(SyncPlugin? existing, LocalMcpDefinition stored)
+    private async Task CleanUpReplacedContainersAsync(SyncPlugin? existing, LocalMcpDefinition stored)
     {
         var previous = existing is null ? null : ReadLocalDefinition(existing);
-        if (previous is null || string.IsNullOrEmpty(previous.ToolPrefix)
-            || string.Equals(previous.ToolPrefix, stored.ToolPrefix, StringComparison.OrdinalIgnoreCase))
+        if (previous is null || string.IsNullOrEmpty(previous.ToolPrefix))
             return;
+
+        if (string.Equals(previous.ToolPrefix, stored.ToolPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            await SweepSandboxLeaksAsync([previous], stillGranted: stored);
+            return;
+        }
 
         await SweepSandboxLeaksAsync([previous]);
         _profileService?.DeleteServerProfiles(previous.ToolPrefix);
@@ -904,7 +909,7 @@ public class PluginService : IPluginService
         }
     }
 
-    private async Task SweepSandboxLeaksAsync(IEnumerable<LocalMcpDefinition?> definitions)
+    private async Task SweepSandboxLeaksAsync(IEnumerable<LocalMcpDefinition?> definitions, LocalMcpDefinition? stillGranted = null)
     {
         if (_aceSweeper is null)
             return;
@@ -913,7 +918,17 @@ public class PluginService : IPluginService
         if (sandboxed.Count == 0)
             return;
 
-        var roots = sandboxed.SelectMany(d => SandboxLaunchSpecBuilder.PolicyRoots(d.Sandbox!, d.Command, d.WorkingDirectory)).ToList();
+        var kept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (stillGranted?.Sandbox is { } policy)
+            kept.UnionWith(SandboxLaunchSpecBuilder.PolicyRoots(policy, stillGranted.Command, stillGranted.WorkingDirectory));
+
+        var roots = sandboxed
+            .SelectMany(d => SandboxLaunchSpecBuilder.PolicyRoots(d.Sandbox!, d.Command, d.WorkingDirectory))
+            .Where(root => !kept.Contains(root))
+            .ToList();
+        if (roots.Count == 0)
+            return;
+
         var names = sandboxed
             .SelectMany(d => new[] { SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, false), SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, true) })
             .ToList();

@@ -98,7 +98,7 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
     }
 
-    private async Task ShutdownAsync(string container, MxcProcess process, Stream stdin, SandboxContainerLease lease)
+    internal async Task ShutdownAsync(string container, IMxcProcess process, Stream stdin, SandboxContainerLease lease)
     {
         try
         {
@@ -121,7 +121,8 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Error while shutting {Container} down", container);
+            logger.LogWarning("Error while shutting {Container} down: {ExceptionType}", container, ex.GetType().Name);
+            logger.SensitiveDebug("Error while shutting {Container} down: {Message}", container, ex.Message);
         }
         finally
         {
@@ -131,7 +132,7 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
     }
 
-    private async Task KillAsync(string container, MxcProcess process)
+    private async Task KillAsync(string container, IMxcProcess process)
     {
         try
         {
@@ -141,11 +142,12 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Killing {Container} failed", container);
+            logger.LogWarning("Killing {Container} failed: {ExceptionType}", container, ex.GetType().Name);
+            logger.SensitiveDebug("Killing {Container} failure: {Message}", container, ex.Message);
         }
     }
 
-    private void LogWarnings(string container, MxcProcess process, string phase)
+    private void LogWarnings(string container, IMxcProcess process, string phase)
     {
         try
         {

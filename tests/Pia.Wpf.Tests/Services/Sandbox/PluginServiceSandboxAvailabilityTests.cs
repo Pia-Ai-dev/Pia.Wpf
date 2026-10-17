@@ -577,6 +577,41 @@ public sealed class PluginServiceSandboxAvailabilityTests : IDisposable
         Assert.Equal(["sweep", "profile:files_2"], log);
     }
 
+    /// <summary>A folder dropped from the policy is never in a later sweep's roots, so it is swept when it is dropped.</summary>
+    [Fact]
+    public async Task EditingTheFolders_SweepsOnlyTheDroppedOnes_UnderTheSameContainerNames()
+    {
+        var sweeper = new RecordingSweeper();
+        var profiles = new RecordingProfiles();
+        var service = CreateService(new RecordingFactory(), new FakeAvailability(Ready), profiles, sweeper);
+        var id = await service.SaveLocalMcpAsync(
+            null, Definition(new McpSandboxPolicy([@"C:\box\rw", @"C:\box\keep"], [], AllowNetwork: false)), TestContext.Current.CancellationToken);
+        sweeper.Calls.Clear();
+
+        await service.SaveLocalMcpAsync(
+            id, Definition(new McpSandboxPolicy([@"C:\box\keep", @"C:\box\new"], [], AllowNetwork: false)), TestContext.Current.CancellationToken);
+
+        var call = Assert.Single(sweeper.Calls);
+        Assert.Contains(@"C:\box\rw", call.Roots);
+        Assert.DoesNotContain(@"C:\box\keep", call.Roots);
+        Assert.DoesNotContain(@"C:\box\new", call.Roots);
+        Assert.Equal(["pia-mcp-files", "pia-mcp-files-probe"], call.Names);
+        Assert.Empty(profiles.Deleted);
+    }
+
+    [Fact]
+    public async Task TurningTheSandboxOff_SweepsEveryFolderItHad()
+    {
+        var sweeper = new RecordingSweeper();
+        var service = CreateService(new RecordingFactory(), new FakeAvailability(Ready), new RecordingProfiles(), sweeper);
+        var id = await service.SaveLocalMcpAsync(null, Definition(Policy), TestContext.Current.CancellationToken);
+        sweeper.Calls.Clear();
+
+        await service.SaveLocalMcpAsync(id, Definition(sandbox: null), TestContext.Current.CancellationToken);
+
+        Assert.Contains(@"C:\box\rw", Assert.Single(sweeper.Calls).Roots);
+    }
+
     [Fact]
     public async Task RenamingAnUncontainedServer_DeletesTheOldProfiles_ButSweepsNothing()
     {

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Native;
 
 namespace Pia.Services.Plugins.Sandbox;
@@ -61,7 +62,8 @@ public sealed class AppContainerProfileService : IAppContainerProfileService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "AppContainer profile {Container} could not be deleted", name);
+            _logger.LogWarning("AppContainer profile {Container} could not be deleted: {ExceptionType}", name, ex.GetType().Name);
+            _logger.SensitiveDebug("AppContainer profile {Container} deletion failure: {Message}", name, ex.Message);
             return false;
         }
     }
