@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Mxc.Sdk.V1;
+using Pia.Services.Plugins.Sandbox;
 
 namespace Pia.Tests.TestInfrastructure;
 
@@ -15,6 +16,22 @@ internal static class MxcTestHost
     public static string? Reason => Verdict.Value;
 
     public static string NativeDirectory => Path.Combine(AppContext.BaseDirectory, "mxc-native");
+
+    /// <summary>Stands in for the provisioner: the native copy in the test output counts as verified.</summary>
+    public static IMxcRuntime Runtime { get; } = new TestRuntime();
+
+    private sealed class TestRuntime : IMxcRuntime
+    {
+        public bool TryLoad(out string? reason)
+        {
+            reason = Reason;
+            if (!CanSpawn)
+                return false;
+
+            Environment.SetEnvironmentVariable("MXC_FFI_DIR", NativeDirectory);
+            return true;
+        }
+    }
 
     private static string? Probe()
     {

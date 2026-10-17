@@ -6,7 +6,7 @@ using Pia.Services.Exceptions;
 
 namespace Pia.Services.Plugins.Sandbox;
 
-public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger) : IMxcProcessLauncher
+public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime runtime) : IMxcProcessLauncher
 {
     internal static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(3);
 
@@ -41,6 +41,10 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger) : IMxcProcess
 
     public async Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken)
     {
+        // The only caller of the SDK: it must not run until the runtime is verified in this process.
+        if (!runtime.TryLoad(out var unavailable))
+            throw new SandboxStartException(unavailable ?? "The sandbox runtime is not available.");
+
         var lease = SandboxContainerLease.Acquire(spec.ContainerName);
         try
         {
@@ -90,7 +94,7 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger) : IMxcProcess
         }
         catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
         {
-            throw new SandboxStartException("The sandbox runtime could not be loaded. Turn the sandbox off and on again to reinstall it.", ex);
+            throw new SandboxStartException($"The sandbox runtime could not be loaded: {ex.Message}", ex);
         }
     }
 

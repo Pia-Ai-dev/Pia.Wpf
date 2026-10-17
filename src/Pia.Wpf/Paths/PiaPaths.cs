@@ -81,6 +81,10 @@ public static class PiaPaths
 
     public static string MxcRuntimeDirectory => Path.Combine(RealLocalRoot, "Runtimes", "Mxc", MxcRuntimeVersion);
 
+    /// <summary>Where a pre-fetched runtime package is looked for before anything is downloaded.</summary>
+    public static string MxcRuntimeArchivePath =>
+        Path.Combine(RealLocalRoot, "Runtimes", "Mxc", $"microsoft.mxc.sdk.{MxcRuntimeVersion}.nupkg");
+
     private static string RealLocalRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProductFolder);
 

@@ -197,15 +197,23 @@ of them are Microsoft-signed (checked 2026-10-17).
   and like `ModelsDirectory` it sits on the real profile, because downloaded artifacts deliberately
   ignore `PIA_LOCAL_DATA_DIR`.
 - **This is executable code, so it is verified, not just size-checked.** The nupkg's SHA-256 is
-  **pinned in code** next to the catalog entry. A mismatch deletes the download and fails closed.
-  Before the first load in each process, every extracted file must pass `WinTrust.HasValidSignature`
-  with a signer in `UpdateOptions.DefaultTrustedPublishers` (Microsoft). Extraction goes to a `.tmp`
-  dir and is renamed into place only after both checks pass.
-- **Loading.** A `NativeLibrary.SetDllImportResolver` on the MXC assembly resolves `mxc_ffi` from
-  `MxcRuntimeDirectory`. Whether `mxc_ffi.dll` then finds `plm.exe` and the WSL files beside itself, or
-  looks next to the host exe, is part of gate G2. If it looks next to the exe, the fallback is
-  `AddDllDirectory` plus whatever lookup MXC documents. Bundling is **not** the fallback; that question
-  goes back to the owner.
+  **pinned in code** next to the catalog entry (`RuntimeAssetCatalog.MxcRuntimeSha256`, and a test pins
+  it against the package NuGet restored). A mismatch deletes the download and fails closed. Only
+  `runtimes/win-x64/native/mxc_ffi.dll` is extracted (G2: the other three files are not needed), into a
+  `.tmp` dir that is renamed into place only after the extracted file passes `WinTrust.HasValidSignature`
+  with the signer `Microsoft Corporation`. An interrupted extract leaves only `.tmp`, which the next run
+  discards. A package pre-fetched to `PiaPaths.MxcRuntimeArchivePath` (the air-gapped path) is checked
+  against the same pin and consumed instead of downloading.
+- **Loading.** The SDK probes the `MXC_FFI_DIR` environment variable first, so Pia owns it (G2 found no
+  need for a custom `SetDllImportResolver`, which cannot be registered once the SDK has touched its
+  native). Constructing the provisioner removes any inherited value, before any SDK call. `IMxcRuntime.TryLoad`
+  sets it to `MxcRuntimeDirectory` only after `mxc_ffi.dll` passes the signature and publisher check **in
+  this process**, once per process, and otherwise removes it. The nupkg hash is not re-checked on each
+  start; it was pinned when the file was extracted. `MxcMcpLauncher`, the only SDK caller, refuses to
+  run until `TryLoad` succeeds, and the availability service must not call the SDK (not even
+  `GetPlatformSupport`) before that either: with no native present every SDK call throws. `MXC_FFI_DIR`
+  is stripped from the environment of every MCP child, sandboxed or not, and a contained child does not
+  inherit it (tested with a real container).
 - **When the download happens.** The first time the user turns **Run in sandbox** on, the editor says
   "Pia needs to download the sandbox runtime (15 MB) from Pia's storage" and shows progress. At
   startup, a saved sandboxed server whose runtime is missing triggers the same download. The row reads
