@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -121,18 +122,19 @@ public sealed class PluginServiceSandboxAvailabilityTests : IDisposable
 
         public List<string>? Log { get; init; }
 
-        public bool Throw { get; init; }
+        public Exception? Failure { get; init; }
 
         public AceSweepResult Sweep(IEnumerable<string> roots, IEnumerable<string> containerNames)
         {
             Calls.Add(([.. roots], [.. containerNames]));
             Log?.Add("sweep");
-            return Throw ? throw new IOException("sweep failed") : new AceSweepResult(1, 0, 0);
+            return Failure is null ? new AceSweepResult(1, 0, 0) : throw Failure;
         }
     }
 
     private PluginService CreateService(
-        RecordingFactory factory, FakeAvailability? availability, IAppContainerProfileService? profiles = null, IAceSweeper? sweeper = null)
+        RecordingFactory factory, FakeAvailability? availability, IAppContainerProfileService? profiles = null, IAceSweeper? sweeper = null,
+        ILogger<PluginService>? logger = null)
     {
         var sqlite = new SqliteContext(_dbPath);
         _contexts.Add(sqlite);
@@ -153,7 +155,7 @@ public sealed class PluginServiceSandboxAvailabilityTests : IDisposable
             Substitute.For<IAssignmentSurfaceCache>(),
             Substitute.For<IKnowledgeManagerSurfaceCache>(),
             SettingsStubs.Returning(),
-            NullLogger<PluginService>.Instance,
+            logger ?? NullLogger<PluginService>.Instance,
             sqlite,
             cabManager: null,
             dpapiHelper: new DpapiHelper(NullLogger<DpapiHelper>.Instance),
@@ -461,7 +463,7 @@ public sealed class PluginServiceSandboxAvailabilityTests : IDisposable
         var factory = new RecordingFactory();
         SeedRow(ConfigJson(Definition(Policy)));
 
-        await CreateService(factory, new FakeAvailability(Ready), sweeper: new RecordingSweeper { Throw = true })
+        await CreateService(factory, new FakeAvailability(Ready), sweeper: new RecordingSweeper { Failure = new IOException("sweep failed") })
             .InitializePersistedPluginsAsync();
 
         Assert.Equal(1, factory.Count);
@@ -503,5 +505,69 @@ public sealed class PluginServiceSandboxAvailabilityTests : IDisposable
         await service.RemoveLocalMcpAsync(id);
 
         Assert.Equal(["plain"], profiles.Deleted);
+    }
+
+    [Fact]
+    public async Task RenamingAServer_SweepsAndDeletesTheOldContainersProfiles()
+    {
+        var log = new List<string>();
+        var sweeper = new RecordingSweeper { Log = log };
+        var service = CreateService(new RecordingFactory(), new FakeAvailability(Ready), new RecordingProfiles { Log = log }, sweeper);
+        var id = await service.SaveLocalMcpAsync(null, Definition(Policy, name: "Files"), TestContext.Current.CancellationToken);
+        log.Clear();
+        sweeper.Calls.Clear();
+
+        await service.SaveLocalMcpAsync(id, Definition(Policy, name: "Documents"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["sweep", "profile:files"], log);
+        Assert.Equal(["pia-mcp-files", "pia-mcp-files-probe"], Assert.Single(sweeper.Calls).Names);
+        Assert.Equal("documents", service.GetLocalMcpDefinition(id)!.ToolPrefix);
+    }
+
+    [Fact]
+    public async Task EditingAServerWithoutChangingItsPrefix_TouchesNoProfile()
+    {
+        var log = new List<string>();
+        var service = CreateService(
+            new RecordingFactory(), new FakeAvailability(Ready), new RecordingProfiles { Log = log }, new RecordingSweeper { Log = log });
+        var id = await service.SaveLocalMcpAsync(null, Definition(Policy), TestContext.Current.CancellationToken);
+        log.Clear();
+
+        await service.SaveLocalMcpAsync(id, Definition(Policy) with { Command = @"C:\Tools\fs\other.exe" }, TestContext.Current.CancellationToken);
+
+        Assert.Empty(log);
+    }
+
+    [Fact]
+    public async Task ACollisionSuffix_ThatRevertsOnEdit_CleansTheSuffixedProfile()
+    {
+        var log = new List<string>();
+        var profiles = new RecordingProfiles { Log = log };
+        var service = CreateService(new RecordingFactory(), new FakeAvailability(Ready), profiles, new RecordingSweeper { Log = log });
+        var first = await service.SaveLocalMcpAsync(null, Definition(Policy), TestContext.Current.CancellationToken);
+        var second = await service.SaveLocalMcpAsync(null, Definition(Policy), TestContext.Current.CancellationToken);
+        Assert.Equal("files_2", service.GetLocalMcpDefinition(second)!.ToolPrefix);
+        await service.RemoveLocalMcpAsync(first);
+        log.Clear();
+        profiles.Deleted.Clear();
+
+        await service.SaveLocalMcpAsync(second, Definition(Policy), TestContext.Current.CancellationToken);
+
+        Assert.Equal("files", service.GetLocalMcpDefinition(second)!.ToolPrefix);
+        Assert.Equal(["sweep", "profile:files_2"], log);
+    }
+
+    [Fact]
+    public async Task RenamingAnUncontainedServer_DeletesTheOldProfiles_ButSweepsNothing()
+    {
+        var sweeper = new RecordingSweeper();
+        var profiles = new RecordingProfiles();
+        var service = CreateService(new RecordingFactory(), new FakeAvailability(Ready), profiles, sweeper);
+        var id = await service.SaveLocalMcpAsync(null, Definition(sandbox: null, name: "Plain"), TestContext.Current.CancellationToken);
+
+        await service.SaveLocalMcpAsync(id, Definition(sandbox: null, name: "Renamed"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(["plain"], profiles.Deleted);
+        Assert.Empty(sweeper.Calls);
     }
 }

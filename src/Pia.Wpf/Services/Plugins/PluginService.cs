@@ -545,6 +545,7 @@ public class PluginService : IPluginService
         };
 
         await ShutdownHandlerAsync(id);
+        await CleanUpRenamedContainersAsync(existing, stored);
 
         _pluginConfigs[id] = plugin;
         SavePluginToDb(plugin);
@@ -584,6 +585,17 @@ public class PluginService : IPluginService
         RebuildToolNameRoutes();
         PluginsChanged?.Invoke(this, EventArgs.Empty);
         _logger.LogInformation("Local MCP server {PluginId} removed", pluginId);
+    }
+
+    private async Task CleanUpRenamedContainersAsync(SyncPlugin? existing, LocalMcpDefinition stored)
+    {
+        var previous = existing is null ? null : ReadLocalDefinition(existing);
+        if (previous is null || string.IsNullOrEmpty(previous.ToolPrefix)
+            || string.Equals(previous.ToolPrefix, stored.ToolPrefix, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await SweepSandboxLeaksAsync([previous]);
+        _profileService?.DeleteServerProfiles(previous.ToolPrefix);
     }
 
     private async Task ShutdownHandlerAsync(Guid pluginId)
