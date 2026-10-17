@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Pia.Services.Plugins.Sandbox;
 
 namespace Pia.Services.Plugins;
 
@@ -15,7 +16,8 @@ public sealed record LocalMcpDefinition(
     string ToolPrefix,
     IReadOnlyList<string>? AllowedTools,
     string? Description = null,
-    bool DefaultEnabled = true)
+    bool DefaultEnabled = true,
+    McpSandboxPolicy? Sandbox = null)
 {
     public static LocalMcpDefinition Empty { get; } =
         new("", "", [], new Dictionary<string, string>(), null, "", null);
@@ -68,8 +70,21 @@ public static class LocalMcpConfig
         if (definition.AllowedTools is not null)
             root["allowedTools"] = new JsonArray([.. definition.AllowedTools.Select(t => (JsonNode?)JsonValue.Create(t))]);
 
+        if (definition.Sandbox is { } sandbox)
+        {
+            root["sandbox"] = new JsonObject
+            {
+                ["readwrite"] = ToJsonArray(sandbox.ReadwritePaths),
+                ["readonly"] = ToJsonArray(sandbox.ReadonlyPaths),
+                ["network"] = sandbox.AllowNetwork ? "allow" : "deny"
+            };
+        }
+
         return root.ToJsonString();
     }
+
+    private static JsonArray ToJsonArray(IReadOnlyList<string> values) =>
+        new([.. values.Select(v => (JsonNode?)JsonValue.Create(v))]);
 
     public static LocalMcpDefinition? FromConfigJson(string name, string? description, string? configJson, Func<string, string> decrypt)
     {
@@ -104,13 +119,34 @@ public static class LocalMcpConfig
                 || enabledEl.ValueKind != JsonValueKind.False;
 
             return new LocalMcpDefinition(name, command, args, env, cwd,
-                prefix.Length > 0 ? prefix : DeriveToolPrefix(name), allowed, description, defaultEnabled);
+                prefix.Length > 0 ? prefix : DeriveToolPrefix(name), allowed, description, defaultEnabled,
+                ReadSandbox(root));
         }
         catch (JsonException)
         {
             return null;
         }
     }
+
+    // A present but unreadable block stays contained: dropping it would start the server uncontained.
+    private static McpSandboxPolicy? ReadSandbox(JsonElement root)
+    {
+        if (!root.TryGetProperty("sandbox", out var block)) return null;
+        if (block.ValueKind != JsonValueKind.Object) return McpSandboxPolicy.Empty;
+
+        var allowNetwork = block.TryGetProperty("network", out var network)
+            && network.ValueKind == JsonValueKind.String
+            && string.Equals(network.GetString(), "allow", StringComparison.OrdinalIgnoreCase);
+        return new McpSandboxPolicy(ReadPaths(block, "readwrite"), ReadPaths(block, "readonly"), allowNetwork);
+    }
+
+    private static List<string> ReadPaths(JsonElement block, string name) =>
+        block.TryGetProperty(name, out var paths) && paths.ValueKind == JsonValueKind.Array
+            ? [.. paths.EnumerateArray()
+                .Where(p => p.ValueKind == JsonValueKind.String)
+                .Select(p => p.GetString()!)
+                .Where(p => !string.IsNullOrWhiteSpace(p))]
+            : [];
 
     /// <summary>Tool names must stay a valid function-name token for every provider, so anything outside
     /// [a-z0-9_] folds to an underscore.</summary>

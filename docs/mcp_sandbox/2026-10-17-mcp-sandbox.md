@@ -92,7 +92,10 @@ public sealed record McpSandboxPolicy(
     bool AllowNetwork);
 ```
 
-A missing `sandbox` key reads as null, so every existing row round-trips unchanged.
+A missing `sandbox` key reads as null, so every existing row round-trips unchanged. A key that is present
+but unreadable (not an object, `null`, `{}`) reads as `McpSandboxPolicy.Empty`: contained, nothing
+granted, network off. Dropping it would start the server uncontained. Network is `allow` only for the
+exact string `allow`; anything else is deny.
 
 ### New and changed types
 
