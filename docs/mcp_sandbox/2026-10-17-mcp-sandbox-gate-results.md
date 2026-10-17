@@ -1,6 +1,6 @@
 # Sandboxed local MCP servers: gate results
 
-**Status:** G1 passed with caveats (below). G2 pending.
+**Status:** G1 and G2 passed (caveats below). The CI runner's ability to spawn a container is still open.
 **Owner:** Marco Altmann
 **Written:** 2026-10-17
 **Origin:** Gates G1 and G2 of [2026-10-17-mcp-sandbox.md](2026-10-17-mcp-sandbox.md), checklist steps S1
@@ -44,3 +44,34 @@ over MCP. A Tier 3 (`AppContainerDacl`) spawn is the only tier tried.
   pre-check that the command's directory and files are owned by the user is worth adding.
 - **SDK order rule.** Take `StandardInput`, `StandardOutput` and `StandardError` before the first
   `WaitAsync`. Reading `StandardOutput` after `WaitAsync` has started throws `InvalidOperationException`.
+
+## G2: native runtime outside the app dir (S2)
+
+**Method.** `Pia.Wpf` references `Microsoft.Mxc.Sdk` 1.0.1 with `ExcludeAssets="native"`. A throwaway console
+with the same reference, started at medium integrity through `explorer.exe`, spawns `cmd /c echo` under
+Tier 3 with different subsets of the four native files in a separate directory.
+
+| Check | Result |
+|---|---|
+| `dotnet build` of `Pia.Wpf` and of `Pia.Wpf.Tests` | `Microsoft.Mxc.Sdk.dll` is copied, no native file is. The exclusion flows to the test project |
+| CI-style publish (`-c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=false`) | No `mxc_ffi.dll`, `plm.exe`, `wslcsdk.dll` or `wxc-wslc-daemon.exe` in the output. Other packages' natives do appear, so the exclusion is what removed them |
+| Spawn with only `mxc_ffi.dll` (6.1 MB) in a separate dir | Works: `PlatformSupport.IsSupported`, backend `ProcessContainer` at tier `AppContainerDacl`, spawn in 80-130 ms, stdout read back |
+| Same with `plm.exe`, `wslcsdk.dll` or both added | No difference. `wslcsdk.dll` is only loaded if it sits beside `mxc_ffi.dll`. `plm.exe` and `wxc-wslc-daemon.exe` never start |
+| No native file anywhere | `DllNotFoundException` (`0x8007007E`) from the **first SDK call**, including `MxcPlatform.GetPlatformSupport()` |
+| Signatures | All four files are `Valid`, signer `CN=Microsoft Corporation`, issuer `Microsoft Code Signing PCA 2024` |
+
+**Verdict: pass.** Decisions that follow:
+
+- **Only `mxc_ffi.dll` is extracted.** The other three are for the guarded WPR capture and the WSLC
+  backend, which Pia does not use. `mxc_ffi.dll` looks for `plm.exe`, `wxc-wslc-daemon.exe` and
+  `wslcsdk.dll` **beside itself**, not beside the host exe. The mirrored asset stays the whole nupkg
+  (same bytes upstream and on the mirror, one pin).
+- **No custom resolver is needed.** The SDK registers its own resolver for `mxc_ffi` and probes, in
+  order: the `MXC_FFI_DIR` environment variable, `AppContext.BaseDirectory`,
+  `<base>\runtimes\<rid>\native`. A custom `SetDllImportResolver` also works, but only when it is
+  registered before the SDK's own, which registers on the first SDK call and then fails quietly. Setting
+  `MXC_FFI_DIR` after verification has no ordering constraint: a call that failed earlier is retried.
+- **`NotInstalled` is decided by file existence**, not by calling the SDK, because every SDK call throws
+  without the native.
+- **Open: the CI runner.** Whether `windows-latest` can create an AppContainer is only known from a CI run.
+  The integration tests skip at runtime when a spawn is not possible, so the gate works either way.
