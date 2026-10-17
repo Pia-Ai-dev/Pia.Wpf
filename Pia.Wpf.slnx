@@ -2,4 +2,5 @@
   <Project Path="src\Pia.Wpf\Pia.Wpf.csproj" />
   <Project Path="src\Pia.Shared\Pia.Shared.csproj" />
   <Project Path="tests\Pia.Wpf.Tests\Pia.Wpf.Tests.csproj" />
+  <Project Path="tests\Pia.TestMcpServer\Pia.TestMcpServer.csproj" />
 </Solution>
