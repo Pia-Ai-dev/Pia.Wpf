@@ -180,7 +180,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     [ObservableProperty]
     private string? _selectedSandboxReadonly;
 
-    /// <summary>The server's own folder, which the sandbox always lets it read; null until the launch spec reports it.</summary>
+    /// <summary>The server's own folder, which the sandbox lets it read on top of the policy; null when none is granted.</summary>
     [ObservableProperty]
     private string? _selectedSandboxAlsoReadable;
 
@@ -345,6 +345,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         SelectedSandboxSummary = DescribeSandbox(sandbox);
         SelectedSandboxReadwrite = sandbox is { ReadwritePaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadwritePaths) : null;
         SelectedSandboxReadonly = sandbox is { ReadonlyPaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadonlyPaths) : null;
+        SelectedSandboxAlsoReadable = sandbox is null ? null : SandboxPathGuard.GrantedCommandFolder(sandbox, definition?.Command);
         HasSelectedSandbox = sandbox is not null;
 
         FillSelectedTools(definition?.AllowedTools, status?.DiscoveredTools ?? []);

@@ -563,6 +563,52 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
     }
 
     [Fact]
+    public void TheDetailPane_NamesTheServersOwnFolder_WhenTheSandboxGrantsIt()
+    {
+        var root = MakeFolders("srv", "work");
+        try
+        {
+            var exe = Path.Combine(root, "srv", "server.exe");
+            File.WriteAllBytes(exe, []);
+            var policy = new McpSandboxPolicy([Path.Combine(root, "work")], [], false);
+            var (vm, _, _, _) = Create(Stored(policy, command: exe));
+
+            Assert.Equal(Path.Combine(root, "srv"), vm.SelectedSandboxAlsoReadable, ignoreCase: true);
+        }
+        finally
+        {
+            TempPath.Remove(root);
+        }
+    }
+
+    [Fact]
+    public void TheDetailPane_HidesTheServersOwnFolder_WhenAPolicyFolderAlreadyCoversIt()
+    {
+        var root = MakeFolders(@"work\srv");
+        try
+        {
+            var exe = Path.Combine(root, "work", "srv", "server.exe");
+            File.WriteAllBytes(exe, []);
+            var policy = new McpSandboxPolicy([Path.Combine(root, "work")], [], false);
+            var (vm, _, _, _) = Create(Stored(policy, command: exe));
+
+            Assert.Null(vm.SelectedSandboxAlsoReadable);
+        }
+        finally
+        {
+            TempPath.Remove(root);
+        }
+    }
+
+    [Fact]
+    public void TheDetailPane_HidesTheServersOwnFolder_ForAnUncontainedServer()
+    {
+        var (vm, _, _, _) = Create(Stored(sandbox: null));
+
+        Assert.Null(vm.SelectedSandboxAlsoReadable);
+    }
+
+    [Fact]
     public void ADisabledSandboxedServer_StillShowsItsSandbox()
     {
         var (vm, plugins, _, _) = Create(Stored(Policy()));
