@@ -56,7 +56,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* C3, U1 · *Effort:* S · *Value:* Med
 - [ ] **U3 Action card line (worker2).** `ActionCardBuilder` adds the one-line sandbox summary for calls from a sandboxed server. No gate change.
   *Deps:* C1 · *Effort:* XS · *Value:* Med
-- [ ] **E1 E2E harness (worker2).** A script (under `tests/ui-scripts/` or `scripts/`, per that README) that seeds the fixture tree (workspace/protected/secret), records SHA-256s, launches the Debug exe **de-elevated** with the throwaway profile and `PIA_CLOUD_SERVER_URL=https://localhost:18081`, and prints the IL, ACE state and orphan processes on demand.
+- [x] **E1 E2E harness (worker2).** A script (under `tests/ui-scripts/` or `scripts/`, per that README) that seeds the fixture tree (workspace/protected/secret), records SHA-256s, launches the Debug exe **de-elevated** with the throwaway profile and `PIA_CLOUD_SERVER_URL=https://localhost:18081`, and prints the IL, ACE state and orphan processes on demand.
   *Deps:* F1 · *Effort:* S · *Value:* Enabler
 - [ ] **E2 Live run (worker2, coordinator reviews).** Scenarios 0–12 from the plan through WinWright on the e2e stack, with results written into the plan's *Live verification* section.
   *Deps:* E1, U1, U2, U3, C3, C4, D1 · *Effort:* S · *Value:* High

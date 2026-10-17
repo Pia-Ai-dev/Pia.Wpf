@@ -14,6 +14,7 @@ scripts/settings-general.json           recorded flows (ww_record exports)
 fixtures/settings.ui-test-seed.json     the profile every script starts from
 artifacts/                              junit reports, healed scripts, profile backups (gitignored)
 agent-run-e2e/                          the unrecorded agent-run walkthrough (see below)
+mxc-sandbox-e2e/                        harness for the sandboxed-MCP live run (see below)
 ```
 
 ## Run them
@@ -247,3 +248,52 @@ or `LEAK <file>`, exiting 1 on a leak — the same contract as the PowerShell ha
 
 `PIA_DATA_DIR` does **not** redirect the memory vault, so keep `remember`, `create_source` and
 `recall` out of any prompt you drive here — a vault write would land in the real one.
+
+## MXC sandbox e2e (unrecorded)
+
+`mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1` is the harness for the live run in
+[`docs/mcp_sandbox/2026-10-17-mcp-sandbox.md`](../../docs/mcp_sandbox/2026-10-17-mcp-sandbox.md). Like
+`agent-run-e2e/` it has no recorded script: you launch with it, attach WinWright to the process it
+prints and drive the scenarios yourself. Run it from an **elevated** shell — it hands file ownership to
+your user and drops out of the elevation for the launch.
+
+```powershell
+dotnet build                                  # Debug: PIA_CLOUD_SERVER_URL is a Debug-only switch
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Init      # layout, profile, server copies, fixture
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch    # explorer.exe parent, prints the IL
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Status    # IL, hashes, ACEs, orphans, containers
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Seed      # reseed the fixture (scenario 7)
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Stop      # waits for TrayMenu_Exit; -Kill is the hard kill
+```
+
+Everything lives under `artifacts/mxc-sandbox-e2e/` (gitignored, outside `%TEMP%` so the cleaner leaves a
+multi-hour run alone): `profile\roaming` and `profile\local` are the throwaway `PIA_DATA_DIR` /
+`PIA_LOCAL_DATA_DIR`, `fixture\{workspace,protected,secret}` is the tree the policy points at, and
+`server\` / `server-admin\` hold two copies of `Pia.TestMcpServer`. The fixture must stay **outside** the
+profile roots, because the path guard refuses a Pia data root.
+
+- **De-elevated launch.** `Launch` writes `launch\launch.cmd`, which sets `PIA_CLOUD_SERVER_URL` and the two
+  data dirs and starts the Debug exe, then opens it through `explorer.exe`, so the whole tree starts at the
+  user's medium integrity level. The IL is read off the Pia process token (`S-1-16-8192`), not from
+  localised `whoami` text, and a mismatch fails the launch. A scheduled task is not used.
+- **Ownership and ACLs.** Tier 3 rewrites the DACL of every policy path, which fails silently for a path
+  the user cannot WRITE_DAC, and the server then dies on load. Anything an elevated shell creates is owned
+  by Administrators and, under a drive root that only lets Users read, is not even writable by the user
+  (Pia itself crashes on its first `settings.json` write). So `Init` gives `artifacts\mxc-sandbox-e2e` an
+  explicit DACL (user, SYSTEM, Administrators: full control) and `icacls /setowner`s the fixture and
+  `server\` to the user. `server-admin\` is deliberately the opposite: Administrators-owned, Users
+  read-and-execute only, no WRITE_DAC for the user. It is the negative case where Pia must refuse to
+  start the server rather than run it uncontained. `Status` prints owner, write and WRITE_DAC per path.
+- **Exit.** Closing Pia's window only hides it to the tray (explicit shutdown mode), so a graceful exit is
+  the tray menu's `TrayMenu_Exit`, driven through WinWright; `Stop` then waits for the process to end.
+- **Real data.** The harness refuses `:8081`, which is the owner's real stack; the e2e stack is
+  `https://localhost:18081`. `profile\roaming\settings.json` is seeded once and never rewritten or
+  restored — it carries the rotating sign-in tokens. `Verify` re-hashes the real `settings.json` and
+  `history.db` against the hashes `Init` took.
+- **Verdicts come from `Status`**, never from the model's text: `protected\` and `secret\` hashes against
+  the baseline, explicit `S-1-15-2-*` ACEs on the fixture and server copies (the two well-known
+  `ALL (RESTRICTED) APPLICATION PACKAGES` SIDs are not leaks), helper processes with no live Pia, and the
+  `%LOCALAPPDATA%\Packages\pia-mcp-*` container profiles against those present at `Init`.
+- **MXC runtime.** `RemoveRuntime -Force` deletes `%LOCALAPPDATA%\Pia\Runtimes\Mxc` on the real local
+  root. It is a downloaded artifact, so that is safe, and it is the only way to re-run the first-download
+  scenario.
