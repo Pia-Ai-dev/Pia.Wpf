@@ -291,8 +291,11 @@ public class E2EEOnboardingViewModelTests
         sut.Cleanup();
     }
 
-    [Fact]
-    public async Task Polling_DeviceApproved_ShouldFetchUmkAndComplete()
+    private static KeyHandover Handover(string? approverFingerprint) => new(
+        new WrappedUmkBlob { DeviceId = "device-001", Ciphertext = "c", HkdfSalt = "s", CreatedByDeviceId = "dev-approver" },
+        "approver-agreement-key", 1, approverFingerprint is null ? null : "Laptop", approverFingerprint);
+
+    private async Task<E2EEOnboardingViewModel> ApprovedAsync(KeyHandover handover)
     {
         _deviceMgmt.RegisterPendingDeviceAsync().Returns(new DeviceRegistrationResponse
         {
@@ -300,27 +303,146 @@ public class E2EEOnboardingViewModelTests
             ServerChallenge = "challenge",
             IsFirstDevice = false
         });
+        // Pending when the person starts waiting, approved on the first poll.
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Pending },
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Active });
+        _deviceMgmt.FetchKeyHandoverAsync().Returns(handover);
 
-        // Return approved on first poll
-        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(new DeviceStatusResponse
-        {
-            DeviceId = "device-001",
-            Status = DeviceStatus.Active
-        });
+        var sut = FastSut();
+        await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
+        return sut;
+    }
 
-        var completed = false;
-        var sut = CreateSut();
-        sut.OnboardingCompleted += (_, _) => completed = true;
+    private E2EEOnboardingViewModel FastSut() => new(
+        _deviceMgmt, _deviceKeys, _e2ee, _syncService, _settingsService,
+        NullLogger<E2EEOnboardingViewModel>.Instance, pollIntervalOverride: TimeSpan.FromMilliseconds(10));
+
+    // The server decides which device counts as the approver, so the key waits for a person to compare.
+    [Fact]
+    public async Task AnApprovalByAnotherDevice_WaitsForTheFingerprintToBeConfirmed()
+    {
+        var sut = await ApprovedAsync(Handover("AAAA-BBBB-CCCC-DDDD"));
+
+        await WaitForState(sut, OnboardingState.ConfirmingApprover, timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal(OnboardingState.ConfirmingApprover, sut.State);
+        Assert.Equal("AAAA-BBBB-CCCC-DDDD", sut.ApproverFingerprint);
+        Assert.Equal("Laptop", sut.ApproverDeviceName);
+        await _deviceMgmt.Received(1).RegisterPendingDeviceAsync();
+        await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
+        sut.Cleanup();
+    }
+
+    // A device the account still lists as active (re-login after sign-out) already has its copy on the server.
+    [Fact]
+    public async Task AnAlreadyActiveDevice_GoesStraightToConfirmingWithoutANewApprovalRound()
+    {
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Active });
+        _deviceMgmt.FetchKeyHandoverAsync().Returns(Handover("AAAA-BBBB-CCCC-DDDD"));
+        var sut = FastSut();
+
+        Assert.True(await sut.TryResumeKeyHandoverAsync());
+
+        Assert.Equal(OnboardingState.ConfirmingApprover, sut.State);
+        Assert.Equal("AAAA-BBBB-CCCC-DDDD", sut.ApproverFingerprint);
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+        await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
+    }
+
+    [Fact]
+    public async Task WaitingForApprovalOnAnAlreadyActiveDevice_AlsoSkipsRegistration()
+    {
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Active });
+        _deviceMgmt.FetchKeyHandoverAsync().Returns(Handover("AAAA-BBBB-CCCC-DDDD"));
+        var sut = FastSut();
 
         await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
 
-        await WaitForState(sut, OnboardingState.Success, timeout: TimeSpan.FromSeconds(15));
+        Assert.Equal(OnboardingState.ConfirmingApprover, sut.State);
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+    }
+
+    [Fact]
+    public async Task ADeviceThatIsNotActiveYet_HasNothingToResume()
+    {
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Pending });
+        var sut = FastSut();
+
+        Assert.False(await sut.TryResumeKeyHandoverAsync());
+
+        Assert.Equal(OnboardingState.Initial, sut.State);
+        await _deviceMgmt.DidNotReceive().FetchKeyHandoverAsync();
+    }
+
+    [Fact]
+    public async Task ConfirmingTheFingerprint_AcceptsTheKeyAndCompletes()
+    {
+        var handover = Handover("AAAA-BBBB-CCCC-DDDD");
+        var sut = await ApprovedAsync(handover);
+        var completed = false;
+        sut.OnboardingCompleted += (_, _) => completed = true;
+        await WaitForState(sut, OnboardingState.ConfirmingApprover, timeout: TimeSpan.FromSeconds(5));
+
+        await sut.ConfirmApproverCommand.ExecuteAsync(null);
 
         Assert.Equal(OnboardingState.Success, sut.State);
         Assert.True(completed);
-        await _deviceMgmt.Received(1).FetchAndUnwrapUmkAsync();
+        await _deviceMgmt.Received(1).AcceptKeyHandoverAsync(handover);
         await _settingsService.Received(1).SaveSettingsAsync(Arg.Is<AppSettings>(s => s.IsE2EEEnabled));
+        sut.Cleanup();
+    }
 
+    [Fact]
+    public async Task AFingerprintThatDoesNotMatch_RefusesTheKey()
+    {
+        var sut = await ApprovedAsync(Handover("AAAA-BBBB-CCCC-DDDD"));
+        var completed = false;
+        sut.OnboardingCompleted += (_, _) => completed = true;
+        await WaitForState(sut, OnboardingState.ConfirmingApprover, timeout: TimeSpan.FromSeconds(5));
+
+        sut.RejectApproverCommand.Execute(null);
+        await sut.ConfirmApproverCommand.ExecuteAsync(null);
+
+        Assert.Equal(OnboardingState.Error, sut.State);
+        Assert.False(string.IsNullOrEmpty(sut.ErrorMessage));
+        Assert.Equal("", sut.ApproverFingerprint);
+        Assert.False(completed);
+        await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
+        await _settingsService.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+        _syncService.DidNotReceive().NotifyE2EEOnboardingCompleted();
+        sut.Cleanup();
+    }
+
+    [Fact]
+    public async Task ThisDevicesOwnCopy_IsAcceptedWithoutAsking()
+    {
+        var handover = Handover(approverFingerprint: null);
+        var sut = await ApprovedAsync(handover);
+
+        await WaitForState(sut, OnboardingState.Success, timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal(OnboardingState.Success, sut.State);
+        await _deviceMgmt.Received(1).AcceptKeyHandoverAsync(handover);
+        sut.Cleanup();
+    }
+
+    [Fact]
+    public async Task AKeyThatCannotBeOpenedAfterConfirming_EndsInAnError()
+    {
+        var sut = await ApprovedAsync(Handover("AAAA-BBBB-CCCC-DDDD"));
+        _deviceMgmt.AcceptKeyHandoverAsync(Arg.Any<KeyHandover>())
+            .ThrowsAsync(new System.Security.Cryptography.CryptographicException("bad wrap"));
+        await WaitForState(sut, OnboardingState.ConfirmingApprover, timeout: TimeSpan.FromSeconds(5));
+
+        await sut.ConfirmApproverCommand.ExecuteAsync(null);
+
+        Assert.Equal(OnboardingState.Error, sut.State);
+        Assert.False(string.IsNullOrEmpty(sut.ErrorMessage));
+        await _settingsService.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
         sut.Cleanup();
     }
 

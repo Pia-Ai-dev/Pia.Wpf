@@ -38,17 +38,27 @@ internal static class TempPath
 
     public static void RemoveFile(string? file, [CallerFilePath] string? caller = null)
     {
-        if (string.IsNullOrEmpty(file) || !File.Exists(file))
+        if (string.IsNullOrEmpty(file))
         {
             return;
         }
 
-        Retry(file, caller, _ =>
+        if (File.Exists(file))
         {
-            ReleasePooledDatabase(file);
-            ClearReadOnlyFile(file);
-            File.Delete(file);
-        });
+            Retry(file, caller, _ =>
+            {
+                ReleasePooledDatabase(file);
+                ClearReadOnlyFile(file);
+                File.Delete(file);
+            });
+        }
+
+        // A history database keeps its key beside it, so a .db in the temp root would leave the key in %TEMP%.
+        var key = Pia.Infrastructure.HistoryDatabaseEncryption.KeyPathFor(file);
+        if (file.EndsWith(".db", StringComparison.OrdinalIgnoreCase) && File.Exists(key))
+        {
+            Retry(key, caller, _ => File.Delete(key));
+        }
     }
 
     private static void ReleasePooledDatabases(string directory)

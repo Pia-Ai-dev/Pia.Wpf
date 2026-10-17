@@ -452,7 +452,7 @@ public sealed class PiaCloudChatClient : IChatClient
         return null;
     }
 
-    private static JsonArray SerializeMessages(IEnumerable<ChatMessage> messages)
+    internal static JsonArray SerializeMessages(IEnumerable<ChatMessage> messages)
     {
         var array = new JsonArray();
 

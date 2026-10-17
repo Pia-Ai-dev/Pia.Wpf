@@ -48,6 +48,8 @@ public class PluginService : IPluginService
     private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
 
     private const string LocalMcpBlockedReason = "Your organization's policy does not allow local MCP servers.";
+
+    private const string SseWithoutCommandReason = "This server uses the sse transport but names no command to launch.";
     private volatile bool _localMcpAllowed = true;
 
     public IReadOnlyList<IPluginToolHandler> ActiveHandlers
@@ -353,8 +355,9 @@ public class PluginService : IPluginService
                 var config = _pluginConfigs.GetValueOrDefault(handler.PluginId);
                 if (config is not null && !IsPluginEnabled(config))
                 {
-                    _logger.LogWarning("GetAllTools: plugin {PluginName} (id={PluginId}) skipped — IsActive={IsActive}, UserEnabled={UserEnabled}, kind={Kind}",
-                        config.Name, config.Id, config.IsActive, config.UserEnabled, config.Kind);
+                    _logger.LogWarning("GetAllTools: plugin {PluginId} skipped — IsActive={IsActive}, UserEnabled={UserEnabled}, kind={Kind}",
+                        config.Id, config.IsActive, config.UserEnabled, config.Kind);
+                    _logger.SensitiveDebug("GetAllTools: skipped plugin {PluginId} is {PluginName}", config.Id, config.Name);
                     continue;
                 }
                 tools.AddRange(handler.GetTools());
@@ -675,7 +678,8 @@ public class PluginService : IPluginService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to parse ConfigJson for plugin {PluginName}", plugin.Name);
+            _logger.LogWarning(ex, "Failed to parse ConfigJson for plugin {PluginId}", plugin.Id);
+            _logger.SensitiveDebug("Plugin {PluginId} with unparseable ConfigJson is {PluginName}", plugin.Id, plugin.Name);
             return;
         }
 
@@ -691,21 +695,21 @@ public class PluginService : IPluginService
 
         if (localDefinition is not null && transport != "stdio")
         {
-            _logger.LogWarning("Local MCP server {PluginName}: transport '{Transport}' is not supported, only stdio",
-                plugin.Name, transport);
+            _logger.LogWarning("Local MCP server {PluginId}: transport '{Transport}' is not supported, only stdio",
+                plugin.Id, transport);
             _startFailures[plugin.Id] = $"Transport '{transport}' is not supported. Only stdio servers can be added here.";
             return;
         }
 
         if (string.IsNullOrEmpty(transport))
         {
-            _logger.LogWarning("Plugin {PluginName} has no transport specified in ConfigJson", plugin.Name);
+            _logger.LogWarning("Plugin {PluginId} has no transport specified in ConfigJson", plugin.Id);
             return;
         }
 
-        _logger.LogInformation("Plugin {PluginName}: transport={Transport}", plugin.Name, transport);
-        _logger.SensitiveDebug("Plugin {PluginName} command='{Command}', args=[{Args}]",
-            plugin.Name, command ?? "<null>", string.Join(", ", args));
+        _logger.LogInformation("Plugin {PluginId}: transport={Transport}", plugin.Id, transport);
+        _logger.SensitiveDebug("Plugin {PluginId} is {PluginName}, command='{Command}', args=[{Args}]",
+            plugin.Id, plugin.Name, command ?? "<null>", string.Join(", ", args));
 
         // Check prerequisites
         try
@@ -741,34 +745,9 @@ public class PluginService : IPluginService
             case "stdio":
                 // A local server skips the PATH guess: the user picked the command, so the launch failure
                 // itself is the answer they need, not `where.exe`'s opinion of it.
-                if (!string.IsNullOrEmpty(command) && localDefinition is null)
-                {
-                    var commandExists = await CheckCommandOnPathAsync(command);
-                    _logger.LogInformation("Plugin {PluginName}: command '{Command}' on PATH = {Exists}",
-                        plugin.Name, command, commandExists);
-                    if (!commandExists)
-                    {
-                        // If the plugin has a cab, try extracting it first
-                        if (!string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
-                        {
-                            var extractedPath = await _cabManager.EnsurePluginExtractedAsync(plugin);
-                            if (extractedPath is null)
-                            {
-                                _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH and cab extraction failed, skipping activation",
-                                    plugin.Name, command);
-                                return;
-                            }
-
-                            _logger.LogInformation("Plugin {PluginName}: cab extracted to {Path}", plugin.Name, extractedPath);
-                        }
-                        else
-                        {
-                            _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH, skipping activation",
-                                plugin.Name, command);
-                            return;
-                        }
-                    }
-                }
+                if (!string.IsNullOrEmpty(command) && localDefinition is null
+                    && !await PreflightServerCommandAsync(plugin, command))
+                    return;
 
                 // Check version prerequisites if specified
                 try
@@ -791,6 +770,15 @@ public class PluginService : IPluginService
                 break;
 
             case "sse":
+                // Only the stdio client exists, so an sse row is launched through its command like a stdio one.
+                if (string.IsNullOrEmpty(command))
+                {
+                    _logger.LogWarning("Plugin {PluginId}: transport 'sse' has no command to launch, skipping activation",
+                        plugin.Id);
+                    _startFailures[plugin.Id] = SseWithoutCommandReason;
+                    return;
+                }
+
                 if (!string.IsNullOrEmpty(url))
                 {
                     var reachable = await PingUrlAsync(url);
@@ -801,6 +789,9 @@ public class PluginService : IPluginService
                         return;
                     }
                 }
+
+                if (!await PreflightServerCommandAsync(plugin, command))
+                    return;
                 break;
 
             default:
@@ -809,8 +800,8 @@ public class PluginService : IPluginService
                 return;
         }
 
-        // If stdio plugin has a cab and we haven't extracted yet, ensure extraction
-        if (transport == "stdio" && !string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
+        // Both transports spawn the command, so a cab is extracted before either starts.
+        if (transport is "stdio" or "sse" && !string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
         {
             var extractedPath = await _cabManager.EnsurePluginExtractedAsync(plugin);
             if (extractedPath is not null)
@@ -833,14 +824,42 @@ public class PluginService : IPluginService
         {
             await handler.InitializeAsync();
             RegisterHandler(plugin.Id, handler);
-            _logger.LogInformation("Plugin {PluginName} ({Transport}) activated with {ToolCount} tools",
-                plugin.Name, transport, handler.GetTools().Count);
+            _logger.LogInformation("Plugin {PluginId} ({Transport}) activated with {ToolCount} tools",
+                plugin.Id, transport, handler.GetTools().Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginName}", plugin.Name);
+            _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginId}", plugin.Id);
             handler.Dispose();
         }
+    }
+
+    /// <summary>False when the admin's command is neither on PATH nor recoverable from the plugin's cab.</summary>
+    private async Task<bool> PreflightServerCommandAsync(SyncPlugin plugin, string command)
+    {
+        var commandExists = await CheckCommandOnPathAsync(command);
+        _logger.LogInformation("Plugin {PluginName}: command '{Command}' on PATH = {Exists}",
+            plugin.Name, command, commandExists);
+        if (commandExists)
+            return true;
+
+        if (!string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
+        {
+            var extractedPath = await _cabManager.EnsurePluginExtractedAsync(plugin);
+            if (extractedPath is null)
+            {
+                _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH and cab extraction failed, skipping activation",
+                    plugin.Name, command);
+                return false;
+            }
+
+            _logger.LogInformation("Plugin {PluginName}: cab extracted to {Path}", plugin.Name, extractedPath);
+            return true;
+        }
+
+        _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH, skipping activation",
+            plugin.Name, command);
+        return false;
     }
 
     private async Task<(bool MeetsMinimum, string? ActualVersion)> CheckNodeVersionAsync(string minVersion)
@@ -886,7 +905,7 @@ public class PluginService : IPluginService
             var psi = new ProcessStartInfo
             {
                 FileName = "where.exe",
-                Arguments = command,
+                ArgumentList = { command },
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true
@@ -982,7 +1001,7 @@ public class PluginService : IPluginService
         foreach (var handler in handlers)
         {
             try { await handler.ShutdownAsync(); }
-            catch (Exception ex) { _logger.LogError(ex, "Error shutting down plugin {PluginName}", handler.PluginName); }
+            catch (Exception ex) { _logger.LogError(ex, "Error shutting down plugin {PluginId}", handler.PluginId); }
         }
     }
 

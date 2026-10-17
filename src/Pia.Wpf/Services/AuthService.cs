@@ -169,7 +169,8 @@ public class AuthService : IAuthService
             switch (triage.Kind)
             {
                 case LoginCallbackKind.ProviderError:
-                    _logger.LogWarning("OAuth callback returned error: {Error} - {Message}", error, errorMessage);
+                    _logger.LogWarning("OAuth callback returned error: {Error}", error);
+                    _logger.SensitiveDebug("OAuth callback error message: {Message}", errorMessage);
                     break;
                 case LoginCallbackKind.LegacyTokens:
                     _logger.LogWarning("OAuth callback carried tokens in the URL; the server predates the code exchange");

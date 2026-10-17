@@ -2277,8 +2277,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             if (!result.IsSuccess)
             {
-                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Process} {Reason}",
-                    result.Target.Kind, result.Target.ProcessName, result.Reason);
+                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Reason}",
+                    result.Target.Kind, result.Reason);
+                _logger.SensitiveDebug("Refused picker capture process: {Process}", result.Target.ProcessName);
                 _snackbarService.Show(
                     _localizationService["Msg_Warning"],
                     _localizationService[ScreenCaptureFailureText.KeyFor(result.Reason)!],
@@ -2351,9 +2352,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _screenCaptureAudit?.Record(evt);
         _screenCaptureIndicator?.NotifyCapture(evt);
-        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Process} {Width}x{Height}",
-            kind, target.ProcessName, attachment.Width, attachment.Height);
-        _logger.SensitiveDebug("Picker capture window title: {Title}", target.Title);
+        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Width}x{Height}",
+            kind, attachment.Width, attachment.Height);
+        _logger.SensitiveDebug("Picker capture window: {Process} '{Title}'", target.ProcessName, target.Title);
     }
 
     private void ExecuteToggleTts()

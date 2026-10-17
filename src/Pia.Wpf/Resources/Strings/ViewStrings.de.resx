@@ -1028,6 +1028,16 @@
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Verschlüsselung wird aktualisiert und Daten werden synchronisiert...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Nach Geräteanfragen suchen</value></data>
+  <data name="Settings_E2EE_OffNotice_Title" xml:space="preserve"><value>Deine synchronisierten Daten sind nicht Ende-zu-Ende-verschlüsselt</value></data>
+  <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Was du mit diesem Konto synchronisierst, liegt unverschlüsselt auf dem Pia-Server. Aktiviere die Ende-zu-Ende-Verschlüsselung, damit nur deine Geräte die Inhalte lesen können.</value></data>
+  <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Verschlüsselung aktivieren</value></data>
+  <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Nicht jetzt</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Neues Gerät möchte Zugriff</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>Ein neues Gerät möchte deinem Konto beitreten.&#xA;&#xA;Gerät: {0}&#xA;Fingerabdruck: {1}&#xA;&#xA;Vergleiche diesen Fingerabdruck mit dem auf dem neuen Gerät und bestätige nur, wenn beide übereinstimmen. Das neue Gerät bittet dich danach, den Fingerabdruck dieses Geräts zu vergleichen: {2}&#xA;&#xA;Möchtest du dieses Gerät bestätigen?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Gerät ablehnen?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du {0} ablehnen und entfernen? Wenn du dieses Gerät nicht kennst, entferne es.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Gerät bestätigt</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} wurde bestätigt und kann jetzt synchronisieren.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung einrichten</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Dieses Konto verwendet Ende-zu-Ende-Verschlüsselung. Richte dieses Gerät ein, um auf deine verschlüsselten Daten zugreifen zu können.</value></data>
@@ -1038,7 +1048,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Gib den Wiederherstellungscode ein, den du beim ersten Aktivieren der Verschlüsselung gespeichert hast. Verwende diesen, wenn dein anderes Gerät nicht verfügbar ist.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Dein Geräte-Fingerabdruck:</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Cloud-Sync &gt; Geräteverwaltung. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Konto und klicke auf Nach Geräteanfragen suchen. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Stattdessen Wiederherstellungscode verwenden</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
@@ -1049,6 +1059,13 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Deine Daten werden synchronisiert. Das kann einen Moment dauern.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Erneut versuchen</value></data>
+  <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Bestätigendes Gerät prüfen</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>Der Schlüssel ist angekommen, aber dieses Gerät hat ihn noch nicht übernommen. Das bestätigende Gerät zeigt seinen Fingerabdruck im Bestätigungsdialog und unter Einstellungen &gt; Konto. Übernimm den Schlüssel nur, wenn er mit dem unten angezeigten übereinstimmt.</value></data>
+  <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Bestätigt von: </value></data>
+  <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>Stimmt überein</value></data>
+  <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Stimmt nicht überein</value></data>
+  <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>Dieses Gerät hat den Schlüssel nicht übernommen. Das bestätigende Gerät gehört möglicherweise nicht dir: Lehne auf deinen anderen Geräten jede Anfrage ab, die du nicht kennst, und richte dieses Gerät stattdessen mit deinem Wiederherstellungscode ein.</value></data>
+  <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>Der bestätigte Schlüssel ließ sich auf diesem Gerät nicht öffnen. Versuche es erneut oder verwende deinen Wiederherstellungscode.</value></data>
   <!-- Wiederherstellungscode-Dialog (beim Aktivieren der E2EE in den Einstellungen) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Wiederherstellungscode speichern</value></data>

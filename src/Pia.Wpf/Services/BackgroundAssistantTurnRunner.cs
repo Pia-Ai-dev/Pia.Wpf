@@ -364,9 +364,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // A tool round just completed; the next TextDelta starts a fresh model turn built on the
         // tool result, not a continuation of whatever is already in textBuffer.
         var pendingRoundBreak = false;
-        // This turn's call/result pairs, for a caller that accumulates a transcript across steps. Empty on
-        // the single-turn path, which discards the result anyway.
         var toolExchanges = new List<ChatMessage>();
+        var sentRounds = new List<ChatMessage>();
+        IReadOnlyList<ChatMessage>? finalAnswer = null;
 
         // The persona rides on the setup (which every caller of this method already builds via
         // PrepareTurn), so no new parameter is needed here — HeadlessTurnExecutor calls this too.
@@ -390,8 +390,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     break;
                 case ToolRoundExchange round:
                     toolExchanges.AddRange(round.Messages);
+                    sentRounds.AddRange(round.Sent);
                     if (exchanges is not null)
                         await exchanges.RecordAsync(round.Round, round.Messages).ConfigureAwait(false);
+                    break;
+                case FinalAnswer final:
+                    finalAnswer = final.Messages;
                     break;
                 case Finished finished:
                     if (finished.Usage is { } u)
@@ -418,15 +422,18 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
         return new ExchangeResult(
             visible, string.IsNullOrEmpty(thinking) ? null : thinking, usage, model, providerLabel, tokens,
-            toolExchanges, protectedRoute);
+            toolExchanges, protectedRoute, sentRounds, finalAnswer);
     }
 
     /// <summary>The post-processed output of one <see cref="RunExchangeAsync"/> call.</summary>
-    /// <param name="ToolExchanges">This turn's tool call/result messages, in round order, for a caller that
-    /// carries them into the next step. Already tokenized — they are what the model saw.</param>
+    /// <param name="ToolExchanges">Calls and capped results in round order — the persisted shape.</param>
+    /// <param name="SentRounds">Every round as the model was sent it, for a caller that carries the turn on.</param>
+    /// <param name="FinalAnswer">The last round's assistant message as received; null when the turn ended
+    /// without one, and the caller falls back to <paramref name="Visible"/>.</param>
     public sealed record ExchangeResult(
         string Visible, string? Thinking, UsageDetails? Usage, string? Model, string? Provider, int? Tokens,
-        IReadOnlyList<ChatMessage> ToolExchanges, bool Protected = false);
+        IReadOnlyList<ChatMessage> ToolExchanges, bool Protected = false,
+        IReadOnlyList<ChatMessage>? SentRounds = null, IReadOnlyList<ChatMessage>? FinalAnswer = null);
 
     /// <summary>
     /// Route and run one persisted call a person approved, outside any tool loop — same gate, same audit rows.

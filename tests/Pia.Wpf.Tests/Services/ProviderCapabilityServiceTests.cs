@@ -7,11 +7,6 @@ using Xunit;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// R10: probe-once + cache-per-provider capability. Capable requires SupportsToolCalling AND the
-/// strengthened probe emitting a call; a disabled flag is Weak without probing; a transient probe
-/// failure is Unknown and is NOT cached (so a retry re-probes). Never hard-blocks.
-/// </summary>
 public class ProviderCapabilityServiceTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -72,19 +67,40 @@ public class ProviderCapabilityServiceTests
     }
 
     [Fact]
-    public async Task ProbeThrows_IsUnknown_AndNotCached()
+    public async Task ProbeThrows_IsUnknown_AndCachedOnlyUntilItExpires()
     {
         var provider = Provider();
         _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>())
             .Returns<bool>(_ => throw new InvalidOperationException("boom"));
+        var clock = new MovableClock(DateTimeOffset.UnixEpoch);
+        var sut = new ProviderCapabilityService(_ai, NullLogger<ProviderCapabilityService>.Instance, clock);
+        var ct = TestContext.Current.CancellationToken;
 
-        var sut = CreateSut();
-        Assert.Equal(PlanningCapability.Unknown, await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken));
+        Assert.Equal(PlanningCapability.Unknown, await sut.GetPlanningCapabilityAsync(provider, ct));
+        clock.Advance(ProviderCapabilityService.UnknownExpiry - TimeSpan.FromSeconds(1));
+        Assert.Equal(PlanningCapability.Unknown, await sut.GetPlanningCapabilityAsync(provider, ct));
+        await _ai.Received(1).TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>());
 
-        // Not cached — a later successful probe re-evaluates.
         _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>()).Returns(true);
-        Assert.Equal(PlanningCapability.Capable, await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(PlanningCapability.Capable, await sut.GetPlanningCapabilityAsync(provider, ct));
         await _ai.Received(2).TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Capable_NeverExpires()
+    {
+        var provider = Provider();
+        _ai.TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>()).Returns(true);
+        var clock = new MovableClock(DateTimeOffset.UnixEpoch);
+        var sut = new ProviderCapabilityService(_ai, NullLogger<ProviderCapabilityService>.Instance, clock);
+        var ct = TestContext.Current.CancellationToken;
+
+        await sut.GetPlanningCapabilityAsync(provider, ct);
+        clock.Advance(TimeSpan.FromDays(1));
+        await sut.GetPlanningCapabilityAsync(provider, ct);
+
+        await _ai.Received(1).TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -99,5 +115,14 @@ public class ProviderCapabilityServiceTests
         await sut.GetPlanningCapabilityAsync(provider, TestContext.Current.CancellationToken);
 
         await _ai.Received(2).TestToolCallEmittedAsync(provider, Arg.Any<CancellationToken>());
+    }
+
+    private sealed class MovableClock(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _now = start;
+
+        public void Advance(TimeSpan by) => _now += by;
+
+        public override DateTimeOffset GetUtcNow() => _now;
     }
 }

@@ -51,8 +51,8 @@ public sealed class GdiScreenCaptureService : IScreenCaptureService
         }
         catch (TimeoutException)
         {
-            _logger.LogWarning(
-                "Capture of window {Process} timed out after {Seconds}s", target.ProcessName, WindowWatchdog.TotalSeconds);
+            _logger.LogWarning("Capture of a window timed out after {Seconds}s", WindowWatchdog.TotalSeconds);
+            _logger.SensitiveDebug("Timed-out capture target process: {Process}", target.ProcessName);
             return CaptureResult.Failed(target, CaptureFailureReason.Timeout);
         }
     }
@@ -188,8 +188,8 @@ public sealed class GdiScreenCaptureService : IScreenCaptureService
                         return true;
                     }
 
-                    _logger.LogWarning("PrintWindow refused {Process} (error {Error})",
-                        target.ProcessName, Marshal.GetLastPInvokeError());
+                    _logger.LogWarning("PrintWindow refused the window (error {Error})", Marshal.GetLastPInvokeError());
+                    _logger.SensitiveDebug("PrintWindow refused process: {Process}", target.ProcessName);
                     return false;
                 });
 
@@ -595,22 +595,22 @@ public sealed class GdiScreenCaptureService : IScreenCaptureService
     private void LogCaptured(CaptureTarget target, CaptureResult result, Stopwatch stopwatch)
     {
         _logger.LogInformation(
-            "Captured {Kind} {Process} {Width}x{Height} in {Ms} ms",
-            target.Kind, target.ProcessName, result.Width, result.Height, stopwatch.ElapsedMilliseconds);
-        _logger.SensitiveDebug("Capture target title: {Title}", target.Title);
+            "Captured {Kind} {Width}x{Height} in {Ms} ms",
+            target.Kind, result.Width, result.Height, stopwatch.ElapsedMilliseconds);
+        _logger.SensitiveDebug("Capture target: {Process} '{Title}'", target.ProcessName, target.Title);
     }
 
     private CaptureResult Refuse(CaptureTarget target, CaptureFailureReason reason)
     {
-        _logger.LogWarning("Capture of {Kind} {Process} refused: {Reason}", target.Kind, target.ProcessName, reason);
-        _logger.SensitiveDebug("Refused capture target title: {Title}", target.Title);
+        _logger.LogWarning("Capture of {Kind} refused: {Reason}", target.Kind, reason);
+        _logger.SensitiveDebug("Refused capture target: {Process} '{Title}'", target.ProcessName, target.Title);
         return CaptureResult.Failed(target, reason);
     }
 
     private CaptureResult Failed(CaptureTarget target, Exception error)
     {
-        _logger.LogWarning("Capture of {Kind} {Process} failed ({Type})", target.Kind, target.ProcessName, error.GetType().Name);
-        _logger.SensitiveDebug("Capture failure: {Error}", error);
+        _logger.LogWarning("Capture of {Kind} failed ({Type})", target.Kind, error.GetType().Name);
+        _logger.SensitiveDebug("Capture failure on {Process}: {Error}", target.ProcessName, error);
         return CaptureResult.Failed(target, CaptureFailureReason.NativeError);
     }
 

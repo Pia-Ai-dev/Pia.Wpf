@@ -11,30 +11,26 @@ namespace Pia.Helpers;
 /// </summary>
 public static class ShellLauncher
 {
-    /// <summary>
-    /// Extensions Windows would <b>execute</b> (not open in a viewer) via the shell "open" verb. A
-    /// chip can surface a file the assistant <i>wrote</i>, so a one-click ShellExecute of an
-    /// assistant-authored script/binary is a code-execution vector — for these we reveal the file in
-    /// Explorer instead of running it. Documents and source files (.html, .txt, .md, .cs, .py, …) open
-    /// in their viewer/editor as normal.
-    /// </summary>
+    /// <summary>Types whose shell "open" verb runs, installs or follows something instead of showing it; an
+    /// assistant-written one is revealed in Explorer. Documents and source (.html, .md, .cs, .py) still open.</summary>
     private static readonly HashSet<string> ExecutableExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".exe", ".com", ".scr", ".pif", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe",
         ".js", ".jse", ".wsf", ".wsh", ".hta", ".msi", ".msp", ".cpl", ".jar", ".lnk",
-        ".reg", ".scf", ".inf", ".gadget", ".application", ".msc", ".com",
+        ".reg", ".scf", ".inf", ".gadget", ".application", ".msc",
+        ".appref-ms", ".url", ".website", ".settingcontent-ms", ".library-ms", ".searchconnector-ms",
+        ".chm", ".pyw", ".diagcab", ".rdp", ".theme", ".themepack", ".msu", ".msix", ".msixbundle",
+        ".appx", ".appxbundle", ".wsc", ".sct", ".ws", ".psc1", ".xbap", ".jnlp",
     };
 
-    /// <summary>
-    /// Opens a file with its default application (e.g. an exported .html in the browser). Files with an
-    /// executable extension are revealed in Explorer rather than run (see <see cref="ExecutableExtensions"/>).
-    /// </summary>
+    internal static bool IsExecutable(string path) => ExecutableExtensions.Contains(Path.GetExtension(path));
+
+    /// <summary>Opens a file with its default application, or reveals it when <see cref="IsExecutable"/>.</summary>
     public static void OpenFile(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
 
-        // Never one-click-execute an assistant-authored script/binary; reveal it instead.
-        if (ExecutableExtensions.Contains(Path.GetExtension(path)))
+        if (IsExecutable(path))
         {
             RevealInExplorer(path);
             return;

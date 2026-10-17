@@ -70,6 +70,7 @@ public static class SherpaBundle
     {
         using var fileStream = File.OpenRead(archivePath);
         using var reader = ReaderFactory.OpenReader(fileStream);
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(targetDir)) + Path.DirectorySeparatorChar;
 
         while (reader.MoveToNextEntry())
         {
@@ -84,7 +85,11 @@ public static class SherpaBundle
             var rel = sep >= 0 ? key[(sep + 1)..] : key;
             if (string.IsNullOrEmpty(rel)) continue;
 
-            var dest = Path.Combine(targetDir, rel);
+            // The archive is not hash-pinned, so a "../" or rooted entry must not reach outside the target.
+            var dest = Path.GetFullPath(Path.Combine(root, rel));
+            if (!dest.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Archive entry points outside the extraction directory.");
+
             var destDir = Path.GetDirectoryName(dest);
             if (!string.IsNullOrEmpty(destDir)) Directory.CreateDirectory(destDir);
 
