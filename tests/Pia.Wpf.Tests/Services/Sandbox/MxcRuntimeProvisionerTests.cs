@@ -256,14 +256,20 @@ public sealed class MxcRuntimeProvisionerTests : IDisposable
     [Fact]
     public async Task Progress_ShowsTheDownload_ThenExtracting_ThenCompleted()
     {
-        var seen = new List<ModelDownloadProgress>();
+        var seen = new InlineProgress();
 
         await Provisioner(new FakeDownloader(() => Package()))
-            .InstallAsync(new Progress<ModelDownloadProgress>(seen.Add), TestContext.Current.CancellationToken);
-        await Task.Delay(50, TestContext.Current.CancellationToken);
+            .InstallAsync(seen, TestContext.Current.CancellationToken);
 
-        var phases = seen.Select(p => p.Phase).Distinct().ToList();
+        var phases = seen.Reports.Select(p => p.Phase).Distinct().ToList();
         Assert.Equal([ModelDownloadPhase.Downloading, ModelDownloadPhase.Extracting, ModelDownloadPhase.Completed], phases);
+    }
+
+    private sealed class InlineProgress : IProgress<ModelDownloadProgress>
+    {
+        public List<ModelDownloadProgress> Reports { get; } = [];
+
+        public void Report(ModelDownloadProgress value) => Reports.Add(value);
     }
 
     [Fact]
