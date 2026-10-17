@@ -59,6 +59,11 @@
   pwsh scripts/Save-RuntimeAssets.ps1 -Include WhisperLarge,Parakeet,Chromium
 
 .EXAMPLE
+  pwsh scripts/Save-RuntimeAssets.ps1 -Include Mxc
+  Stages the sandbox runtime package where the app looks for it. The app verifies its pinned SHA-256 and
+  extracts mxc_ffi.dll from it instead of downloading, and keeps the package for a later reinstall.
+
+.EXAMPLE
   pwsh scripts/Save-RuntimeAssets.ps1 -All -ListOnly
 #>
 [CmdletBinding()]
@@ -67,7 +72,7 @@ param(
     # as one string, which a ValidateSet rejects. The names are normalised and checked below instead,
     # so the documented command lines actually work.
     [ArgumentCompletions('Vad', 'Speaker', 'Embeddings', 'WhisperTiny', 'WhisperBase', 'WhisperSmall',
-                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices', 'Chromium')]
+                         'WhisperMedium', 'WhisperLarge', 'Parakeet', 'TtsVoices', 'Mxc', 'Chromium')]
     [string[]]$Include = @('Vad', 'Speaker', 'Embeddings', 'WhisperBase'),
 
     [switch]$All,
@@ -113,7 +118,7 @@ function Test-AssetPresent($Asset, [Nullable[long]]$RemoteLength) {
             $len = (Get-Item -LiteralPath $Asset.Target).Length
             if ($len -eq 0) { return $false }
             if ($null -ne $RemoteLength -and $len -ne $RemoteLength) { return $false }
-            return $true
+            return (Test-AssetChecksum $Asset $Asset.Target)
         }
         'Bundle' {
             # The app's gate exactly: the directory holds at least one .onnx, non-recursive. Byte-level
@@ -156,6 +161,10 @@ function Save-File($Asset, [string]$Url, [Nullable[long]]$RemoteLength) {
         throw "Truncated download: got $got bytes, server said $RemoteLength."
     }
     if ($got -eq 0) { Remove-Item -LiteralPath $tmp -Force; throw 'Empty download.' }
+    if (-not (Test-AssetChecksum $Asset $tmp)) {
+        Remove-Item -LiteralPath $tmp -Force
+        throw "Checksum mismatch: the download is not the file the client pins ($($Asset.Sha256))."
+    }
 
     Move-Item -LiteralPath $tmp -Destination $target -Force
     return $got

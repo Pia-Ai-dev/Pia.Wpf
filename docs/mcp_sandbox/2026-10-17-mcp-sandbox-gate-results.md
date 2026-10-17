@@ -75,3 +75,18 @@ Tier 3 with different subsets of the four native files in a separate directory.
   without the native.
 - **Open: the CI runner.** Whether `windows-latest` can create an AppContainer is only known from a CI run.
   The integration tests skip at runtime when a spawn is not possible, so the gate works either way.
+
+## Environment: why the test gate runs with TEMP redirected
+
+On the development machine, Windows Defender's real-time scan opens a file right after it is written, so
+`File.Replace` straight after a write fails with "Die Datei, die ersetzt werden soll, kann nicht entfernt
+werden" (`ERROR_UNABLE_TO_REMOVE_REPLACED`). Measured on 2026-10-17 with a plain `pwsh` loop and no Pia
+code (write a file, then `[IO.File]::Replace(tmp, target, [NullString]::Value)`): **235 of 400 failed** under
+`%TEMP%`. The atomic-write tests (`FilesToolHandlerWrite/Edit/DocxXlsx*Tests`, `WriteFileHelpersTests`,
+`HistoryDatabaseEncryptionTests`, `VaultWikiTests`, `ConfirmedApproverStoreTests`) then fail 1 to 5 at a time
+in a full run, and they fail the same way on a build with none of this branch's changes. A bare `$null` for
+the backup argument fails every time in PowerShell, so the probe must pass `[NullString]::Value`.
+
+The gate runs with `TEMP` and `TMP` pointed at `<worktree>\artifacts\tmp` for the test process only. No
+Defender setting is changed. The runner's own hangs (the log freezes right after the `MeetingAttendee` skip
+line) are a separate, older stall; kill the process and rerun.

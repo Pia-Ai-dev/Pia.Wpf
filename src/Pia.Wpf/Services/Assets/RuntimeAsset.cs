@@ -75,6 +75,7 @@ public static class RuntimeAssetCatalog
         Whisper(WhisperModelSize.Large),
         Parakeet,
         .. TtsVoiceCatalog.Curated.Select(v => PiperVoice(v.Key)),
+        MxcRuntime,
     ];
 
     // A sherpa bundle keeps its released archive name: mirroring the archive rather than the extracted

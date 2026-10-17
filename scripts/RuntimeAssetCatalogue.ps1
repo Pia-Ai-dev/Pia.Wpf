@@ -130,6 +130,18 @@ function Get-RuntimeAssetCatalogue {
                MirrorKey = 'tts/vits-piper-fr_FR-upmc-medium.tar.bz2'
                Target = Join-Path $voicesDir 'vits-piper-fr_FR-upmc-medium'; SizeHint = 80422639 }
         )
+        # The whole Microsoft.Mxc.Sdk package, mirrored verbatim. The client extracts only mxc_ffi.dll from it
+        # and refuses any package whose SHA-256 differs from RuntimeAssetCatalog.MxcRuntimeSha256 (pinned a
+        # second time by MxcRuntimeAssetTests), so Sha256 here keeps a staged or pre-fetched copy honest. Target
+        # is where the client looks for a pre-fetched package; it keeps that file after installing from it.
+        Mxc = @(
+            @{ Kind = 'File'; Name = 'MXC sandbox runtime (Microsoft.Mxc.Sdk 1.0.1)'
+               Url = 'https://api.nuget.org/v3-flatcontainer/microsoft.mxc.sdk/1.0.1/microsoft.mxc.sdk.1.0.1.nupkg'
+               MirrorKey = 'runtimes/microsoft.mxc.sdk.1.0.1.nupkg'
+               Target = Join-Path (Join-Path (Join-Path $DestinationRoot 'Runtimes') 'Mxc') 'microsoft.mxc.sdk.1.0.1.nupkg'
+               SizeHint = 14615475
+               Sha256 = 'D47B1F70C3FCAAED1705A0C3872807E2878FE8C1B778C0DD9EB9325BF421A672' }
+        )
         # No MirrorKey, and it is not an oversight: Playwright picks the browser revision to match the
         # pinned package, and mirroring it means reproducing its CDN layout per revision. The app has a
         # PLAYWRIGHT_DOWNLOAD_HOST hook (ChromiumProvisioner.DownloadHostOverride) if that is ever wanted.
@@ -139,6 +151,17 @@ function Get-RuntimeAssetCatalogue {
             @{ Kind = 'Playwright'; Name = 'Chromium (meeting attendee)'; Target = $browsersDir; SizeHint = 315000000 }
         )
     }
+}
+
+function Test-AssetChecksum {
+    <#
+    .SYNOPSIS
+      True unless the asset declares a Sha256 and the file at $Path does not match it.
+    #>
+    param([Parameter(Mandatory)]$Asset, [Parameter(Mandatory)][string]$Path)
+
+    if (-not $Asset.Contains('Sha256')) { return $true }
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -eq $Asset.Sha256
 }
 
 function Resolve-RuntimeAssetGroups {
