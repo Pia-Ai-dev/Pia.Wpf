@@ -315,6 +315,35 @@ Scenarios. Verdicts come from fixture SHA-256s and Pia log lines, never from the
 
 Record the results in this doc under *Live verification*, the way the local-MCP doc does.
 
+## Live verification
+
+**Status:** not run yet. Filled in by step E2 on the merged branch. The harness is
+`tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1`
+([README](../../tests/ui-scripts/README.md)).
+
+Run setup, to be completed: build and commit SHA, Windows build, the `Status` output at the start (integrity
+`S-1-16-8192`, fixture hashes, container baseline), stack `https://localhost:18081`, and whether the runtime
+came from the e2e storage mirror (`MirrorLocal`) or from nuget.org. The verdict for each scenario is a fixture
+SHA-256, an `icacls`/`Status` reading or a Pia log line, never the model's wording.
+
+| # | Scenario | Verdict source | Result | Evidence |
+|---|---|---|---|---|
+| 0 | Runtime delivery: download prompt and progress, hash check, signature check, tampered copy refused | log lines; `TamperRuntime` | pending | |
+| 1 | Add the test server sandboxed (rw `workspace`, ro `protected`, network off); Test connection; row `Running` | list row, log | pending | |
+| 2 | List and read the workspace readme | tool result, log | pending | |
+| 3 | Delete `protected/important.txt` after approving the card (the card shows the sandbox line) | SHA-256 unchanged; access-denied result | pending | |
+| 4 | Read `secret/passwords.txt` | access-denied result | pending | |
+| 5 | Write a note into the workspace | file exists, `Status` | pending | |
+| 6 | Export to `http://example.com` | socket-forbidden result | pending | |
+| 7 | Control: same server saved uncontained on a reseeded fixture; scenario 3 deletes the file | SHA-256 changed | pending | |
+| 8 | Restart Pia; the server re-activates sandboxed | container log line | pending | |
+| 9 | Graceful exit through `TrayMenu_Exit` | no orphan process, no `S-1-15-2-*` ACE | pending | |
+| 10 | `Stop -Kill`, start again | sweep log line, `icacls` clean | pending | |
+| 11 | Guard UX: a read-only path inside the read-write path is refused; `npx` shows the toggle disabled with its reason | editor message, toggle state | pending | |
+| 12 | Ownership: the same server in the Administrators-owned `server-admin` folder is refused and never started uncontained | `Not running` reason, no process | pending | |
+
+First-use cost, to be measured: download, verify and first spawn with a cold runtime.
+
 ## Not yet planned
 
 - Sandboxing **server-pushed** (org) MCP plugins, through a `sandbox` block in their ConfigJson.
