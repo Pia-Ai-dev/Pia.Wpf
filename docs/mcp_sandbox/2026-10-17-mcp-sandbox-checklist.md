@@ -62,7 +62,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* C1 · *Effort:* XS · *Value:* High
 - [ ] **E2 Live run (worker2, coordinator reviews).** Scenarios 0–12 from the plan through WinWright on the e2e stack, with results written into the plan's *Live verification* section.
   *Deps:* E1, U1, U2, U3, X1, C3, C4, D1 · *Effort:* S · *Value:* High
-- [ ] **O1 Mirror upload (owner).** `Publish-RuntimeAssets.ps1 -Include Mxc` against `storage.pia-ai.de`. Until it runs, clients fetch from nuget.org with the same pin. Not blocking the PR, but due before the release that ships this.
+- [ ] **O1 Mirror upload (owner).** `Publish-RuntimeAssets.ps1 -Include Mxc` against `storage.pia-ai.de`. A configured mirror is the only source, so until it runs a production install fails closed. Not blocking the PR into `develop`, but it **blocks the release** that ships this.
   *Deps:* D2 · *Effort:* XS · *Value:* Med
 
 ## Suggested order

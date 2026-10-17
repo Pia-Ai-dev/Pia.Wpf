@@ -61,7 +61,7 @@ MXC facts on this tier that set the rules. Each comes from the PoC's limitations
 | Gate | **Unchanged.** Sandboxed tools are still approved per call | Relaxing the gate for sandboxed tools is a separate decision (*Not yet planned*). The card gains a one-line sandbox summary. |
 | Shims (`npx`, `uvx`, `.cmd`, `.bat`) | **Out of the first shot.** Toggle disabled with a one-line reason | See gate G3. Their real process downloads into `%LOCALAPPDATA%` caches, which are redirected inside the AppContainer, and needs egress. |
 | CI | MXC integration tests use a **runtime skip** when MXC cannot spawn, not `Explicit` | The local gate on this host must prove containment. The GitHub runner may not be able to create AppContainers (G2). |
-| How MXC ships | **Not in the installer.** The native runtime is a **runtime asset on Pia's own storage**, downloaded the first time a sandboxed server is needed. Owner request | Keeps ~15 MB of native code, most users never need, out of every install and update. It reuses the `RuntimeAssetCatalog` / `AssetDownloader` / `Assets:MirrorBaseUrl` path the models already use, including the upstream fallback and the air-gapped pre-fetch. See *Shipping the MXC runtime*. |
+| How MXC ships | **Not in the installer.** The native runtime is a **runtime asset on Pia's own storage**, downloaded the first time a sandboxed server is needed. Owner request | Keeps ~15 MB of native code, most users never need, out of every install and update. It reuses the `RuntimeAssetCatalog` / `AssetDownloader` / `Assets:MirrorBaseUrl` path the models already use: the configured mirror, upstream only when no mirror is configured, and the air-gapped pre-fetch. See *Shipping the MXC runtime*. |
 
 ## Shape
 
@@ -238,7 +238,7 @@ of them are Microsoft-signed (checked 2026-10-17).
   upstream `https://api.nuget.org/v3-flatcontainer/microsoft.mxc.sdk/1.0.1/microsoft.mxc.sdk.1.0.1.nupkg`
   (14.6 MB). The archive is mirrored verbatim, as the sherpa bundles are, so the extract step is
   identical on the mirror and upstream paths. The client downloads it through `AssetDownloader`
-  (mirror first, then upstream) and extracts **only** `runtimes/win-x64/native/*` into
+  (the configured mirror, or upstream when none is configured) and extracts **only** `runtimes/win-x64/native/*` into
   `PiaPaths.MxcRuntimeDirectory` (`<real local root>\Runtimes\Mxc\1.0.1\`). That is a **property**,
   and like `ModelsDirectory` it sits on the real profile, because downloaded artifacts deliberately
   ignore `PIA_LOCAL_DATA_DIR`.
@@ -276,8 +276,11 @@ of them are Microsoft-signed (checked 2026-10-17).
   `Publish-RuntimeAssets.ps1 -Include Mxc` mirrors it and `Save-RuntimeAssets.ps1 -Include Mxc`
   pre-fetches it for air-gapped machines. `RuntimeAssetCatalogTests` pins the key on both sides. The
   upload to `storage.pia-ai.de` needs `PIA_STORAGE_UPLOAD_SECRET` and is a public write, so it is the
-  **owner's** step and is run by hand. Until it runs, clients fall back to nuget.org with the same
-  hash pin.
+  **owner's** step and is run by hand. `AssetDownloader` goes upstream only when **no** mirror is
+  configured, and the shipped `appsettings.json` configures one. So until the upload runs, a
+  production install fails with the download error and every sandboxed server stays
+  `Not running: not installed`. That is fail-closed, but it **blocks the release** that ships this
+  feature.
 - **Self-hosted deployments.** They point `Assets:MirrorBaseUrl` at their own storage, as they do for
   models. No new setting.
 - **Updating MXC.** A version bump changes the key, the pin and the directory name together, so
