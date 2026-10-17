@@ -264,6 +264,8 @@ tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch    # explorer.e
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Status    # IL, hashes, ACEs, orphans, containers
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Seed      # reseed the fixture (scenario 7)
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Stop      # waits for TrayMenu_Exit; -Kill is the hard kill
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 MirrorLocal   # runtime from the e2e storage; -Off undoes
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 TamperRuntime # scenario 0 tamper; -Undo restores
 ```
 
 Everything lives under `artifacts/mxc-sandbox-e2e/` (gitignored, outside `%TEMP%` so the cleaner leaves a
@@ -286,6 +288,16 @@ profile roots, because the path guard refuses a Pia data root.
   start the server rather than run it uncontained. `Status` prints owner, write and WRITE_DAC per path.
 - **Exit.** Closing Pia's window only hides it to the tray (explicit shutdown mode), so a graceful exit is
   the tray menu's `TrayMenu_Exit`, driven through WinWright; `Stop` then waits for the process to end.
+- **Localised Windows.** `icacls /setowner 'BUILTIN\Administrators'` fails with 1332 on a German install,
+  so the script names principals by SID (`*S-1-5-32-544`), and it reads the integrity level off the
+  token instead of parsing `whoami` text.
+- **Runtime scenarios.** `TamperRuntime` flips one byte of the extracted `mxc_ffi.dll` (a quarter in,
+  inside `.text`) so the signature check must refuse it; `-Undo` restores the byte, and Pia must be
+  stopped because a loaded dll is locked. `MirrorLocal` writes `appsettings.Development.json` beside the
+  Debug exe (gitignored, read once at startup) to point `Assets:MirrorBaseUrl` at the e2e stack's storage
+  on `http://localhost:18090/f/assets/`, merging into a file that is already there and restoring it with
+  `-Off`; `-NoMirror` blanks the URL so downloads go upstream. It refuses `storage.pia-ai.de` — that
+  upload is the owner's. `Status`, `Stop` and `Verify` warn while either override is left in place.
 - **Real data.** The harness refuses `:8081`, which is the owner's real stack; the e2e stack is
   `https://localhost:18081`. `profile\roaming\settings.json` is seeded once and never rewritten or
   restored — it carries the rotating sign-in tokens. `Verify` re-hashes the real `settings.json` and

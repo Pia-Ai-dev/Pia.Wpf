@@ -22,6 +22,11 @@
                    for the next start to sweep
     Verify         the real profile (settings.json, history.db) is untouched
     RemoveRuntime  delete the downloaded MXC runtime on the real local root (-Force)
+    TamperRuntime  flip one byte of the extracted mxc_ffi.dll so the signature check must refuse it; -Undo
+                   restores the byte (Pia must be stopped: a loaded dll cannot be written)
+    MirrorLocal    point the Debug exe's Assets:MirrorBaseUrl at the e2e stack's storage (-Url overrides,
+                   -NoMirror blanks it so downloads go upstream), through appsettings.Development.json
+                   beside the exe; -Off puts the original back
 
   Never use https://localhost:8081: it holds the owner's real data. Never restore roaming\settings.json.
 
@@ -33,7 +38,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory, Position = 0)]
-    [ValidateSet('Init', 'Seed', 'StageServer', 'Launch', 'Status', 'Stop', 'Verify', 'RemoveRuntime')]
+    [ValidateSet('Init', 'Seed', 'StageServer', 'Launch', 'Status', 'Stop', 'Verify', 'RemoveRuntime', 'TamperRuntime', 'MirrorLocal')]
     [string]$Action,
 
     # Where the throwaway profile, fixture, staged servers and launch files live. Default: <repo>\artifacts\mxc-sandbox-e2e.
@@ -51,7 +56,18 @@ param(
 
     [switch]$AllowElevated,
 
-    [switch]$Json
+    [switch]$Json,
+
+    [switch]$Undo,
+
+    [switch]$Off,
+
+    [switch]$NoMirror,
+
+    [string]$Url = 'http://localhost:18090/f/assets/',
+
+    # Overrides the downloaded-runtime location (default: the real local root's Runtimes\Mxc).
+    [string]$RuntimeDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -79,7 +95,10 @@ $serverExe = Join-Path $paths.Server 'Pia.TestMcpServer.exe'
 $serverAdminExe = Join-Path $paths.ServerAdmin 'Pia.TestMcpServer.exe'
 $realSettings = Join-Path $env:APPDATA 'Pia/settings.json'
 $realHistoryDb = Join-Path $env:LOCALAPPDATA 'Pia/history.db'
-$mxcRuntimeDir = Join-Path $env:LOCALAPPDATA 'Pia/Runtimes/Mxc'
+$mxcRuntimeDir = if ($RuntimeDir) { $RuntimeDir } else { Join-Path $env:LOCALAPPDATA 'Pia/Runtimes/Mxc' }
+$tamperRecord = Join-Path $Root 'launch/tamper.json'
+$devSettingsPath = Join-Path (Split-Path $ExePath -Parent) 'appsettings.Development.json'
+$devSettingsBackup = "$devSettingsPath.mxc-e2e.bak"
 $userName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $sidWellKnownAppPackages = @('S-1-15-2-1', 'S-1-15-2-2')
 $sandboxHelperNames = @('plm', 'wxc-wslc-daemon')
@@ -520,12 +539,15 @@ function Invoke-Status {
     if (-not $mappings) { Write-Host 'none' }
     $report.containerMappings = @($mappings)
 
+    Write-LeftoverWarnings $state
+
     if ($Json) { $report | ConvertTo-Json -Depth 6 }
 }
 
 function Invoke-Stop {
     $state = Read-State
     $pia = Get-OurPiaProcess $state
+    Write-LeftoverWarnings $state
     if (-not $pia) { Write-Host 'Pia from this harness is not running.'; return }
     if ($Kill) {
         & taskkill /F /PID $pia.Id | Out-Null
@@ -551,15 +573,99 @@ function Invoke-Verify {
             else { Write-Host "LEAK:  real $key changed with no other Pia running" -ForegroundColor Red; $leak = $true }
         }
     }
+    Write-LeftoverWarnings $state
     if ($leak) { exit 1 }
     Write-Host 'real profile untouched'
 }
 
 function Invoke-RemoveRuntime {
     if (-not $Force) { Fail "RemoveRuntime deletes $mxcRuntimeDir (a downloaded artifact on the real local root). Pass -Force." }
+    Remove-Item -LiteralPath $tamperRecord -ErrorAction SilentlyContinue
     if (-not (Test-Path -LiteralPath $mxcRuntimeDir)) { Write-Host "nothing at $mxcRuntimeDir"; return }
     Remove-Item -LiteralPath $mxcRuntimeDir -Recurse -Force
     Write-Host "removed $mxcRuntimeDir"
+}
+
+function Invoke-TamperRuntime {
+    $match = @(Get-ChildItem -LiteralPath $mxcRuntimeDir -Recurse -Filter 'mxc_ffi.dll' -ErrorAction SilentlyContinue)
+    if ($Undo) {
+        if (-not (Test-Path -LiteralPath $tamperRecord)) { Write-Host 'nothing tampered'; return }
+        $record = Get-Content -LiteralPath $tamperRecord -Raw | ConvertFrom-Json
+        $stream = [IO.File]::Open($record.path, 'Open', 'ReadWrite', 'None')
+        try { $stream.Position = $record.offset; $stream.WriteByte([byte]$record.original) } finally { $stream.Dispose() }
+        Remove-Item -LiteralPath $tamperRecord
+        Write-Host "restored byte at offset $($record.offset) of $($record.path)"
+        return
+    }
+    if ($match.Count -eq 0) { Fail "no mxc_ffi.dll under $mxcRuntimeDir. Download the runtime first (scenario 0)." }
+    if (Test-Path -LiteralPath $tamperRecord) { Fail 'the runtime is already tampered. Use -Undo or RemoveRuntime -Force.' }
+    $path = $match[0].FullName
+    try { $stream = [IO.File]::Open($path, 'Open', 'ReadWrite', 'None') }
+    catch { Fail "cannot open $path for writing ($($_.Exception.Message)). Stop Pia first: a loaded dll is locked." }
+    try {
+        # A quarter in lands inside .text, away from the PE header checksum and the certificate table.
+        $offset = [long]($stream.Length / 4)
+        $stream.Position = $offset
+        $original = $stream.ReadByte()
+        $stream.Position = $offset
+        $stream.WriteByte([byte]($original -bxor 0xFF))
+    }
+    finally { $stream.Dispose() }
+    @{ path = $path; offset = $offset; original = $original } | ConvertTo-Json | Set-Content -LiteralPath $tamperRecord -Encoding utf8
+    Write-Host "flipped byte at offset $offset of $path (was 0x$($original.ToString('x2')))"
+    $sig = (Get-AuthenticodeSignature -LiteralPath $path).Status
+    Write-Host "Authenticode status now: $sig (must not be Valid)"
+}
+
+function Invoke-MirrorLocal {
+    $state = Read-State
+    if ($Off) {
+        if (-not $state.ContainsKey('mirror') -or -not $state['mirror']) { Write-Host 'no mirror override active'; return }
+        $mirror = $state['mirror']
+        if ($mirror['hadOriginal']) { Move-Item -LiteralPath $devSettingsBackup -Destination $devSettingsPath -Force }
+        else { Remove-Item -LiteralPath $devSettingsPath -ErrorAction SilentlyContinue }
+        $state['mirror'] = $null
+        Write-State $state
+        Write-Host "mirror override removed from $devSettingsPath$(if ($mirror['hadOriginal']) { ' (original restored)' })"
+        return
+    }
+
+    $mirrorUrl = if ($NoMirror) { '' } else { $Url }
+    if ($mirrorUrl -match 'pia-ai\.de') { Fail 'refusing storage.pia-ai.de: that mirror is the owner''s. Use the e2e stack''s storage (localhost:18090).' }
+    $active = $state.ContainsKey('mirror') -and $state['mirror']
+    $original = @{}
+    $hadOriginal = $false
+    if ($active) { $hadOriginal = [bool]$state['mirror']['hadOriginal'] }
+    if (Test-Path -LiteralPath $devSettingsPath) {
+        if (-not $active) {
+            Copy-Item -LiteralPath $devSettingsPath -Destination $devSettingsBackup -Force
+            $hadOriginal = $true
+        }
+        $original = Get-Content -LiteralPath $devSettingsPath -Raw | ConvertFrom-Json -AsHashtable
+    }
+    if (-not $original.ContainsKey('Assets') -or $original['Assets'] -isnot [hashtable]) { $original['Assets'] = @{} }
+    $original['Assets']['MirrorBaseUrl'] = $mirrorUrl
+    $original | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $devSettingsPath -Encoding utf8
+    $state['mirror'] = @{ path = $devSettingsPath; hadOriginal = $hadOriginal }
+    Write-State $state
+    $shown = if ($mirrorUrl) { $mirrorUrl } else { '(blank: downloads go upstream)' }
+    Write-Host "mirror:    $shown  via $devSettingsPath"
+    if ($mirrorUrl) {
+        $probe = $mirrorUrl.TrimEnd('/') + '/runtimes/microsoft.mxc.sdk.1.0.1.nupkg'
+        try { $status = [int](Invoke-WebRequest -Uri $probe -Method Head -TimeoutSec 5 -SkipHttpErrorCheck).StatusCode }
+        catch { $status = "unreachable ($($_.Exception.Message))" }
+        Write-Host "mirror object: HTTP $status  ($probe)"
+    }
+    Write-Host 'applies to the next Launch (appsettings is read once at startup).'
+}
+
+function Write-LeftoverWarnings($state) {
+    if ($state.ContainsKey('mirror') -and $state['mirror']) {
+        Write-Host "warning: Assets:MirrorBaseUrl is still overridden in $devSettingsPath. Run: MirrorLocal -Off" -ForegroundColor Yellow
+    }
+    if (Test-Path -LiteralPath $tamperRecord) {
+        Write-Host 'warning: the MXC runtime is still tampered. Run: TamperRuntime -Undo, or RemoveRuntime -Force' -ForegroundColor Yellow
+    }
 }
 
 switch ($Action) {
@@ -571,4 +677,6 @@ switch ($Action) {
     'Stop'          { Invoke-Stop }
     'Verify'        { Invoke-Verify }
     'RemoveRuntime' { Invoke-RemoveRuntime }
+    'TamperRuntime' { Invoke-TamperRuntime }
+    'MirrorLocal'   { Invoke-MirrorLocal }
 }
