@@ -6,6 +6,7 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Pia.Logging;
 using Pia.Services.Interfaces;
+using Pia.Services.Plugins.Sandbox;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Plugins;
@@ -19,9 +20,11 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     private readonly string? _workingDirectory;
     private readonly string? _toolPrefix;
     private readonly IReadOnlyList<string>? _allowedTools;
+    private readonly McpSandboxPolicy? _sandbox;
+    private readonly IMcpTransportFactory _transportFactory;
 
     private McpClient? _client;
-    private StdioClientTransport? _transport;
+    private IClientTransport? _transport;
     private IList<McpClientTool> _tools = [];
     private string? _systemPromptAddition;
     private bool _disposed;
@@ -47,7 +50,9 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         IReadOnlyDictionary<string, string>? env = null,
         string? workingDirectory = null,
         string? toolPrefix = null,
-        IReadOnlyList<string>? allowedTools = null)
+        IReadOnlyList<string>? allowedTools = null,
+        IMcpTransportFactory? transportFactory = null,
+        McpSandboxPolicy? sandbox = null)
     {
         PluginId = pluginId;
         PluginName = pluginName;
@@ -59,6 +64,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _workingDirectory = workingDirectory;
         _toolPrefix = string.IsNullOrWhiteSpace(toolPrefix) ? null : toolPrefix;
         _allowedTools = allowedTools;
+        _transportFactory = transportFactory ?? new McpTransportFactory();
+        _sandbox = sandbox;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -69,9 +76,13 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         if (_env is { Count: > 0 })
             _logger.LogInformation("MCP plugin {PluginId}: {Count} environment variable(s) set: {Names}",
                 PluginId, _env.Count, string.Join(", ", _env.Keys));
+        if (_sandbox is not null)
+            _logger.LogInformation("MCP plugin {PluginId}: sandboxed, rw={Rw} ro={Ro} network={Network}",
+                PluginId, _sandbox.ReadwritePaths.Count, _sandbox.ReadonlyPaths.Count, _sandbox.AllowNetwork ? "allow" : "deny");
         try
         {
-            _transport = new StdioClientTransport(BuildTransportOptions(PluginName, _command, _args, _env, _workingDirectory));
+            _transport = _transportFactory.Create(new McpTransportRequest(
+                PluginName, _command, _args, _env, _workingDirectory, _sandbox, _toolPrefix));
 
             _client = await McpClient.CreateAsync(_transport, cancellationToken: ct);
             var discovered = await _client.ListToolsAsync(cancellationToken: ct);
@@ -93,31 +104,17 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             _logger.SensitiveDebug("Failed plugin {PluginId} is {Name}, command was: '{Command} {Args}'",
                 PluginId, PluginName, _command, string.Join(" ", _args));
             _tools = [];
-            LastError = ex.Message;
+            LastError = DescribeFailure(_transport, ex);
         }
     }
 
-    internal static StdioClientTransportOptions BuildTransportOptions(
-        string name,
-        string command,
-        IEnumerable<string> args,
-        IReadOnlyDictionary<string, string>? env,
-        string? workingDirectory)
+    /// <summary>The SDK puts a stdio server's stderr tail on the exception; a container's has to be added.</summary>
+    internal static string DescribeFailure(IClientTransport? transport, Exception ex)
     {
-        var options = new StdioClientTransportOptions
-        {
-            Name = name,
-            Command = command,
-            Arguments = [.. args]
-        };
-
-        if (env is { Count: > 0 })
-            options.EnvironmentVariables = env.ToDictionary(e => e.Key, e => (string?)e.Value);
-
-        if (!string.IsNullOrWhiteSpace(workingDirectory) && Directory.Exists(workingDirectory))
-            options.WorkingDirectory = workingDirectory;
-
-        return options;
+        var tail = (transport as IStderrTailSource)?.StderrTail;
+        return string.IsNullOrEmpty(tail)
+            ? ex.Message
+            : $"{ex.Message}{Environment.NewLine}Server's stderr tail:{Environment.NewLine}{tail}";
     }
 
     /// <summary>A null allowlist is "every tool"; an empty one is "none", which is a server the user has

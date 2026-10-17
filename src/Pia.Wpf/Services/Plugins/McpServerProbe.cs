@@ -20,6 +20,7 @@ public static class McpServerProbe
 
     public static async Task<McpProbeResult> ProbeAsync(
         LocalMcpDefinition definition,
+        IMcpTransportFactory transportFactory,
         TimeSpan? timeout = null,
         CancellationToken ct = default)
     {
@@ -30,14 +31,18 @@ public static class McpServerProbe
         timeoutSource.CancelAfter(timeout ?? DefaultTimeout);
 
         McpClient? client = null;
+        IClientTransport? transport = null;
         try
         {
-            var transport = new StdioClientTransport(McpPluginToolHandler.BuildTransportOptions(
+            transport = transportFactory.Create(new McpTransportRequest(
                 string.IsNullOrWhiteSpace(definition.Name) ? "probe" : definition.Name,
                 definition.Command,
                 definition.Args,
                 definition.Env,
-                definition.WorkingDirectory));
+                definition.WorkingDirectory,
+                definition.Sandbox,
+                definition.ToolPrefix,
+                IsProbe: true));
 
             client = await McpClient.CreateAsync(transport, cancellationToken: timeoutSource.Token);
             var tools = await client.ListToolsAsync(cancellationToken: timeoutSource.Token);
@@ -55,7 +60,7 @@ public static class McpServerProbe
         }
         catch (Exception ex)
         {
-            return McpProbeResult.Failed(Describe(ex));
+            return McpProbeResult.Failed(Describe(ex, transport));
         }
         finally
         {
@@ -75,9 +80,9 @@ public static class McpServerProbe
 
     /// <summary>The SDK puts the server's stderr tail on the inner exception, which is usually the only text
     /// that names the real fault.</summary>
-    private static string Describe(Exception ex)
+    private static string Describe(Exception ex, IClientTransport? transport)
     {
-        var message = ex.Message;
+        var message = McpPluginToolHandler.DescribeFailure(transport, ex);
         for (var inner = ex.InnerException; inner is not null; inner = inner.InnerException)
         {
             if (!message.Contains(inner.Message, StringComparison.Ordinal))

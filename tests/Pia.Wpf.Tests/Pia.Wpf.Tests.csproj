@@ -28,6 +28,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The app ships no MXC native code; the tests that spawn a container load this copy through MXC_FFI_DIR. -->
+    <None Include="$(NuGetPackageRoot)microsoft.mxc.sdk/$(MxcSdkVersion)/runtimes/win-x64/native/mxc_ffi.dll"
+          Link="mxc-native\mxc_ffi.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Pia.Wpf\Pia.Wpf.csproj" />
     <ProjectReference Include="..\..\src\Pia.Shared\Pia.Shared.csproj" />
     <ProjectReference Include="..\Pia.TestMcpServer\Pia.TestMcpServer.csproj" ReferenceOutputAssembly="false" OutputItemType="TestMcpServerOutput" />
