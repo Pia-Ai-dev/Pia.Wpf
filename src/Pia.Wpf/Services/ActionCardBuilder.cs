@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Plugins.Sandbox;
 
 namespace Pia.Services;
 
@@ -124,6 +125,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             IsAutoApproved = autoApproved,
             IsDestructive = isDestructive,
             WarningText = warningText,
+            SandboxText = pendingAction.Sandbox is { } sandbox ? FormatSandbox(sandbox) : null,
             Details = details,
             DiffLines = diffLines,
             FilePath = Detokenize(pendingAction.TargetPath ?? "", detokenize),
@@ -154,6 +156,11 @@ public sealed class ActionCardBuilder : IActionCardBuilder
 
         return card;
     }
+
+    private string FormatSandbox(McpSandboxPolicy sandbox) => _localizationService.Format(
+        sandbox.AllowNetwork ? "ActionCard_Sandbox_NetworkOn" : "ActionCard_Sandbox_NetworkOff",
+        sandbox.ReadwritePaths.Count,
+        sandbox.ReadonlyPaths.Count);
 
     /// <summary>A helper, not an inline switch, so a localization test can enumerate the keys it returns.</summary>
     internal static string AutoApprovedStatusKey(ToolGateDecision? decision) => decision switch

@@ -54,7 +54,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* C0 (C2 for live errors) · *Effort:* M · *Value:* High
 - [ ] **U2 Status and detail pane (worker2).** The list row and detail pane show `Sandboxed · rw=N ro=M net=off` or `Not sandboxed`, and a fail-closed reason in the existing notice block.
   *Deps:* C3, U1 · *Effort:* S · *Value:* Med
-- [ ] **U3 Action card line (worker2).** `ActionCardBuilder` adds the one-line sandbox summary for calls from a sandboxed server. No gate change.
+- [x] **U3 Action card line (worker2).** `ActionCardBuilder` adds the one-line sandbox summary for calls from a sandboxed server. No gate change.
   *Deps:* C1 · *Effort:* XS · *Value:* Med
 - [x] **E1 E2E harness (worker2).** A script (under `tests/ui-scripts/` or `scripts/`, per that README) that seeds the fixture tree (workspace/protected/secret), records SHA-256s, launches the Debug exe **de-elevated** with the throwaway profile and `PIA_CLOUD_SERVER_URL=https://localhost:18081`, and prints the IL, ACE state and orphan processes on demand.
   *Deps:* F1 · *Effort:* S · *Value:* Enabler

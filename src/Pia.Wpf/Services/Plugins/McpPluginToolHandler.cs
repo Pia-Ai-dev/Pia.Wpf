@@ -177,6 +177,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             // The ONLY producer of the flag — the card's warning and every rule that reads delete-likeness
             // take it from this record.
             ServerDeclaredDestructive: IsServerDeclaredDestructive(tool.ProtocolTool.Annotations),
+            Sandbox: _sandbox,
             Execute: async () =>
             {
                 _logger.SensitiveDebug("MCP tool {ToolName} invocation on plugin {Name}, args: {Args}",

@@ -97,6 +97,10 @@ public partial class ActionCardInfo : ObservableObject
     public string? WarningText { get; init; }
     public bool HasWarning => !string.IsNullOrEmpty(WarningText);
 
+    /// <summary>One line on the containment the tool's server runs under; null when it is not sandboxed.</summary>
+    public string? SandboxText { get; init; }
+    public bool HasSandbox => !string.IsNullOrEmpty(SandboxText);
+
     public ObservableCollection<ActionCardDetail> Details { get; init; } = [];
     public ObservableCollection<ActionCardDetail> OldValueDetails { get; init; } = [];
 
