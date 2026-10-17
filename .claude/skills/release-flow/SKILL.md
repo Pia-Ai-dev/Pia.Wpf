@@ -58,9 +58,7 @@ instead. If the user is on a branch that already has commits, check
 3. Run the `help-corpus` skill. Its regenerating script is the user's to run, via `!`.
 4. Curate `RELEASE.md` from `git log --no-merges --format=%s origin/main..HEAD`, following
    `docs/release_notes/README.md`. Commit.
-5. `git cliff --output CHANGELOG.md` and commit it as `docs: update CHANGELOG.md`. `git-cliff` is
-   not preinstalled; ask the user to run `! winget install --id orhun.git-cliff -e` if it is missing.
-6. `pr` with base `main`. While the PR is open, fixes go onto the release branch.
+5. `pr` with base `main`. While the PR is open, fixes go onto the release branch.
 
 ## ship
 

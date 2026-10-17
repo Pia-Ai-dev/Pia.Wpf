@@ -26,8 +26,8 @@ hotfix/<name> (from origin/main) ──PR──▶ main ──CI──▶ vX.Y.N
 - `develop` is the default branch and the target of every feature PR.
 - `release/<yyyy-mm-dd>` is cut from `develop`. It is named by date because the version is nbgv's
   git height, which is only known once the merge commit exists.
-- On the release branch: run the `help-corpus` skill, curate `RELEASE.md`, and regenerate
-  `CHANGELOG.md` with git-cliff. Then open the PR into `main`.
+- On the release branch: run the `help-corpus` skill and curate `RELEASE.md`. Then open the PR into
+  `main`.
 - Merging it releases: `build-and-release.yml` tags `vX.Y.N`, creates the GitHub release and links
   the pia-ai.de publish step.
 - `back-merge/<ver>` is cut from `main` after the run is green. It archives the notes
@@ -55,7 +55,8 @@ The step-by-step procedure lives in `.claude/skills/release-flow/SKILL.md`.
 
 `changelog.yml` is deleted. It never ran: a release created with `GITHUB_TOKEN` triggers no other
 workflow, and its bot push to `main` would be refused by the ruleset anyway. `CHANGELOG.md` is
-regenerated on the release branch instead.
+gone too: git-cliff over these commit messages produced a 30,000-line dump of bodies and trailers,
+and the archived `docs/release_notes/` files already hold every shipped release's notes.
 
 Unchanged: versioning (`1.4` + git height), `prune-releases.yml`, and the updater. It reads only
 non-prerelease GitHub releases, which only `main` creates.
