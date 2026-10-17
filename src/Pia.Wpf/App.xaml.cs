@@ -101,6 +101,14 @@ public partial class App : Application
         // Initialize DI container
         await Bootstrapper.InitializeAsync();
 
+        // A logoff ends Pia through the normal exit path once the plugins have handed their resources back; the
+        // session itself is never cancelled.
+        SessionEnding += (_, _) =>
+        {
+            Bootstrapper.ServiceProvider.GetRequiredService<Services.Plugins.PluginShutdownService>().ShutDownBounded();
+            Shutdown();
+        };
+
         // Initialize localization — auto-detect from Windows locale on first run
         var localizationService = Bootstrapper.ServiceProvider.GetRequiredService<ILocalizationService>();
         var earlySettings = await Bootstrapper.ServiceProvider.GetRequiredService<ISettingsService>().GetSettingsAsync();
@@ -422,6 +430,16 @@ public partial class App : Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        // Before the first await: nothing after one in this async void is certain to run before the process ends.
+        try
+        {
+            Bootstrapper.ServiceProvider.GetRequiredService<Services.Plugins.PluginShutdownService>().ShutDownBounded();
+        }
+        catch (InvalidOperationException)
+        {
+            // A startup crash can end Pia before the container exists; base.OnExit must still run.
+        }
+
         base.OnExit(e);
 
         // Stop background sync

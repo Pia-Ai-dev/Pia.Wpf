@@ -50,16 +50,18 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
   *Deps:* C1 · *Effort:* S · *Value:* High
 - [x] **T1 MXC integration tests (worker1).** Spawn `Pia.TestMcpServer` through the real factory on a temp fixture: allowed, denied and egress cases, the uncontained control, and ACE hygiene including a simulated leak. Runtime-skipped with a reason when MXC cannot spawn.
   *Deps:* C1, C4, F1 · *Effort:* S · *Value:* High
-- [ ] **U1 Editor sandbox section (worker2).** Toggle, rw/ro lists (add/remove, folder picker, "create under sandbox root"), network switch with its warning, guard errors inline, the "why disabled" line (MXC unsupported, or shim command), and the runtime-download prompt with progress when the runtime is not installed. Default on for a new server. AutomationIds `McpServers_Sandbox*` and their `ViewAutomationIdTests` rows. Strings localised like the rest of the view.
+- [x] **U1 Editor sandbox section (worker2).** Toggle, rw/ro lists (add/remove, folder picker, "create under sandbox root"), network switch with its warning, guard errors inline, the "why disabled" line (MXC unsupported, or shim command), and the runtime-download prompt with progress when the runtime is not installed. Default on for a new server. AutomationIds `McpServers_Sandbox*` and their `ViewAutomationIdTests` rows. Strings localised like the rest of the view.
   *Deps:* C0 (C2 for live errors) · *Effort:* M · *Value:* High
-- [ ] **U2 Status and detail pane (worker2).** The list row and detail pane show `Sandboxed · rw=N ro=M net=off` or `Not sandboxed`, and a fail-closed reason in the existing notice block.
+- [x] **U2 Status and detail pane (worker2).** The list row and detail pane show `Sandboxed · rw=N ro=M net=off` or `Not sandboxed`, and a fail-closed reason in the existing notice block.
   *Deps:* C3, U1 · *Effort:* S · *Value:* Med
-- [ ] **U3 Action card line (worker2).** `ActionCardBuilder` adds the one-line sandbox summary for calls from a sandboxed server. No gate change.
+- [x] **U3 Action card line (worker2).** `ActionCardBuilder` adds the one-line sandbox summary for calls from a sandboxed server. No gate change.
   *Deps:* C1 · *Effort:* XS · *Value:* Med
-- [ ] **E1 E2E harness (worker2).** A script (under `tests/ui-scripts/` or `scripts/`, per that README) that seeds the fixture tree (workspace/protected/secret), records SHA-256s, launches the Debug exe **de-elevated** with the throwaway profile and `PIA_CLOUD_SERVER_URL=https://localhost:18081`, and prints the IL, ACE state and orphan processes on demand.
+- [x] **E1 E2E harness (worker2).** A script (under `tests/ui-scripts/` or `scripts/`, per that README) that seeds the fixture tree (workspace/protected/secret), records SHA-256s, launches the Debug exe **de-elevated** with the throwaway profile and `PIA_CLOUD_SERVER_URL=https://localhost:18081`, and prints the IL, ACE state and orphan processes on demand.
   *Deps:* F1 · *Effort:* S · *Value:* Enabler
+- [x] **X1 Shut plugins down on exit and logoff (worker2).** `IPluginService.ShutdownAllAsync` had no caller, so no exit path disposed an MCP server and a sandbox kept its folders. `PluginShutdownService` stops them bounded to 5 s and never throws; `App.OnExit` runs it before its first await and a `SessionEnding` handler runs it and then ends Pia. Everything after the first await in `OnExit` stays unreliable, which this step does not touch.
+  *Deps:* C1 · *Effort:* XS · *Value:* High
 - [ ] **E2 Live run (worker2, coordinator reviews).** Scenarios 0–12 from the plan through WinWright on the e2e stack, with results written into the plan's *Live verification* section.
-  *Deps:* E1, U1, U2, U3, C3, C4, D1 · *Effort:* S · *Value:* High
+  *Deps:* E1, U1, U2, U3, X1, C3, C4, D1 · *Effort:* S · *Value:* High
 - [ ] **O1 Mirror upload (owner).** `Publish-RuntimeAssets.ps1 -Include Mxc` against `storage.pia-ai.de`. Until it runs, clients fetch from nuget.org with the same pin. Not blocking the PR, but due before the release that ships this.
   *Deps:* D2 · *Effort:* XS · *Value:* Med
 

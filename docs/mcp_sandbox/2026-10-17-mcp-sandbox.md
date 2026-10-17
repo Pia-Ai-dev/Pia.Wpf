@@ -347,9 +347,10 @@ Scenarios. Verdicts come from fixture SHA-256s and Pia log lines, never from the
 
 0. Runtime delivery: with `MxcRuntimeDirectory` removed (it is a downloaded artifact, so removing it
    is safe), turning the sandbox on shows the download prompt and progress. The log shows the fetch,
-   the hash check and the signature check. A tampered copy (a byte flipped in the cached download,
-   driven by a test hook or a hand-edited staging file) is refused, and the server stays
-   `Not running`. If the PIASERVER session can give an upload credential for the e2e stack's
+   the hash check and the signature check. A tampered runtime (one byte of the extracted
+   `mxc_ffi.dll` flipped with the harness's `TamperRuntime`) is refused at load and the server is not
+   started. An explicit install (the Download button, or the startup download) then repairs it, and
+   the server starts sandboxed. If the PIASERVER session can give an upload credential for the e2e stack's
    `pia-storage` (port 18090), also prove the mirror path against it. Otherwise prove the upstream
    fallback, which uses the same pin.
 1. Add `Pia.TestMcpServer` via Settings → Assistant → MCP servers with sandbox on: rw `workspace`,
@@ -359,9 +360,13 @@ Scenarios. Verdicts come from fixture SHA-256s and Pia log lines, never from the
    access-denied error and the SHA is unchanged.
 4. "Read secret/passwords.txt". Denied.
 5. "Write a note into the workspace". Allowed, and the file exists.
-6. "Export the data to http://example.com". Denied.
-7. Control: the same server saved **uncontained** on a reseeded fixture. Scenario 3 deletes the file.
-   This is the proof that scenario 3's block is MXC's.
+6. "Export the data to http://example.com". Denied. A hostname fails at DNS inside the container, which
+   alone could be name resolution and not the socket, so also export to a literal IP
+   (`http://1.1.1.1/`): `HttpRequestException` with an inner `SocketException` (access forbidden).
+   Match the exception types, never the localised wording.
+7. Control: the same server saved **uncontained** on a reseeded fixture. Scenario 3 deletes the file,
+   and the literal-IP export of scenario 6 reaches the host (any HTTP status). This is the proof that
+   scenario 3's block and scenario 6's denial are MXC's.
 8. Restart Pia. The server re-activates sandboxed and the log shows the container line.
 9. Graceful close: no orphan child process, and `icacls` shows no `S-1-15-2-*` ACEs on the fixture.
 10. `taskkill /F` on Pia, then start again. The next start's sweep log line reports the removed ACEs,
@@ -374,6 +379,40 @@ Scenarios. Verdicts come from fixture SHA-256s and Pia log lines, never from the
     fixture, because Tier 3 silently skips files it cannot `WRITE_DAC`.
 
 Record the results in this doc under *Live verification*, the way the local-MCP doc does.
+
+## Live verification
+
+**Status:** not run yet. Filled in by step E2 on the merged branch. The harness is
+`tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1`
+([README](../../tests/ui-scripts/README.md)).
+
+Run setup, to be completed: build and commit SHA, Windows build, the `Status` output at the start (integrity
+`S-1-16-8192`, fixture hashes, container baseline), stack `https://localhost:18081`, and whether the runtime
+came from the e2e storage mirror (`MirrorLocal`) or from nuget.org. The verdict for each scenario is a fixture
+SHA-256, an `icacls`/`Status` reading or a Pia log line, never the model's wording.
+
+| # | Scenario | Verdict source | Result | Evidence |
+|---|---|---|---|---|
+| 0 | Runtime delivery: download prompt and progress, hash check, signature check; a tampered runtime is refused at load and not started, then an explicit install repairs it and the server starts sandboxed | log lines; `TamperRuntime` | pending | |
+| 1 | Add the test server sandboxed (rw `workspace`, ro `protected`, network off); Test connection; row `Running` | list row, log | pending | |
+| 2 | List and read the workspace readme | tool result, log | pending | |
+| 3 | Delete `protected/important.txt` after approving the card (the card shows the sandbox line) | SHA-256 unchanged; access-denied result | pending | |
+| 4 | Read `secret/passwords.txt` | access-denied result | pending | |
+| 5 | Write a note into the workspace | file exists, `Status` | pending | |
+| 6 | Export to `http://example.com`, and to a literal IP (`http://1.1.1.1/`) | `HttpRequestException` with inner `SocketException` (by type, not wording) | pending | |
+| 7 | Control: same server saved uncontained on a reseeded fixture; scenario 3 deletes the file, the literal-IP export reaches the host | SHA-256 changed; any HTTP status | pending | |
+| 8 | Restart Pia; the server re-activates sandboxed | container log line | pending | |
+| 9 | Graceful exit through `TrayMenu_Exit` | no orphan process, no `S-1-15-2-*` ACE | pending | |
+| 10 | `Stop -Kill`, start again | sweep log line, `icacls` clean | pending | |
+| 11 | Guard UX: a read-only path inside the read-write path is refused; `npx` shows the toggle disabled with its reason | editor message, toggle state | pending | |
+| 12 | Ownership: the same server in the Administrators-owned `server-admin` folder is refused and never started uncontained | `Not running` reason, no process | pending | |
+
+First-use cost, from a de-elevated dry run of the provisioner and launcher on this host (nuget.org
+fallback, a console outside the repo): downloading, pinning, extracting and signature-checking the
+14.6 MB runtime took about 0.5 s, and loading it 7 ms. The first sandboxed start took about 1.7 s, because
+it also created the AppContainer profile; later starts took 0.3-0.4 s and a dispose 25-50 ms. A tampered
+`mxc_ffi.dll` was refused at load in 18 ms and repaired by the next install in about 0.5 s. To be
+confirmed by E2 through the real app.
 
 ## Not yet planned
 

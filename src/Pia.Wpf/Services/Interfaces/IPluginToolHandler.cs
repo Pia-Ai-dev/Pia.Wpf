@@ -1,11 +1,13 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Services.Plugins.Sandbox;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Interfaces;
 
 /// <param name="ServerDeclaredDestructive">The MCP server declared the tool destructive; it can only tighten the gate, never loosen it.</param>
 /// <param name="Warning">A caution the handler composed; shown beside any warning the card derives itself, never replacing it.</param>
+/// <param name="Sandbox">The policy the tool's server runs under; null for a server that is not sandboxed.</param>
 public record PluginToolCall(
     string ToolName,
     Guid PluginId,
@@ -16,7 +18,8 @@ public record PluginToolCall(
     IReadOnlyList<DiffLine>? DiffPreview = null,
     string? TargetPath = null,
     bool ServerDeclaredDestructive = false,
-    string? Warning = null);
+    string? Warning = null,
+    McpSandboxPolicy? Sandbox = null);
 
 public interface IPluginToolHandler
 {

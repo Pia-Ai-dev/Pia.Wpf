@@ -1718,6 +1718,40 @@
   <data name="McpServers_EnvironmentHint" xml:space="preserve"><value>Un CLÉ=valeur par ligne. Les valeurs sont chiffrées pour votre compte Windows.</value></data>
   <data name="McpServers_WorkingDirectory" xml:space="preserve"><value>Répertoire de travail</value></data>
   <data name="McpServers_WorkingDirectoryHint" xml:space="preserve"><value>Facultatif. Le dossier dans lequel le serveur démarre.</value></data>
+  <data name="ActionCard_Sandbox_NetworkOff" xml:space="preserve"><value>Exécuté dans le bac à sable : {0} dossier(s) en lecture et écriture, {1} en lecture seule, réseau désactivé</value></data>
+  <data name="ActionCard_Sandbox_NetworkOn" xml:space="preserve"><value>Exécuté dans le bac à sable : {0} dossier(s) en lecture et écriture, {1} en lecture seule, réseau activé</value></data>
+  <data name="McpServers_Sandbox_Summary_NetworkOff" xml:space="preserve"><value>Dans le bac à sable · rw={0} ro={1} réseau désactivé</value></data>
+  <data name="McpServers_Sandbox_Summary_NetworkOn" xml:space="preserve"><value>Dans le bac à sable · rw={0} ro={1} réseau activé</value></data>
+  <data name="McpServers_Sandbox_NotSandboxed" xml:space="preserve"><value>Hors bac à sable</value></data>
+  <data name="McpServers_Detail_SandboxAlsoReadable" xml:space="preserve"><value>Également lisible : le dossier propre du serveur</value></data>
+  <data name="McpServers_Sandbox_Title" xml:space="preserve"><value>Bac à sable</value></data>
+  <data name="McpServers_Sandbox_Hint" xml:space="preserve"><value>Exécute le serveur dans un conteneur isolé qui n'atteint que les dossiers listés ici. Chaque appel d'outil demande toujours votre accord.</value></data>
+  <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>Exécuter dans le bac à sable</value></data>
+  <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Les lanceurs comme npx et uvx, et les scripts .cmd ou .bat, ne peuvent pas encore s'exécuter dans un bac à sable. Faites pointer la commande directement vers le programme du serveur.</value></data>
+  <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Le bac à sable n'est pas disponible sur cet appareil.</value></data>
+  <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia doit télécharger l'environnement du bac à sable (environ 15 Mo) depuis le stockage de Pia avant de pouvoir démarrer ce serveur. L'enregistrement d'un serveur en bac à sable activé le télécharge automatiquement ; vous pouvez aussi le télécharger maintenant.</value></data>
+  <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Téléchargement de l'environnement du bac à sable… {0} %</value></data>
+  <data name="McpServers_Sandbox_Installing" xml:space="preserve"><value>Préparation de l'environnement du bac à sable…</value></data>
+  <data name="McpServers_Sandbox_Download" xml:space="preserve"><value>Télécharger</value></data>
+  <data name="McpServers_Sandbox_HideProgress" xml:space="preserve"><value>Masquer</value></data>
+  <data name="McpServers_Sandbox_DownloadFailed" xml:space="preserve"><value>L'environnement du bac à sable n'a pas pu être téléchargé.</value></data>
+  <data name="McpServers_Sandbox_DownloadFailedWithReason" xml:space="preserve"><value>L'environnement du bac à sable n'a pas pu être téléchargé : {0}</value></data>
+  <data name="McpServers_Sandbox_ReadWrite" xml:space="preserve"><value>Dossiers en lecture et écriture</value></data>
+  <data name="McpServers_Sandbox_ReadWriteHint" xml:space="preserve"><value>Le serveur peut créer, modifier et supprimer des fichiers dans ces dossiers.</value></data>
+  <data name="McpServers_Sandbox_ReadOnly" xml:space="preserve"><value>Dossiers en lecture seule</value></data>
+  <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Gardez-les séparés des dossiers en écriture : un dossier situé dans l'un d'eux serait aussi modifiable.</value></data>
+  <data name="McpServers_Sandbox_FolderCreatedHint" xml:space="preserve"><value>Pia crée un dossier ici au démarrage du serveur s'il n'existe pas encore.</value></data>
+  <data name="McpServers_Sandbox_GuardLead" xml:space="preserve"><value>Ce serveur ne démarrera pas tant que ceci n'est pas corrigé :</value></data>
+  <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Chemin complet d'un dossier existant</value></data>
+  <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Ajouter</value></data>
+  <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Parcourir…</value></data>
+  <data name="McpServers_Sandbox_Remove" xml:space="preserve"><value>Retirer le dossier</value></data>
+  <data name="McpServers_Sandbox_CreateFolder" xml:space="preserve"><value>Créer un dossier pour ce serveur</value></data>
+  <data name="McpServers_Sandbox_CreateFolderFailed" xml:space="preserve"><value>Le dossier n'a pas pu être créé : {0}</value></data>
+  <data name="McpServers_Sandbox_BrowseReadwriteTitle" xml:space="preserve"><value>Choisir un dossier en lecture et écriture</value></data>
+  <data name="McpServers_Sandbox_BrowseReadonlyTitle" xml:space="preserve"><value>Choisir un dossier en lecture seule</value></data>
+  <data name="McpServers_Sandbox_AllowNetwork" xml:space="preserve"><value>Autoriser l'accès réseau</value></data>
+  <data name="McpServers_Sandbox_NetworkWarning" xml:space="preserve"><value>Cela autorise les connexions vers tous les hôtes. Un bac à sable ne peut pas limiter le serveur à certains hôtes.</value></data>
   <data name="McpServers_PasteJson" xml:space="preserve"><value>Coller une configuration</value></data>
   <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Collez une entrée mcpServers d'un autre client pour remplir les champs.</value></data>
   <data name="McpServers_ApplyJson" xml:space="preserve"><value>Remplir depuis le JSON</value></data>

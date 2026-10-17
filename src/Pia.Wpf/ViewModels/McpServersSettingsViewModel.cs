@@ -1,9 +1,14 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
+using Pia.Logging;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 using Pia.Services.Plugins;
+using Pia.Services.Plugins.Sandbox;
 using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
@@ -19,11 +24,26 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localizationService;
     private readonly Wpf.Ui.ISnackbarService _snackbarService;
+    private readonly IMxcAvailability _mxcAvailability;
+    private readonly IFileDialogService _fileDialogs;
     private readonly ILogger<SettingsViewModel> _logger;
 
     private bool _disposed;
     private bool _suppressReload;
     private bool _reloading;
+
+    private CancellationTokenSource? _sandboxDownloadCts;
+    private CancellationTokenSource? _sandboxGuardCts;
+
+    /// <summary>True while a new server's sandbox settings are still the defaults: until the user touches the
+    /// toggle or a folder list, the name and command keep re-deriving them.</summary>
+    private bool _sandboxPristine;
+
+    private bool _applyingSandboxDefaults;
+
+    /// <summary>The per-server folder the defaults last proposed, so a rename replaces it without clobbering a
+    /// folder the user chose.</summary>
+    private string? _proposedReadwritePath;
 
     /// <summary>Starting or stopping a server owns a subprocess, and PluginService mutates one shared catalogue
     /// while it does, so the calls are serialised here rather than by disabling every row's switch.</summary>
@@ -50,6 +70,10 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     /// <summary>What the detail pane lists for the selected server. Separate from <see cref="Tools"/>, which
     /// carries the editor's two-way ticks and is emptied when the editor closes.</summary>
     public ObservableCollection<McpServerToolInfo> SelectedTools { get; } = [];
+
+    public ObservableCollection<string> EditReadwritePaths { get; } = [];
+
+    public ObservableCollection<string> EditReadonlyPaths { get; } = [];
 
     [ObservableProperty]
     private bool _hasServers;
@@ -88,6 +112,42 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private string _editWorkingDirectory = string.Empty;
 
     [ObservableProperty]
+    private bool _editSandboxEnabled;
+
+    [ObservableProperty]
+    private bool _editSandboxAllowNetwork;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AddReadwritePathCommand))]
+    private string _newReadwritePath = string.Empty;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(AddReadonlyPathCommand))]
+    private string _newReadonlyPath = string.Empty;
+
+    /// <summary>What the path guard objects to, one issue per line; null when the policy is acceptable.</summary>
+    [ObservableProperty]
+    private string? _sandboxGuardMessage;
+
+    [ObservableProperty]
+    private MxcAvailabilityStatus _sandboxStatus;
+
+    [ObservableProperty]
+    private bool _isSandboxDownloading;
+
+    [ObservableProperty]
+    private int _sandboxDownloadPercent;
+
+    [ObservableProperty]
+    private ModelDownloadPhase _sandboxDownloadPhase;
+
+    [ObservableProperty]
+    private bool _isSandboxProgressHidden;
+
+    [ObservableProperty]
+    private string? _sandboxDownloadError;
+
+    [ObservableProperty]
     private string _pastedJson = string.Empty;
 
     [ObservableProperty]
@@ -121,6 +181,22 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private string? _selectedError;
 
     [ObservableProperty]
+    private string? _selectedSandboxSummary;
+
+    [ObservableProperty]
+    private string? _selectedSandboxReadwrite;
+
+    [ObservableProperty]
+    private string? _selectedSandboxReadonly;
+
+    /// <summary>The server's own folder, which the sandbox lets it read on top of the policy; null when none is granted.</summary>
+    [ObservableProperty]
+    private string? _selectedSandboxAlsoReadable;
+
+    [ObservableProperty]
+    private bool _hasSelectedSandbox;
+
+    [ObservableProperty]
     private string? _selectedToolsSummary;
 
     [ObservableProperty]
@@ -147,15 +223,30 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         IDialogService dialogService,
         ILocalizationService localizationService,
         Wpf.Ui.ISnackbarService snackbarService,
+        IMxcAvailability mxcAvailability,
+        IFileDialogService fileDialogs,
         ILogger<SettingsViewModel> logger)
     {
         _pluginService = pluginService;
         _dialogService = dialogService;
         _localizationService = localizationService;
         _snackbarService = snackbarService;
+        _mxcAvailability = mxcAvailability;
+        _fileDialogs = fileDialogs;
         _logger = logger;
+        _sandboxStatus = mxcAvailability.Status;
 
         _pluginService.PluginsChanged += OnPluginsChanged;
+        _mxcAvailability.StatusChanged += OnMxcStatusChanged;
+        EditReadwritePaths.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(ShowSandboxFolderCreatedHint));
+            if (!_applyingSandboxDefaults) UpdateSandboxGuard();
+        };
+        EditReadonlyPaths.CollectionChanged += (_, _) =>
+        {
+            if (!_applyingSandboxDefaults) UpdateSandboxGuard();
+        };
         Reload();
     }
 
@@ -164,6 +255,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         if (_disposed) return;
         _disposed = true;
         _pluginService.PluginsChanged -= OnPluginsChanged;
+        _mxcAvailability.StatusChanged -= OnMxcStatusChanged;
+        _sandboxDownloadCts?.Cancel();
+        _sandboxGuardCts?.Cancel();
         GC.SuppressFinalize(this);
     }
 
@@ -229,7 +323,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
                 IsRunning = !pending && enabled && status.IsRunning,
                 IsFailed = !pending && enabled && !status.IsRunning,
                 IsToggling = pending,
-                StatusText = pending ? PendingStatus(target) : DescribeStatus(enabled, status)
+                StatusText = pending ? PendingStatus(target) : DescribeStatus(enabled, status),
+                SandboxText = DescribeSandbox(definition?.Sandbox)
             });
         }
 
@@ -259,8 +354,22 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         SelectedEnvironmentKeys = definition is { Env.Count: > 0 } ? string.Join(", ", definition.Env.Keys) : null;
         SelectedError = SelectedServer is { IsFailed: true } ? NullIfBlank(status?.Error) : null;
 
+        var sandbox = definition?.Sandbox;
+        SelectedSandboxSummary = DescribeSandbox(sandbox);
+        SelectedSandboxReadwrite = sandbox is { ReadwritePaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadwritePaths) : null;
+        SelectedSandboxReadonly = sandbox is { ReadonlyPaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadonlyPaths) : null;
+        SelectedSandboxAlsoReadable = sandbox is null ? null : SandboxPathGuard.GrantedCommandFolder(sandbox, definition?.Command);
+        HasSelectedSandbox = sandbox is not null;
+
         FillSelectedTools(definition?.AllowedTools, status?.DiscoveredTools ?? []);
     }
+
+    private string DescribeSandbox(McpSandboxPolicy? sandbox) => sandbox is null
+        ? _localizationService["McpServers_Sandbox_NotSandboxed"]
+        : _localizationService.Format(
+            sandbox.AllowNetwork ? "McpServers_Sandbox_Summary_NetworkOn" : "McpServers_Sandbox_Summary_NetworkOff",
+            sandbox.ReadwritePaths.Count,
+            sandbox.ReadonlyPaths.Count);
 
     private void FillSelectedTools(IReadOnlyList<string>? allowed, IReadOnlyList<McpProbeTool> discovered)
     {
@@ -332,6 +441,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         SetEditingAllowlist(null);
         Tools.Clear();
         HasTools = false;
+        ResetSandboxEditor();
+        _sandboxPristine = true;
+        ApplySandboxDefaults();
         IsEditorOpen = true;
     }
 
@@ -359,6 +471,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         // allowlist alone, so a stopped server shows nothing to tick until it is tested again.
         SetEditingAllowlist(definition.AllowedTools);
         FillTools(_pluginService.GetLocalMcpStatus(SelectedServer.Id).DiscoveredTools, definition.AllowedTools);
+
+        LoadSandboxEditor(definition.Sandbox);
 
         IsEditorOpen = true;
     }
@@ -410,6 +524,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         SetEditingAllowlist(null);
         Tools.Clear();
         HasTools = false;
+        ResetSandboxEditor();
     }
 
     [RelayCommand]
@@ -563,8 +678,373 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
             ParseEnvironment(EditEnvironment),
             string.IsNullOrWhiteSpace(EditWorkingDirectory) ? null : EditWorkingDirectory.Trim(),
             LocalMcpConfig.DeriveToolPrefix(name),
-            AllowedTools: null);
+            AllowedTools: null,
+            Sandbox: BuildSandboxPolicy());
     }
+
+    // Left out, a positional definition saves a sandboxed server back as uncontained on any edit.
+    private McpSandboxPolicy? BuildSandboxPolicy() =>
+        EditSandboxEnabled
+            ? new McpSandboxPolicy([.. EditReadwritePaths], [.. EditReadonlyPaths], EditSandboxAllowNetwork)
+            : null;
+
+    // ---- sandbox ------------------------------------------------------------------------------------
+
+    public bool CanEnableSandbox =>
+        !SandboxCommandRules.IsShimCommand(EditCommand) && SandboxStatus.State != MxcRuntimeState.Unsupported;
+
+    /// <summary>Switching off is always allowed, so a server saved as sandboxed on a host that cannot sandbox
+    /// any more is not stuck on a toggle it cannot move.</summary>
+    public bool IsSandboxToggleEnabled => EditSandboxEnabled || CanEnableSandbox;
+
+    public string? SandboxDisabledReason
+    {
+        get
+        {
+            if (SandboxCommandRules.IsShimCommand(EditCommand)) return _localizationService["McpServers_Sandbox_Reason_Shim"];
+            if (SandboxStatus.State == MxcRuntimeState.Unsupported)
+                return string.IsNullOrWhiteSpace(SandboxStatus.Reason)
+                    ? _localizationService["McpServers_Sandbox_Reason_Unsupported"]
+                    : SandboxStatus.Reason;
+            return null;
+        }
+    }
+
+    /// <summary>A folder under the sandbox root that does not exist yet is not a mistake: the core makes it when the
+    /// server starts.</summary>
+    public bool ShowSandboxFolderCreatedHint => EditReadwritePaths.Any(IsMissingFolderUnderSandboxRoot);
+
+    private static bool IsMissingFolderUnderSandboxRoot(string path)
+    {
+        try
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(PiaPaths.McpSandboxRoot)) + Path.DirectorySeparatorChar;
+            var full = Path.GetFullPath(path);
+            return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && !Directory.Exists(full);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    public bool ShowSandboxDownloadPrompt =>
+        EditSandboxEnabled && SandboxStatus.State == MxcRuntimeState.NotInstalled && !IsSandboxDownloading;
+
+    public bool ShowSandboxDownloadProgress =>
+        EditSandboxEnabled && !IsSandboxProgressHidden
+        && (IsSandboxDownloading || SandboxStatus.State == MxcRuntimeState.Downloading);
+
+    /// <summary>No percentage exists for an install another caller drives, nor once the file is fetched and being unpacked.</summary>
+    public bool IsSandboxDownloadIndeterminate =>
+        !IsSandboxDownloading || SandboxDownloadPhase != ModelDownloadPhase.Downloading;
+
+    public string SandboxDownloadMessage =>
+        !ShowSandboxDownloadProgress ? _localizationService["McpServers_Sandbox_NotInstalled"]
+        : IsSandboxDownloadIndeterminate ? _localizationService["McpServers_Sandbox_Installing"]
+        : _localizationService.Format("McpServers_Sandbox_Downloading", SandboxDownloadPercent);
+
+    partial void OnEditSandboxEnabledChanged(bool value)
+    {
+        if (!_applyingSandboxDefaults)
+        {
+            _sandboxPristine = false;
+            if (value && EditReadwritePaths.Count == 0) ProposeReadwritePath();
+        }
+
+        RaiseSandboxStateChanged();
+        if (!_applyingSandboxDefaults) UpdateSandboxGuard();
+    }
+
+    partial void OnEditNameChanged(string value)
+    {
+        ApplySandboxDefaults();
+        CreateDefaultFolderCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnEditCommandChanged(string value)
+    {
+        ApplySandboxDefaults();
+        RaiseSandboxStateChanged();
+        UpdateSandboxGuardAfterTyping();
+    }
+
+    /// <summary>The early warning for what the launcher would refuse at start. It never blocks a save: a policy
+    /// saved with an issue simply does not start, and says why.</summary>
+    private void UpdateSandboxGuard()
+    {
+        _sandboxGuardCts?.Cancel();
+        SandboxGuardMessage = GuardMessageFor(BuildSandboxPolicy(), EditCommand);
+    }
+
+    internal int SandboxGuardDebounceMs { get; set; } = 250;
+
+    // The command check searches PATH and may count a whole folder, so a keystroke waits for a pause and runs off the UI thread.
+    private void UpdateSandboxGuardAfterTyping()
+    {
+        _sandboxGuardCts?.Cancel();
+        var cts = _sandboxGuardCts = new CancellationTokenSource();
+        var policy = BuildSandboxPolicy();
+        var command = EditCommand;
+        ValidateSandboxGuardAsync(policy, command, cts.Token).SafeFireAndForget(_logger);
+    }
+
+    private async Task ValidateSandboxGuardAsync(McpSandboxPolicy? policy, string command, CancellationToken token)
+    {
+        await Task.Delay(SandboxGuardDebounceMs, token);
+        var message = await Task.Run(() => GuardMessageFor(policy, command), token);
+        PostOrRun(() =>
+        {
+            if (!token.IsCancellationRequested) SandboxGuardMessage = message;
+        });
+    }
+
+    private static string? GuardMessageFor(McpSandboxPolicy? policy, string command)
+    {
+        var issues = policy is null ? [] : SandboxPathGuard.Validate(policy, command);
+        return issues.Count == 0
+            ? null
+            : string.Join(Environment.NewLine, issues.Select(i => $"{i.Path}: {i.Message}"));
+    }
+
+    partial void OnSandboxStatusChanged(MxcAvailabilityStatus value)
+    {
+        if (value.State != MxcRuntimeState.Downloading) IsSandboxProgressHidden = false;
+        ApplySandboxDefaults();
+        RaiseSandboxStateChanged();
+    }
+
+    partial void OnIsSandboxDownloadingChanged(bool value) => RaiseSandboxStateChanged();
+
+    partial void OnIsSandboxProgressHiddenChanged(bool value) => RaiseSandboxStateChanged();
+
+    partial void OnSandboxDownloadPercentChanged(int value) => OnPropertyChanged(nameof(SandboxDownloadMessage));
+
+    partial void OnSandboxDownloadPhaseChanged(ModelDownloadPhase value) => RaiseSandboxStateChanged();
+
+    private void RaiseSandboxStateChanged()
+    {
+        OnPropertyChanged(nameof(CanEnableSandbox));
+        OnPropertyChanged(nameof(IsSandboxToggleEnabled));
+        OnPropertyChanged(nameof(SandboxDisabledReason));
+        OnPropertyChanged(nameof(ShowSandboxDownloadPrompt));
+        OnPropertyChanged(nameof(ShowSandboxDownloadProgress));
+        OnPropertyChanged(nameof(IsSandboxDownloadIndeterminate));
+        OnPropertyChanged(nameof(SandboxDownloadMessage));
+        DownloadSandboxRuntimeCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnMxcStatusChanged(object? sender, MxcAvailabilityStatus status) =>
+        PostOrRun(() => SandboxStatus = status);
+
+    /// <summary>A new server starts sandboxed whenever it can be, with its own folder under the sandbox root.</summary>
+    private void ApplySandboxDefaults()
+    {
+        if (!_sandboxPristine || EditingServerId is not null) return;
+
+        _applyingSandboxDefaults = true;
+        try
+        {
+            EditSandboxEnabled = CanEnableSandbox;
+            if (_proposedReadwritePath is not null) EditReadwritePaths.Remove(_proposedReadwritePath);
+            _proposedReadwritePath = null;
+            if (EditSandboxEnabled) ProposeReadwritePath();
+        }
+        finally
+        {
+            _applyingSandboxDefaults = false;
+        }
+
+        UpdateSandboxGuardAfterTyping();
+    }
+
+    private void ProposeReadwritePath()
+    {
+        var folder = DefaultFolderFor(EditName);
+        if (folder is null || EditReadwritePaths.Contains(folder, StringComparer.OrdinalIgnoreCase)) return;
+
+        EditReadwritePaths.Add(folder);
+        _proposedReadwritePath = folder;
+    }
+
+    // Null until the name has a letter or digit: DeriveToolPrefix falls back to "mcp" for anything else, and every
+    // such server would then share one folder.
+    private static string? DefaultFolderFor(string name) =>
+        name.Any(char.IsAsciiLetterOrDigit)
+            ? Path.Combine(PiaPaths.McpSandboxRoot, LocalMcpConfig.DeriveToolPrefix(name.Trim()))
+            : null;
+
+    private void ResetSandboxEditor()
+    {
+        _sandboxPristine = false;
+        _proposedReadwritePath = null;
+        _sandboxGuardCts?.Cancel();
+        _applyingSandboxDefaults = true;
+        try
+        {
+            EditSandboxEnabled = false;
+            EditSandboxAllowNetwork = false;
+            EditReadwritePaths.Clear();
+            EditReadonlyPaths.Clear();
+            NewReadwritePath = string.Empty;
+            NewReadonlyPath = string.Empty;
+            SandboxGuardMessage = null;
+            SandboxDownloadError = null;
+        }
+        finally
+        {
+            _applyingSandboxDefaults = false;
+        }
+    }
+
+    private void LoadSandboxEditor(McpSandboxPolicy? policy)
+    {
+        ResetSandboxEditor();
+        if (policy is null) return;
+
+        _applyingSandboxDefaults = true;
+        try
+        {
+            EditSandboxEnabled = true;
+            EditSandboxAllowNetwork = policy.AllowNetwork;
+            foreach (var path in policy.ReadwritePaths) EditReadwritePaths.Add(path);
+            foreach (var path in policy.ReadonlyPaths) EditReadonlyPaths.Add(path);
+        }
+        finally
+        {
+            _applyingSandboxDefaults = false;
+        }
+
+        UpdateSandboxGuard();
+    }
+
+    private bool CanAddReadwritePath() => !string.IsNullOrWhiteSpace(NewReadwritePath);
+
+    [RelayCommand(CanExecute = nameof(CanAddReadwritePath))]
+    private void AddReadwritePath()
+    {
+        AddSandboxPath(EditReadwritePaths, NewReadwritePath);
+        NewReadwritePath = string.Empty;
+    }
+
+    private bool CanAddReadonlyPath() => !string.IsNullOrWhiteSpace(NewReadonlyPath);
+
+    [RelayCommand(CanExecute = nameof(CanAddReadonlyPath))]
+    private void AddReadonlyPath()
+    {
+        AddSandboxPath(EditReadonlyPaths, NewReadonlyPath);
+        NewReadonlyPath = string.Empty;
+    }
+
+    [RelayCommand]
+    private void BrowseReadwriteFolder() =>
+        AddBrowsedFolder(EditReadwritePaths, "McpServers_Sandbox_BrowseReadwriteTitle");
+
+    [RelayCommand]
+    private void BrowseReadonlyFolder() =>
+        AddBrowsedFolder(EditReadonlyPaths, "McpServers_Sandbox_BrowseReadonlyTitle");
+
+    private void AddBrowsedFolder(ObservableCollection<string> target, string titleKey)
+    {
+        var picked = _fileDialogs.PromptSelectFolder(_localizationService[titleKey], null);
+        if (!string.IsNullOrWhiteSpace(picked)) AddSandboxPath(target, picked);
+    }
+
+    private void AddSandboxPath(ObservableCollection<string> target, string path)
+    {
+        var trimmed = path.Trim().Trim('"');
+        if (trimmed.Length == 0 || target.Contains(trimmed, StringComparer.OrdinalIgnoreCase)) return;
+
+        target.Add(trimmed);
+        _sandboxPristine = false;
+    }
+
+    [RelayCommand]
+    private void RemoveReadwritePath(string? path) => RemoveSandboxPath(EditReadwritePaths, path);
+
+    [RelayCommand]
+    private void RemoveReadonlyPath(string? path) => RemoveSandboxPath(EditReadonlyPaths, path);
+
+    private void RemoveSandboxPath(ObservableCollection<string> target, string? path)
+    {
+        if (path is null || !target.Remove(path)) return;
+        _sandboxPristine = false;
+    }
+
+    private bool CanCreateDefaultFolder() => DefaultFolderFor(EditName) is not null;
+
+    /// <summary>The only place the editor writes to disk: the folder is created on request, never as a side effect
+    /// of saving.</summary>
+    [RelayCommand(CanExecute = nameof(CanCreateDefaultFolder))]
+    private void CreateDefaultFolder()
+    {
+        var folder = DefaultFolderFor(EditName);
+        if (folder is null) return;
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning("Could not create the sandbox folder for a local MCP server ({ExceptionType})", ex.GetType().Name);
+            _logger.SensitiveDebug("Sandbox folder failure: {Message}", ex.Message);
+            SetMessage(_localizationService.Format("McpServers_Sandbox_CreateFolderFailed", ex.Message), isError: true);
+            return;
+        }
+
+        AddSandboxPath(EditReadwritePaths, folder);
+        OnPropertyChanged(nameof(ShowSandboxFolderCreatedHint));
+    }
+
+    private bool CanDownloadSandboxRuntime() =>
+        !IsSandboxDownloading && SandboxStatus.State == MxcRuntimeState.NotInstalled;
+
+    /// <summary>An outbound fetch the user did not ask for by switching a toggle, so it waits for a click.</summary>
+    [RelayCommand(CanExecute = nameof(CanDownloadSandboxRuntime))]
+    private async Task DownloadSandboxRuntimeAsync()
+    {
+        using var cts = new CancellationTokenSource();
+        _sandboxDownloadCts = cts;
+        SandboxDownloadPercent = 0;
+        SandboxDownloadPhase = ModelDownloadPhase.Downloading;
+        SandboxDownloadError = null;
+        IsSandboxProgressHidden = false;
+        IsSandboxDownloading = true;
+        try
+        {
+            var progress = new Progress<ModelDownloadProgress>(p =>
+            {
+                SandboxDownloadPercent = p.PercentComplete;
+                SandboxDownloadPhase = p.Phase;
+            });
+            var status = await _mxcAvailability.InstallRuntimeAsync(progress, cts.Token);
+            SandboxStatus = status;
+            if (!status.IsReady)
+                SandboxDownloadError = string.IsNullOrWhiteSpace(status.Reason)
+                    ? _localizationService["McpServers_Sandbox_DownloadFailed"]
+                    : _localizationService.Format("McpServers_Sandbox_DownloadFailedWithReason", status.Reason);
+        }
+        catch (OperationCanceledException)
+        {
+            SandboxDownloadError = null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Downloading the sandbox runtime failed ({ExceptionType})", ex.GetType().Name);
+            _logger.SensitiveDebug("Sandbox runtime download failure: {Message}", ex.Message);
+            SandboxDownloadError = _localizationService.Format("McpServers_Sandbox_DownloadFailedWithReason", ex.Message);
+        }
+        finally
+        {
+            _sandboxDownloadCts = null;
+            IsSandboxDownloading = false;
+        }
+    }
+
+    // The install is shared with the rest of Pia and keeps going, so the panel can only be put away.
+    [RelayCommand]
+    private void HideSandboxProgress() => IsSandboxProgressHidden = true;
 
     private static string FormatEnvironment(IReadOnlyDictionary<string, string> env) =>
         string.Join(Environment.NewLine, env.Select(e => $"{e.Key}={e.Value}"));

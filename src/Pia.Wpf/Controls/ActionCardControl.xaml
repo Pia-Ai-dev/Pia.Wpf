@@ -90,6 +90,12 @@
                          FontSize="12"
                          Foreground="{DynamicResource TextPlaceholderColorBrush}"
                          TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding SandboxText}"
+                         FontSize="11"
+                         Foreground="{DynamicResource TextPlaceholderColorBrush}"
+                         TextTrimming="CharacterEllipsis"
+                         AutomationProperties.AutomationId="{Binding Id, StringFormat='ActionCard_Sandbox_{0}'}"
+                         Visibility="{Binding HasSandbox, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
 
             <ui:Button Grid.Column="2"
