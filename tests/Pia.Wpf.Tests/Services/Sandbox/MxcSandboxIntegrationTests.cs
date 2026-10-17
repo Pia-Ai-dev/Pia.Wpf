@@ -7,6 +7,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using Pia.Infrastructure;
 using Pia.Native;
 using Pia.Services.Plugins;
 using Pia.Services.Plugins.Sandbox;
@@ -26,7 +27,11 @@ public sealed class MxcSandboxIntegrationTests : IAsyncLifetime
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "pia-t1-" + Guid.NewGuid().ToString("N"));
     private readonly string _prefix = "t1-" + Guid.NewGuid().ToString("N")[..8];
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), "pia-t1-" + Guid.NewGuid().ToString("N") + ".db");
     private readonly List<McpClient> _clients = [];
+    private readonly List<SqliteContext> _contexts = [];
+    private readonly List<PluginService> _services = [];
+    private readonly List<string> _savedPrefixes = [];
 
     public ValueTask InitializeAsync()
     {
@@ -38,8 +43,17 @@ public sealed class MxcSandboxIntegrationTests : IAsyncLifetime
     {
         foreach (var client in _clients)
             await client.DisposeAsync();
+        foreach (var service in _services)
+            await service.ShutdownAllAsync();
+        foreach (var context in _contexts)
+            context.Dispose();
 
-        new AppContainerProfileService(NullLogger<AppContainerProfileService>.Instance).DeleteServerProfiles(_prefix);
+        var profiles = new AppContainerProfileService(NullLogger<AppContainerProfileService>.Instance);
+        profiles.DeleteServerProfiles(_prefix);
+        foreach (var prefix in _savedPrefixes)
+            profiles.DeleteServerProfiles(prefix);
+
+        TempPath.RemoveFile(_dbPath);
         TempPath.Remove(_root);
     }
 
@@ -64,6 +78,30 @@ public sealed class MxcSandboxIntegrationTests : IAsyncLifetime
 
     private McpTransportRequest Request(string root, McpSandboxPolicy? policy, bool probe = false) =>
         new("t1", TestMcpServerFixture.ExePath, [], null, Path.Combine(root, "workspace"), policy, _prefix, probe);
+
+    private PluginService CreateService()
+    {
+        var sqlite = new SqliteContext(_dbPath);
+        _contexts.Add(sqlite);
+        var service = SandboxPluginServices.Create(sqlite, Factory(), new ReadyMxcAvailability());
+        _services.Add(service);
+        return service;
+    }
+
+    private async Task<string> SaveSandboxedAsync(PluginService service, string name)
+    {
+        var definition = new LocalMcpDefinition(name, TestMcpServerFixture.ExePath, [], new Dictionary<string, string>(),
+            Path.Combine(_root, "workspace"), LocalMcpConfig.DeriveToolPrefix(name), null, Sandbox: Policy(_root));
+
+        var id = await service.SaveLocalMcpAsync(null, definition, TestContext.Current.CancellationToken);
+
+        var prefix = service.GetLocalMcpDefinition(id)!.ToolPrefix;
+        _savedPrefixes.Add(prefix);
+        var status = service.GetLocalMcpStatus(id);
+        Assert.True(status.IsRunning, status.Error);
+        Assert.NotEmpty(status.ActiveTools);
+        return AppContainerNative.DeriveSid("pia-mcp-" + prefix)!;
+    }
 
     private async Task<McpClient> ConnectAsync(McpTransportRequest request)
     {
@@ -232,6 +270,46 @@ public sealed class MxcSandboxIntegrationTests : IAsyncLifetime
         Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"shutdown took {clock.Elapsed}");
         Assert.All(GrantedPaths(_root), p => Assert.DoesNotContain(OurSid, ExplicitSids(p)));
         await ConnectAsync(request);
+    }
+
+    /// <summary>Closing Pia goes through the service, not through a client the test disposes itself.</summary>
+    [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
+    public async Task ClosingPia_TakesASandboxedServerDown_PromptlyAndLeavesNoAceOfItsContainer()
+    {
+        var service = CreateService();
+        var sid = await SaveSandboxedAsync(service, _prefix + "-a");
+        Assert.All(GrantedPaths(_root).Take(2), p => Assert.Contains(sid, ExplicitSids(p)));
+
+        var clock = Stopwatch.StartNew();
+        await service.ShutdownAllAsync();
+        clock.Stop();
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"shutdown took {clock.Elapsed}");
+        Assert.All(GrantedPaths(_root), p => Assert.DoesNotContain(sid, ExplicitSids(p)));
+    }
+
+    /// <summary>Two containers share the exe folder, so their ACE removals can touch the same DACL at once.</summary>
+    [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
+    public async Task ClosingPia_TakesTwoSandboxedServersDown_AndLeavesNoAceOfEitherContainer()
+    {
+        var service = CreateService();
+        var first = await SaveSandboxedAsync(service, _prefix + "-a");
+        var second = await SaveSandboxedAsync(service, _prefix + "-b");
+        Assert.NotEqual(first, second);
+        Assert.All(GrantedPaths(_root), p => Assert.Contains(first, ExplicitSids(p)));
+        Assert.All(GrantedPaths(_root), p => Assert.Contains(second, ExplicitSids(p)));
+
+        var clock = Stopwatch.StartNew();
+        await service.ShutdownAllAsync();
+        clock.Stop();
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(3), $"shutdown took {clock.Elapsed}");
+        Assert.All(GrantedPaths(_root), p =>
+        {
+            var sids = ExplicitSids(p);
+            Assert.DoesNotContain(first, sids);
+            Assert.DoesNotContain(second, sids);
+        });
     }
 
     /// <summary>A host killed before it could dispose leaves the container's ACEs on the folders; the sweep finds and removes them.</summary>
