@@ -140,10 +140,11 @@ to put it in a policy. So the dir is added **only when it is not** under `%WINDI
 
 ### Container name
 
-`pia-mcp-<prefix>-<pid>`, as in the PoC, **unless** gate G1 shows that per-pid names leave an
-AppContainer profile behind in `%LOCALAPPDATA%\Packages` on every start. In that case use a stable
-`pia-mcp-<prefix>` and guard it in-process against concurrent use, so a probe of a running server
-gets a `-probe` suffix.
+A stable `pia-mcp-<prefix>`, guarded in-process against concurrent use, so a probe of a running server
+gets `pia-mcp-<prefix>-probe`. Gate G1 showed that every distinct name leaves one
+`%LOCALAPPDATA%\Packages` profile and one `AppContainer\Mappings` key, and that dispose removes
+neither. A per-pid name would therefore leak one per start. A stable name also keeps the same SID
+after a hard kill, so leaked ACEs do not pile up. Removing the server deletes its profile.
 
 ### ACE sweep
 
@@ -250,8 +251,8 @@ Read `docs/ui_automation/ui-automation-playbook.md` first.
 - **Stack:** `https://localhost:18081` (`pia-e2e`). **Never** use 8081, which holds the owner's real
   data. Get a test account from the `PIASERVER` session. Do not reset the stack.
 - **Launch de-elevated.** These sessions are elevated, and a Pia started from WinWright would be too,
-  which would prove nothing for G1. Start the Debug exe at medium IL (a scheduled task with
-  `-RunLevel Limited`, or `explorer.exe` as the parent) with `PIA_CLOUD_SERVER_URL`, `PIA_DATA_DIR` and
+  which would prove nothing for G1. Start the Debug exe at medium IL with `explorer.exe` as the
+  parent. Auto mode refuses a scheduled task as persistence. Set `PIA_CLOUD_SERVER_URL`, `PIA_DATA_DIR` and
   `PIA_LOCAL_DATA_DIR` set to a throwaway profile. Check the IL from the log or with
   `whoami /groups` in the same launch path, then `ww_attach`. Elevated UIA can drive a medium-IL
   window.
@@ -283,6 +284,10 @@ Scenarios. Verdicts come from fixture SHA-256s and Pia log lines, never from the
     and `icacls` is clean.
 11. Guard UX: a readonly path inside the readwrite path is refused in the editor with the message.
     `npx` as the command shows the toggle disabled with the reason.
+12. Ownership: the same server in a folder owned by `Administrators` (anything an elevated build or
+    copy produced) is refused with the "belong to an administrator" reason and never starts
+    uncontained. For every other scenario the harness gives the user ownership of the server and the
+    fixture, because Tier 3 silently skips files it cannot `WRITE_DAC`.
 
 Record the results in this doc under *Live verification*, the way the local-MCP doc does.
 
