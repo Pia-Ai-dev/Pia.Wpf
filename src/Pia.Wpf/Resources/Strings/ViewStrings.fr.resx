@@ -1732,6 +1732,7 @@
   <data name="McpServers_Sandbox_ReadWriteHint" xml:space="preserve"><value>Le serveur peut créer, modifier et supprimer des fichiers dans ces dossiers.</value></data>
   <data name="McpServers_Sandbox_ReadOnly" xml:space="preserve"><value>Dossiers en lecture seule</value></data>
   <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Gardez-les séparés des dossiers en écriture : un dossier situé dans l'un d'eux serait aussi modifiable.</value></data>
+  <data name="McpServers_Sandbox_FolderCreatedHint" xml:space="preserve"><value>Pia crée un dossier ici au démarrage du serveur s'il n'existe pas encore.</value></data>
   <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Chemin complet d'un dossier existant</value></data>
   <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Ajouter</value></data>
   <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Parcourir…</value></data>

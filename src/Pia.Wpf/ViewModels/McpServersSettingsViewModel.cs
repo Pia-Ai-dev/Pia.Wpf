@@ -213,6 +213,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
         _pluginService.PluginsChanged += OnPluginsChanged;
         _mxcAvailability.StatusChanged += OnMxcStatusChanged;
+        EditReadwritePaths.CollectionChanged += (_, _) => OnPropertyChanged(nameof(ShowSandboxFolderCreatedHint));
         Reload();
     }
 
@@ -640,25 +641,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     // ---- sandbox ------------------------------------------------------------------------------------
 
-    private static readonly HashSet<string> ShimCommandNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "npx", "npm", "pnpm", "pnpx", "yarn", "uvx", "bunx", "pipx"
-    };
-
-    /// <summary>A package-manager launcher or script wrapper: the real server process is fetched into a cache and
-    /// spawned later, which a sandbox cannot grant ahead of time.</summary>
-    internal static bool IsShimCommand(string? command)
-    {
-        var name = Path.GetFileName((command ?? string.Empty).Trim().Trim('"'));
-        if (name.Length == 0) return false;
-
-        var extension = Path.GetExtension(name);
-        return extension.Equals(".cmd", StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(".bat", StringComparison.OrdinalIgnoreCase)
-            || ShimCommandNames.Contains(Path.GetFileNameWithoutExtension(name));
-    }
-
-    public bool CanEnableSandbox => !IsShimCommand(EditCommand) && SandboxStatus.State != MxcRuntimeState.Unsupported;
+    public bool CanEnableSandbox =>
+        !SandboxCommandRules.IsShimCommand(EditCommand) && SandboxStatus.State != MxcRuntimeState.Unsupported;
 
     /// <summary>Switching off is always allowed, so a server saved as sandboxed on a host that cannot sandbox
     /// any more is not stuck on a toggle it cannot move.</summary>
@@ -668,12 +652,30 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         get
         {
-            if (IsShimCommand(EditCommand)) return _localizationService["McpServers_Sandbox_Reason_Shim"];
+            if (SandboxCommandRules.IsShimCommand(EditCommand)) return _localizationService["McpServers_Sandbox_Reason_Shim"];
             if (SandboxStatus.State == MxcRuntimeState.Unsupported)
                 return string.IsNullOrWhiteSpace(SandboxStatus.Reason)
                     ? _localizationService["McpServers_Sandbox_Reason_Unsupported"]
                     : SandboxStatus.Reason;
             return null;
+        }
+    }
+
+    /// <summary>A folder under the sandbox root that does not exist yet is not a mistake: the core makes it when the
+    /// server starts.</summary>
+    public bool ShowSandboxFolderCreatedHint => EditReadwritePaths.Any(IsMissingFolderUnderSandboxRoot);
+
+    private static bool IsMissingFolderUnderSandboxRoot(string path)
+    {
+        try
+        {
+            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(PiaPaths.McpSandboxRoot)) + Path.DirectorySeparatorChar;
+            var full = Path.GetFullPath(path);
+            return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && !Directory.Exists(full);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
         }
     }
 
@@ -885,6 +887,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         }
 
         AddSandboxPath(EditReadwritePaths, folder);
+        OnPropertyChanged(nameof(ShowSandboxFolderCreatedHint));
     }
 
     private bool CanDownloadSandboxRuntime() =>

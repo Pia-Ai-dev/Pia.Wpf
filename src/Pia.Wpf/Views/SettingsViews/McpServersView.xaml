@@ -307,6 +307,7 @@
 
               <Border Style="{StaticResource PiaFieldNoticeStyle}" Margin="0,0,0,12">
                 <TextBlock Text="{loc:Str McpServers_Edit_RecipientNotice}"
+                           Foreground="{DynamicResource TextDefaultBrush}"
                            AutomationProperties.AutomationId="McpServers_Edit_RecipientNotice"
                            TextWrapping="Wrap"/>
               </Border>
@@ -483,6 +484,12 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <TextBlock Text="{loc:Str McpServers_Sandbox_FolderCreatedHint}"
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0"
+                           AutomationProperties.AutomationId="McpServers_Sandbox_FolderCreatedHint"
+                           Visibility="{Binding ShowSandboxFolderCreatedHint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 <Grid Margin="0,6,0,0">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>

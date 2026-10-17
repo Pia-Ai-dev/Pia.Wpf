@@ -510,22 +510,30 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
         Assert.Equal("Gone.", vm.SandboxDisabledReason);
     }
 
-    // ---- shim detection -------------------------------------------------------------------------------
+    // ---- the "created when the server starts" hint ----------------------------------------------------
 
-    [Theory]
-    [InlineData("npx", true)]
-    [InlineData("NPX.CMD", true)]
-    [InlineData(@"C:\Program Files\nodejs\npm.cmd", true)]
-    [InlineData(@"C:\Users\me\.cargo\bin\uvx.exe", true)]
-    [InlineData("pnpx", true)]
-    [InlineData("bunx", true)]
-    [InlineData(@"C:\Tools\run-server.bat", true)]
-    [InlineData(@"""C:\Tools\fs\fs.exe""", false)]
-    [InlineData(ExePath, false)]
-    [InlineData("node", false)]
-    [InlineData("python", false)]
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void IsShimCommand_RecognisesLaunchersAndScripts(string? command, bool expected) =>
-        Assert.Equal(expected, McpServersSettingsViewModel.IsShimCommand(command));
+    [Fact]
+    public void AMissingFolderUnderTheSandboxRoot_ShowsTheCreatedAtStartHint_UntilItIsCreated()
+    {
+        var (vm, _, _, _) = Create();
+        vm.AddServerCommand.Execute(null);
+        vm.EditName = "Hinted";
+        vm.EditCommand = ExePath;
+
+        Assert.True(vm.ShowSandboxFolderCreatedHint);
+
+        vm.CreateDefaultFolderCommand.Execute(null);
+
+        Assert.False(vm.ShowSandboxFolderCreatedHint);
+    }
+
+    [Fact]
+    public void AMissingFolderElsewhere_IsNotCoveredByTheHint()
+    {
+        var (vm, _, _, _) = Create(Stored(Policy()));
+
+        vm.EditSelectedCommand.Execute(null);
+
+        Assert.False(vm.ShowSandboxFolderCreatedHint);
+    }
 }
