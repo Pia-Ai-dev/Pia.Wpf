@@ -30,6 +30,21 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Pia.Wpf\Pia.Wpf.csproj" />
     <ProjectReference Include="..\..\src\Pia.Shared\Pia.Shared.csproj" />
+    <ProjectReference Include="..\Pia.TestMcpServer\Pia.TestMcpServer.csproj" ReferenceOutputAssembly="false" OutputItemType="TestMcpServerOutput" />
   </ItemGroup>
+
+  <Target Name="StageTestMcpServer" AfterTargets="Build">
+    <PropertyGroup>
+      <TestMcpServerSourceDir>@(TestMcpServerOutput->'%(RootDir)%(Directory)')</TestMcpServerSourceDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <TestMcpServerFile Include="$(TestMcpServerSourceDir)**" />
+      <TestMcpServerStaged Include="@(TestMcpServerFile->'$(OutDir)Pia.TestMcpServer\%(RecursiveDir)%(Filename)%(Extension)')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TestMcpServerFile)" DestinationFiles="@(TestMcpServerStaged)" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <FileWrites Include="@(TestMcpServerStaged)" />
+    </ItemGroup>
+  </Target>
 
 </Project>
