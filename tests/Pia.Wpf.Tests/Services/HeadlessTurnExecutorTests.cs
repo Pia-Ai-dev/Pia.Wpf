@@ -562,7 +562,7 @@ public sealed class HeadlessTurnExecutorTests
         public readonly CountingChatService Chats;
         public readonly AiProvider Provider = new() { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", ProviderType = AiProviderType.OpenAI };
         public readonly Persona Persona = new() { Name = "Pia", SystemPrompt = "sys" };
-        public readonly IAiClientService Ai = Substitute.For<IAiClientService>();
+        public readonly IAiClientService Ai;
 
         /// <summary>The executor's log, so a fixture can assert on the compaction diff LINE.</summary>
         public readonly CapturingLogger<HeadlessTurnExecutor> ExecutorLog = new();
@@ -602,9 +602,11 @@ public sealed class HeadlessTurnExecutorTests
         /// </summary>
         public Action<int>? OnTurn;
 
-        public DurabilityHarness()
+        /// <param name="ai">A real tool loop to run the steps through; null stubs one text reply per turn.</param>
+        public DurabilityHarness(IAiClientService? ai = null)
         {
-            _dir = Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
+            Ai = ai ?? Substitute.For<IAiClientService>();
+            _dir =Path.Combine(Path.GetTempPath(), "PiaTests_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_dir);
             Ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
             Runs = new AgentRunService(Ctx, NullLogger<AgentRunService>.Instance);
@@ -622,6 +624,9 @@ public sealed class HeadlessTurnExecutorTests
             Personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(Persona);
             Providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>()).Returns(Provider);
             SettingsService.GetSettingsAsync().Returns(_ => Task.FromResult(Settings));
+
+            if (ai is not null)
+                return;
 
             // One distinct reply per step turn, so the persisted transcript is order-verifiable.
             Ai.GetChatCompletionWithToolsAsync(
@@ -1384,10 +1389,10 @@ public sealed class HeadlessTurnExecutorTests
 
         Assert.Equal(6, captured.Count);
 
-        // The last step's request would carry system + goal + 5 prior replies + the step instruction
-        // if nothing compacted. It must be smaller than that.
+        // Uncompacted, the last step's request carries system + goal + 5 prior steps' instruction and reply + the
+        // step instruction. It must be smaller than that.
         var last = captured[^1];
-        Assert.True(last.Count < 8,
+        Assert.True(last.Count < 13,
             $"the final step's request must be compacted, but it still carried {last.Count} messages");
 
         // ...and the pin held: the system prompt and the run goal are still the first two messages.
@@ -1424,9 +1429,9 @@ public sealed class HeadlessTurnExecutorTests
             new RunProfile(MaxSteps: 6, MaxReplans: 0, WallClock: TimeSpan.FromMinutes(20)),
             TestContext.Current.CancellationToken);
 
-        // system + goal + 5 prior replies + the step instruction - the full 8 the compacted run cut down.
+        // system + goal + 5 prior steps' instruction and reply + the step instruction, uncut.
         Assert.Equal(6, captured.Count);
-        Assert.Equal(8, captured[^1].Count);
+        Assert.Equal(13, captured[^1].Count);
 
         // Keyed on the seam's own signature (run id AND "compaction"): the compactor logs through this same logger
         // instance, so a bare substring would couple this guard to the compactor's wording.
@@ -1762,7 +1767,7 @@ public sealed class HeadlessTurnExecutorTests
         for (var round = 0; round < rounds.Length; round++)
         {
             yield return new ToolRoundCompleted();
-            yield return new ToolRoundExchange(round + 1, rounds[round]);
+            yield return new ToolRoundExchange(round + 1, rounds[round], rounds[round]);
         }
 
         yield return new TextDelta(answer);
@@ -1798,6 +1803,50 @@ public sealed class HeadlessTurnExecutorTests
     private static IEnumerable<string> ResultBodies(IEnumerable<ChatMessage> messages) =>
         messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.Result as string ?? string.Empty);
 
+    /// <summary>A step boundary only reads the prompt cache when the new request extends the last one.</summary>
+    [Fact]
+    public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest()
+    {
+        var recorder = new StepBoundaryRecorder();
+        using var h = new DurabilityHarness(recorder.Ai) { SupportsTools = true };
+        StepBoundaryRecorder.RouteReads(h.Plugins);
+
+        await RunTwoRecordedStepsAsync(h, CarryStep(0), CarryStep(1));
+
+        recorder.AssertStepTwoExtendsStepOne();
+    }
+
+    [Fact]
+    public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest_UnderAnotherPersona()
+    {
+        var recorder = new StepBoundaryRecorder();
+        using var h = new DurabilityHarness(recorder.Ai) { SupportsTools = true };
+        StepBoundaryRecorder.RouteReads(h.Plugins);
+        var researcher = RosterPersona("Researcher");
+        var writer = RosterPersona("Writer");
+        WithRoster(h, researcher, writer);
+        var first = CarryStep(0);
+        first.AssignedPersonaId = researcher.Id;
+        var second = CarryStep(1);
+        second.AssignedPersonaId = writer.Id;
+
+        await RunTwoRecordedStepsAsync(h, first, second);
+
+        recorder.AssertStepTwoExtendsStepOne(from: 1);
+    }
+
+    private static async Task RunTwoRecordedStepsAsync(DurabilityHarness h, AgentStep first, AgentStep second)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await h.NewRunAsync("inventory report");
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, ["write_file"], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, first, ctx, ct);
+        await executor.ExecuteStepAsync(run, second, ctx, ct);
+    }
+
     /// <summary>The finding: a step that read a file in step 1 and wrote a report in step 3 had nothing but its
     /// own prose to write from, and invented every row. The raw result must survive the boundary.</summary>
     [Fact]
@@ -1830,25 +1879,32 @@ public sealed class HeadlessTurnExecutorTests
         Assert.DoesNotContain(chat.Messages, m => (m.Content ?? string.Empty).Contains("SKU-1001"));
     }
 
-    /// <summary>Past K, the oldest bodies go but the calls stay, and the placeholder says what to re-issue —
-    /// otherwise a run's whole file history rides along forever.</summary>
+    // A sixth of the carry budget, so 17 rounds of these clear exactly the oldest 8.
+    private static string BigBody(int i) => $"body {i}|" + new string('x', AgentToolCarryover.CarriedResultBudgetChars / 6);
+
+    private static bool HasBody(IEnumerable<ChatMessage> messages, int i) =>
+        ResultBodies(messages).Any(b => b.StartsWith($"body {i}|", StringComparison.Ordinal));
+
+    /// <summary>Past the carry budget the oldest bodies go but the calls stay, and the placeholder says what to
+    /// re-issue — otherwise a run's whole file history rides along forever.</summary>
     [Fact]
-    public async Task PastTheKeptCount_TheOldestResultIsClearedAndNamesItsCall()
+    public async Task PastTheBudget_TheOldestResultIsClearedAndNamesItsCall()
     {
         using var h = new DurabilityHarness();
         var run = await h.NewRunAsync("inventory report");
 
-        var rounds = Enumerable.Range(0, AgentToolCarryover.KeptResults + 1)
-            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
+        var rounds = Enumerable.Range(0, 17)
+            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, BigBody(i)) })
             .ToArray();
 
         var captured = await RunTwoStepsAsync(h, run, rounds);
         var second = captured[1];
 
         Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(second));
-        Assert.DoesNotContain("body 0", ResultBodies(second));
-        Assert.Contains("body 1", ResultBodies(second));
-        Assert.Contains("body " + AgentToolCarryover.KeptResults, ResultBodies(second));
+        Assert.False(HasBody(second, 0));
+        Assert.False(HasBody(second, 7));
+        Assert.True(HasBody(second, 8));
+        Assert.True(HasBody(second, 16));
         Assert.Contains(second.SelectMany(m => m.Contents).OfType<FunctionCallContent>(), c => c.CallId == "c0");
     }
 
@@ -2200,23 +2256,23 @@ public sealed class HeadlessTurnExecutorTests
     /// <summary>Clearing still runs downstream of the re-seed, so the post-resume context budget is the
     /// pre-park one — re-seeding full bodies does not defeat it.</summary>
     [Fact]
-    public async Task PastTheKeptCount_AResumedRunStillClearsTheOldestResult()
+    public async Task PastTheBudget_AResumedRunStillClearsTheOldestResult()
     {
         using var h = new DurabilityHarness();
         using var store = ExchangeStore(h);
         h.Exchanges = store;
         var run = await h.NewRunAsync("inventory report");
 
-        var rounds = Enumerable.Range(0, AgentToolCarryover.KeptResults + 1)
-            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, "body " + i) })
+        var rounds = Enumerable.Range(0, 17)
+            .Select(i => new[] { ToolCall("c" + i, "read_file", "f" + i + ".csv"), ToolResult("c" + i, BigBody(i)) })
             .ToArray();
 
         var captured = await RunThenResumeAsync(h, run, rounds);
         var resumed = captured[1];
 
         Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(resumed));
-        Assert.DoesNotContain("body 0", ResultBodies(resumed));
-        Assert.Contains("body " + AgentToolCarryover.KeptResults, ResultBodies(resumed));
+        Assert.False(HasBody(resumed, 0));
+        Assert.True(HasBody(resumed, 16));
     }
 
     /// <summary>The detokenized rows must not outlive the run — and a park is not terminal, so it keeps them.</summary>
@@ -2324,7 +2380,8 @@ public sealed class HeadlessTurnExecutorTests
             var (callId, tool, path) = rounds[i];
             var stop = new ToolLoopStopSignal();
             yield return new ToolRoundCompleted();
-            yield return new ToolRoundExchange(i + 1, await GateRoundAsync(handler, stop, i + 1, callId, tool, path));
+            var gated = await GateRoundAsync(handler, stop, i + 1, callId, tool, path);
+            yield return new ToolRoundExchange(i + 1, gated, gated);
             if (stop.IsStopRequested)
                 break;
         }

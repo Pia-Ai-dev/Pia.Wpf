@@ -61,8 +61,7 @@ public class AgentToolCarryoverTests
         Assert.Equal("two rows", Body(captured[1]));
     }
 
-    /// <summary>The prose a round produced is already in the exchange's visible reply; carrying it here too
-    /// would cost tokens and read as the model having said it twice.</summary>
+    /// <summary>The persisted shape holds tool content only; the live carry keeps the prose (AsSent).</summary>
     [Fact]
     public void Capture_DropsTheProseThatCameWithTheCall()
     {
@@ -79,6 +78,34 @@ public class AgentToolCarryoverTests
 
         Assert.DoesNotContain(captured.SelectMany(m => m.Contents), c => c is TextContent);
         Assert.Single(captured.SelectMany(m => m.Contents).OfType<FunctionCallContent>());
+    }
+
+    /// <summary>The live carry is the round as the next request sends it: prose, calls and the full result.</summary>
+    [Fact]
+    public void AsSent_KeepsProseCallsAndFullResults_AndDropsOnlyReasoning()
+    {
+        var long_ = new string('x', AgentToolCarryover.MaxCarriedResultChars + 500);
+        var round = new ChatMessage[]
+        {
+            new(ChatRole.Assistant, [
+                new TextReasoningContent("weighing it"),
+                new TextContent("Let me read that file."),
+                new FunctionCallContent("c0", "read_file", new Dictionary<string, object?> { ["path"] = "a.csv" }),
+            ]),
+            Result("c0", long_),
+            new(ChatRole.Assistant, [new TextReasoningContent("only thinking")]),
+        };
+
+        var sent = AgentToolCarryover.AsSent(round);
+
+        Assert.Equal(2, sent.Count);
+        Assert.DoesNotContain(sent.SelectMany(m => m.Contents), c => c is TextReasoningContent);
+        Assert.Equal("Let me read that file.", sent[0].Text);
+        Assert.Equal("c0", sent[0].Contents.OfType<FunctionCallContent>().Single().CallId);
+        Assert.Same(round[1], sent[1]);
+        Assert.Equal(long_, Body(sent[1]));
+        // The tool loop still holds its own thinking-bearing message.
+        Assert.Contains(round[0].Contents, c => c is TextReasoningContent);
     }
 
     /// <summary>A turn that sends no tools gets the transcript without them — a provider handed tool_calls with
@@ -98,27 +125,72 @@ public class AgentToolCarryoverTests
         Assert.Same(stripped, AgentToolCarryover.WithoutToolExchanges(stripped));
     }
 
+    // One sixth of the budget, so 17 such results clear exactly the oldest 8.
+    private const int Big = AgentToolCarryover.CarriedResultBudgetChars / 6;
+
+    private static List<string> Bodies(IReadOnlyList<ChatMessage> messages) =>
+        [.. AgentToolCarryover.ClearOldResults(messages).Select(Body).Where(b => b is not null).Select(b => b!)];
+
+    private static int ClearedPrefix(IReadOnlyList<ChatMessage> messages)
+    {
+        var bodies = Bodies(messages);
+        var cut = bodies.TakeWhile(b => b.StartsWith("[result cleared;", StringComparison.Ordinal)).Count();
+        Assert.DoesNotContain(bodies.Skip(cut), b => b.StartsWith("[result cleared;", StringComparison.Ordinal));
+        return cut;
+    }
+
     [Fact]
     public void ClearOldResults_ReturnsTheInput_WhenNothingIsStaleYet()
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults);
+        var messages = Rounds(60);
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
         Assert.Same(messages, cleared);
     }
 
-    [Fact]
-    public void ClearOldResults_KeepsTheNewestKeptCount_AndClearsTheRest()
+    /// <summary>Tiny results cost nothing to carry; clearing them would only re-write the cached prefix.</summary>
+    [Theory]
+    [MemberData(nameof(OneToSixty))]
+    public void ClearOldResults_NeverClearsTinyResults(int results)
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults + 3);
+        Assert.Equal(0, ClearedPrefix(Rounds(results)));
+    }
 
-        var cleared = AgentToolCarryover.ClearOldResults(messages);
+    public static TheoryData<int> OneToSixty() => [.. Enumerable.Range(1, 60)];
 
-        var bodies = cleared.Select(Body).Where(b => b is not null).ToList();
-        Assert.Equal(AgentToolCarryover.KeptResults + 3, bodies.Count);
-        Assert.Equal(3, bodies.Count(b => b!.StartsWith("[result cleared;", StringComparison.Ordinal)));
-        Assert.All(bodies.Take(3), b => Assert.StartsWith("[result cleared;", b!, StringComparison.Ordinal));
+    /// <summary>A pure function of the result sizes: the cut moves only in multiples of 8, and only once the
+    /// uncleared tail would exceed the budget (here 20 bodies fit).</summary>
+    [Theory]
+    [InlineData(20, 0)]
+    [InlineData(21, 8)]
+    [InlineData(28, 8)]
+    [InlineData(29, 16)]
+    [InlineData(36, 16)]
+    [InlineData(37, 24)]
+    [InlineData(60, 40)]
+    public void ClearOldResults_CutsInChunksOfEight_OnlyWhenTheTailExceedsTheBudget(int results, int expected)
+    {
+        var messages = Rounds(results, AgentToolCarryover.CarriedResultBudgetChars / 20);
+
+        Assert.Equal(expected, ClearedPrefix(messages));
+        Assert.Equal(expected, ClearedPrefix(messages));
+    }
+
+    /// <summary>A result larger than the whole budget clears what it can but never the newest 8.</summary>
+    [Theory]
+    [InlineData(9, 0)]
+    [InlineData(21, 8)]
+    public void ClearOldResults_KeepsTheNewest8_EvenWhenOneOfThemExceedsTheBudget(int results, int expected)
+    {
+        var messages = Rounds(results - 1);
+        messages.Add(Call("huge", "read_file", "huge.csv"));
+        messages.Add(Result("huge", new string('h', AgentToolCarryover.CarriedResultBudgetChars + 1)));
+
+        var cut = ClearedPrefix(messages);
+
+        Assert.Equal(expected, cut);
+        Assert.True(results - cut >= 8);
     }
 
     /// <summary>Build, never mutate: the input list is the executor's accumulating transcript, and an in-place
@@ -126,7 +198,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_DoesNotMutateTheInput()
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults + 2);
+        var messages = Rounds(18, Big);
         var before = messages.Select(Body).ToList();
 
         AgentToolCarryover.ClearOldResults(messages);
@@ -138,7 +210,7 @@ public class AgentToolCarryoverTests
     [Fact]
     public void ClearOldResults_KeepsTheCallAndNamesItsPath()
     {
-        var messages = Rounds(AgentToolCarryover.KeptResults + 1);
+        var messages = Rounds(17, Big);
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
@@ -150,10 +222,44 @@ public class AgentToolCarryoverTests
     public void ClearOldResults_OmitsThePath_WhenTheCallCarriedNone()
     {
         var messages = new List<ChatMessage> { Call("listing", "list_files"), Result("listing", "a listing") };
-        messages.AddRange(Rounds(AgentToolCarryover.KeptResults));
+        messages.AddRange(Rounds(16, Big));
 
         var cleared = AgentToolCarryover.ClearOldResults(messages);
 
         Assert.Equal("[result cleared; call list_files again if you need it]", Body(cleared[1]));
     }
+
+    // The server's native-content store matches on the toolu_ id alone, so a carried id must never change.
+    [Fact]
+    public void Capture_KeepsEveryCallIdVerbatim_EvenWhenItCapsTheResult()
+    {
+        var round = new[]
+        {
+            Call("toolu_01AbC-dEf_9", "read_file", "big.csv"),
+            Result("toolu_01AbC-dEf_9", new string('x', AgentToolCarryover.MaxCarriedResultChars + 1)),
+        };
+
+        var captured = AgentToolCarryover.Capture(round);
+
+        Assert.Equal("toolu_01AbC-dEf_9", captured[0].Contents.OfType<FunctionCallContent>().Single().CallId);
+        Assert.Equal("toolu_01AbC-dEf_9", captured[1].Contents.OfType<FunctionResultContent>().Single().CallId);
+    }
+
+    [Fact]
+    public void ClearOldResults_KeepsEveryCallIdVerbatim_InOrder()
+    {
+        var messages = Rounds(19, Big);
+        var before = messages.SelectMany(m => m.Contents).Select(IdOf).ToList();
+
+        var cleared = AgentToolCarryover.ClearOldResults(messages);
+
+        Assert.Equal(before, cleared.SelectMany(m => m.Contents).Select(IdOf));
+    }
+
+    private static string? IdOf(AIContent content) => content switch
+    {
+        FunctionCallContent c => "call:" + c.CallId,
+        FunctionResultContent r => "result:" + r.CallId,
+        _ => null,
+    };
 }

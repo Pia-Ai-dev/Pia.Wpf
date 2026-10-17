@@ -112,11 +112,13 @@ public sealed class ChatSession : IDisposable
     private UserInputRequestStore? _userInputRequest;
 
     /// <summary>
-    /// Each step's tool call/result messages, keyed by the <see cref="AssistantMessage.Id"/> of the reply they
-    /// belong to. The live half of cross-step tool context: deliberately NOT in <see cref="Messages"/>, which
-    /// is rendered and persisted, and read only by <see cref="BuildStepChatMessagesAsync"/>.
+    /// Each step's model context as sent — instruction, rounds and, once received, the answer — keyed by the
+    /// reply's <see cref="AssistantMessage.Id"/>. Kept out of <see cref="Messages"/>, which is rendered and persisted.
     /// </summary>
     private readonly Dictionary<Guid, List<ChatMessage>> _stepToolExchanges = new();
+
+    /// <summary>Steps whose transcript ends in the answer as received, which then stands in for the bubble.</summary>
+    private readonly HashSet<Guid> _answeredSteps = new();
 
     /// <summary>
     /// The interactive counterpart: one summary LINE per tool call, keyed the same way. Interactive replies
@@ -612,7 +614,7 @@ public sealed class ChatSession : IDisposable
         // The persona's model-routing hint (metadata.pia_persona_type). Sourced the same way as
         // personaId: the interactive turn off the AssistantTurnSetup, a Planned step off its spec.
         string? personaModelType = null,
-        // Where this turn's tool call/result messages accumulate, so the NEXT step can be built on them.
+        // Where this turn's rounds and answer accumulate as sent, so the NEXT step can extend them.
         // Only a Planned step passes one — the interactive turn has no next step and would grow it forever.
         List<ChatMessage>? toolExchangeSink = null)
     {
@@ -695,7 +697,12 @@ public sealed class ChatSession : IDisposable
                     break;
 
                 case ToolRoundExchange round:
-                    toolExchangeSink?.AddRange(round.Messages);
+                    toolExchangeSink?.AddRange(round.Sent);
+                    break;
+
+                case FinalAnswer final when toolExchangeSink is not null:
+                    toolExchangeSink.AddRange(final.Messages);
+                    _answeredSteps.Add(assistantMessage.Id);
                     break;
 
                 case Finished finished:
@@ -1005,16 +1012,6 @@ public sealed class ChatSession : IDisposable
             UserInputQuestion: askedQuestion);
     }
 
-    /// <summary>
-    /// Builds the model context for a step exchange: the system prompt + the full visible transcript
-    /// so far (excluding the streaming target) + one trailing EPHEMERAL User-role step instruction.
-    /// The instruction message is a local — it is never added to <see cref="Messages"/> / persisted.
-    /// The finished list is compacted against the provider's context budget so a long run cannot overflow the
-    /// window and fail a step; compaction returns a NEW list, so the displayed and persisted transcript is
-    /// unaffected. This is the LIVE half of executor parity — LiveTurnExecutor builds no message list of its
-    /// own, so the parity seam lives here.
-    /// </summary>
-    /// <summary>The list this step's tool exchanges accumulate into, created on first use for the step's reply.</summary>
     private List<ChatMessage> StepToolExchangeSink(Guid assistantMessageId)
     {
         if (!_stepToolExchanges.TryGetValue(assistantMessageId, out var sink))
@@ -1026,6 +1023,7 @@ public sealed class ChatSession : IDisposable
         return sink;
     }
 
+    /// <summary>The live twin of HeadlessTurnExecutor's step request; the displayed transcript is never changed.</summary>
     private async Task<List<ChatMessage>> BuildStepChatMessagesAsync(StepTurnSpec spec, RunContext ctx, AssistantMessage assistantMessage, CancellationToken ct)
     {
         var chatMessages = new List<ChatMessage>
@@ -1033,15 +1031,18 @@ public sealed class ChatSession : IDisposable
             new(ChatRole.System, spec.SystemPrompt),
         };
 
-        // ToChatMessage() carries text and an optional image and no tool content, so a step's calls and results
-        // are spliced back in ahead of the reply they belong to — the live twin of what HeadlessTurnExecutor
-        // keeps in _messages.
+        // A finished step contributes its transcript as sent; its bubble only when no answer was received.
         foreach (var message in Messages)
         {
             if (message == assistantMessage)
                 continue;
-            if (_stepToolExchanges.TryGetValue(message.Id, out var exchanges))
-                chatMessages.AddRange(exchanges);
+            if (_stepToolExchanges.TryGetValue(message.Id, out var transcript))
+            {
+                chatMessages.AddRange(transcript);
+                if (_answeredSteps.Contains(message.Id))
+                    continue;
+            }
+
             chatMessages.Add(message.ToChatMessage());
         }
 
@@ -1056,9 +1057,12 @@ public sealed class ChatSession : IDisposable
                 spec.WorkspaceRoot, spec.Tools, ctx);
         }
 
-        // The ONLY place a user steering note may ride — a ChatRole.User message, never System.
-        chatMessages.Add(new ChatMessage(ChatRole.User,
-            AssistantPromptComposer.AppendTimeNote(ctx.AppendNudge(instruction))));
+        // The ONLY place a user steering note may ride — a ChatRole.User message, never System. Recorded as
+        // sent, so the next step carries this instruction where this step's loop had it.
+        var instructionMessage = new ChatMessage(ChatRole.User,
+            AssistantPromptComposer.AppendTimeNote(ctx.AppendNudge(instruction)));
+        chatMessages.Add(instructionMessage);
+        StepToolExchangeSink(assistantMessage.Id).Add(instructionMessage);
 
         // Cleared before compaction, and by construction — _stepToolExchanges holds the full results and the
         // next step must still be able to be the one that gets them verbatim.
