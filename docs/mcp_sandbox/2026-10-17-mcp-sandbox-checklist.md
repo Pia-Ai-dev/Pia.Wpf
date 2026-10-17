@@ -28,7 +28,7 @@ If G1 fails, stop and do not tick C1 or anything below it. Report to the coordin
 
 ## Steps
 
-- [ ] **S1 Non-elevated spike (worker1).** A throwaway console spike (outside the repo, scratch dir) launched at medium IL spawns Mxc's `artifacts/servers/files` exe under MXC and checks the four denials, a Program-Files command without its dir granted, and `%LOCALAPPDATA%\Packages` profile growth across three spawns.
+- [x] **S1 Non-elevated spike (worker1).** A throwaway console spike (outside the repo, scratch dir) launched at medium IL spawns Mxc's `artifacts/servers/files` exe under MXC and checks the four denials, a Program-Files command without its dir granted, and `%LOCALAPPDATA%\Packages` profile growth across three spawns.
   *Deps:* none · *Effort:* XS · *Value:* Enabler (gate G1)
 - [ ] **S2 Native-outside-app-dir check (worker1).** Add `Microsoft.Mxc.Sdk` 1.0.1 to `Pia.Wpf` with `ExcludeAssets="native"`. Confirm `dotnet publish -r win-x64 --self-contained` then carries **no** `mxc_ffi.dll`. With the four native files placed in a separate dir and a `NativeLibrary.SetDllImportResolver`, confirm a Tier 3 spawn works from the app process, and record which files it actually needs and where it looks for `plm.exe`.
   *Deps:* S1 · *Effort:* XS · *Value:* Enabler (gate G2)
