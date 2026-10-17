@@ -281,9 +281,6 @@ jobs:
             git cliff "${DIFF_BASE}..HEAD" --tag "$TAG" --strip header -o release-notes.md
             echo "source=cliff" >> "$GITHUB_OUTPUT"
           fi
-          # Appended to BOTH branches, so it is read as raw text on storage.pia-ai.de as often as
-          # it is rendered on GitHub. Hence a bare URL rather than a Markdown link.
-          printf "\nFull changelog: https://github.com/Pia-Ai-dev/Pia.Wpf/blob/main/CHANGELOG.md\n" >> release-notes.md
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main'
