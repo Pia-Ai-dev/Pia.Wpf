@@ -103,16 +103,16 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### E Guard, verifier and errors
 
-- [ ] **E1 Guard rules for runtime folders.** The `ManagedRuntimeFolder` policy refusal, tests that the grants
+- [x] **E1 Guard rules for runtime folders.** The `ManagedRuntimeFolder` policy refusal, tests that the grants
   and support folders are refused as Pia data, and `RuntimeRootVerifier` (too wide, too large, semicolon) for
   toolchain roots and program folders.
   *Deps:* A1 · *Effort:* S · *Value:* High
-- [ ] **E2 Verifier, launcher request and serial spawns.** `SandboxGrantVerifier` walks toolchain roots fully
+- [x] **E2 Verifier, launcher request and serial spawns.** `SandboxGrantVerifier` walks toolchain roots fully
   with a cached positive result and checks Pia's own folders with their own clause; `MxcMcpLauncher` grants the
   toolchain, support and state folders, honours `ReplaceEnvironmentBlock`, and serializes spawns and disposals
   through `MxcAclGate`.
   *Deps:* A1 · *Effort:* S · *Value:* High
-- [ ] **E3 Path-free start errors.** `MxcSpawnErrors` turns `MxcException` texts, which carry full paths, into
+- [x] **E3 Path-free start errors.** `MxcSpawnErrors` turns `MxcException` texts, which carry full paths, into
   path-free messages without an inner exception, with the raw text in `SensitiveDebug` only.
   *Deps:* none · *Effort:* XS · *Value:* High
 

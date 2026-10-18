@@ -1,5 +1,6 @@
 using System.IO;
 using Pia.Paths;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 
 namespace Pia.Services.Plugins.Sandbox;
 
@@ -17,7 +18,8 @@ public enum SandboxPathIssueKind
     CommandFolderTooWide,
     WideFolder,
     TooManyFiles,
-    CommandFolderTooLarge
+    CommandFolderTooLarge,
+    ManagedRuntimeFolder
 }
 
 /// <param name="Path">The path as the policy holds it, so a UI can mark the matching entry. The message never repeats it.</param>
@@ -200,6 +202,13 @@ public static class SandboxPathGuard
             return;
         }
 
+        if (insideSandboxRoot && IsManagedRuntimeFolder(full, sandboxRoot))
+        {
+            issues.Add(new(raw, SandboxPathIssueKind.ManagedRuntimeFolder,
+                "Pia manages this folder for a server's runtime. Choose a different folder."));
+            return;
+        }
+
         if (environment.WideFolders.Any(wide => string.Equals(full, SandboxLaunchSpecBuilder.Normalize(wide), StringComparison.OrdinalIgnoreCase)))
         {
             issues.Add(new(raw, SandboxPathIssueKind.WideFolder,
@@ -221,6 +230,27 @@ public static class SandboxPathGuard
         }
 
         accepted.Add((raw, full));
+    }
+
+    private static bool IsManagedRuntimeFolder(string full, string sandboxRoot) =>
+        full[(sandboxRoot.TrimEnd('\\').Length + 1)..].Split('\\')[0].EndsWith(".runtime", StringComparison.OrdinalIgnoreCase);
+
+    /// <returns>Null when the normalized root may be granted, and under Windows or Program Files, which are never granted.</returns>
+    internal static RuntimeIssue? JudgeRuntimeRoot(string root, bool isProgramFolder, SandboxGuardEnvironment environment)
+    {
+        if (root.Contains(';'))
+            return RuntimeIssue.ToolchainPathUnsupported;
+
+        if (SystemRoots(environment).Any(system => SandboxLaunchSpecBuilder.IsSameOrUnder(root, system)))
+            return null;
+
+        if (IsTooWide(root, environment))
+            return isProgramFolder ? RuntimeIssue.ProgramFolderTooWide : RuntimeIssue.ToolchainTooWide;
+
+        if (IsTooLarge(root, environment))
+            return isProgramFolder ? RuntimeIssue.ProgramFolderTooLarge : RuntimeIssue.ToolchainTooLarge;
+
+        return null;
     }
 
     private static (SandboxPathIssueKind Kind, string Message)? FindProblem(

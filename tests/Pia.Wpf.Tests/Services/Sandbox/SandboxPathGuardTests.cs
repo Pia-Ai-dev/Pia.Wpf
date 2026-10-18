@@ -1,5 +1,7 @@
 using System.IO;
+using Pia.Paths;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 using Xunit;
 
 namespace Pia.Tests.Services.Sandbox;
@@ -11,6 +13,7 @@ public sealed class SandboxPathGuardTests
         @"C:\gone",
         @"C:\Users\me\AppData\Local\Pia\McpSandbox\fresh",
         @"C:\Users\me\AppData\Local\Pia\McpSandbox\ro-fresh",
+        @"C:\Users\me\AppData\Local\Pia\McpSandbox\gone.runtime",
     };
 
     private static readonly Dictionary<string, int> Counts = new(StringComparer.OrdinalIgnoreCase)
@@ -208,6 +211,152 @@ public sealed class SandboxPathGuardTests
     {
         Assert.Equal(SandboxPathIssueKind.SandboxRootItself, Single(Validate([@"C:\Users\me\AppData\Local\Pia\McpSandbox"], [])).Kind);
         Assert.Empty(Validate([@"C:\Users\me\AppData\Local\Pia\McpSandbox\fs"], []));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\files.runtime")]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\FILES.RUNTIME\")]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\files.runtime\node_modules")]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\gone.runtime")]
+    public void AServersRuntimeFolder_IsRefused_ForBothKinds(string path)
+    {
+        var readwrite = Single(Validate([path], []));
+        var readOnly = Single(Validate([], [path]));
+
+        Assert.Equal(SandboxPathIssueKind.ManagedRuntimeFolder, readwrite.Kind);
+        Assert.Equal(SandboxPathIssueKind.ManagedRuntimeFolder, readOnly.Kind);
+        Assert.Equal("Pia manages this folder for a server's runtime. Choose a different folder.", readwrite.Message);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\fs")]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\runtime")]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\fs.runtimes")]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\fs\cache.runtime")]
+    [InlineData(@"C:\Work\project.runtime")]
+    public void AFolderThatIsNoServersRuntimeFolder_IsStillAccepted(string path)
+    {
+        Assert.Empty(Validate([path], []));
+    }
+
+    [Fact]
+    public void PiasGrantAndSupportFolders_AreRefusedAsPiasOwnData()
+    {
+        var environment = SandboxGuardEnvironment.Current() with { PathExists = _ => true, CountEntries = (_, _) => 1 };
+
+        foreach (var path in new[] { PiaPaths.McpSandboxGrantsDirectory, PiaPaths.McpSandboxSupportDirectory })
+        {
+            var readwrite = Single(SandboxPathGuard.Validate(new McpSandboxPolicy([path], [], false), null, environment, _ => true));
+            var readOnly = Single(SandboxPathGuard.Validate(new McpSandboxPolicy([], [path], false), null, environment, _ => true));
+
+            Assert.Equal(SandboxPathIssueKind.PiaDataFolder, readwrite.Kind);
+            Assert.Equal(SandboxPathIssueKind.PiaDataFolder, readOnly.Kind);
+        }
+    }
+
+    [Fact]
+    public void TheCurrentSandboxRoot_StillAcceptsAServersOwnFolder_ButNotItsRuntimeFolder()
+    {
+        var environment = SandboxGuardEnvironment.Current() with { PathExists = _ => true, CountEntries = (_, _) => 1 };
+        var policy = new McpSandboxPolicy([Path.Combine(PiaPaths.McpSandboxRoot, "fs")], [PiaPaths.McpRuntimeStateDirectory("fs")], false);
+
+        var issue = Single(SandboxPathGuard.Validate(policy, null, environment, _ => true));
+
+        Assert.Equal(SandboxPathIssueKind.ManagedRuntimeFolder, issue.Kind);
+        Assert.Equal(PiaPaths.McpRuntimeStateDirectory("fs"), issue.Path);
+    }
+
+    private static SandboxGuardEnvironment RuntimeEnvironment(params (string Path, int Count)[] counts)
+    {
+        var table = counts.ToDictionary(c => c.Path, c => c.Count, StringComparer.OrdinalIgnoreCase);
+        return SandboxGuardEnvironment.Current() with
+        {
+            PathExists = _ => true,
+            CountEntries = (path, limit) => Math.Min(table.GetValueOrDefault(path, 10), limit)
+        };
+    }
+
+    private static string InProfile(params string[] parts) => Path.Combine([PiaPaths.UserProfileRoot, .. parts]);
+
+    private static void AssertJudged(RuntimeIssue? toolchain, RuntimeIssue? programFolder, string root, SandboxGuardEnvironment environment)
+    {
+        Assert.Equal(toolchain, SandboxPathGuard.JudgeRuntimeRoot(root, isProgramFolder: false, environment));
+        Assert.Equal(programFolder, SandboxPathGuard.JudgeRuntimeRoot(root, isProgramFolder: true, environment));
+    }
+
+    [Fact]
+    public void ARuntimeRoot_AtTheProfileRoot_IsTooWide()
+    {
+        var environment = RuntimeEnvironment();
+
+        AssertJudged(RuntimeIssue.ToolchainTooWide, RuntimeIssue.ProgramFolderTooWide, environment.ProfileRoot, environment);
+        AssertJudged(RuntimeIssue.ToolchainTooWide, RuntimeIssue.ProgramFolderTooWide, Path.GetDirectoryName(environment.ProfileRoot)!, environment);
+    }
+
+    [Fact]
+    public void ARuntimeRoot_ThatIsDownloadsItself_IsTooWide_ButAFolderInsideItIsNot()
+    {
+        var environment = RuntimeEnvironment();
+
+        AssertJudged(RuntimeIssue.ToolchainTooWide, RuntimeIssue.ProgramFolderTooWide, InProfile("Downloads"), environment);
+        AssertJudged(null, null, InProfile("Downloads", "node-v22"), environment);
+    }
+
+    [Fact]
+    public void ARuntimeRoot_InPiasOwnData_IsTooWide()
+    {
+        var environment = RuntimeEnvironment();
+
+        AssertJudged(RuntimeIssue.ToolchainTooWide, RuntimeIssue.ProgramFolderTooWide, PiaPaths.LocalDataDirectory, environment);
+        AssertJudged(RuntimeIssue.ToolchainTooWide, RuntimeIssue.ProgramFolderTooWide, PiaPaths.McpSandboxSupportDirectory, environment);
+        AssertJudged(RuntimeIssue.ToolchainTooWide, RuntimeIssue.ProgramFolderTooWide, PiaPaths.McpSandboxRoot, environment);
+    }
+
+    [Fact]
+    public void ARuntimeRoot_InsideTheSandboxRoot_KeepsItsExemptions()
+    {
+        var state = PiaPaths.McpRuntimeStateDirectory("fs");
+        var environment = RuntimeEnvironment((state, 90_000));
+
+        AssertJudged(null, null, state, environment);
+    }
+
+    [Fact]
+    public void ARuntimeRoot_WithMoreEntriesThanTheCap_IsTooLarge()
+    {
+        var big = InProfile("tools", "node");
+        var exactly = InProfile("tools", "dotnet");
+        var environment = RuntimeEnvironment((big, SandboxPathGuard.MaxEntriesPerRoot + 1), (exactly, SandboxPathGuard.MaxEntriesPerRoot));
+
+        AssertJudged(RuntimeIssue.ToolchainTooLarge, RuntimeIssue.ProgramFolderTooLarge, big, environment);
+        AssertJudged(null, null, exactly, environment);
+    }
+
+    [Fact]
+    public void ARuntimeRoot_WithASemicolon_IsUnsupported()
+    {
+        var environment = RuntimeEnvironment();
+
+        AssertJudged(RuntimeIssue.ToolchainPathUnsupported, RuntimeIssue.ToolchainPathUnsupported, InProfile("a;b", "node"), environment);
+    }
+
+    [Fact]
+    public void ARuntimeRoot_UnderProgramFilesOrWindows_IsNeverGranted_SoNeverJudged()
+    {
+        var environment = RuntimeEnvironment();
+        var programFiles = Path.Combine(environment.ProgramFilesDirectories[0], "nodejs");
+        var huge = RuntimeEnvironment((programFiles, 90_000));
+
+        AssertJudged(null, null, programFiles, huge);
+        AssertJudged(null, null, Path.Combine(environment.WindowsDirectory, "System32"), environment);
+    }
+
+    [Fact]
+    public void APlainUserFolder_MayBeGranted()
+    {
+        var environment = RuntimeEnvironment();
+
+        AssertJudged(null, null, InProfile("tools", "node"), environment);
     }
 
     [Theory]
