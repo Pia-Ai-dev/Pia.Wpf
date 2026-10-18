@@ -10,6 +10,7 @@ using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Operators;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.Services.Screen;
 using Pia.Shared.Operators;
 using Pia.ViewModels;
@@ -520,6 +521,102 @@ public class LocalizationTests
             $"every capture-refusal key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
+    /// <summary>The refusal key comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryRunnerRefusalKeyResolvesInAllThreeLocales()
+    {
+        // Taken from the parser, so a renamed subject cannot slip past the map into its fallback.
+        var subjects = new (string Command, string Arg)[] { ("npm", "install"), ("uv", "pip"), ("dotnet", "build"), ("node", "-e") }
+            .Select(c => RunnerCommandParser.Parse(c.Command, [c.Arg], workingDirectory: null))
+            .Select(parse =>
+            {
+                Assert.Equal(RunnerRefusal.UnsupportedForm, parse.Refusal);
+                return parse.Subject;
+            })
+            .ToArray();
+
+        var keys = Enum.GetValues<RunnerRefusal>()
+            .Where(refusal => refusal != RunnerRefusal.None)
+            .SelectMany(refusal => refusal == RunnerRefusal.UnsupportedForm
+                ? subjects.Select(subject => SandboxRuntimeKeys.ForRefusal(refusal, subject))
+                : [SandboxRuntimeKeys.ForRefusal(refusal, null)])
+            .Select(key => key!)
+            .Distinct()
+            .ToList();
+
+        Assert.Null(SandboxRuntimeKeys.ForRefusal(RunnerRefusal.None, null));
+
+        // Two refusals share the launcher text and UnsupportedForm takes one text per subject.
+        string[] expected =
+        [
+            "McpServers_Sandbox_Reason_Shim",
+            "McpServers_Sandbox_Reason_CmdNotSystem",
+            "McpServers_Sandbox_Reason_CmdWithoutC",
+            "McpServers_Sandbox_Reason_CmdMetacharacters",
+            "McpServers_Sandbox_Reason_UnsupportedForm_Npm",
+            "McpServers_Sandbox_Reason_UnsupportedForm_Uv",
+            "McpServers_Sandbox_Reason_UnsupportedForm_Dotnet",
+            "McpServers_Sandbox_Reason_UnsupportedForm_Node",
+            "McpServers_Sandbox_Reason_UvxOption",
+            "McpServers_Sandbox_Reason_UvxValue",
+            "McpServers_Sandbox_Reason_RelativePath",
+        ];
+        Assert.Equal(expected.Order(), keys.Order());
+
+        var missing = MissingFromAnyLocale(ViewStrings.ResourceManager, keys);
+        Assert.True(missing.Count == 0,
+            $"every runner-refusal key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>The issue key comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryRuntimeIssueKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<RuntimeIssue>()
+            .Where(issue => issue != RuntimeIssue.None)
+            .Select(issue => SandboxRuntimeKeys.ForIssue(issue)!)
+            .Distinct()
+            .ToList();
+
+        Assert.Null(SandboxRuntimeKeys.ForIssue(RuntimeIssue.None));
+        Assert.True(keys.Count >= 13, $"non-vacuity: expected at least 13 distinct runtime-issue keys, found {keys.Count}");
+        Assert.Equal(Enum.GetValues<RuntimeIssue>().Length - 1, keys.Count);
+
+        var missing = MissingFromAnyLocale(ViewStrings.ResourceManager, keys);
+        Assert.True(missing.Count == 0,
+            $"every runtime-issue key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>The runner key comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryRunnerKindKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<RunnerKind>()
+            .Where(kind => kind != RunnerKind.None)
+            .Select(kind => SandboxRuntimeKeys.ForRunner(kind)!)
+            .Distinct()
+            .ToList();
+
+        Assert.Null(SandboxRuntimeKeys.ForRunner(RunnerKind.None));
+        Assert.True(keys.Count >= 6, $"non-vacuity: expected at least 6 distinct runner-kind keys, found {keys.Count}");
+        Assert.Equal(Enum.GetValues<RunnerKind>().Length - 1, keys.Count);
+
+        var missing = MissingFromAnyLocale(ViewStrings.ResourceManager, keys);
+        Assert.True(missing.Count == 0,
+            $"every runner-kind key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    private static List<string> MissingFromAnyLocale(ResourceManager rm, IEnumerable<string> keys)
+    {
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(rm, culture);
+            missing.AddRange(keys.Where(k => !available.Contains(k)).Select(k => $"{culture.Name}: {k}"));
+        }
+        return missing;
+    }
+
     [Fact]
     public void EnumConverterKeys_MustExistInResources()
     {
@@ -575,6 +672,32 @@ public class LocalizationTests
         foreach (var culture in cultures)
         {
             var value = ViewStrings.ResourceManager.GetString(key, culture);
+            Assert.False(string.IsNullOrWhiteSpace(value), $"{key} is missing for {culture.Name}");
+            var indexes = placeholder.Matches(value!).Select(m => m.Groups[1].Value).Order().ToArray();
+            Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),
+                indexes);
+        }
+    }
+
+    /// <summary>A locale that drops {2} from the fix confirmation hides the removal command, the fix's only undo.</summary>
+    [Theory]
+    [InlineData("McpServers_Sandbox_Reason_UvxOption", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_Found", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_StateFolder", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_StateFolderReadOnly", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_FixText", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_FixConfirmMessage", 3)]
+    [InlineData("McpServers_Sandbox_Runtime_FixFailed", 1)]
+    [InlineData("McpServers_Detail_SandboxRuntime", 2)]
+    public void ASandboxRuntimeKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
+    {
+        var placeholder = new Regex(@"\{(\d+)");
+        var cultures = new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") };
+
+        foreach (var culture in cultures)
+        {
+            // No parent fallback: a missing de value must not pass on the English one.
+            var value = ViewStrings.ResourceManager.GetResourceSet(culture, true, false)?.GetString(key);
             Assert.False(string.IsNullOrWhiteSpace(value), $"{key} is missing for {culture.Name}");
             var indexes = placeholder.Matches(value!).Select(m => m.Groups[1].Value).Order().ToArray();
             Assert.Equal(Enumerable.Range(0, expected).Select(i => i.ToString(CultureInfo.InvariantCulture)),

@@ -125,7 +125,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### U Editor
 
-- [ ] **U0 Editor strings.** Every key of the plan's *Appendix C* in en, de and fr, `SandboxRuntimeKeys`, the
+- [x] **U0 Editor strings.** Every key of the plan's *Appendix C* in en, de and fr, `SandboxRuntimeKeys`, the
   three enum→key tests and the placeholder-parity theory.
   *Deps:* A1 · *Effort:* S · *Value:* Enabler
 - [ ] **U1 Editor view model.** Parser-based toggle and reasons, guard parity with the factory, debounced

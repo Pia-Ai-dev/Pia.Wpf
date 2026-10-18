@@ -1724,11 +1724,22 @@
   <data name="McpServers_Sandbox_Summary_NetworkOn" xml:space="preserve"><value>In der Sandbox · rw={0} ro={1} Netz an</value></data>
   <data name="McpServers_Sandbox_NotSandboxed" xml:space="preserve"><value>Nicht in der Sandbox</value></data>
   <data name="McpServers_Detail_SandboxAlsoReadable" xml:space="preserve"><value>Zusätzlich lesbar: der eigene Ordner des Servers</value></data>
+  <data name="McpServers_Detail_SandboxRuntime" xml:space="preserve"><value>{0} · Laufzeitordner {1}</value></data>
   <data name="McpServers_Sandbox_Title" xml:space="preserve"><value>Sandbox</value></data>
   <data name="McpServers_Sandbox_Hint" xml:space="preserve"><value>Startet den Server in einem isolierten Container, der nur die hier aufgeführten Ordner erreicht. Jeder Tool-Aufruf braucht weiterhin deine Freigabe.</value></data>
   <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>In der Sandbox ausführen</value></data>
-  <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Starter wie npx und uvx sowie .cmd- oder .bat-Skripte laufen noch nicht in einer Sandbox. Lass den Befehl direkt auf das Server-Programm zeigen.</value></data>
+  <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Pia kann Server, die mit pnpm, yarn, bun, deno, pipx oder docker oder mit .cmd-, .bat- oder .ps1-Skripten starten, nicht in einer Sandbox ausführen. npx, npm exec, uvx und dnx funktionieren; ansonsten lass den Befehl direkt auf das Server-Programm zeigen.</value></data>
   <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Sandboxing ist auf diesem Gerät nicht verfügbar.</value></data>
+  <data name="McpServers_Sandbox_Reason_CmdNotSystem" xml:space="preserve"><value>Pia kann diesen Server nicht in einer Sandbox ausführen: „cmd“ muss der Windows-Befehlsprozessor sein.</value></data>
+  <data name="McpServers_Sandbox_Reason_CmdWithoutC" xml:space="preserve"><value>Pia kann diesen Server nicht in einer Sandbox ausführen: Nur „cmd /c“ gefolgt von einem Programm lässt sich auflösen.</value></data>
+  <data name="McpServers_Sandbox_Reason_CmdMetacharacters" xml:space="preserve"><value>Pia kann diesen Server nicht in einer Sandbox ausführen: Die Zeile nach cmd /c nutzt cmd-Funktionen (&amp; | &lt; &gt; ^ % oder Anführungszeichen), die eine Sandbox nicht nachbilden kann. Trag das Programm in das Feld „Befehl“ ein und seine Argumente eins pro Zeile.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Npm" xml:space="preserve"><value>Pia kann npm nur als npx oder npm exec in einer Sandbox ausführen.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Uv" xml:space="preserve"><value>Pia kann uv nur als uvx oder uv tool run in einer Sandbox ausführen, und nur mit einem Befehlsnamen, den Pia lesen kann.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Dotnet" xml:space="preserve"><value>Pia kann dotnet nur als dnx, dotnet dnx oder dotnet &lt;app&gt;.dll in einer Sandbox ausführen.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Node" xml:space="preserve"><value>Pia kann node nur als node &lt;script&gt; in einer Sandbox ausführen.</value></data>
+  <data name="McpServers_Sandbox_Reason_UvxOption" xml:space="preserve"><value>Pia kann diesen uvx-Aufruf nicht in einer Sandbox ausführen: Die Option {0} wird nicht unterstützt. Unterstützt werden --from, --with und --python.</value></data>
+  <data name="McpServers_Sandbox_Reason_UvxValue" xml:space="preserve"><value>Pia kann diesen uvx-Aufruf nicht in einer Sandbox ausführen: Pakete müssen Namen aus dem Paketindex sein, optional mit Version, und --python erwartet eine Versionsnummer.</value></data>
+  <data name="McpServers_Sandbox_Reason_RelativePath" xml:space="preserve"><value>Gib den vollständigen Pfad des Skripts oder der .dll an oder lege ein Arbeitsverzeichnis fest.</value></data>
   <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia muss die Sandbox-Laufzeit (etwa 15 MB) aus dem Pia-Speicher herunterladen, bevor dieser Server starten kann. Beim Speichern eines aktivierten Sandbox-Servers wird sie automatisch heruntergeladen; sie kann auch jetzt heruntergeladen werden.</value></data>
   <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Sandbox-Laufzeit wird heruntergeladen … {0} %</value></data>
   <data name="McpServers_Sandbox_Installing" xml:space="preserve"><value>Sandbox-Laufzeit wird eingerichtet …</value></data>
@@ -1752,6 +1763,51 @@
   <data name="McpServers_Sandbox_BrowseReadonlyTitle" xml:space="preserve"><value>Ordner nur mit Lesezugriff wählen</value></data>
   <data name="McpServers_Sandbox_AllowNetwork" xml:space="preserve"><value>Netzwerkzugriff erlauben</value></data>
   <data name="McpServers_Sandbox_NetworkWarning" xml:space="preserve"><value>Das erlaubt Verbindungen zu jedem Host. Eine Sandbox kann den Server nicht auf einzelne Hosts beschränken.</value></data>
+  <data name="McpServers_Sandbox_Runner_Npx" xml:space="preserve"><value>npx</value></data>
+  <data name="McpServers_Sandbox_Runner_NpmExec" xml:space="preserve"><value>npm exec</value></data>
+  <data name="McpServers_Sandbox_Runner_NodeScript" xml:space="preserve"><value>Node.js-Skript</value></data>
+  <data name="McpServers_Sandbox_Runner_Dnx" xml:space="preserve"><value>dnx</value></data>
+  <data name="McpServers_Sandbox_Runner_DotnetDll" xml:space="preserve"><value>.NET-App</value></data>
+  <data name="McpServers_Sandbox_Runner_Uvx" xml:space="preserve"><value>uvx</value></data>
+  <data name="McpServers_Sandbox_Runtime_Title" xml:space="preserve"><value>Laufzeitumgebung</value></data>
+  <data name="McpServers_Sandbox_Runtime_Detect" xml:space="preserve"><value>Laufzeitumgebungen erkennen</value></data>
+  <data name="McpServers_Sandbox_Runtime_Detecting" xml:space="preserve"><value>Laufzeitumgebung wird gesucht …</value></data>
+  <data name="McpServers_Sandbox_Runtime_Found" xml:space="preserve"><value>Gefunden: {0}.</value></data>
+  <data name="McpServers_Sandbox_Runtime_ReadonlyFolders" xml:space="preserve"><value>Bei jedem Start schreibgeschützt für den Server freigegeben:</value></data>
+  <data name="McpServers_Sandbox_Runtime_ReadableAlready" xml:space="preserve"><value>Apps in einer Sandbox können diese Laufzeitumgebung bereits lesen, daher gibt Pia nichts zusätzlich frei.</value></data>
+  <data name="McpServers_Sandbox_Runtime_StateFolder" xml:space="preserve"><value>Pia speichert die Downloads und Caches dieses Servers in {0}.</value></data>
+  <data name="McpServers_Sandbox_Runtime_StateFolderReadOnly" xml:space="preserve"><value>Pia installiert das Paket dieses Servers in {0}; der Server kann es nur lesen.</value></data>
+  <data name="McpServers_Sandbox_Runtime_DenyHint" xml:space="preserve"><value>Ohne Netzwerkzugriff startet dieser Server erst, wenn sein Paket im Laufzeitordner von Pia liegt. Starte ihn einmal mit Netzwerkzugriff.</value></data>
+  <data name="McpServers_Sandbox_Runtime_DetectAgain" xml:space="preserve"><value>Erneut erkennen</value></data>
+  <data name="McpServers_Sandbox_Runtime_Copy" xml:space="preserve"><value>Kopieren</value></data>
+  <data name="McpServers_Sandbox_Runtime_Copied" xml:space="preserve"><value>Befehl kopiert.</value></data>
+  <data name="McpServers_Sandbox_EnvHint" xml:space="preserve"><value>Deine Windows-Benutzerumgebungsvariablen sind für Server in der Sandbox ausgeblendet. Trag die, die dieser Server braucht, unter „Umgebungsvariablen“ ein.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_NodeNotFound" xml:space="preserve"><value>Node.js wurde nicht gefunden. Installiere es nur für deinen Benutzer, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_NodeAdminOwned" xml:space="preserve"><value>Das einzige gefundene Node.js ist für alle Benutzer installiert, und Apps in einer Sandbox können seinen Ordner nicht lesen. Führe Pia einmal als Administrator aus, um das zu erlauben, oder installiere Node.js nur für deinen Benutzer.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetSdkMissing" xml:space="preserve"><value>dnx braucht ein .NET 10 SDK, und es wurde keins gefunden. Installiere eins nur für deinen Benutzer, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing" xml:space="preserve"><value>Die .NET-Laufzeit, die dieses Programm braucht, wurde nicht gefunden. Installiere das .NET 10 SDK nur für deinen Benutzer, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetAdminOwned" xml:space="preserve"><value>Das einzige gefundene .NET ist für alle Benutzer installiert, und Apps in einer Sandbox können seinen Ordner nicht lesen. Führe Pia einmal als Administrator aus, um das zu erlauben, oder installiere .NET nur für deinen Benutzer.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_UvNotFound" xml:space="preserve"><value>uv wurde nicht gefunden. Installiere es nur für deinen Benutzer, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ToolchainTooLarge" xml:space="preserve"><value>Der Ordner der Laufzeitumgebung enthält zu viele Dateien, um ihn mit einer Sandbox zu teilen. Installiere eine eigene Kopie nur für deinen Benutzer, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ToolchainTooWide" xml:space="preserve"><value>Die Laufzeitumgebung liegt direkt in einem Ordner, den Pia nicht freigibt (dein Profil, Desktop, Dokumente oder Downloads). Installiere sie in einen eigenen Ordner, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ToolchainPathUnsupported" xml:space="preserve"><value>Der Ordnerpfad der Laufzeitumgebung enthält ein Semikolon, mit dem eine Sandbox nicht umgehen kann. Installiere sie in einen anderen Ordner, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ProgramFolderTooLarge" xml:space="preserve"><value>Der Ordner des Programms enthält zu viele Dateien, um ihn mit einem Server in der Sandbox zu teilen. Leg das Programm in einen kleineren Ordner.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ProgramFolderTooWide" xml:space="preserve"><value>Leg das Programm in einen eigenen Ordner: Pia müsste sonst den gesamten Ordner darum herum freigeben.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ScriptMissing" xml:space="preserve"><value>Das Skript wurde nicht gefunden.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DllMissing" xml:space="preserve"><value>Die .dll wurde nicht gefunden.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixText" xml:space="preserve"><value>Pia läuft als Administrator und kann daher jeder App in einer Sandbox auf diesem PC erlauben, {0} zu lesen.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Fix" xml:space="preserve"><value>Apps in einer Sandbox das Lesen dieses Ordners erlauben</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixConfirmTitle" xml:space="preserve"><value>Berechtigungen dieses Ordners ändern?</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixConfirmMessage" xml:space="preserve"><value>Pia erlaubt jeder App in einer Sandbox auf diesem PC, {0} zu lesen. Das ist reiner Lesezugriff, wie ihn Program Files auch an anderer Stelle gewährt. Pia kann das nicht rückgängig machen; ein Administrator kann es, mit dem zweiten Befehl.&#xA;&#xA;Erteilen: {1}&#xA;Entfernen: {2}</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixExistingAce" xml:space="preserve"><value>Dieser Ordner hat bereits eine Berechtigung für alle Apps in einer Sandbox. Pia lässt ihn unverändert, weil ein späteres Entfernen von Pias Änderung auch diese Berechtigung entziehen würde.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixFailed" xml:space="preserve"><value>Pia konnte die Berechtigungen des Ordners nicht ändern: {0}</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixDone" xml:space="preserve"><value>Apps in einer Sandbox können den Ordner jetzt lesen.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Node" xml:space="preserve"><value>Installiere Node.js nur für deinen Benutzer, ohne Administratorrechte. Führe das in einem Terminal aus und klicke dann auf „Erneut erkennen“:</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_NodeAlt" xml:space="preserve"><value>Kein winget? Dieser PowerShell-Befehl legt Node.js stattdessen in deinem Benutzerordner ab:</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Uv" xml:space="preserve"><value>Installiere uv nur für deinen Benutzer, ohne Administratorrechte. Führe das in einem Terminal aus und klicke dann auf „Erneut erkennen“:</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_UvAlt" xml:space="preserve"><value>Oder mit winget:</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Dotnet" xml:space="preserve"><value>Installiere das .NET 10 SDK nur für deinen Benutzer, ohne Administratorrechte. Führe das in einem Terminal aus und klicke dann auf „Erneut erkennen“:</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Caveat" xml:space="preserve"><value>Hinter einem Proxy oder wenn deine Organisation Skripte oder Programme in Benutzerordnern blockiert, kann das fehlschlagen. Frag dein IT-Team oder führe Pia einmal als Administrator aus, um eine installierte Kopie zu verwenden.</value></data>
   <data name="McpServers_PasteJson" xml:space="preserve"><value>Konfiguration einfügen</value></data>
   <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Füge einen mcpServers-Eintrag aus einem anderen Client ein, um die Felder zu füllen.</value></data>
   <data name="McpServers_ApplyJson" xml:space="preserve"><value>Aus JSON übernehmen</value></data>
