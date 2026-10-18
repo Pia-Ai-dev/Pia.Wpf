@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Pia.Services.Plugins;
 using Pia.Services.Plugins.Sandbox;
 using Xunit;
@@ -280,6 +281,39 @@ public class LocalMcpConfigTests
     public void AFieldOfTheWrongType_ReadsAsNoDefinition_NotAnException(string json)
     {
         Assert.Null(LocalMcpConfig.FromConfigJson("n", null, json, v => v));
+    }
+
+    [Theory]
+    [InlineData(@"x\..\..\..\..\Roaming\Pia\settings")]
+    [InlineData("x/../../settings")]
+    [InlineData(@"D:\data\proj")]
+    [InlineData("files.runtime")]
+    [InlineData("my-server")]
+    public void AToolPrefixThatIsNotAPlainToken_ReadsAsNoDefinition(string prefix)
+    {
+        var json = new JsonObject { ["source"] = "local", ["command"] = "x", ["toolPrefix"] = prefix }.ToJsonString();
+
+        Assert.Null(LocalMcpConfig.FromConfigJson("n", null, json, v => v));
+    }
+
+    [Fact]
+    public void AToolPrefixLongerThan64Characters_ReadsAsNoDefinition()
+    {
+        var json = new JsonObject { ["source"] = "local", ["command"] = "x", ["toolPrefix"] = new string('a', 65) }.ToJsonString();
+
+        Assert.Null(LocalMcpConfig.FromConfigJson("n", null, json, v => v));
+    }
+
+    [Fact]
+    public void ADeduplicatedToolPrefix_OfACappedName_StillReads()
+    {
+        var prefix = LocalMcpConfig.DeriveToolPrefix("@modelcontextprotocol/server-git") + "_2";
+        var definition = new LocalMcpDefinition("n", "x", [], new Dictionary<string, string>(), null, prefix, null);
+
+        var back = LocalMcpConfig.FromConfigJson("n", null, LocalMcpConfig.ToConfigJson(definition, v => v), v => v);
+
+        Assert.Equal(26, prefix.Length);
+        Assert.Equal(prefix, back?.ToolPrefix);
     }
 
     [Fact]

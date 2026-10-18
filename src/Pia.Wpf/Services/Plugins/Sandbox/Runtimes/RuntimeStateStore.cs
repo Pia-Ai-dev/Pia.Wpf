@@ -9,20 +9,20 @@ namespace Pia.Services.Plugins.Sandbox.Runtimes;
 /// <summary>Owns the runtime state folders and the grant records kept outside them.</summary>
 public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRuntimeStateStore
 {
-    private const string ContainerPrefix = "pia-mcp-";
-    private const string ProbeSuffix = "-probe";
     private const string RecordExtension = ".json";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false)
     {
-        CheckContainerName(containerName);
-
+        var target = RecordPath(containerName);
         var directory = PiaPaths.McpSandboxGrantsDirectory;
         Directory.CreateDirectory(directory);
-        var record = new GrantRecord(containerName, [.. roots], DateTime.UtcNow, stateReadOnly);
-        var target = RecordPath(containerName);
+
+        // A root a failed sweep left behind stays on record until a later sweep can reach it.
+        var kept = ReadRoots(containerName).Where(root => Directory.Exists(root) || File.Exists(root));
+        var record = new GrantRecord(
+            containerName, [.. roots.Concat(kept).Distinct(StringComparer.OrdinalIgnoreCase)], DateTime.UtcNow, stateReadOnly);
         var temp = Path.Combine(directory, $".{containerName}.{Guid.NewGuid():N}.tmp");
         try
         {
@@ -37,10 +37,9 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
 
     public bool? StateGrantedReadOnly(string containerName)
     {
-        CheckContainerName(containerName);
+        var path = RecordPath(containerName);
         try
         {
-            var path = RecordPath(containerName);
             if (!File.Exists(path))
                 return null;
 
@@ -54,6 +53,9 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
 
     public IReadOnlyList<string> SweepRoots(string prefix)
     {
+        if (!IsPlainPrefix(prefix))
+            return [];
+
         var roots = new List<string>();
         var state = PiaPaths.McpRuntimeStateDirectory(prefix);
         if (Directory.Exists(state))
@@ -67,6 +69,12 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
 
     public bool TryDelete(string prefix, Action? beforeDelete = null)
     {
+        if (!IsPlainPrefix(prefix))
+        {
+            logger.LogWarning("Runtime state not deleted: the prefix is not a plain name");
+            return false;
+        }
+
         var state = PiaPaths.McpRuntimeStateDirectory(prefix);
         using var held = RuntimeStateLocks.TryAcquire(state);
         if (held is null || SandboxLaunchSpecBuilder.ContainerNames(prefix).Any(SandboxContainerLease.IsActive))
@@ -109,9 +117,9 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
             prefixes.AddRange(Directory.EnumerateFiles(PiaPaths.McpSandboxGrantsDirectory, "*" + RecordExtension)
                 .Select(Path.GetFileNameWithoutExtension)
                 .OfType<string>()
-                .Where(name => name.StartsWith(ContainerPrefix, StringComparison.OrdinalIgnoreCase))
-                .Select(name => name[ContainerPrefix.Length..])
-                .Select(name => name.EndsWith(ProbeSuffix, StringComparison.OrdinalIgnoreCase) ? name[..^ProbeSuffix.Length] : name));
+                .Where(name => SandboxLaunchSpecBuilder.ContainerNames(SandboxLaunchSpecBuilder.PrefixOf(name))
+                    .Contains(name, StringComparer.OrdinalIgnoreCase))
+                .Select(SandboxLaunchSpecBuilder.PrefixOf));
         }
 
         return [.. prefixes
@@ -119,20 +127,33 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
             .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
-    private static string RecordPath(string containerName) =>
-        Path.Combine(PiaPaths.McpSandboxGrantsDirectory, containerName + RecordExtension);
-
-    private static void CheckContainerName(string containerName)
+    private static string RecordPath(string containerName)
     {
-        if (containerName.Length == 0 || containerName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        if (!IsPlainFileName(containerName))
             throw new ArgumentException("A container name must be a plain file name.", nameof(containerName));
+
+        return Path.Combine(PiaPaths.McpSandboxGrantsDirectory, containerName + RecordExtension);
+    }
+
+    private static bool IsPlainFileName(string name) =>
+        name.Length > 0 && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
+
+    // A prefix read from saved settings must not lead the delete out of the sandbox root.
+    private static bool IsPlainPrefix(string prefix)
+    {
+        if (prefix.Length == 0 || !SandboxLaunchSpecBuilder.ContainerNames(prefix).All(IsPlainFileName))
+            return false;
+
+        var parent = Path.GetDirectoryName(Path.GetFullPath(PiaPaths.McpRuntimeStateDirectory(prefix)));
+        return string.Equals(
+            parent, Path.TrimEndingDirectorySeparator(Path.GetFullPath(PiaPaths.McpSandboxRoot)), StringComparison.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyList<string> ReadRoots(string containerName)
     {
+        var path = RecordPath(containerName);
         try
         {
-            var path = RecordPath(containerName);
             if (!File.Exists(path))
                 return [];
 
