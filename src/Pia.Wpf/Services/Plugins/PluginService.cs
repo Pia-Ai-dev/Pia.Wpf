@@ -50,6 +50,9 @@ public class PluginService : IPluginService
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
     private readonly Dictionary<Guid, SyncPlugin> _pluginConfigs = new();
     private readonly List<SyncPluginPreference> _pendingPrefs = [];
+    private readonly Dictionary<Guid, PendingStart> _pendingStarts = new();
+
+    private sealed record PendingStart(SyncPlugin Plugin, CancellationTokenSource Cancel, Task Task);
 
     /// <summary>Why a server never got as far as a handler, so the settings row can say so.</summary>
     private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
@@ -297,7 +300,9 @@ public class PluginService : IPluginService
                 if (SavedLocalPrefixes().Contains(orphan))
                     continue;
 
-                await TryDeleteRuntimeStateAsync(orphan, () => CleanUpOrphanContainers(store, orphan));
+                // The sweep in beforeDelete needs the ACL gate; a spawn holding the state lock while it waits for the
+                // gate cannot deadlock this, because TryDelete only tries that lock.
+                await TryDeleteRuntimeStateAsync(orphan, () => CleanUpOrphanContainers(store, orphan), underAclGate: true);
             }
         }
         catch (Exception ex)
@@ -323,14 +328,15 @@ public class PluginService : IPluginService
         }
     }
 
-    private async Task TryDeleteRuntimeStateAsync(string prefix, Action? beforeDelete = null)
+    private async Task TryDeleteRuntimeStateAsync(string prefix, Action? beforeDelete = null, bool underAclGate = false)
     {
         if (_runtimeStateStore is not { } store)
             return;
 
         try
         {
-            if (!await Task.Run(() => store.TryDelete(prefix, beforeDelete)))
+            bool TryDelete() => store.TryDelete(prefix, beforeDelete);
+            if (!await (underAclGate ? RunUnderAclGateAsync(TryDelete) : Task.Run(TryDelete)))
                 _logger.LogInformation("Runtime state for prefix {Prefix} is in use; the next start removes it", prefix);
         }
         catch (Exception ex)
@@ -343,10 +349,14 @@ public class PluginService : IPluginService
     private HashSet<string> SavedLocalPrefixes() =>
         _pluginConfigs.Values
             .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson))
-            .Select(p => ReadLocalDefinition(p)?.ToolPrefix)
+            .Select(StoredToolPrefix)
             .OfType<string>()
             .Where(p => p.Length > 0)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    // The prefix holds no secret, so reading it skips the DPAPI call per env value the full definition costs.
+    private static string? StoredToolPrefix(SyncPlugin plugin) =>
+        LocalMcpConfig.FromConfigJson(plugin.Name, plugin.Description, plugin.ConfigJson, static value => value)?.ToolPrefix;
 
     private List<SyncPlugin> LoadPluginsFromDb()
     {
@@ -415,29 +425,43 @@ public class PluginService : IPluginService
             return _handlers.ContainsKey(pluginId);
     }
 
-    private void RegisterHandler(Guid pluginId, IPluginToolHandler handler)
+    // Returns the handler it displaced; nothing else holds that one, so the caller must stop it.
+    private IPluginToolHandler? RegisterHandler(Guid pluginId, IPluginToolHandler handler)
     {
         lock (_handlers)
         {
+            _handlers.TryGetValue(pluginId, out var replaced);
+            if (ReferenceEquals(replaced, handler))
+                replaced = null;
+            else if (replaced is not null)
+                RemoveRoutes(replaced);
+
             _handlers[pluginId] = handler;
             foreach (var tool in handler.GetTools())
+                _toolNameRoutes[tool.Name] = handler;
+
+            return replaced;
+        }
+    }
+
+    private void UnregisterHandler(Guid pluginId, IPluginToolHandler handler)
+    {
+        lock (_handlers)
+        {
+            if (_handlers.TryGetValue(pluginId, out var registered) && ReferenceEquals(registered, handler))
             {
-                var toolName = tool.Name;
-                _toolNameRoutes[toolName] = handler;
+                RemoveRoutes(handler);
+                _handlers.Remove(pluginId);
             }
         }
     }
 
-    private void UnregisterHandler(Guid pluginId)
+    private void RemoveRoutes(IPluginToolHandler handler)
     {
-        lock (_handlers)
+        foreach (var tool in handler.GetTools())
         {
-            if (_handlers.TryGetValue(pluginId, out var handler))
-            {
-                foreach (var tool in handler.GetTools())
-                    _toolNameRoutes.Remove(tool.Name);
-                _handlers.Remove(pluginId);
-            }
+            if (_toolNameRoutes.TryGetValue(tool.Name, out var routed) && ReferenceEquals(routed, handler))
+                _toolNameRoutes.Remove(tool.Name);
         }
     }
 
@@ -683,11 +707,21 @@ public class PluginService : IPluginService
 
     private async Task ShutdownHandlerAsync(Guid pluginId)
     {
+        await CancelPendingStartAsync(pluginId);
+
         IPluginToolHandler? handler;
         lock (_handlers)
             _handlers.TryGetValue(pluginId, out handler);
 
         if (handler is null) return;
+
+        await StopHandlerAsync(pluginId, handler);
+    }
+
+    // Unregistered first: a shut-down handler reports no tools, so its routes could no longer be found.
+    private async Task StopHandlerAsync(Guid pluginId, IPluginToolHandler handler)
+    {
+        UnregisterHandler(pluginId, handler);
 
         try
         {
@@ -695,10 +729,10 @@ public class PluginService : IPluginService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error shutting down handler for plugin {PluginId}", pluginId);
+            _logger.LogWarning("Error shutting down handler for plugin {PluginId}: {ExceptionType}", pluginId, ex.GetType().Name);
+            _logger.SensitiveDebug("The handler shutdown failure for plugin {PluginId}: {Message}", pluginId, ex.Message);
         }
 
-        UnregisterHandler(pluginId);
         (handler as IDisposable)?.Dispose();
     }
 
@@ -717,7 +751,7 @@ public class PluginService : IPluginService
 
         var taken = _pluginConfigs.Values
             .Where(p => p.Id != id && LocalMcpConfig.IsLocal(p.ConfigJson))
-            .Select(p => ReadLocalDefinition(p)?.ToolPrefix)
+            .Select(StoredToolPrefix)
             .Where(p => !string.IsNullOrEmpty(p))
             .ToHashSet(StringComparer.Ordinal);
 
@@ -738,11 +772,7 @@ public class PluginService : IPluginService
             if (BuiltInPluginDefaults.PreloadedPluginIds.Contains(id))
                 continue; // Never remove built-in plugins
 
-            if (_handlers.TryGetValue(id, out var handler))
-            {
-                await handler.ShutdownAsync();
-                UnregisterHandler(id);
-            }
+            await ShutdownHandlerAsync(id);
             _pluginConfigs.Remove(id);
             DeletePluginFromDb(id);
             _logger.LogInformation("Removed plugin {PluginId}", id);
@@ -785,7 +815,82 @@ public class PluginService : IPluginService
         PluginsChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    // A start can take minutes (downloads, a uv install); Remove, Save and the switch cancel it and wait for it.
     private async Task ActivateMcpPluginAsync(SyncPlugin plugin)
+    {
+        while (true)
+        {
+            if (!IsCurrent(plugin))
+                return;
+
+            PendingStart? running;
+            bool joins;
+            lock (_pendingStarts)
+            {
+                _pendingStarts.TryGetValue(plugin.Id, out running);
+                joins = running is not null && ReferenceEquals(running.Plugin, plugin) && !running.Cancel.IsCancellationRequested;
+            }
+
+            if (running is null)
+                break;
+
+            // A second spawn of the same container would fail on its lease and replace the first.
+            await WaitQuietlyAsync(running.Task);
+            if (joins)
+                return;
+        }
+
+        var cancel = new CancellationTokenSource();
+        var pending = new PendingStart(plugin, cancel, StartMcpPluginAsync(plugin, cancel.Token));
+        lock (_pendingStarts)
+            _pendingStarts[plugin.Id] = pending;
+
+        try
+        {
+            await pending.Task;
+        }
+        finally
+        {
+            lock (_pendingStarts)
+            {
+                if (_pendingStarts.TryGetValue(plugin.Id, out var current) && ReferenceEquals(current, pending))
+                    _pendingStarts.Remove(plugin.Id);
+                cancel.Dispose();
+            }
+        }
+    }
+
+    private async Task CancelPendingStartAsync(Guid pluginId)
+    {
+        PendingStart? pending;
+        Task cancelled;
+        lock (_pendingStarts)
+        {
+            if (!_pendingStarts.TryGetValue(pluginId, out pending))
+                return;
+            cancelled = pending.Cancel.CancelAsync();
+        }
+
+        await WaitQuietlyAsync(cancelled);
+        await WaitQuietlyAsync(pending.Task);
+    }
+
+    // Only waits: a start's own caller sees and logs its failure.
+    private static async Task WaitQuietlyAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private bool IsCurrent(SyncPlugin plugin) =>
+        _pluginConfigs.TryGetValue(plugin.Id, out var current) && ReferenceEquals(current, plugin) && IsPluginEnabled(plugin);
+
+    private async Task StartMcpPluginAsync(SyncPlugin plugin, CancellationToken ct)
     {
         if (plugin.Kind != "mcp_server")
         {
@@ -980,14 +1085,26 @@ public class PluginService : IPluginService
 
         try
         {
-            await handler.InitializeAsync();
-            RegisterHandler(plugin.Id, handler);
+            await handler.InitializeAsync(ct);
+
+            // Checked on resuming: Remove, Save or the switch may have run while it started.
+            if (ct.IsCancellationRequested || !IsCurrent(plugin))
+            {
+                _logger.LogInformation("Plugin {PluginId} was removed, replaced or switched off while starting; stopping it", plugin.Id);
+                await StopHandlerAsync(plugin.Id, handler);
+                return;
+            }
+
+            if (RegisterHandler(plugin.Id, handler) is { } replaced)
+                await StopHandlerAsync(plugin.Id, replaced);
+
             _logger.LogInformation("Plugin {PluginId} ({Transport}) activated with {ToolCount} tools",
                 plugin.Id, transport, handler.GetTools().Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginId}", plugin.Id);
+            _logger.LogError("Failed to initialize McpPluginToolHandler for plugin {PluginId}: {ExceptionType}", plugin.Id, ex.GetType().Name);
+            _logger.SensitiveDebug("The handler initialization failure for plugin {PluginId}: {Message}", plugin.Id, ex.Message);
             handler.Dispose();
         }
     }
@@ -1002,8 +1119,22 @@ public class PluginService : IPluginService
             return;
 
         var names = sandboxed.SelectMany(d => SandboxLaunchSpecBuilder.ContainerNames(d.ToolPrefix)).ToList();
-        await Task.Run(() => SweepAces(sweeper, () => LeakedRoots(sandboxed, stillGranted), names));
+        await RunUnderAclGateAsync(() => SweepAces(sweeper, () => LeakedRoots(sandboxed, stillGranted), names));
     }
+
+    // MXC spawns and disposals rewrite the same DACLs. Entered and left on the pool, so a UI thread blocked in
+    // shutdown cannot hold the gate a container's disposal is waiting for.
+    private static Task RunUnderAclGateAsync(Action work) => RunUnderAclGateAsync(() =>
+    {
+        work();
+        return true;
+    });
+
+    private static Task<T> RunUnderAclGateAsync<T>(Func<T> work) => Task.Run(async () =>
+    {
+        using (await MxcAclGate.EnterAsync(CancellationToken.None).ConfigureAwait(false))
+            return work();
+    });
 
     private IEnumerable<string> LeakedRoots(IReadOnlyList<LocalMcpDefinition> sandboxed, LocalMcpDefinition? stillGranted)
     {

@@ -108,6 +108,23 @@ public sealed class MxcClientTransportTests
     }
 
     [Fact]
+    public async Task ARequestToAServerThatDied_FailsWithoutTheStderrTailInTheException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var transport = SandboxedToolCallFailureTests.TransportWithInstallOutput(
+            new FakeMxcProcessLauncher(SandboxedToolCallFailureTests.AnswersTheHandshakeThenExits));
+        await using var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
+        await client.ListToolsAsync(cancellationToken: ct);
+
+        var ex = await Assert.ThrowsAnyAsync<Exception>(
+            () => client.CallToolAsync("echo", cancellationToken: ct).AsTask().WaitAsync(TimeSpan.FromSeconds(30), ct));
+
+        for (var inner = ex; inner is not null; inner = inner.InnerException)
+            Assert.DoesNotContain("secret-pkg", inner.Message);
+        Assert.Contains(SandboxedToolCallFailureTests.InstallLine, transport.StderrTail);
+    }
+
+    [Fact]
     public async Task StderrLines_AreReadableWhileTheServerRuns()
     {
         var launcher = new FakeMxcProcessLauncher();

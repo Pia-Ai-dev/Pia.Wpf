@@ -69,7 +69,7 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
             var inner = await new StreamClientTransport(launched.StandardInput, launched.StandardOutput, _loggerFactory)
                 .ConnectAsync(cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("{Container} started, pid {Pid}", _spec.ContainerName, launched.ProcessId);
-            return new MxcSessionTransport(inner, launched, pump, this);
+            return new MxcSessionTransport(inner, launched, pump);
         }
         catch
         {
@@ -140,8 +140,7 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
     private sealed class MxcSessionTransport(
         ITransport inner,
         LaunchedMxcProcess launched,
-        Task stderrPump,
-        MxcClientTransport owner) : ITransport
+        Task stderrPump) : ITransport
     {
         private static readonly TimeSpan PumpWait = TimeSpan.FromSeconds(2);
 
@@ -151,18 +150,9 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
 
         public ChannelReader<JsonRpcMessage> MessageReader => inner.MessageReader;
 
-        public async Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                await inner.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
-            }
-            catch (IOException ex) when (!cancellationToken.IsCancellationRequested && owner.StderrTail.Length > 0)
-            {
-                throw new IOException(
-                    $"{ex.Message}{Environment.NewLine}Server's stderr tail:{Environment.NewLine}{owner.StderrTail}", ex);
-            }
-        }
+        // The stderr tail stays off the exception: it may hold install output, which must not reach logs or the model.
+        public Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken = default) =>
+            inner.SendMessageAsync(message, cancellationToken);
 
         public async ValueTask DisposeAsync()
         {

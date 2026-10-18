@@ -330,7 +330,8 @@ public sealed class MxcSandboxIntegrationTests : IAsyncLifetime
             var leaked = GrantedPaths(_root).Where(p => ExplicitSids(p).Contains(OurSid)).ToList();
             Assert.NotEmpty(leaked);
 
-            var result = new AceSweepService(new PiaContainerSidResolver(), NullLogger<AceSweepService>.Instance)
+            // A killed host's lease dies with it; this process still holds the one it launched with.
+            var result = new AceSweepService(new PiaContainerSidResolver(isRunning: _ => false), NullLogger<AceSweepService>.Instance)
                 .Sweep(GrantedPaths(_root), ["pia-mcp-" + _prefix]);
 
             Assert.Equal(0, result.Failed);

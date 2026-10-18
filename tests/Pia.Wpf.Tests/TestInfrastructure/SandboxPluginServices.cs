@@ -20,7 +20,8 @@ internal static class SandboxPluginServices
         IAppContainerProfileService? profiles = null,
         IAceSweeper? sweeper = null,
         ILogger<PluginService>? logger = null,
-        IRuntimeStateStore? runtimeStateStore = null) =>
+        IRuntimeStateStore? runtimeStateStore = null,
+        DpapiHelper? dpapi = null) =>
         new(
             Substitute.For<IMemoryToolHandler>(),
             Substitute.For<ITodoToolHandler>(),
@@ -40,7 +41,7 @@ internal static class SandboxPluginServices
             logger ?? NullLogger<PluginService>.Instance,
             sqlite,
             cabManager: null,
-            dpapiHelper: new DpapiHelper(NullLogger<DpapiHelper>.Instance),
+            dpapiHelper: dpapi ?? new DpapiHelper(NullLogger<DpapiHelper>.Instance),
             transportFactory: factory,
             mxcAvailability: availability,
             profileService: profiles,

@@ -23,16 +23,26 @@ public sealed class PiaContainerSidResolver : IPiaContainerSidResolver
     private readonly Func<IEnumerable<(string Sid, string Moniker)>> _mappings;
     private readonly Func<string, string?> _deriveSid;
 
+    // A running container's ACEs, shared toolchains included, are live grants that its own disposal removes.
+    private readonly Func<string, bool> _isRunning;
+
     public PiaContainerSidResolver() : this(RegistryMappings, AppContainerNative.DeriveSid)
+    {
+    }
+
+    internal PiaContainerSidResolver(Func<string, bool> isRunning)
+        : this(RegistryMappings, AppContainerNative.DeriveSid, isRunning)
     {
     }
 
     internal PiaContainerSidResolver(
         Func<IEnumerable<(string Sid, string Moniker)>> mappings,
-        Func<string, string?> deriveSid)
+        Func<string, string?> deriveSid,
+        Func<string, bool>? isRunning = null)
     {
         _mappings = mappings;
         _deriveSid = deriveSid;
+        _isRunning = isRunning ?? SandboxContainerLease.IsActive;
     }
 
     public IReadOnlySet<string> Resolve(IEnumerable<string> containerNames)
@@ -43,7 +53,7 @@ public sealed class PiaContainerSidResolver : IPiaContainerSidResolver
         {
             foreach (var (sid, moniker) in _mappings())
             {
-                if (moniker.StartsWith(NamePrefix, StringComparison.OrdinalIgnoreCase))
+                if (moniker.StartsWith(NamePrefix, StringComparison.OrdinalIgnoreCase) && !_isRunning(moniker))
                     sids.Add(sid);
             }
         }
@@ -54,7 +64,7 @@ public sealed class PiaContainerSidResolver : IPiaContainerSidResolver
 
         foreach (var name in containerNames)
         {
-            if (_deriveSid(name) is { } derived)
+            if (!_isRunning(name) && _deriveSid(name) is { } derived)
                 sids.Add(derived);
         }
 
