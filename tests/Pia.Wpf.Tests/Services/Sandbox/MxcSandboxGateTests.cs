@@ -215,6 +215,7 @@ public sealed class MxcSandboxGateTests : IAsyncLifetime
         var read = await CallAsync(second, "read_file", new() { ["path"] = Path.Combine(Junction, "kept.txt") });
         var write = await CallAsync(second, "write_file", new() { ["path"] = Path.Combine(Junction, "planted.txt"), ["content"] = "x" });
 
+        Assert.Contains(secondSid, Sids(Workspace));
         Assert.DoesNotContain(secondSid, onTarget);
         Assert.True(read.IsError, read.Text);
         Assert.True(write.IsError, write.Text);
