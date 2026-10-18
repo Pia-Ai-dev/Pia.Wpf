@@ -96,6 +96,51 @@ public sealed class MxcMcpLauncherTests
     }
 
     [Fact]
+    public void Request_ReplacesTheDefaultEnvironment_WhenTheSpecCarriesAWholeBlock()
+    {
+        Assert.False(MxcMcpLauncher.BuildRequest(Spec() with { ReplaceEnvironmentBlock = true }).InheritDefaultEnvironment);
+    }
+
+    private static SandboxLaunchSpec RuntimeSpec(bool stateReadOnly = false) =>
+        Spec() with
+        {
+            ToolchainDirectories = [@"C:\Users\me\node", @"C:\Users\me\dotnet"],
+            SupportDirectory = @"C:\Users\me\AppData\Local\Pia\McpSandboxSupport",
+            RuntimeStateDirectory = @"C:\Users\me\AppData\Local\Pia\McpSandbox\fs.runtime",
+            RuntimeStateReadOnly = stateReadOnly,
+            RunnerKind = Pia.Services.Plugins.Sandbox.Runtimes.RunnerKind.Npx
+        };
+
+    [Fact]
+    public void Request_GrantsTheToolchainAndTheSupportFolderReadOnly_AndTheStateFolderReadWrite()
+    {
+        var filesystem = MxcMcpLauncher.BuildRequest(RuntimeSpec()).Filesystem!;
+
+        Assert.Equal([@"C:\box\rw", @"C:\Users\me\AppData\Local\Pia\McpSandbox\fs.runtime"], filesystem.ReadwritePaths);
+        Assert.Equal(
+            [@"C:\box\ro", @"C:\Tools\fs", @"C:\Users\me\node", @"C:\Users\me\dotnet", @"C:\Users\me\AppData\Local\Pia\McpSandboxSupport"],
+            filesystem.ReadonlyPaths);
+    }
+
+    [Fact]
+    public void Request_GrantsTheStateFolderReadOnly_WhenTheSpecSaysSo()
+    {
+        var filesystem = MxcMcpLauncher.BuildRequest(RuntimeSpec(stateReadOnly: true)).Filesystem!;
+
+        Assert.Equal([@"C:\box\rw"], filesystem.ReadwritePaths);
+        Assert.Contains(@"C:\Users\me\AppData\Local\Pia\McpSandbox\fs.runtime", filesystem.ReadonlyPaths);
+    }
+
+    [Fact]
+    public void Request_WithoutARuntime_GrantsNoRuntimeFolders()
+    {
+        var filesystem = MxcMcpLauncher.BuildRequest(Spec() with { RuntimeStateReadOnly = true }).Filesystem!;
+
+        Assert.Equal([@"C:\box\rw"], filesystem.ReadwritePaths);
+        Assert.Equal([@"C:\box\ro", @"C:\Tools\fs"], filesystem.ReadonlyPaths);
+    }
+
+    [Fact]
     public void Request_DoesNotLetTheCallerMutateTheSpec()
     {
         var env = new Dictionary<string, string> { ["A"] = "1" };
@@ -150,5 +195,32 @@ public sealed class MxcMcpLauncherTests
         await launcher.ShutdownAsync("pia-mcp-log", process, Stream.Null, lease);
 
         AssertLogsTheTypeOnly(logger, typeof(IOException));
+    }
+
+    [Fact]
+    public async Task TheDisposal_WaitsForTheAclGate()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = LoggingLauncher();
+        var process = Substitute.For<IMxcProcess>();
+        process.WaitAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(default(WaitResult)));
+        var lease = SandboxContainerLease.Acquire("pia-mcp-gate-" + Guid.NewGuid().ToString("N"));
+        var gate = await MxcAclGate.EnterAsync(ct).WaitAsync(TimeSpan.FromSeconds(30), ct);
+        Task shutdown;
+        try
+        {
+            shutdown = launcher.ShutdownAsync("pia-mcp-gate", process, Stream.Null, lease);
+            await Task.Delay(100, ct);
+
+            Assert.False(shutdown.IsCompleted);
+            process.DidNotReceive().Dispose();
+        }
+        finally
+        {
+            gate.Dispose();
+        }
+
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(30), ct);
+        process.Received(1).Dispose();
     }
 }

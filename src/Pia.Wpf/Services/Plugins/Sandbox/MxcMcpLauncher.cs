@@ -27,15 +27,22 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
             ContainerName = spec.ContainerName,
             WorkingDirectory = spec.WorkingDirectory,
             TimeoutMs = null,
-            // An Environment without InheritDefaultEnvironment replaces the whole block and breaks .NET startup.
             Environment = new Dictionary<string, string>(spec.Environment),
-            InheritDefaultEnvironment = true
+            // Only a complete block may replace the default one: a partial block breaks .NET startup.
+            InheritDefaultEnvironment = !spec.ReplaceEnvironmentBlock
         };
 
-        request.Filesystem.ReadwritePaths.AddRange(spec.ReadwritePaths);
-        request.Filesystem.ReadonlyPaths.AddRange(spec.ReadonlyPaths);
+        var readwrite = request.Filesystem.ReadwritePaths;
+        var readonlyPaths = request.Filesystem.ReadonlyPaths;
+        readwrite.AddRange(spec.ReadwritePaths);
+        readonlyPaths.AddRange(spec.ReadonlyPaths);
         if (spec.GrantedCommandDirectory is not null)
-            request.Filesystem.ReadonlyPaths.Add(spec.GrantedCommandDirectory);
+            readonlyPaths.Add(spec.GrantedCommandDirectory);
+        readonlyPaths.AddRange(spec.Toolchain);
+        if (spec.SupportDirectory is not null)
+            readonlyPaths.Add(spec.SupportDirectory);
+        if (spec.RuntimeStateDirectory is not null)
+            (spec.RuntimeStateReadOnly ? readonlyPaths : readwrite).Add(spec.RuntimeStateDirectory);
         return request;
     }
 
@@ -50,14 +57,14 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         {
             var request = BuildRequest(spec);
             logger.LogInformation(
-                "Starting {Container} under MXC: rw={Rw} ro={Ro} net={Net}",
+                "Starting {Container} under MXC: rw={Rw} ro={Ro} net={Net} runtime={Runtime}",
                 spec.ContainerName, request.Filesystem!.ReadwritePaths.Count, request.Filesystem.ReadonlyPaths.Count,
-                spec.AllowNetwork ? "allow" : "deny");
+                spec.AllowNetwork ? "allow" : "deny", spec.RunnerKind);
             logger.SensitiveDebug("{Container}: {CommandLine} in {Cwd}, rw [{Rw}], ro [{Ro}]",
                 spec.ContainerName, request.Command, spec.WorkingDirectory,
                 string.Join("; ", request.Filesystem.ReadwritePaths), string.Join("; ", request.Filesystem.ReadonlyPaths));
 
-            var process = await SpawnAsync(request, cancellationToken).ConfigureAwait(false);
+            var process = await SpawnAsync(spec.ContainerName, request, cancellationToken).ConfigureAwait(false);
             LogWarnings(spec.ContainerName, process, "spawn");
 
             // The streams must be taken before the first WaitAsync, which drains whatever is still untaken.
@@ -80,17 +87,18 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
     }
 
-    private static async Task<MxcProcess> SpawnAsync(ContainerRequest request, CancellationToken cancellationToken)
+    private async Task<MxcProcess> SpawnAsync(string container, ContainerRequest request, CancellationToken cancellationToken)
     {
         try
         {
+            using var gate = await MxcAclGate.EnterAsync(cancellationToken).ConfigureAwait(false);
             return await MxcContainer.SpawnAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (MxcException ex)
         {
-            throw new SandboxStartException(
-                $"The sandbox could not start the server: {ex.Message}"
-                + (string.IsNullOrEmpty(ex.Remediation) ? "" : $" {ex.Remediation}"), ex);
+            logger.LogWarning("MXC could not start {Container}: {Code}", container, ex.Code);
+            logger.SensitiveDebug("MXC could not start {Container}: {Message} {Remediation}", container, ex.Message, ex.Remediation);
+            throw new SandboxStartException(MxcSpawnErrors.Describe(ex));
         }
         catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
         {
@@ -127,7 +135,8 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         finally
         {
             // Disposing frees the sandbox, ends the process tree if it is still alive, and removes the container's ACEs.
-            process.Dispose();
+            using (await MxcAclGate.EnterAsync(CancellationToken.None).ConfigureAwait(false))
+                process.Dispose();
             lease.Dispose();
         }
     }

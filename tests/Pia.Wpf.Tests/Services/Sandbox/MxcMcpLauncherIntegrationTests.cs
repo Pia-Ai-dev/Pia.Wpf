@@ -85,4 +85,23 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
         Assert.True(File.Exists(inside));
         Assert.False(File.Exists(outside));
     }
+
+    /// <summary>MXC names the missing folder in its message; neither the thrown error nor a warning may carry it.</summary>
+    [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
+    public async Task AMissingFolder_FailsTheSpawn_WithAPathFreeError()
+    {
+        var logger = new CapturingLogger<MxcMcpLauncher>();
+        var launcher = new MxcMcpLauncher(logger, MxcTestHost.Runtime);
+        var missing = Path.Combine(_workspace, "missing");
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(
+            () => launcher.LaunchAsync(Spec("/c", "exit", "0") with { ReadonlyPaths = [missing] }, TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "The sandbox could not start the server: a folder it needs is missing. Open the server's settings and detect runtimes again.",
+            ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+        Assert.All(logger.Entries.Where(e => e.Level >= Microsoft.Extensions.Logging.LogLevel.Information),
+            e => Assert.DoesNotContain(_workspace, e.Message, StringComparison.OrdinalIgnoreCase));
+    }
 }
