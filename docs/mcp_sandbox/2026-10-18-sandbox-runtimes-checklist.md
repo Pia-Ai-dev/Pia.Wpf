@@ -60,9 +60,8 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 ### B Detection
 
 - [x] **B1 Windows host facts.** `RuntimeHostService` with registry `PATH` and `HKCU\Environment` reading, the
-  static name reader, the registry-built default environment block, the DEBUG-only candidate override,
-  final-path resolution, the container-readability ACL check and the linked-token WRITE_DAC check, with tests
-  on real temp folders.
+  static name reader, the DEBUG-only candidate override, final-path resolution, the container-readability ACL
+  check and the linked-token WRITE_DAC check, with tests on real temp folders.
   *Deps:* A1 · *Effort:* M · *Value:* Enabler
 - [x] **B2 Runtime detector.** `RuntimeDetector`: candidates in registry-`PATH` order plus the user-scope
   locations, link resolution, per-kind validity (npm beside every Node, runtimeconfig frameworks for a dll),
@@ -109,8 +108,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
   *Deps:* A1 · *Effort:* S · *Value:* High
 - [x] **E2 Verifier, launcher request and serial spawns.** `SandboxGrantVerifier` walks toolchain roots fully
   with a cached positive result and checks Pia's own folders with their own clause; `MxcMcpLauncher` grants the
-  toolchain, support and state folders, honours `ReplaceEnvironmentBlock`, and serializes spawns and disposals
-  through `MxcAclGate`.
+  toolchain, support and state folders and serializes spawns and disposals through `MxcAclGate`.
   *Deps:* A1 · *Effort:* S · *Value:* High
 - [x] **E3 Path-free start errors.** `MxcSpawnErrors` turns `MxcException` texts, which carry full paths, into
   path-free messages without an inner exception, with the raw text in `SensitiveDebug` only.
@@ -191,6 +189,8 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 - One shared runtime cache across servers.
 - Passing private registry or proxy configuration (`.npmrc`, `uv.toml`, `NuGet.Config`) into the sandbox, and
   proxy or CA variables on the blanking allowlist (an owner question).
+- Keeping a machine-wide `NODE_OPTIONS` in sandboxed Node starts: read only the `HKLM` Session Manager value
+  through `IRuntimeHostService` and append it after the preload options, before the server's own value.
 - Starting `Program Files\nodejs\node.exe` for a bare script without step 2 (the spike shows MXC can launch it).
 - `FilesystemEnumeratePaths` containment once a Windows build offers it, which could retire the preload.
 - Logging `MxcContainer.Probe` warnings at startup.

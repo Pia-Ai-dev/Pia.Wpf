@@ -38,7 +38,8 @@ From the owner (spike results, end of file), fixed:
    `TEMP`, `TMP` and names starting with `OneDrive`. The server's own env entries still win.
 
 From the design, also fixed: three steps (use what exists, elevated-only fix button, user-scope guide);
-a new runner server defaults to network Allow, a saved server's setting never changes; the Pia-managed
+a new package-runner server (npx, npm exec, uvx, dnx, or `cmd /c` wrapping one) defaults to network Allow, a
+saved server's setting never changes; the Pia-managed
 runtime state folder is `PiaPaths.McpSandboxRoot\<prefix>.runtime`; Test connection and Save share one
 launch path through `McpTransportFactory`.
 
@@ -187,7 +188,7 @@ public enum RuntimeIssue
 {
     None, NodeNotFound, NodeAdminOwned, DotnetSdkMissing, DotnetRuntimeMissing, DotnetAdminOwned,
     UvNotFound, ToolchainTooLarge, ToolchainTooWide, ToolchainPathUnsupported,
-    ProgramFolderTooLarge, ProgramFolderTooWide, ScriptMissing, DllMissing
+    ProgramFolderTooLarge, ProgramFolderTooWide, ScriptMissing, DllMissing, UvInWritableFolder
 }
 
 /// <param name="Root">Final path (links resolved) of the folder holding node.exe, dotnet.exe or uv.exe.</param>
@@ -271,7 +272,6 @@ public interface IRuntimeHostService
     string RegistryPath();                           // the same, joined with ';'
     IReadOnlyList<string> UserEnvironmentNames();    // value names under HKCU\Environment
     string? RegistryEnvironmentValue(string name);   // HKCU over HKLM, expanded
-    IReadOnlyDictionary<string, string>? DefaultUserEnvironment(); // the registry-built block, never Pia's own process variables
     IReadOnlyList<string>? CandidateOverride { get; } // PIA_DEBUG_SANDBOX_RUNTIME_ROOTS, DEBUG builds only
     string LocalAppData { get; }
     string RoamingAppData { get; }
@@ -341,7 +341,7 @@ Changed in the contract slice:
   positional `new SandboxLaunchSpec(` in the tests keeps compiling:
   `IReadOnlyList<string>? ToolchainDirectories = null, string? RuntimeStateDirectory = null,
   bool RuntimeStateReadOnly = false, string? SupportDirectory = null, RunnerKind RunnerKind = RunnerKind.None,
-  RuntimePreparation? Preparation = null, bool ReplaceEnvironmentBlock = false`, plus a computed
+  RuntimePreparation? Preparation = null`, plus a computed
   `IReadOnlyList<string> Toolchain => ToolchainDirectories ?? []`.
 - `PiaPaths` gains the method `McpRuntimeStateDirectory(string prefix) => Path.Combine(McpSandboxRoot,
   prefix + ".runtime")` and the properties `McpSandboxGrantsDirectory` (`<LocalDataDirectory>\McpSandboxGrants`)
@@ -396,6 +396,8 @@ single-item case). The editor calls it on every keystroke; Build calls it on eve
      `^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?(\[[A-Za-z0-9._,-]+\])?(@[A-Za-z0-9.*+!_-]+|(===|==|>=|<=|~=|!=|<|>)[A-Za-z0-9.*+!_-]+(,(===|==|>=|<=|~=|!=|<|>)[A-Za-z0-9.*+!_-]+)*)?$`
      (an index name with optional extras and a version, no spaces). That refuses a leading `-`, paths,
      `file:`, URLs, git sources and UNC names, which uv would otherwise read or contact on the host, uncontained.
+     An archive file name (`.whl`, `.zip`, `.tar`, `.tar.gz`, `.tgz` and the other sdist suffixes) is refused
+     like a path: uv reads it as a local file.
      `--python` must match `^(cpython-?|python)?[0-9]+(\.[0-9]+){0,2}$`: uv also accepts an interpreter path
      there and would run it on the host to query it.
    - `CommandName` is the command token without `@…`, `[…]` and any version specifier; it must match
@@ -451,7 +453,8 @@ between candidates.
 - `Uvx`: `uv.exe` (final path). `uvx.exe` is not needed: Pia runs `uv` itself.
 
 **Classification**, first valid candidate in order:
-- `Uvx`: Ready at once. uv runs on the host, so nothing is granted.
+- `Uvx`: Ready at once. uv runs on the host, so nothing is granted. A `uv.exe` in a folder this server can
+  write, or under `McpSandboxRoot`, is skipped at start (`UvInWritableFolder`): a server could have planted it.
 - Readable already when the root, the executable and the entry script all pass `IsContainerReadable`:
   Ready, no toolchain roots. (`C:\Program Files\dotnet` inherits `S-1-15-2-1` and `S-1-15-2-2` RX.)
 - Under `%WINDIR%`: skipped. Under `Program Files*` and not readable: remembered as admin-owned, next.
@@ -484,11 +487,6 @@ dll it is the dll's folder. `roots.Check(folder, true)` refuses a too-wide or to
 - `public static IReadOnlyList<string> ReadUserEnvironmentNames()`: the value names under `HKCU\Environment`,
   empty on any error. The instance member returns the same; the factory uses the static one when DI gave it
   no host, so blanking never depends on DI.
-- `DefaultUserEnvironment()`: new `Native/UserEnvironmentBlock.cs`, `OpenProcessToken(TOKEN_QUERY |
-  TOKEN_DUPLICATE | TOKEN_IMPERSONATE)`, `CreateEnvironmentBlock(out block, token, bInherit: false)`, the
-  double-null-terminated UTF-16 block parsed into a case-insensitive dictionary, `DestroyEnvironmentBlock`.
-  That is the block Windows builds from the registry (machine, user, `Volatile Environment`, profile
-  variables), not Pia's process environment. Null on failure.
 - Profile roots from `PiaPaths.LocalProfileRoot`, `RoamingProfileRoot`, `UserProfileRoot`: the real roots,
   never the routed data roots. `DataDirectoryRoutingTests` forbids `SpecialFolder.(Local)ApplicationData`
   elsewhere; update the comment on those three properties to say they also serve toolchain discovery.
@@ -527,7 +525,8 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
   `NpmExec` → `<root>\node_modules\npm\bin\npm-cli.js`, `exec` + the rest; `NodeScript` → runtime options,
   the script's full path, the script args.
 - `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main --require "<support>/node-sandbox.cjs"` with
-  forward slashes (a backslash inside the quotes is an escape). A user `NODE_OPTIONS` is appended after a space.
+  forward slashes (a backslash inside the quotes is an escape). A user `NODE_OPTIONS` is appended after a space;
+  a machine-wide one is replaced, not merged (see *Known limits*).
 - `PIA_SANDBOX_ROOTS` = every granted root, joined with `|` (illegal in Windows paths; the spike's `;`
   breaks on a folder name with a semicolon): the user's rw and ro folders, the program folder, the install
   root, `<state>`, `<support>`.
@@ -543,11 +542,15 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
 
 **The preload.** `Runtimes/pia-node-sandbox.cjs`, an `EmbeddedResource` with `LogicalName`
 `Pia.Sandbox.NodePreload` in `Pia.Wpf.csproj` (as `Pia.DefaultFileIgnore` is), read through
-`NodeSandboxPreload.Content`. Its full text is in *Appendix A*: the spike's
-`%LOCALAPPDATA%\PiaRuntimeSpike\node\fixtures\pia-node-sandbox.cjs` with two changes, roots split on `|`
-and the header comment cut to two lines. It answers `lstat`/`stat` of an ancestor of a granted root that
-fails with `EPERM`/`EACCES` as a directory, and lets `realpath*` fall back to `path.resolve` once the leaf
-exists. The provisioner writes it to `<support>` when it is missing or differs; the folder is granted
+`NodeSandboxPreload.Content`. Its full text is in *Appendix A*. It answers `lstat`/`stat` of an ancestor of
+a granted root that fails with `EPERM`/`EACCES` with the stats of its own folder, `<support>` (a directory,
+in the `bigint` form when asked for it). A `realpath*` call that fails with `EPERM`/`EACCES` resolves the
+path by hand: the ancestors count as plain folders, every component below them is `lstat`ed, and a link is
+read with `readlink`, spliced in (a relative target against the link's parent) and the walk restarted, at
+most 32 times (then `ELOOP`). Any other error from a component is rethrown, a missing leaf gives `ENOENT`,
+and the `encoding` option is honoured. A junction inside a granted folder therefore resolves to its target,
+so a server that checks paths against its allowed folders after `realpath` sees where a link leads. The
+provisioner writes it to `<support>` when it is missing or differs; the folder is granted
 read-only per start, so no server can change what the next one loads. The spike's runs loaded the preload
 from a read-only grant, so `--preserve-symlinks` is enough for Node to load it from there.
 
@@ -592,15 +595,16 @@ read-only like today's command folder.
   sdist-only packages are refused), `UV_NO_CONFIG=1`, `UV_PYTHON_PREFERENCE=only-managed`,
   `UV_PYTHON_INSTALL_REGISTRY=0`, `UV_PYTHON_INSTALL_BIN=0`, `TEMP=<state>\tmp`, `TMP=<state>\tmp`. Proxy
   variables stay.
-- **Spec record** `<state>\pia-uv-spec.json` (package, with, python). When it differs from the requested
-  spec, Pia deletes `<state>\tools` and `<state>\tool-bin` before the install, so a changed spec never
-  launches the old package. If the delete fails because the saved server runs from that folder, the start
-  fails: "This server's package is in use by the running server. Stop the server, then try again." The
-  record is written after a successful install. The state folder is read-only inside the container, so no
-  server can change it.
-- Network Allow: the install runs on every start (a recheck took 50 ms; an installed tool is not upgraded).
-  Network Deny: when the spec record matches and the tool folder provides the command, the install is
-  skipped; otherwise the start fails ("network is off and the package is not installed yet").
+- **Spec record** `<state>\pia-uv-spec.json` (package, with, python), written after a successful install.
+  The state folder is read-only inside the container, so no server can change it.
+- **An installed tool is never re-run through uv**, with network Allow or Deny: when the spec record matches
+  and the tool resolves (its entry point and `<tool>\Scripts\python.exe` are present), the start goes straight
+  to the sandboxed `python.exe`.
+- **Every other case deletes `<state>\tools` and `<state>\tool-bin` before uv runs**, so uv never queries a
+  venv that holds code from the index, and a changed spec never launches the old package. With network Deny
+  that case fails before anything is deleted ("Network access is off and this package is not installed yet.
+  Allow network access for the first start."). While another container of the prefix is running it fails
+  the same way with "This server's package is in use by the running server. Stop the server, then try again."
 - After exit code 0, `<state>\uv-cache` and `<state>\python-cache` are deleted (owner decision 3; gate
   G-UVCACHE confirms the venv still runs).
 - **Entry point**, scoped to the installed tool (measured layout in the spike's `uv\state\pre1\tools`):
@@ -621,7 +625,7 @@ read-only like today's command folder.
 ### Environment: blanking and composition
 
 `SandboxEnvironmentComposer` (static, C3) builds `spec.Environment` for **every** sandboxed server, exe
-servers included. Mode `Blank`:
+servers included, in this order:
 
 1. Every name from the user-environment names except `Path`, `TEMP`, `TMP` and names starting with
    `OneDrive` (case-insensitive) → `""`. The container's block is rebuilt from the registry, so this is what
@@ -633,25 +637,11 @@ servers included. Mode `Blank`:
 The names come from `IRuntimeHostService.UserEnvironmentNames()` when DI provided a host and from
 `RuntimeHostService.ReadUserEnvironmentNames()` otherwise (a factory seam replaces it in tests).
 
-Whether `""` blanks a variable is **gate G-ENV**, answered by step A2 with a real container: the test
-server with `OS=""` (every machine's registry environment carries `OS`), read through `get_environment`.
-Empty or absent both count as blanked. The same probe checks that the rest still arrives (`ComSpec` set,
-`get_server_info` reports `inAppContainer`), so an MXC that dropped the whole block on an empty override
-would fail it too.
-
-If `""` does not blank, C3 builds mode `CompleteBlock`: `spec.ReplaceEnvironmentBlock = true` (the
-launcher then sets `InheritDefaultEnvironment = false`), and the composer starts from
-`IRuntimeHostService.DefaultUserEnvironment()`, the same registry-built block the container gets today,
-**never** Pia's process environment (that would hand containers every variable only Pia's session has:
-terminal tokens, the `DOTNET_*` Pia was started with). It removes the `HKCU\Environment` names outside the
-allowlist, `MXC_FFI_DIR` and `PIA_*`, then applies steps 2 and 3. The launcher comment "an Environment
-without InheritDefaultEnvironment … breaks .NET startup" was about a block holding only the spec's few
-variables. A real-container test must then show the test server (a .NET app) starting, `OS` absent,
-`LOCALAPPDATA` still inside the container, and a variable set only in the test process
-(`PIA_TEST_SESSION_ONLY_<guid>`) absent.
-
-If neither mode is proven, stop and take it to the owner. No build ships a sandboxed start without
-blanking.
+Whether `""` blanks a variable is **gate G-ENV**, answered yes by step A2 with a real container: the test
+server with `OS=""` (every machine's registry environment carries `OS`) reads `OS` as empty through
+`get_environment`, while the rest still arrives (`ComSpec` set, `get_server_info` reports
+`inAppContainer`). So the composer always blanks with `""` on top of the registry-built block the container
+inherits, and no build ships a sandboxed start without blanking.
 
 ### Builder and factory (C3)
 
@@ -731,7 +721,8 @@ connection (`ProbeLocalMcpAsync` → `McpServerProbe`), Save (`ActivateMcpPlugin
 - `MxcMcpLauncher` passes `MxcContainer.SpawnAsync` and `process.Dispose()` in `ShutdownAsync` through one
   process-wide gate, `MxcAclGate` (an internal static `SemaphoreSlim(1)` with `EnterAsync` returning an
   `IDisposable`). Each rewrites ACLs below every root, and two containers sharing a toolchain or state root at
-  the same moment was never measured. The cost is serial starts: 0.2–2 s each.
+  the same moment was never measured. The cost is serial starts: 0.2–2 s each. ACE sweeps run under the same
+  gate, and a sweep never strips the SID of a container that holds a live `SandboxContainerLease`.
 - The probe and the running server share the npm cache and rely on npm's own locking (a known limit).
 
 ### Runtime state folder lifecycle
@@ -739,11 +730,13 @@ connection (`ProbeLocalMcpAsync` → `McpServerProbe`), Save (`ActivateMcpPlugin
 `PiaPaths.McpRuntimeStateDirectory(prefix)`, a sibling of the server's own `McpSandboxRoot\<prefix>`:
 never inside it, so the server's file tools and default working directory never see `node_modules`, and
 the nested-read-write rule is untouched. Slugs are `[a-z0-9_]`, so no server's folder can be `x.runtime`.
+A definition whose tool prefix holds a character outside `[A-Za-z0-9_]` is unreadable, so a prefix is always
+one plain path segment.
 
 - **Created** by `RuntimeStateProvisioner` in `ConnectAsync`, before `Verify`: the support folder and its
   files (written only when missing or different, through a temp file and a replace), the plan's directories
   (with the `AC\Temp` of this container name), the plan's state files, the grant record, then the uv
-  install. A spec without a runner kind passes through unchanged.
+  install. A spec without a runner kind gets only its grant record.
 - **Reparse-safe.** Before writing a state file, every path component between `<state>` and the file is
   checked; a reparse point there is deleted as a link (never followed) and the folder recreated. Every walk
   of a state folder uses `EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip =
@@ -752,7 +745,9 @@ the nested-read-write rule is untouched. Slugs are `[a-z0-9_]`, so no server's f
 - **Cleared before every uv install**, which runs outside the sandbox and would read and run what a container
   planted: unless the grant records of both container names (kept outside the folder) show only read-only grants,
   a non-empty state folder is deleted first (a record without its access counts as read-write, no record at all
-  deletes too), and the start is refused while a container that could write the folder is running.
+  deletes too), and the start is refused while a container that could write the folder is running. Once the
+  folder is cleared, the other container name's read-write record is rewritten as read-only with its roots
+  kept: the folder that container could write is gone, but its roots still need sweeping.
 - **Shared** by the probe and the running server: same prefix, different container names and `AC\Temp`.
 - **Shown** in the editor as "managed by Pia", not editable, never saved in ConfigJson.
 - **Kept** when the sandbox is switched off or the command stops being a runner.
@@ -764,7 +759,10 @@ the nested-read-write rule is untouched. Slugs are `[a-z0-9_]`, so no server's f
 `RuntimeStateStore`:
 - `WriteGrantRecord(containerName, roots, stateReadOnly)` writes `<McpSandboxGrantsDirectory>\<containerName>.json`,
   `{"container": "...", "roots": ["..."], "writtenUtc": "...", "stateReadOnly": false}`. The provisioner writes it
-  before each runner launch with the toolchain roots, the program folder, the state folder and the support folder;
+  before every sandboxed launch, exe servers included, with the server's read-write and read-only policy folders,
+  the toolchain roots, the program folder, the state folder and the support folder. A spec without a state folder
+  records the state folder as not writable (`stateReadOnly: true`). The new roots are merged with the previous
+  record's roots that still exist on disk, so a grant that never got swept stays in the record.
   `StateGrantedReadOnly(containerName)` reads the access back (null without a record).
 - `SweepRoots(prefix)`: the state folder when it exists, plus the roots of both records
   (`pia-mcp-<prefix>` and `-probe`).
@@ -803,7 +801,7 @@ falls back to `DeriveToolPrefix(name)`, so existing editor tests keep their `fil
   different folder." Today such a path passes (the root exemption at `SandboxPathGuard.cs:210,216`).
   `McpSandboxGrantsDirectory` and `McpSandboxSupportDirectory` sit under `LocalDataDirectory`, which
   `SandboxGuardEnvironment.Current().PiaDataRoots` holds, so `FindProblem` already refuses them as Pia data;
-  E1 pins that with a test for each.
+  E1 pins that with a test for each. A read-write policy folder that covers a uv location is refused too.
 - `RuntimeRootVerifier : IRuntimeRootVerifier`, against `SandboxGuardEnvironment.Current()`: a path with
   `;` → `ToolchainPathUnsupported`; the profile root or above, a wide folder itself (Desktop, Documents,
   Downloads, OneDrive roots), a Pia data root outside `McpSandboxRoot` → `ToolchainTooWide` /
@@ -819,7 +817,7 @@ falls back to `DeriveToolPrefix(name)`, so existing editor tests keep their `fil
   server and add it again; Pia then starts with fresh folders."
 - `MxcMcpLauncher.BuildRequest`: `spec.Toolchain` and `SupportDirectory` added to `ReadonlyPaths`;
   `RuntimeStateDirectory` to `ReadonlyPaths` when `RuntimeStateReadOnly`, else `ReadwritePaths`;
-  `InheritDefaultEnvironment = !spec.ReplaceEnvironmentBlock`. The Information line gains `runtime={Kind}`
+  `InheritDefaultEnvironment` is always true. The Information line gains `runtime={Kind}`
   and the counts include the new paths.
 
 ### Start errors and messages
@@ -898,10 +896,12 @@ Behaviour:
   The token reaches `Detect`, which checks it between candidates.
 - **Network default**, independent of `_sandboxPristine` (which a folder add or remove clears):
   `ApplyNetworkDefault()` runs on command, argument and working-directory changes whenever
-  `EditingServerId is null && !_networkTouched`, and sets `EditSandboxAllowNetwork = IsRunnerCommand` inside
-  `_applyingSandboxDefaults`. New `OnEditSandboxAllowNetworkChanged` sets `_networkTouched` outside
-  `_applyingSandboxDefaults`; `ResetSandboxEditor` clears it. A user who adds a folder first and then pastes
-  `npx …` still gets Allow. Tests 110 and 114 of `McpServersSandboxEditorTests` (Deny for an exe) stay green.
+  `EditingServerId is null && !_networkTouched`, and inside `_applyingSandboxDefaults` sets
+  `EditSandboxAllowNetwork` to Allow for a package runner only (npx, npm exec, uvx, dnx, or `cmd /c` wrapping
+  one). `node <script>` and `dotnet <dll>` keep Deny and get no deny hint: they download nothing at start.
+  New `OnEditSandboxAllowNetworkChanged` sets `_networkTouched` outside `_applyingSandboxDefaults`;
+  `ResetSandboxEditor` clears it. A user who adds a folder first and then pastes `npx …` still gets Allow.
+  Tests 110 and 114 of `McpServersSandboxEditorTests` (Deny for an exe) stay green.
 - The editor's guard (`GuardMessageFor` and the debounced `UpdateSandboxGuardAfterTyping`) passes
   `SandboxPathGuard.Validate` the parse's effective command for `Kind None` and no command for a runner, as
   the factory does, so `cmd /c C:\Tools\s.exe` is judged the same way in the editor and at start. The detail
@@ -1000,7 +1000,11 @@ without admin:
   `%USERPROFILE%\.local\bin` and prepends it to the user `Path`). Alternative: `winget install --id astral-sh.uv -e`.
 - .NET 10 SDK: `powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://dot.net/v1/dotnet-install.ps1))) -Channel 10.0"`
   (installs to `%LOCALAPPDATA%\Microsoft\dotnet`, no `PATH` change; winget has no user-scope SDK).
-  No alternative.
+  No alternative. This is the guide for dnx.
+- .NET runtime, for `dotnet <app>.dll`: built from the dll's runtimeconfig, the same `dotnet-install.ps1` call
+  with `-Runtime dotnet|aspnetcore|windowsdesktop -Channel <major>.0` for the framework it names
+  (`Microsoft.NETCore.App`, `Microsoft.AspNetCore.App`, `Microsoft.WindowsDesktop.App`). Without a readable
+  runtimeconfig it falls back to the .NET 10 SDK command. No alternative.
 
 Detect again needs no restart: detection reads the registry `PATH` and the fixed folders each time.
 
@@ -1106,16 +1110,18 @@ runtime with a reason. Anything that downloads (npm, NuGet, PyPI, CPython) is `[
   `ScriptMissing`; a cancelled token stops between candidates.
 - `RuntimeHostService` against real temp folders: a folder given `S-1-15-2-1` RX is readable, one without is
   not, a deny ACE wins; `CanUserWriteDacl` true on a user temp folder; a junction (`cmd /c mklink /J`, no admin
-  needed) resolves to its target; `DefaultUserEnvironment` holds `USERPROFILE` and not a variable set only in
-  the test process; when the test runs elevated, a folder owned by SYSTEM (`icacls /setowner *S-1-5-18`) with
-  a protected DACL of Users RX, Administrators F and SYSTEM F is not grantable through the linked token
-  (runtime-skipped when not elevated).
+  needed) resolves to its target; when the test runs elevated, a folder owned by SYSTEM (`icacls /setowner
+  *S-1-5-18`) with a protected DACL of Users RX, Administrators F and SYSTEM F is not grantable through the
+  linked token (runtime-skipped when not elevated).
 - `RuntimeLaunchPlanner`: the exact environment per kind and network state, `NODE_OPTIONS` with a path that
   has a space (forward slashes, quoted), user `NODE_OPTIONS` appended, `PATH` merge with and without a user
   `PATH`, `PIA_SANDBOX_ROOTS` separator and members, both `NuGet.Config` bodies, `--yes` insertion and its
   absence when present, `DOTNET_CLI_HOME` for a dll, the `AC\Temp` directory per container name,
   readable-already → no roots, uvx → read-only state and a `UvPrepareRequest`. The preload resource loads and
-  splits on `|`.
+  splits on `|`; when `node.exe` is on `PATH`, a harness that fails `lstat`/`stat` on ancestors and every
+  `realpath` with `EPERM` shows ancestors read as folders while the first root is a file, the `ino` type each
+  call asks for in either order, a junction in a granted root resolved to its target, `ENOENT` and `ELOOP`,
+  the `encoding` option honoured, and a throwing success callback run once.
 - `RuntimeStateProvisioner`, `UvToolRunner`, `UvEntryPointResolver`: support files and state directories
   created before the returned spec, an identical file not rewritten, a planted junction on a state file's path
   replaced and its target untouched, the grant record written, a fake uv process (seam) exit 0 → final python
@@ -1136,7 +1142,7 @@ runtime with a reason. Anything that downloads (npm, NuGet, PyPI, CPython) is `[
 - `SandboxPathGuard`: `ManagedRuntimeFolder`; the grants and support folders refused as Pia data.
   `RuntimeRootVerifier`: each issue. `SandboxGrantVerifier`: toolchain walked past 5,000 entries, cached
   positive result, state and support folders shallow with their own clause. `MxcMcpLauncher.BuildRequest`:
-  toolchain and support read-only, state rw or ro, `ReplaceEnvironmentBlock`; `MxcAclGate` admits one holder
+  toolchain and support read-only, state rw or ro; `MxcAclGate` admits one holder
   at a time. `MxcSpawnErrors`: the two measured messages (German `os error 2` text included) → path-free texts.
 - `SandboxLaunchSpecBuilder` and `McpTransportFactory`: every refusal text, not-Ready → `SandboxStartException`
   with the issue text, a throwing detector → the path-free check text and no start, a Ready Node spec end to
@@ -1155,8 +1161,9 @@ runtime with a reason. Anything that downloads (npm, NuGet, PyPI, CPython) is `[
   `HasAllAppPackagesAce` before and after. `SandboxRuntimeService`: preview strings exact, refusal under
   `%WINDIR%`, `CanGrantMachineWide` mirrors elevation, `GuideFor` returns the exact commands.
 - `McpServersSettingsViewModel`: refusal reasons per kind; runner → toggle enabled; network Allow for a new
-  runner, Deny for an exe, Allow after a folder was added first, kept after the user touched it, never changed
-  for a saved server; `cmd /c npx` becomes a runner through its arguments; detection debounced on command,
+  package runner, Deny for an exe, `node <script>` and `dotnet <dll>`, Allow after a folder was added first,
+  kept after the user touched it, never changed for a saved server; `cmd /c npx` becomes a runner through its
+  arguments; detection debounced on command,
   args, working directory, not on name, not while the toggle is off; panel state per outcome; step 2 only when
   elevated; confirmation text carries both commands; existing ACE refused; copy hits the clipboard; preview
   prefix used by Test connection and the proposed folder; the guard sees the effective command.
@@ -1165,7 +1172,7 @@ runtime with a reason. Anything that downloads (npm, NuGet, PyPI, CPython) is `[
 - Real containers, in the gate, runtime-skipped (R13):
   - `dotnet Pia.TestMcpServer.dll` through the real factory and detector (readable `Program Files\dotnet`):
     tools listed, a recording launcher seam shows no toolchain root, a blanked name reads empty or absent.
-    Skipped without a usable .NET 10.
+    Skipped unless the Program Files .NET 10 is already container-readable.
   - `node <fixture>\server.js` with `TestData/node-mcp/server.js` (*Appendix B*), a dependency-free MCP stdio
     server whose entry check compares `fs.realpathSync(process.argv[1])` with its own path, so it exits
     silently without the preload. The toolchain is a temp copy of `node.exe` with a minimal
@@ -1245,10 +1252,14 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
 - Node child processes with piped stdio hang at 100 % CPU (libuv's global pipe names are denied);
   `stdio: 'ignore'` and `NUL` fail with `EPERM`. Servers that shell out to git or python with captured output
   fail. Packages whose install scripts capture output probably hang too (not measured).
-- uvx: wheels only; sdist-only and git sources are refused by `UV_NO_BUILD=1`, and paths, URLs and local
-  wheels by the parser. Each server carries its own CPython (about 62 MB, 2,269 files). `uv run` is refused.
-  Only `--from`, `--with` and `--python` (a version) are accepted. An installed tool is not upgraded; pin a
-  version and change it to update.
+- uvx: wheels only; sdist-only and git sources are refused by `UV_NO_BUILD=1`, and paths, URLs and archive
+  file names (local wheels and sdists) by the parser. Each server carries its own CPython (about 62 MB, 2,269
+  files). `uv run` is refused. Only `--from`, `--with` and `--python` (a version) are accepted. An installed
+  tool is never upgraded: changing the pinned version or the spec is the only way to update it.
+- uv: a `uv.exe` in a folder this server can write, or under `McpSandboxRoot`, is skipped at start, and the
+  path guard refuses a read-write folder that covers a uv location. Remaining risk: an exe a server plants in a
+  read-write folder on `PATH` still takes over the user's shell and unsandboxed servers, and a uv folder that
+  only appears after the grant was saved is caught only by the start-time check.
 - The user's `.npmrc`, `uv.toml` and `NuGet.Config` do not apply, so private registries, registry auth and
   proxy settings from there do not reach sandboxed servers (proxy environment variables do reach the uv
   install). Cached CLI logins (`az login`) do not reach them either; use a token in the server's env.
@@ -1270,11 +1281,20 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
 - Step 2 has no undo in Pia, and an MSI repair may remove it.
 - Bare `python` still uses today's exe path; a user Python (26,099 entries here) exceeds the 20,000-entry cap.
 - Machine-level (`HKLM`) environment variables still reach containers; only `HKCU\Environment` is blanked.
+  `NODE_OPTIONS` is the exception: Pia replaces it in every sandboxed Node start, so a machine-wide value such
+  as `--use-openssl-ca` has to be repeated in the server's own env entries, where it is appended after the
+  preload options.
 - The probe and the running server share one npm cache and rely on npm's own locking.
+- Startup sweeps the ACEs a never-saved probe leaked only as far as its grant record reaches, and nothing is
+  recorded when the factory has no provisioner.
+- A definition whose tool prefix holds a character outside `[A-Za-z0-9_]` is unreadable.
 - If another server claims a previewed prefix between Test connection and Save, the probe's state folder
   belongs to that server. Only one editor saves local servers, so this needs two saves at once; startup
   removes the folders of servers never saved.
 - Detection grants only resolved final paths; how MXC treats links inside a granted tree is answered by G-LINK.
+- The preload's realpath `lstat`s every root it walks through. A policy folder that is itself a junction
+  reaches `PIA_SANDBOX_ROOTS` unresolved, so realpath below it fails with `EPERM` when the container cannot
+  `lstat` the junction or its target's parent (not measured).
 - Volta, fnm, nvm and scoop detection follows their documentation; only a junction-resolved install is
   checked live (scenario 15).
 - Windows 10/11 client editions were not measured; their `C:\` ACL may make the preload unnecessary there,
@@ -1319,13 +1339,11 @@ Not run yet.
 
 ## Appendix A: the shipped Node preload
 
-`src/Pia.Wpf/Services/Plugins/Sandbox/Runtimes/pia-node-sandbox.cjs`. The spike's file with roots split on `|`
-and a two-line header.
+`src/Pia.Wpf/Services/Plugins/Sandbox/Runtimes/pia-node-sandbox.cjs`, verbatim.
 
 ```js
 'use strict';
-// Inside an AppContainer every ancestor of a granted folder fails lstat with EPERM: answer those as folders and
-// let realpath fall back to the resolved path, so Node's loader, npm and entry-point checks keep working.
+// An AppContainer denies lstat on every ancestor of a granted folder: answer those as folders, resolve realpath by hand.
 const fs = require('fs');
 const path = require('path');
 
@@ -1341,50 +1359,86 @@ function isAncestor(p) {
 }
 
 const orig = {
-  lstatSync: fs.lstatSync, statSync: fs.statSync, lstat: fs.lstat, stat: fs.stat,
+  lstatSync: fs.lstatSync, statSync: fs.statSync, lstat: fs.lstat, stat: fs.stat, readlinkSync: fs.readlinkSync,
   realpathSync: fs.realpathSync, realpathSyncNative: fs.realpathSync.native,
   realpath: fs.realpath, realpathNative: fs.realpath.native,
   pLstat: fs.promises.lstat, pStat: fs.promises.stat, pRealpath: fs.promises.realpath,
 };
 
-let dirStats = null;
+// __dirname is Pia's support folder, which every Node start grants.
+const dirStats = [null, null];
 function fakeDir(opts) {
-  if (!dirStats) dirStats = orig.statSync(roots[0] || process.execPath, opts);
-  return dirStats;
+  const k = opts && opts.bigint ? 1 : 0;
+  if (!dirStats[k]) dirStats[k] = orig.statSync(__dirname, k ? { bigint: true } : undefined);
+  return dirStats[k];
 }
 
 function wrapSync(fn) {
   return function (p, opts) {
-    try { return fn.call(fs, p, opts); } catch (e) { if (denied(e) && isAncestor(p)) return fakeDir(opts); throw e; }
+    try { return fn.call(fs, p, opts); } catch (e) {
+      if (!denied(e) || !isAncestor(p)) throw e;
+      try { return fakeDir(opts); } catch { throw e; }
+    }
   };
 }
 function wrapCb(fn) {
   return function (p, opts, cb) {
     if (typeof opts === 'function') { cb = opts; opts = undefined; }
-    fn.call(fs, p, opts, (e, st) => { if (denied(e) && isAncestor(p)) return cb(null, fakeDir(opts)); cb(e, st); });
+    fn.call(fs, p, opts, (e, st) => {
+      if (denied(e) && isAncestor(p)) { try { st = fakeDir(opts); } catch { return cb(e); } return cb(null, st); }
+      cb(e, st);
+    });
   };
 }
 function wrapP(fn) {
   return async function (p, opts) {
-    try { return await fn.call(fs.promises, p, opts); } catch (e) { if (denied(e) && isAncestor(p)) return fakeDir(opts); throw e; }
+    try { return await fn.call(fs.promises, p, opts); } catch (e) {
+      if (!denied(e) || !isAncestor(p)) throw e;
+      try { return fakeDir(opts); } catch { throw e; }
+    }
   };
 }
 
-function realFallback(p) {
-  const s = path.resolve(p instanceof URL ? require('url').fileURLToPath(p) : String(p));
-  orig.statSync(s); // throws ENOENT for a missing leaf, as realpath would
-  return s;
+// Ancestors cannot be lstat'ed, so they count as plain folders; every link below them is followed.
+function resolveLinks(start) {
+  let s = start;
+  for (let hops = 0; ; hops++) {
+    const root = path.parse(s).root;
+    const parts = s.slice(root.length).split(path.sep).filter(Boolean);
+    let cur = root;
+    let i = 0;
+    while (i < parts.length && isAncestor(path.join(cur, parts[i]))) cur = path.join(cur, parts[i++]);
+    let next = null;
+    for (; i < parts.length; i++) {
+      const c = path.join(cur, parts[i]);
+      if (orig.lstatSync(c).isSymbolicLink()) { next = path.resolve(cur, orig.readlinkSync(c), ...parts.slice(i + 1)); break; }
+      cur = c;
+    }
+    if (next === null) return cur;
+    if (hops >= 32) {
+      throw Object.assign(new Error(`ELOOP: too many symbolic links encountered, realpath '${start}'`),
+        { code: 'ELOOP', syscall: 'realpath', path: start });
+    }
+    s = next;
+  }
+}
+function realFallback(p, opts) {
+  const s = resolveLinks(path.resolve(p instanceof URL ? require('url').fileURLToPath(p) : String(p)));
+  orig.statSync(s);
+  const enc = typeof opts === 'string' ? opts : opts && opts.encoding;
+  if (enc === 'buffer') return Buffer.from(s);
+  return enc && enc !== 'utf8' && enc !== 'utf-8' ? Buffer.from(s).toString(enc) : s;
 }
 function wrapRealSync(fn) {
   return function (p, opts) {
-    try { return fn.call(fs, p, opts); } catch (e) { if (denied(e)) return realFallback(p); throw e; }
+    try { return fn.call(fs, p, opts); } catch (e) { if (denied(e)) return realFallback(p, opts); throw e; }
   };
 }
 function wrapRealCb(fn) {
   return function (p, opts, cb) {
     if (typeof opts === 'function') { cb = opts; opts = undefined; }
     fn.call(fs, p, opts, (e, r) => {
-      if (denied(e)) { try { return cb(null, realFallback(p)); } catch (e2) { return cb(e2); } }
+      if (denied(e)) { try { r = realFallback(p, opts); } catch (e2) { return cb(e2); } return cb(null, r); }
       cb(e, r);
     });
   };
@@ -1401,7 +1455,7 @@ fs.realpath.native = wrapRealCb(orig.realpathNative);
 fs.promises.lstat = wrapP(orig.pLstat);
 fs.promises.stat = wrapP(orig.pStat);
 fs.promises.realpath = async function (p, opts) {
-  try { return await orig.pRealpath.call(fs.promises, p, opts); } catch (e) { if (denied(e)) return realFallback(p); throw e; }
+  try { return await orig.pRealpath.call(fs.promises, p, opts); } catch (e) { if (denied(e)) return realFallback(p, opts); throw e; }
 };
 require('module').syncBuiltinESMExports();
 ```
@@ -1489,6 +1543,7 @@ Panel:
 - `McpServers_Sandbox_Runtime_Title`: "Runtime"
 - `McpServers_Sandbox_Runtime_Detect`: "Detect runtimes"
 - `McpServers_Sandbox_Runtime_Detecting`: "Looking for the runtime…"
+- `McpServers_Sandbox_Runtime_CheckFailed`: "Pia could not check this server's runtime."
 - `McpServers_Sandbox_Runtime_Found` *(1)*: "Found {0}." (`{0}` is composed in code from product names and
   versions: "Node.js 22.23.2, npm 10.9.8", ".NET SDK 10.0.402", ".NET 10.0.1", "uv 0.13.1", "uv")
 - `McpServers_Sandbox_Runtime_ReadonlyFolders`: "Shared read-only with the server at each start:"
@@ -1511,8 +1566,8 @@ Issues (`McpServers_Sandbox_Runtime_Issue_<RuntimeIssue>`):
   folder. Run Pia as administrator once to allow it, or install Node.js for your user only."
 - `_DotnetSdkMissing`: "dnx needs a .NET 10 SDK, and none was found. Install one for your user only, as shown
   below."
-- `_DotnetRuntimeMissing`: "The .NET runtime this program needs was not found. Install the .NET 10 SDK for
-  your user only, as shown below."
+- `_DotnetRuntimeMissing` *(1)*: "The .NET runtime this program needs ({0}) was not found. Install it for
+  your user only, as shown below." (`{0}` names the runtime, composed in code from the runtimeconfig)
 - `_DotnetAdminOwned`: "The only .NET found is installed for all users, and sandboxed apps can't read its
   folder. Run Pia as administrator once to allow it, or install .NET for your user only."
 - `_UvNotFound`: "uv was not found. Install it for your user only, as shown below."
@@ -1528,6 +1583,8 @@ Issues (`McpServers_Sandbox_Runtime_Issue_<RuntimeIssue>`):
   around it."
 - `_ScriptMissing`: "The script was not found."
 - `_DllMissing`: "The .dll was not found."
+- `_UvInWritableFolder`: "The only uv found sits in a folder a sandboxed server can write, so Pia won't run it.
+  Install uv for your user only, as shown below."
 
 Step 2:
 - `McpServers_Sandbox_Runtime_FixText` *(1)*: "Pia runs as administrator, so it can let every sandboxed app on
@@ -1552,6 +1609,8 @@ Step 3:
 - `McpServers_Sandbox_Runtime_Guide_UvAlt`: "Or with winget:"
 - `McpServers_Sandbox_Runtime_Guide_Dotnet`: "Install the .NET 10 SDK for your user only, no administrator
   needed. Run this in a terminal, then press Detect again:"
+- `McpServers_Sandbox_Runtime_Guide_DotnetRuntime`: "Install the .NET runtime this program needs for your user
+  only, no administrator needed. Run this in a terminal, then press Detect again:"
 - `McpServers_Sandbox_Runtime_Guide_Caveat`: "Behind a proxy, or where your organisation blocks scripts or
   programs in user folders, these may fail. Ask your IT team, or run Pia as administrator once to use an
   installed copy."
