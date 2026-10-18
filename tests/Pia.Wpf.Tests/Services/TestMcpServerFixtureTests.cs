@@ -50,7 +50,8 @@ public sealed class TestMcpServerFixtureTests(TestMcpServerFixtureTests.Session 
         var tools = await session.Client.ListToolsAsync(cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
-            ["delete_directory", "delete_file", "export", "get_server_info", "list_directory", "read_file", "write_file"],
+            ["create_link", "delete_directory", "delete_file", "export", "get_environment", "get_server_info", "list_directory",
+                "read_file", "write_file"],
             tools.Select(t => t.Name).Order(StringComparer.Ordinal));
     }
 
