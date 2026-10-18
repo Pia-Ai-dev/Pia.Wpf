@@ -52,6 +52,22 @@ public static partial class RuntimeCandidates
             yield return scoopUv;
     }
 
+    /// <summary>The fixed uv folders whether or not uv is there yet, the PATH folders holding uv.exe, and where each uv.exe link leads.</summary>
+    public static IEnumerable<string> UvLocations(IRuntimeHostService host)
+    {
+        var onPath = host.RegistryPathEntries()
+            .Select(entry => entry.Trim().Trim('"'))
+            .Where(entry => entry.Length > 0 && Path.IsPathFullyQualified(entry) && host.FileExists(Path.Combine(entry, "uv.exe")));
+
+        foreach (var folder in Uv(host).Concat(onPath))
+        {
+            yield return folder;
+            if (host.ResolveFinalPath(Path.Combine(folder, "uv.exe")) is { } target
+                && Path.GetDirectoryName(target) is { Length: > 0 } targetFolder)
+                yield return targetFolder;
+        }
+    }
+
     private static string? NewestWinGetNode(IRuntimeHostService host)
     {
         var packages = Path.Combine(host.LocalAppData, "Microsoft", "WinGet", "Packages");

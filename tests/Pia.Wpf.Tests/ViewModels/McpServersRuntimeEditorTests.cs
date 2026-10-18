@@ -63,6 +63,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         var runtime = Substitute.For<ISandboxRuntimeService>();
         runtime.CanGrantMachineWide.Returns(elevated);
         runtime.GuideFor(Arg.Any<RuntimeFamily>()).Returns(call => RuntimeInstallGuides.GuideFor(call.Arg<RuntimeFamily>()));
+        runtime.GuideFor(Arg.Any<RuntimeResolution>()).Returns(call => RuntimeInstallGuides.GuideFor(call.Arg<RuntimeResolution>()));
         AnyDetect(runtime).Returns(Task.FromResult(detection ??Detection(RunnerKind.Npx, RuntimeOutcome.Ready, install: Node(readable: true))));
 
         var dialogs = Substitute.For<IDialogService>();
@@ -94,9 +95,10 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         RuntimeIssue issue = RuntimeIssue.None,
         RuntimeInstall? install = null,
         IReadOnlyList<string>? roots = null,
-        string? programFolder = null) =>
+        string? programFolder = null,
+        IReadOnlyList<DotnetRuntimeConfig.Framework>? frameworks = null) =>
         new(new RunnerParseResult(kind, null, RunnerRefusal.None, null, "npx", []),
-            new RuntimeResolution(kind, outcome, issue, install, roots ?? [], programFolder),
+            new RuntimeResolution(kind, outcome, issue, install, roots ?? [], programFolder, frameworks),
             @"C:\state",
             kind == RunnerKind.Uvx);
 
@@ -138,6 +140,27 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
 
         Assert.True(vm.EditSandboxEnabled);
         Assert.True(vm.EditSandboxAllowNetwork);
+        Assert.False(vm.ShowRunnerDenyHint);
+    }
+
+    /// <summary>A local script or dll fetches nothing at its first start, so it keeps the no-network default and gets no hint.</summary>
+    [Theory]
+    [InlineData("node", @"C:/Servers/weather/index.js", RunnerKind.NodeScript)]
+    [InlineData("dotnet", @"C:/Servers/app/app.dll", RunnerKind.DotnetDll)]
+    public void ANewLocalScriptOrDllServer_DefaultsToNoNetwork_WithoutTheDenyHint(string command, string arguments, RunnerKind kind)
+    {
+        var (vm, _, _, _, _, _, _) = Create(Detection(kind, RuntimeOutcome.Ready, install: Node(readable: true)));
+
+        NewServer(vm, command, arguments);
+
+        Assert.True(vm.IsRunnerCommand);
+        Assert.True(vm.ShowRuntimePanel);
+        Assert.False(vm.EditSandboxAllowNetwork);
+        Assert.False(vm.ShowRunnerDenyHint);
+
+        vm.EditSandboxAllowNetwork = true;
+        vm.EditSandboxAllowNetwork = false;
+
         Assert.False(vm.ShowRunnerDenyHint);
     }
 
@@ -371,7 +394,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         NewServer(vm, "npx");
 
         WaitFor(() => vm.RuntimeReason is not null);
-        Assert.Equal(SandboxRuntimeMessages.CheckFailed, vm.RuntimeReason);
+        Assert.Equal("McpServers_Sandbox_Runtime_CheckFailed", vm.RuntimeReason);
         Assert.False(vm.IsDetectingRuntime);
         Assert.Null(vm.RuntimeOutcomeValue);
         Assert.DoesNotContain(logger.Entries, e => e.Level >= LogLevel.Error);
@@ -472,18 +495,33 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         "McpServers_Sandbox_Runtime_Guide_Uv", "McpServers_Sandbox_Runtime_Guide_UvAlt")]
     [InlineData(RunnerKind.Dnx, "dnx", "Contoso.Mcp", RuntimeIssue.DotnetSdkMissing, RuntimeFamily.Dotnet,
         "McpServers_Sandbox_Runtime_Guide_Dotnet", null)]
+    [InlineData(RunnerKind.DotnetDll, "dotnet", @"C:\Servers\app\app.dll", RuntimeIssue.DotnetRuntimeMissing, RuntimeFamily.Dotnet,
+        "McpServers_Sandbox_Runtime_Guide_DotnetRuntime:.NET 8.0", null,
+        "Microsoft.NETCore.App", "8.0.0", "McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing:.NET 8.0")]
+    [InlineData(RunnerKind.DotnetDll, "dotnet", @"C:\Servers\app\app.dll", RuntimeIssue.DotnetRuntimeMissing, RuntimeFamily.Dotnet,
+        "McpServers_Sandbox_Runtime_Guide_DotnetRuntime:ASP.NET Core 8.0", null,
+        "Microsoft.AspNetCore.App", "8.0.0", "McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing:ASP.NET Core 8.0")]
+    [InlineData(RunnerKind.DotnetDll, "dotnet", @"C:\Servers\app\app.dll", RuntimeIssue.DotnetRuntimeMissing, RuntimeFamily.Dotnet,
+        "McpServers_Sandbox_Runtime_Guide_Dotnet", null,
+        null, null, "McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing:.NET")]
     public void AMissingRuntime_ShowsItsFamilysGuide(
-        RunnerKind kind, string command, string arguments, RuntimeIssue issue, RuntimeFamily family, string guideKey, string? altKey)
+        RunnerKind kind, string command, string arguments, RuntimeIssue issue, RuntimeFamily family, string guideKey, string? altKey,
+        string? framework = null, string? frameworkVersion = null, string? reason = null)
     {
-        var (vm, _, _, _, _, _, _) = Create(Detection(kind, RuntimeOutcome.NotFound, issue));
+        IReadOnlyList<DotnetRuntimeConfig.Framework>? frameworks = framework is null
+            ? null
+            : [new DotnetRuntimeConfig.Framework(framework, frameworkVersion!)];
+        var detection = Detection(kind, RuntimeOutcome.NotFound, issue, frameworks: frameworks);
+        var (vm, _, _, _, _, _, _) = Create(detection);
 
         NewServer(vm, command, arguments);
 
         WaitFor(() => vm.RuntimeOutcomeValue == RuntimeOutcome.NotFound);
-        var guide = RuntimeInstallGuides.GuideFor(family);
+        var guide = RuntimeInstallGuides.GuideFor(detection.Resolution!);
+        Assert.Equal(family, guide.Family);
         Assert.True(vm.ShowRuntimeGuide);
         Assert.Null(vm.RuntimeSummary);
-        Assert.Equal($"McpServers_Sandbox_Runtime_Issue_{issue}", vm.RuntimeReason);
+        Assert.Equal(reason ?? $"McpServers_Sandbox_Runtime_Issue_{issue}", vm.RuntimeReason);
         Assert.Equal(guideKey, vm.RuntimeGuideText);
         Assert.Equal(guide.Command, vm.RuntimeGuideCommand);
         Assert.Equal(guide.AlternativeCommand, vm.RuntimeGuideAltCommand);
@@ -541,7 +579,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         Assert.Null(vm.RuntimeStateFolderText);
     }
 
-    // ---- step 2: the machine-wide grant -----------------------------------------------------------------
+    // ---- the machine-wide grant ----
 
     private static MachineWideGrantPreview RealPreview(string root) =>
         new SandboxRuntimeService(
@@ -549,6 +587,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
                 Substitute.For<IToolchainAclService>(),
                 Substitute.For<IElevationService>(),
                 Substitute.For<IRuntimeHostService>(),
+                Substitute.For<IRuntimeRootVerifier>(),
                 NullLogger<SandboxRuntimeService>.Instance)
             .PreviewMachineWideGrant(root);
 
@@ -646,7 +685,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         await dialogs.DidNotReceiveWithAnyArgs().ShowConfirmationDialogAsync(default!, default!);
     }
 
-    // ---- step 3: copying a guide command ------------------------------------------------------------------
+    // ---- copying an install command ----
 
     [Fact]
     public void Copy_PutsTheChosenCommandOnTheClipboard()

@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Paths;
 using Pia.Services.Plugins.Sandbox.Runtimes;
 
@@ -19,13 +20,15 @@ public enum SandboxPathIssueKind
     WideFolder,
     TooManyFiles,
     CommandFolderTooLarge,
-    ManagedRuntimeFolder
+    ManagedRuntimeFolder,
+    UvFolder
 }
 
 /// <param name="Path">The path as the policy holds it, so a UI can mark the matching entry. The message never repeats it.</param>
 public sealed record SandboxPathIssue(string Path, SandboxPathIssueKind Kind, string Message);
 
 /// <summary>The machine facts the guard judges paths against; a seam so the rules test without a real profile.</summary>
+/// <param name="UvFolders">Where Pia finds the uv it runs outside the sandbox, so no server may write there.</param>
 public sealed record SandboxGuardEnvironment(
     string WindowsDirectory,
     IReadOnlyList<string> ProgramFilesDirectories,
@@ -34,10 +37,14 @@ public sealed record SandboxGuardEnvironment(
     string SandboxRoot,
     IReadOnlyList<string> WideFolders,
     Func<string, bool> PathExists,
-    Func<string, int, int> CountEntries)
+    Func<string, int, int> CountEntries,
+    IReadOnlyList<string>? UvFolders = null)
 {
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, long Ticks)> CountCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly long CountCacheTicks = TimeSpan.FromSeconds(20).Ticks;
+
+    // Only reads the registry and the file system here; elevation is never asked.
+    private static readonly RuntimeHostService UvHost = new(new ElevationService(NullLogger<ElevationService>.Instance));
 
     public static SandboxGuardEnvironment Current()
     {
@@ -66,7 +73,8 @@ public sealed record SandboxGuardEnvironment(
                     .Select(path => path!)
             ],
             path => Directory.Exists(path) || File.Exists(path),
-            CountEntriesCached);
+            CountEntriesCached,
+            [.. RuntimeCandidates.UvLocations(UvHost).Distinct(StringComparer.OrdinalIgnoreCase)]);
     }
 
     // Typed into an editor, so the same folder is judged on every keystroke; a recount per keystroke would stall it.
@@ -131,7 +139,7 @@ public static class SandboxPathGuard
         {
             var nested = readwrite.Where((other, j) => j != i
                 && (j < i ? SandboxLaunchSpecBuilder.IsSameOrUnder(readwrite[i].Full, other.Full)
-                          : IsStrictlyUnder(readwrite[i].Full, other.Full))).Any();
+                          : SandboxLaunchSpecBuilder.IsStrictlyUnder(readwrite[i].Full, other.Full))).Any();
             if (nested)
                 issues.Add(new(readwrite[i].Raw, SandboxPathIssueKind.NestedReadwrite,
                     "This folder is already covered by another read-write folder. Keep only one of them."));
@@ -193,7 +201,7 @@ public static class SandboxPathGuard
 
         var full = SandboxLaunchSpecBuilder.Normalize(trimmed);
         var sandboxRoot = SandboxLaunchSpecBuilder.Normalize(environment.SandboxRoot);
-        var insideSandboxRoot = IsStrictlyUnder(full, sandboxRoot);
+        var insideSandboxRoot = SandboxLaunchSpecBuilder.IsStrictlyUnder(full, sandboxRoot);
 
         var problem = FindProblem(full, sandboxRoot, insideSandboxRoot, environment);
         if (problem is not null)
@@ -212,7 +220,14 @@ public static class SandboxPathGuard
         if (environment.WideFolders.Any(wide => string.Equals(full, SandboxLaunchSpecBuilder.Normalize(wide), StringComparison.OrdinalIgnoreCase)))
         {
             issues.Add(new(raw, SandboxPathIssueKind.WideFolder,
-                $"Share a subfolder instead: Pia would have to change the permissions of everything in {Path.GetFileName(full)}."));
+                "Share a subfolder instead: Pia would have to change the permissions of everything in this folder."));
+            return;
+        }
+
+        if (isReadwrite && environment.UvFolders?.Any(uv => Path.IsPathFullyQualified(uv) && ContainsOrIs(full, uv)) == true)
+        {
+            issues.Add(new(raw, SandboxPathIssueKind.UvFolder,
+                "Pia looks for uv in this folder and runs it outside the sandbox, so a sandboxed server can't be allowed to change it. Choose a different folder."));
             return;
         }
 
@@ -294,9 +309,8 @@ public static class SandboxPathGuard
 
         if (IsTooWide(granted, environment))
         {
-            var name = Path.GetFileName(granted.TrimEnd('\\', '/'));
             issues.Add(new(granted, SandboxPathIssueKind.CommandFolderTooWide,
-                $"Put the server in its own folder: Pia would have to share all of {(name.Length == 0 ? granted : name)} with it."));
+                "Put the server in its own folder: Pia would have to share that whole folder with it."));
         }
         else if (IsTooLarge(granted, environment))
         {
@@ -306,7 +320,7 @@ public static class SandboxPathGuard
     }
 
     private static bool IsTooLarge(string directory, SandboxGuardEnvironment environment) =>
-        !IsStrictlyUnder(directory, SandboxLaunchSpecBuilder.Normalize(environment.SandboxRoot))
+        !SandboxLaunchSpecBuilder.IsStrictlyUnder(directory, SandboxLaunchSpecBuilder.Normalize(environment.SandboxRoot))
         && environment.CountEntries(directory, MaxEntriesPerRoot + 1) > MaxEntriesPerRoot;
 
     private static bool IsTooWide(string directory, SandboxGuardEnvironment environment)
@@ -314,7 +328,7 @@ public static class SandboxPathGuard
         var sandboxRoot = SandboxLaunchSpecBuilder.Normalize(environment.SandboxRoot);
         return ContainsOrIs(directory, environment.ProfileRoot)
             || environment.WideFolders.Any(folder => string.Equals(directory, SandboxLaunchSpecBuilder.Normalize(folder), StringComparison.OrdinalIgnoreCase))
-            || (!IsStrictlyUnder(directory, sandboxRoot)
+            || (!SandboxLaunchSpecBuilder.IsStrictlyUnder(directory, sandboxRoot)
                 && environment.PiaDataRoots.Any(root =>
                     SandboxLaunchSpecBuilder.IsSameOrUnder(directory, SandboxLaunchSpecBuilder.Normalize(root)) || ContainsOrIs(directory, root)));
     }
@@ -327,7 +341,4 @@ public static class SandboxPathGuard
     /// <summary>True when <paramref name="path"/> is <paramref name="other"/> or a folder above it.</summary>
     private static bool ContainsOrIs(string path, string other) =>
         SandboxLaunchSpecBuilder.IsSameOrUnder(SandboxLaunchSpecBuilder.Normalize(other), path);
-
-    private static bool IsStrictlyUnder(string path, string root) =>
-        !string.Equals(path, root, StringComparison.OrdinalIgnoreCase) && SandboxLaunchSpecBuilder.IsSameOrUnder(path, root);
 }

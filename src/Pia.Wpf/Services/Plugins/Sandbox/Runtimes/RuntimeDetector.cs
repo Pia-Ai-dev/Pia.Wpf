@@ -21,6 +21,8 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
             : null;
 
         var runtime = FindRuntime(runner, family, frameworks, cancellationToken);
+        if (runner.Kind == RunnerKind.DotnetDll)
+            runtime = runtime with { Frameworks = frameworks };
         if (!hasProgram)
             return runtime;
         if (program is null)
@@ -46,6 +48,7 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
         (RuntimeInstall Install, RuntimeIssue Issue)? refused = null;
         var seenFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var seenRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var writable = family == RuntimeFamily.Uv ? FinalFolders(runner.WritableFolders) : [];
 
         foreach (var candidate in Candidates(runner, family))
         {
@@ -59,18 +62,44 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
                 continue;
 
             if (family == RuntimeFamily.Uv)
+            {
+                // uv runs outside the sandbox, so a server that can replace it would run its own program at Pia's level.
+                if (IsUnderAny([folder, install.Root, install.Executable], writable))
+                {
+                    refused ??= (install, RuntimeIssue.UvInWritableFolder);
+                    continue;
+                }
+
                 return Ready(runner.Kind, install, []);
+            }
+
             if (IsReadable(install))
                 return Ready(runner.Kind, install with { ReadableAlready = true }, []);
             if (IsUnderWindows(install.Root))
                 continue;
-            if (IsUnderProgramFiles(install.Root) || !host.CanUserWriteDacl(install.Root))
+            if (IsUnderProgramFiles(install.Root))
             {
                 adminOwned ??= install with { AdminOwned = true };
                 continue;
             }
 
-            if (roots.Check(install.Root, false) is { } issue && issue != RuntimeIssue.None)
+            // Judged before ownership too: a too-wide root must never reach the machine-wide grant.
+            var issue = SandboxLaunchSpecBuilder.IsVolumeRoot(install.Root)
+                ? RuntimeIssue.ToolchainTooWide
+                : roots.Check(install.Root, false) ?? RuntimeIssue.None;
+            if (issue is RuntimeIssue.ToolchainTooWide or RuntimeIssue.ToolchainPathUnsupported)
+            {
+                refused ??= (install, issue);
+                continue;
+            }
+
+            if (!host.CanUserWriteDacl(install.Root))
+            {
+                adminOwned ??= install with { AdminOwned = true };
+                continue;
+            }
+
+            if (issue != RuntimeIssue.None)
             {
                 refused ??= (install, issue);
                 continue;
@@ -107,7 +136,7 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
         {
             var folder = entry.Trim().Trim('"');
             if (folder.Length == 0
-                || SamePath(folder, windowsApps)
+                || SandboxLaunchSpecBuilder.SamePath(folder, windowsApps)
                 || host.FileExists(Path.Combine(folder, "volta-shim.exe")))
                 continue;
             yield return folder;
@@ -197,7 +226,7 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
     {
         var scriptFolder = Path.GetDirectoryName(script)!;
         var folder = scriptFolder;
-        while (Path.GetDirectoryName(folder) is { } parent && !SamePath(folder, host.UserProfile))
+        while (Path.GetDirectoryName(folder) is { } parent && !SandboxLaunchSpecBuilder.SamePath(folder, host.UserProfile))
         {
             if (host.FileExists(Path.Combine(folder, "package.json")))
                 return folder;
@@ -235,14 +264,35 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
             ? final
             : null;
 
+    // Through the final path too, or a junction inside a writable folder would hide what it reaches.
+    private List<string> FinalFolders(IReadOnlyList<string>? folders)
+    {
+        var result = new List<string>();
+        foreach (var raw in folders ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(raw) || !Path.IsPathFullyQualified(raw.Trim()))
+                continue;
+
+            var folder = SandboxLaunchSpecBuilder.Normalize(raw);
+            result.Add(folder);
+            if (host.ResolveFinalPath(folder) is { } final)
+                result.Add(final);
+        }
+
+        return result;
+    }
+
+    private static bool IsUnderAny(IEnumerable<string> paths, IReadOnlyList<string> folders) =>
+        paths.Any(path => folders.Any(folder => SandboxLaunchSpecBuilder.IsSameOrUnder(path, folder)));
+
     private bool IsReadable(RuntimeInstall install) =>
         host.IsContainerReadable(install.Root)
         && host.IsContainerReadable(install.Executable)
         && (install.EntryScript is null || host.IsContainerReadable(install.EntryScript));
 
-    private bool IsUnderWindows(string path) => IsSameOrUnder(path, host.WindowsDirectory);
+    private bool IsUnderWindows(string path) => IsUnderHostFolder(path, host.WindowsDirectory);
 
-    private bool IsUnderProgramFiles(string path) => host.ProgramFilesDirectories.Any(folder => IsSameOrUnder(path, folder));
+    private bool IsUnderProgramFiles(string path) => host.ProgramFilesDirectories.Any(folder => IsUnderHostFolder(path, folder));
 
     private static RuntimeResolution Ready(RunnerKind kind, RuntimeInstall install, IReadOnlyList<string> toolchainRoots) =>
         new(kind, RuntimeOutcome.Ready, RuntimeIssue.None, install, toolchainRoots, null);
@@ -273,18 +323,8 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
         _ => "uv.exe"
     };
 
-    private static bool IsSameOrUnder(string path, string folder)
-    {
-        if (string.IsNullOrWhiteSpace(folder))
-            return false;
-
-        var parent = Path.TrimEndingDirectorySeparator(folder);
-        return string.Equals(Path.TrimEndingDirectorySeparator(path), parent, StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith(parent + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool SamePath(string left, string right) =>
-        string.Equals(Path.TrimEndingDirectorySeparator(left), Path.TrimEndingDirectorySeparator(right), StringComparison.OrdinalIgnoreCase);
+    private static bool IsUnderHostFolder(string path, string folder) =>
+        !string.IsNullOrWhiteSpace(folder) && SandboxLaunchSpecBuilder.IsSameOrUnder(path, SandboxLaunchSpecBuilder.Normalize(folder));
 
     private static bool IsPlainName(string name) =>
         name.Length > 0 && name is not ("." or "..") && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;

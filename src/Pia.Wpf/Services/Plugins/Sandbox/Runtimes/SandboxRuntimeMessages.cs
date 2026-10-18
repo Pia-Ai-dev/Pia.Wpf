@@ -70,6 +70,9 @@ public static class SandboxRuntimeMessages
 
     public const string DllMissing = "The .dll was not found.";
 
+    public const string UvInWritableFolder =
+        "The only uv found sits in a folder a sandboxed server can change, and Pia runs uv outside the sandbox. Install uv into a folder of its own, or stop sharing that folder read-write.";
+
     public const string DetectionUnavailable = "Pia can't sandbox this server: runtime detection is not available.";
 
     public const string CheckFailed = "Pia could not check this server's runtime.";
@@ -110,6 +113,7 @@ public static class SandboxRuntimeMessages
         RuntimeIssue.ProgramFolderTooLarge => ProgramFolderTooLarge,
         RuntimeIssue.ScriptMissing => ScriptMissing,
         RuntimeIssue.DllMissing => DllMissing,
+        RuntimeIssue.UvInWritableFolder => UvInWritableFolder,
         _ => CheckFailed,
     };
 

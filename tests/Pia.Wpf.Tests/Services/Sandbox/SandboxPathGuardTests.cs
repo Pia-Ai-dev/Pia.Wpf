@@ -1,7 +1,10 @@
 using System.IO;
+using System.Text.RegularExpressions;
 using Pia.Paths;
+using Pia.Services.Exceptions;
 using Pia.Services.Plugins.Sandbox;
 using Pia.Services.Plugins.Sandbox.Runtimes;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Sandbox;
@@ -128,20 +131,19 @@ public sealed class SandboxPathGuardTests
 
     /// <summary>Granting a folder changes the permissions of every file below it, on every start.</summary>
     [Theory]
-    [InlineData(@"C:\Users\me\Documents", "Documents")]
-    [InlineData(@"C:\Users\me\Desktop\", "Desktop")]
-    [InlineData(@"c:\users\ME\downloads", "downloads")]
-    [InlineData(@"C:\Users\me\OneDrive - Contoso", "OneDrive - Contoso")]
-    public void ADocumentsStyleRoot_IsRefusedAsAPolicyPath_ForBothKinds(string path, string name)
+    [InlineData(@"C:\Users\me\Documents")]
+    [InlineData(@"C:\Users\me\Desktop\")]
+    [InlineData(@"c:\users\ME\downloads")]
+    [InlineData(@"C:\Users\me\OneDrive - Contoso")]
+    public void ADocumentsStyleRoot_IsRefusedAsAPolicyPath_ForBothKinds(string path)
     {
-        var expected = $"Share a subfolder instead: Pia would have to change the permissions of everything in {name}.";
-
         var readwrite = Single(Validate([path], []));
         var readOnly = Single(Validate([], [path]));
 
         Assert.Equal(SandboxPathIssueKind.WideFolder, readwrite.Kind);
         Assert.Equal(SandboxPathIssueKind.WideFolder, readOnly.Kind);
-        Assert.Equal(expected, readwrite.Message, ignoreCase: true);
+        Assert.Equal("Share a subfolder instead: Pia would have to change the permissions of everything in this folder.", readwrite.Message);
+        Assert.Equal(readwrite.Message, readOnly.Message);
     }
 
     [Fact]
@@ -158,6 +160,84 @@ public sealed class SandboxPathGuardTests
         {
             Environment.SetEnvironmentVariable("OneDriveCommercial", original);
         }
+    }
+
+    private static readonly SandboxGuardEnvironment WithUv = Fake with
+    {
+        UvFolders = [@"C:\Users\me\.local\bin", @"C:\Users\me\.cargo\bin", @"C:\Tools\uv\bin"]
+    };
+
+    private static IReadOnlyList<SandboxPathIssue> ValidateWithUv(IReadOnlyList<string> rw, IReadOnlyList<string> ro) =>
+        SandboxPathGuard.Validate(new McpSandboxPolicy(rw, ro, false), null, WithUv, fileExists: _ => true);
+
+    /// <summary>Pia runs uv outside the sandbox, so a server that could replace it would run its own program at Pia's level.</summary>
+    [Theory]
+    [InlineData(@"C:\Users\me\.local\bin")]
+    [InlineData(@"c:\users\ME\.LOCAL\bin\")]
+    [InlineData(@"C:\Users\me\.local")]
+    [InlineData(@"C:\Users\me\.cargo\bin")]
+    [InlineData(@"C:\Tools\uv\bin")]
+    [InlineData(@"C:\Tools\uv")]
+    [InlineData(@"C:\Tools")]
+    public void AReadwriteFolderThatHoldsAUvFolder_IsRefused(string path)
+    {
+        var issue = Single(ValidateWithUv([path], []));
+
+        Assert.Equal(SandboxPathIssueKind.UvFolder, issue.Kind);
+        Assert.Equal(path, issue.Path);
+        Assert.Equal(
+            "Pia looks for uv in this folder and runs it outside the sandbox, so a sandboxed server can't be allowed to change it. Choose a different folder.",
+            issue.Message);
+        PathFreeAssert.IsPathFree(new SandboxStartException(issue.Message));
+        Assert.DoesNotMatch(@"(?i)\b(me|users|tools|local|cargo)\b", issue.Message);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\me\.local\bin\cache")]
+    [InlineData(@"C:\Users\me\.local2")]
+    [InlineData(@"C:\Tools\uvx")]
+    public void AReadwriteFolderBesideOrInsideAUvFolder_IsFine(string path)
+    {
+        Assert.Empty(ValidateWithUv([path], []));
+    }
+
+    [Fact]
+    public void AUvFolder_MayStillBeSharedReadOnly()
+    {
+        Assert.Empty(ValidateWithUv([], [@"C:\Users\me\.local\bin", @"C:\Tools\uv"]));
+    }
+
+    [Fact]
+    public void TheCurrentEnvironment_RefusesTheFixedUvFolders_EvenBeforeUvIsInstalled()
+    {
+        var uvFolders = SandboxGuardEnvironment.Current().UvFolders;
+
+        Assert.NotNull(uvFolders);
+        Assert.Contains(Path.Combine(PiaPaths.UserProfileRoot, ".local", "bin"), uvFolders);
+        Assert.Contains(Path.Combine(PiaPaths.UserProfileRoot, ".cargo", "bin"), uvFolders);
+    }
+
+    [Fact]
+    public void TheUvLocations_AddThePathFoldersHoldingUv_AndWhereTheirLinksLead()
+    {
+        var host = new FakeRuntimeHost();
+        var onPath = Path.Combine(@"D:\", "tools", "uv");
+        var linkFolder = Path.Combine(@"D:\", "bin");
+        var linkTarget = Path.Combine(@"D:\", "uv-versions", "0.13.1");
+        var withoutUv = Path.Combine(@"D:\", "other");
+        host.WithUv(onPath).WithUv(linkTarget).WithFile(Path.Combine(linkFolder, "uv.exe")).WithDirectory(withoutUv);
+        host.FinalPaths[Path.Combine(linkFolder, "uv.exe")] = Path.Combine(linkTarget, "uv.exe");
+        host.PathEntries.AddRange([onPath, $"\"{linkFolder}\"", withoutUv, "relative"]);
+
+        var locations = RuntimeCandidates.UvLocations(host).ToList();
+
+        Assert.Contains(Path.Combine(host.UserProfile, ".local", "bin"), locations);
+        Assert.Contains(Path.Combine(host.UserProfile, ".cargo", "bin"), locations);
+        Assert.Contains(onPath, locations);
+        Assert.Contains(linkFolder, locations);
+        Assert.Contains(linkTarget, locations);
+        Assert.DoesNotContain(withoutUv, locations);
+        Assert.DoesNotContain("relative", locations);
     }
 
     [Fact]
@@ -393,17 +473,17 @@ public sealed class SandboxPathGuardTests
     }
 
     [Theory]
-    [InlineData(@"C:\Users\me\Downloads\server.exe", "Downloads")]
-    [InlineData(@"C:\Users\me\Desktop\server.exe", "Desktop")]
-    [InlineData(@"C:\Users\me\Documents\server.exe", "Documents")]
-    [InlineData(@"C:\Users\me\server.exe", "me")]
-    public void AProgramSittingInAWideFolder_IsRefused_BecauseItsFolderWouldBeShared(string command, string folder)
+    [InlineData(@"C:\Users\me\Downloads\server.exe")]
+    [InlineData(@"C:\Users\me\Desktop\server.exe")]
+    [InlineData(@"C:\Users\me\Documents\server.exe")]
+    [InlineData(@"C:\Users\me\server.exe")]
+    public void AProgramSittingInAWideFolder_IsRefused_BecauseItsFolderWouldBeShared(string command)
     {
         var issue = Single(Validate([@"C:\Work\box"], [], command));
 
         Assert.Equal(SandboxPathIssueKind.CommandFolderTooWide, issue.Kind);
         Assert.Equal(Path.GetDirectoryName(command), issue.Path);
-        Assert.Equal($"Put the server in its own folder: Pia would have to share all of {folder} with it.", issue.Message);
+        Assert.Equal("Put the server in its own folder: Pia would have to share that whole folder with it.", issue.Message);
     }
 
     /// <summary>Its folder is granted read-only too, so a 30,000-file virtual environment would make every start crawl.</summary>
@@ -429,7 +509,34 @@ public sealed class SandboxPathGuardTests
     [Fact]
     public void AProgramAtTheDriveRoot_IsRefused()
     {
-        Assert.Equal(SandboxPathIssueKind.CommandFolderTooWide, Single(Validate([], [], @"C:\server.exe")).Kind);
+        var issue = Single(Validate([], [], @"C:\server.exe"));
+
+        Assert.Equal(SandboxPathIssueKind.CommandFolderTooWide, issue.Kind);
+        PathFreeAssert.IsPathFree(new SandboxStartException(issue.Message));
+    }
+
+    [Fact]
+    public void AProgramAtAShareRoot_IsRefused_WithoutNamingTheShare()
+    {
+        var environment = Fake with { WideFolders = [.. Fake.WideFolders, @"\\fileserver\jdoe$"] };
+
+        var issue = Single(SandboxPathGuard.Validate(
+            new McpSandboxPolicy([], [], false), @"\\fileserver\jdoe$\server.exe", environment, fileExists: _ => true));
+
+        Assert.Equal(SandboxPathIssueKind.CommandFolderTooWide, issue.Kind);
+        Assert.DoesNotContain("jdoe", issue.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("fileserver", issue.Message, StringComparison.OrdinalIgnoreCase);
+        PathFreeAssert.IsPathFree(new SandboxStartException(issue.Message));
+    }
+
+    [Fact]
+    public void AProgramAtTheProfileRoot_IsRefused_WithoutNamingTheAccount()
+    {
+        var issue = Single(Validate([], [], "C:/Users/me/server.exe"));
+
+        Assert.Equal(SandboxPathIssueKind.CommandFolderTooWide, issue.Kind);
+        Assert.DoesNotMatch(@"(?i)\bme\b", issue.Message);
+        PathFreeAssert.IsPathFree(new SandboxStartException(issue.Message));
     }
 
     [Fact]
@@ -500,6 +607,25 @@ public sealed class SandboxPathGuardTests
 
         Assert.DoesNotContain(path, issue.Message);
         Assert.DoesNotContain("Logs", issue.Message);
+
+        var oneDrive = @"C:\Users\me\OneDrive - Contoso Ltd";
+        var environment = Fake with { WideFolders = [.. Fake.WideFolders, oneDrive] };
+        var wide = Single(SandboxPathGuard.Validate(new McpSandboxPolicy([oneDrive], [], false), null, environment, _ => true));
+        Assert.Equal(SandboxPathIssueKind.WideFolder, wide.Kind);
+        AssertNamesNoSegmentOf(oneDrive, wide.Message);
+
+        var profileCommand = Single(Validate([], [], @"C:\Users\me\server.exe"));
+        Assert.Equal(SandboxPathIssueKind.CommandFolderTooWide, profileCommand.Kind);
+        AssertNamesNoSegmentOf(profileCommand.Path, profileCommand.Message);
+    }
+
+    private static void AssertNamesNoSegmentOf(string path, string message)
+    {
+        var segments = path.Split(['\\', '/', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Select(segment => segment.Trim(':', '-'))
+            .Where(segment => segment.Length > 0);
+        foreach (var segment in segments)
+            Assert.DoesNotMatch($@"(?i)\b{Regex.Escape(segment)}\b", message);
     }
 
     [Fact]

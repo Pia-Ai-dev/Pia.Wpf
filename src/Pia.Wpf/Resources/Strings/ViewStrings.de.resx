@@ -1785,7 +1785,7 @@
   <data name="McpServers_Sandbox_Runtime_Issue_NodeNotFound" xml:space="preserve"><value>Node.js wurde nicht gefunden. Installiere es nur für deinen Benutzer, wie unten gezeigt.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_NodeAdminOwned" xml:space="preserve"><value>Das einzige gefundene Node.js ist für alle Benutzer installiert, und Apps in einer Sandbox können seinen Ordner nicht lesen. Führe Pia einmal als Administrator aus, um das zu erlauben, oder installiere Node.js nur für deinen Benutzer.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_DotnetSdkMissing" xml:space="preserve"><value>dnx braucht ein .NET 10 SDK, und es wurde keins gefunden. Installiere eins nur für deinen Benutzer, wie unten gezeigt.</value></data>
-  <data name="McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing" xml:space="preserve"><value>Die .NET-Laufzeit, die dieses Programm braucht, wurde nicht gefunden. Installiere das .NET 10 SDK nur für deinen Benutzer, wie unten gezeigt.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing" xml:space="preserve"><value>Die Laufzeit {0}, die dieses Programm braucht, wurde nicht gefunden. Installiere sie nur für deinen Benutzer, wie unten gezeigt.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_DotnetAdminOwned" xml:space="preserve"><value>Das einzige gefundene .NET ist für alle Benutzer installiert, und Apps in einer Sandbox können seinen Ordner nicht lesen. Führe Pia einmal als Administrator aus, um das zu erlauben, oder installiere .NET nur für deinen Benutzer.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_UvNotFound" xml:space="preserve"><value>uv wurde nicht gefunden. Installiere es nur für deinen Benutzer, wie unten gezeigt.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_ToolchainTooLarge" xml:space="preserve"><value>Der Ordner der Laufzeitumgebung enthält zu viele Dateien, um ihn mit einer Sandbox zu teilen. Installiere eine eigene Kopie nur für deinen Benutzer, wie unten gezeigt.</value></data>
@@ -1795,6 +1795,8 @@
   <data name="McpServers_Sandbox_Runtime_Issue_ProgramFolderTooWide" xml:space="preserve"><value>Leg das Programm in einen eigenen Ordner: Pia müsste sonst den gesamten Ordner darum herum freigeben.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_ScriptMissing" xml:space="preserve"><value>Das Skript wurde nicht gefunden.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_DllMissing" xml:space="preserve"><value>Die .dll wurde nicht gefunden.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_UvInWritableFolder" xml:space="preserve"><value>Das einzige gefundene uv liegt in einem Ordner, den ein Server in der Sandbox ändern kann, und Pia führt uv außerhalb der Sandbox aus. Installiere uv in einen eigenen Ordner oder gib diesen Ordner nicht mehr mit Schreibzugriff frei.</value></data>
+  <data name="McpServers_Sandbox_Runtime_CheckFailed" xml:space="preserve"><value>Pia konnte die Laufzeitumgebung dieses Servers nicht prüfen. Klicke auf „Laufzeitumgebungen erkennen“, um es erneut zu versuchen.</value></data>
   <data name="McpServers_Sandbox_Runtime_FixText" xml:space="preserve"><value>Pia läuft als Administrator und kann daher jeder App in einer Sandbox auf diesem PC erlauben, {0} zu lesen.</value></data>
   <data name="McpServers_Sandbox_Runtime_Fix" xml:space="preserve"><value>Apps in einer Sandbox das Lesen dieses Ordners erlauben</value></data>
   <data name="McpServers_Sandbox_Runtime_FixConfirmTitle" xml:space="preserve"><value>Berechtigungen dieses Ordners ändern?</value></data>
@@ -1807,6 +1809,7 @@
   <data name="McpServers_Sandbox_Runtime_Guide_Uv" xml:space="preserve"><value>Installiere uv nur für deinen Benutzer, ohne Administratorrechte. Führe das in einem Terminal aus und klicke dann auf „Erneut erkennen“:</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_UvAlt" xml:space="preserve"><value>Oder mit winget:</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_Dotnet" xml:space="preserve"><value>Installiere das .NET 10 SDK nur für deinen Benutzer, ohne Administratorrechte. Führe das in einem Terminal aus und klicke dann auf „Erneut erkennen“:</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_DotnetRuntime" xml:space="preserve"><value>Installiere die Laufzeit {0} nur für deinen Benutzer, ohne Administratorrechte. Führe das in einem Terminal aus und klicke dann auf „Erneut erkennen“:</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_Caveat" xml:space="preserve"><value>Hinter einem Proxy oder wenn deine Organisation Skripte oder Programme in Benutzerordnern blockiert, kann das fehlschlagen. Frag dein IT-Team oder führe Pia einmal als Administrator aus, um eine installierte Kopie zu verwenden.</value></data>
   <data name="McpServers_PasteJson" xml:space="preserve"><value>Konfiguration einfügen</value></data>
   <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Füge einen mcpServers-Eintrag aus einem anderen Client ein, um die Felder zu füllen.</value></data>

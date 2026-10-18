@@ -15,13 +15,15 @@ public sealed record UvxSpec(string Package, string CommandName, IReadOnlyList<s
 /// <param name="LauncherPathHint">The full path the user named, tried before the usual order; null for a bare name.</param>
 /// <param name="Arguments">What follows the launcher: npx args, script args, dnx args, server args.</param>
 /// <param name="RuntimeOptions">node flags before the script.</param>
+/// <param name="WritableFolders">Folders a sandboxed server can write; uv found under one is refused.</param>
 public sealed record RunnerRequest(
     RunnerKind Kind,
     string? LauncherPathHint,
     IReadOnlyList<string> Arguments,
     string? ScriptOrDll,
     IReadOnlyList<string> RuntimeOptions,
-    UvxSpec? Uvx);
+    UvxSpec? Uvx,
+    IReadOnlyList<string>? WritableFolders = null);
 
 /// <param name="Subject">A launcher or option name, never a value.</param>
 /// <param name="EffectiveCommand">The program after cmd /c unwrapping; for Kind None this is what Build launches.</param>

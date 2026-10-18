@@ -141,7 +141,9 @@ public static class SandboxLaunchSpecBuilder
         string? programFolder;
         try
         {
-            var resolution = detector.Detect(runner, runtime.CancellationToken);
+            // The sandbox root holds every server's own folder, so a uv in there is as writable as one in a policy folder.
+            var resolution = detector.Detect(
+                runner with { WritableFolders = [.. folders.Readwrite, PiaPaths.McpSandboxRoot] }, runtime.CancellationToken);
             log.LogInformation("Runtime for {Container}: {Kind} {Outcome}, {Roots} toolchain root(s), readable already {ReadableAlready}",
                 folders.ContainerName, parse.Kind, resolution.Outcome, resolution.ToolchainRoots.Count,
                 resolution.Install?.ReadableAlready ?? false);
@@ -326,9 +328,28 @@ public static class SandboxLaunchSpecBuilder
         return full.Length > 3 ? full.TrimEnd('\\', '/') : full;
     }
 
-    internal static bool IsSameOrUnder(string path, string root) =>
-        string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
-        || path.StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+    internal static bool IsSameOrUnder(string path, string root)
+    {
+        var parent = Comparable(root);
+        if (parent.Length == 0)
+            return false;
+
+        var child = Comparable(path);
+        return string.Equals(child, parent, StringComparison.OrdinalIgnoreCase)
+            || child.StartsWith(parent + "\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsStrictlyUnder(string path, string root) => IsSameOrUnder(path, root) && !SamePath(path, root);
+
+    internal static bool SamePath(string left, string right) =>
+        string.Equals(Comparable(left), Comparable(right), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True for a drive root such as D:\ and for a share root such as \\server\share.</summary>
+    internal static bool IsVolumeRoot(string path) =>
+        Path.GetPathRoot(path) is { Length: > 0 } root && SamePath(root, path);
+
+    // A drive root keeps no separator, so D:\x still falls under D:\ once both sides are trimmed.
+    private static string Comparable(string path) => path.Replace('/', '\\').TrimEnd('\\');
 
     private sealed record PolicyFolders(
         string ContainerName,

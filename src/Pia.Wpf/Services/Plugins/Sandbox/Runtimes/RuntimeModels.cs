@@ -8,7 +8,7 @@ public enum RuntimeIssue
 {
     None, NodeNotFound, NodeAdminOwned, DotnetSdkMissing, DotnetRuntimeMissing, DotnetAdminOwned,
     UvNotFound, ToolchainTooLarge, ToolchainTooWide, ToolchainPathUnsupported,
-    ProgramFolderTooLarge, ProgramFolderTooWide, ScriptMissing, DllMissing
+    ProgramFolderTooLarge, ProgramFolderTooWide, ScriptMissing, DllMissing, UvInWritableFolder
 }
 
 /// <param name="Root">Final path (links resolved) of the folder holding node.exe, dotnet.exe or uv.exe.</param>
@@ -26,13 +26,15 @@ public sealed record RuntimeInstall(
 /// <param name="Install">The chosen install when Ready, the first admin-owned one when NeedsAdminFix, the refused one when Refused.</param>
 /// <param name="ToolchainRoots">Read-only grants per start; empty when readable already and for uv.</param>
 /// <param name="ProgramFolder">The script's package root or the dll's folder; null for the package runners.</param>
+/// <param name="Frameworks">What a dll's runtimeconfig asks for; null for other kinds and without a readable runtimeconfig.</param>
 public sealed record RuntimeResolution(
     RunnerKind Kind,
     RuntimeOutcome Outcome,
     RuntimeIssue Issue,
     RuntimeInstall? Install,
     IReadOnlyList<string> ToolchainRoots,
-    string? ProgramFolder);
+    string? ProgramFolder,
+    IReadOnlyList<DotnetRuntimeConfig.Framework>? Frameworks = null);
 
 public sealed record PreparedFile(string Path, string Content);
 
@@ -79,4 +81,9 @@ public sealed record MachineWideGrantPreview(string Root, string GrantCommand, s
 
 public sealed record MachineWideGrantResult(bool Ok, string? Error);
 
-public sealed record RuntimeGuide(RuntimeFamily Family, string Command, string? AlternativeCommand);
+/// <param name="Runtime">The dotnet-install.ps1 -Runtime value: dotnet, aspnetcore or windowsdesktop.</param>
+/// <param name="Product">The name shown to the user, such as ASP.NET Core 8.0.</param>
+public sealed record DotnetSharedRuntime(string Runtime, int Major, string Product);
+
+/// <param name="Product">The shared runtime the command installs, such as ASP.NET Core 8.0; null for the family's default install.</param>
+public sealed record RuntimeGuide(RuntimeFamily Family, string Command, string? AlternativeCommand, string? Product = null);

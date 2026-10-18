@@ -688,6 +688,11 @@ public class LocalizationTests
     [InlineData("McpServers_Sandbox_Runtime_FixText", 1)]
     [InlineData("McpServers_Sandbox_Runtime_FixConfirmMessage", 3)]
     [InlineData("McpServers_Sandbox_Runtime_FixFailed", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_Guide_DotnetRuntime", 1)]
+    [InlineData("McpServers_Sandbox_Runtime_Guide_Dotnet", 0)]
+    [InlineData("McpServers_Sandbox_Runtime_Issue_UvInWritableFolder", 0)]
+    [InlineData("McpServers_Sandbox_Runtime_CheckFailed", 0)]
     [InlineData("McpServers_Detail_SandboxRuntime", 2)]
     public void ASandboxRuntimeKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)
     {
