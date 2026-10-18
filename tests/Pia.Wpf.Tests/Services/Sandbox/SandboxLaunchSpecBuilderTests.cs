@@ -355,6 +355,7 @@ public sealed class SandboxLaunchSpecBuilderTests
         { "uvx", ["--index-url=https://user:token@host/simple", "pkg"],
             "Pia can't sandbox this uvx call: the option --index-url is not supported. Supported are --from, --with and --python." },
         { "uvx", [@"C:\w\x.whl"], SandboxRuntimeMessages.UvxValue },
+        { "uvx", ["x-1.0.tar.gz"], SandboxRuntimeMessages.UvxValue },
         { "node", ["server.js"], SandboxRuntimeMessages.RelativePath },
     };
 

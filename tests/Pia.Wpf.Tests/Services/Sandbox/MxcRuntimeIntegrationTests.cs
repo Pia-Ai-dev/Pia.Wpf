@@ -30,11 +30,14 @@ public sealed class MxcRuntimeIntegrationTests : IAsyncDisposable
     {
         using var timeout = MxcRuntimeTestScope.Timeout(TimeSpan.FromMinutes(2));
         var ct = timeout.Token;
-        var host = OverridingRuntimeHost.Real();
-        var dll = Path.Combine(Path.GetDirectoryName(TestMcpServerFixture.ExePath)!, "Pia.TestMcpServer.dll");
+        var host = MxcRuntimeTestScope.MachineWideDotnet(OverridingRuntimeHost.Real());
+        // Under the test's own root, so the read-only grant of the dll's folder never touches the build output.
+        var server = _scope.Folder("server");
+        MxcRuntimeTestScope.CopyTree(Path.GetDirectoryName(TestMcpServerFixture.ExePath)!, server);
+        var dll = Path.Combine(server, "Pia.TestMcpServer.dll");
         var resolution = MxcRuntimeTestScope.Detect(host, "dotnet", [dll], _scope.Readwrite);
-        if (resolution.Outcome != RuntimeOutcome.Ready)
-            Assert.Skip($"No .NET 10 runtime a container can use on this host: {resolution.Outcome}, {resolution.Issue}.");
+        if (resolution is not { Outcome: RuntimeOutcome.Ready, Install.ReadableAlready: true })
+            Assert.Skip("No container-readable .NET 10 runtime on this host");
 
         var client = await _scope.ConnectAsync(
             host, _scope.Request("dotnet", [dll], allowNetwork: false, new Dictionary<string, string> { ["OS"] = "" }), ct);
@@ -197,6 +200,10 @@ internal sealed class MxcRuntimeTestScope : IAsyncDisposable
         Assert.Equal(RunnerRefusal.None, parse.Refusal);
         return new RuntimeDetector(host, new RuntimeRootVerifier()).Detect(parse.Runner!, CancellationToken.None);
     }
+
+    // Machine-wide installs only, so a test can never grant the developer's user-scope .NET.
+    public static OverridingRuntimeHost MachineWideDotnet(IRuntimeHostService real) =>
+        new(real, [.. real.ProgramFilesDirectories.Select(folder => Path.Combine(folder, "dotnet"))]);
 
     /// <summary>A Node install on this machine, Program Files first; null when there is none.</summary>
     public static string? HostNodeFolder(IRuntimeHostService real, bool needsNpx)

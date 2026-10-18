@@ -10,6 +10,9 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
 {
     internal static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(3);
 
+    internal Func<ContainerRequest, Task<IMxcProcess>> Spawn { get; init; } =
+        async request => await MxcContainer.SpawnAsync(request, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+
     internal static ContainerRequest BuildRequest(SandboxLaunchSpec spec)
     {
         var request = new ContainerRequest(CommandLine.Build(spec.Command, spec.Args))
@@ -28,8 +31,8 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
             WorkingDirectory = spec.WorkingDirectory,
             TimeoutMs = null,
             Environment = new Dictionary<string, string>(spec.Environment),
-            // Only a complete block may replace the default one: a partial block breaks .NET startup.
-            InheritDefaultEnvironment = !spec.ReplaceEnvironmentBlock
+            // An Environment without InheritDefaultEnvironment replaces the whole block and breaks .NET startup.
+            InheritDefaultEnvironment = true
         };
 
         var readwrite = request.Filesystem.ReadwritePaths;
@@ -73,7 +76,7 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
             var stderr = process.StandardError;
             if (stdin is null || stdout is null || stderr is null)
             {
-                process.Dispose();
+                await DisposeInGateAsync(process).ConfigureAwait(false);
                 throw new SandboxStartException("The sandbox gave the server no standard streams.");
             }
 
@@ -87,12 +90,20 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
     }
 
-    private async Task<MxcProcess> SpawnAsync(string container, ContainerRequest request, CancellationToken cancellationToken)
+    private async Task<IMxcProcess> SpawnAsync(string container, ContainerRequest request, CancellationToken cancellationToken)
     {
         try
         {
             using var gate = await MxcAclGate.EnterAsync(cancellationToken).ConfigureAwait(false);
-            return await MxcContainer.SpawnAsync(request, cancellationToken: cancellationToken).ConfigureAwait(false);
+            // A native spawn cannot be abandoned: the gate, lease and state lock must outlive it and its disposal.
+            var process = await Spawn(request).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                process.Dispose();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return process;
         }
         catch (MxcException ex)
         {
@@ -134,11 +145,16 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
         finally
         {
-            // Disposing frees the sandbox, ends the process tree if it is still alive, and removes the container's ACEs.
-            using (await MxcAclGate.EnterAsync(CancellationToken.None).ConfigureAwait(false))
-                process.Dispose();
+            await DisposeInGateAsync(process).ConfigureAwait(false);
             lease.Dispose();
         }
+    }
+
+    // Disposing frees the sandbox, ends the process tree if it is still alive, and removes the container's ACEs.
+    private static async Task DisposeInGateAsync(IMxcProcess process)
+    {
+        using (await MxcAclGate.EnterAsync(CancellationToken.None).ConfigureAwait(false))
+            process.Dispose();
     }
 
     private async Task KillAsync(string container, IMxcProcess process)
@@ -173,7 +189,7 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         }
     }
 
-    private static int? TryGetId(MxcProcess process)
+    private static int? TryGetId(IMxcProcess process)
     {
         try { return (int)process.Id; }
         catch (Exception) { return null; }

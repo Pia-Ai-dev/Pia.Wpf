@@ -13,8 +13,6 @@ public sealed class FakeRuntimeHost : IRuntimeHostService
 
     public List<string> UserNames { get; } = [];
 
-    public Dictionary<string, string>? DefaultEnvironment { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
     public List<string>? Override { get; set; }
 
     public HashSet<string> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -52,8 +50,6 @@ public sealed class FakeRuntimeHost : IRuntimeHostService
     public IReadOnlyList<string> UserEnvironmentNames() => [.. UserNames];
 
     public string? RegistryEnvironmentValue(string name) => RegistryEnvironment.GetValueOrDefault(name);
-
-    public IReadOnlyDictionary<string, string>? DefaultUserEnvironment() => DefaultEnvironment;
 
     public bool FileExists(string path) => Files.Contains(path);
 

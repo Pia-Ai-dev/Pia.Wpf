@@ -7,7 +7,6 @@ public interface IRuntimeHostService
     string RegistryPath();                           // the same, joined with ';'
     IReadOnlyList<string> UserEnvironmentNames();    // value names under HKCU\Environment
     string? RegistryEnvironmentValue(string name);   // HKCU over HKLM, expanded
-    IReadOnlyDictionary<string, string>? DefaultUserEnvironment(); // the registry-built block, never Pia's own process variables
     IReadOnlyList<string>? CandidateOverride { get; } // PIA_DEBUG_SANDBOX_RUNTIME_ROOTS, DEBUG builds only
     string LocalAppData { get; }
     string RoamingAppData { get; }

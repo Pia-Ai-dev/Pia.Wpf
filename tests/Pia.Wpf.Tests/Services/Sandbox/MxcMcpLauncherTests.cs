@@ -29,6 +29,15 @@ public sealed class MxcMcpLauncherTests
         }
     }
 
+    private sealed class LoadedRuntime : IMxcRuntime
+    {
+        public bool TryLoad(out string? why)
+        {
+            why = null;
+            return true;
+        }
+    }
+
     [Fact]
     public async Task WithoutAVerifiedRuntime_NothingIsLaunched_AndTheContainerNameStaysFree()
     {
@@ -93,12 +102,6 @@ public sealed class MxcMcpLauncherTests
 
         Assert.True(request.InheritDefaultEnvironment);
         Assert.Equal("t", request.Environment!["TOKEN"]);
-    }
-
-    [Fact]
-    public void Request_ReplacesTheDefaultEnvironment_WhenTheSpecCarriesAWholeBlock()
-    {
-        Assert.False(MxcMcpLauncher.BuildRequest(Spec() with { ReplaceEnvironmentBlock = true }).InheritDefaultEnvironment);
     }
 
     private static SandboxLaunchSpec RuntimeSpec(bool stateReadOnly = false) =>
@@ -223,4 +226,61 @@ public sealed class MxcMcpLauncherTests
         await shutdown.WaitAsync(TimeSpan.FromSeconds(30), ct);
         process.Received(1).Dispose();
     }
+
+    [Fact]
+    public async Task ACancelledSpawn_KeepsTheGateAndTheLease_UntilTheLateProcessIsDisposed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var name = "pia-mcp-cancel-" + Guid.NewGuid().ToString("N");
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var spawned = new TaskCompletionSource<IMxcProcess>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, new LoadedRuntime())
+        {
+            Spawn = _ =>
+            {
+                started.TrySetResult();
+                return spawned.Task;
+            }
+        };
+        Task<IDisposable>? gateProbe = null;
+        var leaseHeldAtDispose = false;
+        var gateHeldAtDispose = false;
+        var process = Substitute.For<IMxcProcess>();
+        process.When(p => p.Dispose()).Do(_ =>
+        {
+            leaseHeldAtDispose = SandboxContainerLease.IsActive(name);
+            gateHeldAtDispose = gateProbe is { IsCompleted: false };
+        });
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        try
+        {
+            var launch = launcher.LaunchAsync(Spec() with { ContainerName = name }, cancel.Token);
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
+            await cancel.CancelAsync();
+            await Task.Delay(100, ct);
+
+            Assert.False(launch.IsCompleted);
+            Assert.True(SandboxContainerLease.IsActive(name));
+            gateProbe = MxcAclGate.EnterAsync(ct);
+            Assert.False(gateProbe.IsCompleted);
+
+            spawned.SetResult(process);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => launch.WaitAsync(TimeSpan.FromSeconds(30), ct));
+
+            process.Received(1).Dispose();
+            Assert.True(leaseHeldAtDispose);
+            Assert.True(gateHeldAtDispose);
+            Assert.False(SandboxContainerLease.IsActive(name));
+            (await gateProbe.WaitAsync(TimeSpan.FromSeconds(30), ct)).Dispose();
+        }
+        finally
+        {
+            spawned.TrySetResult(process);
+            ReleaseWhenEntered(gateProbe);
+        }
+    }
+
+    private static void ReleaseWhenEntered(Task<IDisposable>? entry) =>
+        _ = entry?.ContinueWith(
+            entered => entered.Result.Dispose(), CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
 }

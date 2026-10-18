@@ -39,6 +39,11 @@ public static partial class RunnerCommandParser
 
     private static readonly char[] VersionStart = ['@', '[', '=', '<', '>', '~', '!'];
 
+    private static readonly string[] ArchiveExtensions =
+    [
+        ".whl", ".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz", ".tar.xz", ".txz", ".tar.zst", ".tar.lz", ".tlz"
+    ];
+
     [GeneratedRegex(@"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?(\[[A-Za-z0-9._,-]+\])?(@[A-Za-z0-9.*+!_-]+|(===|==|>=|<=|~=|!=|<|>)[A-Za-z0-9.*+!_-]+(,(===|==|>=|<=|~=|!=|<|>)[A-Za-z0-9.*+!_-]+)*)?$")]
     private static partial Regex PackagePattern();
 
@@ -181,7 +186,7 @@ public static partial class RunnerCommandParser
 
             var value = inlineValue ?? (index + 1 < args.Count ? args[++index] : null);
             var isPython = option is "--python" or "-p";
-            if (value is null || !IsFullMatch(isPython ? PythonPattern() : PackagePattern(), value))
+            if (value is null || !IsFullMatch(isPython ? PythonPattern() : PackagePattern(), value) || (!isPython && LooksLikeArchive(value)))
                 return Refused(RunnerRefusal.UvxValue, null, command, args);
 
             if (isPython)
@@ -196,7 +201,7 @@ public static partial class RunnerCommandParser
             return Refused(RunnerRefusal.UnsupportedForm, "uv", command, args);
 
         var token = args[index];
-        if (from is null && !IsFullMatch(PackagePattern(), token))
+        if ((from is null && !IsFullMatch(PackagePattern(), token)) || LooksLikeArchive(token))
             return Refused(RunnerRefusal.UvxValue, null, command, args);
 
         var versionStart = token.IndexOfAny(VersionStart);
@@ -317,6 +322,15 @@ public static partial class RunnerCommandParser
     // .NET's '$' also matches before a trailing newline, which must not slip through.
     private static bool IsFullMatch(Regex pattern, string value) =>
         pattern.Match(value) is { Success: true } match && match.Length == value.Length;
+
+    // uv installs an archive name as a local file, read from its working directory: the state folder.
+    private static bool LooksLikeArchive(string value)
+    {
+        var versionStart = value.IndexOfAny(VersionStart);
+        var name = versionStart < 0 ? value : value[..versionStart];
+        return ArchiveExtensions.Any(extension => value.EndsWith(extension, StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
+    }
 
     private static string? ResolveAgainst(string path, string? workingDirectory)
     {

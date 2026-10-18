@@ -53,11 +53,11 @@ public sealed class MxcRuntimeLiveTests : IAsyncDisposable
     [LiveApiFact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
     public async Task Dnx_WithoutYesInTheArguments_StartsBecausePiaInsertsIt()
     {
-        var host = OverridingRuntimeHost.Real();
+        var host = MxcRuntimeTestScope.MachineWideDotnet(OverridingRuntimeHost.Real());
         string[] args = ["Community.Mcp.DotNet@1.*"];
         var resolution = MxcRuntimeTestScope.Detect(host, "dnx", args, _scope.Readwrite);
-        if (resolution.Outcome != RuntimeOutcome.Ready)
-            Assert.Skip($"No .NET 10 SDK a container can use on this host: {resolution.Outcome}, {resolution.Issue}.");
+        if (resolution is not { Outcome: RuntimeOutcome.Ready, Install.ReadableAlready: true })
+            Assert.Skip("No container-readable .NET 10 SDK on this host");
 
         var elapsed = await StartAndListToolsAsync(host, _scope.Request("dnx", args, allowNetwork: true));
 
