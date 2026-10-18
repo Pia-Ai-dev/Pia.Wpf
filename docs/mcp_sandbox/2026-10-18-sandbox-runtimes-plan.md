@@ -544,15 +544,18 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
 `Pia.Sandbox.NodePreload` in `Pia.Wpf.csproj` (as `Pia.DefaultFileIgnore` is), read through
 `NodeSandboxPreload.Content`. Its full text is in *Appendix A*. It answers `lstat`/`stat` of an ancestor of
 a granted root that fails with `EPERM`/`EACCES` with the stats of its own folder, `<support>` (a directory,
-in the `bigint` form when asked for it). A `realpath*` call that fails with `EPERM`/`EACCES` resolves the
-path by hand: the ancestors count as plain folders, every component below them is `lstat`ed, and a link is
-read with `readlink`, spliced in (a relative target against the link's parent) and the walk restarted, at
-most 32 times (then `ELOOP`). Any other error from a component is rethrown, a missing leaf gives `ENOENT`,
-and the `encoding` option is honoured. A junction inside a granted folder therefore resolves to its target,
-so a server that checks paths against its allowed folders after `realpath` sees where a link leads. The
-provisioner writes it to `<support>` when it is missing or differs; the folder is granted
-read-only per start, so no server can change what the next one loads. The spike's runs loaded the preload
-from a read-only grant, so `--preserve-symlinks` is enough for Node to load it from there.
+in the `bigint` form when asked for it). Roots and paths compare regardless of a `\\?\` or `\\.\` prefix
+(`\\?\UNC\x` is `\\x`), letter case and trailing separators. A `realpath*` call that fails with
+`EPERM`/`EACCES` resolves the path by hand, prefix dropped: the ancestors count as plain folders, every
+component below them is `lstat`ed, and a link is read with `readlink`, spliced in (a relative target against
+the link's parent) and the walk restarted, at most 32 times (then `ELOOP`). Any other error from a component
+is rethrown, a missing leaf gives `ENOENT`, and the `encoding` option is honoured. A junction inside a
+granted folder therefore resolves to its target, so a server that checks paths against its allowed folders
+after `realpath` sees where a link leads; a junction that is also an ancestor of another granted root (a
+nested grant) counts as a plain folder and is not followed. The provisioner writes it to `<support>` when
+it is missing or differs; the folder is granted read-only per start, so no server can change what the next
+one loads. The spike's runs loaded the preload from a read-only grant, so `--preserve-symlinks` is enough
+for Node to load it from there.
 
 **dnx**:
 - Command `<root>\dotnet.exe`, args `exec`, `<root>\sdk\<v>\dotnet.dll`, `dnx` + the user's args, with
@@ -1120,7 +1123,8 @@ runtime with a reason. Anything that downloads (npm, NuGet, PyPI, CPython) is `[
   readable-already → no roots, uvx → read-only state and a `UvPrepareRequest`. The preload resource loads and
   splits on `|`; when `node.exe` is on `PATH`, a harness that fails `lstat`/`stat` on ancestors and every
   `realpath` with `EPERM` shows ancestors read as folders while the first root is a file, the `ino` type each
-  call asks for in either order, a junction in a granted root resolved to its target, `ENOENT` and `ELOOP`,
+  call asks for in either order, a junction in a granted root resolved to its target, ancestors and realpath
+  matched through `\\?\`, `\\.\` and `\\?\UNC\` spellings of a path or a root, `ENOENT` and `ELOOP`,
   the `encoding` option honoured, and a throwing success callback run once.
 - `RuntimeStateProvisioner`, `UvToolRunner`, `UvEntryPointResolver`: support files and state directories
   created before the returned spec, an identical file not rewritten, a planted junction on a state file's path
@@ -1295,6 +1299,8 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
 - The preload's realpath `lstat`s every root it walks through. A policy folder that is itself a junction
   reaches `PIA_SANDBOX_ROOTS` unresolved, so realpath below it fails with `EPERM` when the container cannot
   `lstat` the junction or its target's parent (not measured).
+- The preload matches ancestors by spelling: a path through an 8.3 short name or a `subst` drive cannot be
+  mapped to a root without the `lstat` the container denies, so realpath on it fails with `EPERM`.
 - Volta, fnm, nvm and scoop detection follows their documentation; only a junction-resolved install is
   checked live (scenario 15).
 - Windows 10/11 client editions were not measured; their `C:\` ACL may make the preload unnecessary there,
@@ -1347,15 +1353,24 @@ Not run yet.
 const fs = require('fs');
 const path = require('path');
 
-const roots = (process.env.PIA_SANDBOX_ROOTS || '').split('|').filter(Boolean).map((r) => path.resolve(r).toLowerCase());
+// The container denies a folder under every spelling, so drop a \\?\ or \\.\ prefix before comparing.
+function plain(p) {
+  const s = path.resolve(p instanceof URL ? require('url').fileURLToPath(p) : String(p));
+  if (/^\\\\[?.]\\unc\\/i.test(s)) return path.resolve('\\\\' + s.slice(8));
+  return /^\\\\[?.]\\[a-z]:\\/i.test(s) ? s.slice(4) : s;
+}
+function key(p) {
+  const s = plain(p).toLowerCase();
+  return s.endsWith(path.sep) ? s : s + path.sep;
+}
+
+const roots = (process.env.PIA_SANDBOX_ROOTS || '').split('|').filter(Boolean).map(key);
 const denied = (e) => e && (e.code === 'EPERM' || e.code === 'EACCES');
 
 function isAncestor(p) {
   if (typeof p !== 'string' && !(p instanceof URL) && !Buffer.isBuffer(p)) return false;
-  let s = p instanceof URL ? require('url').fileURLToPath(p) : String(p);
-  s = path.resolve(s).toLowerCase();
-  if (!s.endsWith(path.sep)) s += path.sep;
-  return roots.some((r) => (r + path.sep).startsWith(s) && (r + path.sep) !== s);
+  const s = key(p);
+  return roots.some((r) => r.startsWith(s) && r !== s);
 }
 
 const orig = {
@@ -1399,7 +1414,7 @@ function wrapP(fn) {
   };
 }
 
-// Ancestors cannot be lstat'ed, so they count as plain folders; every link below them is followed.
+// Ancestors of a root count as plain folders, even inside another root, so only links below them are followed.
 function resolveLinks(start) {
   let s = start;
   for (let hops = 0; ; hops++) {
@@ -1423,7 +1438,7 @@ function resolveLinks(start) {
   }
 }
 function realFallback(p, opts) {
-  const s = resolveLinks(path.resolve(p instanceof URL ? require('url').fileURLToPath(p) : String(p)));
+  const s = resolveLinks(plain(p));
   orig.statSync(s);
   const enc = typeof opts === 'string' ? opts : opts && opts.encoding;
   if (enc === 'buffer') return Buffer.from(s);

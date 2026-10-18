@@ -3,15 +3,24 @@
 const fs = require('fs');
 const path = require('path');
 
-const roots = (process.env.PIA_SANDBOX_ROOTS || '').split('|').filter(Boolean).map((r) => path.resolve(r).toLowerCase());
+// The container denies a folder under every spelling, so drop a \\?\ or \\.\ prefix before comparing.
+function plain(p) {
+  const s = path.resolve(p instanceof URL ? require('url').fileURLToPath(p) : String(p));
+  if (/^\\\\[?.]\\unc\\/i.test(s)) return path.resolve('\\\\' + s.slice(8));
+  return /^\\\\[?.]\\[a-z]:\\/i.test(s) ? s.slice(4) : s;
+}
+function key(p) {
+  const s = plain(p).toLowerCase();
+  return s.endsWith(path.sep) ? s : s + path.sep;
+}
+
+const roots = (process.env.PIA_SANDBOX_ROOTS || '').split('|').filter(Boolean).map(key);
 const denied = (e) => e && (e.code === 'EPERM' || e.code === 'EACCES');
 
 function isAncestor(p) {
   if (typeof p !== 'string' && !(p instanceof URL) && !Buffer.isBuffer(p)) return false;
-  let s = p instanceof URL ? require('url').fileURLToPath(p) : String(p);
-  s = path.resolve(s).toLowerCase();
-  if (!s.endsWith(path.sep)) s += path.sep;
-  return roots.some((r) => (r + path.sep).startsWith(s) && (r + path.sep) !== s);
+  const s = key(p);
+  return roots.some((r) => r.startsWith(s) && r !== s);
 }
 
 const orig = {
@@ -55,7 +64,7 @@ function wrapP(fn) {
   };
 }
 
-// Ancestors cannot be lstat'ed, so they count as plain folders; every link below them is followed.
+// Ancestors of a root count as plain folders, even inside another root, so only links below them are followed.
 function resolveLinks(start) {
   let s = start;
   for (let hops = 0; ; hops++) {
@@ -79,7 +88,7 @@ function resolveLinks(start) {
   }
 }
 function realFallback(p, opts) {
-  const s = resolveLinks(path.resolve(p instanceof URL ? require('url').fileURLToPath(p) : String(p)));
+  const s = resolveLinks(plain(p));
   orig.statSync(s);
   const enc = typeof opts === 'string' ? opts : opts && opts.encoding;
   if (enc === 'buffer') return Buffer.from(s);
