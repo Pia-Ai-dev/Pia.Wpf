@@ -43,6 +43,42 @@ public sealed class PiaContainerSidResolverTests
     }
 
     [Fact]
+    public void AContainerRunningInThisProcess_IsNotSwept_FromItsMapping()
+    {
+        var running = "pia-mcp-running-" + Guid.NewGuid().ToString("N");
+        var stopped = "pia-mcp-stopped-" + Guid.NewGuid().ToString("N");
+        var resolver = Resolver([("S-1-15-2-201", running), ("S-1-15-2-202", stopped)]);
+        using var lease = SandboxContainerLease.Acquire(running);
+
+        var sids = resolver.Resolve([]);
+
+        Assert.Equal(["S-1-15-2-202"], sids);
+    }
+
+    [Fact]
+    public void ANameInUse_WhoseContainerIsRunning_ContributesNoSid()
+    {
+        var running = "pia-mcp-files-probe-" + Guid.NewGuid().ToString("N");
+        var stopped = "pia-mcp-files-" + Guid.NewGuid().ToString("N");
+        var resolver = Resolver([], name => name == running ? "S-1-15-2-running" : "S-1-15-2-stopped");
+        using var lease = SandboxContainerLease.Acquire(running);
+
+        var sids = resolver.Resolve([stopped, running]);
+
+        Assert.Equal(["S-1-15-2-stopped"], sids);
+    }
+
+    [Fact]
+    public void AContainerWhoseLeaseIsReleased_IsSweptAgain()
+    {
+        var name = "pia-mcp-released-" + Guid.NewGuid().ToString("N");
+        var resolver = Resolver([("S-1-15-2-203", name)]);
+        SandboxContainerLease.Acquire(name).Dispose();
+
+        Assert.Equal(["S-1-15-2-203"], resolver.Resolve([]));
+    }
+
+    [Fact]
     public void TheWellKnownPackageSids_AreNeverOurs()
     {
         var resolver = Resolver([("S-1-15-2-1", "pia-mcp-x"), ("S-1-15-2-2", "pia-mcp-y")], _ => "S-1-15-2-1");

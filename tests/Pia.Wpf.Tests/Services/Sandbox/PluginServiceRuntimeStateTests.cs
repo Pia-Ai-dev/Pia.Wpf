@@ -1,7 +1,9 @@
 using System.IO;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Services.Plugins;
 using Pia.Services.Plugins.Sandbox;
@@ -140,7 +142,8 @@ public sealed class PluginServiceRuntimeStateTests : IDisposable
         IReadOnlyList<string>? orphans = null,
         HashSet<string>? busy = null,
         Exception? orphanFailure = null,
-        ILogger<PluginService>? logger = null)
+        ILogger<PluginService>? logger = null,
+        DpapiHelper? dpapi = null)
     {
         var log = new List<string>();
         var sqlite = new SqliteContext(_dbPath);
@@ -151,7 +154,7 @@ public sealed class PluginServiceRuntimeStateTests : IDisposable
         var sweeper = new RecordingSweeper(log);
         var store = new RecordingStore(log) { Orphans = orphans ?? [], Busy = busy ?? [], OrphanFailure = orphanFailure };
         var service = SandboxPluginServices.Create(
-            sqlite, factory, new ReadyMxcAvailability(), profiles, sweeper, logger, runtimeStateStore: store);
+            sqlite, factory, new ReadyMxcAvailability(), profiles, sweeper, logger, runtimeStateStore: store, dpapi: dpapi);
 
         return new Harness(log, factory, profiles, sweeper, store, service);
     }
@@ -186,6 +189,8 @@ public sealed class PluginServiceRuntimeStateTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(30);
+
     [Fact]
     public async Task RemovingAServer_DeletesItsRuntimeState_AfterTheSweepAndTheProfiles()
     {
@@ -199,6 +204,55 @@ public sealed class PluginServiceRuntimeStateTests : IDisposable
         var roots = Assert.Single(h.Sweeper.Calls).Roots;
         Assert.Contains(RecordingStore.StateRoot("files"), roots);
         Assert.Contains(RecordingStore.ToolchainRoot("files"), roots);
+    }
+
+    /// <summary>MXC spawns and disposals rewrite the same DACLs, so a sweep waits its turn at the gate.</summary>
+    [Fact]
+    public async Task RemovingAServer_SweepsOnlyOnceTheAclGateIsFree()
+    {
+        var h = Create();
+        var id = await h.Service.SaveLocalMcpAsync(null, Definition(Policy), Ct);
+        h.Reset();
+        var gate = await MxcAclGate.EnterAsync(Ct).WaitAsync(Patience, Ct);
+        Task removing;
+        try
+        {
+            removing = h.Service.RemoveLocalMcpAsync(id);
+            await Task.Delay(200, Ct);
+
+            Assert.Empty(h.Sweeper.Calls);
+            Assert.False(removing.IsCompleted);
+        }
+        finally
+        {
+            gate.Dispose();
+        }
+
+        await removing.WaitAsync(Patience, Ct);
+        Assert.Single(h.Sweeper.Calls);
+    }
+
+    [Fact]
+    public async Task AtStartup_AnOrphanIsCleanedOnlyOnceTheAclGateIsFree()
+    {
+        var h = Create(orphans: ["probe"]);
+        var gate = await MxcAclGate.EnterAsync(Ct).WaitAsync(Patience, Ct);
+        Task initializing;
+        try
+        {
+            initializing = h.Service.InitializePersistedPluginsAsync();
+            await Task.Delay(200, Ct);
+
+            Assert.Empty(h.Log);
+            Assert.False(initializing.IsCompleted);
+        }
+        finally
+        {
+            gate.Dispose();
+        }
+
+        await initializing.WaitAsync(Patience, Ct);
+        Assert.Equal(["trydelete:probe", "sweep", "profile:probe", "deleted:probe"], h.Log);
     }
 
     /// <summary>Switching the sandbox off keeps the state, so the server that no longer uses it still owns it.</summary>
@@ -380,6 +434,24 @@ public sealed class PluginServiceRuntimeStateTests : IDisposable
         Assert.Equal("files", h.Service.PreviewLocalMcpToolPrefix(first, "Files"));
         Assert.Equal("files_2", h.Service.PreviewLocalMcpToolPrefix(second, "Files"));
         Assert.Equal(h.Service.GetLocalMcpDefinition(second)!.ToolPrefix, h.Service.PreviewLocalMcpToolPrefix(second, "Files"));
+    }
+
+    /// <summary>The preview runs on every keystroke; it must not decrypt the other servers' secrets to find their prefixes.</summary>
+    [Fact]
+    public async Task ThePreview_ReadsThePrefixesOfTheOtherServers_WithoutDecryptingTheirEnvironment()
+    {
+        var dpapi = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
+        dpapi.Encrypt(Arg.Any<string>()).Returns(call => call.Arg<string>());
+        dpapi.Decrypt(Arg.Any<string>()).Returns(call => call.Arg<string>());
+        var h = Create(dpapi: dpapi);
+        await h.Service.SaveLocalMcpAsync(
+            null, Definition(sandbox: null, name: "Files") with { Env = new Dictionary<string, string> { ["API_TOKEN"] = "secret" } }, Ct);
+        dpapi.ClearReceivedCalls();
+
+        var preview = h.Service.PreviewLocalMcpToolPrefix(null, "Files");
+
+        Assert.Equal("files_2", preview);
+        dpapi.DidNotReceive().Decrypt(Arg.Any<string>());
     }
 
     [Fact]

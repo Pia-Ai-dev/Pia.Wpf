@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Pia.Logging;
@@ -99,11 +100,18 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             if (discovered.Count == 0)
                 _logger.LogWarning("MCP plugin {PluginId} initialized but reported 0 tools — process may have failed silently", PluginId);
         }
+        catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+        {
+            _logger.LogInformation("MCP plugin {PluginId}: start canceled", PluginId);
+            _tools = [];
+            LastError = ex.Message;
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize MCP plugin {PluginId}", PluginId);
-            _logger.SensitiveDebug("Failed plugin {PluginId} is {Name}, command was: '{Command} {Args}'",
-                PluginId, PluginName, _command, string.Join(" ", _args));
+            // The message may carry the server's stderr, so release logs get the type only.
+            _logger.LogError("Failed to initialize MCP plugin {PluginId}: {ExceptionType}", PluginId, ex.GetType().Name);
+            _logger.SensitiveDebug("Failed plugin {PluginId} is {Name}, command was: '{Command} {Args}': {Message}",
+                PluginId, PluginName, _command, string.Join(" ", _args), ex.Message);
             _tools = [];
             LastError = DescribeFailure(_transport, ex);
         }
@@ -117,6 +125,10 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             ? ex.Message
             : $"{ex.Message}{Environment.NewLine}Server's stderr tail:{Environment.NewLine}{tail}";
     }
+
+    // Only the server's own error answer reaches the model; a transport failure may carry its stderr tail.
+    internal static string ModelFacingFailure(Exception ex) =>
+        ex is McpProtocolException ? $"Tool call failed: {ex.Message}" : "Tool call failed: the MCP server did not answer.";
 
     /// <summary>A null allowlist is "every tool"; an empty one is "none", which is a server the user has
     /// deliberately muted rather than a missing setting.</summary>
@@ -203,9 +215,11 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "MCP tool call {Tool} failed on plugin {PluginId}",
-                        toolCall.Name, PluginId);
-                    return $"Tool call failed: {ex.Message}";
+                    _logger.LogError("MCP tool call {Tool} failed on plugin {PluginId}: {ExceptionType}",
+                        toolCall.Name, PluginId, ex.GetType().Name);
+                    _logger.SensitiveDebug("MCP tool call {Tool} failure on plugin {PluginId}: {Message}",
+                        toolCall.Name, PluginId, ex.Message);
+                    return ModelFacingFailure(ex);
                 }
             });
 

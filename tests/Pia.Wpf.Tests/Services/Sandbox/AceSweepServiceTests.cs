@@ -15,6 +15,7 @@ public sealed class AceSweepServiceTests : IDisposable
 {
     private static readonly SecurityIdentifier Ours = new("S-1-15-2-1111111111-2222222222-3333333333-4444444444-5555555555-6666666666-7777777777");
     private static readonly SecurityIdentifier Foreign = new("S-1-15-2-9999999999-8888888888-7777777777-6666666666-5555555555-4444444444-3333333333");
+    private static readonly SecurityIdentifier Running = new("S-1-15-2-1212121212-3434343434-1515151515-2626262626-3737373737-4848484848-1919191919");
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "pia-ace-" + Guid.NewGuid().ToString("N"));
 
@@ -214,6 +215,26 @@ public sealed class AceSweepServiceTests : IDisposable
 
         Assert.Equal(0, result.Removed);
         Assert.Contains(Ours.Value, ExplicitSids(root));
+    }
+
+    /// <summary>A shared toolchain carries the ACE of every container that uses it; removing one server must not
+    /// take the grant away from another that is still running.</summary>
+    [Fact]
+    public void TheAceOfAnotherContainerStillRunning_SurvivesASweepOfASharedRoot()
+    {
+        var shared = Dir("toolchain");
+        var removed = "pia-mcp-removed-" + Guid.NewGuid().ToString("N");
+        var running = "pia-mcp-running-" + Guid.NewGuid().ToString("N");
+        Leak(shared, Ours);
+        Leak(shared, Running);
+        var resolver = new PiaContainerSidResolver(() => [(Ours.Value, removed), (Running.Value, running)], _ => null);
+        using var lease = SandboxContainerLease.Acquire(running);
+
+        var result = new AceSweepService(resolver, NullLogger<AceSweepService>.Instance).Sweep([shared], [removed]);
+
+        Assert.Equal(1, result.Removed);
+        Assert.DoesNotContain(Ours.Value, ExplicitSids(shared));
+        Assert.Contains(Running.Value, ExplicitSids(shared));
     }
 
     [Fact]
