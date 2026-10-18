@@ -29,8 +29,9 @@
                    <Root>\toolchain\<name>); -Elevated starts it straight from this elevated shell against
                    <Root>\profile-elevated; -DryRun writes and prints the launch and starts nothing
     Status         integrity level, fixture verdicts, ownership, ACEs (fixture, servers, toolchain, McpSandbox
-                   with its .runtime folders, McpSandboxSupport, both profiles), .runtime sizes, grant records,
-                   orphans, container profiles
+                   with its .runtime folders, McpSandboxSupport, both profiles, and every root a grant record or
+                   Launch named, kept in state.json past a Remove), .runtime sizes, grant records, orphans,
+                   container profiles
     EndSession     send WM_QUERYENDSESSION then WM_ENDSESSION (logoff) to Pia's own window, then check the log,
                    ACEs (the roots Status scans) and helper processes; exits 3 unless Pia exited and left
                    nothing behind
@@ -437,14 +438,38 @@ function Get-ActiveProfileName($state) {
 
 function Get-ProfileLocal([string]$name) { Join-Path $piaProfiles[$name] 'local' }
 
+function Test-PathWithin([string]$path, [string]$root) {
+    $prefix = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($root)) + '\'
+    ([IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($path)) + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+}
+
+# A Remove deletes a server's grant record, so every root a record or launch named stays in state.json.
+function Update-GrantRootsSeen($state, [string[]]$roots) {
+    $known = @(if ($state.ContainsKey('grantRootsSeen')) { @($state['grantRootsSeen']) | Where-Object { $_ } })
+    $seen = [Collections.Generic.List[string]]::new()
+    $unique = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($root in $known + @($roots | Where-Object { $_ })) {
+        $full = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($root))
+        if ($unique.Add($full)) { $seen.Add($full) }
+    }
+    if (($seen -join '|') -eq ($known -join '|')) { return }
+    $state['grantRootsSeen'] = @($seen)
+    Write-State $state
+}
+
 # Both profiles, whichever launched last: a leak under either fails the run. McpSandbox holds the server
-# folders and their .runtime siblings.
-function Get-AceRoots {
+# folders and their .runtime siblings; grant roots can lie outside <Root>, such as a detected host toolchain.
+function Get-AceRoots($state) {
     $roots = @($paths.Fixture, $paths.Server, $paths.ServerAdmin, $paths.Toolchain)
     foreach ($name in $piaProfiles.Keys) {
         $local = Get-ProfileLocal $name
         $roots += Join-Path $local 'McpSandbox'
         $roots += Join-Path $local 'McpSandboxSupport'
+    }
+    $granted = @(if ($state.ContainsKey('grantRootsSeen')) { @($state['grantRootsSeen']) | Where-Object { $_ } | Sort-Object Length })
+    # A root inside another is walked with it; walking it again would count its ACEs twice.
+    foreach ($root in $granted) {
+        if (-not @($roots | Where-Object { Test-PathWithin $root $_ })) { $roots += $root }
     }
     $roots
 }
@@ -909,6 +934,8 @@ function Invoke-Launch {
         if ($dir.Contains(';')) { Fail "a runtime root cannot contain ';': $dir" }
         Write-Host ("runtime root: {0}  {1}" -f $dir, $(if (Test-Path -LiteralPath $dir) { 'exists' } else { 'MISSING' }))
     }
+    # Before the start: its orphan sweep deletes the records of servers that are gone.
+    if (-not $DryRun) { Update-GrantRootsSeen $state (@(Get-GrantRecords | ForEach-Object Roots) + $runtimeRoots) }
     # An empty value clears a variable the shell may still carry from an earlier run.
     $environment = [ordered]@{
         PIA_CLOUD_SERVER_URL             = $ServerUrl
@@ -1038,14 +1065,19 @@ function Invoke-Status {
     # A running sandbox legitimately holds explicit ACEs on its policy paths; once nothing runs they are leaks.
     $procs = @(Get-SandboxProcesses)
     $sandboxRunning = $null -ne $pia -and $procs.Count -gt 0
+    $records = @(Get-GrantRecords)
+    Update-GrantRootsSeen $state @($records | ForEach-Object Roots)
 
     Write-Section 'AppContainer ACEs (S-1-15-2-*; explicit ones are active while a sandbox runs, leaks after)'
-    $aces = @(Get-AppContainerAces (Get-AceRoots))
+    $aceRoots = @(Get-AceRoots $state)
+    $harnessRoots = @(Get-AceRoots @{})
+    foreach ($root in @($aceRoots | Where-Object { $harnessRoots -notcontains $_ })) { Write-Host "scanned  $root (named by a grant record or a launch)" }
+    $aces = @(Get-AppContainerAces $aceRoots)
     $explicit = @($aces | Where-Object { $_.Explicit -and -not $_.WellKnown })
     foreach ($ace in $explicit) {
         Write-Host ("{0,-8} {1}  {2}" -f $(if ($sandboxRunning) { 'active' } else { 'LEAK' }), $ace.Sid, $ace.Path)
     }
-    # The two well-known SIDs are never leaks; a step 2 grant on a toolchain shows here.
+    # The two well-known SIDs are never leaks; a machine-wide read grant on a toolchain shows here.
     foreach ($ace in @($aces | Where-Object { $_.Explicit -and $_.WellKnown })) {
         Write-Host ("{0,-8} {1}  {2}" -f 'known', $ace.Sid, $ace.Path)
     }
@@ -1066,7 +1098,6 @@ function Invoke-Status {
     $report.runtimeStateFolders = @($stateFolders | ForEach-Object { @{ profile = $_.Profile; name = $_.Name; entries = $_.Entries; bytes = $_.Bytes } })
 
     Write-Section 'Grant records (<profile>\local\McpSandboxGrants)'
-    $records = @(Get-GrantRecords)
     foreach ($record in $records) {
         Write-Host ("{0,-9} {1}  stateReadOnly={2}  written {3}  {4} root(s)" -f $record.Profile, $record.Container, $record.StateReadOnly, $record.Written, $record.Roots.Count)
         foreach ($root in $record.Roots) { Write-Host "            $root" }
@@ -1114,6 +1145,7 @@ function Invoke-EndSession {
     Write-Host "targets:   pid $($pia.Id), $($targets.Count) window(s) of its own: $(($targets | ForEach-Object { '0x' + $_.Hwnd.ToString('x') }) -join ', ')"
     $helpersBefore = @(Get-SandboxProcesses).Count
     Write-Host "helpers:   $helpersBefore running before"
+    Update-GrantRootsSeen $state @(Get-GrantRecords | ForEach-Object Roots)
     $logDir = Join-Path (Get-ProfileLocal (Get-ActiveProfileName $state)) 'Logs'
 
     $logoff = [long]2147483648
@@ -1166,7 +1198,7 @@ function Invoke-EndSession {
         if (-not $lines) { Write-Host '  (none)' }
     }
 
-    $explicit = @(Get-AppContainerAces (Get-AceRoots) | Where-Object { $_.Explicit -and -not $_.WellKnown })
+    $explicit = @(Get-AppContainerAces (Get-AceRoots $state) | Where-Object { $_.Explicit -and -not $_.WellKnown })
     $helpersAfter = @(Get-SandboxProcesses).Count
     Write-Host "after:     explicit S-1-15-2-* ACEs=$($explicit.Count)  helper processes=$helpersAfter"
     foreach ($ace in $explicit) { Write-Host "  ACE on $($ace.Path)" }
@@ -1368,7 +1400,7 @@ function Write-LeftoverWarnings($state) {
         Write-Host "warning: $text. Run: TamperRuntime -Undo, or RemoveRuntime -Force" -ForegroundColor Yellow
     }
     if ((Test-Path -LiteralPath $paths.NodeAdmin) -and (Get-AllAppPackagesState $paths.NodeAdmin) -ne 'none') {
-        Write-Host "warning: $($paths.NodeAdmin) still carries the step 2 grant (S-1-15-2-1). Run: UndoToolchainGrant" -ForegroundColor Yellow
+        Write-Host "warning: $($paths.NodeAdmin) still carries the machine-wide read grant (S-1-15-2-1). Run: UndoToolchainGrant" -ForegroundColor Yellow
     }
 }
 
