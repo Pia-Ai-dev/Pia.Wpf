@@ -1795,7 +1795,7 @@
   <data name="McpServers_Sandbox_Runtime_Issue_NodeNotFound" xml:space="preserve"><value>Node.js was not found. Install it for your user only, as shown below.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_NodeAdminOwned" xml:space="preserve"><value>The only Node.js found is installed for all users, and sandboxed apps can't read its folder. Run Pia as administrator once to allow it, or install Node.js for your user only.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_DotnetSdkMissing" xml:space="preserve"><value>dnx needs a .NET 10 SDK, and none was found. Install one for your user only, as shown below.</value></data>
-  <data name="McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing" xml:space="preserve"><value>The .NET runtime this program needs was not found. Install the .NET 10 SDK for your user only, as shown below.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing" xml:space="preserve"><value>The {0} runtime this program needs was not found. Install it for your user only, as shown below.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_DotnetAdminOwned" xml:space="preserve"><value>The only .NET found is installed for all users, and sandboxed apps can't read its folder. Run Pia as administrator once to allow it, or install .NET for your user only.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_UvNotFound" xml:space="preserve"><value>uv was not found. Install it for your user only, as shown below.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_ToolchainTooLarge" xml:space="preserve"><value>The runtime's folder holds too many files to share with a sandbox. Install a separate copy for your user only, as shown below.</value></data>
@@ -1805,6 +1805,8 @@
   <data name="McpServers_Sandbox_Runtime_Issue_ProgramFolderTooWide" xml:space="preserve"><value>Put the program in its own folder: Pia would have to share all of the folder around it.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_ScriptMissing" xml:space="preserve"><value>The script was not found.</value></data>
   <data name="McpServers_Sandbox_Runtime_Issue_DllMissing" xml:space="preserve"><value>The .dll was not found.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_UvInWritableFolder" xml:space="preserve"><value>The only uv found sits in a folder a sandboxed server can change, and Pia runs uv outside the sandbox. Install uv into a folder of its own, or stop sharing that folder read-write.</value></data>
+  <data name="McpServers_Sandbox_Runtime_CheckFailed" xml:space="preserve"><value>Pia could not check this server's runtime. Press Detect runtimes to try again.</value></data>
   <data name="McpServers_Sandbox_Runtime_FixText" xml:space="preserve"><value>Pia runs as administrator, so it can let every sandboxed app on this PC read {0}.</value></data>
   <data name="McpServers_Sandbox_Runtime_Fix" xml:space="preserve"><value>Allow sandboxed apps to read this folder</value></data>
   <data name="McpServers_Sandbox_Runtime_FixConfirmTitle" xml:space="preserve"><value>Change this folder's permissions?</value></data>
@@ -1817,6 +1819,7 @@
   <data name="McpServers_Sandbox_Runtime_Guide_Uv" xml:space="preserve"><value>Install uv for your user only, no administrator needed. Run this in a terminal, then press Detect again:</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_UvAlt" xml:space="preserve"><value>Or with winget:</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_Dotnet" xml:space="preserve"><value>Install the .NET 10 SDK for your user only, no administrator needed. Run this in a terminal, then press Detect again:</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_DotnetRuntime" xml:space="preserve"><value>Install the {0} runtime for your user only, no administrator needed. Run this in a terminal, then press Detect again:</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_Caveat" xml:space="preserve"><value>Behind a proxy, or where your organisation blocks scripts or programs in user folders, these may fail. Ask your IT team, or run Pia as administrator once to use an installed copy.</value></data>
   <data name="McpServers_PasteJson" xml:space="preserve"><value>Paste a configuration</value></data>
   <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Paste an mcpServers entry from another client to fill the fields in.</value></data>

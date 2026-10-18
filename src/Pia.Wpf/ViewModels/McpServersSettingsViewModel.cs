@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -842,7 +841,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         UpdateRuntimeDetectionAfterTyping();
     }
 
-    // A runner fetches its package at the first start, so a new one defaults to network access.
+    // A package runner fetches its package at the first start, so a new one defaults to network access.
     private void ApplyNetworkDefault()
     {
         if (EditingServerId is not null || _networkTouched) return;
@@ -851,7 +850,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         _applyingSandboxDefaults = true;
         try
         {
-            EditSandboxAllowNetwork = IsRunnerCommand;
+            EditSandboxAllowNetwork = FetchesPackage;
         }
         finally
         {
@@ -1158,9 +1157,12 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     public bool IsRunnerCommand => IsRunner(_parse);
 
+    private bool FetchesPackage =>
+        IsRunnerCommand && _parse.Kind is RunnerKind.Npx or RunnerKind.NpmExec or RunnerKind.Uvx or RunnerKind.Dnx;
+
     public bool ShowRuntimePanel => EditSandboxEnabled && IsRunnerCommand;
 
-    public bool ShowRunnerDenyHint => ShowRuntimePanel && !EditSandboxAllowNetwork;
+    public bool ShowRunnerDenyHint => ShowRuntimePanel && FetchesPackage && !EditSandboxAllowNetwork;
 
     private RuntimeResolution? CurrentResolution => _runtimeDetection?.Resolution;
 
@@ -1174,10 +1176,13 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         get
         {
-            if (_runtimeDetectionFailed) return SandboxRuntimeMessages.CheckFailed;
-            return SandboxRuntimeKeys.ForIssue(CurrentResolution?.Issue ?? RuntimeIssue.None) is { } key
-                ? _localizationService[key]
-                : null;
+            if (_runtimeDetectionFailed) return _localizationService["McpServers_Sandbox_Runtime_CheckFailed"];
+            if (CurrentResolution is not { } resolution || SandboxRuntimeKeys.ForIssue(resolution.Issue) is not { } key)
+                return null;
+
+            return resolution.Issue == RuntimeIssue.DotnetRuntimeMissing
+                ? _localizationService.Format(key, RuntimeInstallGuides.SharedRuntimeFor(resolution.Frameworks)?.Product ?? ".NET")
+                : _localizationService[key];
         }
     }
 
@@ -1226,12 +1231,16 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         ? resolution.Install?.Family ?? RuntimeDetector.FamilyOf(resolution.Kind)
         : null;
 
-    private RuntimeGuide? Guide => GuideFamily is { } family ? _sandboxRuntime?.GuideFor(family) : null;
+    private RuntimeGuide? Guide => GuideFamily is not null && CurrentResolution is { } resolution
+        ? _sandboxRuntime?.GuideFor(resolution)
+        : null;
 
     public string? RuntimeGuideText => GuideFamily switch
     {
         RuntimeFamily.Node => _localizationService["McpServers_Sandbox_Runtime_Guide_Node"],
         RuntimeFamily.Uv => _localizationService["McpServers_Sandbox_Runtime_Guide_Uv"],
+        RuntimeFamily.Dotnet when Guide?.Product is { } product =>
+            _localizationService.Format("McpServers_Sandbox_Runtime_Guide_DotnetRuntime", product),
         RuntimeFamily.Dotnet => _localizationService["McpServers_Sandbox_Runtime_Guide_Dotnet"],
         _ => null,
     };
@@ -1389,7 +1398,6 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
                 preview.Root, preview.GrantCommand, preview.RemoveCommand));
         if (!confirmed) return;
 
-        var watch = Stopwatch.StartNew();
         var result = await runtime.GrantMachineWideReadAsync(root, CancellationToken.None);
         if (!result.Ok)
         {
@@ -1397,7 +1405,6 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
             return;
         }
 
-        _logger.LogInformation("Granted all-app-packages read on a runtime folder in {Ms} ms", watch.ElapsedMilliseconds);
         _snackbarService.Show(
             _localizationService["McpServers_Title"],
             _localizationService["McpServers_Sandbox_Runtime_FixDone"],

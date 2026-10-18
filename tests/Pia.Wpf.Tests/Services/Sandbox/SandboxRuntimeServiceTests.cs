@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Paths;
 using Pia.Services.Interfaces;
+using Pia.Services.Plugins.Sandbox;
 using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
@@ -17,8 +18,18 @@ public sealed class SandboxRuntimeServiceTests
     private readonly IElevationService _elevation = Substitute.For<IElevationService>();
     private readonly FakeRuntimeHost _host = new();
 
+    private static readonly SandboxGuardEnvironment Guard = new(
+        WindowsDirectory: @"C:\Windows",
+        ProgramFilesDirectories: [@"C:\Program Files", @"C:\Program Files (x86)"],
+        ProfileRoot: @"C:\Users\u",
+        PiaDataRoots: [@"C:\Users\u\AppData\Roaming\Pia", @"C:\Users\u\AppData\Local\Pia"],
+        SandboxRoot: @"C:\Users\u\AppData\Local\Pia\McpSandbox",
+        WideFolders: [@"C:\Users\u\Desktop", @"C:\Users\u\Documents", @"C:\Users\u\Downloads"],
+        PathExists: _ => true,
+        CountEntries: (_, limit) => limit);
+
     private SandboxRuntimeService Service() =>
-        new(_detector, _acl, _elevation, _host, NullLogger<SandboxRuntimeService>.Instance);
+        new(_detector, _acl, _elevation, _host, new RuntimeRootVerifier(() => Guard), NullLogger<SandboxRuntimeService>.Instance);
 
     private static RuntimeResolution Resolution(RunnerKind kind) =>
         new(kind, RuntimeOutcome.Ready, RuntimeIssue.None, null, [], null);
@@ -73,6 +84,56 @@ public sealed class SandboxRuntimeServiceTests
         Assert.False(result.Ok);
         Assert.False(string.IsNullOrWhiteSpace(result.Error));
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
+    }
+
+    [Theory]
+    [InlineData(@"C:\")]
+    [InlineData(@"D:\")]
+    [InlineData("D:/")]
+    [InlineData(@"\\fileserver\share")]
+    public async Task Grant_OnADriveRoot_IsRefused(string root)
+    {
+        _elevation.IsElevated.Returns(true);
+
+        var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal("Pia does not change the permissions of a whole drive.", result.Error);
+        _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
+    }
+
+    [Theory]
+    [InlineData(@"C:\Users\u")]
+    [InlineData(@"C:\Users\u\")]
+    [InlineData(@"C:\Users")]
+    [InlineData(@"C:\Users\u\Downloads")]
+    [InlineData(@"C:\Users\u\AppData\Local")]
+    [InlineData(@"C:\Users\u\AppData\Local\Pia")]
+    public async Task Grant_OnAProfileAncestor_IsRefused(string root)
+    {
+        _elevation.IsElevated.Returns(true);
+
+        var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+        PathFreeAssert.IsPathFree(new InvalidOperationException(result.Error));
+        _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
+        _acl.DidNotReceive().HasAllAppPackagesAce(Arg.Any<string>());
+    }
+
+    /// <summary>The cap keeps per-start grants fast; this entry is written once, so a large runtime folder may take it.</summary>
+    [Fact]
+    public async Task Grant_OnAFolderTooLargeForAPerStartGrant_StillRuns()
+    {
+        _elevation.IsElevated.Returns(true);
+        var root = @"D:\tools\node";
+        Assert.Equal(RuntimeIssue.ToolchainTooLarge, new RuntimeRootVerifier(() => Guard).Check(root, false));
+
+        var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
+
+        Assert.True(result.Ok);
+        _acl.Received(1).GrantAllAppPackagesRead(root);
     }
 
     [Fact]
@@ -159,6 +220,19 @@ public sealed class SandboxRuntimeServiceTests
     }
 
     [Fact]
+    public async Task Detect_TellsTheDetectorThatTheSandboxRootIsWritable()
+    {
+        var sandboxRoot = PiaPaths.McpSandboxRoot;
+        _detector.Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>()).Returns(Resolution(RunnerKind.Uvx));
+
+        await Service().DetectAsync("uvx", ["mcp-server-time"], null, "time", CancellationToken.None);
+
+        _detector.Received(1).Detect(
+            Arg.Is<RunnerRequest>(runner => runner.WritableFolders != null && runner.WritableFolders.SequenceEqual(new[] { sandboxRoot })),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Detect_ForUvx_MarksTheStateFolderReadOnly()
     {
         _detector.Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>()).Returns(Resolution(RunnerKind.Uvx));
@@ -189,5 +263,19 @@ public sealed class SandboxRuntimeServiceTests
     public void GuideFor_DelegatesToTheGuides(RuntimeFamily family)
     {
         Assert.Equal(RuntimeInstallGuides.GuideFor(family), Service().GuideFor(family));
+    }
+
+    [Fact]
+    public void GuideForAResolution_DelegatesToTheGuides()
+    {
+        var resolution = Resolution(RunnerKind.DotnetDll) with
+        {
+            Outcome = RuntimeOutcome.NotFound,
+            Issue = RuntimeIssue.DotnetRuntimeMissing,
+            Frameworks = [new DotnetRuntimeConfig.Framework("Microsoft.AspNetCore.App", "8.0.0")]
+        };
+
+        Assert.Equal(RuntimeInstallGuides.GuideFor(resolution), Service().GuideFor(resolution));
+        Assert.Equal("ASP.NET Core 8.0", Service().GuideFor(resolution).Product);
     }
 }

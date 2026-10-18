@@ -1,4 +1,5 @@
 using System.IO;
+using Pia.Paths;
 using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
@@ -24,10 +25,11 @@ public sealed class RuntimeDetectorTests
         RunnerKind kind,
         string? hint = null,
         string? scriptOrDll = null,
-        CancellationToken? cancellationToken = null)
+        CancellationToken? cancellationToken = null,
+        IReadOnlyList<string>? writable = null)
     {
         var uvx = kind == RunnerKind.Uvx ? new UvxSpec("mcp-server-time", "mcp-server-time", [], null) : null;
-        var runner = new RunnerRequest(kind, hint, [], scriptOrDll, [], uvx);
+        var runner = new RunnerRequest(kind, hint, [], scriptOrDll, [], uvx, writable);
         return new RuntimeDetector(_host, _roots).Detect(runner, cancellationToken ?? TestContext.Current.CancellationToken);
     }
 
@@ -125,6 +127,60 @@ public sealed class RuntimeDetectorTests
         Assert.Equal(RuntimeOutcome.NeedsAdminFix, resolution.Outcome);
         Assert.Equal(RuntimeIssue.NodeAdminOwned, resolution.Issue);
         Assert.True(resolution.Install!.AdminOwned);
+    }
+
+    [Fact]
+    public void AnAdminOwnedNodeAtADriveRoot_IsRefusedAsTooWide_NotOfferedTheMachineWideGrant()
+    {
+        var driveRoot = @"D:\";
+        _host.WithNode(driveRoot, grantable: false);
+        _host.PathEntries.Add(driveRoot);
+
+        var resolution = Detect(RunnerKind.Npx);
+
+        Assert.Equal(RuntimeOutcome.Refused, resolution.Outcome);
+        Assert.Equal(RuntimeIssue.ToolchainTooWide, resolution.Issue);
+        Assert.Equal(driveRoot, resolution.Install!.Root);
+        Assert.False(resolution.Install.AdminOwned);
+    }
+
+    [Theory]
+    [InlineData(RuntimeIssue.ToolchainTooWide)]
+    [InlineData(RuntimeIssue.ToolchainPathUnsupported)]
+    public void AnAdminOwnedNodeTheVerifierRefuses_IsRefused_NotOfferedTheMachineWideGrant(RuntimeIssue issue)
+    {
+        _host.WithNode(ToolsNode, grantable: false);
+        _host.PathEntries.Add(ToolsNode);
+        _roots.Issues[ToolsNode] = issue;
+
+        var resolution = Detect(RunnerKind.Npx);
+
+        Assert.Equal(RuntimeOutcome.Refused, resolution.Outcome);
+        Assert.Equal(issue, resolution.Issue);
+        Assert.Equal(ToolsNode, resolution.Install!.Root);
+    }
+
+    [Fact]
+    public void AnAdminOwnedNodeThatIsOnlyLarge_StillNeedsAdminFix_BecauseTheMachineWideGrantHasNoCap()
+    {
+        _host.WithNode(ToolsNode, grantable: false);
+        _host.PathEntries.Add(ToolsNode);
+        _roots.Issues[ToolsNode] = RuntimeIssue.ToolchainTooLarge;
+
+        var resolution = Detect(RunnerKind.Npx);
+
+        Assert.Equal(RuntimeOutcome.NeedsAdminFix, resolution.Outcome);
+        Assert.Equal(RuntimeIssue.NodeAdminOwned, resolution.Issue);
+    }
+
+    [Fact]
+    public void AGrantableNodeAtADriveRoot_IsRefusedAsTooWide_AndTheNextCandidateWins()
+    {
+        _host.WithNode(@"E:\").WithNode(ToolsNode);
+        _host.PathEntries.AddRange([@"E:\", ToolsNode]);
+
+        AssertReady(Detect(RunnerKind.Npx), ToolsNode, ToolsNode);
+        Assert.DoesNotContain(_roots.Calls, call => call.Root == @"E:\");
     }
 
     [Fact]
@@ -282,6 +338,30 @@ public sealed class RuntimeDetectorTests
     }
 
     [Fact]
+    public void ADllAskingForNet8_OnARootWithOnly10_IsDotnetRuntimeMissing_AndCarriesWhatItAskedFor()
+    {
+        _host.WithDotnet(UserDotnet, ["10.0.100"], ["10.0.3"]);
+        var dll = AddDll(Path.Combine(@"D:\", "app", "server.dll"), RuntimeConfig(("Microsoft.NETCore.App", "8.0.0")));
+
+        var resolution = Detect(RunnerKind.DotnetDll, scriptOrDll: dll);
+
+        Assert.Equal(RuntimeOutcome.NotFound, resolution.Outcome);
+        Assert.Equal(RuntimeIssue.DotnetRuntimeMissing, resolution.Issue);
+        Assert.Equal([new DotnetRuntimeConfig.Framework("Microsoft.NETCore.App", "8.0.0")], resolution.Frameworks!);
+        Assert.Equal(".NET 8.0", RuntimeInstallGuides.SharedRuntimeFor(resolution.Frameworks)!.Product);
+    }
+
+    [Fact]
+    public void OnlyADllCarriesFrameworks()
+    {
+        _host.WithDotnet(UserDotnet, ["10.0.100"], ["10.0.3"]);
+        var dll = AddDll(Path.Combine(@"D:\", "app", "server.dll"), runtimeConfig: null);
+
+        Assert.Null(Detect(RunnerKind.DotnetDll, scriptOrDll: dll).Frameworks);
+        Assert.Null(Detect(RunnerKind.Dnx).Frameworks);
+    }
+
+    [Fact]
     public void ADllAskingForNet10_TakesALaterRuntimeOfTheSameMajor_AndReportsTheHighestRuntime()
     {
         _host.WithDotnet(UserDotnet, [], ["8.0.11", "10.0.3", "10.0.12"]);
@@ -349,6 +429,71 @@ public sealed class RuntimeDetectorTests
         Assert.Null(install.EntryScript);
         Assert.False(install.AdminOwned);
         Assert.Empty(_roots.Calls);
+    }
+
+    [Fact]
+    public void AUvInAWritableFolder_IsSkipped_AndASecondCleanUvWins()
+    {
+        var localBin = Path.Combine(UserProfile, ".local", "bin");
+        var cargoBin = Path.Combine(UserProfile, ".cargo", "bin");
+        _host.WithUv(localBin).WithUv(cargoBin);
+
+        AssertReady(Detect(RunnerKind.Uvx, writable: [localBin]), cargoBin);
+        AssertReady(Detect(RunnerKind.Uvx, writable: [Path.Combine(@"D:\", "work")]), localBin);
+    }
+
+    [Fact]
+    public void OnlyAUvInAWritableFolder_IsRefused()
+    {
+        var localBin = Path.Combine(UserProfile, ".local", "bin");
+        _host.WithUv(localBin);
+
+        var resolution = Detect(RunnerKind.Uvx, writable: [UserProfile + @"\.local\"]);
+
+        Assert.Equal(RuntimeOutcome.Refused, resolution.Outcome);
+        Assert.Equal(RuntimeIssue.UvInWritableFolder, resolution.Issue);
+        Assert.Equal(localBin, resolution.Install!.Root);
+        Assert.Empty(resolution.ToolchainRoots);
+    }
+
+    [Fact]
+    public void AWritableFolderThatIsAJunctionOntoTheUvFolder_IsRefused()
+    {
+        var localBin = Path.Combine(UserProfile, ".local", "bin");
+        var junction = Path.Combine(@"D:\", "shared");
+        _host.WithUv(localBin);
+        _host.FinalPaths[junction] = localBin;
+
+        var resolution = Detect(RunnerKind.Uvx, writable: [junction]);
+
+        Assert.Equal(RuntimeOutcome.Refused, resolution.Outcome);
+        Assert.Equal(RuntimeIssue.UvInWritableFolder, resolution.Issue);
+    }
+
+    [Fact]
+    public void AUvLinkInAWritableFolder_IsRefused_EvenThoughItsTargetLiesElsewhere()
+    {
+        var links = Path.Combine(LocalAppData, "Microsoft", "WinGet", "Links");
+        var package = Path.Combine(LocalAppData, "Microsoft", "WinGet", "Packages", "astral-sh.uv");
+        _host.WithDirectory(links).WithUv(package);
+        _host.FinalPaths[Path.Combine(links, "uv.exe")] = Path.Combine(package, "uv.exe");
+
+        Assert.Equal(RuntimeIssue.UvInWritableFolder, Detect(RunnerKind.Uvx, writable: [links]).Issue);
+    }
+
+    [Fact]
+    public void AUvUnderTheSandboxRoot_IsRefused()
+    {
+        var sandboxRoot = PiaPaths.McpSandboxRoot;
+        var uvFolder = Path.Combine(sandboxRoot, "files", ".venv", "Scripts");
+        _host.WithUv(uvFolder);
+        _host.PathEntries.Add(uvFolder);
+
+        var resolution = Detect(RunnerKind.Uvx, writable: [sandboxRoot]);
+
+        Assert.Equal(RuntimeOutcome.Refused, resolution.Outcome);
+        Assert.Equal(RuntimeIssue.UvInWritableFolder, resolution.Issue);
+        Assert.Equal(uvFolder, resolution.Install!.Root);
     }
 
     [Fact]

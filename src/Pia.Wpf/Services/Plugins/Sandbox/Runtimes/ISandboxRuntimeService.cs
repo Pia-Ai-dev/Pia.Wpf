@@ -9,4 +9,5 @@ public interface ISandboxRuntimeService
     MachineWideGrantPreview PreviewMachineWideGrant(string root);
     Task<MachineWideGrantResult> GrantMachineWideReadAsync(string root, CancellationToken cancellationToken);
     RuntimeGuide GuideFor(RuntimeFamily family);
+    RuntimeGuide GuideFor(RuntimeResolution resolution);
 }
