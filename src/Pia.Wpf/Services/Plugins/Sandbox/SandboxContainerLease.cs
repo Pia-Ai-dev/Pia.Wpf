@@ -24,6 +24,12 @@ public sealed class SandboxContainerLease : IDisposable
         return new SandboxContainerLease(name);
     }
 
+    public static bool IsActive(string name)
+    {
+        lock (Active)
+            return Active.Contains(name);
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _released, 1) != 0)

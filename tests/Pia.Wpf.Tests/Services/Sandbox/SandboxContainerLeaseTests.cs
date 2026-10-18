@@ -49,6 +49,20 @@ public sealed class SandboxContainerLeaseTests
     }
 
     [Fact]
+    public void IsActive_FollowsTheLease()
+    {
+        var name = Unique();
+        Assert.False(SandboxContainerLease.IsActive(name));
+
+        var lease = SandboxContainerLease.Acquire(name);
+        Assert.True(SandboxContainerLease.IsActive(name));
+        Assert.True(SandboxContainerLease.IsActive(name.ToUpperInvariant()));
+
+        lease.Dispose();
+        Assert.False(SandboxContainerLease.IsActive(name));
+    }
+
+    [Fact]
     public void ReleasingTwice_DoesNotFreeSomeoneElsesLease()
     {
         var name = Unique();

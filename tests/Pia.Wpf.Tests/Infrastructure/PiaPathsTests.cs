@@ -106,6 +106,41 @@ public sealed class PiaPathsTests : IDisposable
     }
 
     [Fact]
+    public void McpRuntimeFolders_FollowTheLocalDataOverride()
+    {
+        var local = TempRoot("local");
+
+        using (PiaPaths.OverrideForTests(null, local))
+        {
+            Assert.Equal(Path.Combine(local, "McpSandbox", "files.runtime"), PiaPaths.McpRuntimeStateDirectory("files"));
+            Assert.Equal(Path.Combine(local, "McpSandboxGrants"), PiaPaths.McpSandboxGrantsDirectory);
+            Assert.Equal(Path.Combine(local, "McpSandboxSupport"), PiaPaths.McpSandboxSupportDirectory);
+        }
+
+        Assert.Equal(Path.Combine(RealLocal, "McpSandbox", "files.runtime"), PiaPaths.McpRuntimeStateDirectory("files"));
+        Assert.Equal(Path.Combine(RealLocal, "McpSandboxGrants"), PiaPaths.McpSandboxGrantsDirectory);
+        Assert.Equal(Path.Combine(RealLocal, "McpSandboxSupport"), PiaPaths.McpSandboxSupportDirectory);
+    }
+
+    /// <summary>A server can write its sandbox folders, so the grant records and the preload must sit outside them.</summary>
+    [Fact]
+    public void McpGrantsAndSupportFolders_SitOutsideTheSandboxRoot()
+    {
+        using (PiaPaths.OverrideForTests(TempRoot("roaming"), TempRoot("local")))
+        {
+            var sandboxRoot = PiaPaths.McpSandboxRoot + Path.DirectorySeparatorChar;
+
+            foreach (var folder in new[] { PiaPaths.McpSandboxGrantsDirectory, PiaPaths.McpSandboxSupportDirectory })
+            {
+                Assert.Equal(PiaPaths.LocalDataDirectory, Path.GetDirectoryName(folder));
+                Assert.False(
+                    folder.StartsWith(sandboxRoot, StringComparison.OrdinalIgnoreCase),
+                    $"{folder} sits inside {sandboxRoot}");
+            }
+        }
+    }
+
+    [Fact]
     public void DataRoots_WithOverride_UseTheOverrideVerbatim()
     {
         var roaming = TempRoot("roaming");
@@ -176,6 +211,9 @@ public sealed class PiaPathsTests : IDisposable
     [InlineData(RecordingsDirectoryMember)]
     [InlineData(ScreenCaptureAuditDirectoryMember)]
     [InlineData(McpSandboxRootMember)]
+    [InlineData(McpRuntimeStateDirectoryMember)]
+    [InlineData(McpSandboxGrantsDirectoryMember)]
+    [InlineData(McpSandboxSupportDirectoryMember)]
     [InlineData(ConfirmedApproversMember)]
     public void RoutedMember_ObservesAnOverrideAppliedAfterItsTypeIsLoaded(string member)
     {
@@ -211,6 +249,9 @@ public sealed class PiaPathsTests : IDisposable
     private const string RecordingsDirectoryMember = "PiaPaths.RecordingsDirectory";
     private const string ScreenCaptureAuditDirectoryMember = "PiaPaths.ScreenCaptureAuditDirectory";
     private const string McpSandboxRootMember = "PiaPaths.McpSandboxRoot";
+    private const string McpRuntimeStateDirectoryMember = "PiaPaths.McpRuntimeStateDirectory";
+    private const string McpSandboxGrantsDirectoryMember = "PiaPaths.McpSandboxGrantsDirectory";
+    private const string McpSandboxSupportDirectoryMember = "PiaPaths.McpSandboxSupportDirectory";
     private const string ConfirmedApproversMember = "ConfirmedApproverStore.DefaultPath";
     private const string SettingsDirectoryMember = "JsonPersistenceService.SettingsDirectory";
     private const string LegacyWorkdirMember = "AssistantWorkspace.LegacyWorkdir";
@@ -231,6 +272,9 @@ public sealed class PiaPathsTests : IDisposable
         RecordingsDirectoryMember => () => PiaPaths.RecordingsDirectory,
         ScreenCaptureAuditDirectoryMember => () => PiaPaths.ScreenCaptureAuditDirectory,
         McpSandboxRootMember => () => PiaPaths.McpSandboxRoot,
+        McpRuntimeStateDirectoryMember => () => PiaPaths.McpRuntimeStateDirectory("files"),
+        McpSandboxGrantsDirectoryMember => () => PiaPaths.McpSandboxGrantsDirectory,
+        McpSandboxSupportDirectoryMember => () => PiaPaths.McpSandboxSupportDirectory,
         ConfirmedApproversMember => () => ConfirmedApproverStore.DefaultPath,
         _ => throw new ArgumentOutOfRangeException(nameof(member), member, "no reader for this member"),
     };
