@@ -1724,11 +1724,22 @@
   <data name="McpServers_Sandbox_Summary_NetworkOn" xml:space="preserve"><value>Dans le bac à sable · rw={0} ro={1} réseau activé</value></data>
   <data name="McpServers_Sandbox_NotSandboxed" xml:space="preserve"><value>Hors bac à sable</value></data>
   <data name="McpServers_Detail_SandboxAlsoReadable" xml:space="preserve"><value>Également lisible : le dossier propre du serveur</value></data>
+  <data name="McpServers_Detail_SandboxRuntime" xml:space="preserve"><value>{0} · dossier d'exécution {1}</value></data>
   <data name="McpServers_Sandbox_Title" xml:space="preserve"><value>Bac à sable</value></data>
   <data name="McpServers_Sandbox_Hint" xml:space="preserve"><value>Exécute le serveur dans un conteneur isolé qui n'atteint que les dossiers listés ici. Chaque appel d'outil demande toujours votre accord.</value></data>
   <data name="McpServers_Sandbox_Toggle" xml:space="preserve"><value>Exécuter dans le bac à sable</value></data>
-  <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Les lanceurs comme npx et uvx, et les scripts .cmd ou .bat, ne peuvent pas encore s'exécuter dans un bac à sable. Faites pointer la commande directement vers le programme du serveur.</value></data>
+  <data name="McpServers_Sandbox_Reason_Shim" xml:space="preserve"><value>Pia ne peut pas exécuter dans un bac à sable les serveurs lancés avec pnpm, yarn, bun, deno, pipx ou docker, ni avec des scripts .cmd, .bat ou .ps1. npx, npm exec, uvx et dnx fonctionnent ; sinon, faites pointer la commande directement vers le programme du serveur.</value></data>
   <data name="McpServers_Sandbox_Reason_Unsupported" xml:space="preserve"><value>Le bac à sable n'est pas disponible sur cet appareil.</value></data>
+  <data name="McpServers_Sandbox_Reason_CmdNotSystem" xml:space="preserve"><value>Pia ne peut pas exécuter ce serveur dans un bac à sable : « cmd » doit être l'interpréteur de commandes de Windows.</value></data>
+  <data name="McpServers_Sandbox_Reason_CmdWithoutC" xml:space="preserve"><value>Pia ne peut pas exécuter ce serveur dans un bac à sable : seul « cmd /c » suivi d'un programme peut être résolu.</value></data>
+  <data name="McpServers_Sandbox_Reason_CmdMetacharacters" xml:space="preserve"><value>Pia ne peut pas exécuter ce serveur dans un bac à sable : sa ligne cmd /c utilise des fonctions de cmd (&amp; | &lt; &gt; ^ % ou des guillemets) qu'un bac à sable ne peut pas reproduire. Indiquez le programme dans le champ Commande et ses arguments un par ligne.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Npm" xml:space="preserve"><value>Pia ne peut exécuter npm dans un bac à sable que sous la forme npx ou npm exec.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Uv" xml:space="preserve"><value>Pia ne peut exécuter uv dans un bac à sable que sous la forme uvx ou uv tool run, avec un nom de commande lisible par Pia.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Dotnet" xml:space="preserve"><value>Pia ne peut exécuter dotnet dans un bac à sable que sous la forme dnx, dotnet dnx ou dotnet &lt;app&gt;.dll.</value></data>
+  <data name="McpServers_Sandbox_Reason_UnsupportedForm_Node" xml:space="preserve"><value>Pia ne peut exécuter node dans un bac à sable que sous la forme node &lt;script&gt;.</value></data>
+  <data name="McpServers_Sandbox_Reason_UvxOption" xml:space="preserve"><value>Pia ne peut pas exécuter cet appel uvx dans un bac à sable : l'option {0} n'est pas prise en charge. Les options prises en charge sont --from, --with et --python.</value></data>
+  <data name="McpServers_Sandbox_Reason_UvxValue" xml:space="preserve"><value>Pia ne peut pas exécuter cet appel uvx dans un bac à sable : les paquets doivent être des noms de l'index des paquets, avec une version facultative, et --python attend un numéro de version.</value></data>
+  <data name="McpServers_Sandbox_Reason_RelativePath" xml:space="preserve"><value>Indiquez le chemin complet du script ou du fichier .dll, ou définissez un répertoire de travail.</value></data>
   <data name="McpServers_Sandbox_NotInstalled" xml:space="preserve"><value>Pia doit télécharger l'environnement du bac à sable (environ 15 Mo) depuis le stockage de Pia avant de pouvoir démarrer ce serveur. L'enregistrement d'un serveur en bac à sable activé le télécharge automatiquement ; vous pouvez aussi le télécharger maintenant.</value></data>
   <data name="McpServers_Sandbox_Downloading" xml:space="preserve"><value>Téléchargement de l'environnement du bac à sable… {0} %</value></data>
   <data name="McpServers_Sandbox_Installing" xml:space="preserve"><value>Préparation de l'environnement du bac à sable…</value></data>
@@ -1752,6 +1763,51 @@
   <data name="McpServers_Sandbox_BrowseReadonlyTitle" xml:space="preserve"><value>Choisir un dossier en lecture seule</value></data>
   <data name="McpServers_Sandbox_AllowNetwork" xml:space="preserve"><value>Autoriser l'accès réseau</value></data>
   <data name="McpServers_Sandbox_NetworkWarning" xml:space="preserve"><value>Cela autorise les connexions vers tous les hôtes. Un bac à sable ne peut pas limiter le serveur à certains hôtes.</value></data>
+  <data name="McpServers_Sandbox_Runner_Npx" xml:space="preserve"><value>npx</value></data>
+  <data name="McpServers_Sandbox_Runner_NpmExec" xml:space="preserve"><value>npm exec</value></data>
+  <data name="McpServers_Sandbox_Runner_NodeScript" xml:space="preserve"><value>Script Node.js</value></data>
+  <data name="McpServers_Sandbox_Runner_Dnx" xml:space="preserve"><value>dnx</value></data>
+  <data name="McpServers_Sandbox_Runner_DotnetDll" xml:space="preserve"><value>Application .NET</value></data>
+  <data name="McpServers_Sandbox_Runner_Uvx" xml:space="preserve"><value>uvx</value></data>
+  <data name="McpServers_Sandbox_Runtime_Title" xml:space="preserve"><value>Environnement d'exécution</value></data>
+  <data name="McpServers_Sandbox_Runtime_Detect" xml:space="preserve"><value>Détecter les environnements d'exécution</value></data>
+  <data name="McpServers_Sandbox_Runtime_Detecting" xml:space="preserve"><value>Recherche de l'environnement d'exécution…</value></data>
+  <data name="McpServers_Sandbox_Runtime_Found" xml:space="preserve"><value>Trouvé : {0}.</value></data>
+  <data name="McpServers_Sandbox_Runtime_ReadonlyFolders" xml:space="preserve"><value>Partagés en lecture seule avec le serveur à chaque démarrage :</value></data>
+  <data name="McpServers_Sandbox_Runtime_ReadableAlready" xml:space="preserve"><value>Les applications en bac à sable peuvent déjà lire cet environnement d'exécution, Pia ne partage donc rien de plus.</value></data>
+  <data name="McpServers_Sandbox_Runtime_StateFolder" xml:space="preserve"><value>Pia conserve les téléchargements et les caches de ce serveur dans {0}.</value></data>
+  <data name="McpServers_Sandbox_Runtime_StateFolderReadOnly" xml:space="preserve"><value>Pia installe le paquet de ce serveur dans {0} ; le serveur peut seulement le lire.</value></data>
+  <data name="McpServers_Sandbox_Runtime_DenyHint" xml:space="preserve"><value>Sans accès réseau, ce serveur ne démarre qu'une fois son paquet présent dans le dossier d'exécution de Pia. Démarrez-le une première fois avec l'accès réseau activé.</value></data>
+  <data name="McpServers_Sandbox_Runtime_DetectAgain" xml:space="preserve"><value>Détecter à nouveau</value></data>
+  <data name="McpServers_Sandbox_Runtime_Copy" xml:space="preserve"><value>Copier</value></data>
+  <data name="McpServers_Sandbox_Runtime_Copied" xml:space="preserve"><value>Commande copiée.</value></data>
+  <data name="McpServers_Sandbox_EnvHint" xml:space="preserve"><value>Vos variables d'environnement utilisateur Windows sont masquées pour les serveurs en bac à sable. Ajoutez celles dont ce serveur a besoin sous « Variables d'environnement ».</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_NodeNotFound" xml:space="preserve"><value>Node.js est introuvable. Installez-le pour votre utilisateur uniquement, comme indiqué ci-dessous.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_NodeAdminOwned" xml:space="preserve"><value>Le seul Node.js trouvé est installé pour tous les utilisateurs, et les applications en bac à sable ne peuvent pas lire son dossier. Exécutez Pia une fois en tant qu'administrateur pour l'autoriser, ou installez Node.js pour votre utilisateur uniquement.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetSdkMissing" xml:space="preserve"><value>dnx a besoin d'un SDK .NET 10, et aucun n'a été trouvé. Installez-en un pour votre utilisateur uniquement, comme indiqué ci-dessous.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetRuntimeMissing" xml:space="preserve"><value>Le runtime .NET dont ce programme a besoin est introuvable. Installez le SDK .NET 10 pour votre utilisateur uniquement, comme indiqué ci-dessous.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DotnetAdminOwned" xml:space="preserve"><value>Le seul .NET trouvé est installé pour tous les utilisateurs, et les applications en bac à sable ne peuvent pas lire son dossier. Exécutez Pia une fois en tant qu'administrateur pour l'autoriser, ou installez .NET pour votre utilisateur uniquement.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_UvNotFound" xml:space="preserve"><value>uv est introuvable. Installez-le pour votre utilisateur uniquement, comme indiqué ci-dessous.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ToolchainTooLarge" xml:space="preserve"><value>Le dossier de l'environnement d'exécution contient trop de fichiers pour être partagé avec un bac à sable. Installez une copie distincte pour votre utilisateur uniquement, comme indiqué ci-dessous.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ToolchainTooWide" xml:space="preserve"><value>L'environnement d'exécution se trouve directement dans un dossier que Pia ne partage pas (votre profil, Bureau, Documents ou Téléchargements). Installez-le dans un dossier dédié, comme indiqué ci-dessous.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ToolchainPathUnsupported" xml:space="preserve"><value>Le chemin du dossier de l'environnement d'exécution contient un point-virgule, qu'un bac à sable ne peut pas gérer. Installez-le dans un autre dossier, comme indiqué ci-dessous.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ProgramFolderTooLarge" xml:space="preserve"><value>Le dossier du programme contient trop de fichiers pour être partagé avec un serveur en bac à sable. Placez le programme dans un dossier plus petit.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ProgramFolderTooWide" xml:space="preserve"><value>Placez le programme dans un dossier dédié : sinon, Pia devrait partager tout le dossier qui l'entoure.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_ScriptMissing" xml:space="preserve"><value>Le script est introuvable.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Issue_DllMissing" xml:space="preserve"><value>Le fichier .dll est introuvable.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixText" xml:space="preserve"><value>Pia s'exécute en tant qu'administrateur et peut donc autoriser chaque application en bac à sable de ce PC à lire {0}.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Fix" xml:space="preserve"><value>Autoriser les applications en bac à sable à lire ce dossier</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixConfirmTitle" xml:space="preserve"><value>Modifier les autorisations de ce dossier ?</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixConfirmMessage" xml:space="preserve"><value>Pia va autoriser chaque application en bac à sable de ce PC à lire {0}. Il s'agit d'un accès en lecture seule, le même que celui que Program Files accorde ailleurs. Pia ne peut pas l'annuler ; un administrateur le peut, avec la seconde commande.&#xA;&#xA;Accorder : {1}&#xA;Retirer : {2}</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixExistingAce" xml:space="preserve"><value>Ce dossier porte déjà une autorisation pour toutes les applications en bac à sable. Pia n'y touche pas, car retirer plus tard la modification de Pia supprimerait aussi cette autorisation.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixFailed" xml:space="preserve"><value>Pia n'a pas pu modifier les autorisations du dossier : {0}</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixDone" xml:space="preserve"><value>Les applications en bac à sable peuvent désormais lire le dossier.</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Node" xml:space="preserve"><value>Installez Node.js pour votre utilisateur uniquement, sans droits d'administrateur. Exécutez ceci dans un terminal, puis cliquez sur « Détecter à nouveau » :</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_NodeAlt" xml:space="preserve"><value>Pas de winget ? Cette commande PowerShell place plutôt Node.js dans votre dossier utilisateur :</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Uv" xml:space="preserve"><value>Installez uv pour votre utilisateur uniquement, sans droits d'administrateur. Exécutez ceci dans un terminal, puis cliquez sur « Détecter à nouveau » :</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_UvAlt" xml:space="preserve"><value>Ou avec winget :</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Dotnet" xml:space="preserve"><value>Installez le SDK .NET 10 pour votre utilisateur uniquement, sans droits d'administrateur. Exécutez ceci dans un terminal, puis cliquez sur « Détecter à nouveau » :</value></data>
+  <data name="McpServers_Sandbox_Runtime_Guide_Caveat" xml:space="preserve"><value>Derrière un proxy, ou si votre organisation bloque les scripts ou les programmes dans les dossiers utilisateur, ces commandes peuvent échouer. Adressez-vous à votre service informatique, ou exécutez Pia une fois en tant qu'administrateur pour utiliser une copie installée.</value></data>
   <data name="McpServers_PasteJson" xml:space="preserve"><value>Coller une configuration</value></data>
   <data name="McpServers_PasteJsonHint" xml:space="preserve"><value>Collez une entrée mcpServers d'un autre client pour remplir les champs.</value></data>
   <data name="McpServers_ApplyJson" xml:space="preserve"><value>Remplir depuis le JSON</value></data>
