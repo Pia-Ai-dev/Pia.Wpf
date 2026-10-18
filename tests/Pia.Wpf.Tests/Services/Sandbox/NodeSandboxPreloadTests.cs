@@ -18,39 +18,50 @@ public sealed class NodeSandboxPreloadTests : IDisposable
 
         const granted = path.join(base, 'granted');
         const outside = path.join(base, 'outside');
+        const deep = path.join(base, 'deep');
         const rootFile = path.join(base, 'root.txt');
         fs.mkdirSync(granted, { recursive: true });
         fs.mkdirSync(outside, { recursive: true });
+        fs.mkdirSync(path.join(deep, 'spelled'), { recursive: true });
         fs.writeFileSync(rootFile, 'x');
         fs.writeFileSync(path.join(outside, 'secret.txt'), 'x');
+        fs.writeFileSync(path.join(granted, 'plain.txt'), 'x');
         fs.symlinkSync(outside, path.join(granted, 'link'), 'junction');
         fs.symlinkSync(path.join(granted, 'loop-b'), path.join(granted, 'loop-a'), 'junction');
         fs.symlinkSync(path.join(granted, 'loop-a'), path.join(granted, 'loop-b'), 'junction');
         const preload = path.join(granted, 'node-sandbox.cjs');
         fs.copyFileSync(preloadSource, preload);
 
-        const ancestors = new Set();
+        const real = { lstatSync: fs.lstatSync, statSync: fs.statSync, lstat: fs.lstat, stat: fs.stat, pLstat: fs.promises.lstat, pStat: fs.promises.stat };
+        // A container denies the folder whatever its spelling, so the stub matches file ids, never strings.
+        const idOf = (stat, p) => { try { const s = stat.call(fs, p, { bigint: true }); return `${s.dev}:${s.ino}`; } catch { return null; } };
+        const ancestors = new Set([idOf(real.statSync, deep)]);
         for (let d = path.resolve(base); ; d = path.dirname(d)) {
-          ancestors.add(d.toLowerCase());
+          ancestors.add(idOf(real.statSync, d));
           if (path.dirname(d) === d) break;
         }
-        const isAncestor = (p) => ancestors.has(path.resolve(String(p)).toLowerCase());
+        // A share that does not exist stands in for a server whose every folder is denied.
+        const offline = (p) => /pia-unc-host/i.test(String(p));
+        const isAncestor = (stat, p) => {
+          if (offline(p)) return true;
+          const id = idOf(stat, p);
+          return id !== null && ancestors.has(id);
+        };
         const eperm = (syscall, p) =>
           Object.assign(new Error(`EPERM: operation not permitted, ${syscall} '${p}'`), { code: 'EPERM', syscall, path: String(p) });
 
-        const real = { lstatSync: fs.lstatSync, statSync: fs.statSync, lstat: fs.lstat, stat: fs.stat, pLstat: fs.promises.lstat, pStat: fs.promises.stat };
         for (const name of ['lstatSync', 'statSync']) {
-          fs[name] = function (p, o) { if (isAncestor(p)) throw eperm(name, p); return real[name].call(fs, p, o); };
+          fs[name] = function (p, o) { if (isAncestor(real[name], p)) throw eperm(name, p); return real[name].call(fs, p, o); };
         }
         for (const name of ['lstat', 'stat']) {
           fs[name] = function (p, o, cb) {
             if (typeof o === 'function') { cb = o; o = undefined; }
-            if (isAncestor(p)) return process.nextTick(cb, eperm(name, p));
+            if (isAncestor(real[name + 'Sync'], p)) return process.nextTick(cb, eperm(name, p));
             return real[name].call(fs, p, o, cb);
           };
         }
-        fs.promises.lstat = async (p, o) => { if (isAncestor(p)) throw eperm('lstat', p); return real.pLstat(p, o); };
-        fs.promises.stat = async (p, o) => { if (isAncestor(p)) throw eperm('stat', p); return real.pStat(p, o); };
+        fs.promises.lstat = async (p, o) => { if (isAncestor(real.lstatSync, p)) throw eperm('lstat', p); return real.pLstat(p, o); };
+        fs.promises.stat = async (p, o) => { if (isAncestor(real.statSync, p)) throw eperm('stat', p); return real.pStat(p, o); };
         const deniedSync = (p) => { throw eperm('lstat', p); };
         const deniedCb = (p, o, cb) => process.nextTick(typeof o === 'function' ? o : cb, eperm('lstat', p));
         fs.realpathSync = function (p) { return deniedSync(p); };
@@ -59,10 +70,16 @@ public sealed class NodeSandboxPreloadTests : IDisposable
         fs.realpath.native = function (p, o, cb) { deniedCb(p, o, cb); };
         fs.promises.realpath = async (p) => deniedSync(p);
 
-        process.env.PIA_SANDBOX_ROOTS = rootFile + '|' + granted;
+        process.env.PIA_SANDBOX_ROOTS = [
+          rootFile,
+          granted,
+          '\\\\.\\' + path.join(deep, 'spelled').toUpperCase() + '\\',
+          '\\\\?\\UNC\\pia-unc-host\\share\\users\\granted',
+        ].join('|');
         require(preload);
 
         const code = (fn) => { try { fn(); return 'none'; } catch (e) { return e.code; } };
+        const attempt = async (fn) => { try { return await fn(); } catch (e) { return e.code; } };
         const viaCb = (start) => new Promise((resolve, reject) => start((e, r) => (e ? reject(e) : resolve(r))));
         const callsOf = (start) => new Promise((resolve) => {
           let calls = 0;
@@ -104,6 +121,32 @@ public sealed class NodeSandboxPreloadTests : IDisposable
           r.hexMatches = fs.realpathSync(viaLink, { encoding: 'hex' }) === Buffer.from(r.expected).toString('hex');
           r.missingCode = code(() => fs.realpathSync(path.join(granted, 'missing.txt')));
           r.loopCode = code(() => fs.realpathSync(path.join(granted, 'loop-a', 'x')));
+          const prefixed = '\\\\?\\';
+          r.spellings = {
+            prefixed: await attempt(() => fs.statSync(prefixed + base).isDirectory()),
+            device: await attempt(() => fs.lstatSync('\\\\.\\' + base).isDirectory()),
+            recasedWithTrailingSeparator: await attempt(async () => (await viaCb((cb) => fs.stat(base.toUpperCase() + '\\', cb))).isDirectory()),
+            forwardSlashes: await attempt(async () => (await fs.promises.lstat(base.replace(/\\/g, '/') + '/')).isDirectory()),
+            underARootSpelledWithAPrefix: await attempt(() => fs.statSync(deep).isDirectory()),
+            uncUnderAPrefixedRoot: await attempt(() => fs.statSync('\\\\pia-unc-host\\share\\users').isDirectory()),
+            uncPrefixedAndRecased: await attempt(() => fs.lstatSync('\\\\?\\UNC\\PIA-UNC-HOST\\Share\\Users\\').isDirectory()),
+          };
+          r.uncCodes = [
+            code(() => fs.statSync('\\\\?\\UNC\\pia-unc-host\\share\\other')),
+            code(() => fs.statSync('\\\\pia-unc-host\\share\\users\\granted\\')),
+          ];
+          r.prefixedRealpaths = [
+            await attempt(() => fs.realpathSync(prefixed + viaLink)),
+            await attempt(() => fs.realpathSync.native(prefixed + viaLink)),
+            await attempt(() => viaCb((cb) => fs.realpath(prefixed + viaLink, cb))),
+            await attempt(() => viaCb((cb) => fs.realpath.native(prefixed + viaLink, cb))),
+            await attempt(() => fs.promises.realpath(prefixed + viaLink)),
+          ];
+          r.plainFile = path.join(granted, 'plain.txt');
+          r.prefixedPlainRealpath = await attempt(() => fs.realpathSync(prefixed + r.plainFile));
+          r.recasedRealpath = await attempt(() => fs.realpathSync(viaLink.toUpperCase()));
+          r.recasedFolderRealpath = await attempt(() => fs.realpathSync(path.join(granted, 'LINK') + '\\'));
+          r.outside = outside;
           r.realpathCallbackCalls = await callsOf((cb) => fs.realpath(viaLink, cb));
           r.statCallbackCalls = await callsOf((cb) => fs.stat(base, cb));
           process.stdout.write(JSON.stringify(r));
@@ -201,6 +244,29 @@ public sealed class NodeSandboxPreloadTests : IDisposable
         Assert.All(result.GetProperty("buffers").EnumerateArray(),
             item => Assert.Equal(expected, item.GetString(), ignoreCase: true));
         Assert.True(result.GetProperty("hexMatches").GetBoolean());
+    }
+
+    [Fact]
+    public async Task AnAncestor_ReadsAsAFolder_WhateverTheSpellingOfItOrOfTheRoot()
+    {
+        var result = await RunHarnessAsync("plain-first");
+
+        Assert.All(result.GetProperty("spellings").EnumerateObject(),
+            spelling => Assert.True(spelling.Value.ValueKind == JsonValueKind.True, $"{spelling.Name} gave {spelling.Value}"));
+        Assert.All(result.GetProperty("uncCodes").EnumerateArray(), item => Assert.Equal("EPERM", item.GetString()));
+    }
+
+    [Fact]
+    public async Task Realpath_ResolvesAPrefixedOrRecasedPath_ToItsPlainSpelling()
+    {
+        var result = await RunHarnessAsync("plain-first");
+
+        var expected = result.GetProperty("expected").GetString();
+        Assert.All(result.GetProperty("prefixedRealpaths").EnumerateArray(),
+            item => Assert.Equal(expected, item.GetString(), ignoreCase: true));
+        Assert.Equal(result.GetProperty("plainFile").GetString(), result.GetProperty("prefixedPlainRealpath").GetString(), ignoreCase: true);
+        Assert.Equal(expected, result.GetProperty("recasedRealpath").GetString(), ignoreCase: true);
+        Assert.Equal(result.GetProperty("outside").GetString(), result.GetProperty("recasedFolderRealpath").GetString(), ignoreCase: true);
     }
 
     [Fact]
