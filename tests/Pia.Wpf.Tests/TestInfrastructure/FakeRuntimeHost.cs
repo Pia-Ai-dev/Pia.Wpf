@@ -13,6 +13,9 @@ public sealed class FakeRuntimeHost : IRuntimeHostService
 
     public List<string> UserNames { get; } = [];
 
+    /// <summary>Thrown by <see cref="UserEnvironmentNames"/> instead of returning the names.</summary>
+    public Exception? UserNamesFailure { get; set; }
+
     public List<string>? Override { get; set; }
 
     public HashSet<string> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -47,7 +50,7 @@ public sealed class FakeRuntimeHost : IRuntimeHostService
 
     public string RegistryPath() => string.Join(';', PathEntries);
 
-    public IReadOnlyList<string> UserEnvironmentNames() => [.. UserNames];
+    public IReadOnlyList<string> UserEnvironmentNames() => UserNamesFailure is { } failure ? throw failure : [.. UserNames];
 
     public string? RegistryEnvironmentValue(string name) => RegistryEnvironment.GetValueOrDefault(name);
 

@@ -635,7 +635,10 @@ servers included, in this order:
    plan set them: the planner already merged the user's value into them.
 
 The names come from `IRuntimeHostService.UserEnvironmentNames()` when DI provided a host and from
-`RuntimeHostService.ReadUserEnvironmentNames()` otherwise (a factory seam replaces it in tests).
+`RuntimeHostService.ReadUserEnvironmentNames()` otherwise (a factory seam replaces it in tests). A missing
+`HKCU\Environment` key gives no names; any other failed read refuses the start with
+`SandboxRuntimeMessages.UserEnvironmentUnreadable` and a warning naming only the exception type, so no
+sandboxed start runs unblanked.
 
 Whether `""` blanks a variable is **gate G-ENV**, answered yes by step A2 with a real container: the test
 server with `OS=""` (every machine's registry environment carries `OS`) reads `OS` as empty through

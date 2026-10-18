@@ -87,21 +87,14 @@ public sealed partial class RuntimeHostService(IElevationService elevation) : IR
 
     public IReadOnlyList<string> UserEnvironmentNames() => ReadUserEnvironmentNames();
 
-    /// <summary>The value names under <c>HKCU\Environment</c>, empty on any error; needs no DI, so blanking never depends on it.</summary>
+    /// <summary>The value names under <c>HKCU\Environment</c>; a missing key has none, and any failed read throws.</summary>
     public static IReadOnlyList<string> ReadUserEnvironmentNames() =>
         ReadUserEnvironmentNames(Registry.CurrentUser, UserEnvironmentKey);
 
     internal static IReadOnlyList<string> ReadUserEnvironmentNames(RegistryKey parent, string subKey)
     {
-        try
-        {
-            using var key = parent.OpenSubKey(subKey);
-            return key is null ? [] : [.. key.GetValueNames().Where(name => name.Length > 0)];
-        }
-        catch (Exception)
-        {
-            return [];
-        }
+        using var key = parent.OpenSubKey(subKey);
+        return key is null ? [] : [.. key.GetValueNames().Where(name => name.Length > 0)];
     }
 
     public string? RegistryEnvironmentValue(string name)

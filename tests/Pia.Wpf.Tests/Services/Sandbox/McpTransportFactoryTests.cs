@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using NSubstitute;
@@ -254,6 +255,48 @@ public sealed class McpTransportFactoryTests
             .ToList();
         Assert.SkipWhen(expected.Count == 0, "no HKCU Environment name outside the allowlist on this host");
         Assert.All(expected, name => Assert.Equal("", spec.Environment[name]));
+    }
+
+    /// <summary>Without the names nothing would be blanked, so the start fails closed rather than leaking the user's variables.</summary>
+    [Fact]
+    public void AUserEnvironmentTheSeamCannotRead_RefusesTheStart_AndStartsNothing()
+    {
+        var launcher = new FakeMxcProcessLauncher();
+        var logger = new CapturingLogger<McpTransportFactory>();
+        var loggerFactory = Substitute.For<ILoggerFactory>();
+        loggerFactory.CreateLogger(Arg.Any<string>()).Returns(logger);
+        var factory = new McpTransportFactory(launcher, Substitute.For<ISandboxGrantVerifier>(), loggerFactory,
+            fileExists: _ => true, guardEnvironment: EverythingExists,
+            userEnvironmentNames: () => throw new UnauthorizedAccessException(@"Access to C:\Users\jane\secret is denied."));
+
+        var ex = Assert.Throws<SandboxStartException>(() => factory.Create(Request(McpSandboxPolicy.Empty)));
+
+        Assert.Equal(SandboxRuntimeMessages.UserEnvironmentUnreadable, ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+        Assert.Empty(launcher.Launched);
+        var warning = Assert.Single(logger.Entries, entry => entry.Level == LogLevel.Warning);
+        Assert.Contains(nameof(UnauthorizedAccessException), warning.Message);
+        Assert.DoesNotContain(logger.Entries, entry => entry.Level >= LogLevel.Information && entry.Message.Contains("secret"));
+    }
+
+    [Fact]
+    public void AUserEnvironmentTheHostCannotRead_RefusesARunner_BeforeDetectionOrProvisioning()
+    {
+        var launcher = new FakeMxcProcessLauncher();
+        var detector = Detector();
+        var provisioner = new RecordingProvisioner();
+        var host = new FakeRuntimeHost { UserNamesFailure = new IOException("registry unavailable") };
+        var factory = new McpTransportFactory(launcher, Substitute.For<ISandboxGrantVerifier>(), NullLoggerFactory.Instance,
+            fileExists: _ => true, guardEnvironment: EverythingExists, detector, host, provisioner,
+            userEnvironmentNames: () => ["FROM_SEAM"]);
+
+        var ex = Assert.Throws<SandboxStartException>(() => factory.Create(NpxRequest()));
+
+        Assert.Equal(SandboxRuntimeMessages.UserEnvironmentUnreadable, ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+        detector.DidNotReceive().Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>());
+        Assert.Empty(provisioner.Prepared);
+        Assert.Empty(launcher.Launched);
     }
 
     private sealed class RecordingProvisioner : IRuntimeStateProvisioner

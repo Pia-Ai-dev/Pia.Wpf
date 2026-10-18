@@ -77,6 +77,9 @@ public static class SandboxRuntimeMessages
 
     public const string CheckFailed = "Pia could not check this server's runtime.";
 
+    public const string UserEnvironmentUnreadable =
+        "Pia could not read your user environment, so it cannot keep its variables away from the server. The server was not started.";
+
     public static string For(RunnerParseResult parse) => parse.Refusal switch
     {
         RunnerRefusal.NonGoalLauncher => string.Format(NonGoalLauncher, Subject(parse.Subject)),

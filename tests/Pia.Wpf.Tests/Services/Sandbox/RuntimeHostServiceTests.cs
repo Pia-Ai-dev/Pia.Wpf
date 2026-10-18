@@ -319,6 +319,26 @@ public sealed class RuntimeHostServiceTests : IDisposable
         }
     }
 
+    /// <summary>No names would mean nothing gets blanked, so a read that fails must not look like an empty key.</summary>
+    [Fact]
+    public void AUserEnvironmentReadThatFails_Throws_InsteadOfGivingNoNames()
+    {
+        var subKey = @"Software\Pia.Tests\" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var parent = Registry.CurrentUser.CreateSubKey(subKey);
+            using (var environment = parent.CreateSubKey("Environment"))
+                environment.SetValue("PIA_TEST_SECRET", "1");
+            parent.Dispose();
+
+            Assert.Throws<ObjectDisposedException>(() => RuntimeHostService.ReadUserEnvironmentNames(parent, "Environment"));
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(subKey, throwOnMissingSubKey: false);
+        }
+    }
+
     [Fact]
     public void TheCandidateOverride_IsReadOnlyInDebugBuilds()
     {
