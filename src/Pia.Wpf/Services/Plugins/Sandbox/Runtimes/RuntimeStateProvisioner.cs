@@ -35,12 +35,13 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
 
     public async Task<SandboxLaunchSpec> PrepareAsync(SandboxLaunchSpec spec, Action<string> stderrLine, CancellationToken cancellationToken)
     {
-        if (spec.RunnerKind == RunnerKind.None || spec.Preparation is not { } preparation)
-            return spec;
-
         try
         {
-            return await PrepareCoreAsync(spec, preparation, stderrLine, cancellationToken).ConfigureAwait(false);
+            if (spec.RunnerKind != RunnerKind.None && spec.Preparation is { } preparation)
+                return await PrepareCoreAsync(spec, preparation, stderrLine, cancellationToken).ConfigureAwait(false);
+
+            WriteGrantRecord(spec);
+            return spec;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -78,7 +79,7 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
         foreach (var (file, root) in files.Where(f => f.Root != support))
             WriteStateFile(root, file);
 
-        store.WriteGrantRecord(spec.ContainerName, GrantRoots(spec), spec.RuntimeStateReadOnly);
+        WriteGrantRecord(spec);
 
         if (preparation.Uv is not { } request)
             return spec;
@@ -117,6 +118,11 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
 
         StateFolderSafety.DeleteTree(state);
         logger.LogInformation("Runtime state for {Container} cleared before the uv install", containerName);
+
+        // Nothing a sibling wrote is left, so its read-write grant must not force the next start to clear again.
+        foreach (var grant in grants.Where(grant =>
+                     grant.ReadOnly == false && !string.Equals(grant.Name, containerName, StringComparison.OrdinalIgnoreCase)))
+            store.WriteGrantRecord(grant.Name, [], stateReadOnly: true);
     }
 
     // Counts a planted link as an entry; the reparse-safe walks would skip it.
@@ -146,44 +152,58 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
         var recordPath = Path.Combine(state, SpecRecordName);
         var wanted = new UvSpecRecord(request.Spec.Package, [.. request.Spec.With], request.Spec.Python);
         var recorded = ReadSpecRecord(recordPath);
-        var unchanged = recorded is not null && recorded.SameAs(wanted);
-        if (!unchanged)
-            RemoveInstalledTool(spec.ContainerName, state);
+        // uv runs a tool venv's python on the host, where a .pth file in it would execute; only the container may.
+        if (recorded is not null && recorded.SameAs(wanted)
+            && UvEntryPointResolver.Find(state, request.Spec) is { } installed
+            && File.Exists(UvEntryPointResolver.PythonFor(installed.ToolFolder)))
+            return Launch(spec, request, installed);
 
         if (request.Offline)
-        {
-            if (!unchanged || UvEntryPointResolver.Find(state, request.Spec) is null)
-                throw new SandboxStartException(OfflineMessage);
-        }
-        else
-        {
-            int exitCode;
-            try
-            {
-                exitCode = await uv.InstallAsync(request, stderrLine, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Win32Exception ex)
-            {
-                LogFailure(spec.ContainerName, ex);
-                throw new SandboxStartException(CouldNotRunUvMessage);
-            }
+            throw new SandboxStartException(OfflineMessage);
 
-            if (exitCode != 0)
-                throw new SandboxStartException(InstallFailedMessage);
+        RefuseWhileAContainerRuns(spec.ContainerName);
+        RemoveInstalledTool(spec.ContainerName, state);
 
-            StateFolderSafety.EnsureNoReparsePoints(state, recordPath);
-            File.WriteAllText(recordPath, JsonSerializer.Serialize(wanted, Json), Utf8NoBom);
-            PruneCaches(spec.ContainerName, request.CacheDirectoriesToPrune);
+        int exitCode;
+        try
+        {
+            exitCode = await uv.InstallAsync(request, stderrLine, cancellationToken).ConfigureAwait(false);
         }
+        catch (Win32Exception ex)
+        {
+            LogFailure(spec.ContainerName, ex);
+            throw new SandboxStartException(CouldNotRunUvMessage);
+        }
+
+        if (exitCode != 0)
+            throw new SandboxStartException(InstallFailedMessage);
+
+        StateFolderSafety.EnsureNoReparsePoints(state, recordPath);
+        File.WriteAllText(recordPath, JsonSerializer.Serialize(wanted, Json), Utf8NoBom);
+        PruneCaches(spec.ContainerName, request.CacheDirectoriesToPrune);
 
         if (UvEntryPointResolver.Find(state, request.Spec) is not { } entry)
             throw new SandboxStartException(NoCommandMessage);
 
-        return spec with
+        return Launch(spec, request, entry);
+    }
+
+    private static SandboxLaunchSpec Launch(
+        SandboxLaunchSpec spec, UvPrepareRequest request, (string ToolFolder, string Module, string Attr) entry) =>
+        spec with
         {
             Command = UvEntryPointResolver.PythonFor(entry.ToolFolder),
             Args = ["-c", UvEntryPointResolver.Code(request.Spec.CommandName, entry.Module, entry.Attr), .. request.ServerArgs],
         };
+
+    // A failed recursive delete has already removed every file it could reach, so a running server is checked first.
+    private void RefuseWhileAContainerRuns(string containerName)
+    {
+        if (!SandboxLaunchSpecBuilder.ContainerNames(SandboxLaunchSpecBuilder.PrefixOf(containerName)).Any(SandboxContainerLease.IsActive))
+            return;
+
+        logger.LogInformation("uv tool for {Container} not replaced: a container of this server is running", containerName);
+        throw new SandboxStartException(InUseMessage);
     }
 
     private void RemoveInstalledTool(string containerName, string state)
@@ -261,11 +281,20 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
     private static bool IsCurrent(string path, byte[] bytes) =>
         File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes);
 
+    // A start without a state folder grants none, so it keeps an earlier read-write grant on record until the next clear.
+    private void WriteGrantRecord(SandboxLaunchSpec spec) =>
+        store.WriteGrantRecord(
+            spec.ContainerName,
+            GrantRoots(spec),
+            spec.RuntimeStateDirectory is null ? store.StateGrantedReadOnly(spec.ContainerName) != false : spec.RuntimeStateReadOnly);
+
     private static List<string> GrantRoots(SandboxLaunchSpec spec) =>
         [.. spec.Toolchain
             .Append(spec.GrantedCommandDirectory)
             .Append(spec.RuntimeStateDirectory)
             .Append(spec.SupportDirectory)
+            .Concat(spec.ReadwritePaths)
+            .Concat(spec.ReadonlyPaths)
             .OfType<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase)];
 

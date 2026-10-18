@@ -67,15 +67,36 @@ public sealed class RuntimeStateStoreTests : IClassFixture<RedirectedProfileFixt
     }
 
     [Fact]
-    public void AGrantRecord_IsReplacedByTheNextOne()
+    public void AGrantRecord_IsReplacedByTheNextOne_ExceptForRootsStillOnDisk()
     {
         var prefix = NewPrefix();
-        _store.WriteGrantRecord($"pia-mcp-{prefix}", [@"C:\old"]);
+        _store.WriteGrantRecord($"pia-mcp-{prefix}", [Path.Combine(_outside, "gone")], stateReadOnly: true);
 
         _store.WriteGrantRecord($"pia-mcp-{prefix}", [@"C:\new"]);
 
         Assert.Equal([@"C:\new"], _store.SweepRoots(prefix));
+        Assert.False(_store.StateGrantedReadOnly($"pia-mcp-{prefix}"));
         Assert.Single(Directory.EnumerateFiles(PiaPaths.McpSandboxGrantsDirectory, $"*{prefix}*"));
+    }
+
+    [Fact]
+    public void AGrantRecord_KeepsAnEarlierRootWhileItIsOnDisk()
+    {
+        var prefix = NewPrefix();
+        var container = $"pia-mcp-{prefix}";
+        var earlier = Directory.CreateDirectory(Path.Combine(_outside, "node20")).FullName;
+        var later = Directory.CreateDirectory(Path.Combine(_outside, "node22")).FullName;
+        var shared = Directory.CreateDirectory(Path.Combine(_outside, "support")).FullName;
+        _store.WriteGrantRecord(container, [earlier, shared]);
+
+        _store.WriteGrantRecord(container, [later, shared.ToUpperInvariant()]);
+
+        Assert.Equal([later, shared.ToUpperInvariant(), earlier], _store.SweepRoots(prefix));
+
+        Directory.Delete(earlier);
+        _store.WriteGrantRecord(container, [later, shared]);
+
+        Assert.Equal([later, shared], _store.SweepRoots(prefix));
     }
 
     [Fact]
@@ -220,16 +241,53 @@ public sealed class RuntimeStateStoreTests : IClassFixture<RedirectedProfileFixt
         Assert.NotNull(free);
     }
 
+    // The traversals land on <profile>\sentinel.runtime and, for the records, <profile>\sentinel.json.
+    [Theory]
+    [InlineData(@"x\..\..\..\sentinel")]
+    [InlineData("x/../../../sentinel")]
+    [InlineData(@"..\..\sentinel")]
+    [InlineData(@"{root}\sentinel")]
+    [InlineData(@"D:\data\proj")]
+    public void APrefixThatIsNotAPlainName_IsNeitherSweptNorDeleted(string prefix)
+    {
+        prefix = prefix.Replace("{root}", _profile.Root);
+        var sentinelState = Directory.CreateDirectory(Path.Combine(_profile.Root, "sentinel" + PiaPaths.McpRuntimeStateSuffix)).FullName;
+        var sentinel = Path.Combine(sentinelState, "keep.txt");
+        File.WriteAllText(sentinel, "keep");
+        string[] sentinelRecords = [Path.Combine(_profile.Root, "sentinel.json"), Path.Combine(_profile.Root, "sentinel-probe.json")];
+        foreach (var record in sentinelRecords)
+            File.WriteAllText(record, "{\"roots\":[]}");
+        var called = false;
+        try
+        {
+            Assert.Empty(_store.SweepRoots(prefix));
+            Assert.False(_store.TryDelete(prefix, () => called = true));
+
+            Assert.False(called);
+            Assert.Equal("keep", File.ReadAllText(sentinel));
+            Assert.All(sentinelRecords, record => Assert.True(File.Exists(record)));
+            Assert.Equal("outside", File.ReadAllText(_outsideFile));
+            Assert.False(Directory.Exists(PiaPaths.McpSandboxGrantsDirectory)
+                && Directory.EnumerateFileSystemEntries(PiaPaths.McpSandboxGrantsDirectory).Any());
+        }
+        finally
+        {
+            TempPath.Remove(sentinelState);
+            foreach (var record in sentinelRecords)
+                File.Delete(record);
+        }
+    }
+
     [Fact]
     public void OrphanPrefixes_FindsStateFoldersAndRecords_NotKnownOnes()
     {
         StateOf("orphanfolder");
         StateOf("known");
         Directory.CreateDirectory(Path.Combine(PiaPaths.McpSandboxRoot, "plainserver"));
-        _store.WriteGrantRecord("pia-mcp-orphanrecord", []);
-        _store.WriteGrantRecord("pia-mcp-orphanprobe-probe", []);
-        _store.WriteGrantRecord("pia-mcp-known-probe", []);
-        _store.WriteGrantRecord("pia-mcp-orphanfolder", []);
+        _store.WriteGrantRecord(SandboxLaunchSpecBuilder.ContainerName("orphanrecord", isProbe: false), []);
+        _store.WriteGrantRecord(SandboxLaunchSpecBuilder.ContainerName("orphanprobe", isProbe: true), []);
+        _store.WriteGrantRecord(SandboxLaunchSpecBuilder.ContainerName("known", isProbe: true), []);
+        _store.WriteGrantRecord(SandboxLaunchSpecBuilder.ContainerName("orphanfolder", isProbe: false), []);
         File.WriteAllText(Path.Combine(PiaPaths.McpSandboxGrantsDirectory, "notes.json"), "{}");
 
         var orphans = _store.OrphanPrefixes(new HashSet<string> { "known" });

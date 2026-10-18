@@ -76,6 +76,15 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         new(container, @"C:\Tools\node\node.exe", ["server.js"], new Dictionary<string, string>(), @"C:\box",
             [@"C:\box"], [], AllowNetwork: true, GrantedCommandDirectory: null);
 
+    private static SandboxLaunchSpec ProgramSpec(string container) =>
+        Base(container) with
+        {
+            Command = @"C:\Tools\server\server.exe",
+            Args = [],
+            ReadonlyPaths = [@"C:\data"],
+            GrantedCommandDirectory = @"C:\Tools\server",
+        };
+
     private SandboxLaunchSpec NodeSpec(params PreparedFile[] extraFiles) =>
         Base(Container) with
         {
@@ -127,13 +136,16 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     private static bool IsLink(string path) => File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
 
     [Fact]
-    public async Task ASpecWithoutARunner_IsReturnedUnchanged_AndNothingIsWritten()
+    public async Task ASpecWithoutARunner_IsReturnedUnchanged_AndOnlyItsGrantRecordIsWritten()
     {
         var spec = Base(Container) with { RuntimeStateDirectory = State, Preparation = NodeSpec().Preparation };
 
         Assert.Same(spec, await Prepare(spec));
         Assert.False(Directory.Exists(State));
-        Assert.Empty(_store.Records);
+        var (container, roots, stateReadOnly) = Assert.Single(_store.Records);
+        Assert.Equal(Container, container);
+        Assert.Equal([State, @"C:\box"], roots);
+        Assert.False(stateReadOnly);
     }
 
     [Fact]
@@ -142,7 +154,47 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         var spec = NodeSpec() with { Preparation = null };
 
         Assert.Same(spec, await Prepare(spec));
-        Assert.Empty(_store.Records);
+        Assert.False(Directory.Exists(State));
+        Assert.Single(_store.Records);
+    }
+
+    [Fact]
+    public async Task AProgramSpec_RecordsItsProgramAndPolicyFolders_WithTheStateFolderReadOnly()
+    {
+        var spec = ProgramSpec(ProbeContainer);
+
+        Assert.Same(spec, await Prepare(spec));
+
+        var (container, roots, stateReadOnly) = Assert.Single(_store.Records);
+        Assert.Equal(ProbeContainer, container);
+        Assert.Equal([@"C:\Tools\server", @"C:\box", @"C:\data"], roots);
+        Assert.True(stateReadOnly);
+        Assert.False(Directory.Exists(State));
+    }
+
+    [Fact]
+    public async Task AProgramSpec_KeepsAnEarlierReadWriteGrantOnRecord()
+    {
+        _store.Earlier[Container] = false;
+
+        await Prepare(ProgramSpec(Container));
+
+        Assert.False(Assert.Single(_store.Records).StateReadOnly);
+    }
+
+    [Fact]
+    public async Task AProgramProbe_LeavesItsFoldersToTheOrphanSweep()
+    {
+        var readwrite = Directory.CreateDirectory(Path.Combine(_outside, "rw")).FullName;
+        var readOnly = Directory.CreateDirectory(Path.Combine(_outside, "ro")).FullName;
+
+        await PrepareWithRecords(ProgramSpec(ProbeContainer) with { ReadwritePaths = [readwrite], ReadonlyPaths = [readOnly] });
+
+        var store = new RuntimeStateStore(NullLogger<RuntimeStateStore>.Instance);
+        Assert.Contains(readwrite, store.SweepRoots(_prefix));
+        Assert.Contains(readOnly, store.SweepRoots(_prefix));
+        Assert.Contains(_prefix, store.OrphanPrefixes(new HashSet<string>()));
+        Assert.DoesNotContain(_prefix, store.OrphanPrefixes(new HashSet<string> { _prefix }));
     }
 
     [Fact]
@@ -210,13 +262,13 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     }
 
     [Fact]
-    public async Task TheGrantRecord_HoldsToolchainProgramStateAndSupportFolders()
+    public async Task TheGrantRecord_HoldsToolchainProgramStateSupportAndPolicyFolders()
     {
-        await Prepare(NodeSpec());
+        await Prepare(NodeSpec() with { ReadonlyPaths = [@"C:\data"] });
 
         var (container, roots, stateReadOnly) = Assert.Single(_store.Records);
         Assert.Equal(Container, container);
-        Assert.Equal([@"C:\Users\Jane\node", @"C:\Users\Jane\mcp\server", State, Support], roots);
+        Assert.Equal([@"C:\Users\Jane\node", @"C:\Users\Jane\mcp\server", State, Support, @"C:\box", @"C:\data"], roots);
         Assert.False(stateReadOnly);
     }
 
@@ -268,21 +320,53 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
         await Prepare(UvxSpec());
 
-        Assert.Equal([State], _store.Records.Single().Roots);
+        Assert.Equal([State, @"C:\box"], _store.Records.Single().Roots);
         Assert.True(_store.Records.Single().StateReadOnly);
     }
 
-    [Fact]
-    public async Task Uvx_AnUnchangedSpec_KeepsTheInstalledTool()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uvx_AnUnchangedSpec_KeepsTheInstalledTool_WithoutRunningUv(bool offline)
     {
         TrustTheStateFolder();
         WriteSpecRecord("mcp-server-time");
-        var marker = Path.Combine(UvEntryPointResolverTests.InstallTimeTool(State), "marker.txt");
+        var tool = UvEntryPointResolverTests.InstallTimeTool(State);
+        var marker = Path.Combine(tool, "marker.txt");
         File.WriteAllText(marker, "kept");
+
+        var prepared = await Prepare(UvxSpec(offline));
+
+        Assert.Empty(_uv.Calls);
+        Assert.True(File.Exists(marker));
+        Assert.Equal(Path.Combine(tool, "Scripts", "python.exe"), prepared.Command);
+        Assert.Equal(["-c", ExpectedCode, "--local-timezone", "UTC"], prepared.Args);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uvx_AnUnchangedSpecWithoutARunnableTool_DeletesToolsAndToolBin_BeforeUvRuns(bool onlyPythonMissing)
+    {
+        TrustTheStateFolder();
+        WriteSpecRecord("mcp-server-time");
+        var tool = UvEntryPointResolverTests.InstallTimeTool(State);
+        File.Delete(onlyPythonMissing ? Path.Combine(tool, "Scripts", "python.exe") : Path.Combine(tool, "uv-receipt.toml"));
+        Directory.CreateDirectory(Path.Combine(State, "tool-bin"));
+        File.WriteAllText(Path.Combine(State, "tool-bin", "mcp-server-time.exe"), "old");
+        bool? toolsExistedAtInstall = null;
+        bool? toolBinExistedAtInstall = null;
+        _uv.OnRun = () =>
+        {
+            toolsExistedAtInstall = Directory.Exists(Path.Combine(State, "tools"));
+            toolBinExistedAtInstall = Directory.Exists(Path.Combine(State, "tool-bin"));
+        };
 
         await Prepare(UvxSpec());
 
-        Assert.True(File.Exists(marker));
+        Assert.Single(_uv.Calls);
+        Assert.False(toolsExistedAtInstall);
+        Assert.False(toolBinExistedAtInstall);
     }
 
     [Fact]
@@ -335,6 +419,29 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
         Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
         PathFreeAssert.IsPathFree(ex);
+        Assert.Empty(_uv.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uvx_AChangedSpec_WhileAContainerOfTheServerRuns_IsRefused_AndKeepsTheTool(bool sameContainer)
+    {
+        _store.Earlier[Container] = true;
+        _store.Earlier[ProbeContainer] = true;
+        WriteSpecRecord("mcp-server-time", python: "3.12");
+        var tool = UvEntryPointResolverTests.InstallTimeTool(State);
+        using var running = SandboxContainerLease.Acquire(Container);
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(
+            () => Prepare(UvxSpec() with { ContainerName = sameContainer ? Container : ProbeContainer }));
+
+        Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+        Assert.True(File.Exists(Path.Combine(tool, "uv-receipt.toml")));
+        Assert.True(File.Exists(Path.Combine(tool, "Scripts", "python.exe")));
+        Assert.True(Directory.Exists(Path.Combine(tool, "Lib", "site-packages", "mcp_server_time-2026.10.10.dist-info")));
+        Assert.Contains("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
         Assert.Empty(_uv.Calls);
     }
 
@@ -394,15 +501,18 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     }
 
     [Fact]
-    public async Task Uvx_Offline_WithAnotherSpecInstalled_Refuses()
+    public async Task Uvx_Offline_WithAnotherSpecInstalled_Refuses_AndKeepsTheOldTool()
     {
         TrustTheStateFolder();
         WriteSpecRecord("mcp-server-time", python: "3.12");
-        UvEntryPointResolverTests.InstallTimeTool(State);
+        var tool = UvEntryPointResolverTests.InstallTimeTool(State);
 
         var ex = await Assert.ThrowsAsync<SandboxStartException>(() => Prepare(UvxSpec(offline: true)));
 
         Assert.StartsWith("Network access is off", ex.Message);
+        Assert.True(File.Exists(Path.Combine(tool, "uv-receipt.toml")));
+        Assert.True(File.Exists(Path.Combine(tool, "Scripts", "python.exe")));
+        Assert.Contains("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
         Assert.Empty(_uv.Calls);
     }
 
@@ -465,7 +575,130 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         await PrepareWithRecords(UvxSpec());
 
         Assert.True(File.Exists(marker));
-        Assert.Equal(2, _uv.Calls.Count);
+        Assert.Single(_uv.Calls);
+    }
+
+    private async Task AfterAnNpxProbeAndAUvxStart()
+    {
+        await PrepareWithRecords(NodeSpec() with { ContainerName = ProbeContainer, RunnerKind = RunnerKind.Npx });
+        await PrepareWithRecords(UvxSpec());
+    }
+
+    [Fact]
+    public async Task Uvx_AfterAnNpxProbe_ClearsOnce_ThenKeepsTheInstalledTool()
+    {
+        await AfterAnNpxProbeAndAUvxStart();
+        var marker = Path.Combine(State, "tools", "mcp-server-time", "marker.txt");
+        File.WriteAllText(marker, "kept");
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.True(File.Exists(marker));
+        Assert.True(File.Exists(Path.Combine(State, "pia-uv-spec.json")));
+        Assert.Single(_uv.Calls);
+        Assert.True(new RuntimeStateStore(NullLogger<RuntimeStateStore>.Instance).StateGrantedReadOnly(ProbeContainer));
+    }
+
+    [Fact]
+    public async Task Uvx_AfterAnNpxProbe_ClearsOnce_ThenStartsOffline()
+    {
+        await AfterAnNpxProbeAndAUvxStart();
+
+        var prepared = await PrepareWithRecords(UvxSpec(offline: true));
+
+        Assert.Equal(["-c", ExpectedCode, "--local-timezone", "UTC"], prepared.Args);
+        Assert.Single(_uv.Calls);
+    }
+
+    [Fact]
+    public async Task Uvx_AfterAnNpxProbe_ClearsOnce_ThenProbesWhileTheServerRuns()
+    {
+        await AfterAnNpxProbeAndAUvxStart();
+        using var running = SandboxContainerLease.Acquire(Container);
+
+        var prepared = await PrepareWithRecords(UvxSpec() with { ContainerName = ProbeContainer });
+
+        Assert.Equal(["-c", ExpectedCode, "--local-timezone", "UTC"], prepared.Args);
+        Assert.Single(_uv.Calls);
+    }
+
+    private async Task<string> AfterAUvxStartAndAnNpxProbe(params string[] planted)
+    {
+        await PrepareWithRecords(UvxSpec());
+        await PrepareWithRecords(NodeSpec() with { ContainerName = ProbeContainer, RunnerKind = RunnerKind.Npx });
+        var path = Path.Combine([State, .. planted]);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "planted");
+        return path;
+    }
+
+    [Fact]
+    public async Task Uvx_AfterAnNpxProbeOfAUvxServer_ClearsTheStateFolder_BeforeUvRuns()
+    {
+        var planted = await AfterAUvxStartAndAnNpxProbe("python", "cpython-3.13", "python.exe");
+        bool? plantedAtInstall = null;
+        _uv.OnRun = () => plantedAtInstall = File.Exists(planted);
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.False(plantedAtInstall);
+    }
+
+    [Fact]
+    public async Task Uvx_Offline_AfterAnNpxProbeOfAUvxServer_ClearsTheStateFolder()
+    {
+        var planted = await AfterAUvxStartAndAnNpxProbe("tools", "mcp-server-time", "planted.txt");
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(() => PrepareWithRecords(UvxSpec(offline: true)));
+
+        Assert.Equal("Network access is off and this package is not installed yet. Allow network access for the first start.", ex.Message);
+        Assert.False(File.Exists(planted));
+    }
+
+    [Fact]
+    public async Task Uvx_AfterAnNpxProbeOfAUvxServer_WhileTheServerRuns_IsRefused_AndTouchesNothing()
+    {
+        var planted = await AfterAUvxStartAndAnNpxProbe("tools", "mcp-server-time", "planted.txt");
+        using var running = SandboxContainerLease.Acquire(Container);
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(() => PrepareWithRecords(UvxSpec()));
+
+        Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
+        Assert.True(File.Exists(planted));
+        Assert.Single(_uv.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uvx_AfterAnNpxStartThenAProgramStart_StillClearsTheStateFolder_BeforeUvRuns(bool probe)
+    {
+        var container = probe ? ProbeContainer : Container;
+        await PrepareWithRecords(NodeSpec() with { ContainerName = container, RunnerKind = RunnerKind.Npx });
+        await PrepareWithRecords(ProgramSpec(container));
+        var planted = Path.Combine(State, "python", "cpython-3.13", "python.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(planted)!);
+        File.WriteAllText(planted, "planted");
+        bool? plantedAtInstall = null;
+        _uv.OnRun = () => plantedAtInstall = File.Exists(planted);
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.False(plantedAtInstall);
+    }
+
+    [Fact]
+    public async Task Uvx_AfterAProgramProbe_KeepsTheStateFolder()
+    {
+        await PrepareWithRecords(UvxSpec());
+        await PrepareWithRecords(ProgramSpec(ProbeContainer));
+        var marker = Path.Combine(State, "marker.txt");
+        File.WriteAllText(marker, "kept");
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.True(File.Exists(marker));
+        Assert.Single(_uv.Calls);
     }
 
     [Fact]

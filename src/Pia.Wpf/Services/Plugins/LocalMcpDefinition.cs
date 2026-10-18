@@ -110,6 +110,8 @@ public static class LocalMcpConfig
 
             var cwd = root.TryGetProperty("cwd", out var cwdEl) ? cwdEl.GetString() : null;
             var prefix = root.TryGetProperty("toolPrefix", out var prefixEl) ? prefixEl.GetString() ?? "" : "";
+            if (prefix.Length > 0 && !IsPlainPrefix(prefix))
+                return null;
 
             List<string>? allowed = null;
             if (root.TryGetProperty("allowedTools", out var allowedEl) && allowedEl.ValueKind == JsonValueKind.Array)
@@ -127,6 +129,10 @@ public static class LocalMcpConfig
             return null;
         }
     }
+
+    // The prefix names the server's folders and records on disk, so a hand-edited one must not reach outside them.
+    private static bool IsPlainPrefix(string prefix) =>
+        prefix.Length <= 64 && prefix.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_');
 
     // A present but unreadable block stays contained: dropping it would start the server uncontained.
     private static McpSandboxPolicy? ReadSandbox(JsonElement root)
