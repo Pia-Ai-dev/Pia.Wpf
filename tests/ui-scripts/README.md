@@ -265,9 +265,9 @@ tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 StageToolchain        
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 StageToolchain -Kind Uv  # latest uv into toolchain\uv
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch    # explorer.exe parent, prints the IL
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch -RuntimeRoots node-user   # detection sees only these folders
-tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch -Elevated -RuntimeRoots node-admin  # step 2, own profile
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch -Elevated -RuntimeRoots node-admin  # the elevated fix, own profile
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Status    # IL, hashes, toolchain, ACEs, .runtime, grants, orphans
-tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 UndoToolchainGrant  # remove step 2 from node-admin, compare SDDL
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 UndoToolchainGrant  # remove the machine-wide read grant from node-admin, compare SDDL
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Seed      # reseed the fixture (scenario 7)
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Stop      # waits for TrayMenu_Exit; -Kill is the hard kill
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 EndSession       # logoff messages to Pia's window, then verify
@@ -308,9 +308,9 @@ fixture must stay **outside** the profile roots, because the path guard refuses 
   and extracts it into `toolchain\uv`. Downloads stay in `toolchain\downloads`, never `%TEMP%`; a re-run
   restages the folders and reuses a Node zip of the same version. Both actions refuse a `-Root` under
   `Program Files` or the Windows folder: the real `C:\Program Files\nodejs` is never touched.
-- **Step 2 undo.** `UndoToolchainGrant` runs `icacls node-admin /remove:g *S-1-15-2-1` and compares the SDDL,
-  read through .NET rather than from localised `icacls` text, with the recorded one; it exits 3 on a
-  mismatch or when any item in the tree still carries `S-1-15-2-1`. `Status` shows whether node-admin still
+- **Undoing the elevated fix.** `UndoToolchainGrant` runs `icacls node-admin /remove:g *S-1-15-2-1` and
+  compares the SDDL, read through .NET rather than from localised `icacls` text, with the recorded one; it
+  exits 3 on a mismatch or when any item in the tree still carries `S-1-15-2-1`. `Status` shows whether node-admin still
   matches, and `Status`, `Stop` and `Verify` warn while the grant is left in place.
 - **Ownership and ACLs.** Tier 3 rewrites the DACL of every policy path, which fails silently for a path
   the user cannot WRITE_DAC, and the server then dies on load. Anything an elevated shell creates is owned
@@ -354,13 +354,20 @@ fixture must stay **outside** the profile roots, because the path guard refuses 
   the baseline, explicit `S-1-15-2-*` ACEs on the fixture, the server copies, `toolchain\` and both
   profiles' `local\McpSandbox` (server folders and `.runtime` state folders) and `local\McpSandboxSupport`
   (the two well-known `ALL (RESTRICTED) APPLICATION PACKAGES` SIDs are not leaks; an explicit one, such as
-  a step 2 grant, is listed as `known`), helper processes with no live Pia, and the
+  the machine-wide read grant, is listed as `known`), helper processes with no live Pia, and the
   `%LOCALAPPDATA%\Packages\pia-mcp-*` container profiles against those present at `Init` (`Baseline`
   retakes that set; the `pia-mcp-test-*` ones the real-container unit tests leave behind are labelled as
   known test artefacts, not as new). `Status` also prints each toolchain folder's owner SID, user write and
   WRITE_DAC, and its `S-1-15-2-1` entry; each `.runtime` folder's entry count and size; and every grant
   record under `local\McpSandboxGrants` with its roots. No walk follows a junction or symlink, so a link a
   contained server planted never leads it out of the tree. `EndSession` checks the same ACE roots.
+- **Grant roots outside the tree.** A grant record can name a root outside `artifacts\mxc-sandbox-e2e` —
+  after a bare `Launch`, Pia grants the host's own toolchain, such as `%LOCALAPPDATA%\Programs\nodejs` —
+  and removing the server deletes the record. So `Launch`, `Status` and `EndSession` copy every record's
+  roots, and `Launch` its `-RuntimeRoots`, into `grantRootsSeen` in `state.json`, which nothing shrinks,
+  and the ACE check walks each one not already inside a root above (`Status` lists them as `scanned`). A
+  server added and removed in one session with no `Status` in between leaves no trace there, so run
+  `Status` while it runs.
 - **MXC runtime.** `RemoveRuntime -Force` deletes `%LOCALAPPDATA%\Pia\Runtimes\Mxc` on the real local
   root. It is a downloaded artifact, so that is safe, and it is the only way to re-run the first-download
   scenario.
