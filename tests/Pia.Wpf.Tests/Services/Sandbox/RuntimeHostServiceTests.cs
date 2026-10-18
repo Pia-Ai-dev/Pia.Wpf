@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using Microsoft.Win32;
 using NSubstitute;
 using Pia.Native;
 using Pia.Paths;
@@ -285,44 +285,37 @@ public sealed class RuntimeHostServiceTests : IDisposable
     }
 
     [Fact]
-    public void TheStaticNameReader_MatchesTheInstance() =>
-        Assert.Equal(Host().UserEnvironmentNames(), RuntimeHostService.ReadUserEnvironmentNames());
-
-    [Fact]
-    public void TheDefaultUserEnvironment_IsBuiltFromTheRegistry_NotFromThisProcess()
+    public void TheUserEnvironmentNames_AreTheValueNamesUnderHkcuEnvironment()
     {
-        var sessionOnly = "PIA_TEST_SESSION_ONLY_" + Guid.NewGuid().ToString("N");
-        Environment.SetEnvironmentVariable(sessionOnly, "1");
-        try
-        {
-            var block = Host().DefaultUserEnvironment();
+        using var environment = Registry.CurrentUser.OpenSubKey("Environment");
+        Assert.NotNull(environment);
+        var expected = environment.GetValueNames().Where(name => name.Length > 0).ToList();
 
-            Assert.NotNull(block);
-            Assert.True(block.ContainsKey("USERPROFILE"));
-            Assert.True(block.ContainsKey("systemroot"));
-            Assert.False(block.ContainsKey(sessionOnly));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable(sessionOnly, null);
-        }
+        var names = RuntimeHostService.ReadUserEnvironmentNames();
+
+        Assert.Equal(expected.Order(StringComparer.OrdinalIgnoreCase), names.Order(StringComparer.OrdinalIgnoreCase));
+        Assert.Contains(names, name => name.Equals("TEMP", StringComparison.OrdinalIgnoreCase) || name.Equals("TMP", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void AnEnvironmentBlock_IsParsedWithoutItsDriveEntries()
+    public void TheUserEnvironmentNames_AreReadFromTheGivenKey_AndAMissingKeyGivesNone()
     {
-        var block = Marshal.StringToHGlobalUni("A=1\0=C:=C:\\work\0Path=x=y\0\0");
+        var subKey = @"Software\Pia.Tests\" + Guid.NewGuid().ToString("N");
+        var unique = "PIA_TEST_NAME_" + Guid.NewGuid().ToString("N");
         try
         {
-            var variables = UserEnvironmentBlock.Parse(block);
+            using (var key = Registry.CurrentUser.CreateSubKey(subKey))
+            {
+                key.SetValue(unique, "1");
+                key.SetValue("", "default");
+            }
 
-            Assert.Equal(2, variables.Count);
-            Assert.Equal("1", variables["a"]);
-            Assert.Equal("x=y", variables["PATH"]);
+            Assert.Equal([unique], RuntimeHostService.ReadUserEnvironmentNames(Registry.CurrentUser, subKey));
+            Assert.Empty(RuntimeHostService.ReadUserEnvironmentNames(Registry.CurrentUser, subKey + "-missing"));
         }
         finally
         {
-            Marshal.FreeHGlobal(block);
+            Registry.CurrentUser.DeleteSubKeyTree(subKey, throwOnMissingSubKey: false);
         }
     }
 

@@ -432,6 +432,7 @@ public sealed class RunnerCommandParserTests
     [InlineData("pkg~=1.4", "pkg")]
     [InlineData("pkg===1.0", "pkg")]
     [InlineData("mcp_server.time-2", "mcp_server.time-2")]
+    [InlineData("mcp.zip-tools", "mcp.zip-tools")]
     [InlineData("a", "a")]
     public void UvxPackageSpecs_AreAccepted_AndTheCommandNameDropsTheVersion(string token, string commandName)
     {
@@ -470,6 +471,13 @@ public sealed class RunnerCommandParserTests
     [InlineData(@"\\host\share\x.whl")]
     [InlineData("https://h/x.whl")]
     [InlineData("pkg @ https://h/x.whl")]
+    [InlineData("x-1.0-py3-none-any.whl")]
+    [InlineData("X-1.0-PY3-NONE-ANY.WHL")]
+    [InlineData("x.whl[cli]")]
+    [InlineData("--from", "x-1.0.tar.gz", "x")]
+    [InlineData("--from", "pkg", "x.tar.zst")]
+    [InlineData("--with", "x.zip", "pkg")]
+    [InlineData("--with=x.tgz", "pkg")]
     [InlineData("pkg[extra")]
     [InlineData("pkg-")]
     [InlineData("pkg\n")]

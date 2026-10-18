@@ -19,8 +19,7 @@ public sealed record SandboxLaunchSpec(
     bool RuntimeStateReadOnly = false,
     string? SupportDirectory = null,
     RunnerKind RunnerKind = RunnerKind.None,
-    RuntimePreparation? Preparation = null,
-    bool ReplaceEnvironmentBlock = false)
+    RuntimePreparation? Preparation = null)
 {
     public IReadOnlyList<string> Toolchain => ToolchainDirectories ?? [];
 }

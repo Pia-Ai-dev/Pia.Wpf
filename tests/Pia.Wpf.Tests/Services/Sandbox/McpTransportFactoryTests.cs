@@ -145,6 +145,7 @@ public sealed class McpTransportFactoryTests
 
     [Theory]
     [InlineData("uvx", new[] { @"C:\w\x.whl" }, SandboxRuntimeMessages.UvxValue)]
+    [InlineData("uvx", new[] { "x-1.0-py3-none-any.whl" }, SandboxRuntimeMessages.UvxValue)]
     [InlineData("cmd", new[] { "/c", "npx -y @x/y & calc" }, SandboxRuntimeMessages.CmdMetacharacters)]
     [InlineData("pnpm", new[] { "dlx", "x" },
         "Pia can't sandbox servers started with pnpm. npx, npm exec, uvx and dnx work; otherwise point the command at the server program itself.")]
@@ -249,7 +250,9 @@ public sealed class McpTransportFactoryTests
         var spec = await SpecReachingTheVerifier(factory.Create(Request(McpSandboxPolicy.Empty)), seen);
 
         var expected = SandboxEnvironmentComposer.NamesToBlank(RuntimeHostService.ReadUserEnvironmentNames())
-            .Where(name => !string.Equals(name, "TOKEN", StringComparison.OrdinalIgnoreCase));
+            .Where(name => !string.Equals(name, "TOKEN", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Assert.SkipWhen(expected.Count == 0, "no HKCU Environment name outside the allowlist on this host");
         Assert.All(expected, name => Assert.Equal("", spec.Environment[name]));
     }
 

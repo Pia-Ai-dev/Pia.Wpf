@@ -25,8 +25,6 @@ public sealed class OverridingRuntimeHost(IRuntimeHostService inner, IReadOnlyLi
 
     public string? RegistryEnvironmentValue(string name) => inner.RegistryEnvironmentValue(name);
 
-    public IReadOnlyDictionary<string, string>? DefaultUserEnvironment() => inner.DefaultUserEnvironment();
-
     public string LocalAppData => inner.LocalAppData;
 
     public string RoamingAppData => inner.RoamingAppData;

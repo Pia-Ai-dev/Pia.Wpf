@@ -88,11 +88,14 @@ public sealed partial class RuntimeHostService(IElevationService elevation) : IR
     public IReadOnlyList<string> UserEnvironmentNames() => ReadUserEnvironmentNames();
 
     /// <summary>The value names under <c>HKCU\Environment</c>, empty on any error; needs no DI, so blanking never depends on it.</summary>
-    public static IReadOnlyList<string> ReadUserEnvironmentNames()
+    public static IReadOnlyList<string> ReadUserEnvironmentNames() =>
+        ReadUserEnvironmentNames(Registry.CurrentUser, UserEnvironmentKey);
+
+    internal static IReadOnlyList<string> ReadUserEnvironmentNames(RegistryKey parent, string subKey)
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(UserEnvironmentKey);
+            using var key = parent.OpenSubKey(subKey);
             return key is null ? [] : [.. key.GetValueNames().Where(name => name.Length > 0)];
         }
         catch (Exception)
@@ -106,8 +109,6 @@ public sealed partial class RuntimeHostService(IElevationService elevation) : IR
         var registry = RegistryEnvironment.Read();
         return registry.Raw(name) is { } raw ? registry.Expand(raw) : null;
     }
-
-    public IReadOnlyDictionary<string, string>? DefaultUserEnvironment() => UserEnvironmentBlock.Read();
 
     public bool FileExists(string path) => File.Exists(path);
 
