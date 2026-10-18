@@ -587,7 +587,7 @@
                                  TextWrapping="Wrap"
                                  Foreground="{DynamicResource TextDefaultBrush}"
                                  AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideText"/>
-                      <!-- OneWay: the guide commands are get-only, and TextBox.Text binds TwoWay by default. -->
+                      <!-- OneWay: the commands are get-only and TextBox.Text binds TwoWay. Left: wrapped lines render justified otherwise. -->
                       <Grid Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="*"/>
@@ -599,6 +599,7 @@
                                     ClearButtonEnabled="False"
                                     FontFamily="Consolas"
                                     TextWrapping="Wrap"
+                                    TextAlignment="Left"
                                     AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideCommand"/>
                         <ui:Button Grid.Column="1"
                                    Content="{loc:Str McpServers_Sandbox_Runtime_Copy}"
@@ -628,6 +629,7 @@
                                       ClearButtonEnabled="False"
                                       FontFamily="Consolas"
                                       TextWrapping="Wrap"
+                                      TextAlignment="Left"
                                       AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideAltCommand"/>
                           <ui:Button Grid.Column="1"
                                      Content="{loc:Str McpServers_Sandbox_Runtime_Copy}"
