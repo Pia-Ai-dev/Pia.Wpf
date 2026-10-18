@@ -251,35 +251,67 @@ or `LEAK <file>`, exiting 1 on a leak — the same contract as the PowerShell ha
 
 ## MXC sandbox e2e (unrecorded)
 
-`mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1` is the harness for the live run in
-[`docs/mcp_sandbox/2026-10-17-mcp-sandbox.md`](../../docs/mcp_sandbox/2026-10-17-mcp-sandbox.md). Like
-`agent-run-e2e/` it has no recorded script: you launch with it, attach WinWright to the process it
-prints and drive the scenarios yourself. Run it from an **elevated** shell — it hands file ownership to
-your user and drops out of the elevation for the launch.
+`mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1` is the harness for the live runs in
+[`docs/mcp_sandbox/2026-10-17-mcp-sandbox.md`](../../docs/mcp_sandbox/2026-10-17-mcp-sandbox.md) and
+[`docs/mcp_sandbox/2026-10-18-sandbox-runtimes-plan.md`](../../docs/mcp_sandbox/2026-10-18-sandbox-runtimes-plan.md)
+(sandboxed npx, uvx and dnx). Like `agent-run-e2e/` it has no recorded script: you launch with it, attach
+WinWright to the process it prints and drive the scenarios yourself. Run it from an **elevated** shell — it
+hands file ownership to your user and drops out of the elevation for the launch.
 
 ```powershell
 dotnet build                                  # Debug: PIA_CLOUD_SERVER_URL is a Debug-only switch
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Init      # layout, profile, server copies, fixture
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 StageToolchain           # Node LTS: node-user, node-admin, node-link
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 StageToolchain -Kind Uv  # latest uv into toolchain\uv
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch    # explorer.exe parent, prints the IL
-tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Status    # IL, hashes, ACEs, orphans, containers
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch -RuntimeRoots node-user   # detection sees only these folders
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Launch -Elevated -RuntimeRoots node-admin  # step 2, own profile
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Status    # IL, hashes, toolchain, ACEs, .runtime, grants, orphans
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 UndoToolchainGrant  # remove step 2 from node-admin, compare SDDL
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Seed      # reseed the fixture (scenario 7)
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 Stop      # waits for TrayMenu_Exit; -Kill is the hard kill
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 EndSession       # logoff messages to Pia's window, then verify
-tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 ResetSandboxRoot # forget the server folders under the sandbox root
+tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 ResetSandboxRoot # forget the server folders and .runtime caches
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 MirrorLocal   # runtime from the e2e storage; -Off undoes
 tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1 TamperRuntime # scenario 0 tamper; -Undo restores
 ```
 
 Everything lives under `artifacts/mxc-sandbox-e2e/` (gitignored, outside `%TEMP%` so the cleaner leaves a
 multi-hour run alone): `profile\roaming` and `profile\local` are the throwaway `PIA_DATA_DIR` /
-`PIA_LOCAL_DATA_DIR`, `fixture\{workspace,protected,secret}` is the tree the policy points at, and
-`server\` / `server-admin\` hold two copies of `Pia.TestMcpServer`. The fixture must stay **outside** the
-profile roots, because the path guard refuses a Pia data root.
+`PIA_LOCAL_DATA_DIR`, `profile-elevated\` is the same pair for `Launch -Elevated`,
+`fixture\{workspace,protected,secret}` is the tree the policy points at, `server\` / `server-admin\` hold
+two copies of `Pia.TestMcpServer`, and `toolchain\` holds the staged Node and uv with their downloads. The
+fixture must stay **outside** the profile roots, because the path guard refuses a Pia data root.
 
 - **De-elevated launch.** `Launch` writes `launch\launch.cmd`, which sets `PIA_CLOUD_SERVER_URL` and the two
   data dirs and starts the Debug exe, then opens it through `explorer.exe`, so the whole tree starts at the
   user's medium integrity level. The IL is read off the Pia process token (`S-1-16-8192`), not from
   localised `whoami` text, and a mismatch fails the launch. A scheduled task is not used.
+  `-RuntimeRoots <dirs>` writes `PIA_DEBUG_SANDBOX_RUNTIME_ROOTS` (Debug builds only) into the same file, so
+  detection looks in those folders instead of the real ones; a bare name such as `node-user` means
+  `toolchain\node-user`, and without the switch the file clears the variable. `-DryRun` writes and prints
+  the launch and starts nothing.
+- **Elevated launch.** `Launch -Elevated` starts the Debug exe straight from the elevated shell with the same
+  variables, against `profile-elevated\` (seeded once from the fixture; sign in there once more). Files an
+  elevated Pia creates are read-only to the de-elevated user later, so the two launch modes never share a
+  profile. `Status` then reports `elevated=True` and skips the medium-IL check for that launch only; a
+  normal launch that ends up elevated still warns. `Status`, `EndSession` and `ResetSandboxRoot` cover both
+  profiles, and the logs are read from the profile of the last launch.
+- **Toolchains.** `StageToolchain` resolves the newest Node LTS from `nodejs.org/dist/index.json`, checks the
+  zip against `SHASUMS256.txt` and extracts it with the Windows `tar` into `toolchain\node-user`, owned by
+  your user. `toolchain\node-admin` is a copy in the shape of the Node MSI's install: `icacls /setowner
+  *S-1-5-18 /T` (.NET cannot set a foreign owner without `SeRestorePrivilege`), then a protected DACL set
+  through .NET — Users and Authenticated Users read-and-execute, Administrators and SYSTEM full control,
+  no `S-1-15-2-1` — and its owner-and-DACL SDDL is recorded in `state.json`. `toolchain\node-link` is a
+  junction to `node-user` (scenario 15) and `toolchain\node-empty` an empty user-owned folder (scenario 5).
+  `-Kind Uv` downloads `uv-x86_64-pc-windows-msvc.zip` from the latest GitHub release, checks its `.sha256`
+  and extracts it into `toolchain\uv`. Downloads stay in `toolchain\downloads`, never `%TEMP%`; a re-run
+  restages the folders and reuses a Node zip of the same version. Both actions refuse a `-Root` under
+  `Program Files` or the Windows folder: the real `C:\Program Files\nodejs` is never touched.
+- **Step 2 undo.** `UndoToolchainGrant` runs `icacls node-admin /remove:g *S-1-15-2-1` and compares the SDDL,
+  read through .NET rather than from localised `icacls` text, with the recorded one; it exits 3 on a
+  mismatch or when any item in the tree still carries `S-1-15-2-1`. `Status` shows whether node-admin still
+  matches, and `Status`, `Stop` and `Verify` warn while the grant is left in place.
 - **Ownership and ACLs.** Tier 3 rewrites the DACL of every policy path, which fails silently for a path
   the user cannot WRITE_DAC, and the server then dies on load. Anything an elevated shell creates is owned
   by Administrators and, under a drive root that only lets Users read, is not even writable by the user
@@ -296,7 +328,10 @@ profile roots, because the path guard refuses a Pia data root.
   helper processes. It exits 3 unless Pia exited and left nothing behind.
 - **Sandbox folder.** The core creates a server's missing folder under the sandbox root at its first start
   or probe, so the editor's "Pia creates a folder here" hint only shows before that. `ResetSandboxRoot`
-  deletes `profile\local\McpSandbox` (with Pia stopped) so a run can check the hint again.
+  deletes `local\McpSandbox` of both profiles (with Pia stopped) so a run can check the hint again. That
+  also wipes every `<prefix>.runtime` state folder beside the server folders — the npm, NuGet and uv
+  caches — so the next start of a runner server is a cold one. `McpSandboxGrants` is kept: Pia deletes a
+  record with its server, and the records name the roots a later sweep must clean.
 - **Localised Windows.** `icacls /setowner 'BUILTIN\Administrators'` fails with 1332 on a German install,
   so the script names principals by SID (`*S-1-5-32-544`), and it reads the integrity level off the
   token instead of parsing `whoami` text.
@@ -310,13 +345,22 @@ profile roots, because the path guard refuses a Pia data root.
 - **Real data.** The harness refuses `:8081`, which is the owner's real stack; the e2e stack is
   `https://localhost:18081`. `profile\roaming\settings.json` is seeded once and never rewritten or
   restored — it carries the rotating sign-in tokens. `Verify` re-hashes the real `settings.json` and
-  `history.db` against the hashes `Init` took.
+  `history.db` against the hashes `Init` took. It also compares the entry count and newest write time of
+  the real `%LOCALAPPDATA%\npm-cache`, `%APPDATA%\npm`, `%USERPROFILE%\.nuget\packages`,
+  `%LOCALAPPDATA%\uv` and `%APPDATA%\uv` with the snapshot `Init` took (`Init` adds one to an older
+  `state.json`, `Baseline` retakes it). A change there is printed as `look:`, never failed on: other tools on
+  the host write `npm-cache` too.
 - **Verdicts come from `Status`**, never from the model's text: `protected\` and `secret\` hashes against
-  the baseline, explicit `S-1-15-2-*` ACEs on the fixture and server copies (the two well-known
-  `ALL (RESTRICTED) APPLICATION PACKAGES` SIDs are not leaks), helper processes with no live Pia, and the
+  the baseline, explicit `S-1-15-2-*` ACEs on the fixture, the server copies, `toolchain\` and both
+  profiles' `local\McpSandbox` (server folders and `.runtime` state folders) and `local\McpSandboxSupport`
+  (the two well-known `ALL (RESTRICTED) APPLICATION PACKAGES` SIDs are not leaks; an explicit one, such as
+  a step 2 grant, is listed as `known`), helper processes with no live Pia, and the
   `%LOCALAPPDATA%\Packages\pia-mcp-*` container profiles against those present at `Init` (`Baseline`
   retakes that set; the `pia-mcp-test-*` ones the real-container unit tests leave behind are labelled as
-  known test artefacts, not as new).
+  known test artefacts, not as new). `Status` also prints each toolchain folder's owner SID, user write and
+  WRITE_DAC, and its `S-1-15-2-1` entry; each `.runtime` folder's entry count and size; and every grant
+  record under `local\McpSandboxGrants` with its roots. No walk follows a junction or symlink, so a link a
+  contained server planted never leads it out of the tree. `EndSession` checks the same ACE roots.
 - **MXC runtime.** `RemoveRuntime -Force` deletes `%LOCALAPPDATA%\Pia\Runtimes\Mxc` on the real local
   root. It is a downloaded artifact, so that is safe, and it is the only way to re-run the first-download
   scenario.

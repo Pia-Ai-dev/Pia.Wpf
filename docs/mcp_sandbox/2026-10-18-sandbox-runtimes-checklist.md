@@ -149,7 +149,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### X End to end
 
-- [ ] **X1 Harness for runtimes.** `StageToolchain` (with the `icacls /setowner` admin copy and a junction),
+- [x] **X1 Harness for runtimes.** `StageToolchain` (with the `icacls /setowner` admin copy and a junction),
   `Launch -RuntimeRoots`, `Launch -Elevated` with its own profile, `UndoToolchainGrant`, toolchain, support and
   `.runtime` roots in `Status` and `EndSession`, real-profile runtime folders in `Verify`, and the README section.
   *Deps:* C3 · *Effort:* S · *Value:* Enabler
