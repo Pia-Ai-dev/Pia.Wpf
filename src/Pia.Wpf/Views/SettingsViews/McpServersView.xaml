@@ -259,6 +259,13 @@
                            TextWrapping="Wrap"
                            AutomationProperties.AutomationId="McpServers_Detail_SandboxAlsoReadable"
                            Visibility="{Binding SelectedSandboxAlsoReadable, Converter={StaticResource NullToVisibilityConverter}}"/>
+                <TextBlock Text="{Binding SelectedSandboxRuntime}"
+                           Style="{StaticResource PiaDetailValueStyle}"
+                           FontFamily="Consolas"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0"
+                           AutomationProperties.AutomationId="McpServers_Detail_SandboxRuntime"
+                           Visibility="{Binding SelectedSandboxRuntime, Converter={StaticResource NullToVisibilityConverter}}"/>
               </StackPanel>
 
               <TextBlock Text="{loc:Str McpServers_Tools}"
@@ -495,6 +502,160 @@
                              AutomationProperties.AutomationId="McpServers_Sandbox_DownloadError"/>
                 </Border>
 
+                <StackPanel Visibility="{Binding ShowRuntimePanel, Converter={StaticResource BooleanToVisibilityConverter}}">
+                  <TextBlock Text="{loc:Str McpServers_Sandbox_Runtime_Title}"
+                             Style="{StaticResource PiaSettingsSectionLabelStyle}"
+                             Margin="0,14,0,6"/>
+                  <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="{loc:Str McpServers_Sandbox_Runtime_Detect}"
+                               Icon="{ui:SymbolIcon ArrowSync24}"
+                               Appearance="Secondary"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeDetect"
+                               Command="{Binding DetectRuntimesCommand}"/>
+                    <ui:ProgressRing IsIndeterminate="True"
+                                     Width="18" Height="18"
+                                     Margin="10,0,0,0"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding IsDetectingRuntime, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    <TextBlock Text="{loc:Str McpServers_Sandbox_Runtime_Detecting}"
+                               Style="{StaticResource PiaMetaTextStyle}"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeDetecting"
+                               Visibility="{Binding IsDetectingRuntime, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                  </StackPanel>
+                  <TextBlock Text="{Binding RuntimeSummary}"
+                             TextWrapping="Wrap"
+                             Margin="0,8,0,0"
+                             Foreground="{DynamicResource TextDefaultBrush}"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeResult"
+                             Visibility="{Binding RuntimeSummary, Converter={StaticResource NullToVisibilityConverter}}"/>
+                  <TextBlock Text="{Binding RuntimeReason}"
+                             TextWrapping="Wrap"
+                             Margin="0,8,0,0"
+                             Foreground="{DynamicResource PiaDangerBrush}"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeReason"
+                             Visibility="{Binding RuntimeReason, Converter={StaticResource NullToVisibilityConverter}}"/>
+                  <StackPanel Margin="0,8,0,0"
+                              Visibility="{Binding ShowRuntimeFolders, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{loc:Str McpServers_Sandbox_Runtime_ReadonlyFolders}"
+                               Style="{StaticResource PiaMetaTextStyle}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding RuntimeFolders}"
+                               Foreground="{DynamicResource TextDefaultBrush}"
+                               FontFamily="Consolas"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeFolders"/>
+                  </StackPanel>
+                  <TextBlock Text="{loc:Str McpServers_Sandbox_Runtime_ReadableAlready}"
+                             Style="{StaticResource PiaMetaTextStyle}"
+                             TextWrapping="Wrap"
+                             Margin="0,8,0,0"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeReadableAlready"
+                             Visibility="{Binding RuntimeReadableAlready, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                  <TextBlock Text="{Binding RuntimeStateFolderText}"
+                             Style="{StaticResource PiaMetaTextStyle}"
+                             TextWrapping="Wrap"
+                             Margin="0,8,0,0"
+                             AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeStateFolder"
+                             Visibility="{Binding RuntimeStateFolderText, Converter={StaticResource NullToVisibilityConverter}}"/>
+
+                  <Border Style="{StaticResource PiaFieldNoticeStyle}"
+                          Margin="0,10,0,0"
+                          Visibility="{Binding ShowRuntimeFix, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                      <TextBlock Text="{Binding RuntimeFixText}"
+                                 TextWrapping="Wrap"
+                                 Foreground="{DynamicResource TextDefaultBrush}"
+                                 AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeFixText"/>
+                      <ui:Button Content="{loc:Str McpServers_Sandbox_Runtime_Fix}"
+                                 Appearance="Secondary"
+                                 Margin="0,8,0,0"
+                                 HorizontalAlignment="Left"
+                                 AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeFix"
+                                 Command="{Binding GrantRuntimeReadCommand}"/>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Style="{StaticResource PiaFieldNoticeStyle}"
+                          Margin="0,10,0,0"
+                          Visibility="{Binding ShowRuntimeGuide, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                      <TextBlock Text="{Binding RuntimeGuideText}"
+                                 TextWrapping="Wrap"
+                                 Foreground="{DynamicResource TextDefaultBrush}"
+                                 AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideText"/>
+                      <!-- OneWay: the guide commands are get-only, and TextBox.Text binds TwoWay by default. -->
+                      <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox Grid.Column="0"
+                                    Text="{Binding RuntimeGuideCommand, Mode=OneWay}"
+                                    IsReadOnly="True"
+                                    ClearButtonEnabled="False"
+                                    FontFamily="Consolas"
+                                    TextWrapping="Wrap"
+                                    AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideCommand"/>
+                        <ui:Button Grid.Column="1"
+                                   Content="{loc:Str McpServers_Sandbox_Runtime_Copy}"
+                                   Icon="{ui:SymbolIcon Copy24}"
+                                   Appearance="Secondary"
+                                   Margin="6,0,0,0"
+                                   VerticalAlignment="Top"
+                                   AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideCopy"
+                                   Command="{Binding CopyRuntimeGuideCommand}"
+                                   CommandParameter="primary"/>
+                      </Grid>
+                      <StackPanel Visibility="{Binding ShowRuntimeGuideAlt, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock Text="{Binding RuntimeGuideAltText}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,10,0,0"
+                                   Foreground="{DynamicResource TextDefaultBrush}"
+                                   AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideAltText"
+                                   Visibility="{Binding RuntimeGuideAltText, Converter={StaticResource NullToVisibilityConverter}}"/>
+                        <Grid Margin="0,8,0,0">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                          </Grid.ColumnDefinitions>
+                          <ui:TextBox Grid.Column="0"
+                                      Text="{Binding RuntimeGuideAltCommand, Mode=OneWay}"
+                                      IsReadOnly="True"
+                                      ClearButtonEnabled="False"
+                                      FontFamily="Consolas"
+                                      TextWrapping="Wrap"
+                                      AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideAltCommand"/>
+                          <ui:Button Grid.Column="1"
+                                     Content="{loc:Str McpServers_Sandbox_Runtime_Copy}"
+                                     Icon="{ui:SymbolIcon Copy24}"
+                                     Appearance="Secondary"
+                                     Margin="6,0,0,0"
+                                     VerticalAlignment="Top"
+                                     AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideCopyAlt"
+                                     Command="{Binding CopyRuntimeGuideCommand}"
+                                     CommandParameter="alt"/>
+                        </Grid>
+                      </StackPanel>
+                      <TextBlock Text="{loc:Str McpServers_Sandbox_Runtime_Guide_Caveat}"
+                                 Style="{StaticResource PiaMetaTextStyle}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,10,0,0"
+                                 AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeGuideCaveat"/>
+                      <ui:Button Content="{loc:Str McpServers_Sandbox_Runtime_DetectAgain}"
+                                 Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                 Appearance="Secondary"
+                                 Margin="0,8,0,0"
+                                 HorizontalAlignment="Left"
+                                 AutomationProperties.AutomationId="McpServers_Sandbox_RuntimeDetectAgain"
+                                 Command="{Binding DetectRuntimesCommand}"/>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+
                 <TextBlock Text="{loc:Str McpServers_Sandbox_ReadWrite}"
                            Style="{StaticResource PiaSettingsSectionLabelStyle}"
                            Margin="0,14,0,6"/>
@@ -643,6 +804,12 @@
                              Foreground="{DynamicResource TextDefaultBrush}"
                              AutomationProperties.AutomationId="McpServers_Sandbox_NetworkWarning"/>
                 </Border>
+                <TextBlock Text="{loc:Str McpServers_Sandbox_Runtime_DenyHint}"
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,6,0,0"
+                           AutomationProperties.AutomationId="McpServers_Sandbox_RunnerDenyHint"
+                           Visibility="{Binding ShowRunnerDenyHint, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
                 <Border Style="{StaticResource PiaRequiredHintStyle}"
                         Margin="0,10,0,0"
@@ -660,6 +827,11 @@
                                AutomationProperties.AutomationId="McpServers_Sandbox_GuardMessage"/>
                   </StackPanel>
                 </Border>
+                <TextBlock Text="{loc:Str McpServers_Sandbox_EnvHint}"
+                           Style="{StaticResource PiaMetaTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,10,0,0"
+                           AutomationProperties.AutomationId="McpServers_Sandbox_EnvHint"/>
               </StackPanel>
 
               <StackPanel Orientation="Horizontal" Margin="0,18,0,0">

@@ -132,7 +132,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
   detection while the sandbox is on for a runner, the runner network default that survives a folder edit and
   respects a touched switch, step 2 and step 3 state and commands, and the preview prefix.
   *Deps:* C3, D2, G1, U0 · *Effort:* M · *Value:* High
-- [ ] **U2 Editor view.** The runtime block, the step-2 button, the guide with copy buttons, the deny and
+- [x] **U2 Editor view.** The runtime block, the step-2 button, the guide with copy buttons, the deny and
   environment hints and the detail line in `McpServersView.xaml`, every interactive control with its
   AutomationId, the `ViewAutomationIdTests` floor raised to 38, and the playbook's id list.
   *Deps:* U1 · *Effort:* S · *Value:* High
