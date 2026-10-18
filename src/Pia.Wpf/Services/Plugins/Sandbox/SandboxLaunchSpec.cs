@@ -1,3 +1,5 @@
+using Pia.Services.Plugins.Sandbox.Runtimes;
+
 namespace Pia.Services.Plugins.Sandbox;
 
 /// <param name="ReadonlyPaths">The user's read-only folders; the command directory is not in here.</param>
@@ -11,7 +13,17 @@ public sealed record SandboxLaunchSpec(
     IReadOnlyList<string> ReadwritePaths,
     IReadOnlyList<string> ReadonlyPaths,
     bool AllowNetwork,
-    string? GrantedCommandDirectory);
+    string? GrantedCommandDirectory,
+    IReadOnlyList<string>? ToolchainDirectories = null,
+    string? RuntimeStateDirectory = null,
+    bool RuntimeStateReadOnly = false,
+    string? SupportDirectory = null,
+    RunnerKind RunnerKind = RunnerKind.None,
+    RuntimePreparation? Preparation = null,
+    bool ReplaceEnvironmentBlock = false)
+{
+    public IReadOnlyList<string> Toolchain => ToolchainDirectories ?? [];
+}
 
 /// <summary>Exactly one of <see cref="Spec"/> and <see cref="Error"/> is set.</summary>
 public sealed record SandboxLaunchPlan(SandboxLaunchSpec? Spec, string? Error)

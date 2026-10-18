@@ -47,6 +47,15 @@ public static class PiaPaths
     /// <summary>Per-server read-write folders for sandboxed MCP servers. Routed: the files are user data.</summary>
     public static string McpSandboxRoot => Path.Combine(LocalDataDirectory, "McpSandbox");
 
+    /// <summary>A sibling of the server's own folder, never inside it, so its file tools never see the runtime.</summary>
+    public static string McpRuntimeStateDirectory(string prefix) => Path.Combine(McpSandboxRoot, prefix + ".runtime");
+
+    /// <summary>Outside every state folder, because a server can write its own.</summary>
+    public static string McpSandboxGrantsDirectory => Path.Combine(LocalDataDirectory, "McpSandboxGrants");
+
+    /// <summary>Granted read-only to every Node start; no container can write it.</summary>
+    public static string McpSandboxSupportDirectory => Path.Combine(LocalDataDirectory, "McpSandboxSupport");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);

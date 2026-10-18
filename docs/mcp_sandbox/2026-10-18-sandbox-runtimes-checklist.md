@@ -42,7 +42,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### A Contract and gates
 
-- [ ] **A1 Contract and parser.** Every new enum, record and interface of the plan's *Contract*, the optional
+- [x] **A1 Contract and parser.** Every new enum, record and interface of the plan's *Contract*, the optional
   trailing `SandboxLaunchSpec` fields, the three `PiaPaths` additions, `CommandLine.Split`,
   `SandboxContainerLease.IsActive`, `RuntimeStateLocks`, the frozen `FakeRuntimeHost` and `PathFreeAssert`
   test helpers, and `RunnerCommandParser` with its table tests, uvx value validation included.
