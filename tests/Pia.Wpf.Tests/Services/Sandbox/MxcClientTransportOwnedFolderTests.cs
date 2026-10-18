@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Paths;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
 
@@ -37,6 +38,34 @@ public sealed class MxcClientTransportOwnedFolderTests : IDisposable
         await using var session = await Transport(Spec(owned)).ConnectAsync(TestContext.Current.CancellationToken);
 
         Assert.True(Directory.Exists(owned));
+    }
+
+    [Fact]
+    public async Task TheProvisioner_RunsOnceTheOwnedFoldersExist_AndBeforeTheGrantCheck()
+    {
+        using var _ = PiaPaths.OverrideForTests(null, _local);
+        var owned = Path.Combine(PiaPaths.McpSandboxRoot, "fs");
+        var events = new List<string>();
+        var verifier = Substitute.For<ISandboxGrantVerifier>();
+        verifier.Verify(Arg.Any<SandboxLaunchSpec>()).Returns(call =>
+        {
+            events.Add("verify");
+            return new SandboxGrantResult(true, 0, null);
+        });
+        var provisioner = Substitute.For<IRuntimeStateProvisioner>();
+        provisioner.PrepareAsync(Arg.Any<SandboxLaunchSpec>(), Arg.Any<Action<string>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                events.Add(Directory.Exists(owned) ? "prepare, folders exist" : "prepare, folders missing");
+                return Task.FromResult(call.Arg<SandboxLaunchSpec>());
+            });
+        var spec = Spec(owned) with { RuntimeStateDirectory = PiaPaths.McpRuntimeStateDirectory("fs"), RunnerKind = RunnerKind.Npx };
+        var transport = new MxcClientTransport(spec, new FakeMxcProcessLauncher(), verifier, NullLogger.Instance,
+            NullLoggerFactory.Instance, provisioner);
+
+        await using var session = await transport.ConnectAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(["prepare, folders exist", "verify"], events);
     }
 
     [Fact]
