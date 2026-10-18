@@ -196,13 +196,15 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
             Args = ["-c", UvEntryPointResolver.Code(request.Spec.CommandName, entry.Module, entry.Attr), .. request.ServerArgs],
         };
 
-    // A failed recursive delete has already removed every file it could reach, so a running server is checked first.
+    // A failed recursive delete has already removed every file it could reach, so a running server is checked first;
+    // one that was not given the state folder cannot be using the tool.
     private void RefuseWhileAContainerRuns(string containerName)
     {
-        if (!SandboxLaunchSpecBuilder.ContainerNames(SandboxLaunchSpecBuilder.PrefixOf(containerName)).Any(SandboxContainerLease.IsActive))
+        if (!SandboxLaunchSpecBuilder.ContainerNames(SandboxLaunchSpecBuilder.PrefixOf(containerName))
+                .Any(name => SandboxContainerLease.IsActive(name) && store.StateGranted(name)))
             return;
 
-        logger.LogInformation("uv tool for {Container} not replaced: a container of this server is running", containerName);
+        logger.LogInformation("uv tool for {Container} not replaced: a running container of this server was given the state folder", containerName);
         throw new SandboxStartException(InUseMessage);
     }
 
@@ -282,19 +284,29 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
         File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes);
 
     // A start without a state folder grants none, so it keeps an earlier read-write grant on record until the next clear.
-    private void WriteGrantRecord(SandboxLaunchSpec spec) =>
-        store.WriteGrantRecord(
-            spec.ContainerName,
-            GrantRoots(spec),
-            spec.RuntimeStateDirectory is null ? store.StateGrantedReadOnly(spec.ContainerName) != false : spec.RuntimeStateReadOnly);
+    private void WriteGrantRecord(SandboxLaunchSpec spec)
+    {
+        try
+        {
+            store.WriteGrantRecord(
+                spec.ContainerName,
+                RuntimeRoots(spec),
+                spec.RuntimeStateDirectory is null ? store.StateGrantedReadOnly(spec.ContainerName) != false : spec.RuntimeStateReadOnly,
+                [.. spec.ReadwritePaths.Concat(spec.ReadonlyPaths).Distinct(StringComparer.OrdinalIgnoreCase)]);
+        }
+        // Without a state folder the record only widens later sweeps, so losing it must not stop the start.
+        catch (Exception ex) when (spec.RuntimeStateDirectory is null && ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning("Grant record for {Container} not written: {Error}", spec.ContainerName, ex.GetType().Name);
+            logger.SensitiveDebug("Grant record for {Container} not written: {Message}", spec.ContainerName, ex.Message);
+        }
+    }
 
-    private static List<string> GrantRoots(SandboxLaunchSpec spec) =>
+    private static List<string> RuntimeRoots(SandboxLaunchSpec spec) =>
         [.. spec.Toolchain
             .Append(spec.GrantedCommandDirectory)
             .Append(spec.RuntimeStateDirectory)
             .Append(spec.SupportDirectory)
-            .Concat(spec.ReadwritePaths)
-            .Concat(spec.ReadonlyPaths)
             .OfType<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase)];
 

@@ -121,13 +121,65 @@ public sealed class RuntimeStateStoreTests : IClassFixture<RedirectedProfileFixt
     [Theory]
     [InlineData("{\"container\":\"x\",\"roots\":[],\"writtenUtc\":\"2026-10-18T00:00:00Z\"}")]
     [InlineData("{ not json")]
-    public void ARecordWithoutTheStateAccess_OrDamaged_CountsAsReadWrite(string content)
+    public void ARecordWithoutTheStateAccess_OrDamaged_CountsAsAReadWriteGrant(string content)
     {
         var container = $"pia-mcp-{NewPrefix()}-probe";
         Directory.CreateDirectory(PiaPaths.McpSandboxGrantsDirectory);
         File.WriteAllText(Record(container), content);
 
         Assert.False(_store.StateGrantedReadOnly(container));
+        Assert.True(_store.StateGranted(container));
+    }
+
+    [Fact]
+    public void TheStateGrant_IsTheLastStartsOwn_NotAStateFolderKeptOnRecord()
+    {
+        var prefix = NewPrefix();
+        var container = $"pia-mcp-{prefix}";
+        var spelledOtherwise = StateOf(prefix).ToUpperInvariant() + @"\";
+        Assert.False(_store.StateGranted(container));
+
+        _store.WriteGrantRecord(container, [@"C:\Tools\uv", spelledOtherwise], stateReadOnly: true);
+        Assert.True(_store.StateGranted(container));
+
+        _store.WriteGrantRecord(container, [@"C:\Tools\server"], stateReadOnly: true);
+        Assert.False(_store.StateGranted(container));
+        using var json = JsonDocument.Parse(File.ReadAllText(Record(container)));
+        Assert.False(json.RootElement.GetProperty("stateGranted").GetBoolean());
+        Assert.Contains(spelledOtherwise, json.RootElement.GetProperty("roots").EnumerateArray().Select(r => r.GetString()));
+    }
+
+    [Fact]
+    public void PolicyFolders_AreRecordedApart_AndOnlySweepRootsHoldThem()
+    {
+        var prefix = NewPrefix();
+        var state = StateOf(prefix);
+        _store.WriteGrantRecord($"pia-mcp-{prefix}", [@"C:\Tools\node", state], policyRoots: [@"C:\box\rw", @"C:\box\ro"]);
+        _store.WriteGrantRecord($"pia-mcp-{prefix}-probe", [@"C:\Tools\support"], policyRoots: [@"C:\box\probe", @"C:\TOOLS\NODE"]);
+
+        using (var json = JsonDocument.Parse(File.ReadAllText(Record($"pia-mcp-{prefix}"))))
+        {
+            Assert.Equal([@"C:\Tools\node", state], json.RootElement.GetProperty("roots").EnumerateArray().Select(r => r.GetString()));
+            Assert.Equal([@"C:\box\rw", @"C:\box\ro"], json.RootElement.GetProperty("policyRoots").EnumerateArray().Select(r => r.GetString()));
+        }
+
+        Assert.Equal(
+            [state, @"C:\Tools\node", @"C:\box\rw", @"C:\box\ro", @"C:\Tools\support", @"C:\box\probe"], _store.SweepRoots(prefix));
+        Assert.Equal([state, @"C:\Tools\node", @"C:\Tools\support"], _store.RuntimeRoots(prefix));
+    }
+
+    [Fact]
+    public void ADroppedPolicyFolder_StaysOnRecordWhileItIsOnDisk_AsAPolicyFolder()
+    {
+        var prefix = NewPrefix();
+        var container = $"pia-mcp-{prefix}";
+        var dropped = Directory.CreateDirectory(Path.Combine(_outside, "dropped")).FullName;
+        _store.WriteGrantRecord(container, [@"C:\Tools\node"], policyRoots: [dropped, Path.Combine(_outside, "gone")]);
+
+        _store.WriteGrantRecord(container, [@"C:\Tools\node"], policyRoots: [@"C:\box\keep"]);
+
+        Assert.Equal([@"C:\Tools\node", @"C:\box\keep", dropped], _store.SweepRoots(prefix));
+        Assert.Equal([@"C:\Tools\node"], _store.RuntimeRoots(prefix));
     }
 
     [Fact]
@@ -261,6 +313,7 @@ public sealed class RuntimeStateStoreTests : IClassFixture<RedirectedProfileFixt
         try
         {
             Assert.Empty(_store.SweepRoots(prefix));
+            Assert.Empty(_store.RuntimeRoots(prefix));
             Assert.False(_store.TryDelete(prefix, () => called = true));
 
             Assert.False(called);
