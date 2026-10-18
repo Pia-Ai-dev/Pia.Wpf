@@ -1,8 +1,8 @@
 # Sandboxed MCP servers on npx, uvx and dnx: plan
 
-**Status:** Planned, not started. Three gates are open: G-ENV and G-LINK (real container, step A2) and
-G-UVCACHE (host side, step A3). G-UVSPEC is closed by construction: Pia reinstalls a uvx tool whenever its
-spec changes, whatever uv itself would do.
+**Status:** In progress on `feature/mxc-sandboxed-mcp`. All gates are answered (see the checklist): an empty
+value blanks a variable (G-ENV), a container cannot plant a link to a folder it cannot write (G-LINK), a uv
+tool starts after its caches are pruned (G-UVCACHE), and Pia reinstalls on a spec change (G-UVSPEC).
 **Owner:** Marco Altmann
 **Written:** 2026-10-18
 **Origin:** The owner-approved concept [2026-10-18-sandbox-runtimes-design.md](2026-10-18-sandbox-runtimes-design.md)

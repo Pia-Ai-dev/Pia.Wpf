@@ -1,6 +1,6 @@
 # Sandboxed MCP servers on npx, uvx and dnx: checklist
 
-**Status:** Not started. Gates G-ENV, G-LINK and G-UVCACHE are open.
+**Status:** In progress. A1–A3 done; every decision gate is answered.
 **Owner:** Marco Altmann
 **Written:** 2026-10-18
 **Origin:** [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md)
