@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Mxc.Sdk.V1;
 using Pia.Services.Plugins.Sandbox;
 
@@ -39,6 +40,9 @@ internal static class MxcTestHost
             return "mxc_ffi.dll was not copied to the test output";
 
         Environment.SetEnvironmentVariable("MXC_FFI_DIR", NativeDirectory);
+
+        // Per process, so two test runs on one host never spawn the same container name at once.
+        var prefix = "test-probe-" + Environment.ProcessId;
         try
         {
             var support = MxcPlatform.GetPlatformSupport();
@@ -47,7 +51,7 @@ internal static class MxcTestHost
 
             var request = new ContainerRequest("\"" + Path.Combine(Environment.SystemDirectory, "cmd.exe") + "\" /c exit 0")
             {
-                ContainerName = "pia-mcp-test-probe",
+                ContainerName = SandboxLaunchSpecBuilder.ContainerName(prefix, isProbe: false),
                 Ui = new UiPolicy { Disable = false },
                 InheritDefaultEnvironment = true
             };
@@ -59,6 +63,10 @@ internal static class MxcTestHost
         catch (Exception ex)
         {
             return $"MXC cannot create a container here: {ex.GetType().Name}: {ex.Message}";
+        }
+        finally
+        {
+            new AppContainerProfileService(NullLogger<AppContainerProfileService>.Instance).DeleteServerProfiles(prefix);
         }
     }
 }
