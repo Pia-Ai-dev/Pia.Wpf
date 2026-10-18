@@ -12,6 +12,7 @@ using Pia.Services.Interfaces;
 using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.Shared.Models;
 
 namespace Pia.Services.Plugins;
@@ -43,6 +44,7 @@ public class PluginService : IPluginService
     private readonly IMxcAvailability? _mxcAvailability;
     private readonly IAppContainerProfileService? _profileService;
     private readonly IAceSweeper? _aceSweeper;
+    private readonly IRuntimeStateStore? _runtimeStateStore;
 
     private readonly Dictionary<Guid, IPluginToolHandler> _handlers = new();
     private readonly Dictionary<string, IPluginToolHandler> _toolNameRoutes = new();
@@ -90,7 +92,8 @@ public class PluginService : IPluginService
         IMcpTransportFactory? transportFactory = null,
         IMxcAvailability? mxcAvailability = null,
         IAppContainerProfileService? profileService = null,
-        IAceSweeper? aceSweeper = null)
+        IAceSweeper? aceSweeper = null,
+        IRuntimeStateStore? runtimeStateStore = null)
     {
         _memoryToolHandler = memoryToolHandler;
         _todoToolHandler = todoToolHandler;
@@ -115,6 +118,7 @@ public class PluginService : IPluginService
         _mxcAvailability = mxcAvailability;
         _profileService = profileService;
         _aceSweeper = aceSweeper;
+        _runtimeStateStore = runtimeStateStore;
 
         InitializeBuiltInPlugins();
         LoadPersistedPlugins();
@@ -272,7 +276,77 @@ public class PluginService : IPluginService
 
         if (serverPlugins.Count > 0)
             _logger.LogInformation("Initialized {Count} persisted server plugin handler(s)", serverPlugins.Count);
+
+        // An orphan is the state of a probe whose server was never saved; servers start first, cleanup can wait.
+        await CleanUpOrphanedRuntimeStateAsync();
     }
+
+    private async Task CleanUpOrphanedRuntimeStateAsync()
+    {
+        if (_runtimeStateStore is not { } store)
+            return;
+
+        try
+        {
+            var known = SavedLocalPrefixes();
+            var orphans = await Task.Run(() => store.OrphanPrefixes(known));
+
+            foreach (var orphan in orphans)
+            {
+                // Read here, not on the pool: saves change the catalogue on this thread, and one may have claimed it.
+                if (SavedLocalPrefixes().Contains(orphan))
+                    continue;
+
+                await TryDeleteRuntimeStateAsync(orphan, () => CleanUpOrphanContainers(store, orphan));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("The runtime state cleanup failed: {ExceptionType}", ex.GetType().Name);
+            _logger.SensitiveDebug("The runtime state cleanup failure: {Message}", ex.Message);
+        }
+    }
+
+    private void CleanUpOrphanContainers(IRuntimeStateStore store, string prefix)
+    {
+        if (_aceSweeper is { } sweeper)
+            SweepAces(sweeper, () => store.SweepRoots(prefix), ContainerNames(prefix));
+
+        try
+        {
+            _profileService?.DeleteServerProfiles(prefix);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Deleting the container profiles of prefix {Prefix} failed: {ExceptionType}", prefix, ex.GetType().Name);
+            _logger.SensitiveDebug("The container profile deletion failure: {Message}", ex.Message);
+        }
+    }
+
+    private async Task TryDeleteRuntimeStateAsync(string prefix, Action? beforeDelete = null)
+    {
+        if (_runtimeStateStore is not { } store)
+            return;
+
+        try
+        {
+            if (!await Task.Run(() => store.TryDelete(prefix, beforeDelete)))
+                _logger.LogInformation("Runtime state for prefix {Prefix} is in use; the next start removes it", prefix);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Deleting the runtime state of prefix {Prefix} failed: {ExceptionType}", prefix, ex.GetType().Name);
+            _logger.SensitiveDebug("The runtime state deletion failure: {Message}", ex.Message);
+        }
+    }
+
+    private HashSet<string> SavedLocalPrefixes() =>
+        _pluginConfigs.Values
+            .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson))
+            .Select(p => ReadLocalDefinition(p)?.ToolPrefix)
+            .OfType<string>()
+            .Where(p => p.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private List<SyncPlugin> LoadPluginsFromDb()
     {
@@ -579,6 +653,9 @@ public class PluginService : IPluginService
         if (_profileService is not null && !string.IsNullOrEmpty(prefix))
             _profileService.DeleteServerProfiles(prefix);
 
+        if (!string.IsNullOrEmpty(prefix))
+            await TryDeleteRuntimeStateAsync(prefix);
+
         lock (_pendingPrefs)
             _pendingPrefs.RemoveAll(p => p.PluginId == pluginId);
 
@@ -601,6 +678,7 @@ public class PluginService : IPluginService
 
         await SweepSandboxLeaksAsync([previous]);
         _profileService?.DeleteServerProfiles(previous.ToolPrefix);
+        await TryDeleteRuntimeStateAsync(previous.ToolPrefix);
     }
 
     private async Task ShutdownHandlerAsync(Guid pluginId)
@@ -623,6 +701,11 @@ public class PluginService : IPluginService
         UnregisterHandler(pluginId);
         (handler as IDisposable)?.Dispose();
     }
+
+    public string PreviewLocalMcpToolPrefix(Guid? pluginId, string name) =>
+        UniqueToolPrefix(
+            LocalMcpDefinition.Empty with { Name = name, ToolPrefix = LocalMcpConfig.DeriveToolPrefix(name) },
+            pluginId ?? Guid.Empty);
 
     /// <summary>Two servers sharing a prefix would collide again on the very names the prefix exists to keep
     /// apart.</summary>
@@ -911,31 +994,55 @@ public class PluginService : IPluginService
 
     private async Task SweepSandboxLeaksAsync(IEnumerable<LocalMcpDefinition?> definitions, LocalMcpDefinition? stillGranted = null)
     {
-        if (_aceSweeper is null)
+        if (_aceSweeper is not { } sweeper)
             return;
 
         var sandboxed = definitions.OfType<LocalMcpDefinition>().Where(d => d.Sandbox is not null).ToList();
         if (sandboxed.Count == 0)
             return;
 
-        var kept = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (stillGranted?.Sandbox is { } policy)
-            kept.UnionWith(SandboxLaunchSpecBuilder.PolicyRoots(policy, stillGranted.Command, stillGranted.WorkingDirectory));
+        var names = sandboxed.SelectMany(d => ContainerNames(d.ToolPrefix)).ToList();
+        await Task.Run(() => SweepAces(sweeper, () => LeakedRoots(sandboxed, stillGranted), names));
+    }
 
-        var roots = sandboxed
-            .SelectMany(d => SandboxLaunchSpecBuilder.PolicyRoots(d.Sandbox!, d.Command, d.WorkingDirectory))
+    private IEnumerable<string> LeakedRoots(IReadOnlyList<LocalMcpDefinition> sandboxed, LocalMcpDefinition? stillGranted)
+    {
+        var kept = stillGranted?.Sandbox is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : GrantedRoots(stillGranted).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return sandboxed
+            .SelectMany(GrantedRoots)
             .Where(root => !kept.Contains(root))
-            .ToList();
-        if (roots.Count == 0)
-            return;
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+    }
 
-        var names = sandboxed
-            .SelectMany(d => new[] { SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, false), SandboxLaunchSpecBuilder.ContainerName(d.ToolPrefix, true) })
-            .ToList();
+    private IEnumerable<string> GrantedRoots(LocalMcpDefinition definition)
+    {
+        var policyRoots = SandboxLaunchSpecBuilder.PolicyRoots(
+            definition.Sandbox!, EffectiveCommand(definition), definition.WorkingDirectory);
 
+        return _runtimeStateStore is null || string.IsNullOrEmpty(definition.ToolPrefix)
+            ? policyRoots
+            : policyRoots.Concat(_runtimeStateStore.SweepRoots(definition.ToolPrefix));
+    }
+
+    // A cmd /c <exe> server launches the exe, so the exe's folder is the one it was granted.
+    private static string EffectiveCommand(LocalMcpDefinition definition) =>
+        RunnerCommandParser.Parse(definition.Command, definition.Args, definition.WorkingDirectory) is { Kind: RunnerKind.None } parsed
+            ? parsed.EffectiveCommand
+            : definition.Command;
+
+    private static string[] ContainerNames(string prefix) =>
+        [SandboxLaunchSpecBuilder.ContainerName(prefix, false), SandboxLaunchSpecBuilder.ContainerName(prefix, true)];
+
+    private void SweepAces(IAceSweeper sweeper, Func<IEnumerable<string>> roots, IReadOnlyList<string> names)
+    {
         try
         {
-            await Task.Run(() => _aceSweeper.Sweep(roots, names));
+            var list = roots().ToList();
+            if (list.Count > 0)
+                sweeper.Sweep(list, names);
         }
         catch (Exception ex)
         {

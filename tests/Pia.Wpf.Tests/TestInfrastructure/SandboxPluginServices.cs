@@ -7,6 +7,7 @@ using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Services.Plugins;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 
 namespace Pia.Tests.TestInfrastructure;
 
@@ -18,7 +19,8 @@ internal static class SandboxPluginServices
         IMxcAvailability availability,
         IAppContainerProfileService? profiles = null,
         IAceSweeper? sweeper = null,
-        ILogger<PluginService>? logger = null) =>
+        ILogger<PluginService>? logger = null,
+        IRuntimeStateStore? runtimeStateStore = null) =>
         new(
             Substitute.For<IMemoryToolHandler>(),
             Substitute.For<ITodoToolHandler>(),
@@ -42,7 +44,8 @@ internal static class SandboxPluginServices
             transportFactory: factory,
             mxcAvailability: availability,
             profileService: profiles,
-            aceSweeper: sweeper);
+            aceSweeper: sweeper,
+            runtimeStateStore: runtimeStateStore);
 }
 
 internal sealed class ReadyMxcAvailability : IMxcAvailability
