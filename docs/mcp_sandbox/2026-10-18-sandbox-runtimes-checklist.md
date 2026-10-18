@@ -139,11 +139,11 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### T Real-container tests
 
-- [ ] **T1 Runner starts in a real container.** Gate tests: `dotnet <dll>` with the test server through the
+- [x] **T1 Runner starts in a real container.** Gate tests: `dotnet <dll>` with the test server through the
   real factory and detector, and a dependency-free Node fixture server on a temp `node.exe` copy whose realpath
   check proves the preload, with ACE hygiene after dispose.
   *Deps:* C3 · *Effort:* S · *Value:* High
-- [ ] **T2 Live downloads.** `[LiveApiFact]` tests for npx (cold, warm, warm Deny), dnx without `--yes` in the
+- [x] **T2 Live downloads.** `[LiveApiFact]` tests for npx (cold, warm, warm Deny), dnx without `--yes` in the
   user's arguments, and uvx under Deny after an Allow start.
   *Deps:* C3 · *Effort:* S · *Value:* Med
 
