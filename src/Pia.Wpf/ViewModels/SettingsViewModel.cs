@@ -6,6 +6,7 @@ using Pia.Services;
 using Pia.Services.Credits;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.Navigation;
 
 namespace Pia.ViewModels;
@@ -63,7 +64,9 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IAccountDataService accountData,
         IFileDialogService fileDialogs,
         ICreditStatusService creditStatus,
-        IMxcAvailability mxcAvailability)
+        IMxcAvailability mxcAvailability,
+        ISandboxRuntimeService? sandboxRuntime = null,
+        IClipboardService? clipboard = null)
     {
         _logger = logger;
 
@@ -78,7 +81,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         var toolPermissionsVm = new ToolPermissionsSettingsViewModel(
             toolPermissionService, pluginService, logger, screenCaptureAllowlistStore, dialogService);
         var meetingVm = new MeetingSettingsViewModel(logger, settingsService, localizationService, policyService);
-        var mcpServersVm = new McpServersSettingsViewModel(pluginService, dialogService, localizationService, snackbarService, mxcAvailability, fileDialogs, logger);
+        var mcpServersVm = new McpServersSettingsViewModel(pluginService, dialogService, localizationService, snackbarService, mxcAvailability, fileDialogs, logger, sandboxRuntime, clipboard);
         AssistantVm = new AssistantSettingsViewModel(ProvidersVm, PersonasVm, toolPermissionsVm, mcpServersVm, meetingVm, logger, settingsService, assistantChatService, dialogService, localizationService, folderRelocationService, workingDirectoryService, policyService, personaService);
 
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
