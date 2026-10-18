@@ -60,7 +60,7 @@ public static class PiaPaths
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);
 
-    // Redaction keys for the log sink, not data paths: the REAL profile roots, which an override still sits under.
+    // The REAL profile roots, not data paths: log redaction keys and sandbox toolchain discovery.
     public static string RoamingProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
     public static string LocalProfileRoot => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
