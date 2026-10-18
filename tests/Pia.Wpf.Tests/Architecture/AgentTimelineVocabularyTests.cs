@@ -104,6 +104,7 @@ public class AgentTimelineVocabularyTests
             ["Ingest"] = 8,
             ["Assignment"] = 9,
             ["Screen"] = 10,
+            ["KnowledgeBase"] = 11,
         }, Enum.GetValues<ToolClass>());
 
         AssertGoldenMap(new Dictionary<string, int>

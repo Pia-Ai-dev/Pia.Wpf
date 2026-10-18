@@ -103,28 +103,33 @@ The rules are a ratchet, not a one-time cleanup: when you touch a member, bring 
 
 ## Git Workflow
 
-Main: `main`. Features: `feature/<name>`.
+`feature/<name>` from `develop` → PR into `develop` → `release/<yyyy-mm-dd>` → PR into `main` → CI
+tags `vX.Y.N` → `back-merge/<ver>` → PR into `develop`. Hotfixes: `hotfix/<name>` from `main` → PR
+into `main` → back-merge. `develop` is the default branch and builds only on a manual run, which
+uploads the installers as an artifact; a push to `main` cuts a release. Every change reaches
+`develop` and `main` by a pull request merged with **Create a merge commit** — never squash or
+rebase, or the back-merge conflicts. A Claude Code hook blocks local writes to both. Branching, PRs,
+cutting, shipping and hotfixes go through the `release-flow` skill.
 
 Before treating a feature branch as done, clear the **Zero-Warning Policy** above.
 
-**Mandatory before every push to `main`:** run the `help-corpus` skill
-(`.claude/skills/help-corpus/`). That push cuts a release, and the help corpus the assistant's
+**Mandatory on every `release/*` branch before its PR into `main`:** run the `help-corpus` skill
+(`.claude/skills/help-corpus/`). That merge cuts a release, and the help corpus the assistant's
 `pia_help` tool searches is a checked-in artifact CI cannot regenerate — so a stale one ships. The
 skill also checks that Pia.Docs covers what the release notes claim.
 
 ## Release Notes
 
-`docs/release_notes/RELEASE.md` is the curated, cumulative changelog for the **next** release —
-rewrite it in place as work lands; it ships as the GitHub release body and, verbatim, as
-`storage.pia-ai.de/f/wpf/RELEASE-NOTES.md`. The build stamps the version header itself and falls
-back to a raw `git-cliff` commit dump only when the file has no changes since the last release
-tag — so an unedited file is safe, but the bar for "curated" is that the body actually changed,
-not that anyone remembered a version number. Read `docs/release_notes/README.md` for the format
+`docs/release_notes/RELEASE.md` is the curated changelog for the **next** release — written on the
+`release/*` or `hotfix/*` branch, never in a feature PR (that makes the back-merge conflict). It
+ships as the GitHub release body and, verbatim, as `storage.pia-ai.de/f/wpf/RELEASE-NOTES.md`. The
+build stamps the version header itself and falls back to a raw `git-cliff` commit dump only when
+the file has no changes since the last release tag — so an unedited file is safe, but the bar for
+"curated" is that the body actually changed, not that anyone remembered a version number. Read `docs/release_notes/README.md` for the format
 rules (hard-wrap 80, one bullet level, no tables, four lines per bullet) before editing it. After
-a release ships you **must** archive it by hand — copy to `YYYY-MM-DD-<version>.md`, truncate
-`RELEASE.md`, commit with `[skip ci]` — because a push to `main` without it cuts another release.
-CI cannot do this: the `Main` ruleset refuses the bot's push, so the step was removed. A build now
-refuses to start if `RELEASE.md` still holds the previous release's body.
+a release ships, the `back-merge/<ver>` branch archives it — copy to `YYYY-MM-DD-<version>.md`,
+truncate `RELEASE.md` — on its way into `develop`. A release build refuses to start if `RELEASE.md`
+still holds the previous release's body.
 
 ## Privacy-First Logging
 

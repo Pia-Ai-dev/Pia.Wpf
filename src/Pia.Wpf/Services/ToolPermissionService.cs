@@ -63,6 +63,7 @@ public class ToolPermissionService : IToolPermissionService
         "delete_todo",
         "delete_reminder",
         "delete_scheduled_research",
+        "delete_kb_document",
         "forget"
     };
 
@@ -106,6 +107,8 @@ public class ToolPermissionService : IToolPermissionService
         "query_scheduled_research", "list_routine_blueprints",
         "query_assignments", "get_assignment",
         "git_status", "git_log", "git_diff", "git_branch", "git_show",
+        "list_knowledge_bases", "get_knowledge_base_stats", "list_kb_documents", "get_kb_prompt",
+        "read_kb_document", "download_kb_document",
         "pia_help", "pia_settings",
     };
 

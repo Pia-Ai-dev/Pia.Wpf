@@ -14,26 +14,66 @@ internal static class ToolApprovalArguments
     private const int MaxTotalChars = 400;
 
     /// <summary>One call's string arguments as <c>key=value</c> pairs, or null when it carried none.</summary>
-    internal static string? Describe(FunctionCallContent call)
-    {
-        if (call.Arguments is null || call.Arguments.Count == 0)
-            return null;
-
-        var parts = new List<string>(call.Arguments.Count);
-        foreach (var (key, value) in call.Arguments)
-        {
-            var text = value switch
+    internal static string? Describe(FunctionCallContent call) =>
+        call.Arguments is null
+            ? null
+            : JoinPairs(call.Arguments.Select(a => (a.Key, Text: a.Value switch
             {
                 string s => s,
                 JsonElement { ValueKind: JsonValueKind.String } el => el.GetString(),
                 _ => null,
-            };
+            })));
 
-            if (!string.IsNullOrWhiteSpace(text))
-                parts.Add($"{key}={Cap(text, MaxValueChars)}");
+    /// <summary><see cref="Describe"/> as it comes out for arguments that were persisted as JSON.</summary>
+    private static string? DescribeJson(string? argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argumentsJson))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(argumentsJson);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                ? JoinPairs(doc.RootElement.EnumerateObject().Select(p =>
+                    (p.Name, Text: p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString() : null)))
+                : null;
         }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? JoinPairs(IEnumerable<(string Key, string? Text)> pairs)
+    {
+        var parts = pairs
+            .Where(p => !string.IsNullOrWhiteSpace(p.Text))
+            .Select(p => $"{p.Key}={Cap(p.Text!, MaxValueChars)}")
+            .ToList();
 
         return parts.Count == 0 ? null : string.Join(" ", parts);
+    }
+
+    /// <summary>What a call does and what to watch for, as one line; null without a description.</summary>
+    internal static string? Heading(string? description, string? warning)
+    {
+        if (string.IsNullOrWhiteSpace(description))
+            return null;
+
+        var parts = new List<string> { description.Trim() };
+        if (!string.IsNullOrWhiteSpace(warning))
+            parts.AddRange(warning.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        return string.Join(" — ", parts);
+    }
+
+    /// <summary>The stored display text when it is a heading; null when it is just the argument line an older row holds.</summary>
+    internal static string? ParkedHeading(string? displayArgs, string? argumentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(displayArgs))
+            return null;
+
+        return string.Equals(displayArgs, DescribeJson(argumentsJson), StringComparison.Ordinal) ? null : displayArgs;
     }
 
     /// <summary>Every parked call's description as one envelope-sized line, or null when there is nothing to show.</summary>

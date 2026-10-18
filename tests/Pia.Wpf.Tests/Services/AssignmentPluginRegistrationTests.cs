@@ -5,6 +5,7 @@ using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Services.Plugins;
 using Pia.Shared.Models;
@@ -84,7 +85,9 @@ public sealed class AssignmentPluginRegistrationTests : IDisposable
             handler,
             Substitute.For<IScreenCaptureToolHandler>(),
             Substitute.For<IHelpToolHandler>(),
+            Substitute.For<IKnowledgeManagerToolHandler>(),
             cache,
+            Substitute.For<IKnowledgeManagerSurfaceCache>(),
             SettingsStubs.Returning(),
             NullLogger<PluginService>.Instance,
             _sqlite);

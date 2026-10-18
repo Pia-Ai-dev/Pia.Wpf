@@ -20,3 +20,12 @@ sample proved matters:
 | `__properties_version1.0` (root) | Holds `PR_CLIENT_SUBMIT_TIME` (`0x0039`, PT_SYSTIME) as a FILETIME. |
 
 Expected values are asserted in `tests/Pia.Wpf.Tests/Helpers/MsgReaderTests.cs`.
+
+## `anthropic-two-search-stream.sse`, `anthropic-two-search-buffered.json`
+
+Real Messages API responses (`claude-sonnet-5-5`, adaptive thinking, `web_search_20250305`, one client
+tool `save_note`), recorded byte-for-byte from the response body only — no request or response headers.
+The prompt is a neutral public query (latest Rust and Go releases), so the files hold no user data. Each
+carries a signed thinking block, two `server_tool_use` / `web_search_tool_result` pairs, cited text and a
+client `tool_use`, ending in `stop_reason: tool_use`. `-text` in `.gitattributes` keeps the bytes exact.
+Used by the Anthropic native-replay accumulator and replay tests.

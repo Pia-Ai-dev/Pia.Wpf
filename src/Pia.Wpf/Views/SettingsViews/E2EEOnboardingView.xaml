@@ -130,6 +130,62 @@
       </Border>
     </StackPanel>
 
+    <!-- State: Confirming the approving device -->
+    <StackPanel>
+      <StackPanel.Style>
+        <Style TargetType="StackPanel">
+          <Setter Property="Visibility" Value="Collapsed"/>
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding OnboardingViewModel.State}" Value="{x:Static models:OnboardingState.ConfirmingApprover}">
+              <Setter Property="Visibility" Value="Visible"/>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </StackPanel.Style>
+
+      <Border Style="{StaticResource PiaSettingsCardStyle}"
+              Padding="16"
+              Margin="0,0,0,10">
+        <StackPanel>
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Confirm_Title}"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextDefaultBrush}"
+                     Margin="0,0,0,4"/>
+          <TextBlock Text="{loc:Str E2EE_Onboarding_Confirm_Description}"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,12"/>
+
+          <TextBlock FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     Margin="0,0,0,4">
+            <Run Text="{loc:Str E2EE_Onboarding_Confirm_ApproverLabel}"/>
+            <Run Text="{Binding OnboardingViewModel.ApproverDeviceName, Mode=OneWay}"/>
+          </TextBlock>
+          <TextBlock Text="{Binding OnboardingViewModel.ApproverFingerprint}"
+                     AutomationProperties.AutomationId="E2EEOnboarding_ApproverFingerprint"
+                     FontFamily="{StaticResource PiaMonoFont}"
+                     FontSize="16"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextDefaultBrush}"
+                     Margin="0,0,0,12"/>
+
+          <StackPanel Orientation="Horizontal">
+            <ui:Button Content="{loc:Str E2EE_Onboarding_Confirm_Matches}"
+                       Appearance="Primary"
+                       Command="{Binding OnboardingViewModel.ConfirmApproverCommand}"
+                       AutomationProperties.AutomationId="E2EEOnboarding_ConfirmApprover"
+                       Margin="0,0,8,0"/>
+            <ui:Button Content="{loc:Str E2EE_Onboarding_Confirm_DoesNotMatch}"
+                       Appearance="Secondary"
+                       Command="{Binding OnboardingViewModel.RejectApproverCommand}"
+                       AutomationProperties.AutomationId="E2EEOnboarding_RejectApprover"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+
     <!-- State: Entering recovery code -->
     <StackPanel>
       <StackPanel.Style>

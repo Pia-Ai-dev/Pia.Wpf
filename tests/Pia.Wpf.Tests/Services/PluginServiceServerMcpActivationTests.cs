@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Services.Plugins;
 using Pia.Shared.Models;
@@ -130,19 +131,48 @@ public sealed class PluginServiceServerMcpActivationTests : IDisposable
         Assert.Equal(pushed.Id, Assert.Single(restarted.GetPendingPreferenceChanges()).PluginId);
     }
 
+    [Fact]
+    public async Task AnSseExtensionWithoutACommand_SpawnsNothing()
+    {
+        var pushed = Pushed(configJson: """{"transport":"sse","defaultEnabled":true}""");
+        var log = new CapturingLogger<PluginService>();
+        var service = CreateService(log);
+
+        await service.ApplyServerPluginsAsync([pushed], []);
+
+        var status = service.GetLocalMcpStatus(pushed.Id);
+        Assert.False(status.IsRunning);
+        Assert.Contains("no command", status.Error);
+        Assert.DoesNotContain(log.Entries, e => e.Message.Contains("activated with", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnSseExtensionWithACommand_GetsTheSamePathPreflightAsStdio()
+    {
+        var pushed = Pushed(configJson: """{"transport":"sse","command":"pia-tests-no-such-command","defaultEnabled":true}""");
+        var log = new CapturingLogger<PluginService>();
+        var service = CreateService(log);
+
+        await service.ApplyServerPluginsAsync([pushed], []);
+
+        Assert.Equal(1, StartAttempts(log));
+        Assert.False(service.GetLocalMcpStatus(pushed.Id).IsRunning);
+    }
+
     // The command is not on PATH, so an attempt stops at the preflight and says so.
     private static int StartAttempts(CapturingLogger<PluginService> log) =>
         log.Entries.Count(e => e.Message.Contains(Name, StringComparison.Ordinal)
             && e.Message.Contains("not found on PATH", StringComparison.Ordinal));
 
-    private static SyncPlugin Pushed(Guid? id = null, bool isActive = true, bool? defaultEnabled = true) => new()
+    private static SyncPlugin Pushed(
+        Guid? id = null, bool isActive = true, bool? defaultEnabled = true, string? configJson = null) => new()
     {
         Id = id ?? Guid.NewGuid(),
         Kind = "mcp_server",
         Name = Name,
-        ConfigJson = defaultEnabled is bool on
+        ConfigJson = configJson ?? (defaultEnabled is bool on
             ? $$"""{"transport":"stdio","command":"pia-tests-no-such-command","defaultEnabled":{{(on ? "true" : "false")}}}"""
-            : """{"transport":"stdio","command":"pia-tests-no-such-command"}""",
+            : """{"transport":"stdio","command":"pia-tests-no-such-command"}"""),
         IsActive = isActive,
     };
 
@@ -164,7 +194,9 @@ public sealed class PluginServiceServerMcpActivationTests : IDisposable
             Substitute.For<IAssignmentToolHandler>(),
             Substitute.For<IScreenCaptureToolHandler>(),
             Substitute.For<IHelpToolHandler>(),
+            Substitute.For<IKnowledgeManagerToolHandler>(),
             Substitute.For<IAssignmentSurfaceCache>(),
+            Substitute.For<IKnowledgeManagerSurfaceCache>(),
             SettingsStubs.Returning(),
             log,
             sqlite,

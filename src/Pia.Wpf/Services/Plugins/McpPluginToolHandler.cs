@@ -63,12 +63,12 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        _logger.LogInformation("MCP plugin {Name}: starting", PluginName);
-        _logger.SensitiveDebug("MCP plugin {Name} command: '{Command} {Args}'",
-            PluginName, _command, string.Join(" ", _args));
+        _logger.LogInformation("MCP plugin {PluginId}: starting", PluginId);
+        _logger.SensitiveDebug("MCP plugin {PluginId} is {Name}, command: '{Command} {Args}'",
+            PluginId, PluginName, _command, string.Join(" ", _args));
         if (_env is { Count: > 0 })
-            _logger.LogInformation("MCP plugin {Name}: {Count} environment variable(s) set: {Names}",
-                PluginName, _env.Count, string.Join(", ", _env.Keys));
+            _logger.LogInformation("MCP plugin {PluginId}: {Count} environment variable(s) set: {Names}",
+                PluginId, _env.Count, string.Join(", ", _env.Keys));
         try
         {
             _transport = new StdioClientTransport(BuildTransportOptions(PluginName, _command, _args, _env, _workingDirectory));
@@ -80,18 +80,18 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             _tools = Project(discovered, _allowedTools, _toolPrefix);
             LastError = null;
 
-            _logger.LogInformation("MCP plugin {Name} initialized with {ToolCount} of {Discovered} tools: {Tools}",
-                PluginName, _tools.Count, discovered.Count,
+            _logger.LogInformation("MCP plugin {PluginId} initialized with {ToolCount} of {Discovered} tools: {Tools}",
+                PluginId, _tools.Count, discovered.Count,
                 string.Join(", ", _tools.Select(t => t.Name)));
 
             if (discovered.Count == 0)
-                _logger.LogWarning("MCP plugin {Name} initialized but reported 0 tools — process may have failed silently", PluginName);
+                _logger.LogWarning("MCP plugin {PluginId} initialized but reported 0 tools — process may have failed silently", PluginId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize MCP plugin {Name}", PluginName);
-            _logger.SensitiveDebug("Failed plugin {Name} command was: '{Command} {Args}'",
-                PluginName, _command, string.Join(" ", _args));
+            _logger.LogError(ex, "Failed to initialize MCP plugin {PluginId}", PluginId);
+            _logger.SensitiveDebug("Failed plugin {PluginId} is {Name}, command was: '{Command} {Args}'",
+                PluginId, PluginName, _command, string.Join(" ", _args));
             _tools = [];
             LastError = ex.Message;
         }
@@ -152,14 +152,14 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         FunctionCallContent toolCall, CancellationToken ct = default)
     {
         if (_client is null)
-            _logger.LogWarning("MCP plugin {Name}: client is null (not initialized or connection lost), tool {ToolName} will likely fail",
-                PluginName, toolCall.Name);
+            _logger.LogWarning("MCP plugin {PluginId}: client is null (not initialized or connection lost), tool {ToolName} will likely fail",
+                PluginId, toolCall.Name);
 
         var tool = _tools.FirstOrDefault(t => t.Name == toolCall.Name);
         if (tool is null)
         {
-            _logger.LogWarning("MCP tool '{ToolName}' not found in plugin {Name}. Available tools: [{Available}]",
-                toolCall.Name, PluginName,
+            _logger.LogWarning("MCP tool '{ToolName}' not found in plugin {PluginId}. Available tools: [{Available}]",
+                toolCall.Name, PluginId,
                 string.Join(", ", _tools.Select(t => t.Name)));
             return Task.FromResult<(object?, PluginToolCall?)>(
                 ($"Tool '{toolCall.Name}' not found in plugin '{PluginName}'.", null));
@@ -204,8 +204,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "MCP tool call {Tool} failed on plugin {Name}",
-                        toolCall.Name, PluginName);
+                    _logger.LogError(ex, "MCP tool call {Tool} failed on plugin {PluginId}",
+                        toolCall.Name, PluginId);
                     return $"Tool call failed: {ex.Message}";
                 }
             });
@@ -252,7 +252,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error disposing MCP client for plugin {Name}", PluginName);
+                _logger.LogWarning(ex, "Error disposing MCP client for plugin {PluginId}", PluginId);
             }
             _client = null;
         }

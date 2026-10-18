@@ -12,10 +12,9 @@
   lists only the current full, the current delta and the previous full. The pia-ai.de mirror is a
   copy on Hetzner storage, not a link to a GitHub asset, so it survives too.
 
-  Tags are never deleted (no --cleanup-tag). changelog.yml regenerates the whole CHANGELOG.md with
-  git-cliff on every publish, and build-and-release.yml derives PREV_TAG / the release-notes diff
-  base from `git describe --tags`, so dropping a tag would quietly rewrite history on the next
-  release. Tags cost nothing to keep.
+  Tags are never deleted (no --cleanup-tag). build-and-release.yml derives PREV_TAG / the
+  release-notes diff base from `git describe --tags`, so dropping a tag would quietly rewrite
+  history on the next release. Tags cost nothing to keep.
 
   Nothing is deleted unless you pass -Apply.
 

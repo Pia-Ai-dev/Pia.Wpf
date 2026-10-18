@@ -15,6 +15,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Services.Screen;
 using Pia.Shared.Models;
@@ -79,6 +80,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IThemeService? _themeService;
     private readonly ITimelineWatcher? _timelineWatcher;
     private readonly IAssignmentSurfaceCache? _assignmentSurfaceCache;
+    private readonly IKnowledgeManagerSurfaceCache? _kbManagerSurfaceCache;
     private readonly Func<AssignmentConsentViewModel>? _assignmentConsentFactory;
     private readonly IScreenCaptureService? _screenCapture;
     private readonly IScreenCaptureAuditLog? _screenCaptureAudit;
@@ -394,7 +396,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IScreenCaptureAuditLog? screenCaptureAudit = null,
         IScreenCaptureIndicator? screenCaptureIndicator = null,
         // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
-        IElevationService? elevation = null)
+        IElevationService? elevation = null,
+        // Trailing and defaulted, same discipline; null ⇒ only the main window probes the knowledge-base surface.
+        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -438,6 +442,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _themeService = themeService;
         _timelineWatcher = timelineWatcher;
         _assignmentSurfaceCache = assignmentSurfaceCache;
+        _kbManagerSurfaceCache = kbManagerSurfaceCache;
         _assignmentConsentFactory = assignmentConsentFactory;
         _volatileWork = volatileWork;
         _starterSuggestions = starterSuggestions;
@@ -1922,6 +1927,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         // First, so nothing that throws below can decide whether this action row button appears.
         RefreshAssignmentSurfaceAsync().SafeFireAndForget(_logger);
+        _kbManagerSurfaceCache?.RefreshAsync().SafeFireAndForget(_logger);
 
         if (parameter is Guid chatId && chatId != Guid.Empty)
         {
@@ -2271,8 +2277,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             if (!result.IsSuccess)
             {
-                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Process} {Reason}",
-                    result.Target.Kind, result.Target.ProcessName, result.Reason);
+                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Reason}",
+                    result.Target.Kind, result.Reason);
+                _logger.SensitiveDebug("Refused picker capture process: {Process}", result.Target.ProcessName);
                 _snackbarService.Show(
                     _localizationService["Msg_Warning"],
                     _localizationService[ScreenCaptureFailureText.KeyFor(result.Reason)!],
@@ -2345,9 +2352,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _screenCaptureAudit?.Record(evt);
         _screenCaptureIndicator?.NotifyCapture(evt);
-        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Process} {Width}x{Height}",
-            kind, target.ProcessName, attachment.Width, attachment.Height);
-        _logger.SensitiveDebug("Picker capture window title: {Title}", target.Title);
+        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Width}x{Height}",
+            kind, attachment.Width, attachment.Height);
+        _logger.SensitiveDebug("Picker capture window: {Process} '{Title}'", target.ProcessName, target.Title);
     }
 
     private void ExecuteToggleTts()

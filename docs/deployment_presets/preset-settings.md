@@ -98,7 +98,7 @@ the local `settings.json` (that is the anti-circumvention path), they just never
 |---|---|---|
 | `serverUrl` | string, `null` | 🔒 Enforcing it also suppresses the hardcoded production URL written at startup, and beats the `PIA_CLOUD_SERVER_URL` dev override |
 | `syncEnabled` | bool, `false` | ✓ |
-| `trustSelfSignedCertificates` | bool, `false` | ✓ |
+| `trustSelfSignedCertificates` | bool, `false` | ✓ Relaxes certificate checks for the `serverUrl` host and port only; every other host stays fully validated. A release build turns it off at startup unless a policy enforces it |
 | `allowedSyncProviders` | string[], `null` | ✓ `"local"`, `"google"`, `"microsoft"`, `"entraid"` (case-insensitive). `null` or `[]` = all allowed. Disallowed providers are hidden in the first-run wizard *and* account settings, a login through one is refused, and a stored session from one is signed out on the next launch. Read from `enforce` first, then `defaults`. Works in both blocks |
 | `isE2EEEnabled` · `e2eeUmkVersion` · `e2eeRecoveryConfigured` | bool / int | ✗ device state |
 | `encryptedAccessToken` · `encryptedRefreshToken` · `syncUserId` · `syncUserEmail` · `syncUserDisplayName` · `syncProvider` · `syncDeviceId` · `lastSyncTimestamp` · `lastPullETag` · `lastChatPullETag` · `lastPushedSettingsHash` · `lastCatalogVersion` · `e2eeEncryptedUmk` · `e2eeDeviceId` · `assistantChatsBackfilledAt` · `assistantChatsEncryptedResendAt` · `managedPersonaStoreInitialized` | — | ✗ runtime state; presetting these corrupts the sync cursor |
@@ -238,6 +238,7 @@ sync/managed personas.
 | `Update:GitHubRepoUrl` | the public repo | Point at a private/internal release feed |
 | `Update:AccessToken` | `null` | PAT for a private feed — plain text on disk |
 | `Update:Prerelease` | `false` | Opt a ring into pre-releases. GitHub only — a static feed separates rings by channel |
+| `Update:TrustedPublishers` | `neo42 GmbH`, `Microsoft Corporation`, `OpenJS Foundation` | Signer organizations (the certificate's O=) that every `.exe`/`.dll` in a downloaded update must carry; an update that fails is not installed. Matching on the organization means a certificate from another CA keeps working. A build that is not itself signed skips the check. A feed that also serves `Pia.Wpf-<version>.cat` has each package checked against it, logged only for now |
 | `Plugins:SigningRequired` | `true` | `false` disables plugin CAB signature verification |
 
 PascalCase here (standard `IConfiguration` binding), unlike `policy.json`. `appsettings.Development.json`

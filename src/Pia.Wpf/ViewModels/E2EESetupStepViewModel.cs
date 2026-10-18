@@ -140,7 +140,7 @@ public partial class E2EESetupStepViewModel : ObservableObject
 
     [RelayCommand]
     private Task CopyRecoveryCodeAsync()
-        => RecoveryCode is null ? Task.CompletedTask : _outputService.CopyToClipboardAsync(RecoveryCode);
+        => RecoveryCode is null ? Task.CompletedTask : _outputService.CopySecretToClipboardAsync(RecoveryCode);
 
     [RelayCommand]
     private void OptOutGoBack()

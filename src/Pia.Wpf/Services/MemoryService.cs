@@ -327,8 +327,9 @@ public class MemoryService : IMemoryService
         }
         catch (SqliteException ex)
         {
-            _logger.LogWarning(ex, "FTS search failed for query: {Query}", query);
-            // Fall back to LIKE search
+            // The message quotes the query fragment FTS choked on, so only the code reaches the release log.
+            _logger.LogWarning("FTS search failed (SQLite error {Code}); falling back to LIKE", ex.SqliteErrorCode);
+            _logger.SensitiveDebug("FTS search failed for query {Query}: {Error}", query, ex.Message);
             return await SearchAsync(query);
         }
     }

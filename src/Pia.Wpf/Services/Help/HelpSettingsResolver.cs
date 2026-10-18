@@ -306,6 +306,9 @@ public sealed class HelpSettingsResolver
         rows.Add(new HelpSettingRow("tools", "Plugins from Pia Cloud",
             "switched on or off here; needs a Pia Cloud connection",
             Path("Settings_Tab_Plugins")));
+        rows.Add(new HelpSettingRow("tools", "Knowledge-base manager tools (keep your group's knowledge bases current)",
+            "off by default; listed only for a user the server marks as knowledge-base manager, switched on here",
+            Path("Settings_Tab_Plugins")));
     }
 
     private void AddAbout(List<HelpSettingRow> rows)

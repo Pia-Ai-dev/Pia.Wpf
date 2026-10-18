@@ -7,6 +7,7 @@ using NSubstitute.ExceptionExtensions;
 using Pia.Models;
 using Pia.Navigation;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Shared.Operators;
 using Pia.Tests.TestInfrastructure;
@@ -49,6 +50,7 @@ public class MainWindowViewModelTests
             Substitute.For<ISyncClientService>(),
             new AssignmentSurfaceCache(_assignments, TimeProvider.System,
                 NullLogger<AssignmentSurfaceCache>.Instance),
+            Substitute.For<IKnowledgeManagerSurfaceCache>(),
             _policy,
             _tourTargets,
             _clipboard)

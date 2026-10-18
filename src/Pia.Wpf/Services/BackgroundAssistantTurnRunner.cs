@@ -364,9 +364,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         // A tool round just completed; the next TextDelta starts a fresh model turn built on the
         // tool result, not a continuation of whatever is already in textBuffer.
         var pendingRoundBreak = false;
-        // This turn's call/result pairs, for a caller that accumulates a transcript across steps. Empty on
-        // the single-turn path, which discards the result anyway.
         var toolExchanges = new List<ChatMessage>();
+        var sentRounds = new List<ChatMessage>();
+        IReadOnlyList<ChatMessage>? finalAnswer = null;
 
         // The persona rides on the setup (which every caller of this method already builds via
         // PrepareTurn), so no new parameter is needed here — HeadlessTurnExecutor calls this too.
@@ -390,8 +390,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     break;
                 case ToolRoundExchange round:
                     toolExchanges.AddRange(round.Messages);
+                    sentRounds.AddRange(round.Sent);
                     if (exchanges is not null)
                         await exchanges.RecordAsync(round.Round, round.Messages).ConfigureAwait(false);
+                    break;
+                case FinalAnswer final:
+                    finalAnswer = final.Messages;
                     break;
                 case Finished finished:
                     if (finished.Usage is { } u)
@@ -418,15 +422,18 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
 
         return new ExchangeResult(
             visible, string.IsNullOrEmpty(thinking) ? null : thinking, usage, model, providerLabel, tokens,
-            toolExchanges, protectedRoute);
+            toolExchanges, protectedRoute, sentRounds, finalAnswer);
     }
 
     /// <summary>The post-processed output of one <see cref="RunExchangeAsync"/> call.</summary>
-    /// <param name="ToolExchanges">This turn's tool call/result messages, in round order, for a caller that
-    /// carries them into the next step. Already tokenized — they are what the model saw.</param>
+    /// <param name="ToolExchanges">Calls and capped results in round order — the persisted shape.</param>
+    /// <param name="SentRounds">Every round as the model was sent it, for a caller that carries the turn on.</param>
+    /// <param name="FinalAnswer">The last round's assistant message as received; null when the turn ended
+    /// without one, and the caller falls back to <paramref name="Visible"/>.</param>
     public sealed record ExchangeResult(
         string Visible, string? Thinking, UsageDetails? Usage, string? Model, string? Provider, int? Tokens,
-        IReadOnlyList<ChatMessage> ToolExchanges, bool Protected = false);
+        IReadOnlyList<ChatMessage> ToolExchanges, bool Protected = false,
+        IReadOnlyList<ChatMessage>? SentRounds = null, IReadOnlyList<ChatMessage>? FinalAnswer = null);
 
     /// <summary>
     /// Route and run one persisted call a person approved, outside any tool loop — same gate, same audit rows.
@@ -508,8 +515,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             if (approvals?.PendingToolName is { } parkedFor)
             {
                 dispatch.Stop?.RequestStop();
-                approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
-                approvals.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: true));
+                var withheldHeading = ParkedHeading(pending);
+                approvals.Park(pending.ToolName, withheldHeading ?? ToolApprovalArguments.Describe(toolCall));
+                approvals.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: true, withheldHeading));
                 _logger.LogInformation(
                     "Background turn withheld {ToolName}: the run is already parked on {ParkedToolName}",
                     pending.ToolName, parkedFor);
@@ -643,11 +651,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 dispatch.Stop?.RequestStop();
                 // The arguments ride along so the Continue card can name what it is about to allow. NOT logged
                 // anywhere on this path — a path is user content, and the count is what the audit row carries.
+                var heading = ParkedHeading(pending);
                 var parked = approvals is not null
-                    && approvals.Park(pending.ToolName, ToolApprovalArguments.Describe(toolCall));
+                    && approvals.Park(pending.ToolName, heading ?? ToolApprovalArguments.Describe(toolCall));
                 // Outside the audit guard below: a second parked call of the same tool writes no second
                 // timeline row but must still be replayable — that is the delete-four-files case.
-                approvals?.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: false));
+                approvals?.Record(BuildParkedCall(pending, toolCall, dispatch, withheld: false, heading));
                 _logger.LogInformation(
                     "Background turn parked {ToolName} for human approval (first={First})", pending.ToolName, parked);
                 // Audited only for the call that actually parked the run. A second parked call in the
@@ -704,14 +713,22 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// is the one spelling the pause envelope, the grant list and the re-route all key on.
     /// </summary>
     private static ToolApprovalStore.ParkedCall BuildParkedCall(
-        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, bool withheld) =>
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, bool withheld,
+        string? heading) =>
         new(pending.ToolName,
             toolCall.CallId,
             dispatch.Round,
             pending.PluginId,
             AgentToolExchangeSerializer.SerializeArguments(toolCall.Arguments),
-            ToolApprovalArguments.Describe(toolCall),
+            // DisplayArgs is the text to show for this parked call: its heading when it has one, else its arguments.
+            heading ?? ToolApprovalArguments.Describe(toolCall),
             withheld);
+
+    // A knowledge-base call names its target by id, so the approver is shown what it does and warns about instead.
+    private string? ParkedHeading(PluginToolCall pending) =>
+        ToolClassifier.Classify(pending.PluginName, IsExternalTool(pending.ToolName)) == ToolClass.KnowledgeBase
+            ? ToolApprovalArguments.Heading(pending.Description, pending.Warning)
+            : null;
 
     /// <summary>
     /// Is this an external/MCP tool? Re-derived from the plugin SERVICE at the gate — the same source the

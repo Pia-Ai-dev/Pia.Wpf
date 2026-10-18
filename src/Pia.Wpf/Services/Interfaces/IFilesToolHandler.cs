@@ -37,6 +37,9 @@ public interface IFilesToolHandler
     /// </summary>
     bool IsAvailable { get; }
 
+    /// <summary>The folder a tool call made now resolves paths against; null when none exists.</summary>
+    string? ResolveToolRoot();
+
     /// <summary>
     /// Enumerates files in the sandbox folder for the <c>@Files</c> autocomplete picker,
     /// applying the same containment + sensitive-path filtering as <c>list_files</c> so the

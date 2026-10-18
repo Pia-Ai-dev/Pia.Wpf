@@ -21,7 +21,7 @@ public class E2EEOnboardingViewModelTests
             new DeviceRegistrationResponse { OnboardingSessionId = "session-1", ServerChallenge = "challenge" });
         deviceMgmt.GetDeviceStatusAsync(Arg.Any<string>()).Returns(
             new DeviceStatusResponse { DeviceId = "dev-self", Status = DeviceStatus.Active });
-        deviceMgmt.FetchAndUnwrapUmkAsync().ThrowsAsync(new UnverifiedApprovalException("unsigned"));
+        deviceMgmt.FetchKeyHandoverAsync().ThrowsAsync(new UnverifiedApprovalException("unsigned"));
         var keys = Substitute.For<IDeviceKeyService>();
         keys.GetDeviceId().Returns("dev-self");
         keys.GetFingerprint().Returns("FP");
@@ -39,7 +39,8 @@ public class E2EEOnboardingViewModelTests
 
         Assert.Equal(OnboardingState.Error, sut.State);
         Assert.False(string.IsNullOrEmpty(sut.ErrorMessage));
-        await deviceMgmt.Received(1).FetchAndUnwrapUmkAsync();
+        await deviceMgmt.Received(1).FetchKeyHandoverAsync();
+        await deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
         sync.DidNotReceive().NotifyE2EEOnboardingCompleted();
     }
 }
