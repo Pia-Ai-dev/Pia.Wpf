@@ -171,6 +171,6 @@ public sealed class FakeRuntimeHost : IRuntimeHostService
     }
 
     private static bool IsSameOrUnder(string path, string prefix) =>
-        string.Equals(path, prefix, StringComparison.OrdinalIgnoreCase)
+        string.Equals(path, prefix.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
         || path.StartsWith(prefix.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
 }
