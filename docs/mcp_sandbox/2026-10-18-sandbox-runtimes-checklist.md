@@ -59,7 +59,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### B Detection
 
-- [ ] **B1 Windows host facts.** `RuntimeHostService` with registry `PATH` and `HKCU\Environment` reading, the
+- [x] **B1 Windows host facts.** `RuntimeHostService` with registry `PATH` and `HKCU\Environment` reading, the
   static name reader, the registry-built default environment block, the DEBUG-only candidate override,
   final-path resolution, the container-readability ACL check and the linked-token WRITE_DAC check, with tests
   on real temp folders.
