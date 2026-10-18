@@ -310,8 +310,8 @@ fixture must stay **outside** the profile roots, because the path guard refuses 
   `Program Files` or the Windows folder: the real `C:\Program Files\nodejs` is never touched.
 - **Undoing the elevated fix.** `UndoToolchainGrant` runs `icacls node-admin /remove:g *S-1-15-2-1` and
   compares the SDDL, read through .NET rather than from localised `icacls` text, with the recorded one; it
-  exits 3 on a mismatch or when any item in the tree still carries `S-1-15-2-1`. `Status` shows whether node-admin still
-  matches, and `Status`, `Stop` and `Verify` warn while the grant is left in place.
+  exits 3 on a mismatch or when any item in the tree still carries `S-1-15-2-1`. `Status` shows whether
+  node-admin still matches, and `Status`, `Stop` and `Verify` warn while the grant is left in place.
 - **Ownership and ACLs.** Tier 3 rewrites the DACL of every policy path, which fails silently for a path
   the user cannot WRITE_DAC, and the server then dies on load. Anything an elevated shell creates is owned
   by Administrators and, under a drive root that only lets Users read, is not even writable by the user
