@@ -577,7 +577,7 @@ public sealed class PluginServiceSandboxAvailabilityTests : IDisposable
         Assert.Equal(["sweep", "profile:files_2"], log);
     }
 
-    /// <summary>A folder dropped from the policy is never in a later sweep's roots, so it is swept when it is dropped.</summary>
+    /// <summary>A folder dropped from the policy is swept when it is dropped, not left for the next start's sweep.</summary>
     [Fact]
     public async Task EditingTheFolders_SweepsOnlyTheDroppedOnes_UnderTheSameContainerNames()
     {

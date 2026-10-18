@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Paths;
 using Pia.Services.Exceptions;
@@ -55,8 +56,8 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
     private string NuGetConfigPath => Path.Combine(State, "home", "AppData", "Roaming", "NuGet", "NuGet.Config");
 
-    private RuntimeStateProvisioner Provisioner() =>
-        new(_store, new UvToolRunner(NullLogger<UvToolRunner>.Instance, _uv.Run), NullLogger<RuntimeStateProvisioner>.Instance);
+    private RuntimeStateProvisioner Provisioner(ILogger<RuntimeStateProvisioner>? logger = null) =>
+        new(_store, new UvToolRunner(NullLogger<UvToolRunner>.Instance, _uv.Run), logger ?? NullLogger<RuntimeStateProvisioner>.Instance);
 
     private Task<SandboxLaunchSpec> Prepare(SandboxLaunchSpec spec) =>
         Provisioner().PrepareAsync(spec, line => { lock (_stderr) _stderr.Add(line); }, TestContext.Current.CancellationToken);
@@ -142,9 +143,10 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
         Assert.Same(spec, await Prepare(spec));
         Assert.False(Directory.Exists(State));
-        var (container, roots, stateReadOnly) = Assert.Single(_store.Records);
+        var (container, roots, stateReadOnly, policyRoots) = Assert.Single(_store.Records);
         Assert.Equal(Container, container);
-        Assert.Equal([State, @"C:\box"], roots);
+        Assert.Equal([State], roots);
+        Assert.Equal([@"C:\box"], policyRoots);
         Assert.False(stateReadOnly);
     }
 
@@ -165,9 +167,10 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
         Assert.Same(spec, await Prepare(spec));
 
-        var (container, roots, stateReadOnly) = Assert.Single(_store.Records);
+        var (container, roots, stateReadOnly, policyRoots) = Assert.Single(_store.Records);
         Assert.Equal(ProbeContainer, container);
-        Assert.Equal([@"C:\Tools\server", @"C:\box", @"C:\data"], roots);
+        Assert.Equal([@"C:\Tools\server"], roots);
+        Assert.Equal([@"C:\box", @"C:\data"], policyRoots);
         Assert.True(stateReadOnly);
         Assert.False(Directory.Exists(State));
     }
@@ -266,9 +269,10 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     {
         await Prepare(NodeSpec() with { ReadonlyPaths = [@"C:\data"] });
 
-        var (container, roots, stateReadOnly) = Assert.Single(_store.Records);
+        var (container, roots, stateReadOnly, policyRoots) = Assert.Single(_store.Records);
         Assert.Equal(Container, container);
-        Assert.Equal([@"C:\Users\Jane\node", @"C:\Users\Jane\mcp\server", State, Support, @"C:\box", @"C:\data"], roots);
+        Assert.Equal([@"C:\Users\Jane\node", @"C:\Users\Jane\mcp\server", State, Support], roots);
+        Assert.Equal([@"C:\box", @"C:\data"], policyRoots);
         Assert.False(stateReadOnly);
     }
 
@@ -289,6 +293,35 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         Directory.CreateDirectory(NuGetConfigPath);
 
         var ex = await Assert.ThrowsAsync<SandboxStartException>(() => Prepare(NodeSpec()));
+
+        Assert.Equal("Pia could not prepare the server's runtime folder.", ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+    }
+
+    [Fact]
+    public async Task AGrantRecordThatCannotBeWritten_DoesNotStopAStartWithoutAStateFolder_AndLogsTheTypeOnly()
+    {
+        var logger = new CapturingLogger<RuntimeStateProvisioner>();
+        _store.Failure = new IOException(@"Access to the path 'C:\Users\Jane\grants\pia-mcp-x.json' is denied.");
+        var spec = ProgramSpec(Container);
+
+        Assert.Same(spec, await Provisioner(logger).PrepareAsync(spec, _ => { }, TestContext.Current.CancellationToken));
+
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(nameof(IOException), warning.Message);
+        Assert.Null(warning.Exception);
+        Assert.DoesNotContain(logger.Entries, e => e.Level >= LogLevel.Information && e.Message.Contains(@"C:\"));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AGrantRecordThatCannotBeWritten_FailsAStartWithAStateFolder(bool withPreparation)
+    {
+        _store.Failure = new IOException(@"Access to the path 'C:\Users\Jane\grants\pia-mcp-x.json' is denied.");
+        var spec = withPreparation ? NodeSpec() : NodeSpec() with { Preparation = null };
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(() => Prepare(spec));
 
         Assert.Equal("Pia could not prepare the server's runtime folder.", ex.Message);
         PathFreeAssert.IsPathFree(ex);
@@ -320,7 +353,8 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
         await Prepare(UvxSpec());
 
-        Assert.Equal([State, @"C:\box"], _store.Records.Single().Roots);
+        Assert.Equal([State], _store.Records.Single().Roots);
+        Assert.Equal([@"C:\box"], _store.Records.Single().PolicyRoots);
         Assert.True(_store.Records.Single().StateReadOnly);
     }
 
@@ -443,6 +477,53 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         Assert.True(Directory.Exists(Path.Combine(tool, "Lib", "site-packages", "mcp_server_time-2026.10.10.dist-info")));
         Assert.Contains("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
         Assert.Empty(_uv.Calls);
+    }
+
+    private static UvxSpec TimeOnPython312 => new("mcp-server-time", "mcp-server-time", [], "3.12");
+
+    [Fact]
+    public async Task Uvx_AChangedSpec_WhileAUvxStartOfTheServerRuns_IsRefused()
+    {
+        await PrepareWithRecords(UvxSpec());
+        using var running = SandboxContainerLease.Acquire(Container);
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(
+            () => PrepareWithRecords(UvxSpec(uvx: TimeOnPython312) with { ContainerName = ProbeContainer }));
+
+        Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
+        Assert.True(File.Exists(Path.Combine(State, "tools", "mcp-server-time", "uv-receipt.toml")));
+        Assert.DoesNotContain("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
+        Assert.Single(_uv.Calls);
+    }
+
+    // A running server that was never given the state folder cannot be using the tool in it.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uvx_AChangedSpec_WhileAProgramStartOfTheServerRuns_Installs(bool uvxBeforeTheProgram)
+    {
+        if (uvxBeforeTheProgram)
+            await PrepareWithRecords(UvxSpec());
+        await PrepareWithRecords(ProgramSpec(Container));
+        using var running = SandboxContainerLease.Acquire(Container);
+
+        var prepared = await PrepareWithRecords(UvxSpec(uvx: TimeOnPython312) with { ContainerName = ProbeContainer });
+
+        Assert.Equal(["-c", ExpectedCode, "--local-timezone", "UTC"], prepared.Args);
+        Assert.Contains("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
+        Assert.Equal(uvxBeforeTheProgram ? 2 : 1, _uv.Calls.Count);
+    }
+
+    // A runner start fails without its record, so a running container without one was given no state folder.
+    [Fact]
+    public async Task Uvx_WhileAContainerWithoutAGrantRecordRuns_Installs()
+    {
+        using var running = SandboxContainerLease.Acquire(Container);
+
+        var prepared = await PrepareWithRecords(UvxSpec() with { ContainerName = ProbeContainer });
+
+        Assert.Equal(["-c", ExpectedCode, "--local-timezone", "UTC"], prepared.Args);
+        Assert.Single(_uv.Calls);
     }
 
     [Fact]
@@ -765,13 +846,20 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
     private sealed class RecordingStore : IRuntimeStateStore
     {
-        public List<(string Container, IReadOnlyList<string> Roots, bool StateReadOnly)> Records { get; } = [];
+        public List<(string Container, IReadOnlyList<string> Roots, bool StateReadOnly, IReadOnlyList<string> PolicyRoots)> Records { get; } = [];
 
-        /// <summary>The state access earlier starts recorded, by container name.</summary>
+        /// <summary>The state access of earlier starts that were given the state folder, by container name.</summary>
         public Dictionary<string, bool> Earlier { get; } = [];
 
-        public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false) =>
-            Records.Add((containerName, roots, stateReadOnly));
+        public Exception? Failure { get; set; }
+
+        public void WriteGrantRecord(
+            string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false, IReadOnlyList<string>? policyRoots = null)
+        {
+            if (Failure is not null)
+                throw Failure;
+            Records.Add((containerName, roots, stateReadOnly, policyRoots ?? []));
+        }
 
         public bool? StateGrantedReadOnly(string containerName)
         {
@@ -781,7 +869,17 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
             return Earlier.TryGetValue(containerName, out var readOnly) ? readOnly : null;
         }
 
+        public bool StateGranted(string containerName)
+        {
+            var written = Records.FindLast(record => record.Container == containerName);
+            if (written.Container is not null)
+                return written.Roots.Contains(PiaPaths.McpRuntimeStateDirectory(SandboxLaunchSpecBuilder.PrefixOf(containerName)));
+            return Earlier.ContainsKey(containerName);
+        }
+
         public IReadOnlyList<string> SweepRoots(string prefix) => [];
+
+        public IReadOnlyList<string> RuntimeRoots(string prefix) => [];
 
         public bool TryDelete(string prefix, Action? beforeDelete = null) => true;
 

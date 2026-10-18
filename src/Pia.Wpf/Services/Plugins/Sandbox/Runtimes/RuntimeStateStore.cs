@@ -13,16 +13,25 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false)
+    private static readonly GrantRecord Damaged = new("", null, default);
+
+    public void WriteGrantRecord(
+        string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false, IReadOnlyList<string>? policyRoots = null)
     {
         var target = RecordPath(containerName);
         var directory = PiaPaths.McpSandboxGrantsDirectory;
         Directory.CreateDirectory(directory);
 
-        // A root a failed sweep left behind stays on record until a later sweep can reach it.
-        var kept = ReadRoots(containerName).Where(root => Directory.Exists(root) || File.Exists(root));
+        // From this start's roots alone: a root kept from an earlier start was not granted to this one.
+        var stateGranted = roots.Any(root => IsStateFolderOf(containerName, root));
+        var previous = ReadRecord(containerName);
         var record = new GrantRecord(
-            containerName, [.. roots.Concat(kept).Distinct(StringComparer.OrdinalIgnoreCase)], DateTime.UtcNow, stateReadOnly);
+            containerName,
+            WithRootsStillOnDisk(roots, previous?.Roots),
+            DateTime.UtcNow,
+            stateReadOnly,
+            WithRootsStillOnDisk(policyRoots ?? [], previous?.PolicyRoots),
+            stateGranted);
         var temp = Path.Combine(directory, $".{containerName}.{Guid.NewGuid():N}.tmp");
         try
         {
@@ -35,23 +44,17 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
         }
     }
 
-    public bool? StateGrantedReadOnly(string containerName)
-    {
-        var path = RecordPath(containerName);
-        try
-        {
-            if (!File.Exists(path))
-                return null;
+    public bool? StateGrantedReadOnly(string containerName) =>
+        ReadRecord(containerName) is { } record ? record.StateReadOnly == true : null;
 
-            return JsonSerializer.Deserialize<GrantRecord>(File.ReadAllText(path), Json)?.StateReadOnly == true;
-        }
-        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
+    public bool StateGranted(string containerName) =>
+        ReadRecord(containerName) is { } record && record.StateGranted != false;
 
-    public IReadOnlyList<string> SweepRoots(string prefix)
+    public IReadOnlyList<string> SweepRoots(string prefix) => RootsOnRecord(prefix, withPolicyRoots: true);
+
+    public IReadOnlyList<string> RuntimeRoots(string prefix) => RootsOnRecord(prefix, withPolicyRoots: false);
+
+    private static IReadOnlyList<string> RootsOnRecord(string prefix, bool withPolicyRoots)
     {
         if (!IsPlainPrefix(prefix))
             return [];
@@ -61,8 +64,12 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
         if (Directory.Exists(state))
             roots.Add(state);
 
-        foreach (var containerName in SandboxLaunchSpecBuilder.ContainerNames(prefix))
-            roots.AddRange(ReadRoots(containerName));
+        foreach (var record in SandboxLaunchSpecBuilder.ContainerNames(prefix).Select(ReadRecord))
+        {
+            roots.AddRange(Valid(record?.Roots));
+            if (withPolicyRoots)
+                roots.AddRange(Valid(record?.PolicyRoots));
+        }
 
         return [.. roots.Distinct(StringComparer.OrdinalIgnoreCase)];
     }
@@ -149,23 +156,44 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
             parent, Path.TrimEndingDirectorySeparator(Path.GetFullPath(PiaPaths.McpSandboxRoot)), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IReadOnlyList<string> ReadRoots(string containerName)
+    private static GrantRecord? ReadRecord(string containerName)
     {
         var path = RecordPath(containerName);
         try
         {
             if (!File.Exists(path))
-                return [];
+                return null;
 
-            var record = JsonSerializer.Deserialize<GrantRecord>(File.ReadAllText(path), Json);
-            return record?.Roots?.Where(root => !string.IsNullOrWhiteSpace(root)).ToList() ?? [];
+            return JsonSerializer.Deserialize<GrantRecord>(File.ReadAllText(path), Json) ?? Damaged;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            return [];
+            return Damaged;
         }
     }
 
-    // A record without StateReadOnly counts as a read-write grant.
-    private sealed record GrantRecord(string Container, IReadOnlyList<string>? Roots, DateTime WrittenUtc, bool? StateReadOnly = null);
+    private static IEnumerable<string> Valid(IReadOnlyList<string>? roots) =>
+        (roots ?? []).Where(root => !string.IsNullOrWhiteSpace(root));
+
+    // A root a failed sweep left behind stays on record until a later sweep can reach it.
+    private static List<string> WithRootsStillOnDisk(IReadOnlyList<string> roots, IReadOnlyList<string>? earlier) =>
+        [.. roots
+            .Concat(Valid(earlier).Where(root => Directory.Exists(root) || File.Exists(root)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private static bool IsStateFolderOf(string containerName, string root) =>
+        !string.IsNullOrWhiteSpace(root)
+        && string.Equals(
+            SandboxLaunchSpecBuilder.Normalize(root),
+            SandboxLaunchSpecBuilder.Normalize(PiaPaths.McpRuntimeStateDirectory(SandboxLaunchSpecBuilder.PrefixOf(containerName))),
+            StringComparison.OrdinalIgnoreCase);
+
+    // A missing StateReadOnly counts as a read-write grant, a missing StateGranted as a grant.
+    private sealed record GrantRecord(
+        string Container,
+        IReadOnlyList<string>? Roots,
+        DateTime WrittenUtc,
+        bool? StateReadOnly = null,
+        IReadOnlyList<string>? PolicyRoots = null,
+        bool? StateGranted = null);
 }

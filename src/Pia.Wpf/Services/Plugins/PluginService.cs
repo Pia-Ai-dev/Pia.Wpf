@@ -1140,7 +1140,7 @@ public class PluginService : IPluginService
     {
         var kept = stillGranted?.Sandbox is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : GrantedRoots(stillGranted).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            : StillGrantedRoots(stillGranted).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return sandboxed
             .SelectMany(GrantedRoots)
@@ -1148,15 +1148,19 @@ public class PluginService : IPluginService
             .Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
-    private IEnumerable<string> GrantedRoots(LocalMcpDefinition definition)
-    {
-        var policyRoots = SandboxLaunchSpecBuilder.PolicyRoots(
-            definition.Sandbox!, EffectiveCommand(definition), definition.WorkingDirectory);
+    private IEnumerable<string> GrantedRoots(LocalMcpDefinition definition) =>
+        _runtimeStateStore is null || string.IsNullOrEmpty(definition.ToolPrefix)
+            ? PolicyRoots(definition)
+            : PolicyRoots(definition).Concat(_runtimeStateStore.SweepRoots(definition.ToolPrefix));
 
-        return _runtimeStateStore is null || string.IsNullOrEmpty(definition.ToolPrefix)
-            ? policyRoots
-            : policyRoots.Concat(_runtimeStateStore.SweepRoots(definition.ToolPrefix));
-    }
+    // The policy folders on record are an earlier start's, so a folder the new policy drops is swept on this save.
+    private IEnumerable<string> StillGrantedRoots(LocalMcpDefinition definition) =>
+        _runtimeStateStore is null || string.IsNullOrEmpty(definition.ToolPrefix)
+            ? PolicyRoots(definition)
+            : PolicyRoots(definition).Concat(_runtimeStateStore.RuntimeRoots(definition.ToolPrefix));
+
+    private static IReadOnlyList<string> PolicyRoots(LocalMcpDefinition definition) =>
+        SandboxLaunchSpecBuilder.PolicyRoots(definition.Sandbox!, EffectiveCommand(definition), definition.WorkingDirectory);
 
     // A cmd /c <exe> server launches the exe, so the exe's folder is the one it was granted.
     private static string EffectiveCommand(LocalMcpDefinition definition) =>
