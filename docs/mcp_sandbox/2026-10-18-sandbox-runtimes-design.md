@@ -1,7 +1,8 @@
 # Sandboxed MCP servers on npx, uvx and dnx
 
-**Status:** Approved. Measured in [2026-10-18-sandbox-runtimes-spike-results.md](2026-10-18-sandbox-runtimes-spike-results.md),
-which changes the Node and uv recipes; planned in [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md).
+**Status:** Owner-approved and planned in [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md).
+Measured in [2026-10-18-sandbox-runtimes-spike-results.md](2026-10-18-sandbox-runtimes-spike-results.md), which
+changes the Node and uv recipes; where this concept and the plan differ, the plan holds.
 **Owner:** Marco Altmann
 **Written:** 2026-10-18
 **Origin:** The owner added `cmd /c npx -y @tiberriver256/mcp-server-azure-devops` to the live profile. It
@@ -22,8 +23,9 @@ no user data, and a **writable cache**, which can live inside the server's own s
 
 ## What happened in the failing case
 
-- `SandboxCommandRules.IsShimCommand` checks only the command. `cmd` resolves to
-  `C:\Windows\System32\cmd.exe`, so `cmd /c npx …` passes, and `npx` is never looked at.
+- `SandboxCommandRules.IsShimCommand` checked only the command. `cmd` resolves to
+  `C:\Windows\System32\cmd.exe`, so `cmd /c npx …` passed, and `npx` was never looked at. (The plan
+  replaces that class with `RunnerCommandParser`, which unwraps `cmd /c`.)
 - Inside the AppContainer, `cmd` finds no `npx` it can read:
   - `C:\Program Files\nodejs` has a **protected** ACL from the Node MSI: Users, Authenticated Users,
     Administrators, SYSTEM, and **no** `ALL APPLICATION PACKAGES` (`S-1-15-2-1`). `C:\Program Files` and

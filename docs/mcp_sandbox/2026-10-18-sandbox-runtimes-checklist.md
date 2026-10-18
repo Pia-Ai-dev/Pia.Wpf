@@ -159,7 +159,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### W Docs
 
-- [ ] **W1 Cross-references.** The design's and spike doc's Status lines, and the 2026-10-17 plan, checklist and
+- [x] **W1 Cross-references.** The design's and spike doc's Status lines, and the 2026-10-17 plan, checklist and
   gate-results passages that still say launchers are refused.
   *Deps:* U1 · *Effort:* XS · *Value:* Med
 

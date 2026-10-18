@@ -1,6 +1,7 @@
 # Sandboxed npx, uvx and dnx: spike results
 
-**Status:** Measured. Answers the builder-checks of the design. Four results go back to the owner (end of file).
+**Status:** Measured. Answers the builder-checks of the design; the owner decided the four open results (end of
+file). [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md) builds on these results.
 **Owner:** Marco Altmann
 **Written:** 2026-10-18
 **Origin:** [2026-10-18-sandbox-runtimes-design.md](2026-10-18-sandbox-runtimes-design.md), the "left to the

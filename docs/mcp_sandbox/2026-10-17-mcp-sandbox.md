@@ -59,7 +59,7 @@ MXC facts on this tier that set the rules. Each comes from the PoC's limitations
 | Default policy | rw = a per-server dir `PiaPaths.McpSandboxRoot/<slug>` (a **property**), no ro, egress **Deny**, cwd = first rw path | Least privilege. The user widens it in the editor. |
 | Network | `Deny` default, a single `Allow` switch with a warning that it allows every host | That is all MXC offers on Tier 3. |
 | Gate | **Unchanged.** Sandboxed tools are still approved per call | Relaxing the gate for sandboxed tools is a separate decision (*Not yet planned*). The card gains a one-line sandbox summary. |
-| Shims (`npx`, `uvx`, `.cmd`, `.bat`) | **Out of the first shot.** Toggle disabled with a one-line reason | See gate G3. Their real process downloads into `%LOCALAPPDATA%` caches, which are redirected inside the AppContainer, and needs egress. |
+| Shims (`npx`, `uvx`, `.cmd`, `.bat`) | **Out of the first shot.** Toggle disabled with a one-line reason | See gate G3. Their real process downloads into `%LOCALAPPDATA%` caches, which are redirected inside the AppContainer, and needs egress. Followed up by [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md): the runners `npx`, `npm exec`, `uvx`, `dnx`, `node <script>` and `dotnet <dll>` run sandboxed, and a new runner server defaults to network `Allow`. `.cmd`, `.bat` and `.ps1` stay refused. |
 | CI | MXC integration tests use a **runtime skip** when MXC cannot spawn, not `Explicit` | The local gate on this host must prove containment. The GitHub runner may not be able to create AppContainers (G2). |
 | How MXC ships | **Not in the installer.** The native runtime is a **runtime asset on Pia's own storage**, downloaded the first time a sandboxed server is needed. Owner request | Keeps ~15 MB of native code, most users never need, out of every install and update. It reuses the `RuntimeAssetCatalog` / `AssetDownloader` / `Assets:MirrorBaseUrl` path the models already use: the configured mirror, upstream only when no mirror is configured, and the air-gapped pre-fetch. See *Shipping the MXC runtime*. |
 
@@ -168,7 +168,17 @@ to put it in a policy. So the dir is added **only when it is not** under `%WINDI
 `Program Files*`. Those are readable inside the AppContainer anyway, through the inherited
 `ALL APPLICATION PACKAGES:(RX)` ACE. Gate G1 confirms this. The dir is also skipped when a read-write or
 read-only path already covers it. The command must resolve to an `.exe` (a bare name is looked up on
-`PATH`); `.cmd`, `.bat`, `.ps1` and shims such as `npx` are refused at start with a reason.
+`PATH`); `.cmd`, `.bat` and `.ps1` scripts are refused at start with a reason, and so are `pnpm`, `yarn`,
+`bun`, `deno`, `pipx` and `docker`.
+
+`npx`, `npm exec`, `uvx`, `dnx`, `node <script>` and `dotnet <dll>` skip this rule. They go through
+runtime detection, which grants the runtime's folder (for a script or dll also the program's folder)
+read-only per start unless a container can read it already
+([2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md)). `uvx` is the exception:
+uv installs the tool on the host into the server's own runtime folder, and only that folder is
+granted, never the user's uv. `cmd /c` is unwrapped,
+never run: the program after it is judged as if it were the command, and a line that uses cmd features
+(`& | < > ^ %`) is refused.
 
 ### Grant preflight
 
@@ -299,7 +309,7 @@ of them are Microsoft-signed (checked 2026-10-17).
 |---|---|---|
 | **G1** | Does an MXC spawn work from a **non-elevated** process (medium IL) with policy paths under the user profile? Are the four denials enforced (write outside rw, delete in ro, read an ungranted sibling, egress)? Does a command under `Program Files` work without adding its dir? Do per-pid container names leak `%LOCALAPPDATA%\Packages` profiles? | If the spawn fails non-elevated, the whole plan stops and goes back to the owner (an elevated broker is a different project). The other answers set the command-dir rule and the naming. |
 | **G2** | Can MXC run with its native files **outside** the app dir? Native assets excluded from publish, `mxc_ffi` resolved from `MxcRuntimeDirectory` through a DllImport resolver, and a Tier 3 spawn that works (does it need `plm.exe` / the WSL files beside `mxc_ffi.dll`, or next to the exe?). Can the `windows-latest` runner spawn a container? | If the native runtime cannot live outside the app dir, the storage-shipping decision goes back to the owner (bundling instead). CI result: whether the integration tests run there or skip. `plm.exe`, `wslcsdk.dll` and `wxc-wslc-daemon.exe` are WSL-side. Drop them from the extract only if the Tier 3 spawn works without them. |
-| **G3** | Can a shim-launched server (`npx -y …`) run sandboxed with a reasonable policy? | First shot: no, the toggle is disabled for shims. A positive spike becomes a follow-up, not scope creep. |
+| **G3** | Can a shim-launched server (`npx -y …`) run sandboxed with a reasonable policy? | First shot: no, the toggle is disabled for shims. A positive spike becomes a follow-up, not scope creep. The spike was positive ([2026-10-18-sandbox-runtimes-spike-results.md](2026-10-18-sandbox-runtimes-spike-results.md)); [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md) is that follow-up. |
 
 ## Verification
 
@@ -375,7 +385,9 @@ Scenarios. Verdicts come from fixture SHA-256s and Pia log lines, never from the
 10. `taskkill /F` on Pia, then start again. The next start's sweep log line reports the removed ACEs,
     and `icacls` is clean.
 11. Guard UX: a readonly path inside the readwrite path is refused in the editor with the message.
-    `npx` as the command shows the toggle disabled with the reason.
+    `npx` as the command shows the toggle disabled with the reason. (Under
+    [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md) `npx` runs sandboxed; a
+    `.cmd` script is the case that still disables the toggle.)
 12. Ownership: the same server in a folder owned by `Administrators` (anything an elevated build or
     copy produced) is refused with the "belong to an administrator" reason and never starts
     uncontained. For every other scenario the harness gives the user ownership of the server and the
@@ -423,6 +435,12 @@ Run setup:
 | 10 | `Stop -Kill`, start again | sweep log line, `icacls` clean | pass | After `Stop -Kill` (taskkill /F with the server running): `Status` showed 3 explicit ACEs marked LEAK (`fixture\protected`, `fixture\workspace`, `server\Pia.TestMcpServer`), 0 helpers, 0 orphans. Next start: 20:59:49.060 `ACE sweep: 3 folder(s) checked, 3 leaked sandbox ACE(s) removed, 0 entry(ies) failed`; 20:59:49.124 `Starting pia-mcp-files under MXC`; 20:59:49.422 `activated with 7 tools`. `Status` then showed only the new run's 3 active ACEs and `leaked: 0`; after the final graceful stop, `explicit ACEs: 0`. |
 | 11 | Guard UX: a read-only path inside the read-write path is refused; `npx` shows the toggle disabled with its reason | editor message, toggle state | pass | Read-write `…\fixture\workspace` plus read-only `…\fixture\workspace\notes`: `McpServers_Sandbox_GuardLead` read "This server won't start until these are fixed:" and `McpServers_Sandbox_GuardMessage` read "…\fixture\workspace\notes: This read-only folder is inside a read-write folder, so it would be writable. Move it out or remove it."; both disappeared once the folder was removed. Command `npx`: `McpServers_Sandbox_DisabledReason` read "Launchers such as npx and uvx, and .cmd or .bat scripts, cannot run in a sandbox yet. Point the command at the server program itself."; with the toggle off, `McpServers_Sandbox_Toggle` reported `isEnabled=false`. With the toggle on it stays enabled, by design, so it can be switched off. |
 | 12 | Ownership: the same server in the Administrators-owned `server-admin` folder is refused and never started uncontained | `Not running` reason, no process | pass | Same server and policy with the command in `server-admin`: 20:58:07.761 `pia-mcp-files not started: 45 item(s) the sandbox cannot be given access to`; `FAIL … Failed to initialize MCP plugin 2f58ccd7-…SandboxStartException: Pia can't sandbox this server: 45 file(s) in its folder belong to an administrator or another account. Install or copy the server into a folder you own.`; 20:58:07.772 `activated with 0 tools`. The detail pane read "Not running: Pia can't sandbox this server: 45 file(s) in its folder belong to an administrator or another account…". No `Pia.TestMcpServer` process existed and no uncontained start was logged. |
+
+Scenario 11 records the editor as it was on that run. Under
+[2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md) `npx` keeps the toggle enabled,
+and the reason for a refused launcher reads "Pia can't sandbox servers started with pnpm, yarn, bun, deno,
+pipx or docker, or with .cmd, .bat or .ps1 scripts. npx, npm exec, uvx and dnx work; otherwise point the
+command at the server program itself."
 
 First-use cost, from a de-elevated dry run of the provisioner and launcher on this host (nuget.org
 fallback, a console outside the repo): downloading, pinning, extracting and signature-checking the
@@ -479,8 +497,13 @@ Findings:
   never granted and never nested inside a granted folder. The path guard enforces that.
 - The UI policy stays on. With `Ui.Disable = true`, .NET servers fail to start (`0x80008089`). What
   that leaves reachable (clipboard, desktop) was not measured.
-- Script launchers (`npx`, `uvx`, `.cmd`, `.bat`, `.ps1`) are refused with a reason. Sandboxing them
-  is a follow-up.
+- Runners run sandboxed through
+  [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md): `npx`, `npm exec`, `uvx`,
+  `dnx`, `node <script>` and `dotnet <dll>`, also behind `cmd /c`. That plan's *Known limits* apply; the
+  main ones: Node child processes with piped stdio hang, uvx installs only wheels from the package index,
+  and the user's `.npmrc`, `uv.toml` and `NuGet.Config` do not reach the server. Still refused with a
+  reason: `.cmd`, `.bat` and `.ps1` scripts, `pnpm`, `yarn`, `bun`, `deno`, `pipx`, `docker`, `uv run`,
+  and a `cmd /c` line that uses cmd features.
 - Refused as shared folders: Desktop, Documents, Downloads and OneDrive roots themselves (their
   subfolders are allowed), the profile root and above, system roots, UNC paths, and any folder over
   20,000 entries.
@@ -493,7 +516,13 @@ Findings:
   at their top level. A nested file the user doesn't own is just unreadable to the server.
 - Our checks skip junctions and symlinks. What MXC does with them was not verified.
 - A server that an elevated installer put outside `Program Files` cannot be sandboxed by a
-  non-elevated Pia. It is refused with "install or copy into a folder you own".
+  non-elevated Pia. It is refused with "install or copy into a folder you own". An admin-owned
+  **runtime** (Node's MSI in `Program Files\nodejs`) has a fix: when Pia runs elevated, the editor's
+  step 2 lets every sandboxed app read the folder holding `node.exe` or `dotnet.exe`; otherwise the
+  editor shows a user-scope install guide. Step 2 never covers a server's own folder.
+- User environment variables (`HKCU\Environment`) no longer reach any sandboxed server, plain exe
+  servers included, except `Path`, `TEMP`, `TMP` and names starting with `OneDrive`. A server's own env
+  entries still win. Machine-level (`HKLM`) variables still reach containers.
 
 **Cleanup is best effort**
 - A hard kill leaves temporary `S-1-15-2-*` ACEs on the shared folders. The next start removes them
@@ -526,8 +555,10 @@ Findings:
 
 **Owner to confirm** (defaults chosen while the owner was away): sandbox on by default for a new
 sandboxable server, network `Deny` by default, the runtime download only on a click or on saving an
-enabled sandboxed server, script launchers refused, Desktop/Documents/Downloads/OneDrive roots refused
-as shared folders, the 20,000-entry cap, and the approval gate unchanged for sandboxed tools.
+enabled sandboxed server, `.cmd`, `.bat` and `.ps1` scripts refused, Desktop/Documents/Downloads/OneDrive
+roots refused as shared folders, the 20,000-entry cap, and the approval gate unchanged for sandboxed
+tools. The runners are no longer a pending default: the owner approved sandboxing them, see
+[2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md).
 
 **Found on the way, not in this change:** `AssistantWorkspace.DefaultRoot`
 (`src/Pia.Wpf/Infrastructure/AssistantWorkspace.cs`) is a `{ get; } =` initializer built from the real
@@ -536,10 +567,12 @@ the real folder.
 
 ## Not yet planned
 
+Sandboxed runners (`npx`, `uvx`, `dnx`) are planned in
+[2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md).
+
 - Sandboxing **server-pushed** (org) MCP plugins, through a `sandbox` block in their ConfigJson.
 - A `RequireMcpSandbox` org policy key in client policy, which would refuse uncontained local servers.
 - Relaxing the approval gate (session/Always tiers) for sandboxed tools.
-- Shim servers (`npx`/`uvx`) sandboxed, depending on G3.
 - OneDrive or other cloud-synced folders and UNC paths as policy paths.
 - Per-call or per-approval narrower containers for destructive tools (the PoC's "stronger model").
 - Tier 1 (BaseContainer) per-host egress rules, once available on the target Windows builds.

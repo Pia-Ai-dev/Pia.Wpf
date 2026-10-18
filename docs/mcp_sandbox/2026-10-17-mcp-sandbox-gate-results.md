@@ -41,7 +41,10 @@ over MCP. A Tier 3 (`AppContainerDacl`) spawn is the only tier tried.
   elevated build) and the user only has `Users:(RX)` on them. The same server works elevated, and works
   from a copy the user owns. So a server that an elevated installer or build put outside `Program Files`
   cannot be sandboxed by a non-elevated Pia. The launcher must surface the child's stderr tail, and a
-  pre-check that the command's directory and files are owned by the user is worth adding.
+  pre-check that the command's directory and files are owned by the user is worth adding. An
+  admin-installed **runtime** (Node, .NET) is the exception: when Pia runs elevated, step 2 of
+  [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md) lets every sandboxed app read
+  the runtime's folder. It does not cover a server's own folder.
 - **SDK order rule.** Take `StandardInput`, `StandardOutput` and `StandardError` before the first
   `WaitAsync`. Reading `StandardOutput` after `WaitAsync` has started throws `InvalidOperationException`.
 
