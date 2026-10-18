@@ -870,8 +870,9 @@ English service texts (static `SandboxRuntimeMessages`, C3; never with a path):
 - `UvNotFound`: "uv was not found. Install it for your user only (the server's settings show how)."
 - `ToolchainTooLarge`: "The runtime's folder holds too many files to share with a sandbox. Install a separate
   copy for your user only (the server's settings show how)."
-- `ToolchainTooWide`: "The runtime sits directly in a folder Pia won't share (your profile, Desktop,
-  Documents or Downloads). Install it into a folder of its own."
+- `ToolchainTooWide`: "The runtime sits directly on a drive, on a network share or in a folder Pia won't share
+  (such as your profile, Desktop, Documents or Downloads). Install it into a folder of its own." The
+  machine-wide grant gives the same text when it refuses a drive, share or too-wide root.
 - `ToolchainPathUnsupported`: "The runtime's folder path contains a semicolon, which a sandbox can't use."
 - `ProgramFolderTooWide`: "Put the program in its own folder: Pia would have to share all of the folder
   around it." · `ProgramFolderTooLarge`: "The program's folder holds too many files to share with a
@@ -1579,8 +1580,9 @@ Issues (`McpServers_Sandbox_Runtime_Issue_<RuntimeIssue>`):
 - `_UvNotFound`: "uv was not found. Install it for your user only, as shown below."
 - `_ToolchainTooLarge`: "The runtime's folder holds too many files to share with a sandbox. Install a separate
   copy for your user only, as shown below."
-- `_ToolchainTooWide`: "The runtime sits directly in a folder Pia won't share (your profile, Desktop,
-  Documents or Downloads). Install it into a folder of its own, as shown below."
+- `_ToolchainTooWide`: "The runtime sits directly on a drive, on a network share or in a folder Pia won't
+  share (such as your profile, Desktop, Documents or Downloads). Install it into a folder of its own, as shown
+  below."
 - `_ToolchainPathUnsupported`: "The runtime's folder path contains a semicolon, which a sandbox can't use.
   Install it into another folder, as shown below."
 - `_ProgramFolderTooLarge`: "The program's folder holds too many files to share with a sandboxed server. Put

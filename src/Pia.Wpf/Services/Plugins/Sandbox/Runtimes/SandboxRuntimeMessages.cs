@@ -56,7 +56,7 @@ public static class SandboxRuntimeMessages
         "The runtime's folder holds too many files to share with a sandbox. Install a separate copy for your user only (the server's settings show how).";
 
     public const string ToolchainTooWide =
-        "The runtime sits directly in a folder Pia won't share (your profile, Desktop, Documents or Downloads). Install it into a folder of its own.";
+        "The runtime sits directly on a drive, on a network share or in a folder Pia won't share (such as your profile, Desktop, Documents or Downloads). Install it into a folder of its own.";
 
     public const string ToolchainPathUnsupported = "The runtime's folder path contains a semicolon, which a sandbox can't use.";
 

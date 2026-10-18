@@ -98,7 +98,8 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.Equal("Pia does not change the permissions of a whole drive.", result.Error);
+        Assert.Equal(SandboxRuntimeMessages.ToolchainTooWide, result.Error);
+        PathFreeAssert.IsPathFree(new InvalidOperationException(result.Error));
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
     }
 
@@ -116,10 +117,19 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+        Assert.Equal(SandboxRuntimeMessages.ToolchainTooWide, result.Error);
         PathFreeAssert.IsPathFree(new InvalidOperationException(result.Error));
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
         _acl.DidNotReceive().HasAllAppPackagesAce(Arg.Any<string>());
+    }
+
+    /// <summary>The too-wide refusal also fires for a drive or share root, so its text must cover them.</summary>
+    [Fact]
+    public void TheTooWideText_CoversADriveAndAShare_WithoutNamingAPath()
+    {
+        Assert.Contains("on a drive", SandboxRuntimeMessages.ToolchainTooWide);
+        Assert.Contains("network share", SandboxRuntimeMessages.ToolchainTooWide);
+        PathFreeAssert.IsPathFree(new InvalidOperationException(SandboxRuntimeMessages.ToolchainTooWide));
     }
 
     /// <summary>The cap keeps per-start grants fast; this entry is written once, so a large runtime folder may take it.</summary>

@@ -546,6 +546,22 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         Assert.Equal(RuntimeInstallGuides.GuideFor(RuntimeFamily.Node).Command, vm.RuntimeGuideCommand);
     }
 
+    /// <summary>Detection calls a drive or share root too wide as well, so the editor's text must say so in every language.</summary>
+    [Theory]
+    [InlineData("en", "drive", "network share")]
+    [InlineData("de", "Laufwerk", "Netzwerkfreigabe")]
+    [InlineData("fr", "lecteur", "partage réseau")]
+    public void TheTooWideReason_CoversADriveAndAShare_InEveryLanguage(string culture, string drive, string share)
+    {
+        var text = Pia.Resources.Strings.ViewStrings.ResourceManager.GetString(
+            "McpServers_Sandbox_Runtime_Issue_ToolchainTooWide", System.Globalization.CultureInfo.GetCultureInfo(culture));
+
+        Assert.NotNull(text);
+        Assert.Contains(drive, text);
+        Assert.Contains(share, text);
+        Assert.DoesNotMatch(@"[A-Za-z]:[\\/]|\\\\", text);
+    }
+
     [Fact]
     public void AUvInAWritableFolder_ShowsTheUvGuide()
     {

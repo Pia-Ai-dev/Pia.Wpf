@@ -389,7 +389,7 @@ public sealed class SandboxLaunchSpecBuilderTests
     [InlineData(RuntimeOutcome.NeedsAdminFix, RuntimeIssue.DotnetAdminOwned,
         "The only .NET found is installed for all users, and sandboxed apps can't read its folder. Run Pia as administrator once to allow it, or install it for your user only (the server's settings show how).")]
     [InlineData(RuntimeOutcome.Refused, RuntimeIssue.ToolchainTooWide,
-        "The runtime sits directly in a folder Pia won't share (your profile, Desktop, Documents or Downloads). Install it into a folder of its own.")]
+        "The runtime sits directly on a drive, on a network share or in a folder Pia won't share (such as your profile, Desktop, Documents or Downloads). Install it into a folder of its own.")]
     public void ARuntimeThatIsNotReady_GivesItsIssueText(RuntimeOutcome outcome, RuntimeIssue issue, string expected)
     {
         var detector = new FakeDetector(runner => new RuntimeResolution(runner.Kind, outcome, issue, null, [], null));
