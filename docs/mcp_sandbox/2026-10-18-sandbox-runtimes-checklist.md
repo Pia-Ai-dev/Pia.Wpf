@@ -76,7 +76,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
   recipes and their exact environments, the preload in Pia's read-only support folder, both `NuGet.Config`
   bodies, and the `--yes` insertion for dnx.
   *Deps:* A1 · *Effort:* S · *Value:* High
-- [ ] **C2 State provisioner and uv install.** `RuntimeStateProvisioner`, `UvToolRunner` and
+- [x] **C2 State provisioner and uv install.** `RuntimeStateProvisioner`, `UvToolRunner` and
   `UvEntryPointResolver`: support files, state folders with the per-container `AC\Temp`, reparse-safe writes,
   the grant record, the spec record and reinstall, the host-side `uv tool install`, the receipt-scoped entry
   point, the cache prune and path-free errors, called from an off-thread `MxcClientTransport.ConnectAsync` that
@@ -91,7 +91,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### D Runtime state
 
-- [ ] **D1 Runtime state store.** `RuntimeStateStore`: grant records outside the state folder, sweep roots,
+- [x] **D1 Runtime state store.** `RuntimeStateStore`: grant records outside the state folder, sweep roots,
   `TryDelete` that skips a prefix whose lock or lease is held, reparse-safe robust deletion and orphan
   detection.
   *Deps:* A1 · *Effort:* S · *Value:* Enabler

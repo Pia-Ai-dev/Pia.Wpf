@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using NSubstitute;
 using Pia.Services.Exceptions;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 using Xunit;
 
 namespace Pia.Tests.Services.Sandbox;
@@ -127,6 +129,140 @@ public sealed class MxcClientTransportTests
 
     [Fact]
     public void Name_CarriesTheContainerName() => Assert.Equal("mxc:pia-mcp-fake", Transport(new FakeMxcProcessLauncher()).Name);
+
+    // The lock key is a normalized path; no folder is touched, so no profile redirection is needed.
+    private static SandboxLaunchSpec RunnerSpec(string state) =>
+        Spec with { RuntimeStateDirectory = state, RunnerKind = RunnerKind.Npx };
+
+    private static string NewStateDirectory() => Path.Combine(@"C:\pia-transport-tests", Guid.NewGuid().ToString("N") + ".runtime");
+
+    private static MxcClientTransport RunnerTransport(
+        SandboxLaunchSpec spec, IMxcProcessLauncher launcher, IRuntimeStateProvisioner provisioner, ISandboxGrantVerifier? verifier = null) =>
+        new(spec, launcher, verifier ?? Grants(), NullLogger.Instance, NullLoggerFactory.Instance, provisioner);
+
+    [Fact]
+    public async Task ConnectAsync_ReturnsToItsCaller_WhileThePreparationStillRuns()
+    {
+        using var gate = new ManualResetEventSlim();
+        var verifier = Substitute.For<ISandboxGrantVerifier>();
+        verifier.Verify(Arg.Any<SandboxLaunchSpec>()).Returns(_ =>
+        {
+            gate.Wait(TimeSpan.FromSeconds(10));
+            return new SandboxGrantResult(true, 0, null);
+        });
+        var transport = Transport(new FakeMxcProcessLauncher(), verifier);
+
+        var connecting = transport.ConnectAsync(TestContext.Current.CancellationToken);
+        var returnedEarly = !connecting.IsCompleted;
+        gate.Set();
+        await using var session = await connecting;
+
+        Assert.True(returnedEarly);
+    }
+
+    [Fact]
+    public async Task ASecondTransportOnTheSameStateFolder_PreparesOnlyAfterTheFirstLaunchReturned()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var state = NewStateDirectory();
+        var events = new List<string>();
+        void Record(string e) { lock (events) events.Add(e); }
+        var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstLauncher = new GatedLauncher(new FakeMxcProcessLauncher(), async () =>
+        {
+            firstEntered.SetResult();
+            await releaseFirst.Task;
+        }, () => Record("first launched"));
+        var first = RunnerTransport(RunnerSpec(state), firstLauncher, new FakeProvisioner(s => { Record("first prepared"); return s; }));
+        var second = RunnerTransport(RunnerSpec(state), new FakeMxcProcessLauncher(), new FakeProvisioner(s => { Record("second prepared"); return s; }));
+
+        var firstConnecting = first.ConnectAsync(ct);
+        await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var secondConnecting = second.ConnectAsync(ct);
+        await Task.Delay(300, ct);
+        lock (events)
+            Assert.DoesNotContain("second prepared", events);
+
+        releaseFirst.SetResult();
+        await using var firstSession = await firstConnecting;
+        await using var secondSession = await secondConnecting;
+
+        Assert.Equal(["first prepared", "first launched", "second prepared"], events);
+    }
+
+    [Fact]
+    public async Task VerifyAndTheLauncher_GetTheProvisionersSpec_AndTheLockIsFreedAfterTheLaunch()
+    {
+        var state = NewStateDirectory();
+        var prepared = RunnerSpec(state) with { Command = @"C:\state\tools\t\Scripts\python.exe", Args = ["-c", "code"] };
+        var verifier = Grants();
+        var launcher = new FakeMxcProcessLauncher();
+
+        await using var session = await RunnerTransport(RunnerSpec(state), launcher, new FakeProvisioner(_ => prepared), verifier)
+            .ConnectAsync(TestContext.Current.CancellationToken);
+
+        verifier.Received(1).Verify(prepared);
+        Assert.Equal(prepared, Assert.Single(launcher.Launched));
+        using var free = RuntimeStateLocks.TryAcquire(state);
+        Assert.NotNull(free);
+    }
+
+    [Fact]
+    public async Task AProvisionerFailure_StartsNothing_KeepsItsOutputInTheTail_AndFreesTheLock()
+    {
+        var state = NewStateDirectory();
+        var verifier = Grants();
+        var launcher = new FakeMxcProcessLauncher();
+        var provisioner = new FakeProvisioner((_, stderrLine) =>
+        {
+            stderrLine("error: no wheel for this platform");
+            throw new SandboxStartException("uv could not install the package.");
+        });
+        var transport = RunnerTransport(RunnerSpec(state), launcher, provisioner, verifier);
+
+        await Assert.ThrowsAsync<SandboxStartException>(() => transport.ConnectAsync(TestContext.Current.CancellationToken));
+
+        Assert.Empty(launcher.Launched);
+        verifier.DidNotReceive().Verify(Arg.Any<SandboxLaunchSpec>());
+        Assert.Equal("error: no wheel for this platform", transport.StderrTail);
+        using var free = RuntimeStateLocks.TryAcquire(state);
+        Assert.NotNull(free);
+    }
+
+    [Fact]
+    public async Task AGrantFailureAfterPreparation_FreesTheLock()
+    {
+        var state = NewStateDirectory();
+        var transport = RunnerTransport(RunnerSpec(state), new FakeMxcProcessLauncher(), new FakeProvisioner(s => s), Grants(ok: false));
+
+        await Assert.ThrowsAsync<SandboxStartException>(() => transport.ConnectAsync(TestContext.Current.CancellationToken));
+
+        using var free = RuntimeStateLocks.TryAcquire(state);
+        Assert.NotNull(free);
+    }
+
+    private sealed class FakeProvisioner(Func<SandboxLaunchSpec, Action<string>, SandboxLaunchSpec> prepare) : IRuntimeStateProvisioner
+    {
+        public FakeProvisioner(Func<SandboxLaunchSpec, SandboxLaunchSpec> prepare)
+            : this((spec, _) => prepare(spec))
+        {
+        }
+
+        public Task<SandboxLaunchSpec> PrepareAsync(SandboxLaunchSpec spec, Action<string> stderrLine, CancellationToken cancellationToken) =>
+            Task.FromResult(prepare(spec, stderrLine));
+    }
+
+    private sealed class GatedLauncher(IMxcProcessLauncher inner, Func<Task> before, Action after) : IMxcProcessLauncher
+    {
+        public async Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken)
+        {
+            await before();
+            var launched = await inner.LaunchAsync(spec, cancellationToken);
+            after();
+            return launched;
+        }
+    }
 
     private static async Task<string[]> TailContaining(MxcClientTransport transport, string expected)
     {

@@ -1,0 +1,259 @@
+using System.ComponentModel;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Pia.Logging;
+using Pia.Services.Exceptions;
+
+namespace Pia.Services.Plugins.Sandbox.Runtimes;
+
+/// <summary>Everything on disk a runner needs before its container starts; the caller holds the state folder's lock.</summary>
+public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunner uv, ILogger<RuntimeStateProvisioner> logger)
+    : IRuntimeStateProvisioner
+{
+    internal const string SpecRecordName = "pia-uv-spec.json";
+
+    internal const string InstallFailedMessage =
+        "uv could not install the package. Only packages published as wheels are supported; the server's error output has the details.";
+
+    internal const string OfflineMessage =
+        "Network access is off and this package is not installed yet. Allow network access for the first start.";
+
+    internal const string NoCommandMessage = "The installed package does not provide the command this server names.";
+
+    internal const string InUseMessage =
+        "This server's package is in use by the running server. Stop the server, then try again.";
+
+    internal const string CouldNotRunUvMessage = "Pia could not run uv.";
+
+    internal const string CouldNotPrepareMessage = "Pia could not prepare the server's runtime folder.";
+
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task<SandboxLaunchSpec> PrepareAsync(SandboxLaunchSpec spec, Action<string> stderrLine, CancellationToken cancellationToken)
+    {
+        if (spec.RunnerKind == RunnerKind.None || spec.Preparation is not { } preparation)
+            return spec;
+
+        try
+        {
+            return await PrepareCoreAsync(spec, preparation, stderrLine, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogFailure(spec.ContainerName, ex);
+            throw new SandboxStartException(CouldNotPrepareMessage);
+        }
+    }
+
+    private async Task<SandboxLaunchSpec> PrepareCoreAsync(
+        SandboxLaunchSpec spec, RuntimePreparation preparation, Action<string> stderrLine, CancellationToken cancellationToken)
+    {
+        var state = spec.RuntimeStateDirectory is { } s ? SandboxLaunchSpecBuilder.Normalize(s) : null;
+        var support = spec.SupportDirectory is { } p ? SandboxLaunchSpecBuilder.Normalize(p) : null;
+        var files = preparation.Files.Select(file => (File: file, Root: RootOf(file.Path, state, support))).ToList();
+        var directories = preparation.Directories.Select(directory => (Path: directory, Root: RootOf(directory, state, support))).ToList();
+        if (preparation.Uv is { } uvRequest)
+            CheckUvRequest(uvRequest, state);
+
+        if (support is not null)
+            Directory.CreateDirectory(support);
+
+        foreach (var (file, _) in files.Where(f => f.Root == support))
+            WriteSupportFile(file);
+
+        foreach (var (directory, root) in directories)
+        {
+            if (root == state)
+                StateFolderSafety.EnsureNoReparsePoints(root, directory);
+            Directory.CreateDirectory(directory);
+        }
+
+        foreach (var (file, root) in files.Where(f => f.Root != support))
+            WriteStateFile(root, file);
+
+        store.WriteGrantRecord(spec.ContainerName, GrantRoots(spec));
+
+        if (preparation.Uv is not { } request)
+            return spec;
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return await PrepareUvAsync(spec, request, stderrLine, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void CheckUvRequest(UvPrepareRequest request, string? state)
+    {
+        var uvState = SandboxLaunchSpecBuilder.Normalize(request.StateDirectory);
+        if (state is null || !string.Equals(uvState, state, StringComparison.OrdinalIgnoreCase)
+            || request.CacheDirectoriesToPrune.Any(cache => !IsStrictlyUnder(cache, state)))
+            throw new InvalidOperationException("A uv preparation must stay inside the runtime state folder.");
+    }
+
+    private static bool IsStrictlyUnder(string path, string root)
+    {
+        var full = SandboxLaunchSpecBuilder.Normalize(path);
+        return SandboxLaunchSpecBuilder.IsSameOrUnder(full, root) && !string.Equals(full, root, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<SandboxLaunchSpec> PrepareUvAsync(
+        SandboxLaunchSpec spec, UvPrepareRequest request, Action<string> stderrLine, CancellationToken cancellationToken)
+    {
+        var state = SandboxLaunchSpecBuilder.Normalize(request.StateDirectory);
+        StateFolderSafety.EnsureNoReparsePoints(state, state);
+        Directory.CreateDirectory(state);
+
+        var recordPath = Path.Combine(state, SpecRecordName);
+        var wanted = new UvSpecRecord(request.Spec.Package, [.. request.Spec.With], request.Spec.Python);
+        var recorded = ReadSpecRecord(recordPath);
+        var unchanged = recorded is not null && recorded.SameAs(wanted);
+        if (!unchanged)
+            RemoveInstalledTool(spec.ContainerName, state);
+
+        if (request.Offline)
+        {
+            if (!unchanged || UvEntryPointResolver.Find(state, request.Spec) is null)
+                throw new SandboxStartException(OfflineMessage);
+        }
+        else
+        {
+            int exitCode;
+            try
+            {
+                exitCode = await uv.InstallAsync(request, stderrLine, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Win32Exception ex)
+            {
+                LogFailure(spec.ContainerName, ex);
+                throw new SandboxStartException(CouldNotRunUvMessage);
+            }
+
+            if (exitCode != 0)
+                throw new SandboxStartException(InstallFailedMessage);
+
+            StateFolderSafety.EnsureNoReparsePoints(state, recordPath);
+            File.WriteAllText(recordPath, JsonSerializer.Serialize(wanted, Json), Utf8NoBom);
+            PruneCaches(spec.ContainerName, request.CacheDirectoriesToPrune);
+        }
+
+        if (UvEntryPointResolver.Find(state, request.Spec) is not { } entry)
+            throw new SandboxStartException(NoCommandMessage);
+
+        return spec with
+        {
+            Command = UvEntryPointResolver.PythonFor(entry.ToolFolder),
+            Args = ["-c", UvEntryPointResolver.Code(request.Spec.CommandName, entry.Module, entry.Attr), .. request.ServerArgs],
+        };
+    }
+
+    private void RemoveInstalledTool(string containerName, string state)
+    {
+        try
+        {
+            StateFolderSafety.DeleteTree(Path.Combine(state, "tools"));
+            StateFolderSafety.DeleteTree(Path.Combine(state, "tool-bin"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogFailure(containerName, ex);
+            throw new SandboxStartException(InUseMessage);
+        }
+    }
+
+    private void PruneCaches(string containerName, IReadOnlyList<string> cacheDirectories)
+    {
+        foreach (var cache in cacheDirectories)
+        {
+            try
+            {
+                StateFolderSafety.DeleteTree(cache);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning("uv cache for {Container} not pruned: {Error}", containerName, ex.GetType().Name);
+                logger.SensitiveDebug("uv cache {Path} not pruned: {Message}", cache, ex.Message);
+            }
+        }
+    }
+
+    private static string RootOf(string path, string? state, string? support)
+    {
+        var full = SandboxLaunchSpecBuilder.Normalize(path);
+        if (state is not null && SandboxLaunchSpecBuilder.IsSameOrUnder(full, state))
+            return state;
+        if (support is not null && SandboxLaunchSpecBuilder.IsSameOrUnder(full, support))
+            return support;
+
+        throw new InvalidOperationException("A prepared path lies outside the runtime state and support folders.");
+    }
+
+    private static void WriteStateFile(string state, PreparedFile file)
+    {
+        StateFolderSafety.EnsureNoReparsePoints(state, file.Path);
+        var bytes = Utf8NoBom.GetBytes(file.Content);
+        if (IsCurrent(file.Path, bytes))
+            return;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(file.Path)!);
+        File.WriteAllBytes(file.Path, bytes);
+    }
+
+    private static void WriteSupportFile(PreparedFile file)
+    {
+        var bytes = Utf8NoBom.GetBytes(file.Content);
+        if (IsCurrent(file.Path, bytes))
+            return;
+
+        var directory = Path.GetDirectoryName(file.Path)!;
+        Directory.CreateDirectory(directory);
+        var temp = Path.Combine(directory, $".{Path.GetFileName(file.Path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temp, bytes);
+            File.Move(temp, file.Path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temp);
+        }
+    }
+
+    private static bool IsCurrent(string path, byte[] bytes) =>
+        File.Exists(path) && File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes);
+
+    private static List<string> GrantRoots(SandboxLaunchSpec spec) =>
+        [.. spec.Toolchain
+            .Append(spec.GrantedCommandDirectory)
+            .Append(spec.RuntimeStateDirectory)
+            .Append(spec.SupportDirectory)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private static UvSpecRecord? ReadSpecRecord(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? JsonSerializer.Deserialize<UvSpecRecord>(File.ReadAllText(path), Json) : null;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private void LogFailure(string containerName, Exception ex)
+    {
+        logger.LogWarning("Runtime preparation for {Container} failed: {Error}", containerName, ex.GetType().Name);
+        logger.SensitiveDebug("Runtime preparation for {Container} failed: {Message}", containerName, ex.Message);
+    }
+
+    private sealed record UvSpecRecord(string? Package, IReadOnlyList<string>? With, string? Python)
+    {
+        public bool SameAs(UvSpecRecord other) =>
+            Package == other.Package
+            && Python == other.Python
+            && (With ?? []).SequenceEqual(other.With ?? [], StringComparer.Ordinal);
+    }
+}

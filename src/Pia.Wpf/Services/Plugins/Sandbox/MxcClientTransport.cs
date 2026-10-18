@@ -6,6 +6,7 @@ using ModelContextProtocol.Protocol;
 using Pia.Logging;
 using Pia.Paths;
 using Pia.Services.Exceptions;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 
 namespace Pia.Services.Plugins.Sandbox;
 
@@ -25,6 +26,7 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
     private readonly ISandboxGrantVerifier _verifier;
     private readonly ILogger _logger;
     private readonly ILoggerFactory? _loggerFactory;
+    private readonly IRuntimeStateProvisioner? _provisioner;
     private readonly Queue<string> _stderrTail = new();
     private int _connected;
 
@@ -33,13 +35,15 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
         IMxcProcessLauncher launcher,
         ISandboxGrantVerifier verifier,
         ILogger logger,
-        ILoggerFactory? loggerFactory)
+        ILoggerFactory? loggerFactory,
+        IRuntimeStateProvisioner? provisioner = null)
     {
         _spec = spec;
         _launcher = launcher;
         _verifier = verifier;
         _logger = logger;
         _loggerFactory = loggerFactory;
+        _provisioner = provisioner;
     }
 
     public string Name => "mxc:" + _spec.ContainerName;
@@ -58,16 +62,7 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
         if (Interlocked.Exchange(ref _connected, 1) != 0)
             throw new InvalidOperationException("The transport is already connected.");
 
-        CreateOwnedFolders();
-        var grants = _verifier.Verify(_spec);
-        if (!grants.Ok)
-        {
-            _logger.LogInformation("{Container} not started: {Blocked} item(s) the sandbox cannot be given access to",
-                _spec.ContainerName, grants.BlockedCount);
-            throw new SandboxStartException(grants.Reason ?? "Pia can't sandbox this server.");
-        }
-
-        var launched = await _launcher.LaunchAsync(_spec, cancellationToken).ConfigureAwait(false);
+        var launched = await Task.Run(() => PrepareAndLaunchAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
         try
         {
             var pump = Task.Run(() => PumpStderrAsync(launched.StandardError), CancellationToken.None);
@@ -81,6 +76,29 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
             await launched.ShutdownAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    private async Task<LaunchedMxcProcess> PrepareAndLaunchAsync(CancellationToken cancellationToken)
+    {
+        // Held until the launcher returns, by when the container's lease guards the state folder.
+        using var stateLock = _spec.RuntimeStateDirectory is { } state
+            ? await RuntimeStateLocks.AcquireAsync(state, cancellationToken).ConfigureAwait(false)
+            : null;
+
+        CreateOwnedFolders();
+        var prepared = _provisioner is null
+            ? _spec
+            : await _provisioner.PrepareAsync(_spec, AppendStderrLine, cancellationToken).ConfigureAwait(false);
+
+        var grants = _verifier.Verify(prepared);
+        if (!grants.Ok)
+        {
+            _logger.LogInformation("{Container} not started: {Blocked} item(s) the sandbox cannot be given access to",
+                _spec.ContainerName, grants.BlockedCount);
+            throw new SandboxStartException(grants.Reason ?? "Pia can't sandbox this server.");
+        }
+
+        return await _launcher.LaunchAsync(prepared, cancellationToken).ConfigureAwait(false);
     }
 
     // The editor proposes a folder under Pia's own sandbox root without creating it; nothing else is created.
@@ -99,16 +117,21 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
             while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
             {
                 _logger.SensitiveDebug("[{Container}] stderr: {Line}", _spec.ContainerName, line);
-                lock (_stderrTail)
-                {
-                    _stderrTail.Enqueue(line);
-                    while (_stderrTail.Count > StderrTailLines)
-                        _stderrTail.Dequeue();
-                }
+                AppendStderrLine(line);
             }
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
+        }
+    }
+
+    private void AppendStderrLine(string line)
+    {
+        lock (_stderrTail)
+        {
+            _stderrTail.Enqueue(line);
+            while (_stderrTail.Count > StderrTailLines)
+                _stderrTail.Dequeue();
         }
     }
 
