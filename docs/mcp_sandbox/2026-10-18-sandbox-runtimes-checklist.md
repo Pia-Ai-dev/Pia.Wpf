@@ -72,7 +72,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### C Launch
 
-- [ ] **C1 Launch planner and Node preload.** `RuntimeLaunchPlanner` with the Node, dnx, dotnet-dll and uvx
+- [x] **C1 Launch planner and Node preload.** `RuntimeLaunchPlanner` with the Node, dnx, dotnet-dll and uvx
   recipes and their exact environments, the preload in Pia's read-only support folder, both `NuGet.Config`
   bodies, and the `--yes` insertion for dnx.
   *Deps:* A1 · *Effort:* S · *Value:* High
