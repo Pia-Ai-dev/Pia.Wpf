@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -9,6 +10,7 @@ using Pia.Paths;
 using Pia.Services.Interfaces;
 using Pia.Services.Plugins;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.ViewModels.Models;
 
 namespace Pia.ViewModels;
@@ -27,6 +29,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private readonly IMxcAvailability _mxcAvailability;
     private readonly IFileDialogService _fileDialogs;
     private readonly ILogger<SettingsViewModel> _logger;
+    private readonly ISandboxRuntimeService? _sandboxRuntime;
+    private readonly IClipboardService? _clipboard;
 
     private bool _disposed;
     private bool _suppressReload;
@@ -34,6 +38,16 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     private CancellationTokenSource? _sandboxDownloadCts;
     private CancellationTokenSource? _sandboxGuardCts;
+    private CancellationTokenSource? _runtimeDetectionCts;
+
+    private RunnerParseResult _parse = RunnerCommandParser.Parse(string.Empty, [], null);
+
+    private RuntimeDetection? _runtimeDetection;
+
+    private bool _runtimeDetectionFailed;
+
+    // Set once the user moves the network switch; until then a new server's command picks the default.
+    private bool _networkTouched;
 
     /// <summary>True while a new server's sandbox settings are still the defaults: until the user touches the
     /// toggle or a folder list, the name and command keep re-deriving them.</summary>
@@ -148,6 +162,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private string? _sandboxDownloadError;
 
     [ObservableProperty]
+    private bool _isDetectingRuntime;
+
+    [ObservableProperty]
     private string _pastedJson = string.Empty;
 
     [ObservableProperty]
@@ -194,6 +211,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private string? _selectedSandboxAlsoReadable;
 
     [ObservableProperty]
+    private string? _selectedSandboxRuntime;
+
+    [ObservableProperty]
     private bool _hasSelectedSandbox;
 
     [ObservableProperty]
@@ -225,7 +245,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         Wpf.Ui.ISnackbarService snackbarService,
         IMxcAvailability mxcAvailability,
         IFileDialogService fileDialogs,
-        ILogger<SettingsViewModel> logger)
+        ILogger<SettingsViewModel> logger,
+        ISandboxRuntimeService? sandboxRuntime = null,
+        IClipboardService? clipboard = null)
     {
         _pluginService = pluginService;
         _dialogService = dialogService;
@@ -234,6 +256,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         _mxcAvailability = mxcAvailability;
         _fileDialogs = fileDialogs;
         _logger = logger;
+        _sandboxRuntime = sandboxRuntime;
+        _clipboard = clipboard;
         _sandboxStatus = mxcAvailability.Status;
 
         _pluginService.PluginsChanged += OnPluginsChanged;
@@ -258,6 +282,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         _mxcAvailability.StatusChanged -= OnMxcStatusChanged;
         _sandboxDownloadCts?.Cancel();
         _sandboxGuardCts?.Cancel();
+        _runtimeDetectionCts?.Cancel();
         GC.SuppressFinalize(this);
     }
 
@@ -340,8 +365,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private string PendingStatus(bool target) =>
         _localizationService[target ? "McpServers_Status_Starting" : "McpServers_Status_Stopping"];
 
-    /// <summary>Everything the detail pane reads, from one definition/status pair: reading the definition
-    /// decrypts its env values, so it is not something a binding should trigger per property.</summary>
+    // Reading the definition decrypts its env values, so the pane reads it once here, never per binding.
     private void RefreshDetail()
     {
         var definition = SelectedServer is null ? null : _pluginService.GetLocalMcpDefinition(SelectedServer.Id);
@@ -358,10 +382,25 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         SelectedSandboxSummary = DescribeSandbox(sandbox);
         SelectedSandboxReadwrite = sandbox is { ReadwritePaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadwritePaths) : null;
         SelectedSandboxReadonly = sandbox is { ReadonlyPaths.Count: > 0 } ? string.Join(Environment.NewLine, sandbox.ReadonlyPaths) : null;
-        SelectedSandboxAlsoReadable = sandbox is null ? null : SandboxPathGuard.GrantedCommandFolder(sandbox, definition?.Command);
+        var parse = sandbox is null || definition is null
+            ? null
+            : RunnerCommandParser.Parse(definition.Command, definition.Args, definition.WorkingDirectory);
+        SelectedSandboxAlsoReadable = sandbox is null || parse is null
+            ? null
+            : SandboxPathGuard.GrantedCommandFolder(sandbox, GuardCommand(parse));
+        SelectedSandboxRuntime = parse is not null && IsRunner(parse) ? DescribeSavedRuntime(definition!, parse.Kind) : null;
         HasSelectedSandbox = sandbox is not null;
 
         FillSelectedTools(definition?.AllowedTools, status?.DiscoveredTools ?? []);
+    }
+
+    private string DescribeSavedRuntime(LocalMcpDefinition definition, RunnerKind kind)
+    {
+        var prefix = string.IsNullOrWhiteSpace(definition.ToolPrefix)
+            ? LocalMcpConfig.DeriveToolPrefix(definition.Name)
+            : definition.ToolPrefix;
+        return _localizationService.Format("McpServers_Detail_SandboxRuntime",
+            _localizationService[SandboxRuntimeKeys.ForRunner(kind)!], PiaPaths.McpRuntimeStateDirectory(prefix));
     }
 
     private string DescribeSandbox(McpSandboxPolicy? sandbox) => sandbox is null
@@ -676,10 +715,21 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
             EditCommand.Trim(),
             SplitLines(EditArguments),
             ParseEnvironment(EditEnvironment),
-            string.IsNullOrWhiteSpace(EditWorkingDirectory) ? null : EditWorkingDirectory.Trim(),
-            LocalMcpConfig.DeriveToolPrefix(name),
+            EditWorkingDirectoryOrNull,
+            PreviewPrefix(name),
             AllowedTools: null,
             Sandbox: BuildSandboxPolicy());
+    }
+
+    private string? EditWorkingDirectoryOrNull =>
+        string.IsNullOrWhiteSpace(EditWorkingDirectory) ? null : EditWorkingDirectory.Trim();
+
+    // The prefix a save would store, so the probe, the proposed folder and the runtime folder match the saved server.
+    private string PreviewPrefix(string name)
+    {
+        var trimmed = name.Trim();
+        var preview = _pluginService.PreviewLocalMcpToolPrefix(EditingServerId, trimmed);
+        return string.IsNullOrWhiteSpace(preview) ? LocalMcpConfig.DeriveToolPrefix(trimmed) : preview;
     }
 
     // Left out, a positional definition saves a sandboxed server back as uncontained on any edit.
@@ -691,7 +741,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     // ---- sandbox ------------------------------------------------------------------------------------
 
     public bool CanEnableSandbox =>
-        !SandboxCommandRules.IsShimCommand(EditCommand) && SandboxStatus.State != MxcRuntimeState.Unsupported;
+        _parse.Refusal == RunnerRefusal.None && SandboxStatus.State != MxcRuntimeState.Unsupported;
 
     /// <summary>Switching off is always allowed, so a server saved as sandboxed on a host that cannot sandbox
     /// any more is not stuck on a toggle it cannot move.</summary>
@@ -701,7 +751,11 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         get
         {
-            if (SandboxCommandRules.IsShimCommand(EditCommand)) return _localizationService["McpServers_Sandbox_Reason_Shim"];
+            // The same refusal the start would throw, in the editor's words.
+            if (SandboxRuntimeKeys.ForRefusal(_parse.Refusal, _parse.Subject) is { } key)
+                return SandboxRuntimeKeys.TakesSubject(_parse.Refusal)
+                    ? _localizationService.Format(key, _parse.Subject ?? string.Empty)
+                    : _localizationService[key];
             if (SandboxStatus.State == MxcRuntimeState.Unsupported)
                 return string.IsNullOrWhiteSpace(SandboxStatus.Reason)
                     ? _localizationService["McpServers_Sandbox_Reason_Unsupported"]
@@ -754,27 +808,62 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
         RaiseSandboxStateChanged();
         if (!_applyingSandboxDefaults) UpdateSandboxGuard();
+
+        // Also under the defaults: opening a saved runner switches the toggle on that way.
+        UpdateRuntimeDetectionAfterTyping();
+    }
+
+    partial void OnEditSandboxAllowNetworkChanged(bool value)
+    {
+        if (!_applyingSandboxDefaults) _networkTouched = true;
+        OnPropertyChanged(nameof(ShowRunnerDenyHint));
     }
 
     partial void OnEditNameChanged(string value)
     {
         ApplySandboxDefaults();
         CreateDefaultFolderCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(RuntimeStateFolderText));
     }
 
-    partial void OnEditCommandChanged(string value)
+    partial void OnEditCommandChanged(string value) => OnLaunchLineChanged();
+
+    partial void OnEditArgumentsChanged(string value) => OnLaunchLineChanged();
+
+    partial void OnEditWorkingDirectoryChanged(string value) => OnLaunchLineChanged();
+
+    private void OnLaunchLineChanged()
     {
+        _parse = RunnerCommandParser.Parse(EditCommand, SplitLines(EditArguments), EditWorkingDirectoryOrNull);
         ApplySandboxDefaults();
+        ApplyNetworkDefault();
         RaiseSandboxStateChanged();
         UpdateSandboxGuardAfterTyping();
+        UpdateRuntimeDetectionAfterTyping();
     }
 
-    /// <summary>The early warning for what the launcher would refuse at start. It never blocks a save: a policy
-    /// saved with an issue simply does not start, and says why.</summary>
+    // A runner fetches its package at the first start, so a new one defaults to network access.
+    private void ApplyNetworkDefault()
+    {
+        if (EditingServerId is not null || _networkTouched) return;
+
+        var applying = _applyingSandboxDefaults;
+        _applyingSandboxDefaults = true;
+        try
+        {
+            EditSandboxAllowNetwork = IsRunnerCommand;
+        }
+        finally
+        {
+            _applyingSandboxDefaults = applying;
+        }
+    }
+
+    /// <summary>The early warning for what the launcher would refuse at start; it never blocks a save.</summary>
     private void UpdateSandboxGuard()
     {
         _sandboxGuardCts?.Cancel();
-        SandboxGuardMessage = GuardMessageFor(BuildSandboxPolicy(), EditCommand);
+        SandboxGuardMessage = GuardMessageFor(BuildSandboxPolicy(), GuardCommand(_parse));
     }
 
     internal int SandboxGuardDebounceMs { get; set; } = 250;
@@ -785,11 +874,18 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         _sandboxGuardCts?.Cancel();
         var cts = _sandboxGuardCts = new CancellationTokenSource();
         var policy = BuildSandboxPolicy();
-        var command = EditCommand;
+        var command = GuardCommand(_parse);
         ValidateSandboxGuardAsync(policy, command, cts.Token).SafeFireAndForget(_logger);
     }
 
-    private async Task ValidateSandboxGuardAsync(McpSandboxPolicy? policy, string command, CancellationToken token)
+    // As the factory does: the unwrapped program, and none for a runner, whose folders the detector judges.
+    private static string? GuardCommand(RunnerParseResult parse) =>
+        parse.Kind == RunnerKind.None && parse.Refusal == RunnerRefusal.None ? parse.EffectiveCommand : null;
+
+    private static bool IsRunner(RunnerParseResult parse) =>
+        parse.Kind != RunnerKind.None && parse.Refusal == RunnerRefusal.None;
+
+    private async Task ValidateSandboxGuardAsync(McpSandboxPolicy? policy, string? command, CancellationToken token)
     {
         await Task.Delay(SandboxGuardDebounceMs, token);
         var message = await Task.Run(() => GuardMessageFor(policy, command), token);
@@ -799,7 +895,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         });
     }
 
-    private static string? GuardMessageFor(McpSandboxPolicy? policy, string command)
+    private static string? GuardMessageFor(McpSandboxPolicy? policy, string? command)
     {
         var issues = policy is null ? [] : SandboxPathGuard.Validate(policy, command);
         return issues.Count == 0
@@ -831,7 +927,15 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         OnPropertyChanged(nameof(ShowSandboxDownloadProgress));
         OnPropertyChanged(nameof(IsSandboxDownloadIndeterminate));
         OnPropertyChanged(nameof(SandboxDownloadMessage));
+        OnPropertyChanged(nameof(IsRunnerCommand));
+        OnPropertyChanged(nameof(ShowRuntimePanel));
+        OnPropertyChanged(nameof(ShowRunnerDenyHint));
+        OnPropertyChanged(nameof(RuntimeStateFolderText));
+        OnPropertyChanged(nameof(ShowRuntimeFix));
+        OnPropertyChanged(nameof(ShowRuntimeGuide));
         DownloadSandboxRuntimeCommand.NotifyCanExecuteChanged();
+        DetectRuntimesCommand.NotifyCanExecuteChanged();
+        GrantRuntimeReadCommand.NotifyCanExecuteChanged();
     }
 
     private void OnMxcStatusChanged(object? sender, MxcAvailabilityStatus status) =>
@@ -869,16 +973,20 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     // Null until the name has a letter or digit: DeriveToolPrefix falls back to "mcp" for anything else, and every
     // such server would then share one folder.
-    private static string? DefaultFolderFor(string name) =>
+    private string? DefaultFolderFor(string name) =>
         name.Any(char.IsAsciiLetterOrDigit)
-            ? Path.Combine(PiaPaths.McpSandboxRoot, LocalMcpConfig.DeriveToolPrefix(name.Trim()))
+            ? Path.Combine(PiaPaths.McpSandboxRoot, PreviewPrefix(name))
             : null;
 
     private void ResetSandboxEditor()
     {
         _sandboxPristine = false;
+        _networkTouched = false;
         _proposedReadwritePath = null;
         _sandboxGuardCts?.Cancel();
+        _runtimeDetectionCts?.Cancel();
+        _runtimeDetectionCts = null;
+        ShowRuntimeDetection(null, failed: false);
         _applyingSandboxDefaults = true;
         try
         {
@@ -1045,6 +1153,285 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     // The install is shared with the rest of Pia and keeps going, so the panel can only be put away.
     [RelayCommand]
     private void HideSandboxProgress() => IsSandboxProgressHidden = true;
+
+    // ---- runner runtime -----------------------------------------------------------------------------
+
+    public bool IsRunnerCommand => IsRunner(_parse);
+
+    public bool ShowRuntimePanel => EditSandboxEnabled && IsRunnerCommand;
+
+    public bool ShowRunnerDenyHint => ShowRuntimePanel && !EditSandboxAllowNetwork;
+
+    private RuntimeResolution? CurrentResolution => _runtimeDetection?.Resolution;
+
+    public RuntimeOutcome? RuntimeOutcomeValue => CurrentResolution?.Outcome;
+
+    public string? RuntimeSummary => CurrentResolution is { Install: { } install } resolution
+        ? _localizationService.Format("McpServers_Sandbox_Runtime_Found", ProductText(resolution.Kind, install))
+        : null;
+
+    public string? RuntimeReason
+    {
+        get
+        {
+            if (_runtimeDetectionFailed) return SandboxRuntimeMessages.CheckFailed;
+            return SandboxRuntimeKeys.ForIssue(CurrentResolution?.Issue ?? RuntimeIssue.None) is { } key
+                ? _localizationService[key]
+                : null;
+        }
+    }
+
+    public string? RuntimeFolders
+    {
+        get
+        {
+            if (CurrentResolution is not { Outcome: RuntimeOutcome.Ready } resolution) return null;
+
+            List<string> folders = [.. resolution.ToolchainRoots];
+            if (resolution.ProgramFolder is { } program) folders.Add(program);
+            return folders.Count == 0 ? null : string.Join(Environment.NewLine, folders);
+        }
+    }
+
+    public bool ShowRuntimeFolders => RuntimeFolders is not null;
+
+    public bool RuntimeReadableAlready =>
+        CurrentResolution is { Outcome: RuntimeOutcome.Ready, Install.ReadableAlready: true };
+
+    public string? RuntimeStateFolderText => IsRunnerCommand
+        ? _localizationService.Format(
+            _parse.Kind == RunnerKind.Uvx ? "McpServers_Sandbox_Runtime_StateFolderReadOnly" : "McpServers_Sandbox_Runtime_StateFolder",
+            PiaPaths.McpRuntimeStateDirectory(PreviewPrefix(EditName)))
+        : null;
+
+    private bool CanGrantMachineWide => _sandboxRuntime?.CanGrantMachineWide == true;
+
+    public bool ShowRuntimeFix =>
+        CurrentResolution is { Outcome: RuntimeOutcome.NeedsAdminFix, Install: not null } && CanGrantMachineWide;
+
+    public string? RuntimeFixText => ShowRuntimeFix
+        ? _localizationService.Format("McpServers_Sandbox_Runtime_FixText", CurrentResolution!.Install!.Root)
+        : null;
+
+    public bool ShowRuntimeGuide => CurrentResolution is { } resolution && resolution.Outcome switch
+    {
+        RuntimeOutcome.NotFound => true,
+        RuntimeOutcome.Refused => resolution.Issue is RuntimeIssue.ToolchainTooLarge or RuntimeIssue.ToolchainTooWide
+            or RuntimeIssue.ToolchainPathUnsupported,
+        RuntimeOutcome.NeedsAdminFix => !CanGrantMachineWide,
+        _ => false,
+    };
+
+    private RuntimeFamily? GuideFamily => ShowRuntimeGuide && CurrentResolution is { } resolution
+        ? resolution.Install?.Family ?? RuntimeDetector.FamilyOf(resolution.Kind)
+        : null;
+
+    private RuntimeGuide? Guide => GuideFamily is { } family ? _sandboxRuntime?.GuideFor(family) : null;
+
+    public string? RuntimeGuideText => GuideFamily switch
+    {
+        RuntimeFamily.Node => _localizationService["McpServers_Sandbox_Runtime_Guide_Node"],
+        RuntimeFamily.Uv => _localizationService["McpServers_Sandbox_Runtime_Guide_Uv"],
+        RuntimeFamily.Dotnet => _localizationService["McpServers_Sandbox_Runtime_Guide_Dotnet"],
+        _ => null,
+    };
+
+    public string? RuntimeGuideCommand => Guide?.Command;
+
+    public string? RuntimeGuideAltCommand => Guide?.AlternativeCommand;
+
+    public bool ShowRuntimeGuideAlt => RuntimeGuideAltCommand is not null;
+
+    public string? RuntimeGuideAltText => ShowRuntimeGuideAlt
+        ? GuideFamily switch
+        {
+            RuntimeFamily.Node => _localizationService["McpServers_Sandbox_Runtime_Guide_NodeAlt"],
+            RuntimeFamily.Uv => _localizationService["McpServers_Sandbox_Runtime_Guide_UvAlt"],
+            _ => null,
+        }
+        : null;
+
+    // Product names and versions stay untranslated.
+    private static string ProductText(RunnerKind kind, RuntimeInstall install) => install.Family switch
+    {
+        RuntimeFamily.Node when install.NpmVersion is { } npm => $"{WithVersion("Node.js", install.Version)}, npm {npm}",
+        RuntimeFamily.Node => WithVersion("Node.js", install.Version),
+        RuntimeFamily.Dotnet => WithVersion(kind == RunnerKind.Dnx ? ".NET SDK" : ".NET", install.Version),
+        _ => WithVersion("uv", install.Version),
+    };
+
+    private static string WithVersion(string product, string? version) =>
+        string.IsNullOrWhiteSpace(version) ? product : $"{product} {version}";
+
+    internal int RuntimeDetectionDebounceMs { get; set; } = 250;
+
+    private bool CanDetectRuntimes() => _sandboxRuntime is not null && ShowRuntimePanel;
+
+    [RelayCommand(CanExecute = nameof(CanDetectRuntimes))]
+    private void DetectRuntimes() => StartRuntimeDetection(0);
+
+    private void UpdateRuntimeDetectionAfterTyping() => StartRuntimeDetection(RuntimeDetectionDebounceMs);
+
+    private void StartRuntimeDetection(int debounceMs)
+    {
+        _runtimeDetectionCts?.Cancel();
+        _runtimeDetectionCts = null;
+        if (_sandboxRuntime is not { } runtime || !ShowRuntimePanel)
+        {
+            ShowRuntimeDetection(null, failed: false);
+            return;
+        }
+
+        var cts = _runtimeDetectionCts = new CancellationTokenSource();
+        DetectRuntimeAsync(runtime, EditCommand, SplitLines(EditArguments), EditWorkingDirectoryOrNull, PreviewPrefix(EditName),
+            debounceMs, cts.Token).SafeFireAndForget(_logger);
+    }
+
+    private async Task DetectRuntimeAsync(
+        ISandboxRuntimeService runtime,
+        string command,
+        IReadOnlyList<string> args,
+        string? workingDirectory,
+        string prefix,
+        int debounceMs,
+        CancellationToken token)
+    {
+        try
+        {
+            if (debounceMs > 0) await Task.Delay(debounceMs, token);
+            PostOrRun(() =>
+            {
+                if (!token.IsCancellationRequested) IsDetectingRuntime = true;
+            });
+
+            RuntimeDetection? detection = null;
+            var failed = false;
+            try
+            {
+                detection = await runtime.DetectAsync(command, args, workingDirectory, prefix, token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
+            {
+                // The type only: a detection message can name a toolchain or program path.
+                _logger.LogWarning("Runtime detection in the server editor failed: {ExceptionType}", ex.GetType().Name);
+                _logger.SensitiveDebug("Runtime detection in the server editor failed: {Message}", ex.Message);
+                failed = true;
+            }
+
+            PostOrRun(() =>
+            {
+                if (!token.IsCancellationRequested) ShowRuntimeDetection(detection, failed);
+            });
+        }
+        finally
+        {
+            // A cancelled run leaves the flag to the run or reset that cancelled it.
+            PostOrRun(() =>
+            {
+                if (!token.IsCancellationRequested) IsDetectingRuntime = false;
+            });
+        }
+    }
+
+    private void ShowRuntimeDetection(RuntimeDetection? detection, bool failed)
+    {
+        _runtimeDetection = detection;
+        _runtimeDetectionFailed = failed;
+        IsDetectingRuntime = false;
+        OnPropertyChanged(nameof(RuntimeOutcomeValue));
+        OnPropertyChanged(nameof(RuntimeSummary));
+        OnPropertyChanged(nameof(RuntimeReason));
+        OnPropertyChanged(nameof(RuntimeFolders));
+        OnPropertyChanged(nameof(ShowRuntimeFolders));
+        OnPropertyChanged(nameof(RuntimeReadableAlready));
+        OnPropertyChanged(nameof(ShowRuntimeFix));
+        OnPropertyChanged(nameof(RuntimeFixText));
+        OnPropertyChanged(nameof(ShowRuntimeGuide));
+        OnPropertyChanged(nameof(RuntimeGuideText));
+        OnPropertyChanged(nameof(RuntimeGuideCommand));
+        OnPropertyChanged(nameof(RuntimeGuideAltCommand));
+        OnPropertyChanged(nameof(ShowRuntimeGuideAlt));
+        OnPropertyChanged(nameof(RuntimeGuideAltText));
+        GrantRuntimeReadCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanGrantRuntimeRead() => ShowRuntimeFix;
+
+    // Changes the folder for every sandboxed app on the PC, so it asks first; Pia offers no undo.
+    [RelayCommand(CanExecute = nameof(CanGrantRuntimeRead))]
+    private async Task GrantRuntimeReadAsync()
+    {
+        if (_sandboxRuntime is not { } runtime || CurrentResolution?.Install?.Root is not { } root) return;
+
+        MachineWideGrantPreview preview;
+        try
+        {
+            preview = runtime.PreviewMachineWideGrant(root);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Reading a runtime folder's permissions failed: {ExceptionType}", ex.GetType().Name);
+            _logger.SensitiveDebug("Reading a runtime folder's permissions failed: {Message}", ex.Message);
+            SetMessage(_localizationService.Format("McpServers_Sandbox_Runtime_FixFailed", ex.Message), isError: true);
+            return;
+        }
+
+        // A new grant would merge into the existing entry, and removing it later would take that access away too.
+        if (preview.HasExistingAce)
+        {
+            SetMessage(_localizationService["McpServers_Sandbox_Runtime_FixExistingAce"], isError: true);
+            return;
+        }
+
+        var confirmed = await _dialogService.ShowConfirmationDialogAsync(
+            _localizationService["McpServers_Sandbox_Runtime_FixConfirmTitle"],
+            _localizationService.Format("McpServers_Sandbox_Runtime_FixConfirmMessage",
+                preview.Root, preview.GrantCommand, preview.RemoveCommand));
+        if (!confirmed) return;
+
+        var watch = Stopwatch.StartNew();
+        var result = await runtime.GrantMachineWideReadAsync(root, CancellationToken.None);
+        if (!result.Ok)
+        {
+            SetMessage(_localizationService.Format("McpServers_Sandbox_Runtime_FixFailed", result.Error ?? string.Empty), isError: true);
+            return;
+        }
+
+        _logger.LogInformation("Granted all-app-packages read on a runtime folder in {Ms} ms", watch.ElapsedMilliseconds);
+        _snackbarService.Show(
+            _localizationService["McpServers_Title"],
+            _localizationService["McpServers_Sandbox_Runtime_FixDone"],
+            Wpf.Ui.Controls.ControlAppearance.Success,
+            null,
+            TimeSpan.FromSeconds(3));
+        StartRuntimeDetection(0);
+    }
+
+    [RelayCommand]
+    private void CopyRuntimeGuide(string? which)
+    {
+        var text = string.Equals(which, "alt", StringComparison.Ordinal) ? RuntimeGuideAltCommand : RuntimeGuideCommand;
+        if (_clipboard is null || string.IsNullOrEmpty(text)) return;
+
+        try
+        {
+            _clipboard.SetText(text);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Copying an install command failed: {ExceptionType}", ex.GetType().Name);
+            _logger.SensitiveDebug("Copying an install command failed: {Message}", ex.Message);
+            SetMessage(ex.Message, isError: true);
+            return;
+        }
+
+        _snackbarService.Show(
+            _localizationService["McpServers_Title"],
+            _localizationService["McpServers_Sandbox_Runtime_Copied"],
+            Wpf.Ui.Controls.ControlAppearance.Success,
+            null,
+            TimeSpan.FromSeconds(2));
+    }
 
     private static string FormatEnvironment(IReadOnlyDictionary<string, string> env) =>
         string.Join(Environment.NewLine, env.Select(e => $"{e.Key}={e.Value}"));

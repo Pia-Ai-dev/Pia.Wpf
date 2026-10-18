@@ -63,18 +63,19 @@ public class BootstrapperGraphValidationTests
         }
     }
 
-    /// <summary>These parameters are optional, so <c>ValidateOnBuild</c> passes without them and runners are then refused.</summary>
+    /// <summary>These parameters are optional, so <c>ValidateOnBuild</c> passes without them and runners are then refused or go undetected.</summary>
     [Fact]
-    public void EverySandboxRuntimeParameter_OfTheTransportFactoryAndPluginService_IsRegistered()
+    public void EverySandboxRuntimeParameter_OfTheTransportFactoryPluginServiceAndSettings_IsRegistered()
     {
         var services = BuildConfiguredServices();
 
-        var parameters = new[] { typeof(Pia.Services.Plugins.McpTransportFactory), typeof(Pia.Services.Plugins.PluginService) }
+        var parameters = new[] { typeof(Pia.Services.Plugins.McpTransportFactory), typeof(Pia.Services.Plugins.PluginService), typeof(Pia.ViewModels.SettingsViewModel) }
             .Select(type => type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
                 .OrderByDescending(c => c.GetParameters().Length)
                 .First())
             .SelectMany(ctor => ctor.GetParameters())
-            .Where(p => p.ParameterType.Namespace == "Pia.Services.Plugins.Sandbox.Runtimes")
+            .Where(p => p.ParameterType.Namespace == "Pia.Services.Plugins.Sandbox.Runtimes"
+                || p.ParameterType == typeof(Pia.Services.Interfaces.IClipboardService))
             .ToList();
 
         Assert.True(parameters.Count >= 3, $"only {parameters.Count} runtime parameter(s) found");   // non-vacuity

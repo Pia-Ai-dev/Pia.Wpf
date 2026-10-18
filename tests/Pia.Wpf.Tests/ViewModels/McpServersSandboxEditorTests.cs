@@ -158,7 +158,7 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
     }
 
     [Fact]
-    public void ANewServerWithAShimCommand_DefaultsOff_AndTheToggleIsDisabledWithTheReason()
+    public void ANewServerWithARunnerCommand_DefaultsToSandboxedWithItsOwnFolder_AndNetworkAccess()
     {
         var (vm, _, _, _) = Create();
 
@@ -166,17 +166,54 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
         vm.EditName = "GitHub";
         vm.EditCommand = "npx";
 
+        Assert.True(vm.IsRunnerCommand);
+        Assert.True(vm.EditSandboxEnabled);
+        Assert.True(vm.IsSandboxToggleEnabled);
+        Assert.Null(vm.SandboxDisabledReason);
+        Assert.Equal([DefaultFolder("github")], vm.EditReadwritePaths);
+        Assert.True(vm.EditSandboxAllowNetwork);
+    }
+
+    [Theory]
+    [InlineData("pnpm", "", "McpServers_Sandbox_Reason_Shim")]
+    [InlineData(@"C:\Tools\x.bat", "", "McpServers_Sandbox_Reason_Shim")]
+    [InlineData("cmd", "/c\necho hi & x.exe", "McpServers_Sandbox_Reason_CmdMetacharacters")]
+    [InlineData("npm", "install", "McpServers_Sandbox_Reason_UnsupportedForm_Npm")]
+    public void ANewServerWithACommandPiaCannotSandbox_DefaultsOff_AndTheToggleIsDisabledWithItsReason(
+        string command, string arguments, string reasonKey)
+    {
+        var (vm, _, _, _) = Create();
+
+        vm.AddServerCommand.Execute(null);
+        vm.EditName = "GitHub";
+        vm.EditCommand = command;
+        vm.EditArguments = arguments;
+
+        Assert.False(vm.IsRunnerCommand);
         Assert.False(vm.EditSandboxEnabled);
         Assert.False(vm.IsSandboxToggleEnabled);
-        Assert.Equal("McpServers_Sandbox_Reason_Shim", vm.SandboxDisabledReason);
+        Assert.Equal(reasonKey, vm.SandboxDisabledReason);
         Assert.Empty(vm.EditReadwritePaths);
 
+        vm.EditArguments = string.Empty;
         vm.EditCommand = ExePath;
 
         Assert.True(vm.EditSandboxEnabled);
         Assert.True(vm.IsSandboxToggleEnabled);
         Assert.Null(vm.SandboxDisabledReason);
         Assert.Equal([DefaultFolder("github")], vm.EditReadwritePaths);
+    }
+
+    [Fact]
+    public void AUvxOptionPiaCannotReproduce_IsNamedInTheReason()
+    {
+        var (vm, _, _, _) = Create();
+
+        vm.AddServerCommand.Execute(null);
+        vm.EditCommand = "uvx";
+        vm.EditArguments = "--index-url=https://user:token@example.invalid\nmcp-server-time";
+
+        Assert.Equal("McpServers_Sandbox_Reason_UvxOption:--index-url", vm.SandboxDisabledReason);
     }
 
     [Fact]
@@ -306,12 +343,29 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
         var (vm, plugins, _, _) = Create(Stored(policy));
 
         vm.EditSelectedCommand.Execute(null);
-        vm.EditCommand = "npx";
+        vm.EditCommand = "pnpm";
 
         Assert.True(vm.EditSandboxEnabled);
         Assert.False(vm.CanEnableSandbox);
         Assert.True(vm.IsSandboxToggleEnabled);
         Assert.Equal("McpServers_Sandbox_Reason_Shim", vm.SandboxDisabledReason);
+
+        await vm.SaveCommand.ExecuteAsync(null);
+        AssertSamePolicy(policy, SavedDefinition(plugins).Sandbox);
+    }
+
+    [Fact]
+    public async Task ChangingASandboxedServersCommandToARunner_KeepsThePolicyExactly()
+    {
+        var policy = Policy();
+        var (vm, plugins, _, _) = Create(Stored(policy));
+
+        vm.EditSelectedCommand.Execute(null);
+        vm.EditCommand = "npx";
+
+        Assert.True(vm.CanEnableSandbox);
+        Assert.Null(vm.SandboxDisabledReason);
+        Assert.False(vm.EditSandboxAllowNetwork);
 
         await vm.SaveCommand.ExecuteAsync(null);
         AssertSamePolicy(policy, SavedDefinition(plugins).Sandbox);
