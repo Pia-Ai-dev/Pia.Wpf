@@ -5,8 +5,9 @@ public interface IRuntimeHostService
 {
     IReadOnlyList<string> RegistryPathEntries();     // HKLM then HKCU Path, expanded, in order
     string RegistryPath();                           // the same, joined with ';'
-    IReadOnlyList<string> UserEnvironmentNames();    // value names under HKCU\Environment
+    IReadOnlyList<string> UserEnvironmentNames();    // value names under HKCU\Environment; throws when unreadable
     string? RegistryEnvironmentValue(string name);   // HKCU over HKLM, expanded
+    string? MachineEnvironmentValue(string name);    // HKLM only, expanded
     IReadOnlyList<string>? CandidateOverride { get; } // PIA_DEBUG_SANDBOX_RUNTIME_ROOTS, DEBUG builds only
     string LocalAppData { get; }
     string RoamingAppData { get; }

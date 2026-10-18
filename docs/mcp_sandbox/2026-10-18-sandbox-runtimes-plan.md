@@ -525,8 +525,10 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
   `NpmExec` → `<root>\node_modules\npm\bin\npm-cli.js`, `exec` + the rest; `NodeScript` → runtime options,
   the script's full path, the script args.
 - `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main --require "<support>/node-sandbox.cjs"` with
-  forward slashes (a backslash inside the quotes is an escape). A user `NODE_OPTIONS` is appended after a space;
-  a machine-wide one is replaced, not merged (see *Known limits*).
+  forward slashes (a backslash inside the quotes is an escape), then the machine-wide (`HKLM`) `NODE_OPTIONS`
+  read through `IRuntimeHostService.MachineEnvironmentValue`, then the server's own `NODE_OPTIONS`, each after
+  a space. Values are compared whole, never split into options: a machine value the server's own value already
+  repeats is dropped. The user-level (`HKCU`) value stays blanked like every user variable.
 - `PIA_SANDBOX_ROOTS` = every granted root, joined with `|` (illegal in Windows paths; the spike's `;`
   breaks on a folder name with a semicolon): the user's rw and ro folders, the program folder, the install
   root, `<state>`, `<support>`.
@@ -635,7 +637,10 @@ servers included, in this order:
    plan set them: the planner already merged the user's value into them.
 
 The names come from `IRuntimeHostService.UserEnvironmentNames()` when DI provided a host and from
-`RuntimeHostService.ReadUserEnvironmentNames()` otherwise (a factory seam replaces it in tests).
+`RuntimeHostService.ReadUserEnvironmentNames()` otherwise (a factory seam replaces it in tests). A missing
+`HKCU\Environment` key gives no names; any other failed read refuses the start with
+`SandboxRuntimeMessages.UserEnvironmentUnreadable` and a warning naming only the exception type, so no
+sandboxed start runs unblanked.
 
 Whether `""` blanks a variable is **gate G-ENV**, answered yes by step A2 with a real container: the test
 server with `OS=""` (every machine's registry environment carries `OS`) reads `OS` as empty through
@@ -801,7 +806,10 @@ falls back to `DeriveToolPrefix(name)`, so existing editor tests keep their `fil
   different folder." Today such a path passes (the root exemption at `SandboxPathGuard.cs:210,216`).
   `McpSandboxGrantsDirectory` and `McpSandboxSupportDirectory` sit under `LocalDataDirectory`, which
   `SandboxGuardEnvironment.Current().PiaDataRoots` holds, so `FindProblem` already refuses them as Pia data;
-  E1 pins that with a test for each. A read-write policy folder that covers a uv location is refused too.
+  E1 pins that with a test for each. A read-write policy folder that is, or sits above, a registry `PATH`
+  entry (machine or user, expanded) or a fixed uv folder is refused too (`HostProgramFolder`), whether or not
+  a program is there yet; read-only stays allowed. The guard asks for those folders only when it judges a
+  read-write folder, caches them for 20 s, and never probes a UNC or network-drive entry for uv.exe links.
 - `RuntimeRootVerifier : IRuntimeRootVerifier`, against `SandboxGuardEnvironment.Current()`: a path with
   `;` → `ToolchainPathUnsupported`; the profile root or above, a wide folder itself (Desktop, Documents,
   Downloads, OneDrive roots), a Pia data root outside `McpSandboxRoot` → `ToolchainTooWide` /
@@ -862,8 +870,9 @@ English service texts (static `SandboxRuntimeMessages`, C3; never with a path):
 - `UvNotFound`: "uv was not found. Install it for your user only (the server's settings show how)."
 - `ToolchainTooLarge`: "The runtime's folder holds too many files to share with a sandbox. Install a separate
   copy for your user only (the server's settings show how)."
-- `ToolchainTooWide`: "The runtime sits directly in a folder Pia won't share (your profile, Desktop,
-  Documents or Downloads). Install it into a folder of its own."
+- `ToolchainTooWide`: "The runtime sits directly on a drive, on a network share or in a folder Pia won't share
+  (such as your profile, Desktop, Documents or Downloads). Install it into a folder of its own." The
+  machine-wide grant gives the same text when it refuses a drive, share or too-wide root.
 - `ToolchainPathUnsupported`: "The runtime's folder path contains a semicolon, which a sandbox can't use."
 - `ProgramFolderTooWide`: "Put the program in its own folder: Pia would have to share all of the folder
   around it." · `ProgramFolderTooLarge`: "The program's folder holds too many files to share with a
@@ -1257,9 +1266,10 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
   files). `uv run` is refused. Only `--from`, `--with` and `--python` (a version) are accepted. An installed
   tool is never upgraded: changing the pinned version or the spec is the only way to update it.
 - uv: a `uv.exe` in a folder this server can write, or under `McpSandboxRoot`, is skipped at start, and the
-  path guard refuses a read-write folder that covers a uv location. Remaining risk: an exe a server plants in a
-  read-write folder on `PATH` still takes over the user's shell and unsandboxed servers, and a uv folder that
-  only appears after the grant was saved is caught only by the start-time check.
+  path guard refuses a read-write folder that is, or sits above, a registry `PATH` entry or a fixed uv folder.
+  A `PATH` entry added after a server with read-write access to its folder was saved is caught at that
+  server's next start, since the factory runs the guard on every start; until then a running server can still
+  plant a program there. A uv.exe link on a network drive is not followed by the guard.
 - The user's `.npmrc`, `uv.toml` and `NuGet.Config` do not apply, so private registries, registry auth and
   proxy settings from there do not reach sandboxed servers (proxy environment variables do reach the uv
   install). Cached CLI logins (`az login`) do not reach them either; use a token in the server's env.
@@ -1281,9 +1291,6 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
 - Step 2 has no undo in Pia, and an MSI repair may remove it.
 - Bare `python` still uses today's exe path; a user Python (26,099 entries here) exceeds the 20,000-entry cap.
 - Machine-level (`HKLM`) environment variables still reach containers; only `HKCU\Environment` is blanked.
-  `NODE_OPTIONS` is the exception: Pia replaces it in every sandboxed Node start, so a machine-wide value such
-  as `--use-openssl-ca` has to be repeated in the server's own env entries, where it is appended after the
-  preload options.
 - The probe and the running server share one npm cache and rely on npm's own locking.
 - Startup sweeps the ACEs a never-saved probe leaked only as far as its grant record reaches, and nothing is
   recorded when the factory has no provisioner.
@@ -1573,8 +1580,9 @@ Issues (`McpServers_Sandbox_Runtime_Issue_<RuntimeIssue>`):
 - `_UvNotFound`: "uv was not found. Install it for your user only, as shown below."
 - `_ToolchainTooLarge`: "The runtime's folder holds too many files to share with a sandbox. Install a separate
   copy for your user only, as shown below."
-- `_ToolchainTooWide`: "The runtime sits directly in a folder Pia won't share (your profile, Desktop,
-  Documents or Downloads). Install it into a folder of its own, as shown below."
+- `_ToolchainTooWide`: "The runtime sits directly on a drive, on a network share or in a folder Pia won't
+  share (such as your profile, Desktop, Documents or Downloads). Install it into a folder of its own, as shown
+  below."
 - `_ToolchainPathUnsupported`: "The runtime's folder path contains a semicolon, which a sandbox can't use.
   Install it into another folder, as shown below."
 - `_ProgramFolderTooLarge`: "The program's folder holds too many files to share with a sandboxed server. Put

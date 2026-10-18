@@ -49,8 +49,10 @@ public sealed class RuntimeLaunchPlannerTests
         IReadOnlyDictionary<string, string>? userEnvironment = null,
         string state = State,
         string support = Support,
-        string container = Container) =>
-        new(runner, resolution, container, state, support, allowNetwork, sandboxRoots ?? [], RegistryPath, userEnvironment);
+        string container = Container,
+        string? machineNodeOptions = null) =>
+        new(runner, resolution, container, state, support, allowNetwork, sandboxRoots ?? [], RegistryPath, userEnvironment,
+            machineNodeOptions);
 
     private static RuntimeLaunchPlan Plan(RuntimePlanInput input, IReadOnlyDictionary<string, string>? processEnvironment = null) =>
         RuntimeLaunchPlanner.Plan(input, () => new Dictionary<string, string>(processEnvironment ?? NoProcessEnvironment));
@@ -407,6 +409,49 @@ public sealed class RuntimeLaunchPlannerTests
         var plan = Plan(Input(runner, Ready(RunnerKind.NodeScript, NodeInstall(null)), userEnvironment: user));
 
         Assert.Equal(NodeOptions + " --max-old-space-size=4096", plan.Environment["NODE_OPTIONS"]);
+    }
+
+    /// <summary>The plan's NODE_OPTIONS replaces the one the container would inherit, so a machine value must be merged in.</summary>
+    [Theory]
+    [InlineData("--use-openssl-ca", null, NodeOptions + " --use-openssl-ca")]
+    [InlineData("--use-openssl-ca", "--max-old-space-size=4096", NodeOptions + " --use-openssl-ca --max-old-space-size=4096")]
+    [InlineData(" --use-openssl-ca ", "--use-openssl-ca", NodeOptions + " --use-openssl-ca")]
+    [InlineData("--use-openssl-ca", "--max-old-space-size=4096  --use-openssl-ca", NodeOptions + " --max-old-space-size=4096  --use-openssl-ca")]
+    [InlineData("--use-openssl-ca", "--use-openssl-ca-store", NodeOptions + " --use-openssl-ca --use-openssl-ca-store")]
+    [InlineData("--require \"C:/ca/hook.js\"", "--require \"C:/app/trace.js\"",
+        NodeOptions + " --require \"C:/ca/hook.js\" --require \"C:/app/trace.js\"")]
+    [InlineData("   ", "--inspect", NodeOptions + " --inspect")]
+    [InlineData(null, null, NodeOptions)]
+    public void NodeOptions_AreThePreload_ThenTheMachineValue_ThenTheServersOwn(string? machine, string? server, string expected)
+    {
+        var runner = Runner(RunnerKind.NodeScript, [], @"C:\srv\index.js");
+        var user = server is null ? null : new Dictionary<string, string> { ["NODE_OPTIONS"] = server };
+
+        var plan = Plan(Input(runner, Ready(RunnerKind.NodeScript, NodeInstall(null)), userEnvironment: user, machineNodeOptions: machine));
+
+        Assert.Equal(expected, plan.Environment["NODE_OPTIONS"]);
+    }
+
+    [Theory]
+    [InlineData(RunnerKind.Npx)]
+    [InlineData(RunnerKind.NpmExec)]
+    public void NodeOptions_KeepTheMachineValue_ForEveryNodeKind(RunnerKind kind)
+    {
+        var entry = kind == RunnerKind.Npx ? NodeRoot + @"\node_modules\npm\bin\npx-cli.js" : NodeRoot + @"\node_modules\npm\bin\npm-cli.js";
+
+        var plan = Plan(Input(Runner(kind, ["-y", "@x/y"]), Ready(kind, NodeInstall(entry)), machineNodeOptions: "--use-openssl-ca"));
+
+        Assert.Equal(NodeOptions + " --use-openssl-ca", plan.Environment["NODE_OPTIONS"]);
+    }
+
+    [Fact]
+    public void AMachineNodeOptions_StaysOutOfOtherRuntimes()
+    {
+        var dll = Runner(RunnerKind.DotnetDll, [], @"C:\srv\app\Server.dll");
+
+        var plan = Plan(Input(dll, Ready(RunnerKind.DotnetDll, DotnetInstall(null)), machineNodeOptions: "--use-openssl-ca"));
+
+        Assert.False(plan.Environment.ContainsKey("NODE_OPTIONS"));
     }
 
     [Fact]

@@ -63,7 +63,8 @@ public sealed record RuntimePlanInput(
     bool AllowNetwork,
     IReadOnlyList<string> SandboxRoots,
     string RegistryPath,
-    IReadOnlyDictionary<string, string>? UserEnvironment);
+    IReadOnlyDictionary<string, string>? UserEnvironment,
+    string? MachineNodeOptions = null);
 
 public sealed record RuntimeLaunchPlan(
     string Command,

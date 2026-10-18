@@ -47,7 +47,7 @@ public sealed class SandboxRuntimeService(
 
         var folder = SandboxLaunchSpecBuilder.Normalize(root);
         if (SandboxLaunchSpecBuilder.IsVolumeRoot(folder))
-            return new MachineWideGrantResult(false, "Pia does not change the permissions of a whole drive.");
+            return new MachineWideGrantResult(false, SandboxRuntimeMessages.ToolchainTooWide);
         if (SandboxLaunchSpecBuilder.IsSameOrUnder(folder, SandboxLaunchSpecBuilder.Normalize(host.WindowsDirectory)))
             return new MachineWideGrantResult(false, "Pia does not change permissions inside the Windows folder.");
 
@@ -57,8 +57,7 @@ public sealed class SandboxRuntimeService(
             {
                 // The entry is inheritable and has no undo in Pia, so a wide folder would open far more than one runtime.
                 if (roots.Check(folder, false) == RuntimeIssue.ToolchainTooWide)
-                    return new MachineWideGrantResult(false,
-                        "Pia does not change the permissions of your profile, a folder above it, Desktop, Documents, Downloads or Pia's own data.");
+                    return new MachineWideGrantResult(false, SandboxRuntimeMessages.ToolchainTooWide);
 
                 // A new grant would merge into the existing entry, and a later removal would take the old access away.
                 if (acl.HasAllAppPackagesAce(root))

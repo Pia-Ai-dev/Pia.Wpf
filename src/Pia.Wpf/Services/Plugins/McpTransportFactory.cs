@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
+using Pia.Logging;
 using Pia.Services.Exceptions;
 using Pia.Services.Plugins.Sandbox;
 using Pia.Services.Plugins.Sandbox.Runtimes;
@@ -86,9 +87,20 @@ public sealed class McpTransportFactory : IMcpTransportFactory
             spec, _launcher, _verifier, _loggerFactory.CreateLogger<MxcClientTransport>(), _loggerFactory, _provisioner);
     }
 
-    // Blanking never depends on DI: without a host the names come straight from the registry.
-    private IReadOnlyList<string> UserEnvironmentNames() =>
-        _host?.UserEnvironmentNames() ?? _userEnvironmentNames?.Invoke() ?? RuntimeHostService.ReadUserEnvironmentNames();
+    // Blanking never depends on DI, and a start that can't learn the names to blank is refused, never run unblanked.
+    private IReadOnlyList<string> UserEnvironmentNames()
+    {
+        try
+        {
+            return _host?.UserEnvironmentNames() ?? _userEnvironmentNames?.Invoke() ?? RuntimeHostService.ReadUserEnvironmentNames();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Reading the user environment names failed: {ExceptionType}", ex.GetType().Name);
+            _logger.SensitiveDebug("Reading the user environment names failed: {Message}", ex.Message);
+            throw new SandboxStartException(SandboxRuntimeMessages.UserEnvironmentUnreadable);
+        }
+    }
 
     internal static StdioClientTransportOptions BuildStdioOptions(McpTransportRequest request)
     {

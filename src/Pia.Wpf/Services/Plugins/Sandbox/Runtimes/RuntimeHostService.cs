@@ -87,27 +87,26 @@ public sealed partial class RuntimeHostService(IElevationService elevation) : IR
 
     public IReadOnlyList<string> UserEnvironmentNames() => ReadUserEnvironmentNames();
 
-    /// <summary>The value names under <c>HKCU\Environment</c>, empty on any error; needs no DI, so blanking never depends on it.</summary>
+    /// <summary>The value names under <c>HKCU\Environment</c>; a missing key has none, and any failed read throws.</summary>
     public static IReadOnlyList<string> ReadUserEnvironmentNames() =>
         ReadUserEnvironmentNames(Registry.CurrentUser, UserEnvironmentKey);
 
     internal static IReadOnlyList<string> ReadUserEnvironmentNames(RegistryKey parent, string subKey)
     {
-        try
-        {
-            using var key = parent.OpenSubKey(subKey);
-            return key is null ? [] : [.. key.GetValueNames().Where(name => name.Length > 0)];
-        }
-        catch (Exception)
-        {
-            return [];
-        }
+        using var key = parent.OpenSubKey(subKey);
+        return key is null ? [] : [.. key.GetValueNames().Where(name => name.Length > 0)];
     }
 
     public string? RegistryEnvironmentValue(string name)
     {
         var registry = RegistryEnvironment.Read();
         return registry.Raw(name) is { } raw ? registry.Expand(raw) : null;
+    }
+
+    public string? MachineEnvironmentValue(string name)
+    {
+        var registry = RegistryEnvironment.Read();
+        return registry.Machine.GetValueOrDefault(name) is { } raw ? registry.Expand(raw, machineOnly: true) : null;
     }
 
     public bool FileExists(string path) => File.Exists(path);
@@ -227,10 +226,12 @@ public sealed partial class RuntimeHostService(IElevationService elevation) : IR
 
         public string? Raw(string name) => User.TryGetValue(name, out var value) ? value : Machine.GetValueOrDefault(name);
 
-        // One pass: a Path that names %PATH% would otherwise expand into itself.
-        public string Expand(string value) =>
+        // One pass: a Path that names %PATH% would otherwise expand into itself. Windows expands a machine value
+        // before any user value exists, so a user value never fills one in.
+        public string Expand(string value, bool machineOnly = false) =>
             VariableReference().Replace(value, match =>
-                Raw(match.Groups[1].Value) ?? Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? match.Value);
+                (machineOnly ? Machine.GetValueOrDefault(match.Groups[1].Value) : Raw(match.Groups[1].Value))
+                ?? Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? match.Value);
 
         private static Dictionary<string, string> ReadValues(RegistryKey hive, string subKey)
         {

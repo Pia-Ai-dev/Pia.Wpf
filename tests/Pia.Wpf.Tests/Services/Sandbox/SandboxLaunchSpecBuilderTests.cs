@@ -389,7 +389,7 @@ public sealed class SandboxLaunchSpecBuilderTests
     [InlineData(RuntimeOutcome.NeedsAdminFix, RuntimeIssue.DotnetAdminOwned,
         "The only .NET found is installed for all users, and sandboxed apps can't read its folder. Run Pia as administrator once to allow it, or install it for your user only (the server's settings show how).")]
     [InlineData(RuntimeOutcome.Refused, RuntimeIssue.ToolchainTooWide,
-        "The runtime sits directly in a folder Pia won't share (your profile, Desktop, Documents or Downloads). Install it into a folder of its own.")]
+        "The runtime sits directly on a drive, on a network share or in a folder Pia won't share (such as your profile, Desktop, Documents or Downloads). Install it into a folder of its own.")]
     public void ARuntimeThatIsNotReady_GivesItsIssueText(RuntimeOutcome outcome, RuntimeIssue issue, string expected)
     {
         var detector = new FakeDetector(runner => new RuntimeResolution(runner.Kind, outcome, issue, null, [], null));
@@ -462,6 +462,28 @@ public sealed class SandboxLaunchSpecBuilderTests
         Assert.Equal("mine", spec.Environment["API_KEY"]);
         var npx = Assert.Single(detector.Calls);
         Assert.Equal(RunnerKind.Npx, npx.Kind);
+    }
+
+    /// <summary>The machine value reaches the server; the user's registry value stays blanked like every user variable.</summary>
+    [Fact]
+    public void AReadyNodeServer_MergesTheMachineNodeOptions_FromTheHost()
+    {
+        var detector = new FakeDetector(runner => Ready(runner.Kind, Node()));
+        var host = new FakeRuntimeHost
+        {
+            PathEntries = { @"C:\Windows\system32" },
+            MachineEnvironment = { ["NODE_OPTIONS"] = "--use-openssl-ca" },
+            RegistryEnvironment = { ["NODE_OPTIONS"] = "--users-registry-value" }
+        };
+        var request = Request("npx", env: new Dictionary<string, string> { ["NODE_OPTIONS"] = "--max-old-space-size=4096" },
+            args: ["-y", "@x/y"]);
+
+        var spec = Build(request, new SandboxRuntimeContext(detector, host, CanProvision: true, ["NODE_OPTIONS"])).Spec!;
+
+        var preload = Path.Combine(PiaPaths.McpSandboxSupportDirectory, "node-sandbox.cjs").Replace('\\', '/');
+        Assert.Equal(
+            $"--preserve-symlinks --preserve-symlinks-main --require \"{preload}\" --use-openssl-ca --max-old-space-size=4096",
+            spec.Environment["NODE_OPTIONS"]);
     }
 
     [Fact]

@@ -21,14 +21,14 @@ public enum SandboxPathIssueKind
     TooManyFiles,
     CommandFolderTooLarge,
     ManagedRuntimeFolder,
-    UvFolder
+    HostProgramFolder
 }
 
 /// <param name="Path">The path as the policy holds it, so a UI can mark the matching entry. The message never repeats it.</param>
 public sealed record SandboxPathIssue(string Path, SandboxPathIssueKind Kind, string Message);
 
 /// <summary>The machine facts the guard judges paths against; a seam so the rules test without a real profile.</summary>
-/// <param name="UvFolders">Where Pia finds the uv it runs outside the sandbox, so no server may write there.</param>
+/// <param name="HostProgramFolders">Folders whose programs run outside the sandbox; asked only when a read-write folder is judged.</param>
 public sealed record SandboxGuardEnvironment(
     string WindowsDirectory,
     IReadOnlyList<string> ProgramFilesDirectories,
@@ -38,15 +38,14 @@ public sealed record SandboxGuardEnvironment(
     IReadOnlyList<string> WideFolders,
     Func<string, bool> PathExists,
     Func<string, int, int> CountEntries,
-    IReadOnlyList<string>? UvFolders = null)
+    Func<IReadOnlyList<string>>? HostProgramFolders = null)
 {
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, long Ticks)> CountCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly long CountCacheTicks = TimeSpan.FromSeconds(20).Ticks;
 
-    // Only reads the registry and the file system here; elevation is never asked.
-    private static readonly RuntimeHostService UvHost = new(new ElevationService(NullLogger<ElevationService>.Instance));
+    public static SandboxGuardEnvironment Current() => Current(HostProgramFolderCache.Shared);
 
-    public static SandboxGuardEnvironment Current()
+    internal static SandboxGuardEnvironment Current(HostProgramFolderCache hostPrograms)
     {
         var profile = PiaPaths.UserProfileRoot;
         string[] piaRoots =
@@ -74,7 +73,7 @@ public sealed record SandboxGuardEnvironment(
             ],
             path => Directory.Exists(path) || File.Exists(path),
             CountEntriesCached,
-            [.. RuntimeCandidates.UvLocations(UvHost).Distinct(StringComparer.OrdinalIgnoreCase)]);
+            hostPrograms.Get);
     }
 
     // Typed into an editor, so the same folder is judged on every keystroke; a recount per keystroke would stall it.
@@ -100,6 +99,52 @@ public sealed record SandboxGuardEnvironment(
         if (count < limit)
             CountCache[path] = (count, now);
         return count;
+    }
+}
+
+/// <summary>Reuses the host program folders briefly: the editor asks on the UI thread at every change.</summary>
+internal sealed class HostProgramFolderCache(IRuntimeHostService host, Func<long> clockTicks)
+{
+    public static readonly long LifetimeTicks = TimeSpan.FromSeconds(20).Ticks;
+
+    // Only reads the registry and the file system; elevation is never asked.
+    public static HostProgramFolderCache Shared { get; } =
+        new(new RuntimeHostService(new ElevationService(NullLogger<ElevationService>.Instance)), () => DateTime.UtcNow.Ticks);
+
+    private readonly Lock _gate = new();
+    private (IReadOnlyList<string> Folders, string Profile, long Ticks)? _entry;
+
+    public IReadOnlyList<string> Get()
+    {
+        lock (_gate)
+        {
+            var now = clockTicks();
+            // The fixed uv folders hang off the profile, which a test may redirect.
+            var profile = host.UserProfile + "|" + host.LocalAppData;
+            if (_entry is { } entry && entry.Profile == profile && now - entry.Ticks < LifetimeTicks)
+                return entry.Folders;
+
+            var folders = RuntimeCandidates.HostProgramFolders(host, IsOnThisPc);
+            _entry = (folders, profile, now);
+            return folders;
+        }
+    }
+
+    // A UNC path or a mapped network drive can stall for seconds when its server is gone.
+    internal static bool IsOnThisPc(string folder)
+    {
+        if (folder.StartsWith(@"\\", StringComparison.Ordinal) || folder.StartsWith("//", StringComparison.Ordinal))
+            return false;
+
+        try
+        {
+            return Path.GetPathRoot(folder) is { Length: > 0 } root
+                && new DriveInfo(root).DriveType is DriveType.Fixed or DriveType.Removable or DriveType.Ram;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 }
 
@@ -224,10 +269,12 @@ public static class SandboxPathGuard
             return;
         }
 
-        if (isReadwrite && environment.UvFolders?.Any(uv => Path.IsPathFullyQualified(uv) && ContainsOrIs(full, uv)) == true)
+        // Whether or not a program is there yet: a server could plant one that the user or Pia then runs uncontained.
+        if (isReadwrite && environment.HostProgramFolders?.Invoke()
+                .Any(folder => Path.IsPathFullyQualified(folder) && ContainsOrIs(full, folder)) == true)
         {
-            issues.Add(new(raw, SandboxPathIssueKind.UvFolder,
-                "Pia looks for uv in this folder and runs it outside the sandbox, so a sandboxed server can't be allowed to change it. Choose a different folder."));
+            issues.Add(new(raw, SandboxPathIssueKind.HostProgramFolder,
+                "This folder holds programs that run outside the sandbox (a folder on your PATH, or one Pia runs uv from), so a sandboxed server can't be allowed to change it. Share it read-only or choose a different folder."));
             return;
         }
 

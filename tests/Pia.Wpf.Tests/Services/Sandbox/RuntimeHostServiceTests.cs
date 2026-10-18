@@ -285,6 +285,23 @@ public sealed class RuntimeHostServiceTests : IDisposable
     }
 
     [Fact]
+    public void AMachineVariable_IsReadFromHklmOnly_AndExpanded()
+    {
+        var host = Host();
+        using var machine = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager\Environment");
+        Assert.NotNull(machine);
+
+        Assert.Equal((string?)machine.GetValue("TEMP"), host.MachineEnvironmentValue("TEMP"), StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("%", host.MachineEnvironmentValue("TEMP"));
+        Assert.Equal("Windows_NT", host.MachineEnvironmentValue("OS"));
+        Assert.Null(host.MachineEnvironmentValue("PIA_TEST_UNSET_" + Guid.NewGuid().ToString("N")));
+
+        using var user = Registry.CurrentUser.OpenSubKey("Environment");
+        Assert.SkipWhen(user?.GetValue("TEMP") is null, "no user TEMP on this host");
+        Assert.NotEqual(host.RegistryEnvironmentValue("TEMP"), host.MachineEnvironmentValue("TEMP"), StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void TheUserEnvironmentNames_AreTheValueNamesUnderHkcuEnvironment()
     {
         using var environment = Registry.CurrentUser.OpenSubKey("Environment");
@@ -312,6 +329,26 @@ public sealed class RuntimeHostServiceTests : IDisposable
 
             Assert.Equal([unique], RuntimeHostService.ReadUserEnvironmentNames(Registry.CurrentUser, subKey));
             Assert.Empty(RuntimeHostService.ReadUserEnvironmentNames(Registry.CurrentUser, subKey + "-missing"));
+        }
+        finally
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(subKey, throwOnMissingSubKey: false);
+        }
+    }
+
+    /// <summary>No names would mean nothing gets blanked, so a read that fails must not look like an empty key.</summary>
+    [Fact]
+    public void AUserEnvironmentReadThatFails_Throws_InsteadOfGivingNoNames()
+    {
+        var subKey = @"Software\Pia.Tests\" + Guid.NewGuid().ToString("N");
+        try
+        {
+            var parent = Registry.CurrentUser.CreateSubKey(subKey);
+            using (var environment = parent.CreateSubKey("Environment"))
+                environment.SetValue("PIA_TEST_SECRET", "1");
+            parent.Dispose();
+
+            Assert.Throws<ObjectDisposedException>(() => RuntimeHostService.ReadUserEnvironmentNames(parent, "Environment"));
         }
         finally
         {

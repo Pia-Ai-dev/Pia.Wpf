@@ -52,19 +52,41 @@ public static partial class RuntimeCandidates
             yield return scoopUv;
     }
 
-    /// <summary>The fixed uv folders whether or not uv is there yet, the PATH folders holding uv.exe, and where each uv.exe link leads.</summary>
-    public static IEnumerable<string> UvLocations(IRuntimeHostService host)
+    /// <summary>Every fixed uv folder and registry PATH folder, normalized, whether or not it holds a program yet, and
+    /// where a uv.exe link in one leads; <paramref name="mayProbe"/> keeps the file system out of slow folders.</summary>
+    public static IReadOnlyList<string> HostProgramFolders(IRuntimeHostService host, Func<string, bool> mayProbe)
     {
-        var onPath = host.RegistryPathEntries()
-            .Select(entry => entry.Trim().Trim('"'))
-            .Where(entry => entry.Length > 0 && Path.IsPathFullyQualified(entry) && host.FileExists(Path.Combine(entry, "uv.exe")));
-
-        foreach (var folder in Uv(host).Concat(onPath))
+        var folders = new List<string>();
+        foreach (var entry in Uv(host).Concat(host.RegistryPathEntries()))
         {
-            yield return folder;
-            if (host.ResolveFinalPath(Path.Combine(folder, "uv.exe")) is { } target
-                && Path.GetDirectoryName(target) is { Length: > 0 } targetFolder)
-                yield return targetFolder;
+            if (NormalizedFolder(entry.Trim().Trim('"')) is not { } folder)
+                continue;
+
+            folders.Add(folder);
+            var uv = Path.Combine(folder, "uv.exe");
+            if (mayProbe(folder)
+                && host.FileExists(uv)
+                && host.ResolveFinalPath(uv) is { } target
+                && NormalizedFolder(Path.GetDirectoryName(target) ?? string.Empty) is { } targetFolder)
+                folders.Add(targetFolder);
+        }
+
+        return [.. folders.Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    // PATH may hold unexpanded or malformed entries; one of them must not fail the whole guard.
+    private static string? NormalizedFolder(string path)
+    {
+        if (path.Length == 0 || !Path.IsPathFullyQualified(path))
+            return null;
+
+        try
+        {
+            return SandboxLaunchSpecBuilder.Normalize(path);
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
         }
     }
 
