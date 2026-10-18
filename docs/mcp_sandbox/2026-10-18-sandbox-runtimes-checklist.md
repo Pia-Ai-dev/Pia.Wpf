@@ -118,7 +118,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 
 ### G Step 2 and guides
 
-- [ ] **G1 Elevated fix, editor facade and guides.** `ToolchainAclService` (pre-check, `S-1-15-2-1` RX grant
+- [x] **G1 Elevated fix, editor facade and guides.** `ToolchainAclService` (pre-check, `S-1-15-2-1` RX grant
   through .NET), `SandboxRuntimeService` (async detection, exact `icacls` preview, elevation gate) and
   `RuntimeInstallGuides` with the verified commands.
   *Deps:* A1 · *Effort:* S · *Value:* Med
