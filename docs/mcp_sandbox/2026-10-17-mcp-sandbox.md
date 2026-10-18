@@ -174,7 +174,9 @@ read-only path already covers it. The command must resolve to an `.exe` (a bare 
 `npx`, `npm exec`, `uvx`, `dnx`, `node <script>` and `dotnet <dll>` skip this rule. They go through
 runtime detection, which grants the runtime's folder (for a script or dll also the program's folder)
 read-only per start unless a container can read it already
-([2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md)). `cmd /c` is unwrapped,
+([2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md)). `uvx` is the exception:
+uv installs the tool on the host into the server's own runtime folder, and only that folder is
+granted, never the user's uv. `cmd /c` is unwrapped,
 never run: the program after it is judged as if it were the command, and a line that uses cmd features
 (`& | < > ^ %`) is refused.
 
