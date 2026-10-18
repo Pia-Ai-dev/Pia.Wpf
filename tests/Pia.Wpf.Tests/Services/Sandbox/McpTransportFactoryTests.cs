@@ -5,6 +5,8 @@ using NSubstitute;
 using Pia.Services.Plugins;
 using Pia.Services.Exceptions;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
+using Pia.Tests.TestInfrastructure;
 using Xunit;
 
 namespace Pia.Tests.Services.Sandbox;
@@ -94,7 +96,172 @@ public sealed class McpTransportFactoryTests
     {
         var ex = Assert.Throws<SandboxStartException>(() => WithLauncher().Create(Request(McpSandboxPolicy.Empty, command)));
 
-        Assert.Contains("script launcher", ex.Message);
+        Assert.Equal(SandboxRuntimeMessages.ScriptFile, ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+    }
+
+    private const string NodeRoot = @"C:\Users\u\node";
+
+    private static readonly string Downloads = Path.Combine(SandboxGuardEnvironment.Current().ProfileRoot, "Downloads");
+
+    private static McpTransportRequest NpxRequest(string command = "npx", McpSandboxPolicy? sandbox = null) =>
+        new("Files", command, ["-y", "@x/y"], new Dictionary<string, string> { ["TOKEN"] = "t" }, null,
+            sandbox ?? McpSandboxPolicy.Empty, "fs", false);
+
+    private static IRuntimeDetector Detector(RuntimeOutcome outcome = RuntimeOutcome.Ready, RuntimeIssue issue = RuntimeIssue.None)
+    {
+        var install = new RuntimeInstall(RuntimeFamily.Node, NodeRoot, Path.Combine(NodeRoot, "node.exe"), "24.1.0", "11.4.0",
+            Path.Combine(NodeRoot, "node_modules", "npm", "bin", "npx-cli.js"), ReadableAlready: false, AdminOwned: false);
+        var detector = Substitute.For<IRuntimeDetector>();
+        detector.Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call => new RuntimeResolution(call.Arg<RunnerRequest>().Kind, outcome, issue,
+                outcome == RuntimeOutcome.Ready ? install : null, outcome == RuntimeOutcome.Ready ? [NodeRoot] : [], null));
+        return detector;
+    }
+
+    private static (ISandboxGrantVerifier Verifier, List<SandboxLaunchSpec> Seen) RefusingVerifier()
+    {
+        var seen = new List<SandboxLaunchSpec>();
+        var verifier = Substitute.For<ISandboxGrantVerifier>();
+        verifier.Verify(Arg.Do<SandboxLaunchSpec>(spec => seen.Add(spec))).Returns(new SandboxGrantResult(false, 1, "stop"));
+        return (verifier, seen);
+    }
+
+    private static McpTransportFactory Factory(
+        ISandboxGrantVerifier? verifier = null,
+        IRuntimeDetector? detector = null,
+        IRuntimeHostService? host = null,
+        IRuntimeStateProvisioner? provisioner = null,
+        Func<IReadOnlyList<string>>? names = null) =>
+        new(new FakeMxcProcessLauncher(), verifier ?? Substitute.For<ISandboxGrantVerifier>(), NullLoggerFactory.Instance,
+            fileExists: _ => true, guardEnvironment: EverythingExists, detector, host, provisioner, names);
+
+    private static async Task<SandboxLaunchSpec> SpecReachingTheVerifier(
+        IClientTransport transport, List<SandboxLaunchSpec> seen)
+    {
+        await Assert.ThrowsAsync<SandboxStartException>(() => transport.ConnectAsync(TestContext.Current.CancellationToken));
+        return Assert.Single(seen);
+    }
+
+    [Theory]
+    [InlineData("uvx", new[] { @"C:\w\x.whl" }, SandboxRuntimeMessages.UvxValue)]
+    [InlineData("cmd", new[] { "/c", "npx -y @x/y & calc" }, SandboxRuntimeMessages.CmdMetacharacters)]
+    [InlineData("pnpm", new[] { "dlx", "x" },
+        "Pia can't sandbox servers started with pnpm. npx, npm exec, uvx and dnx work; otherwise point the command at the server program itself.")]
+    public void ARunnerRefusal_IsThrownWithItsText_AndNamesNoPath(string command, string[] args, string expected)
+    {
+        var request = Request(McpSandboxPolicy.Empty, command) with { Args = args };
+
+        var ex = Assert.Throws<SandboxStartException>(
+            () => Factory(detector: Detector(), host: new FakeRuntimeHost(), provisioner: new RecordingProvisioner()).Create(request));
+
+        Assert.Equal(expected, ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+    }
+
+    [Fact]
+    public void ARuntimeThatIsNotReady_IsThrownWithItsIssueText()
+    {
+        var factory = Factory(detector: Detector(RuntimeOutcome.NotFound, RuntimeIssue.NodeNotFound),
+            host: new FakeRuntimeHost(), provisioner: new RecordingProvisioner());
+
+        var ex = Assert.Throws<SandboxStartException>(() => factory.Create(NpxRequest()));
+
+        Assert.Equal(SandboxRuntimeMessages.NodeNotFound, ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+    }
+
+    [Fact]
+    public void ARunner_WithoutAProvisioner_IsRefused()
+    {
+        var factory = Factory(detector: Detector(), host: new FakeRuntimeHost());
+
+        var ex = Assert.Throws<SandboxStartException>(() => factory.Create(NpxRequest()));
+
+        Assert.Equal("Pia can't sandbox this server: runtime detection is not available.", ex.Message);
+    }
+
+    [Fact]
+    public void TheGuard_JudgesTheProgramCmdUnwrapped()
+    {
+        var request = Request(McpSandboxPolicy.Empty, Path.Combine(Environment.SystemDirectory, "cmd.exe"))
+            with { Args = ["/c", Path.Combine(Downloads, "server.exe")] };
+
+        var ex = Assert.Throws<SandboxStartException>(() => Factory().Create(request));
+
+        Assert.Contains("Put the server in its own folder", ex.Message);
+    }
+
+    [Fact]
+    public void TheGuard_LeavesARunnersFoldersToTheDetector()
+    {
+        var factory = Factory(detector: Detector(), host: new FakeRuntimeHost(), provisioner: new RecordingProvisioner());
+
+        Assert.IsType<MxcClientTransport>(factory.Create(NpxRequest(Path.Combine(Downloads, "npx.cmd"))));
+    }
+
+    [Fact]
+    public async Task TheProvisioner_ReachesTheTransport_WithTheRunnersSpec()
+    {
+        var provisioner = new RecordingProvisioner();
+        var (verifier, seen) = RefusingVerifier();
+        var factory = Factory(verifier, Detector(), new FakeRuntimeHost(), provisioner);
+
+        var spec = await SpecReachingTheVerifier(factory.Create(NpxRequest()), seen);
+
+        Assert.Same(spec, Assert.Single(provisioner.Prepared));
+        Assert.Equal(RunnerKind.Npx, spec.RunnerKind);
+        Assert.Equal(Path.Combine(NodeRoot, "node.exe"), spec.Command);
+    }
+
+    [Fact]
+    public async Task AnExeServer_IsBlanked_WithTheNamesFromTheSeam()
+    {
+        var (verifier, seen) = RefusingVerifier();
+        var factory = Factory(verifier, names: () => ["GH_TOKEN", "Path", "TOKEN"]);
+
+        var spec = await SpecReachingTheVerifier(factory.Create(Request(McpSandboxPolicy.Empty)), seen);
+
+        Assert.Equal("", spec.Environment["GH_TOKEN"]);
+        Assert.Equal("t", spec.Environment["TOKEN"]);
+        Assert.False(spec.Environment.ContainsKey("Path"));
+    }
+
+    [Fact]
+    public async Task TheHostsNames_WinOverTheSeam()
+    {
+        var (verifier, seen) = RefusingVerifier();
+        var host = new FakeRuntimeHost { UserNames = { "FROM_HOST" } };
+        var factory = Factory(verifier, host: host, names: () => ["FROM_SEAM"]);
+
+        var spec = await SpecReachingTheVerifier(factory.Create(Request(McpSandboxPolicy.Empty)), seen);
+
+        Assert.Equal("", spec.Environment["FROM_HOST"]);
+        Assert.False(spec.Environment.ContainsKey("FROM_SEAM"));
+    }
+
+    [Fact]
+    public async Task WithoutAHostOrASeam_TheRegistryNamesAreStillBlanked()
+    {
+        var (verifier, seen) = RefusingVerifier();
+        var factory = Factory(verifier);
+
+        var spec = await SpecReachingTheVerifier(factory.Create(Request(McpSandboxPolicy.Empty)), seen);
+
+        var expected = SandboxEnvironmentComposer.NamesToBlank(RuntimeHostService.ReadUserEnvironmentNames())
+            .Where(name => !string.Equals(name, "TOKEN", StringComparison.OrdinalIgnoreCase));
+        Assert.All(expected, name => Assert.Equal("", spec.Environment[name]));
+    }
+
+    private sealed class RecordingProvisioner : IRuntimeStateProvisioner
+    {
+        public List<SandboxLaunchSpec> Prepared { get; } = [];
+
+        public Task<SandboxLaunchSpec> PrepareAsync(SandboxLaunchSpec spec, Action<string> stderrLine, CancellationToken cancellationToken)
+        {
+            Prepared.Add(spec);
+            return Task.FromResult(spec);
+        }
     }
 
     [Fact]

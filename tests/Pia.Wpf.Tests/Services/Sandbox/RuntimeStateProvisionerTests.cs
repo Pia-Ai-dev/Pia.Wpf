@@ -29,6 +29,7 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     {
         StateFolderSafety.DeleteTree(PiaPaths.McpSandboxRoot);
         StateFolderSafety.DeleteTree(PiaPaths.McpSandboxSupportDirectory);
+        StateFolderSafety.DeleteTree(PiaPaths.McpSandboxGrantsDirectory);
         _outside = Directory.CreateDirectory(Path.Combine(profile.Root, "outside-" + Guid.NewGuid().ToString("N"))).FullName;
         _outsideFile = Path.Combine(_outside, "keep.txt");
         File.WriteAllText(_outsideFile, "outside");
@@ -38,10 +39,13 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     {
         StateFolderSafety.DeleteTree(PiaPaths.McpSandboxRoot);
         StateFolderSafety.DeleteTree(PiaPaths.McpSandboxSupportDirectory);
+        StateFolderSafety.DeleteTree(PiaPaths.McpSandboxGrantsDirectory);
         TempPath.Remove(_outside);
     }
 
     private string Container => $"pia-mcp-{_prefix}";
+
+    private string ProbeContainer => $"pia-mcp-{_prefix}-probe";
 
     private string State => PiaPaths.McpRuntimeStateDirectory(_prefix);
 
@@ -56,6 +60,17 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
 
     private Task<SandboxLaunchSpec> Prepare(SandboxLaunchSpec spec) =>
         Provisioner().PrepareAsync(spec, line => { lock (_stderr) _stderr.Add(line); }, TestContext.Current.CancellationToken);
+
+    // The real store, so the grant records live outside the state folder as they do in the app.
+    private Task<SandboxLaunchSpec> PrepareWithRecords(SandboxLaunchSpec spec) =>
+        new RuntimeStateProvisioner(
+                new RuntimeStateStore(NullLogger<RuntimeStateStore>.Instance),
+                new UvToolRunner(NullLogger<UvToolRunner>.Instance, _uv.Run),
+                NullLogger<RuntimeStateProvisioner>.Instance)
+            .PrepareAsync(spec, line => { lock (_stderr) _stderr.Add(line); }, TestContext.Current.CancellationToken);
+
+    // An earlier uvx start left a record saying the state folder was read-only, so its content is trusted.
+    private void TrustTheStateFolder() => _store.Earlier[Container] = true;
 
     private static SandboxLaunchSpec Base(string container) =>
         new(container, @"C:\Tools\node\node.exe", ["server.js"], new Dictionary<string, string>(), @"C:\box",
@@ -199,9 +214,10 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     {
         await Prepare(NodeSpec());
 
-        var (container, roots) = Assert.Single(_store.Records);
+        var (container, roots, stateReadOnly) = Assert.Single(_store.Records);
         Assert.Equal(Container, container);
         Assert.Equal([@"C:\Users\Jane\node", @"C:\Users\Jane\mcp\server", State, Support], roots);
+        Assert.False(stateReadOnly);
     }
 
     [Fact]
@@ -253,11 +269,13 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         await Prepare(UvxSpec());
 
         Assert.Equal([State], _store.Records.Single().Roots);
+        Assert.True(_store.Records.Single().StateReadOnly);
     }
 
     [Fact]
     public async Task Uvx_AnUnchangedSpec_KeepsTheInstalledTool()
     {
+        TrustTheStateFolder();
         WriteSpecRecord("mcp-server-time");
         var marker = Path.Combine(UvEntryPointResolverTests.InstallTimeTool(State), "marker.txt");
         File.WriteAllText(marker, "kept");
@@ -270,6 +288,7 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     [Fact]
     public async Task Uvx_AChangedSpec_DeletesToolsAndToolBin_BeforeTheInstall()
     {
+        TrustTheStateFolder();
         WriteSpecRecord("mcp-server-time", requirements: ["tzdata"]);
         UvEntryPointResolverTests.InstallTimeTool(State);
         Directory.CreateDirectory(Path.Combine(State, "tool-bin"));
@@ -293,6 +312,7 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     [Fact]
     public async Task Uvx_ADamagedSpecRecord_CountsAsChanged()
     {
+        TrustTheStateFolder();
         Directory.CreateDirectory(State);
         File.WriteAllText(Path.Combine(State, "pia-uv-spec.json"), "{ not json");
         var marker = Path.Combine(UvEntryPointResolverTests.InstallTimeTool(State), "marker.txt");
@@ -306,6 +326,7 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     [Fact]
     public async Task Uvx_AToolFileHeldByTheRunningServer_GivesTheInUseText()
     {
+        TrustTheStateFolder();
         WriteSpecRecord("other-package");
         var tool = UvEntryPointResolverTests.InstallTimeTool(State);
         using var held = new FileStream(Path.Combine(tool, "Scripts", "python.exe"), FileMode.Open, FileAccess.Read, FileShare.None);
@@ -349,6 +370,7 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     [Fact]
     public async Task Uvx_Offline_WithTheToolInstalled_SkipsTheInstall()
     {
+        TrustTheStateFolder();
         WriteSpecRecord("mcp-server-time");
         UvEntryPointResolverTests.InstallTimeTool(State);
 
@@ -361,6 +383,7 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     [Fact]
     public async Task Uvx_Offline_WithoutTheTool_RefusesWithoutRunningUv()
     {
+        TrustTheStateFolder();
         WriteSpecRecord("mcp-server-time");
 
         var ex = await Assert.ThrowsAsync<SandboxStartException>(() => Prepare(UvxSpec(offline: true)));
@@ -373,6 +396,7 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     [Fact]
     public async Task Uvx_Offline_WithAnotherSpecInstalled_Refuses()
     {
+        TrustTheStateFolder();
         WriteSpecRecord("mcp-server-time", python: "3.12");
         UvEntryPointResolverTests.InstallTimeTool(State);
 
@@ -403,11 +427,126 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         Assert.Equal(Path.Combine(State, "tools"), info.Environment["UV_TOOL_DIR"]);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uvx_AfterAnNpxStart_ClearsTheStateFolder_BeforeUvRuns(bool npxWasTheProbe)
+    {
+        await PrepareWithRecords(NodeSpec() with
+        {
+            ContainerName = npxWasTheProbe ? ProbeContainer : Container,
+            RunnerKind = RunnerKind.Npx,
+        });
+        var planted = Path.Combine(State, "python", "cpython-3.13", "python.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(planted)!);
+        File.WriteAllText(planted, "planted");
+        bool? plantedAtInstall = null;
+        bool? homeAtInstall = null;
+        _uv.OnRun = () =>
+        {
+            plantedAtInstall = File.Exists(planted);
+            homeAtInstall = Directory.Exists(Path.Combine(State, "home"));
+        };
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.False(plantedAtInstall);
+        Assert.False(homeAtInstall);
+        Assert.False(File.Exists(planted));
+    }
+
+    [Fact]
+    public async Task Uvx_AfterAUvxStart_KeepsTheInstalledTool()
+    {
+        await PrepareWithRecords(UvxSpec());
+        var marker = Path.Combine(State, "tools", "mcp-server-time", "marker.txt");
+        File.WriteAllText(marker, "kept");
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.True(File.Exists(marker));
+        Assert.Equal(2, _uv.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Uvx_WithoutAGrantRecord_ClearsANonEmptyStateFolder()
+    {
+        Directory.CreateDirectory(State);
+        var leftover = Path.Combine(State, "leftover.txt");
+        File.WriteAllText(leftover, "x");
+        bool? leftoverAtInstall = null;
+        _uv.OnRun = () => leftoverAtInstall = File.Exists(leftover);
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.False(leftoverAtInstall);
+    }
+
+    [Fact]
+    public async Task Uvx_ALinkPlantedInTheStateFolder_CountsAsContent()
+    {
+        await PrepareWithRecords(NodeSpec() with { RunnerKind = RunnerKind.Npx });
+        StateFolderSafety.DeleteTree(State);
+        Directory.CreateDirectory(State);
+        var python = Path.Combine(State, "python");
+        StateFolderSafetyTests.Junction(python, _outside);
+
+        await PrepareWithRecords(UvxSpec());
+
+        Assert.False(Directory.Exists(python));
+        Assert.Equal("outside", File.ReadAllText(_outsideFile));
+    }
+
+    [Fact]
+    public async Task Uvx_APlantedSpecRecordAndTool_DoNotPreventTheClear()
+    {
+        await PrepareWithRecords(NodeSpec() with { RunnerKind = RunnerKind.Npx });
+        WriteSpecRecord("mcp-server-time");
+        var planted = Path.Combine(UvEntryPointResolverTests.InstallTimeTool(State), "planted.txt");
+        File.WriteAllText(planted, "planted");
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(() => PrepareWithRecords(UvxSpec(offline: true)));
+
+        Assert.Equal("Network access is off and this package is not installed yet. Allow network access for the first start.", ex.Message);
+        Assert.False(File.Exists(planted));
+        Assert.False(File.Exists(Path.Combine(State, "pia-uv-spec.json")));
+        Assert.Empty(_uv.Calls);
+    }
+
+    [Fact]
+    public async Task Uvx_WhileAContainerThatCanWriteTheFolderRuns_IsRefused_AndTouchesNothing()
+    {
+        await PrepareWithRecords(NodeSpec() with { RunnerKind = RunnerKind.Npx });
+        var inUse = Path.Combine(State, "home", "keep.txt");
+        File.WriteAllText(inUse, "in use");
+        using var running = SandboxContainerLease.Acquire(Container);
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(
+            () => PrepareWithRecords(UvxSpec() with { ContainerName = ProbeContainer }));
+
+        Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
+        PathFreeAssert.IsPathFree(ex);
+        Assert.True(File.Exists(inUse));
+        Assert.Empty(_uv.Calls);
+    }
+
     private sealed class RecordingStore : IRuntimeStateStore
     {
-        public List<(string Container, IReadOnlyList<string> Roots)> Records { get; } = [];
+        public List<(string Container, IReadOnlyList<string> Roots, bool StateReadOnly)> Records { get; } = [];
 
-        public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots) => Records.Add((containerName, roots));
+        /// <summary>The state access earlier starts recorded, by container name.</summary>
+        public Dictionary<string, bool> Earlier { get; } = [];
+
+        public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false) =>
+            Records.Add((containerName, roots, stateReadOnly));
+
+        public bool? StateGrantedReadOnly(string containerName)
+        {
+            var written = Records.FindLast(record => record.Container == containerName);
+            if (written.Container is not null)
+                return written.StateReadOnly;
+            return Earlier.TryGetValue(containerName, out var readOnly) ? readOnly : null;
+        }
 
         public IReadOnlyList<string> SweepRoots(string prefix) => [];
 

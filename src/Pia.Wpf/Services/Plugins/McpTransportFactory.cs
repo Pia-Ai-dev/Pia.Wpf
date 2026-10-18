@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
 using Pia.Services.Exceptions;
 using Pia.Services.Plugins.Sandbox;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 
 namespace Pia.Services.Plugins;
 
@@ -19,14 +20,22 @@ public sealed class McpTransportFactory : IMcpTransportFactory
     private readonly IMxcProcessLauncher? _launcher;
     private readonly ISandboxGrantVerifier _verifier;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger _logger;
     private readonly Func<string, bool>? _fileExists;
     private readonly SandboxGuardEnvironment? _guardEnvironment;
+    private readonly IRuntimeDetector? _detector;
+    private readonly IRuntimeHostService? _host;
+    private readonly IRuntimeStateProvisioner? _provisioner;
+    private readonly Func<IReadOnlyList<string>>? _userEnvironmentNames;
 
     public McpTransportFactory(
         IMxcProcessLauncher? launcher = null,
         ISandboxGrantVerifier? verifier = null,
-        ILoggerFactory? loggerFactory = null)
-        : this(launcher, verifier, loggerFactory, fileExists: null, guardEnvironment: null)
+        ILoggerFactory? loggerFactory = null,
+        IRuntimeDetector? detector = null,
+        IRuntimeHostService? host = null,
+        IRuntimeStateProvisioner? provisioner = null)
+        : this(launcher, verifier, loggerFactory, fileExists: null, guardEnvironment: null, detector, host, provisioner)
     {
     }
 
@@ -35,13 +44,22 @@ public sealed class McpTransportFactory : IMcpTransportFactory
         ISandboxGrantVerifier? verifier,
         ILoggerFactory? loggerFactory,
         Func<string, bool>? fileExists,
-        SandboxGuardEnvironment? guardEnvironment = null)
+        SandboxGuardEnvironment? guardEnvironment = null,
+        IRuntimeDetector? detector = null,
+        IRuntimeHostService? host = null,
+        IRuntimeStateProvisioner? provisioner = null,
+        Func<IReadOnlyList<string>>? userEnvironmentNames = null)
     {
         _launcher = launcher;
         _verifier = verifier ?? new SandboxGrantVerifier();
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger<McpTransportFactory>();
         _fileExists = fileExists;
         _guardEnvironment = guardEnvironment;
+        _detector = detector;
+        _host = host;
+        _provisioner = provisioner;
+        _userEnvironmentNames = userEnvironmentNames;
     }
 
     public IClientTransport Create(McpTransportRequest request)
@@ -52,18 +70,25 @@ public sealed class McpTransportFactory : IMcpTransportFactory
         if (_launcher is null)
             throw new SandboxStartException("Sandboxing is not available on this PC, so this server was not started.");
 
-        var plan = SandboxLaunchSpecBuilder.Build(request, fileExists: _fileExists);
-        if (plan.Spec is null)
+        var runtime = new SandboxRuntimeContext(_detector, _host, CanProvision: _provisioner is not null, UserEnvironmentNames());
+        var plan = SandboxLaunchSpecBuilder.Build(request, runtime, fileExists: _fileExists, logger: _logger);
+        if (plan.Spec is not { } spec)
             throw new SandboxStartException(plan.Error!);
 
+        // The detector already judged a runner's folders.
+        var command = spec.RunnerKind == RunnerKind.None ? spec.Command : null;
         var issues = SandboxPathGuard.Validate(
-            request.Sandbox, request.Command, _guardEnvironment ?? SandboxGuardEnvironment.Current(), _fileExists);
+            request.Sandbox, command, _guardEnvironment ?? SandboxGuardEnvironment.Current(), _fileExists);
         if (issues.Count > 0)
             throw new SandboxStartException($"Pia can't sandbox this server: {string.Join(" ", issues.Select(i => i.Message))}");
 
         return new MxcClientTransport(
-            plan.Spec, _launcher, _verifier, _loggerFactory.CreateLogger<MxcClientTransport>(), _loggerFactory);
+            spec, _launcher, _verifier, _loggerFactory.CreateLogger<MxcClientTransport>(), _loggerFactory, _provisioner);
     }
+
+    // Blanking never depends on DI: without a host the names come straight from the registry.
+    private IReadOnlyList<string> UserEnvironmentNames() =>
+        _host?.UserEnvironmentNames() ?? _userEnvironmentNames?.Invoke() ?? RuntimeHostService.ReadUserEnvironmentNames();
 
     internal static StdioClientTransportOptions BuildStdioOptions(McpTransportRequest request)
     {

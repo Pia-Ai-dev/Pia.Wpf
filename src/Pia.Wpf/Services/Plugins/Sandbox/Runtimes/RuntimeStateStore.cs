@@ -15,14 +15,13 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots)
+    public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false)
     {
-        if (containerName.Length == 0 || containerName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            throw new ArgumentException("A container name must be a plain file name.", nameof(containerName));
+        CheckContainerName(containerName);
 
         var directory = PiaPaths.McpSandboxGrantsDirectory;
         Directory.CreateDirectory(directory);
-        var record = new GrantRecord(containerName, [.. roots], DateTime.UtcNow);
+        var record = new GrantRecord(containerName, [.. roots], DateTime.UtcNow, stateReadOnly);
         var target = RecordPath(containerName);
         var temp = Path.Combine(directory, $".{containerName}.{Guid.NewGuid():N}.tmp");
         try
@@ -33,6 +32,23 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
         finally
         {
             File.Delete(temp);
+        }
+    }
+
+    public bool? StateGrantedReadOnly(string containerName)
+    {
+        CheckContainerName(containerName);
+        try
+        {
+            var path = RecordPath(containerName);
+            if (!File.Exists(path))
+                return null;
+
+            return JsonSerializer.Deserialize<GrantRecord>(File.ReadAllText(path), Json)?.StateReadOnly == true;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 
@@ -106,6 +122,12 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
     private static string RecordPath(string containerName) =>
         Path.Combine(PiaPaths.McpSandboxGrantsDirectory, containerName + RecordExtension);
 
+    private static void CheckContainerName(string containerName)
+    {
+        if (containerName.Length == 0 || containerName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new ArgumentException("A container name must be a plain file name.", nameof(containerName));
+    }
+
     private static IReadOnlyList<string> ReadRoots(string containerName)
     {
         try
@@ -123,5 +145,6 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
         }
     }
 
-    private sealed record GrantRecord(string Container, IReadOnlyList<string>? Roots, DateTime WrittenUtc);
+    // A record without StateReadOnly counts as a read-write grant.
+    private sealed record GrantRecord(string Container, IReadOnlyList<string>? Roots, DateTime WrittenUtc, bool? StateReadOnly = null);
 }

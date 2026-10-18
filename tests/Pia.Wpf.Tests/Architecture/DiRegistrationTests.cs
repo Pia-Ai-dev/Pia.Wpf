@@ -8,6 +8,8 @@ namespace Pia.Tests.Architecture;
 
 public class DiRegistrationTests
 {
+    private const string SandboxRuntimesNamespace = "Pia.Services.Plugins.Sandbox.Runtimes";
+
     private static IServiceCollection BuildServiceCollection()
     {
         var configureMethod = typeof(Bootstrapper).GetMethod(
@@ -57,7 +59,15 @@ public class DiRegistrationTests
             .And().AreInterfaces()
             .GetTypes();
 
-        var allInterfaces = serviceInterfaces.Concat(e2eeInterfaces).Concat(meetingAttendeeInterfaces).Concat(consentInterfaces);
+        // The sandbox runtime services reach McpTransportFactory and PluginService as optional parameters, so a
+        // missing registration would build and start, and quietly refuse every runner.
+        var sandboxRuntimeInterfaces = Types.InAssembly(PiaAssembly)
+            .That().ResideInNamespace(SandboxRuntimesNamespace)
+            .And().AreInterfaces()
+            .GetTypes();
+
+        var allInterfaces = serviceInterfaces.Concat(e2eeInterfaces).Concat(meetingAttendeeInterfaces).Concat(consentInterfaces)
+            .Concat(sandboxRuntimeInterfaces);
 
         // INativeHotkeyService is created by INativeHotkeyServiceFactory, not registered directly.
         // IPluginToolHandler implementations are created by PluginService based on plugin kind.

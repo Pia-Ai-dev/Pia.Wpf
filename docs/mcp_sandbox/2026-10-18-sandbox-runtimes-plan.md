@@ -307,7 +307,8 @@ public interface IRuntimeStateProvisioner
 
 public interface IRuntimeStateStore
 {
-    void WriteGrantRecord(string containerName, IReadOnlyList<string> roots);
+    void WriteGrantRecord(string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false);
+    bool? StateGrantedReadOnly(string containerName);
     IReadOnlyList<string> SweepRoots(string prefix);
     /// <returns>False when a start of this prefix is preparing or running; nothing was touched then.</returns>
     bool TryDelete(string prefix, Action? beforeDelete = null);
@@ -663,9 +664,10 @@ public sealed record SandboxRuntimeContext(
     IRuntimeHostService? Host,
     bool CanProvision,
     IReadOnlyList<string> UserEnvironmentNames,
-    SandboxEnvironmentMode Mode,
     CancellationToken CancellationToken = default);
 ```
+
+G-ENV answered yes, so there is no environment mode: the composer always blanks with `""`.
 
 1. Parse. A refusal → `Fail(<English refusal text>)`.
 2. `Kind None`: today's rules (`SandboxLaunchSpecBuilder.cs:36-65`) on `EffectiveCommand` and
@@ -747,6 +749,10 @@ the nested-read-write rule is untouched. Slugs are `[a-z0-9_]`, so no server's f
   of a state folder uses `EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip =
   FileAttributes.ReparsePoint }`. Deletion removes reparse points first, without descending into them.
 - **Granted** per start: read-write, or read-only for `Uvx`. Verified shallowly, with its own clause.
+- **Cleared before every uv install**, which runs outside the sandbox and would read and run what a container
+  planted: unless the grant records of both container names (kept outside the folder) show only read-only grants,
+  a non-empty state folder is deleted first (a record without its access counts as read-write, no record at all
+  deletes too), and the start is refused while a container that could write the folder is running.
 - **Shared** by the probe and the running server: same prefix, different container names and `AC\Temp`.
 - **Shown** in the editor as "managed by Pia", not editable, never saved in ConfigJson.
 - **Kept** when the sandbox is switched off or the command stops being a runner.
@@ -756,9 +762,10 @@ the nested-read-write rule is untouched. Slugs are `[a-z0-9_]`, so no server's f
   belongs to no saved server any more, so the next startup's orphan pass deletes it.
 
 `RuntimeStateStore`:
-- `WriteGrantRecord(containerName, roots)` writes `<McpSandboxGrantsDirectory>\<containerName>.json`,
-  `{"container": "...", "roots": ["..."], "writtenUtc": "..."}`. The provisioner writes it before each runner
-  launch with the toolchain roots, the program folder, the state folder and the support folder.
+- `WriteGrantRecord(containerName, roots, stateReadOnly)` writes `<McpSandboxGrantsDirectory>\<containerName>.json`,
+  `{"container": "...", "roots": ["..."], "writtenUtc": "...", "stateReadOnly": false}`. The provisioner writes it
+  before each runner launch with the toolchain roots, the program folder, the state folder and the support folder;
+  `StateGrantedReadOnly(containerName)` reads the access back (null without a record).
 - `SweepRoots(prefix)`: the state folder when it exists, plus the roots of both records
   (`pia-mcp-<prefix>` and `-probe`).
 - `TryDelete(prefix, beforeDelete)`: `RuntimeStateLocks.TryAcquire` on the state folder, then
@@ -865,7 +872,8 @@ English service texts (static `SandboxRuntimeMessages`, C3; never with a path):
   sandboxed server. Put the program in a smaller folder."
 - `ScriptMissing` / `DllMissing`: "The script was not found." / "The .dll was not found."
 - Builder: "Pia can't sandbox this server: runtime detection is not available." · "Pia could not check this
-  server's runtime."
+  server's runtime." · for a plain program that is not an `.exe`: "Pia can't sandbox this server: its command is
+  not a program (.exe). npx, npm exec, uvx and dnx work; otherwise point the command at the server program itself."
 - Provisioner (C2): "uv could not install the package. Only packages published as wheels are supported; the
   server's error output has the details." · "Network access is off and this package is not installed yet.
   Allow network access for the first start." · "The installed package does not provide the command this

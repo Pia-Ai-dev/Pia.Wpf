@@ -57,7 +57,10 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
         var files = preparation.Files.Select(file => (File: file, Root: RootOf(file.Path, state, support))).ToList();
         var directories = preparation.Directories.Select(directory => (Path: directory, Root: RootOf(directory, state, support))).ToList();
         if (preparation.Uv is { } uvRequest)
+        {
             CheckUvRequest(uvRequest, state);
+            ClearStateAContainerCouldHaveWritten(spec.ContainerName, state!);
+        }
 
         if (support is not null)
             Directory.CreateDirectory(support);
@@ -75,7 +78,7 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
         foreach (var (file, root) in files.Where(f => f.Root != support))
             WriteStateFile(root, file);
 
-        store.WriteGrantRecord(spec.ContainerName, GrantRoots(spec));
+        store.WriteGrantRecord(spec.ContainerName, GrantRoots(spec), spec.RuntimeStateReadOnly);
 
         if (preparation.Uv is not { } request)
             return spec;
@@ -90,6 +93,41 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
         if (state is null || !string.Equals(uvState, state, StringComparison.OrdinalIgnoreCase)
             || request.CacheDirectoriesToPrune.Any(cache => !IsStrictlyUnder(cache, state)))
             throw new InvalidOperationException("A uv preparation must stay inside the runtime state folder.");
+    }
+
+    // uv runs uncontained and executes what it finds, so it never reads a folder a container was allowed to write.
+    // The grant records sit outside the state folder, where no container can forge them.
+    private void ClearStateAContainerCouldHaveWritten(string containerName, string state)
+    {
+        var grants = SandboxLaunchSpecBuilder.ContainerNames(SandboxLaunchSpecBuilder.PrefixOf(containerName))
+            .Select(name => (Name: name, ReadOnly: store.StateGrantedReadOnly(name)))
+            .ToList();
+        var onlyReadOnly = grants.Any(grant => grant.ReadOnly == true) && grants.All(grant => grant.ReadOnly != false);
+        var clear = !onlyReadOnly && HasEntries(state);
+
+        var running = grants.Where(grant => SandboxContainerLease.IsActive(grant.Name)).ToList();
+        if (running.Count > 0 && (clear || running.Any(grant => grant.ReadOnly == false)))
+        {
+            logger.LogInformation("Runtime state for {Container} not prepared: a running container can write it", containerName);
+            throw new SandboxStartException(InUseMessage);
+        }
+
+        if (!clear)
+            return;
+
+        StateFolderSafety.DeleteTree(state);
+        logger.LogInformation("Runtime state for {Container} cleared before the uv install", containerName);
+    }
+
+    // Counts a planted link as an entry; the reparse-safe walks would skip it.
+    private static bool HasEntries(string state)
+    {
+        var attributes = new FileInfo(state).Attributes;
+        if ((int)attributes == -1)
+            return false;
+
+        return (attributes & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != FileAttributes.Directory
+            || Directory.EnumerateFileSystemEntries(state).Any();
     }
 
     private static bool IsStrictlyUnder(string path, string root)

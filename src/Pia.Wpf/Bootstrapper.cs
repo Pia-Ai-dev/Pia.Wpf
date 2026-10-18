@@ -636,6 +636,14 @@ public static class Bootstrapper
         services.AddSingleton<Pia.Services.Plugins.Sandbox.IAppContainerProfileService, Pia.Services.Plugins.Sandbox.AppContainerProfileService>();
         services.AddSingleton<Pia.Services.Plugins.Sandbox.IPiaContainerSidResolver, Pia.Services.Plugins.Sandbox.PiaContainerSidResolver>();
         services.AddSingleton<Pia.Services.Plugins.Sandbox.IAceSweeper, Pia.Services.Plugins.Sandbox.AceSweepService>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.IRuntimeHostService, Pia.Services.Plugins.Sandbox.Runtimes.RuntimeHostService>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.IRuntimeRootVerifier, Pia.Services.Plugins.Sandbox.Runtimes.RuntimeRootVerifier>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.IRuntimeDetector, Pia.Services.Plugins.Sandbox.Runtimes.RuntimeDetector>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.IRuntimeStateStore, Pia.Services.Plugins.Sandbox.Runtimes.RuntimeStateStore>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.UvToolRunner>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.IRuntimeStateProvisioner, Pia.Services.Plugins.Sandbox.Runtimes.RuntimeStateProvisioner>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.IToolchainAclService, Pia.Services.Plugins.Sandbox.Runtimes.ToolchainAclService>();
+        services.AddSingleton<Pia.Services.Plugins.Sandbox.Runtimes.ISandboxRuntimeService, Pia.Services.Plugins.Sandbox.Runtimes.SandboxRuntimeService>();
         services.AddSingleton<Pia.Services.Plugins.IMcpTransportFactory, Pia.Services.Plugins.McpTransportFactory>();
         services.AddSingleton<IPluginService, Pia.Services.Plugins.PluginService>();
         services.AddSingleton<IAutocompleteService, AutocompleteService>();
