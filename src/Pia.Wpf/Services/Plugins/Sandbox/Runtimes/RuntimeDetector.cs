@@ -250,7 +250,7 @@ public sealed class RuntimeDetector(IRuntimeHostService host, IRuntimeRootVerifi
     private static RuntimeResolution Refused(RuntimeResolution runtime, RuntimeIssue issue) =>
         runtime with { Outcome = RuntimeOutcome.Refused, Issue = issue, ToolchainRoots = [], ProgramFolder = null };
 
-    private static RuntimeFamily FamilyOf(RunnerKind kind) => kind switch
+    public static RuntimeFamily FamilyOf(RunnerKind kind) => kind switch
     {
         RunnerKind.Npx or RunnerKind.NpmExec or RunnerKind.NodeScript => RuntimeFamily.Node,
         RunnerKind.Dnx or RunnerKind.DotnetDll => RuntimeFamily.Dotnet,

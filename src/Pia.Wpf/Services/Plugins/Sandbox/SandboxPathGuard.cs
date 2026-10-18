@@ -233,7 +233,7 @@ public static class SandboxPathGuard
     }
 
     private static bool IsManagedRuntimeFolder(string full, string sandboxRoot) =>
-        full[(sandboxRoot.TrimEnd('\\').Length + 1)..].Split('\\')[0].EndsWith(".runtime", StringComparison.OrdinalIgnoreCase);
+        full[(sandboxRoot.TrimEnd('\\').Length + 1)..].Split('\\')[0].EndsWith(PiaPaths.McpRuntimeStateSuffix, StringComparison.OrdinalIgnoreCase);
 
     /// <returns>Null when the normalized root may be granted, and under Windows or Program Files, which are never granted.</returns>
     internal static RuntimeIssue? JudgeRuntimeRoot(string root, bool isProgramFolder, SandboxGuardEnvironment environment)

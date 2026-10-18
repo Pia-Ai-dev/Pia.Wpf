@@ -310,7 +310,7 @@ public class PluginService : IPluginService
     private void CleanUpOrphanContainers(IRuntimeStateStore store, string prefix)
     {
         if (_aceSweeper is { } sweeper)
-            SweepAces(sweeper, () => store.SweepRoots(prefix), ContainerNames(prefix));
+            SweepAces(sweeper, () => store.SweepRoots(prefix), SandboxLaunchSpecBuilder.ContainerNames(prefix));
 
         try
         {
@@ -1001,7 +1001,7 @@ public class PluginService : IPluginService
         if (sandboxed.Count == 0)
             return;
 
-        var names = sandboxed.SelectMany(d => ContainerNames(d.ToolPrefix)).ToList();
+        var names = sandboxed.SelectMany(d => SandboxLaunchSpecBuilder.ContainerNames(d.ToolPrefix)).ToList();
         await Task.Run(() => SweepAces(sweeper, () => LeakedRoots(sandboxed, stillGranted), names));
     }
 
@@ -1032,9 +1032,6 @@ public class PluginService : IPluginService
         RunnerCommandParser.Parse(definition.Command, definition.Args, definition.WorkingDirectory) is { Kind: RunnerKind.None } parsed
             ? parsed.EffectiveCommand
             : definition.Command;
-
-    private static string[] ContainerNames(string prefix) =>
-        [SandboxLaunchSpecBuilder.ContainerName(prefix, false), SandboxLaunchSpecBuilder.ContainerName(prefix, true)];
 
     private void SweepAces(IAceSweeper sweeper, Func<IEnumerable<string>> roots, IReadOnlyList<string> names)
     {

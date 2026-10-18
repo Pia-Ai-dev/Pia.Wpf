@@ -21,6 +21,8 @@ public static class SandboxLaunchSpecBuilder
     public static string ContainerName(string prefix, bool isProbe) =>
         isProbe ? $"pia-mcp-{prefix}-probe" : $"pia-mcp-{prefix}";
 
+    public static string[] ContainerNames(string prefix) => [ContainerName(prefix, false), ContainerName(prefix, true)];
+
     public static SandboxLaunchPlan Build(
         McpTransportRequest request,
         string? pathVariable = null,

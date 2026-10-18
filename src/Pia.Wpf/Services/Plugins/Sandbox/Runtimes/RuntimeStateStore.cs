@@ -12,7 +12,6 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
     private const string ContainerPrefix = "pia-mcp-";
     private const string ProbeSuffix = "-probe";
     private const string RecordExtension = ".json";
-    private const string StateFolderExtension = ".runtime";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -44,7 +43,7 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
         if (Directory.Exists(state))
             roots.Add(state);
 
-        foreach (var containerName in ContainerNames(prefix))
+        foreach (var containerName in SandboxLaunchSpecBuilder.ContainerNames(prefix))
             roots.AddRange(ReadRoots(containerName));
 
         return [.. roots.Distinct(StringComparer.OrdinalIgnoreCase)];
@@ -54,7 +53,7 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
     {
         var state = PiaPaths.McpRuntimeStateDirectory(prefix);
         using var held = RuntimeStateLocks.TryAcquire(state);
-        if (held is null || ContainerNames(prefix).Any(SandboxContainerLease.IsActive))
+        if (held is null || SandboxLaunchSpecBuilder.ContainerNames(prefix).Any(SandboxContainerLease.IsActive))
             return false;
 
         try
@@ -62,7 +61,7 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
             beforeDelete?.Invoke();
             var entries = StateFolderSafety.EnumerateNoLinks(state).Count();
             StateFolderSafety.DeleteTree(state);
-            foreach (var containerName in ContainerNames(prefix))
+            foreach (var containerName in SandboxLaunchSpecBuilder.ContainerNames(prefix))
                 File.Delete(RecordPath(containerName));
 
             logger.LogInformation("Runtime state for prefix {Prefix} deleted: {Entries} entries", prefix, entries);
@@ -85,8 +84,8 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
             prefixes.AddRange(Directory.EnumerateDirectories(PiaPaths.McpSandboxRoot)
                 .Select(Path.GetFileName)
                 .OfType<string>()
-                .Where(name => name.EndsWith(StateFolderExtension, StringComparison.OrdinalIgnoreCase))
-                .Select(name => name[..^StateFolderExtension.Length]));
+                .Where(name => name.EndsWith(PiaPaths.McpRuntimeStateSuffix, StringComparison.OrdinalIgnoreCase))
+                .Select(name => name[..^PiaPaths.McpRuntimeStateSuffix.Length]));
         }
 
         if (Directory.Exists(PiaPaths.McpSandboxGrantsDirectory))
@@ -103,9 +102,6 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
             .Where(prefix => prefix.Length > 0 && !knownPrefixes.Contains(prefix))
             .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
-
-    private static string[] ContainerNames(string prefix) =>
-        [SandboxLaunchSpecBuilder.ContainerName(prefix, isProbe: false), SandboxLaunchSpecBuilder.ContainerName(prefix, isProbe: true)];
 
     private static string RecordPath(string containerName) =>
         Path.Combine(PiaPaths.McpSandboxGrantsDirectory, containerName + RecordExtension);

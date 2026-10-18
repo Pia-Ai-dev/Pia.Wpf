@@ -47,8 +47,10 @@ public static class PiaPaths
     /// <summary>Per-server read-write folders for sandboxed MCP servers. Routed: the files are user data.</summary>
     public static string McpSandboxRoot => Path.Combine(LocalDataDirectory, "McpSandbox");
 
+    public const string McpRuntimeStateSuffix = ".runtime";
+
     /// <summary>A sibling of the server's own folder, never inside it, so its file tools never see the runtime.</summary>
-    public static string McpRuntimeStateDirectory(string prefix) => Path.Combine(McpSandboxRoot, prefix + ".runtime");
+    public static string McpRuntimeStateDirectory(string prefix) => Path.Combine(McpSandboxRoot, prefix + McpRuntimeStateSuffix);
 
     /// <summary>Outside every state folder, because a server can write its own.</summary>
     public static string McpSandboxGrantsDirectory => Path.Combine(LocalDataDirectory, "McpSandboxGrants");
