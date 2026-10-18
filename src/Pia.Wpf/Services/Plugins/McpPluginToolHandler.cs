@@ -81,8 +81,9 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
                 PluginId, _sandbox.ReadwritePaths.Count, _sandbox.ReadonlyPaths.Count, _sandbox.AllowNetwork ? "allow" : "deny");
         try
         {
-            _transport = _transportFactory.Create(new McpTransportRequest(
-                PluginName, _command, _args, _env, _workingDirectory, _sandbox, _toolPrefix));
+            // Runtime detection reads ACLs and walks folders; startup and Save call this on the UI thread.
+            _transport = await Task.Run(() => _transportFactory.Create(new McpTransportRequest(
+                PluginName, _command, _args, _env, _workingDirectory, _sandbox, _toolPrefix)), ct);
 
             _client = await McpClient.CreateAsync(_transport, cancellationToken: ct);
             var discovered = await _client.ListToolsAsync(cancellationToken: ct);

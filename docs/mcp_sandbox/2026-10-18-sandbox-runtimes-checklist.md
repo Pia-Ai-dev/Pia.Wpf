@@ -82,7 +82,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
   point, the cache prune and path-free errors, called from an off-thread `MxcClientTransport.ConnectAsync` that
   holds the state-folder lock until the launch returned.
   *Deps:* A1, A2, A3 · *Effort:* M · *Value:* High
-- [ ] **C3 Builder, factory, blanking and DI.** `SandboxLaunchSpecBuilder.Build` switches to the parser,
+- [x] **C3 Builder, factory, blanking and DI.** `SandboxLaunchSpecBuilder.Build` switches to the parser,
   detector and planner, `SandboxEnvironmentComposer` blanks user registry variables for every sandboxed server
   (per G-ENV), `McpTransportFactory` refuses runners without all three runtime services, both callers run
   `Create` off the UI thread, `Bootstrapper` registers everything, and two DI tests prove the registrations

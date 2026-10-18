@@ -62,4 +62,23 @@ public class BootstrapperGraphValidationTests
             Assert.NotEqual(ServiceLifetime.Scoped, dependency.Lifetime);
         }
     }
+
+    /// <summary>These parameters are optional, so <c>ValidateOnBuild</c> passes without them and runners are then refused.</summary>
+    [Fact]
+    public void EverySandboxRuntimeParameter_OfTheTransportFactoryAndPluginService_IsRegistered()
+    {
+        var services = BuildConfiguredServices();
+
+        var parameters = new[] { typeof(Pia.Services.Plugins.McpTransportFactory), typeof(Pia.Services.Plugins.PluginService) }
+            .Select(type => type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+                .OrderByDescending(c => c.GetParameters().Length)
+                .First())
+            .SelectMany(ctor => ctor.GetParameters())
+            .Where(p => p.ParameterType.Namespace == "Pia.Services.Plugins.Sandbox.Runtimes")
+            .ToList();
+
+        Assert.True(parameters.Count >= 3, $"only {parameters.Count} runtime parameter(s) found");   // non-vacuity
+        foreach (var p in parameters)
+            Assert.Contains(services, d => d.ServiceType == p.ParameterType);
+    }
 }

@@ -94,7 +94,10 @@ public sealed class PluginServiceRuntimeStateTests : IDisposable
 
         public static string ToolchainRoot(string prefix) => $@"C:\toolchain\{prefix}";
 
-        public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots) => throw new NotSupportedException();
+        public void WriteGrantRecord(string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false) =>
+            throw new NotSupportedException();
+
+        public bool? StateGrantedReadOnly(string containerName) => throw new NotSupportedException();
 
         public IReadOnlyList<string> SweepRoots(string prefix) => [StateRoot(prefix), ToolchainRoot(prefix)];
 

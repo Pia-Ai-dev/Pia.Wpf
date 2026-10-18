@@ -1,70 +1,209 @@
 using System.IO;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Pia.Logging;
+using Pia.Paths;
+using Pia.Services.Exceptions;
+using Pia.Services.Plugins.Sandbox.Runtimes;
 
 namespace Pia.Services.Plugins.Sandbox;
+
+/// <summary>Runners need the detector, the host facts and a provisioner together; any one missing refuses them.</summary>
+public sealed record SandboxRuntimeContext(
+    IRuntimeDetector? Detector,
+    IRuntimeHostService? Host,
+    bool CanProvision,
+    IReadOnlyList<string> UserEnvironmentNames,
+    CancellationToken CancellationToken = default);
 
 /// <summary>Turns a sandboxed transport request into the exact program, folders and environment the container gets.</summary>
 public static class SandboxLaunchSpecBuilder
 {
     public const string RuntimeDirectoryVariable = "MXC_FFI_DIR";
 
-    private const string ScriptLauncherError =
-        "Pia can't sandbox this server yet: '{0}' starts through a script launcher (npx, uvx, .cmd, .bat). "
-        + "Point the command at the server's own .exe.";
+    private const string ContainerPrefix = "pia-mcp-";
+
+    private const string ProbeSuffix = "-probe";
 
     private const string AliasError =
         "Pia can't sandbox this server yet: '{0}' is a Microsoft Store alias or a link, not the program itself. "
         + "Point the command at the real {0}.";
 
+    private static readonly HashSet<string> ScriptExtensions = new(StringComparer.OrdinalIgnoreCase) { ".cmd", ".bat", ".ps1" };
+
+    private static readonly IReadOnlyDictionary<string, string> NoVariables = new Dictionary<string, string>();
+
     private static bool IsReparsePoint(string path) =>
         File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
 
     public static string ContainerName(string prefix, bool isProbe) =>
-        isProbe ? $"pia-mcp-{prefix}-probe" : $"pia-mcp-{prefix}";
+        isProbe ? ContainerPrefix + prefix + ProbeSuffix : ContainerPrefix + prefix;
 
     public static string[] ContainerNames(string prefix) => [ContainerName(prefix, false), ContainerName(prefix, true)];
 
-    public static SandboxLaunchPlan Build(
+    public static string PrefixOf(string containerName)
+    {
+        var name = containerName.StartsWith(ContainerPrefix, StringComparison.OrdinalIgnoreCase)
+            ? containerName[ContainerPrefix.Length..]
+            : containerName;
+        return name.EndsWith(ProbeSuffix, StringComparison.OrdinalIgnoreCase) ? name[..^ProbeSuffix.Length] : name;
+    }
+
+    internal static SandboxLaunchPlan Build(
         McpTransportRequest request,
         string? pathVariable = null,
         Func<string, bool>? fileExists = null,
-        Func<string, bool>? isReparsePoint = null)
+        Func<string, bool>? isReparsePoint = null) =>
+        Build(request, new SandboxRuntimeContext(null, null, CanProvision: false, []), pathVariable, fileExists, isReparsePoint);
+
+    public static SandboxLaunchPlan Build(
+        McpTransportRequest request,
+        SandboxRuntimeContext runtime,
+        string? pathVariable = null,
+        Func<string, bool>? fileExists = null,
+        Func<string, bool>? isReparsePoint = null,
+        ILogger? logger = null)
     {
         var policy = request.Sandbox ?? throw new ArgumentException("A sandboxed launch needs a policy.", nameof(request));
         var exists = fileExists ?? File.Exists;
+        var log = logger ?? NullLogger.Instance;
 
-        if (SandboxCommandRules.IsShimCommand(request.Command))
-            return SandboxLaunchPlan.Fail(string.Format(ScriptLauncherError, Path.GetFileName(request.Command.Trim().Trim('"'))));
+        var parse = RunnerCommandParser.Parse(request.Command, request.Args, request.WorkingDirectory, fileExists: exists);
+        if (parse.Refusal != RunnerRefusal.None)
+            return SandboxLaunchPlan.Fail(SandboxRuntimeMessages.For(parse));
 
-        var resolved = ResolveCommand(request.Command, pathVariable ?? Environment.GetEnvironmentVariable("PATH"), exists);
+        var readwrite = Distinct(policy.ReadwritePaths.Select(Normalize));
+        var readonlyPaths = Distinct(policy.ReadonlyPaths.Select(Normalize));
+        var prefix = string.IsNullOrWhiteSpace(request.ToolPrefix)
+            ? LocalMcpConfig.DeriveToolPrefix(request.Name)
+            : request.ToolPrefix;
+        var folders = new PolicyFolders(ContainerName(prefix, request.IsProbe), prefix, readwrite, readonlyPaths, policy.AllowNetwork);
+
+        var plan = parse.Kind == RunnerKind.None
+            ? BuildProgram(request, parse, folders, runtime, pathVariable ?? Environment.GetEnvironmentVariable("PATH"), exists,
+                isReparsePoint ?? IsReparsePoint)
+            : BuildRunner(request, parse, folders, runtime, log);
+
+        if (plan.Spec is { } spec)
+            LogBlanking(log, spec, runtime.UserEnvironmentNames);
+        return plan;
+    }
+
+    private static SandboxLaunchPlan BuildProgram(
+        McpTransportRequest request,
+        RunnerParseResult parse,
+        PolicyFolders folders,
+        SandboxRuntimeContext runtime,
+        string? pathVariable,
+        Func<string, bool> exists,
+        Func<string, bool> isReparsePoint)
+    {
+        var resolved = ResolveCommand(parse.EffectiveCommand, pathVariable, exists);
         if (resolved.Error is not null)
             return SandboxLaunchPlan.Fail(resolved.Error);
 
         var command = resolved.Path!;
-        if ((isReparsePoint ?? IsReparsePoint)(command))
+        if (isReparsePoint(command))
             return SandboxLaunchPlan.Fail(string.Format(AliasError, Path.GetFileName(command)));
 
-        if (!string.Equals(Path.GetExtension(command), ".exe", StringComparison.OrdinalIgnoreCase)
-            || SandboxCommandRules.IsShimCommand(command))
-            return SandboxLaunchPlan.Fail(string.Format(ScriptLauncherError, Path.GetFileName(command)));
+        var extension = Path.GetExtension(command);
+        if (ScriptExtensions.Contains(extension))
+            return SandboxLaunchPlan.Fail(SandboxRuntimeMessages.ScriptFile);
+        if (!string.Equals(extension, ".exe", StringComparison.OrdinalIgnoreCase))
+            return SandboxLaunchPlan.Fail(SandboxRuntimeMessages.NotAProgram);
 
-        var readwrite = Distinct(policy.ReadwritePaths.Select(Normalize));
-        var readonlyPaths = Distinct(policy.ReadonlyPaths.Select(Normalize));
-        var grantedCommandDirectory = CommandDirectoryToGrant(Normalize(Path.GetDirectoryName(command)!), readwrite, readonlyPaths);
-
-        var prefix = string.IsNullOrWhiteSpace(request.ToolPrefix)
-            ? LocalMcpConfig.DeriveToolPrefix(request.Name)
-            : request.ToolPrefix;
+        var grantedCommandDirectory = CommandDirectoryToGrant(
+            Normalize(Path.GetDirectoryName(command)!), folders.Readwrite, folders.Readonly);
 
         return SandboxLaunchPlan.Ok(new SandboxLaunchSpec(
-            ContainerName(prefix, request.IsProbe),
+            folders.ContainerName,
             command,
-            [.. request.Args],
-            CopyEnvironment(request.Env),
-            WorkingDirectoryFor(request.WorkingDirectory, readwrite, readonlyPaths, grantedCommandDirectory),
-            readwrite,
-            readonlyPaths,
-            policy.AllowNetwork,
+            [.. parse.EffectiveArgs],
+            SandboxEnvironmentComposer.Compose(runtime.UserEnvironmentNames, NoVariables, request.Env),
+            WorkingDirectoryFor(request.WorkingDirectory, folders.Readwrite, folders.Readonly, grantedCommandDirectory),
+            folders.Readwrite,
+            folders.Readonly,
+            folders.AllowNetwork,
             grantedCommandDirectory));
+    }
+
+    private static SandboxLaunchPlan BuildRunner(
+        McpTransportRequest request,
+        RunnerParseResult parse,
+        PolicyFolders folders,
+        SandboxRuntimeContext runtime,
+        ILogger log)
+    {
+        if (runtime.Detector is not { } detector || runtime.Host is not { } host || !runtime.CanProvision || parse.Runner is not { } runner)
+            return SandboxLaunchPlan.Fail(SandboxRuntimeMessages.DetectionUnavailable);
+
+        RuntimeLaunchPlan plan;
+        string? programFolder;
+        try
+        {
+            var resolution = detector.Detect(runner, runtime.CancellationToken);
+            log.LogInformation("Runtime for {Container}: {Kind} {Outcome}, {Roots} toolchain root(s), readable already {ReadableAlready}",
+                folders.ContainerName, parse.Kind, resolution.Outcome, resolution.ToolchainRoots.Count,
+                resolution.Install?.ReadableAlready ?? false);
+            log.SensitiveDebug("Runtime for {Container}: install {Root}, toolchain {Toolchain}, program folder {ProgramFolder}",
+                folders.ContainerName, resolution.Install?.Root, string.Join("|", resolution.ToolchainRoots), resolution.ProgramFolder);
+            if (resolution.Outcome != RuntimeOutcome.Ready)
+                return SandboxLaunchPlan.Fail(SandboxRuntimeMessages.For(resolution));
+
+            programFolder = resolution.ProgramFolder is { } folder
+                ? CommandDirectoryToGrant(Normalize(folder), folders.Readwrite, folders.Readonly)
+                : null;
+            List<string> sandboxRoots = [.. folders.Readwrite, .. folders.Readonly];
+            if (programFolder is not null)
+                sandboxRoots.Add(programFolder);
+
+            plan = RuntimeLaunchPlanner.Plan(new RuntimePlanInput(
+                runner,
+                resolution,
+                folders.ContainerName,
+                PiaPaths.McpRuntimeStateDirectory(folders.Prefix),
+                PiaPaths.McpSandboxSupportDirectory,
+                folders.AllowNetwork,
+                Distinct(sandboxRoots),
+                host.RegistryPath(),
+                request.Env));
+        }
+        catch (Exception ex) when (ex is not SandboxStartException
+            && !(ex is OperationCanceledException && runtime.CancellationToken.IsCancellationRequested))
+        {
+            log.LogWarning("Runtime check for {Container} failed: {Error}", folders.ContainerName, ex.GetType().Name);
+            log.SensitiveDebug("Runtime check for {Container} failed: {Message}", folders.ContainerName, ex.Message);
+            return SandboxLaunchPlan.Fail(SandboxRuntimeMessages.CheckFailed);
+        }
+
+        log.SensitiveDebug("Runtime state for {Container}: {State}, support {Support}",
+            folders.ContainerName, plan.StateDirectory, plan.SupportDirectory);
+
+        return SandboxLaunchPlan.Ok(new SandboxLaunchSpec(
+            folders.ContainerName,
+            plan.Command,
+            [.. plan.Args],
+            SandboxEnvironmentComposer.Compose(runtime.UserEnvironmentNames, plan.Environment, request.Env),
+            WorkingDirectoryFor(request.WorkingDirectory, folders.Readwrite, folders.Readonly, programFolder),
+            folders.Readwrite,
+            folders.Readonly,
+            folders.AllowNetwork,
+            programFolder,
+            ToolchainDirectories: plan.ToolchainRoots,
+            RuntimeStateDirectory: plan.StateDirectory,
+            RuntimeStateReadOnly: plan.StateReadOnly,
+            SupportDirectory: plan.SupportDirectory,
+            RunnerKind: parse.Kind,
+            Preparation: plan.Preparation));
+    }
+
+    private static void LogBlanking(ILogger log, SandboxLaunchSpec spec, IReadOnlyList<string> userEnvironmentNames)
+    {
+        var blanked = SandboxEnvironmentComposer.NamesToBlank(userEnvironmentNames)
+            .Where(name => spec.Environment.TryGetValue(name, out var value) && value.Length == 0)
+            .ToList();
+        log.LogInformation("Blanked {Count} user environment variable(s) for {Container}", blanked.Count, spec.ContainerName);
+        log.SensitiveDebug("Blanked for {Container}: {Names}", spec.ContainerName, string.Join(", ", blanked));
     }
 
     internal static (string? Path, string? Error) ResolveCommand(string command, string? pathVariable, Func<string, bool> exists)
@@ -80,7 +219,7 @@ public static class SandboxLaunchSpecBuilder
         }
 
         if (command.Contains('\\') || command.Contains('/'))
-            return (null, "Give the full path to the program, e.g. C:\\Tools\\server\\server.exe.");
+            return (null, "Pia can't sandbox this server: give the full path of the program.");
 
         string[] extensions = Path.HasExtension(command) ? [""] : [".exe", ".cmd", ".bat"];
         foreach (var directory in (pathVariable ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -163,11 +302,6 @@ public static class SandboxLaunchSpecBuilder
             ?? Environment.SystemDirectory;
     }
 
-    private static Dictionary<string, string> CopyEnvironment(IReadOnlyDictionary<string, string>? env) =>
-        (env ?? new Dictionary<string, string>())
-            .Where(e => !string.Equals(e.Key, RuntimeDirectoryVariable, StringComparison.OrdinalIgnoreCase))
-            .ToDictionary(e => e.Key, e => e.Value, StringComparer.OrdinalIgnoreCase);
-
     private static IEnumerable<string> SystemRoots()
     {
         foreach (var folder in new[]
@@ -195,4 +329,11 @@ public static class SandboxLaunchSpecBuilder
     internal static bool IsSameOrUnder(string path, string root) =>
         string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
         || path.StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+
+    private sealed record PolicyFolders(
+        string ContainerName,
+        string Prefix,
+        IReadOnlyList<string> Readwrite,
+        IReadOnlyList<string> Readonly,
+        bool AllowNetwork);
 }

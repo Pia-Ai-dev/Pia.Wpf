@@ -83,6 +83,33 @@ public sealed class RuntimeStateStoreTests : IClassFixture<RedirectedProfileFixt
         Assert.Throws<ArgumentException>(() => _store.WriteGrantRecord(@"..\pia-mcp-x", []));
 
     [Fact]
+    public void TheStateAccess_RoundTrips_AndOnlyAnExplicitReadOnlyCounts()
+    {
+        var prefix = NewPrefix();
+        Assert.Null(_store.StateGrantedReadOnly($"pia-mcp-{prefix}"));
+
+        _store.WriteGrantRecord($"pia-mcp-{prefix}", [@"C:\state"], stateReadOnly: true);
+        Assert.True(_store.StateGrantedReadOnly($"pia-mcp-{prefix}"));
+        using (var json = JsonDocument.Parse(File.ReadAllText(Record($"pia-mcp-{prefix}"))))
+            Assert.True(json.RootElement.GetProperty("stateReadOnly").GetBoolean());
+
+        _store.WriteGrantRecord($"pia-mcp-{prefix}", [@"C:\state"]);
+        Assert.False(_store.StateGrantedReadOnly($"pia-mcp-{prefix}"));
+    }
+
+    [Theory]
+    [InlineData("{\"container\":\"x\",\"roots\":[],\"writtenUtc\":\"2026-10-18T00:00:00Z\"}")]
+    [InlineData("{ not json")]
+    public void ARecordWithoutTheStateAccess_OrDamaged_CountsAsReadWrite(string content)
+    {
+        var container = $"pia-mcp-{NewPrefix()}-probe";
+        Directory.CreateDirectory(PiaPaths.McpSandboxGrantsDirectory);
+        File.WriteAllText(Record(container), content);
+
+        Assert.False(_store.StateGrantedReadOnly(container));
+    }
+
+    [Fact]
     public void SweepRoots_WithNothingOnDisk_IsEmpty() => Assert.Empty(_store.SweepRoots(NewPrefix()));
 
     [Fact]

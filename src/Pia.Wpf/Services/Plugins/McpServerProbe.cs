@@ -34,7 +34,8 @@ public static class McpServerProbe
         IClientTransport? transport = null;
         try
         {
-            transport = transportFactory.Create(new McpTransportRequest(
+            // Runtime detection reads ACLs and walks folders; the caller is usually the UI thread.
+            transport = await Task.Run(() => transportFactory.Create(new McpTransportRequest(
                 string.IsNullOrWhiteSpace(definition.Name) ? "probe" : definition.Name,
                 definition.Command,
                 definition.Args,
@@ -42,7 +43,7 @@ public static class McpServerProbe
                 definition.WorkingDirectory,
                 definition.Sandbox,
                 definition.ToolPrefix,
-                IsProbe: true));
+                IsProbe: true)), timeoutSource.Token);
 
             client = await McpClient.CreateAsync(transport, cancellationToken: timeoutSource.Token);
             var tools = await client.ListToolsAsync(cancellationToken: timeoutSource.Token);
