@@ -64,7 +64,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
   final-path resolution, the container-readability ACL check and the linked-token WRITE_DAC check, with tests
   on real temp folders.
   *Deps:* A1 · *Effort:* M · *Value:* Enabler
-- [ ] **B2 Runtime detector.** `RuntimeDetector`: candidates in registry-`PATH` order plus the user-scope
+- [x] **B2 Runtime detector.** `RuntimeDetector`: candidates in registry-`PATH` order plus the user-scope
   locations, link resolution, per-kind validity (npm beside every Node, runtimeconfig frameworks for a dll),
   readable/grantable/admin-owned classification, program folders and versions from file metadata, cancellable,
   tested against the fake host.
