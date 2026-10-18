@@ -71,4 +71,7 @@ public interface IPluginService
     /// <paramref name="pluginId"/> is null.</summary>
     Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default);
     Task RemoveLocalMcpAsync(Guid pluginId);
+
+    /// <summary>The prefix a save of this name would store, so a Test connection runs under the same one.</summary>
+    string PreviewLocalMcpToolPrefix(Guid? pluginId, string name);
 }

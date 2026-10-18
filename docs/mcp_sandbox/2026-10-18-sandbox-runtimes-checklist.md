@@ -95,7 +95,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
   `TryDelete` that skips a prefix whose lock or lease is held, reparse-safe robust deletion and orphan
   detection.
   *Deps:* A1 · *Effort:* S · *Value:* Enabler
-- [ ] **D2 Server lifecycle and one prefix.** `PluginService` sweeps the state and recorded roots, deletes the
+- [x] **D2 Server lifecycle and one prefix.** `PluginService` sweeps the state and recorded roots, deletes the
   state folder on remove and on a prefix change, cleans orphans at startup off the UI thread and never under a
   starting or running probe, and offers `PreviewLocalMcpToolPrefix` so the probe and the saved start share one
   prefix.
