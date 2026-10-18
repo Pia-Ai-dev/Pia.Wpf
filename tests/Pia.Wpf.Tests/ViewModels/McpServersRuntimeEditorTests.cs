@@ -546,6 +546,22 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         Assert.Equal(RuntimeInstallGuides.GuideFor(RuntimeFamily.Node).Command, vm.RuntimeGuideCommand);
     }
 
+    [Fact]
+    public void AUvInAWritableFolder_ShowsTheUvGuide()
+    {
+        var uv = new RuntimeInstall(RuntimeFamily.Uv, @"C:\Work\box", @"C:\Work\box\uv.exe", "0.13.1", null, null, false, false);
+        var (vm, _, _, _, _, _, _) = Create(Detection(RunnerKind.Uvx, RuntimeOutcome.Refused, RuntimeIssue.UvInWritableFolder, uv));
+
+        NewServer(vm, "uvx", "mcp-server-time");
+
+        WaitFor(() => vm.RuntimeOutcomeValue == RuntimeOutcome.Refused);
+        Assert.Equal("McpServers_Sandbox_Runtime_Issue_UvInWritableFolder", vm.RuntimeReason);
+        Assert.True(vm.ShowRuntimeGuide);
+        Assert.Equal("McpServers_Sandbox_Runtime_Guide_Uv", vm.RuntimeGuideText);
+        Assert.Equal(RuntimeInstallGuides.GuideFor(RuntimeFamily.Uv).Command, vm.RuntimeGuideCommand);
+        Assert.Equal(RuntimeInstallGuides.GuideFor(RuntimeFamily.Uv).AlternativeCommand, vm.RuntimeGuideAltCommand);
+    }
+
     [Theory]
     [InlineData(RuntimeIssue.ScriptMissing)]
     [InlineData(RuntimeIssue.ProgramFolderTooWide)]

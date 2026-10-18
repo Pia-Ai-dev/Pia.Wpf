@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.RegularExpressions;
+using NSubstitute;
 using Pia.Paths;
 using Pia.Services.Exceptions;
 using Pia.Services.Plugins.Sandbox;
@@ -162,15 +163,18 @@ public sealed class SandboxPathGuardTests
         }
     }
 
-    private static readonly SandboxGuardEnvironment WithUv = Fake with
+    private const string PathFolderWithoutUv = @"D:\tools\bin";
+
+    private static readonly SandboxGuardEnvironment WithHostPrograms = Fake with
     {
-        UvFolders = [@"C:\Users\me\.local\bin", @"C:\Users\me\.cargo\bin", @"C:\Tools\uv\bin"]
+        HostProgramFolders = () => [@"C:\Users\me\.local\bin", @"C:\Users\me\.cargo\bin", @"C:\Tools\uv\bin", PathFolderWithoutUv]
     };
 
-    private static IReadOnlyList<SandboxPathIssue> ValidateWithUv(IReadOnlyList<string> rw, IReadOnlyList<string> ro) =>
-        SandboxPathGuard.Validate(new McpSandboxPolicy(rw, ro, false), null, WithUv, fileExists: _ => true);
+    private static IReadOnlyList<SandboxPathIssue> ValidateWithHostPrograms(IReadOnlyList<string> rw, IReadOnlyList<string> ro) =>
+        SandboxPathGuard.Validate(new McpSandboxPolicy(rw, ro, false), null, WithHostPrograms, fileExists: _ => true);
 
-    /// <summary>Pia runs uv outside the sandbox, so a server that could replace it would run its own program at Pia's level.</summary>
+    /// <summary>The user and Pia run programs from these folders outside the sandbox, so a server that could plant one
+    /// there would run its own program uncontained, whether or not a program is there yet.</summary>
     [Theory]
     [InlineData(@"C:\Users\me\.local\bin")]
     [InlineData(@"c:\users\ME\.LOCAL\bin\")]
@@ -179,65 +183,174 @@ public sealed class SandboxPathGuardTests
     [InlineData(@"C:\Tools\uv\bin")]
     [InlineData(@"C:\Tools\uv")]
     [InlineData(@"C:\Tools")]
-    public void AReadwriteFolderThatHoldsAUvFolder_IsRefused(string path)
+    [InlineData(PathFolderWithoutUv)]
+    [InlineData(@"d:\TOOLS\bin\")]
+    [InlineData(@"D:\tools")]
+    [InlineData(@"D:\")]
+    public void AReadwriteFolderThatIsOrHoldsAHostProgramFolder_IsRefused(string path)
     {
-        var issue = Single(ValidateWithUv([path], []));
+        var issue = Single(ValidateWithHostPrograms([path], []));
 
-        Assert.Equal(SandboxPathIssueKind.UvFolder, issue.Kind);
+        Assert.Equal(SandboxPathIssueKind.HostProgramFolder, issue.Kind);
         Assert.Equal(path, issue.Path);
         Assert.Equal(
-            "Pia looks for uv in this folder and runs it outside the sandbox, so a sandboxed server can't be allowed to change it. Choose a different folder.",
+            "This folder holds programs that run outside the sandbox (a folder on your PATH, or one Pia runs uv from), so a sandboxed server can't be allowed to change it. Share it read-only or choose a different folder.",
             issue.Message);
         PathFreeAssert.IsPathFree(new SandboxStartException(issue.Message));
-        Assert.DoesNotMatch(@"(?i)\b(me|users|tools|local|cargo)\b", issue.Message);
+        Assert.DoesNotMatch(@"(?i)\b(me|users|tools|local|cargo|bin)\b", issue.Message);
     }
 
     [Theory]
     [InlineData(@"C:\Users\me\.local\bin\cache")]
     [InlineData(@"C:\Users\me\.local2")]
     [InlineData(@"C:\Tools\uvx")]
-    public void AReadwriteFolderBesideOrInsideAUvFolder_IsFine(string path)
+    [InlineData(@"D:\tools\bin\data")]
+    [InlineData(@"D:\tools2")]
+    public void AReadwriteFolderBesideOrInsideAHostProgramFolder_IsFine(string path)
     {
-        Assert.Empty(ValidateWithUv([path], []));
+        Assert.Empty(ValidateWithHostPrograms([path], []));
     }
 
     [Fact]
-    public void AUvFolder_MayStillBeSharedReadOnly()
+    public void AHostProgramFolder_MayStillBeSharedReadOnly()
     {
-        Assert.Empty(ValidateWithUv([], [@"C:\Users\me\.local\bin", @"C:\Tools\uv"]));
+        Assert.Empty(ValidateWithHostPrograms([], [@"C:\Users\me\.local\bin", @"C:\Tools\uv", PathFolderWithoutUv, @"D:\tools"]));
     }
 
     [Fact]
-    public void TheCurrentEnvironment_RefusesTheFixedUvFolders_EvenBeforeUvIsInstalled()
+    public void TheHostProgramFolders_AreAskedOnlyForAReadwriteFolder()
     {
-        var uvFolders = SandboxGuardEnvironment.Current().UvFolders;
+        var asked = 0;
+        var environment = Fake with { HostProgramFolders = () => { asked++; return [PathFolderWithoutUv]; } };
 
-        Assert.NotNull(uvFolders);
-        Assert.Contains(Path.Combine(PiaPaths.UserProfileRoot, ".local", "bin"), uvFolders);
-        Assert.Contains(Path.Combine(PiaPaths.UserProfileRoot, ".cargo", "bin"), uvFolders);
+        Assert.Null(SandboxPathGuard.JudgeRuntimeRoot(@"C:\Users\me\tools\node", isProgramFolder: false, environment));
+        Assert.Null(SandboxPathGuard.JudgeRuntimeRoot(@"C:\Users\me\tools\node", isProgramFolder: true, environment));
+        Assert.Equal(@"C:\Tools\fs", SandboxPathGuard.GrantedCommandFolder(
+            new McpSandboxPolicy([], [], false), @"C:\Tools\fs\fs.exe", environment, _ => true));
+        Assert.Empty(SandboxPathGuard.Validate(new McpSandboxPolicy([], [@"C:\Work\reference"], false), @"C:\Tools\fs\fs.exe",
+            environment, fileExists: _ => true));
+        Assert.Equal(0, asked);
+
+        Assert.Empty(SandboxPathGuard.Validate(new McpSandboxPolicy([@"C:\Work\box"], [], false), null, environment, fileExists: _ => true));
+        Assert.Equal(1, asked);
     }
 
     [Fact]
-    public void TheUvLocations_AddThePathFoldersHoldingUv_AndWhereTheirLinksLead()
+    public void TheCurrentEnvironment_ProbesNothing_UntilAReadwriteFolderIsJudged()
+    {
+        var host = CountingHost();
+        var environment = SandboxGuardEnvironment.Current(new HostProgramFolderCache(host, () => 0));
+
+        SandboxPathGuard.JudgeRuntimeRoot(Path.Combine(environment.ProfileRoot, "tools", "node"), isProgramFolder: false, environment);
+        host.DidNotReceive().RegistryPathEntries();
+        host.DidNotReceive().FileExists(Arg.Any<string>());
+        host.DidNotReceive().ResolveFinalPath(Arg.Any<string>());
+
+        Assert.Contains(PathFolderWithoutUv, environment.HostProgramFolders!());
+        host.Received(1).RegistryPathEntries();
+    }
+
+    [Fact]
+    public void TheCurrentEnvironment_RefusesTheFixedUvFoldersAndThePathFolders_EvenWithoutUv()
+    {
+        var folders = SandboxGuardEnvironment.Current().HostProgramFolders?.Invoke();
+
+        Assert.NotNull(folders);
+        Assert.Contains(Path.Combine(PiaPaths.UserProfileRoot, ".local", "bin"), folders, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(Path.Combine(PiaPaths.UserProfileRoot, ".cargo", "bin"), folders, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(Environment.SystemDirectory, folders, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TheHostProgramFolders_HoldEveryPathFolder_AndWhereTheUvLinksLead()
     {
         var host = new FakeRuntimeHost();
         var onPath = Path.Combine(@"D:\", "tools", "uv");
         var linkFolder = Path.Combine(@"D:\", "bin");
         var linkTarget = Path.Combine(@"D:\", "uv-versions", "0.13.1");
         var withoutUv = Path.Combine(@"D:\", "other");
+        var notThereYet = Path.Combine(@"D:\", "later", "bin");
         host.WithUv(onPath).WithUv(linkTarget).WithFile(Path.Combine(linkFolder, "uv.exe")).WithDirectory(withoutUv);
         host.FinalPaths[Path.Combine(linkFolder, "uv.exe")] = Path.Combine(linkTarget, "uv.exe");
-        host.PathEntries.AddRange([onPath, $"\"{linkFolder}\"", withoutUv, "relative"]);
+        host.PathEntries.AddRange([onPath, $"\"{linkFolder}\"", withoutUv, notThereYet + @"\", "relative", @"%UNSET%\bin"]);
 
-        var locations = RuntimeCandidates.UvLocations(host).ToList();
+        var folders = RuntimeCandidates.HostProgramFolders(host, _ => true);
 
-        Assert.Contains(Path.Combine(host.UserProfile, ".local", "bin"), locations);
-        Assert.Contains(Path.Combine(host.UserProfile, ".cargo", "bin"), locations);
-        Assert.Contains(onPath, locations);
-        Assert.Contains(linkFolder, locations);
-        Assert.Contains(linkTarget, locations);
-        Assert.DoesNotContain(withoutUv, locations);
-        Assert.DoesNotContain("relative", locations);
+        Assert.Contains(Path.Combine(host.UserProfile, ".local", "bin"), folders);
+        Assert.Contains(Path.Combine(host.UserProfile, ".cargo", "bin"), folders);
+        Assert.Contains(onPath, folders);
+        Assert.Contains(linkFolder, folders);
+        Assert.Contains(linkTarget, folders);
+        Assert.Contains(withoutUv, folders);
+        Assert.Contains(notThereYet, folders);
+        Assert.DoesNotContain(folders, folder => folder.Contains("relative", StringComparison.Ordinal) || folder.Contains('%'));
+        Assert.Equal(folders.Count, folders.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public void TheHostProgramFolders_KeepAFolderItMayNotProbe_ButNeverTouchIt()
+    {
+        var host = CountingHost();
+        host.RegistryPathEntries().Returns([@"\\fileserver\tools", PathFolderWithoutUv]);
+        host.FileExists(Arg.Any<string>()).Returns(true);
+        host.ResolveFinalPath(Arg.Any<string>()).Returns(call => call.Arg<string>());
+
+        var folders = RuntimeCandidates.HostProgramFolders(host, folder => !folder.StartsWith(@"\\", StringComparison.Ordinal));
+
+        Assert.Contains(@"\\fileserver\tools", folders);
+        Assert.Contains(PathFolderWithoutUv, folders);
+        host.DidNotReceive().FileExists(Arg.Is<string>(path => path.StartsWith(@"\\", StringComparison.Ordinal)));
+        host.DidNotReceive().ResolveFinalPath(Arg.Is<string>(path => path.StartsWith(@"\\", StringComparison.Ordinal)));
+        host.Received().ResolveFinalPath(Path.Combine(PathFolderWithoutUv, "uv.exe"));
+    }
+
+    [Theory]
+    [InlineData(@"\\fileserver\share\bin")]
+    [InlineData("//fileserver/share/bin")]
+    [InlineData(@"\\?\C:\tools")]
+    public void ANetworkFolder_IsNeverProbed(string folder)
+    {
+        Assert.False(HostProgramFolderCache.IsOnThisPc(folder));
+    }
+
+    [Fact]
+    public void TheSystemDrive_IsProbed()
+    {
+        Assert.True(HostProgramFolderCache.IsOnThisPc(Environment.SystemDirectory));
+    }
+
+    [Fact]
+    public void TheHostProgramFolders_AreCachedBriefly_AndPerProfile()
+    {
+        var host = CountingHost();
+        var now = 0L;
+        var cache = new HostProgramFolderCache(host, () => now);
+
+        var first = cache.Get();
+        now = HostProgramFolderCache.LifetimeTicks - 1;
+        Assert.Same(first, cache.Get());
+        host.Received(1).RegistryPathEntries();
+
+        now = HostProgramFolderCache.LifetimeTicks;
+        Assert.NotSame(first, cache.Get());
+        host.Received(2).RegistryPathEntries();
+
+        host.UserProfile.Returns(@"C:\Users\other");
+        cache.Get();
+        host.Received(3).RegistryPathEntries();
+    }
+
+    private static IRuntimeHostService CountingHost()
+    {
+        var host = Substitute.For<IRuntimeHostService>();
+        host.UserProfile.Returns(@"C:\Users\me");
+        host.LocalAppData.Returns(@"C:\Users\me\AppData\Local");
+        host.RoamingAppData.Returns(@"C:\Users\me\AppData\Roaming");
+        host.RegistryPathEntries().Returns([PathFolderWithoutUv]);
+        host.RegistryEnvironmentValue(Arg.Any<string>()).Returns((string?)null);
+        host.ReadAllText(Arg.Any<string>()).Returns((string?)null);
+        host.ResolveFinalPath(Arg.Any<string>()).Returns((string?)null);
+        return host;
     }
 
     [Fact]

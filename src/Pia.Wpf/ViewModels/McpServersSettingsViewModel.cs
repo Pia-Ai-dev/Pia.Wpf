@@ -1222,7 +1222,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         RuntimeOutcome.NotFound => true,
         RuntimeOutcome.Refused => resolution.Issue is RuntimeIssue.ToolchainTooLarge or RuntimeIssue.ToolchainTooWide
-            or RuntimeIssue.ToolchainPathUnsupported,
+            or RuntimeIssue.ToolchainPathUnsupported or RuntimeIssue.UvInWritableFolder,
         RuntimeOutcome.NeedsAdminFix => !CanGrantMachineWide,
         _ => false,
     };

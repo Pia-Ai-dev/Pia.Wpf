@@ -801,7 +801,10 @@ falls back to `DeriveToolPrefix(name)`, so existing editor tests keep their `fil
   different folder." Today such a path passes (the root exemption at `SandboxPathGuard.cs:210,216`).
   `McpSandboxGrantsDirectory` and `McpSandboxSupportDirectory` sit under `LocalDataDirectory`, which
   `SandboxGuardEnvironment.Current().PiaDataRoots` holds, so `FindProblem` already refuses them as Pia data;
-  E1 pins that with a test for each. A read-write policy folder that covers a uv location is refused too.
+  E1 pins that with a test for each. A read-write policy folder that is, or sits above, a registry `PATH`
+  entry (machine or user, expanded) or a fixed uv folder is refused too (`HostProgramFolder`), whether or not
+  a program is there yet; read-only stays allowed. The guard asks for those folders only when it judges a
+  read-write folder, caches them for 20 s, and never probes a UNC or network-drive entry for uv.exe links.
 - `RuntimeRootVerifier : IRuntimeRootVerifier`, against `SandboxGuardEnvironment.Current()`: a path with
   `;` → `ToolchainPathUnsupported`; the profile root or above, a wide folder itself (Desktop, Documents,
   Downloads, OneDrive roots), a Pia data root outside `McpSandboxRoot` → `ToolchainTooWide` /
@@ -1257,9 +1260,10 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
   files). `uv run` is refused. Only `--from`, `--with` and `--python` (a version) are accepted. An installed
   tool is never upgraded: changing the pinned version or the spec is the only way to update it.
 - uv: a `uv.exe` in a folder this server can write, or under `McpSandboxRoot`, is skipped at start, and the
-  path guard refuses a read-write folder that covers a uv location. Remaining risk: an exe a server plants in a
-  read-write folder on `PATH` still takes over the user's shell and unsandboxed servers, and a uv folder that
-  only appears after the grant was saved is caught only by the start-time check.
+  path guard refuses a read-write folder that is, or sits above, a registry `PATH` entry or a fixed uv folder.
+  A `PATH` entry added after a server with read-write access to its folder was saved is caught at that
+  server's next start, since the factory runs the guard on every start; until then a running server can still
+  plant a program there. A uv.exe link on a network drive is not followed by the guard.
 - The user's `.npmrc`, `uv.toml` and `NuGet.Config` do not apply, so private registries, registry auth and
   proxy settings from there do not reach sandboxed servers (proxy environment variables do reach the uv
   install). Cached CLI logins (`az login`) do not reach them either; use a token in the server's env.

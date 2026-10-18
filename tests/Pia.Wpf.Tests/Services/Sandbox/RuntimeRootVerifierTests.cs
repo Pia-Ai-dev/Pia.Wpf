@@ -74,6 +74,19 @@ public sealed class RuntimeRootVerifierTests
         Assert.Equal(2, calls);
     }
 
+    /// <summary>A runtime root is never judged against PATH, so a check must not pay for the PATH and uv probes.</summary>
+    [Fact]
+    public void ACheck_NeverAsksForTheHostProgramFolders()
+    {
+        var verifier = new RuntimeRootVerifier(() => Fake with
+        {
+            HostProgramFolders = () => throw new InvalidOperationException("probed")
+        });
+
+        Assert.Null(verifier.Check(@"C:\Users\me\tools\dotnet", isProgramFolder: false));
+        Assert.Equal(RuntimeIssue.ProgramFolderTooWide, verifier.Check(@"C:\Users\me\Downloads", isProgramFolder: true));
+    }
+
     [Fact]
     public void TheDefaultVerifier_JudgesAgainstThisMachine()
     {
