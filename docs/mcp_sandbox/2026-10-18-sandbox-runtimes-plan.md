@@ -1300,7 +1300,8 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
   reaches `PIA_SANDBOX_ROOTS` unresolved, so realpath below it fails with `EPERM` when the container cannot
   `lstat` the junction or its target's parent (not measured).
 - The preload matches ancestors by spelling: a path through an 8.3 short name or a `subst` drive cannot be
-  mapped to a root without the `lstat` the container denies, so realpath on it fails with `EPERM`.
+  mapped to a root without the `lstat` the container denies, so `stat` of such an ancestor and realpath fail
+  with `EPERM`.
 - Volta, fnm, nvm and scoop detection follows their documentation; only a junction-resolved install is
   checked live (scenario 15).
 - Windows 10/11 client editions were not measured; their `C:\` ACL may make the preload unnecessary there,
