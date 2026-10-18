@@ -11,6 +11,8 @@ public sealed class FakeRuntimeHost : IRuntimeHostService
 
     public Dictionary<string, string> RegistryEnvironment { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public Dictionary<string, string> MachineEnvironment { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public List<string> UserNames { get; } = [];
 
     /// <summary>Thrown by <see cref="UserEnvironmentNames"/> instead of returning the names.</summary>
@@ -53,6 +55,8 @@ public sealed class FakeRuntimeHost : IRuntimeHostService
     public IReadOnlyList<string> UserEnvironmentNames() => UserNamesFailure is { } failure ? throw failure : [.. UserNames];
 
     public string? RegistryEnvironmentValue(string name) => RegistryEnvironment.GetValueOrDefault(name);
+
+    public string? MachineEnvironmentValue(string name) => MachineEnvironment.GetValueOrDefault(name);
 
     public bool FileExists(string path) => Files.Contains(path);
 

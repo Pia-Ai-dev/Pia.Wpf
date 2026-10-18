@@ -168,7 +168,8 @@ public static class SandboxLaunchSpecBuilder
                 folders.AllowNetwork,
                 Distinct(sandboxRoots),
                 host.RegistryPath(),
-                request.Env));
+                request.Env,
+                host.MachineEnvironmentValue("NODE_OPTIONS")));
         }
         catch (Exception ex) when (ex is not SandboxStartException
             && !(ex is OperationCanceledException && runtime.CancellationToken.IsCancellationRequested))

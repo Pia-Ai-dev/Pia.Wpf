@@ -285,6 +285,23 @@ public sealed class RuntimeHostServiceTests : IDisposable
     }
 
     [Fact]
+    public void AMachineVariable_IsReadFromHklmOnly_AndExpanded()
+    {
+        var host = Host();
+        using var machine = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Session Manager\Environment");
+        Assert.NotNull(machine);
+
+        Assert.Equal((string?)machine.GetValue("TEMP"), host.MachineEnvironmentValue("TEMP"), StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("%", host.MachineEnvironmentValue("TEMP"));
+        Assert.Equal("Windows_NT", host.MachineEnvironmentValue("OS"));
+        Assert.Null(host.MachineEnvironmentValue("PIA_TEST_UNSET_" + Guid.NewGuid().ToString("N")));
+
+        using var user = Registry.CurrentUser.OpenSubKey("Environment");
+        Assert.SkipWhen(user?.GetValue("TEMP") is null, "no user TEMP on this host");
+        Assert.NotEqual(host.RegistryEnvironmentValue("TEMP"), host.MachineEnvironmentValue("TEMP"), StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void TheUserEnvironmentNames_AreTheValueNamesUnderHkcuEnvironment()
     {
         using var environment = Registry.CurrentUser.OpenSubKey("Environment");

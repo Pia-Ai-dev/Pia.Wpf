@@ -464,6 +464,28 @@ public sealed class SandboxLaunchSpecBuilderTests
         Assert.Equal(RunnerKind.Npx, npx.Kind);
     }
 
+    /// <summary>The machine value reaches the server; the user's registry value stays blanked like every user variable.</summary>
+    [Fact]
+    public void AReadyNodeServer_MergesTheMachineNodeOptions_FromTheHost()
+    {
+        var detector = new FakeDetector(runner => Ready(runner.Kind, Node()));
+        var host = new FakeRuntimeHost
+        {
+            PathEntries = { @"C:\Windows\system32" },
+            MachineEnvironment = { ["NODE_OPTIONS"] = "--use-openssl-ca" },
+            RegistryEnvironment = { ["NODE_OPTIONS"] = "--users-registry-value" }
+        };
+        var request = Request("npx", env: new Dictionary<string, string> { ["NODE_OPTIONS"] = "--max-old-space-size=4096" },
+            args: ["-y", "@x/y"]);
+
+        var spec = Build(request, new SandboxRuntimeContext(detector, host, CanProvision: true, ["NODE_OPTIONS"])).Spec!;
+
+        var preload = Path.Combine(PiaPaths.McpSandboxSupportDirectory, "node-sandbox.cjs").Replace('\\', '/');
+        Assert.Equal(
+            $"--preserve-symlinks --preserve-symlinks-main --require \"{preload}\" --use-openssl-ca --max-old-space-size=4096",
+            spec.Environment["NODE_OPTIONS"]);
+    }
+
     [Fact]
     public void CmdWrappingNpx_IsTheSameRunner()
     {

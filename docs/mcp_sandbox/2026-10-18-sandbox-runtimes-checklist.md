@@ -189,8 +189,6 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 - One shared runtime cache across servers.
 - Passing private registry or proxy configuration (`.npmrc`, `uv.toml`, `NuGet.Config`) into the sandbox, and
   proxy or CA variables on the blanking allowlist (an owner question).
-- Keeping a machine-wide `NODE_OPTIONS` in sandboxed Node starts: read only the `HKLM` Session Manager value
-  through `IRuntimeHostService` and append it after the preload options, before the server's own value.
 - Starting `Program Files\nodejs\node.exe` for a bare script without step 2 (the spike shows MXC can launch it).
 - `FilesystemEnumeratePaths` containment once a Windows build offers it, which could retire the preload.
 - Logging `MxcContainer.Probe` warnings at startup.

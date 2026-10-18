@@ -525,8 +525,10 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
   `NpmExec` → `<root>\node_modules\npm\bin\npm-cli.js`, `exec` + the rest; `NodeScript` → runtime options,
   the script's full path, the script args.
 - `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main --require "<support>/node-sandbox.cjs"` with
-  forward slashes (a backslash inside the quotes is an escape). A user `NODE_OPTIONS` is appended after a space;
-  a machine-wide one is replaced, not merged (see *Known limits*).
+  forward slashes (a backslash inside the quotes is an escape), then the machine-wide (`HKLM`) `NODE_OPTIONS`
+  read through `IRuntimeHostService.MachineEnvironmentValue`, then the server's own `NODE_OPTIONS`, each after
+  a space. Values are compared whole, never split into options: a machine value the server's own value already
+  repeats is dropped. The user-level (`HKCU`) value stays blanked like every user variable.
 - `PIA_SANDBOX_ROOTS` = every granted root, joined with `|` (illegal in Windows paths; the spike's `;`
   breaks on a folder name with a semicolon): the user's rw and ro folders, the program folder, the install
   root, `<state>`, `<support>`.
@@ -1288,9 +1290,6 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
 - Step 2 has no undo in Pia, and an MSI repair may remove it.
 - Bare `python` still uses today's exe path; a user Python (26,099 entries here) exceeds the 20,000-entry cap.
 - Machine-level (`HKLM`) environment variables still reach containers; only `HKCU\Environment` is blanked.
-  `NODE_OPTIONS` is the exception: Pia replaces it in every sandboxed Node start, so a machine-wide value such
-  as `--use-openssl-ca` has to be repeated in the server's own env entries, where it is appended after the
-  preload options.
 - The probe and the running server share one npm cache and rely on npm's own locking.
 - Startup sweeps the ACEs a never-saved probe leaked only as far as its grant record reaches, and nothing is
   recorded when the factory has no provisioner.
