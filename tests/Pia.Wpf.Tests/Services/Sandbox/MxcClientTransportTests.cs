@@ -12,8 +12,9 @@ namespace Pia.Tests.Services.Sandbox;
 
 public sealed class MxcClientTransportTests
 {
-    private static readonly SandboxLaunchSpec Spec = new(
-        "pia-mcp-fake", @"C:\Tools\fake.exe", [], new Dictionary<string, string>(), @"C:\box",
+    // Leases are process-wide, so every test gets a container name no parallel test shares.
+    private readonly SandboxLaunchSpec _spec = new(
+        "pia-mcp-transport-" + Guid.NewGuid().ToString("N"), @"C:\Tools\fake.exe", [], new Dictionary<string, string>(), @"C:\box",
         [@"C:\box"], [], AllowNetwork: false, GrantedCommandDirectory: null);
 
     private static ISandboxGrantVerifier Grants(bool ok = true, string? reason = null)
@@ -23,8 +24,8 @@ public sealed class MxcClientTransportTests
         return verifier;
     }
 
-    private static MxcClientTransport Transport(FakeMxcProcessLauncher launcher, ISandboxGrantVerifier? verifier = null) =>
-        new(Spec, launcher, verifier ?? Grants(), NullLogger.Instance, NullLoggerFactory.Instance);
+    private MxcClientTransport Transport(FakeMxcProcessLauncher launcher, ISandboxGrantVerifier? verifier = null) =>
+        new(_spec, launcher, verifier ?? Grants(), NullLogger.Instance, NullLoggerFactory.Instance);
 
     [Fact]
     public async Task ListsTheServersTools_ThroughTheContainerStreams()
@@ -36,7 +37,7 @@ public sealed class MxcClientTransportTests
         var tools = await client.ListToolsAsync(cancellationToken: ct);
 
         Assert.Equal(["echo"], tools.Select(t => t.Name));
-        Assert.Equal(Spec, Assert.Single(launcher.Launched));
+        Assert.Equal(_spec, Assert.Single(launcher.Launched));
     }
 
     [Fact]
@@ -89,6 +90,7 @@ public sealed class MxcClientTransportTests
 
         Assert.Equal("no container for you", ex.Message);
         Assert.Equal(0, launcher.ShutdownCalls);
+        Assert.False(SandboxContainerLease.IsActive(_spec.ContainerName));
     }
 
     [Fact]
@@ -145,11 +147,12 @@ public sealed class MxcClientTransportTests
     }
 
     [Fact]
-    public void Name_CarriesTheContainerName() => Assert.Equal("mxc:pia-mcp-fake", Transport(new FakeMxcProcessLauncher()).Name);
+    public void Name_CarriesTheContainerName() =>
+        Assert.Equal("mxc:" + _spec.ContainerName, Transport(new FakeMxcProcessLauncher()).Name);
 
     // The lock key is a normalized path; no folder is touched, so no profile redirection is needed.
-    private static SandboxLaunchSpec RunnerSpec(string state) =>
-        Spec with { RuntimeStateDirectory = state, RunnerKind = RunnerKind.Npx };
+    private SandboxLaunchSpec RunnerSpec(string state) =>
+        _spec with { RuntimeStateDirectory = state, RunnerKind = RunnerKind.Npx };
 
     private static string NewStateDirectory() => Path.Combine(@"C:\pia-transport-tests", Guid.NewGuid().ToString("N") + ".runtime");
 
@@ -178,7 +181,7 @@ public sealed class MxcClientTransportTests
     }
 
     [Fact]
-    public async Task ASecondTransportOnTheSameStateFolder_PreparesOnlyAfterTheFirstLaunchReturned()
+    public async Task TheServersProbe_OnTheSameStateFolder_PreparesOnlyAfterTheServersLaunchReturned()
     {
         var ct = TestContext.Current.CancellationToken;
         var state = NewStateDirectory();
@@ -191,8 +194,10 @@ public sealed class MxcClientTransportTests
             firstEntered.SetResult();
             await releaseFirst.Task;
         }, () => Record("first launched"));
-        var first = RunnerTransport(RunnerSpec(state), firstLauncher, new FakeProvisioner(s => { Record("first prepared"); return s; }));
-        var second = RunnerTransport(RunnerSpec(state), new FakeMxcProcessLauncher(), new FakeProvisioner(s => { Record("second prepared"); return s; }));
+        var server = RunnerSpec(state);
+        var probe = server with { ContainerName = server.ContainerName + "-probe" };
+        var first = RunnerTransport(server, firstLauncher, new FakeProvisioner(s => { Record("first prepared"); return s; }));
+        var second = RunnerTransport(probe, new FakeMxcProcessLauncher(), new FakeProvisioner(s => { Record("second prepared"); return s; }));
 
         var firstConnecting = first.ConnectAsync(ct);
         await firstEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
@@ -245,10 +250,11 @@ public sealed class MxcClientTransportTests
         Assert.Equal("error: no wheel for this platform", transport.StderrTail);
         using var free = RuntimeStateLocks.TryAcquire(state);
         Assert.NotNull(free);
+        Assert.False(SandboxContainerLease.IsActive(_spec.ContainerName));
     }
 
     [Fact]
-    public async Task AGrantFailureAfterPreparation_FreesTheLock()
+    public async Task AGrantFailureAfterPreparation_FreesTheLockAndTheLease()
     {
         var state = NewStateDirectory();
         var transport = RunnerTransport(RunnerSpec(state), new FakeMxcProcessLauncher(), new FakeProvisioner(s => s), Grants(ok: false));
@@ -257,6 +263,72 @@ public sealed class MxcClientTransportTests
 
         using var free = RuntimeStateLocks.TryAcquire(state);
         Assert.NotNull(free);
+        Assert.False(SandboxContainerLease.IsActive(_spec.ContainerName));
+    }
+
+    [Fact]
+    public async Task ThePreparation_RunsUnderTheContainersLease_WhichTheContainerKeepsUntilItIsShutDown()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        bool? leasedWhilePreparing = null;
+        var provisioner = new FakeProvisioner(s =>
+        {
+            leasedWhilePreparing = SandboxContainerLease.IsActive(s.ContainerName);
+            return s;
+        });
+
+        await using (await RunnerTransport(RunnerSpec(NewStateDirectory()), new FakeMxcProcessLauncher(), provisioner).ConnectAsync(ct))
+            Assert.True(SandboxContainerLease.IsActive(_spec.ContainerName));
+
+        Assert.True(leasedWhilePreparing);
+        Assert.False(SandboxContainerLease.IsActive(_spec.ContainerName));
+    }
+
+    // The provisioner writes the grant record; a start that cannot own the name must not touch it.
+    [Fact]
+    public async Task AStartUnderTheNameOfARunningContainer_IsRefused_BeforeItPreparesAnything()
+    {
+        var launcher = new FakeMxcProcessLauncher();
+        var prepared = false;
+        using var running = SandboxContainerLease.Acquire(_spec.ContainerName);
+
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(() =>
+            RunnerTransport(RunnerSpec(NewStateDirectory()), launcher, new FakeProvisioner(s => { prepared = true; return s; }))
+                .ConnectAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal($"The sandbox '{_spec.ContainerName}' is already running.", ex.Message);
+        Assert.False(prepared);
+        Assert.Empty(launcher.Launched);
+        Assert.True(SandboxContainerLease.IsActive(_spec.ContainerName));
+    }
+
+    // A container that exits while this start is verified must not let the start run under that container's grant record.
+    [Fact]
+    public async Task ARunningContainerThatExitsWhileTheStartIsVerified_StillRefusesTheStart()
+    {
+        var launcher = new FakeMxcProcessLauncher();
+        var running = SandboxContainerLease.Acquire(_spec.ContainerName);
+        var prepared = false;
+        var verifier = Substitute.For<ISandboxGrantVerifier>();
+        verifier.Verify(Arg.Any<SandboxLaunchSpec>()).Returns(_ =>
+        {
+            running.Dispose();
+            return new SandboxGrantResult(true, 0, null);
+        });
+        try
+        {
+            await Assert.ThrowsAsync<SandboxStartException>(() =>
+                RunnerTransport(RunnerSpec(NewStateDirectory()), launcher, new FakeProvisioner(s => { prepared = true; return s; }), verifier)
+                    .ConnectAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            running.Dispose();
+        }
+
+        Assert.False(prepared);
+        Assert.Empty(launcher.Launched);
+        Assert.False(SandboxContainerLease.IsActive(_spec.ContainerName));
     }
 
     private sealed class FakeProvisioner(Func<SandboxLaunchSpec, Action<string>, SandboxLaunchSpec> prepare) : IRuntimeStateProvisioner
@@ -272,10 +344,10 @@ public sealed class MxcClientTransportTests
 
     private sealed class GatedLauncher(IMxcProcessLauncher inner, Func<Task> before, Action after) : IMxcProcessLauncher
     {
-        public async Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken)
+        public async Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, SandboxContainerLease lease, CancellationToken cancellationToken)
         {
             await before();
-            var launched = await inner.LaunchAsync(spec, cancellationToken);
+            var launched = await inner.LaunchAsync(spec, lease, cancellationToken);
             after();
             return launched;
         }

@@ -25,8 +25,9 @@ public sealed class MxcClientTransportOwnedFolderTests : IDisposable
         return new MxcClientTransport(spec, new FakeMxcProcessLauncher(), verifier, NullLogger.Instance, NullLoggerFactory.Instance);
     }
 
+    // Leases are process-wide, so each start gets a name no parallel test shares.
     private static SandboxLaunchSpec Spec(params string[] readwrite) =>
-        new("pia-mcp-fs", @"C:\Tools\fs.exe", [], new Dictionary<string, string>(), @"C:\box", readwrite, [],
+        new("pia-mcp-owned-" + Guid.NewGuid().ToString("N"), @"C:\Tools\fs.exe", [], new Dictionary<string, string>(), @"C:\box", readwrite, [],
             AllowNetwork: false, GrantedCommandDirectory: null);
 
     [Fact]

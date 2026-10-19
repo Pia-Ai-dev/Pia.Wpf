@@ -27,9 +27,13 @@ internal sealed class FakeMxcProcessLauncher : IMxcProcessLauncher
 
     public TimeSpan ShutdownDelay { get; init; }
 
-    public Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken)
+    public Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, SandboxContainerLease lease, CancellationToken cancellationToken)
     {
-        if (FailWith is not null) throw FailWith;
+        if (FailWith is not null)
+        {
+            lease.Dispose();
+            throw FailWith;
+        }
         Launched.Add(spec);
 
         var clientToServer = new AnonymousPipeServerStream(PipeDirection.Out);
@@ -50,11 +54,18 @@ internal sealed class FakeMxcProcessLauncher : IMxcProcessLauncher
         var stdin = new ObservedStream(clientToServer, () => StdinWasClosed = true);
         return Task.FromResult(new LaunchedMxcProcess(stdin, serverToClient, stderrPipe, 4242, async () =>
         {
-            Interlocked.Increment(ref _shutdownCalls);
-            if (ShutdownDelay > TimeSpan.Zero)
-                await Task.Delay(ShutdownDelay);
-            await stdin.DisposeAsync();
-            await task.WaitAsync(TimeSpan.FromSeconds(5));
+            try
+            {
+                Interlocked.Increment(ref _shutdownCalls);
+                if (ShutdownDelay > TimeSpan.Zero)
+                    await Task.Delay(ShutdownDelay);
+                await stdin.DisposeAsync();
+                await task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            finally
+            {
+                lease.Dispose();
+            }
         }));
     }
 

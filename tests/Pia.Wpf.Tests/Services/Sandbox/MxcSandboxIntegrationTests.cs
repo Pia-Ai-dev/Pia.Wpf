@@ -318,7 +318,8 @@ public sealed class MxcSandboxIntegrationTests : IAsyncLifetime
     {
         var plan = SandboxLaunchSpecBuilder.Build(Request(_root, Policy(_root)));
         var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
-        var launched = await launcher.LaunchAsync(plan.Spec!, TestContext.Current.CancellationToken);
+        var launched = await launcher.LaunchAsync(
+            plan.Spec!, SandboxContainerLease.Acquire(plan.Spec!.ContainerName), TestContext.Current.CancellationToken);
         try
         {
             using (var child = Process.GetProcessById(launched.ProcessId!.Value))

@@ -30,12 +30,15 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
             new Dictionary<string, string>(), _workspace, [_workspace], [], AllowNetwork: false,
             GrantedCommandDirectory: null);
 
+    private static Task<LaunchedMxcProcess> Launch(MxcMcpLauncher launcher, SandboxLaunchSpec spec, CancellationToken cancellationToken) =>
+        launcher.LaunchAsync(spec, SandboxContainerLease.Acquire(spec.ContainerName), cancellationToken);
+
     [Fact(SkipUnless = nameof(MxcTestHost.CanSpawn), SkipType = typeof(MxcTestHost), Skip = SkipReason)]
     public async Task ARealContainer_RunsTheProgram_AndHandsBackItsOutput()
     {
         var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
 
-        var launched = await launcher.LaunchAsync(Spec("/c", "echo", "hello-from-the-container"), TestContext.Current.CancellationToken);
+        var launched = await Launch(launcher, Spec("/c", "echo", "hello-from-the-container"), TestContext.Current.CancellationToken);
         var output = await new StreamReader(launched.StandardOutput).ReadToEndAsync(TestContext.Current.CancellationToken);
         await launched.ShutdownAsync();
 
@@ -48,11 +51,11 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
         var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
         var ct = TestContext.Current.CancellationToken;
 
-        var first = await launcher.LaunchAsync(Spec("/c", "echo", "one"), ct);
-        await Assert.ThrowsAsync<SandboxStartException>(() => launcher.LaunchAsync(Spec("/c", "echo", "two"), ct));
+        var first = await Launch(launcher, Spec("/c", "echo", "one"), ct);
+        await Assert.ThrowsAsync<SandboxStartException>(() => Launch(launcher, Spec("/c", "echo", "two"), ct));
         await first.ShutdownAsync();
 
-        var again = await launcher.LaunchAsync(Spec("/c", "echo", "three"), ct);
+        var again = await Launch(launcher, Spec("/c", "echo", "three"), ct);
         await again.ShutdownAsync();
     }
 
@@ -63,7 +66,7 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
         Assert.False(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MXC_FFI_DIR")), "the test host must have it set");
         var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, MxcTestHost.Runtime);
 
-        var launched = await launcher.LaunchAsync(Spec("/c", "echo [%MXC_FFI_DIR%]"), TestContext.Current.CancellationToken);
+        var launched = await Launch(launcher, Spec("/c", "echo [%MXC_FFI_DIR%]"), TestContext.Current.CancellationToken);
         var output = await new StreamReader(launched.StandardOutput).ReadToEndAsync(TestContext.Current.CancellationToken);
         await launched.ShutdownAsync();
 
@@ -77,8 +80,8 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
         var inside = Path.Combine(_workspace, "inside.txt");
         var outside = Path.Combine(Path.GetDirectoryName(_workspace)!, "pia-mxc-outside-" + Guid.NewGuid().ToString("N") + ".txt");
 
-        var launched = await launcher.LaunchAsync(
-            Spec("/s", "/c", $"echo in>{inside} & echo out>{outside}"), TestContext.Current.CancellationToken);
+        var launched = await Launch(
+            launcher, Spec("/s", "/c",$"echo in>{inside} & echo out>{outside}"), TestContext.Current.CancellationToken);
         await new StreamReader(launched.StandardOutput).ReadToEndAsync(TestContext.Current.CancellationToken);
         await launched.ShutdownAsync();
 
@@ -95,7 +98,7 @@ public sealed class MxcMcpLauncherIntegrationTests : IDisposable
         var missing = Path.Combine(_workspace, "missing");
 
         var ex = await Assert.ThrowsAsync<SandboxStartException>(
-            () => launcher.LaunchAsync(Spec("/c", "exit", "0") with { ReadonlyPaths = [missing] }, TestContext.Current.CancellationToken));
+            () => Launch(launcher, Spec("/c", "exit", "0") with { ReadonlyPaths = [missing] }, TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "The sandbox could not start the server: a folder it needs is missing. Open the server's settings and detect runtimes again.",

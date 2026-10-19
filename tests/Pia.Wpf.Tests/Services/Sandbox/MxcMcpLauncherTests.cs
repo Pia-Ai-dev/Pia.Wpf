@@ -45,10 +45,24 @@ public sealed class MxcMcpLauncherTests
         var spec = Spec() with { ContainerName = "pia-mcp-unverified-" + Guid.NewGuid().ToString("N") };
 
         var ex = await Assert.ThrowsAsync<SandboxStartException>(
-            () => launcher.LaunchAsync(spec, TestContext.Current.CancellationToken));
+            () => launcher.LaunchAsync(spec, SandboxContainerLease.Acquire(spec.ContainerName), TestContext.Current.CancellationToken));
 
         Assert.Equal("The sandbox runtime is not installed.", ex.Message);
         SandboxContainerLease.Acquire(spec.ContainerName).Dispose();
+    }
+
+    [Fact]
+    public async Task ALeaseForAnotherName_IsRefused_AndFreed()
+    {
+        var launcher = new MxcMcpLauncher(NullLogger<MxcMcpLauncher>.Instance, new LoadedRuntime());
+        var spec = Spec() with { ContainerName = "pia-mcp-mine-" + Guid.NewGuid().ToString("N") };
+        var other = "pia-mcp-other-" + Guid.NewGuid().ToString("N");
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => launcher.LaunchAsync(spec, SandboxContainerLease.Acquire(other), TestContext.Current.CancellationToken));
+
+        Assert.False(SandboxContainerLease.IsActive(other));
+        Assert.False(SandboxContainerLease.IsActive(spec.ContainerName));
     }
 
     [Fact]
@@ -254,7 +268,7 @@ public sealed class MxcMcpLauncherTests
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
         try
         {
-            var launch = launcher.LaunchAsync(Spec() with { ContainerName = name }, cancel.Token);
+            var launch = launcher.LaunchAsync(Spec() with { ContainerName = name }, SandboxContainerLease.Acquire(name), cancel.Token);
             await started.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
             await cancel.CancelAsync();
             await Task.Delay(100, ct);

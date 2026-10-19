@@ -8,7 +8,7 @@ using Pia.Services.Exceptions;
 
 namespace Pia.Services.Plugins.Sandbox.Runtimes;
 
-/// <summary>Everything on disk a runner needs before its container starts; the caller holds the state folder's lock.</summary>
+/// <summary>Everything on disk a runner needs before its container starts; the caller holds the state folder's lock and the container's lease.</summary>
 public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunner uv, ILogger<RuntimeStateProvisioner> logger)
     : IRuntimeStateProvisioner
 {
@@ -106,7 +106,7 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
         var onlyReadOnly = grants.Any(grant => grant.ReadOnly == true) && grants.All(grant => grant.ReadOnly != false);
         var clear = !onlyReadOnly && HasEntries(state);
 
-        var running = grants.Where(grant => SandboxContainerLease.IsActive(grant.Name)).ToList();
+        var running = grants.Where(grant => IsOtherRunning(grant.Name, containerName)).ToList();
         if (running.Count > 0 && (clear || running.Any(grant => grant.ReadOnly == false)))
         {
             logger.LogInformation("Runtime state for {Container} not prepared: a running container can write it", containerName);
@@ -201,12 +201,16 @@ public sealed class RuntimeStateProvisioner(IRuntimeStateStore store, UvToolRunn
     private void RefuseWhileAContainerRuns(string containerName)
     {
         if (!SandboxLaunchSpecBuilder.ContainerNames(SandboxLaunchSpecBuilder.PrefixOf(containerName))
-                .Any(name => SandboxContainerLease.IsActive(name) && store.StateGranted(name)))
+                .Any(name => IsOtherRunning(name, containerName) && store.StateGranted(name)))
             return;
 
         logger.LogInformation("uv tool for {Container} not replaced: a running container of this server was given the state folder", containerName);
         throw new SandboxStartException(InUseMessage);
     }
+
+    // The preparing start holds its own name's lease, so only the server's other container can be running.
+    private static bool IsOtherRunning(string name, string containerName) =>
+        !string.Equals(name, containerName, StringComparison.OrdinalIgnoreCase) && SandboxContainerLease.IsActive(name);
 
     private void RemoveInstalledTool(string containerName, string state)
     {

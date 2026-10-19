@@ -10,9 +10,9 @@ public sealed class RecordingMxcLauncher(IMxcProcessLauncher inner) : IMxcProces
 
     public IReadOnlyList<SandboxLaunchSpec> Specs => [.. _specs];
 
-    public Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken)
+    public Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, SandboxContainerLease lease, CancellationToken cancellationToken)
     {
         _specs.Enqueue(spec);
-        return inner.LaunchAsync(spec, cancellationToken);
+        return inner.LaunchAsync(spec, lease, cancellationToken);
     }
 }

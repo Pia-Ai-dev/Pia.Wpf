@@ -149,28 +149,20 @@ public sealed class RuntimeStateStoreTests : IClassFixture<RedirectedProfileFixt
         Assert.Contains(spelledOtherwise, json.RootElement.GetProperty("roots").EnumerateArray().Select(r => r.GetString()));
     }
 
+    // Only the start that holds the name's lease writes its record, so the write must land while the lease is held.
     [Fact]
-    public void ARunningContainersRecord_IsNotRewritten_ItsSiblingsIs()
+    public void ARecordWrittenUnderTheContainersLease_ReplacesTheEarlierGrant()
     {
         var prefix = NewPrefix();
         var container = $"pia-mcp-{prefix}";
-        var probe = $"pia-mcp-{prefix}-probe";
         _store.WriteGrantRecord(container, [@"C:\Tools\uv", StateOf(prefix)], stateReadOnly: true, policyRoots: [@"C:\box"]);
-        var written = File.ReadAllText(Record(container));
 
         using (SandboxContainerLease.Acquire(container))
-        {
-            _store.WriteGrantRecord(container, [@"C:\Tools\server"], policyRoots: [@"C:\other"]);
-            _store.WriteGrantRecord(probe, [@"C:\Tools\server"]);
-        }
+            _store.WriteGrantRecord(container, [@"C:\Tools\node", StateOf(prefix)], stateReadOnly: false, policyRoots: [@"C:\other"]);
 
-        Assert.Equal(written, File.ReadAllText(Record(container)));
         Assert.True(_store.StateGranted(container));
-        Assert.True(_store.StateGrantedReadOnly(container));
-        Assert.True(File.Exists(Record(probe)));
-
-        _store.WriteGrantRecord(container, [@"C:\Tools\server"]);
-        Assert.False(_store.StateGranted(container));
+        Assert.False(_store.StateGrantedReadOnly(container));
+        Assert.Contains(@"C:\other", _store.SweepRoots(prefix));
     }
 
     [Fact]

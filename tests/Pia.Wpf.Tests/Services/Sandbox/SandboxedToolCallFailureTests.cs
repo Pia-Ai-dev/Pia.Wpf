@@ -78,8 +78,10 @@ public sealed class SandboxedToolCallFailureTests
     {
         var verifier = Substitute.For<ISandboxGrantVerifier>();
         verifier.Verify(Arg.Any<SandboxLaunchSpec>()).Returns(new SandboxGrantResult(true, 0, null));
+        // Leases are process-wide, so each transport gets a name no parallel test shares.
+        var spec = Spec with { ContainerName = "pia-mcp-tool-failure-" + Guid.NewGuid().ToString("N") };
         return new MxcClientTransport(
-            Spec, launcher, verifier, logger ?? NullLogger.Instance, NullLoggerFactory.Instance, new InstallingProvisioner());
+            spec, launcher, verifier, logger ?? NullLogger.Instance, NullLoggerFactory.Instance, new InstallingProvisioner());
     }
 
     private sealed class InstallingProvisioner : IRuntimeStateProvisioner

@@ -49,15 +49,17 @@ public sealed class MxcMcpLauncher(ILogger<MxcMcpLauncher> logger, IMxcRuntime r
         return request;
     }
 
-    public async Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken)
+    public async Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, SandboxContainerLease lease, CancellationToken cancellationToken)
     {
-        // The only caller of the SDK: it must not run until the runtime is verified in this process.
-        if (!runtime.TryLoad(out var unavailable))
-            throw new SandboxStartException(unavailable ?? "The sandbox runtime is not available.");
-
-        var lease = SandboxContainerLease.Acquire(spec.ContainerName);
         try
         {
+            if (!string.Equals(lease.Name, spec.ContainerName, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("The lease must be the container's own.", nameof(lease));
+
+            // The only caller of the SDK: it must not run until the runtime is verified in this process.
+            if (!runtime.TryLoad(out var unavailable))
+                throw new SandboxStartException(unavailable ?? "The sandbox runtime is not available.");
+
             var request = BuildRequest(spec);
             logger.LogInformation(
                 "Starting {Container} under MXC: rw={Rw} ro={Ro} net={Net} runtime={Runtime}",

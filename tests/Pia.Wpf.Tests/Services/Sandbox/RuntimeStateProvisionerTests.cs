@@ -59,16 +59,23 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     private RuntimeStateProvisioner Provisioner(ILogger<RuntimeStateProvisioner>? logger = null) =>
         new(_store, new UvToolRunner(NullLogger<UvToolRunner>.Instance, _uv.Run), logger ?? NullLogger<RuntimeStateProvisioner>.Instance);
 
-    private Task<SandboxLaunchSpec> Prepare(SandboxLaunchSpec spec) =>
-        Provisioner().PrepareAsync(spec, line => { lock (_stderr) _stderr.Add(line); }, TestContext.Current.CancellationToken);
+    // Under the container's own lease, which the transport holds while the provisioner runs.
+    private async Task<SandboxLaunchSpec> Prepare(SandboxLaunchSpec spec)
+    {
+        using var lease = SandboxContainerLease.Acquire(spec.ContainerName);
+        return await Provisioner().PrepareAsync(spec, line => { lock (_stderr) _stderr.Add(line); }, TestContext.Current.CancellationToken);
+    }
 
     // The real store, so the grant records live outside the state folder as they do in the app.
-    private Task<SandboxLaunchSpec> PrepareWithRecords(SandboxLaunchSpec spec) =>
-        new RuntimeStateProvisioner(
+    private async Task<SandboxLaunchSpec> PrepareWithRecords(SandboxLaunchSpec spec)
+    {
+        using var lease = SandboxContainerLease.Acquire(spec.ContainerName);
+        return await new RuntimeStateProvisioner(
                 new RuntimeStateStore(NullLogger<RuntimeStateStore>.Instance),
                 new UvToolRunner(NullLogger<UvToolRunner>.Instance, _uv.Run),
                 NullLogger<RuntimeStateProvisioner>.Instance)
             .PrepareAsync(spec, line => { lock (_stderr) _stderr.Add(line); }, TestContext.Current.CancellationToken);
+    }
 
     // An earlier uvx start left a record saying the state folder was read-only, so its content is trusted.
     private void TrustTheStateFolder() => _store.Earlier[Container] = true;
@@ -459,16 +466,17 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task Uvx_AChangedSpec_WhileAContainerOfTheServerRuns_IsRefused_AndKeepsTheTool(bool sameContainer)
+    public async Task Uvx_AChangedSpec_WhileTheServersOtherContainerRuns_IsRefused_AndKeepsTheTool(bool probeRuns)
     {
         _store.Earlier[Container] = true;
         _store.Earlier[ProbeContainer] = true;
         WriteSpecRecord("mcp-server-time", python: "3.12");
         var tool = UvEntryPointResolverTests.InstallTimeTool(State);
-        using var running = SandboxContainerLease.Acquire(Container);
+        var (running, starting) = probeRuns ? (ProbeContainer, Container) : (Container, ProbeContainer);
+        using var lease = SandboxContainerLease.Acquire(running);
 
         var ex = await Assert.ThrowsAsync<SandboxStartException>(
-            () => Prepare(UvxSpec() with { ContainerName = sameContainer ? Container : ProbeContainer }));
+            () => Prepare(UvxSpec() with { ContainerName = starting }));
 
         Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
         PathFreeAssert.IsPathFree(ex);
@@ -480,6 +488,21 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
     }
 
     private static UvxSpec TimeOnPython312 => new("mcp-server-time", "mcp-server-time", [], "3.12");
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Uvx_AChangedSpec_UnderItsOwnLeaseAlone_Reinstalls(bool probe)
+    {
+        var container = probe ? ProbeContainer : Container;
+        await PrepareWithRecords(UvxSpec() with { ContainerName = container });
+
+        var prepared = await PrepareWithRecords(UvxSpec(uvx: TimeOnPython312) with { ContainerName = container });
+
+        Assert.Equal(["-c", ExpectedCode, "--local-timezone", "UTC"], prepared.Args);
+        Assert.Contains("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
+        Assert.Equal(2, _uv.Calls.Count);
+    }
 
     [Fact]
     public async Task Uvx_AChangedSpec_WhileAUvxStartOfTheServerRuns_IsRefused()
@@ -512,29 +535,6 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         Assert.Equal(["-c", ExpectedCode, "--local-timezone", "UTC"], prepared.Args);
         Assert.Contains("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
         Assert.Equal(uvxBeforeTheProgram ? 2 : 1, _uv.Calls.Count);
-    }
-
-    // A program start under a running uvx server's name fails at the lease, so it must not hide that server's state grant.
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AProgramStart_UnderARunningUvxServersName_KeepsItsRecord_SoAChangedSpecIsStillRefused(bool probe)
-    {
-        var (running, other) = probe ? (ProbeContainer, Container) : (Container, ProbeContainer);
-        await PrepareWithRecords(UvxSpec() with { ContainerName = running });
-        using var lease = SandboxContainerLease.Acquire(running);
-
-        await PrepareWithRecords(ProgramSpec(running));
-
-        var store = new RuntimeStateStore(NullLogger<RuntimeStateStore>.Instance);
-        Assert.True(store.StateGranted(running));
-        Assert.True(store.StateGrantedReadOnly(running));
-        var ex = await Assert.ThrowsAsync<SandboxStartException>(
-            () => PrepareWithRecords(UvxSpec(uvx: TimeOnPython312) with { ContainerName = other }));
-        Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
-        Assert.True(File.Exists(Path.Combine(State, "tools", "mcp-server-time", "uv-receipt.toml")));
-        Assert.DoesNotContain("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
-        Assert.Single(_uv.Calls);
     }
 
     // A runner start fails without its record, so a running container without one was given no state folder.
@@ -765,7 +765,8 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         var planted = await AfterAUvxStartAndAnNpxProbe("tools", "mcp-server-time", "planted.txt");
         using var running = SandboxContainerLease.Acquire(Container);
 
-        var ex = await Assert.ThrowsAsync<SandboxStartException>(() => PrepareWithRecords(UvxSpec()));
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(
+            () => PrepareWithRecords(UvxSpec() with { ContainerName = ProbeContainer }));
 
         Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
         Assert.True(File.Exists(planted));

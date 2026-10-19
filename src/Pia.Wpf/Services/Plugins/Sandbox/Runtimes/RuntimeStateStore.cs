@@ -19,13 +19,6 @@ public sealed class RuntimeStateStore(ILogger<RuntimeStateStore> logger) : IRunt
         string containerName, IReadOnlyList<string> roots, bool stateReadOnly = false, IReadOnlyList<string>? policyRoots = null)
     {
         var target = RecordPath(containerName);
-        // A record is written before the lease is taken, so this start fails at the lease; the running container keeps its record.
-        if (SandboxContainerLease.IsActive(containerName))
-        {
-            logger.LogInformation("Grant record for {Container} kept: a container under that name is running", containerName);
-            return;
-        }
-
         var directory = PiaPaths.McpSandboxGrantsDirectory;
         Directory.CreateDirectory(directory);
 

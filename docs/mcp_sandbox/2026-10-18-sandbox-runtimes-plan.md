@@ -86,8 +86,9 @@ Calls made in this plan (the builder's to make, now recorded):
   sandbox has no console to answer a prompt, and the spike always passed it in that position.
 - Pia **serializes MXC spawns and disposals process-wide**: two containers rewriting ACLs over one tree at
   the same moment was never measured.
-- **One lock per state folder** covers preparation until the container's lease exists, so nothing deletes
-  or rewrites a state folder that a start is still filling.
+- **One lock per state folder** covers preparation until the launch returns, so nothing deletes or rewrites
+  a state folder that a start is still filling. The container's lease is taken before preparation, so only
+  the start that owns the container name writes its folders and grant record.
 - **Host-side walks inside a server-writable state folder never follow reparse points.** Measured on this
   host: `Directory.EnumerateFiles(…, AllDirectories)` returned a file behind a junction, and
   `Directory.Delete(dir, true)` threw `IOException` ("Falscher Parameter") on it; `AttributesToSkip =
@@ -115,12 +116,13 @@ McpTransportFactory.Create(request)
 
 MxcClientTransport.ConnectAsync                               async
   await Task.Run(...)                                         off the caller's thread
-    RuntimeStateLocks.AcquireAsync(state folder)              runners only, held until the lease exists
+    RuntimeStateLocks.AcquireAsync(state folder)              runners only, held until the launch returns
+    SandboxContainerLease.Acquire(container name)             a running name refuses the start here
     CreateOwnedFolders()                                      user rw folders under McpSandboxRoot (today)
     IRuntimeStateProvisioner.PrepareAsync(spec)               support folder, state dirs, AC\Temp, files,
                                                               grant record, uv install
     ISandboxGrantVerifier.Verify(final spec)                  toolchain roots walked fully
-    IMxcProcessLauncher.LaunchAsync(final spec)               lease taken; spawn and dispose serialized
+    IMxcProcessLauncher.LaunchAsync(final spec, lease)        owns the lease; spawn and dispose serialized
                                                               process-wide
 ```
 
@@ -361,12 +363,15 @@ Changed in the contract slice:
   (2n backslashes + quote → n backslashes and a quote toggle; 2n+1 → n and a literal quote; `""` inside
   quotes → literal quote).
 - `SandboxContainerLease` gains `public static bool IsActive(string name)`, read under the same lock.
+  The transport takes the lease right after the state-folder lock and before `CreateOwnedFolders`, and hands
+  it to `IMxcProcessLauncher.LaunchAsync(spec, lease, token)`. The launcher frees it when the start fails or
+  the container is shut down; the transport frees it when preparation or the grant check fails. The
+  provisioner's in-use checks skip the starting container's own name, whose lease it holds.
 - `Runtimes/RuntimeStateLocks.cs` (static): one `SemaphoreSlim` per state folder (keyed by the normalized
   path, case-insensitive), `Task<IDisposable> AcquireAsync(string stateDirectory, CancellationToken)` and
   `IDisposable? TryAcquire(string stateDirectory)` (null when held). The transport holds it from before
-  `CreateOwnedFolders` until `LaunchAsync` returns, when the container's lease has taken over;
-  `RuntimeStateStore.TryDelete` takes it and then checks both leases. That closes the window in which a
-  starting probe holds neither.
+  `CreateOwnedFolders` until `LaunchAsync` returns, so the server and its probe never prepare one state
+  folder at once; `RuntimeStateStore.TryDelete` takes it and then checks both leases.
 - Test infrastructure, frozen after A1 so parallel slices never edit it: `FakeRuntimeHost` (an in-memory
   `IRuntimeHostService`) and `PathFreeAssert.IsPathFree(Exception)` (no inner exception, and no
   drive-qualified or UNC path in the message).
@@ -735,8 +740,10 @@ connection (`ProbeLocalMcpAsync` → `McpServerProbe`), Save (`ActivateMcpPlugin
 
 - `RuntimeStateLocks` (A1) serializes everything that touches one state folder: a Test connection and a
   start never prepare one prefix at once, a uv cache prune never runs under another install, and the startup
-  orphan cleanup never deletes a folder a starting probe is filling. The transport holds the lock until
-  `LaunchAsync` has returned, so between the lock and the container's `SandboxContainerLease` there is no gap.
+  orphan cleanup never deletes a folder a starting probe is filling. The transport takes the container's
+  `SandboxContainerLease` right after the lock and holds the lock until `LaunchAsync` has returned, so there
+  is no gap between them. A second start under a running container's name fails at the lease, before it
+  writes a state file or a grant record; a record therefore always describes the start that holds the name.
 - `MxcMcpLauncher` passes `MxcContainer.SpawnAsync` and `process.Dispose()` in `ShutdownAsync` through one
   process-wide gate, `MxcAclGate` (an internal static `SemaphoreSlim(1)` with `EnterAsync` returning an
   `IDisposable`). Each rewrites ACLs below every root, and two containers sharing a toolchain or state root at
@@ -1355,9 +1362,6 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
   cmd-shim, which a contained `cmd.exe` without a console is refused. Harmless; the server starts.
 - Under network Deny with an empty cache, the reason shows npm's raw stderr tail: about 10 lines, with the
   path of npm's log inside the state folder.
-- A start whose grant-record write is skipped, because a running container of that name holds the lease, runs
-  under the previous record if that container exits in the gap. This only changes which roots a later sweep
-  sees.
 
 ## Docs to update
 

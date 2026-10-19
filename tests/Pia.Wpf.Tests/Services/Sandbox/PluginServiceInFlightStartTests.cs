@@ -49,11 +49,15 @@ public sealed class PluginServiceInFlightStartTests : IDisposable
 
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // Named per server like a real start, and unique to this factory: leases are process-wide.
+        private readonly string _suffix = Guid.NewGuid().ToString("N")[..8];
+
         public IClientTransport Create(McpTransportRequest request)
         {
             var verifier = Substitute.For<ISandboxGrantVerifier>();
             verifier.Verify(Arg.Any<SandboxLaunchSpec>()).Returns(new SandboxGrantResult(true, 0, null));
-            return new GatedTransport(this, new MxcClientTransport(Spec, Launcher, verifier, NullLogger.Instance, NullLoggerFactory.Instance));
+            var spec = Spec with { ContainerName = SandboxLaunchSpecBuilder.ContainerName($"{request.ToolPrefix}-{_suffix}", request.IsProbe) };
+            return new GatedTransport(this, new MxcClientTransport(spec, Launcher, verifier, NullLogger.Instance, NullLoggerFactory.Instance));
         }
 
         private sealed class GatedTransport(GatedFactory factory, IClientTransport inner) : IClientTransport

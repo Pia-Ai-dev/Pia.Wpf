@@ -80,25 +80,35 @@ public sealed class MxcClientTransport : IClientTransport, IStderrTailSource
 
     private async Task<LaunchedMxcProcess> PrepareAndLaunchAsync(CancellationToken cancellationToken)
     {
-        // Held until the launcher returns, by when the container's lease guards the state folder.
+        // The server and its probe share the state folder; only one of them prepares it until its launch returns.
         using var stateLock = _spec.RuntimeStateDirectory is { } state
             ? await RuntimeStateLocks.AcquireAsync(state, cancellationToken).ConfigureAwait(false)
             : null;
 
-        CreateOwnedFolders();
-        var prepared = _provisioner is null
-            ? _spec
-            : await _provisioner.PrepareAsync(_spec, AppendStderrLine, cancellationToken).ConfigureAwait(false);
-
-        var grants = _verifier.Verify(prepared);
-        if (!grants.Ok)
+        // Taken before anything is prepared, so only the start that owns the name writes its folders and grant record.
+        var lease = SandboxContainerLease.Acquire(_spec.ContainerName);
+        try
         {
-            _logger.LogInformation("{Container} not started: {Blocked} item(s) the sandbox cannot be given access to",
-                _spec.ContainerName, grants.BlockedCount);
-            throw new SandboxStartException(grants.Reason ?? "Pia can't sandbox this server.");
-        }
+            CreateOwnedFolders();
+            var prepared = _provisioner is null
+                ? _spec
+                : await _provisioner.PrepareAsync(_spec, AppendStderrLine, cancellationToken).ConfigureAwait(false);
 
-        return await _launcher.LaunchAsync(prepared, cancellationToken).ConfigureAwait(false);
+            var grants = _verifier.Verify(prepared);
+            if (!grants.Ok)
+            {
+                _logger.LogInformation("{Container} not started: {Blocked} item(s) the sandbox cannot be given access to",
+                    _spec.ContainerName, grants.BlockedCount);
+                throw new SandboxStartException(grants.Reason ?? "Pia can't sandbox this server.");
+            }
+
+            return await _launcher.LaunchAsync(prepared, lease, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            lease.Dispose();
+            throw;
+        }
     }
 
     // The editor proposes a folder under Pia's own sandbox root without creating it; nothing else is created.

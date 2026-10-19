@@ -13,5 +13,6 @@ public sealed record LaunchedMxcProcess(
 /// <summary>Starts a server inside a container; the seam that keeps the native runtime out of everything above it.</summary>
 public interface IMxcProcessLauncher
 {
-    Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, CancellationToken cancellationToken);
+    /// <param name="lease">The container name's lease; the launcher frees it when the start fails or the container is shut down.</param>
+    Task<LaunchedMxcProcess> LaunchAsync(SandboxLaunchSpec spec, SandboxContainerLease lease, CancellationToken cancellationToken);
 }
