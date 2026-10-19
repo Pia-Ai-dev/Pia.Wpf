@@ -215,7 +215,7 @@ public sealed partial class RuntimeHostService(IElevationService elevation) : IR
     private static bool IsFileSystemError(Exception e) =>
         e is IOException or UnauthorizedAccessException or SecurityException or ArgumentException or NotSupportedException;
 
-    private sealed class RegistryEnvironment(Dictionary<string, string> machine, Dictionary<string, string> user)
+    internal sealed class RegistryEnvironment(Dictionary<string, string> machine, Dictionary<string, string> user)
     {
         public Dictionary<string, string> Machine { get; } = machine;
 
@@ -226,12 +226,15 @@ public sealed partial class RuntimeHostService(IElevationService elevation) : IR
 
         public string? Raw(string name) => User.TryGetValue(name, out var value) ? value : Machine.GetValueOrDefault(name);
 
-        // One pass: a Path that names %PATH% would otherwise expand into itself. Windows expands a machine value
-        // before any user value exists, so a user value never fills one in.
+        // One pass: a Path that names %PATH% would otherwise expand into itself.
         public string Expand(string value, bool machineOnly = false) =>
-            VariableReference().Replace(value, match =>
-                (machineOnly ? Machine.GetValueOrDefault(match.Groups[1].Value) : Raw(match.Groups[1].Value))
-                ?? Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? match.Value);
+            VariableReference().Replace(value, match => Lookup(match.Groups[1].Value, machineOnly) ?? match.Value);
+
+        // Windows expands a machine value before any user value exists, so a name only the user defines stays literal.
+        private string? Lookup(string name, bool machineOnly) =>
+            machineOnly
+                ? Machine.GetValueOrDefault(name) ?? (User.ContainsKey(name) ? null : Environment.GetEnvironmentVariable(name))
+                : Raw(name) ?? Environment.GetEnvironmentVariable(name);
 
         private static Dictionary<string, string> ReadValues(RegistryKey hive, string subKey)
         {

@@ -543,7 +543,9 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
   split into options. When the server's own env entries define `NODE_OPTIONS`, that value, even an empty one,
   and the machine value is left out: the server's own entries win, as everywhere else. Otherwise the
   machine-wide (`HKLM`) `NODE_OPTIONS`, read through `IRuntimeHostService.MachineEnvironmentValue`. The
-  user-level (`HKCU`) value stays blanked like every user variable.
+  user-level (`HKCU`) value stays blanked like every user variable. The machine value is expanded the way
+  Windows does it: from machine values and from names Windows sets itself (`SystemRoot`). A `%NAME%` that
+  only `HKCU\Environment` defines stays literal, although Pia's own process carries the user's value.
 - `PIA_SANDBOX_ROOTS` = every granted root, joined with `|` (illegal in Windows paths; the spike's `;`
   breaks on a folder name with a semicolon): the user's rw and ro folders, the program folder, the install
   root, `<state>`, `<support>`.

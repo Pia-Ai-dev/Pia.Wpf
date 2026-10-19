@@ -301,6 +301,30 @@ public sealed class RuntimeHostServiceTests : IDisposable
         Assert.NotEqual(host.RegistryEnvironmentValue("TEMP"), host.MachineEnvironmentValue("TEMP"), StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>Pia's own process carries every user variable, so only the scopes decide what a machine value may use.</summary>
+    [Fact]
+    public void AMachineValue_KeepsANameOnlyTheUserDefinesLiteral_AndStillExpandsANameOfNeitherScope()
+    {
+        var userOnly = "PIA_TEST_USER_ONLY_" + Guid.NewGuid().ToString("N");
+        var neither = "PIA_TEST_PROCESS_ONLY_" + Guid.NewGuid().ToString("N");
+        var nodeOptions = $@"--require %{userOnly}%\init.js --title=%{neither}%";
+        var registry = new RuntimeHostService.RegistryEnvironment(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["NODE_OPTIONS"] = nodeOptions },
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [userOnly] = @"C:\Users\me\hooks" });
+        Environment.SetEnvironmentVariable(userOnly, @"C:\Users\me\hooks");
+        Environment.SetEnvironmentVariable(neither, "from-the-process");
+        try
+        {
+            Assert.Equal($@"--require %{userOnly}%\init.js --title=from-the-process", registry.Expand(nodeOptions, machineOnly: true));
+            Assert.Equal(@"--require C:\Users\me\hooks\init.js --title=from-the-process", registry.Expand(nodeOptions));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(userOnly, null);
+            Environment.SetEnvironmentVariable(neither, null);
+        }
+    }
+
     [Fact]
     public void TheUserEnvironmentNames_AreTheValueNamesUnderHkcuEnvironment()
     {
