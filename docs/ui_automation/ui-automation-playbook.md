@@ -224,6 +224,13 @@ correctly.
    `type=TabItem[name='Personas'] >> ...`; an `automationId=` is unique within the view and
    resolves on its own once the tab is selected.
 
+On the MCP servers page, `McpServers_Edit_Message`, `McpServers_Detail_Error` and the sandbox
+runtime texts (`McpServers_Sandbox_RuntimeResult`, `_RuntimeReason`, `_RuntimeFixText` and the
+other `TextBlock`s) are Text peers. `ww_get_value` and `ww_wait mode=value` return `''` for them,
+because they read through LegacyIAccessible. Read them with
+`ww_inspect(action=attribute, property=Name)` or `ww_assert_value(property=name)`.
+`_RuntimeGuideCommand` and `_RuntimeGuideAltCommand` are text boxes, so `ww_get_value` works there.
+
 ## Chat and tool approval
 
 - Assistant reply text: `ww_get_value(selector="automationId=MarkdownViewer_<messageId>")` returns

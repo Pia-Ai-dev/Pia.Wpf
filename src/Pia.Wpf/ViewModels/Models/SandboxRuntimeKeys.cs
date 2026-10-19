@@ -23,8 +23,14 @@ public static class SandboxRuntimeKeys
     /// <summary>True when the refusal's text formats the parse's subject into {0}.</summary>
     public static bool TakesSubject(RunnerRefusal refusal) => refusal == RunnerRefusal.UvxOption;
 
-    public static string? ForIssue(RuntimeIssue issue) =>
-        issue == RuntimeIssue.None ? null : $"McpServers_Sandbox_Runtime_Issue_{issue}";
+    // An elevated editor shows the fix button under the reason, so the admin-owned text points at it.
+    public static string? ForIssue(RuntimeIssue issue, bool offersFix) => issue switch
+    {
+        RuntimeIssue.None => null,
+        RuntimeIssue.NodeAdminOwned or RuntimeIssue.DotnetAdminOwned when offersFix =>
+            $"McpServers_Sandbox_Runtime_Issue_{issue}_Elevated",
+        _ => $"McpServers_Sandbox_Runtime_Issue_{issue}",
+    };
 
     public static string? ForRunner(RunnerKind kind) =>
         kind == RunnerKind.None ? null : $"McpServers_Sandbox_Runner_{kind}";

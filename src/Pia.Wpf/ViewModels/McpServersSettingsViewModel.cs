@@ -1177,7 +1177,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         get
         {
             if (_runtimeDetectionFailed) return _localizationService["McpServers_Sandbox_Runtime_CheckFailed"];
-            if (CurrentResolution is not { } resolution || SandboxRuntimeKeys.ForIssue(resolution.Issue) is not { } key)
+            if (CurrentResolution is not { } resolution || SandboxRuntimeKeys.ForIssue(resolution.Issue, ShowRuntimeFix) is not { } key)
                 return null;
 
             return resolution.Issue == RuntimeIssue.DotnetRuntimeMissing
