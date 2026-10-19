@@ -29,6 +29,7 @@ public sealed record SandboxPathIssue(string Path, SandboxPathIssueKind Kind, st
 
 /// <summary>The machine facts the guard judges paths against; a seam so the rules test without a real profile.</summary>
 /// <param name="HostProgramFolders">Folders whose programs run outside the sandbox; asked only when a read-write folder is judged.</param>
+/// <param name="FinalPath">Where a read-write folder leads once links are followed; null when it can't or may not be resolved.</param>
 public sealed record SandboxGuardEnvironment(
     string WindowsDirectory,
     IReadOnlyList<string> ProgramFilesDirectories,
@@ -38,7 +39,8 @@ public sealed record SandboxGuardEnvironment(
     IReadOnlyList<string> WideFolders,
     Func<string, bool> PathExists,
     Func<string, int, int> CountEntries,
-    Func<IReadOnlyList<string>>? HostProgramFolders = null)
+    Func<IReadOnlyList<string>>? HostProgramFolders = null,
+    Func<string, string?>? FinalPath = null)
 {
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, long Ticks)> CountCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly long CountCacheTicks = TimeSpan.FromSeconds(20).Ticks;
@@ -73,7 +75,8 @@ public sealed record SandboxGuardEnvironment(
             ],
             path => Directory.Exists(path) || File.Exists(path),
             CountEntriesCached,
-            hostPrograms.Get);
+            hostPrograms.Get,
+            hostPrograms.FinalPath);
     }
 
     // Typed into an editor, so the same folder is judged on every keystroke; a recount per keystroke would stall it.
@@ -129,6 +132,8 @@ internal sealed class HostProgramFolderCache(IRuntimeHostService host, Func<long
             return folders;
         }
     }
+
+    public string? FinalPath(string folder) => IsOnThisPc(folder) ? host.ResolveFinalPath(folder) : null;
 
     // A UNC path or a mapped network drive can stall for seconds when its server is gone.
     internal static bool IsOnThisPc(string folder)
@@ -270,8 +275,7 @@ public static class SandboxPathGuard
         }
 
         // Whether or not a program is there yet: a server could plant one that the user or Pia then runs uncontained.
-        if (isReadwrite && environment.HostProgramFolders?.Invoke()
-                .Any(folder => Path.IsPathFullyQualified(folder) && ContainsOrIs(full, folder)) == true)
+        if (isReadwrite && HoldsHostProgramFolder(full, environment))
         {
             issues.Add(new(raw, SandboxPathIssueKind.HostProgramFolder,
                 "This folder holds programs that run outside the sandbox (a folder on your PATH, or one Pia runs uv from), so a sandboxed server can't be allowed to change it. Share it read-only or choose a different folder."));
@@ -292,6 +296,18 @@ public static class SandboxPathGuard
         }
 
         accepted.Add((raw, full));
+    }
+
+    // Through its final path too: a folder that is a link writes into its target.
+    private static bool HoldsHostProgramFolder(string full, SandboxGuardEnvironment environment)
+    {
+        if (environment.HostProgramFolders?.Invoke() is not { Count: > 0 } folders)
+            return false;
+
+        string[] spellings = environment.FinalPath?.Invoke(full) is { } final && Path.IsPathFullyQualified(final)
+            ? [full, SandboxLaunchSpecBuilder.Normalize(final)]
+            : [full];
+        return folders.Any(folder => Path.IsPathFullyQualified(folder) && spellings.Any(path => ContainsOrIs(path, folder)));
     }
 
     private static bool IsManagedRuntimeFolder(string full, string sandboxRoot) =>
