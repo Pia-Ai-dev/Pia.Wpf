@@ -585,6 +585,16 @@ public class PluginService : IPluginService
     public LocalMcpDefinition? GetLocalMcpDefinition(Guid pluginId) =>
         _pluginConfigs.TryGetValue(pluginId, out var plugin) ? ReadLocalDefinition(plugin) : null;
 
+    // Switched-off servers count too: one that ran before may have left a program there. The policy holds no
+    // secret, so the read skips the DPAPI call per env value.
+    public IReadOnlyList<string> GetSandboxedReadwriteFolders() =>
+        [.. _pluginConfigs.Values.ToList()
+            .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson))
+            .SelectMany(p => LocalMcpConfig.FromConfigJson(p.Name, p.Description, p.ConfigJson, static value => value)
+                ?.Sandbox?.ReadwritePaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
     private LocalMcpDefinition? ReadLocalDefinition(SyncPlugin plugin) =>
         LocalMcpConfig.FromConfigJson(plugin.Name, plugin.Description, plugin.ConfigJson, Decrypt);
 
@@ -616,7 +626,7 @@ public class PluginService : IPluginService
         if (definition.Sandbox is not null && SandboxUnavailableReason() is { } unavailable)
             return McpProbeResult.Failed(unavailable);
 
-        return await McpServerProbe.ProbeAsync(definition, _transportFactory, timeout: null, ct);
+        return await McpServerProbe.ProbeAsync(definition, _transportFactory, timeout: null, GetSandboxedReadwriteFolders(), ct);
     }
 
     public async Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default)
@@ -1085,7 +1095,8 @@ public class PluginService : IPluginService
             localDefinition?.ToolPrefix,
             localDefinition?.AllowedTools,
             _transportFactory,
-            localDefinition?.Sandbox);
+            localDefinition?.Sandbox,
+            localDefinition?.Sandbox is null ? null : GetSandboxedReadwriteFolders());
 
         try
         {

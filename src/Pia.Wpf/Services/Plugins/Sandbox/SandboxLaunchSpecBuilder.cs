@@ -141,9 +141,14 @@ public static class SandboxLaunchSpecBuilder
         string? programFolder;
         try
         {
-            // The sandbox root holds every server's own folder, so a uv in there is as writable as one in a policy folder.
+            // Any sandboxed server may have planted the uv this one names, in its read-write folders or under the
+            // sandbox root, which holds every server's own folder.
             var resolution = detector.Detect(
-                runner with { WritableFolders = [.. folders.Readwrite, PiaPaths.McpSandboxRoot] }, runtime.CancellationToken);
+                runner with
+                {
+                    WritableFolders = [.. folders.Readwrite, .. request.SandboxedReadwriteFolders ?? [], PiaPaths.McpSandboxRoot]
+                },
+                runtime.CancellationToken);
             log.LogInformation("Runtime for {Container}: {Kind} {Outcome}, {Roots} toolchain root(s), readable already {ReadableAlready}",
                 folders.ContainerName, parse.Kind, resolution.Outcome, resolution.ToolchainRoots.Count,
                 resolution.Install?.ReadableAlready ?? false);

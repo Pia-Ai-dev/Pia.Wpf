@@ -22,6 +22,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
     private readonly string? _toolPrefix;
     private readonly IReadOnlyList<string>? _allowedTools;
     private readonly McpSandboxPolicy? _sandbox;
+    private readonly IReadOnlyList<string>? _sandboxedReadwriteFolders;
     private readonly IMcpTransportFactory _transportFactory;
 
     private McpClient? _client;
@@ -53,7 +54,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         string? toolPrefix = null,
         IReadOnlyList<string>? allowedTools = null,
         IMcpTransportFactory? transportFactory = null,
-        McpSandboxPolicy? sandbox = null)
+        McpSandboxPolicy? sandbox = null,
+        IReadOnlyList<string>? sandboxedReadwriteFolders = null)
     {
         PluginId = pluginId;
         PluginName = pluginName;
@@ -67,6 +69,7 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         _allowedTools = allowedTools;
         _transportFactory = transportFactory ?? new McpTransportFactory();
         _sandbox = sandbox;
+        _sandboxedReadwriteFolders = sandboxedReadwriteFolders;
     }
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -84,7 +87,8 @@ public class McpPluginToolHandler : IPluginToolHandler, IDisposable
         {
             // Runtime detection reads ACLs and walks folders; startup and Save call this on the UI thread.
             _transport = await Task.Run(() => _transportFactory.Create(new McpTransportRequest(
-                PluginName, _command, _args, _env, _workingDirectory, _sandbox, _toolPrefix)), ct);
+                PluginName, _command, _args, _env, _workingDirectory, _sandbox, _toolPrefix,
+                SandboxedReadwriteFolders: _sandboxedReadwriteFolders)), ct);
 
             _client = await McpClient.CreateAsync(_transport, cancellationToken: ct);
             var discovered = await _client.ListToolsAsync(cancellationToken: ct);

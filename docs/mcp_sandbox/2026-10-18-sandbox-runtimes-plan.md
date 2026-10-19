@@ -336,7 +336,7 @@ public interface IToolchainAclService
 public interface ISandboxRuntimeService
 {
     Task<RuntimeDetection> DetectAsync(string command, IReadOnlyList<string> args, string? workingDirectory,
-        string toolPrefix, CancellationToken cancellationToken);
+        string toolPrefix, IReadOnlyList<string> sandboxedReadwriteFolders, CancellationToken cancellationToken);
     bool CanGrantMachineWide { get; }
     MachineWideGrantPreview PreviewMachineWideGrant(string root);
     Task<MachineWideGrantResult> GrantMachineWideReadAsync(string root, CancellationToken cancellationToken);
@@ -468,7 +468,11 @@ between candidates.
 
 **Classification**, first valid candidate in order:
 - `Uvx`: Ready at once. uv runs on the host, so nothing is granted. A `uv.exe` in a folder this server can
-  write, or under `McpSandboxRoot`, is skipped at start (`UvInWritableFolder`): a server could have planted it.
+  write, in a read-write folder of any other saved sandboxed server, or under `McpSandboxRoot`, is skipped
+  (`UvInWritableFolder`): a server could have planted it. That holds for the folder of a full-path `uvx.exe`
+  too, which is tried first. `PluginService.GetSandboxedReadwriteFolders` collects the saved servers' folders,
+  switched-off ones included; a start and a Test connection get them through
+  `McpTransportRequest.SandboxedReadwriteFolders`, the editor through `ISandboxRuntimeService.DetectAsync`.
 - Readable already when the root, the executable and the entry script all pass `IsContainerReadable`:
   Ready, no toolchain roots. (`C:\Program Files\dotnet` inherits `S-1-15-2-1` and `S-1-15-2-2` RX.)
 - Under `%WINDIR%`: skipped. Under `Program Files*` and not readable: remembered as admin-owned, next.
@@ -1313,12 +1317,15 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
   file names (local wheels and sdists) by the parser. Each server carries its own CPython (about 62 MB, 2,269
   files). `uv run` is refused. Only `--from`, `--with` and `--python` (a version) are accepted. An installed
   tool is never upgraded: changing the pinned version or the spec is the only way to update it.
-- uv: a `uv.exe` in a folder this server can write, or under `McpSandboxRoot`, is skipped at start, and the
-  path guard refuses a read-write folder that is, or sits above, a registry `PATH` entry or a fixed uv folder.
-  A `PATH` entry added after a server with read-write access to its folder was saved is caught at that
-  server's next start, since the factory runs the guard on every start; until then a running server can still
-  plant a program there. The guard follows links of local `PATH` entries and uv folders, and of a `uv.exe` in
-  them; it follows no link on a UNC path or a network drive, so a `uv.exe` link there is not traced.
+- uv: a `uv.exe` in a read-write folder of any saved sandboxed server, switched off or not, or under
+  `McpSandboxRoot`, is skipped at start, in the editor and in Test connection, and the path guard refuses a
+  read-write folder that is, or sits above, a registry `PATH` entry or a fixed uv folder. The folders of a
+  removed server, and of a Test connection whose edits were never saved, do not count, so a `uv.exe` either
+  of them planted is not caught. A `PATH` entry added after a server with read-write access to its folder was
+  saved is caught at that server's next start, since the factory runs the guard on every start; until then a
+  running server can still plant a program there. The guard follows links of local `PATH` entries and uv
+  folders, and of a `uv.exe` in them; it follows no link on a UNC path or a network drive, so a `uv.exe` link
+  there is not traced.
 - The user's `.npmrc`, `uv.toml` and `NuGet.Config` do not apply, so private registries, registry auth and
   proxy settings from there do not reach sandboxed servers (proxy environment variables do reach the uv
   install). Cached CLI logins (`az login`) do not reach them either; use a token in the server's env.

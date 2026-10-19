@@ -481,6 +481,22 @@ public sealed class RuntimeDetectorTests
         Assert.Equal(RuntimeIssue.UvInWritableFolder, Detect(RunnerKind.Uvx, writable: [links]).Issue);
     }
 
+    // The hint folder is tried before PATH, so another server's read-write folder must refuse it there too.
+    [Fact]
+    public void AUvxHintUnderAnotherServersWritableFolder_IsRefused_AndACleanUvWins()
+    {
+        var planted = Path.Combine(@"D:\", "tools", "uv");
+        var localBin = Path.Combine(UserProfile, ".local", "bin");
+        _host.WithUv(planted).WithUv(localBin);
+
+        AssertReady(Detect(RunnerKind.Uvx, hint: Path.Combine(planted, "uvx.exe"), writable: [Path.Combine(@"D:\", "tools")]), localBin);
+
+        _host.Override = [];
+        var resolution = Detect(RunnerKind.Uvx, hint: Path.Combine(planted, "uvx.exe"), writable: [Path.Combine(@"D:\", "tools")]);
+        Assert.Equal(RuntimeIssue.UvInWritableFolder, resolution.Issue);
+        Assert.Equal(planted, resolution.Install!.Root);
+    }
+
     [Fact]
     public void AUvUnderTheSandboxRoot_IsRefused()
     {

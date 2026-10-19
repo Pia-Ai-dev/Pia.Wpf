@@ -205,7 +205,7 @@ public sealed class SandboxRuntimeServiceTests
     [Fact]
     public async Task Detect_ForAPlainExe_ReturnsTheParseWithoutDetecting()
     {
-        var detection = await Service().DetectAsync(@"C:\Tools\fs\fs.exe", ["--stdio"], null, "fs", CancellationToken.None);
+        var detection = await Service().DetectAsync(@"C:\Tools\fs\fs.exe", ["--stdio"], null, "fs", [], CancellationToken.None);
 
         Assert.Equal(RunnerKind.None, detection.Parse.Kind);
         Assert.Equal(RunnerRefusal.None, detection.Parse.Refusal);
@@ -218,7 +218,7 @@ public sealed class SandboxRuntimeServiceTests
     [Fact]
     public async Task Detect_ForARefusedCommand_ReturnsTheRefusalWithoutDetecting()
     {
-        var detection = await Service().DetectAsync("pnpm", ["dlx", "@x/y"], null, "x", CancellationToken.None);
+        var detection = await Service().DetectAsync("pnpm", ["dlx", "@x/y"], null, "x", [], CancellationToken.None);
 
         Assert.Equal(RunnerRefusal.NonGoalLauncher, detection.Parse.Refusal);
         Assert.Null(detection.Resolution);
@@ -234,7 +234,7 @@ public sealed class SandboxRuntimeServiceTests
         var resolution = Resolution(RunnerKind.Npx);
         _detector.Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>()).Returns(resolution);
 
-        var detection = await Service().DetectAsync("npx", ["-y", "@x/y"], null, "fs", cts.Token);
+        var detection = await Service().DetectAsync("npx", ["-y", "@x/y"], null, "fs", [], cts.Token);
 
         Assert.Equal(RunnerKind.Npx, detection.Parse.Kind);
         Assert.Same(resolution, detection.Resolution);
@@ -246,15 +246,16 @@ public sealed class SandboxRuntimeServiceTests
     }
 
     [Fact]
-    public async Task Detect_TellsTheDetectorThatTheSandboxRootIsWritable()
+    public async Task Detect_TellsTheDetectorTheSavedServersReadwriteFolders_AndTheSandboxRoot_AreWritable()
     {
         var sandboxRoot = PiaPaths.McpSandboxRoot;
         _detector.Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>()).Returns(Resolution(RunnerKind.Uvx));
 
-        await Service().DetectAsync("uvx", ["mcp-server-time"], null, "time", CancellationToken.None);
+        await Service().DetectAsync("uvx", ["mcp-server-time"], null, "time", [@"D:\tools", @"E:\shared"], CancellationToken.None);
 
         _detector.Received(1).Detect(
-            Arg.Is<RunnerRequest>(runner => runner.WritableFolders != null && runner.WritableFolders.SequenceEqual(new[] { sandboxRoot })),
+            Arg.Is<RunnerRequest>(runner => runner.WritableFolders != null
+                && runner.WritableFolders.SequenceEqual(new[] { @"D:\tools", @"E:\shared", sandboxRoot })),
             Arg.Any<CancellationToken>());
     }
 
@@ -263,7 +264,7 @@ public sealed class SandboxRuntimeServiceTests
     {
         _detector.Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>()).Returns(Resolution(RunnerKind.Uvx));
 
-        var detection = await Service().DetectAsync("uvx", ["mcp-server-time"], null, "time", CancellationToken.None);
+        var detection = await Service().DetectAsync("uvx", ["mcp-server-time"], null, "time", [], CancellationToken.None);
 
         Assert.Equal(RunnerKind.Uvx, detection.Parse.Kind);
         Assert.Equal(PiaPaths.McpRuntimeStateDirectory("time"), detection.StateDirectory);
@@ -277,7 +278,7 @@ public sealed class SandboxRuntimeServiceTests
     {
         _detector.Detect(Arg.Any<RunnerRequest>(), Arg.Any<CancellationToken>()).Returns(Resolution(RunnerKind.Npx));
 
-        var detection = await Service().DetectAsync("npx", ["-y", "@x/y"], null, prefix, CancellationToken.None);
+        var detection = await Service().DetectAsync("npx", ["-y", "@x/y"], null, prefix, [], CancellationToken.None);
 
         Assert.Equal(PiaPaths.McpRuntimeStateDirectory("mcp"), detection.StateDirectory);
     }

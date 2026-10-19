@@ -51,6 +51,22 @@ public sealed class SandboxLaunchSpecBuilderWritableFoldersTests
         Assert.Equal(RunnerKind.Uvx, runner.Kind);
     }
 
+    // Another server can plant the uv.exe this one names by a full path in a folder it may write.
+    [Fact]
+    public void TheDetector_AlsoHearsEverySavedSandboxedServersReadwriteFolders()
+    {
+        var detector = new RecordingDetector(Refused());
+        var request = new McpTransportRequest("Time", @"D:\tools\uv\uvx.exe", ["mcp-server-time"], null, null,
+            new McpSandboxPolicy([@"C:\Work\box"], [], true), "time", false, SandboxedReadwriteFolders: [@"D:\tools", @"E:\shared"]);
+
+        var plan = Build(request, detector);
+
+        var runner = Assert.Single(detector.Calls);
+        Assert.Equal([@"C:\Work\box", @"D:\tools", @"E:\shared", PiaPaths.McpSandboxRoot], runner.WritableFolders!);
+        Assert.Equal(@"D:\tools\uv\uvx.exe", runner.LauncherPathHint);
+        Assert.Equal(SandboxRuntimeMessages.UvInWritableFolder, plan.Error);
+    }
+
     [Fact]
     public void AUvInAWritableFolder_FailsTheStart_WithAPathFreeError()
     {

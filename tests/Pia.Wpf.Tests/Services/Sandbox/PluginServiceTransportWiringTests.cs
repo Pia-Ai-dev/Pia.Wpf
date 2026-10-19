@@ -155,6 +155,31 @@ public sealed class PluginServiceTransportWiringTests : IDisposable
         Assert.Contains("not available on this PC", status.Error);
     }
 
+    private static LocalMcpDefinition Server(string name, McpSandboxPolicy? sandbox, bool enabled = true) =>
+        new(name, "uvx", ["mcp-server-time"], new Dictionary<string, string>(), null,
+            LocalMcpConfig.DeriveToolPrefix(name), null, DefaultEnabled: enabled, Sandbox: sandbox);
+
+    // Any of them may have planted the uv another server names; a switched-off one may have run before.
+    [Fact]
+    public async Task EverySandboxedStartAndProbe_CarriesTheReadwriteFoldersOfEverySavedSandboxedServer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var factory = new RecordingFactory();
+        var service = CreateService(factory);
+        await service.SaveLocalMcpAsync(null, Server("Writer", new([@"D:\tools"], [@"D:\reference"], true)), ct);
+        await service.SaveLocalMcpAsync(null, Server("Off", new([@"E:\shared"], [], true), enabled: false), ct);
+        await service.SaveLocalMcpAsync(null, Server("Bare", sandbox: null), ct);
+        await service.SaveLocalMcpAsync(null, Server("Time", McpSandboxPolicy.Empty), ct);
+        await service.ProbeLocalMcpAsync(Server("Probe", new([@"F:\probe"], [], true)), ct);
+
+        string[] expected = [@"D:\tools", @"E:\shared"];
+        var time = Assert.Single(factory.Requests, r => r.Name == "Time");
+        Assert.Equal(expected, time.SandboxedReadwriteFolders!.Order(StringComparer.OrdinalIgnoreCase));
+        var probe = Assert.Single(factory.Requests, r => r.IsProbe);
+        Assert.Equal(expected, probe.SandboxedReadwriteFolders!.Order(StringComparer.OrdinalIgnoreCase));
+        Assert.Null(Assert.Single(factory.Requests, r => r.Name == "Bare").SandboxedReadwriteFolders);
+    }
+
     [Fact]
     public async Task WhenTheFactoryRefusesTheProbe_TheReasonIsTheResult()
     {

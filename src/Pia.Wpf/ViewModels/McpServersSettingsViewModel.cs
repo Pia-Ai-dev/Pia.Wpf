@@ -1319,7 +1319,8 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
             var failed = false;
             try
             {
-                detection = await runtime.DetectAsync(command, args, workingDirectory, prefix, token);
+                detection = await runtime.DetectAsync(
+                    command, args, workingDirectory, prefix, _pluginService.GetSandboxedReadwriteFolders(), token);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !token.IsCancellationRequested)
             {

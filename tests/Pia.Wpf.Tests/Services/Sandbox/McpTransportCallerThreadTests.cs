@@ -20,7 +20,7 @@ public sealed class McpTransportCallerThreadTests
         using var factory = new GatedFactory();
 
         var probe = CallOnOwnThread(() => McpServerProbe.ProbeAsync(Definition, factory, TimeSpan.FromMinutes(1),
-            TestContext.Current.CancellationToken), factory);
+            ct: TestContext.Current.CancellationToken), factory);
 
         Assert.True(factory.Entered.Wait(CallerBudget, TestContext.Current.CancellationToken), "Create was never called");
         Assert.False(probe.IsCompleted);

@@ -61,6 +61,9 @@ public interface IPluginService
     LocalMcpDefinition? GetLocalMcpDefinition(Guid pluginId);
     LocalMcpStatus GetLocalMcpStatus(Guid pluginId);
 
+    /// <summary>The read-write folders of every saved sandboxed server; Pia runs no uv from under one.</summary>
+    IReadOnlyList<string> GetSandboxedReadwriteFolders();
+
     /// <summary>Starts the server, lists its tools and shuts it back down, without touching the catalogue.</summary>
     Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default);
 

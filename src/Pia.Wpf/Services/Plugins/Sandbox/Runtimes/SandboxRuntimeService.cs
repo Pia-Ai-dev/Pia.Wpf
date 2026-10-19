@@ -21,14 +21,14 @@ public sealed class SandboxRuntimeService(
     public bool CanGrantMachineWide => elevation.IsElevated;
 
     public async Task<RuntimeDetection> DetectAsync(string command, IReadOnlyList<string> args, string? workingDirectory,
-        string toolPrefix, CancellationToken cancellationToken)
+        string toolPrefix, IReadOnlyList<string> sandboxedReadwriteFolders, CancellationToken cancellationToken)
     {
         var parse = RunnerCommandParser.Parse(command, args, workingDirectory);
         if (parse.Refusal != RunnerRefusal.None || parse.Kind == RunnerKind.None || parse.Runner is not { } runner)
             return new RuntimeDetection(parse, null, null, false);
 
-        // The policy's own folders are judged at start; the sandbox root is the same for every server.
-        var request = runner with { WritableFolders = [PiaPaths.McpSandboxRoot] };
+        // The edited policy's folders are judged at start; the saved servers' folders and the sandbox root count already.
+        var request = runner with { WritableFolders = [.. sandboxedReadwriteFolders, PiaPaths.McpSandboxRoot] };
         var resolution = await Task.Run(() => detector.Detect(request, cancellationToken), cancellationToken);
         var prefix = string.IsNullOrWhiteSpace(toolPrefix) ? BlankNamePrefix : toolPrefix;
         return new RuntimeDetection(parse, resolution, PiaPaths.McpRuntimeStateDirectory(prefix), parse.Kind == RunnerKind.Uvx);

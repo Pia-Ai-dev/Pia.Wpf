@@ -22,6 +22,7 @@ public static class McpServerProbe
         LocalMcpDefinition definition,
         IMcpTransportFactory transportFactory,
         TimeSpan? timeout = null,
+        IReadOnlyList<string>? sandboxedReadwriteFolders = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(definition.Command))
@@ -43,7 +44,8 @@ public static class McpServerProbe
                 definition.WorkingDirectory,
                 definition.Sandbox,
                 definition.ToolPrefix,
-                IsProbe: true)), timeoutSource.Token);
+                IsProbe: true,
+                SandboxedReadwriteFolders: sandboxedReadwriteFolders)), timeoutSource.Token);
 
             client = await McpClient.CreateAsync(transport, cancellationToken: timeoutSource.Token);
             var tools = await client.ListToolsAsync(cancellationToken: timeoutSource.Token);

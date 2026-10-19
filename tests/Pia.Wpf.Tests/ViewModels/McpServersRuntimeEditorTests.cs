@@ -125,7 +125,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
 
     private static Task<RuntimeDetection> AnyDetect(ISandboxRuntimeService runtime) =>
         runtime.DetectAsync(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string?>(), Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
+            Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
 
     private static string StateFolder(string prefix) => PiaPaths.McpRuntimeStateDirectory(prefix);
 
@@ -262,6 +262,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
             Arg.Is<IReadOnlyList<string>>(a => a.SequenceEqual(new[] { "/c", "npx", "-y", "@modelcontextprotocol/server-everything" })),
             null,
             "everything",
+            Arg.Any<IReadOnlyList<string>>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -279,11 +280,13 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
 
         vm.EditArguments = NpxArgs;
         _ = runtime.Received(1).DetectAsync(
-            "npx", Arg.Is<IReadOnlyList<string>>(a => a.Count == 2), null, "everything", Arg.Any<CancellationToken>());
+            "npx", Arg.Is<IReadOnlyList<string>>(a => a.Count == 2), null, "everything", Arg.Any<IReadOnlyList<string>>(),
+            Arg.Any<CancellationToken>());
 
         vm.EditWorkingDirectory = @" C:\Work ";
         _ = runtime.Received(1).DetectAsync(
-            "npx", Arg.Any<IReadOnlyList<string>>(), @"C:\Work", "everything", Arg.Any<CancellationToken>());
+            "npx", Arg.Any<IReadOnlyList<string>>(), @"C:\Work", "everything", Arg.Any<IReadOnlyList<string>>(),
+            Arg.Any<CancellationToken>());
 
         _ = AnyDetect(runtime.Received(3));
         WaitFor(() => vm.RuntimeOutcomeValue == RuntimeOutcome.Ready);
@@ -382,7 +385,24 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         vm.EditSelectedCommand.Execute(null);
 
         WaitFor(() => vm.RuntimeOutcomeValue == RuntimeOutcome.Ready);
-        _ = runtime.Received().DetectAsync("npx", Arg.Any<IReadOnlyList<string>>(), null, "files", Arg.Any<CancellationToken>());
+        _ = runtime.Received().DetectAsync(
+            "npx", Arg.Any<IReadOnlyList<string>>(), null, "files", Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    // A uv another sandboxed server can replace would run outside the sandbox, so the editor judges it as the start does.
+    [Fact]
+    public void Detection_HearsTheReadwriteFoldersOfEverySavedSandboxedServer()
+    {
+        var (vm, plugins, runtime, _, _, _, _) = Create();
+        plugins.GetSandboxedReadwriteFolders().Returns([@"D:\tools", @"E:\shared"]);
+
+        NewServer(vm, @"D:\tools\uv\uvx.exe", "mcp-server-time", name: "Time");
+
+        WaitFor(() => vm.RuntimeOutcomeValue == RuntimeOutcome.Ready);
+        _ = runtime.Received().DetectAsync(
+            Arg.Is(@"D:\tools\uv\uvx.exe"), Arg.Any<IReadOnlyList<string>>(), Arg.Any<string?>(), Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<string>>(folders => folders.SequenceEqual(new[] { @"D:\tools", @"E:\shared" })),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -798,7 +818,8 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
 
         Assert.Equal([Path.Combine(PiaPaths.McpSandboxRoot, "github_2")], vm.EditReadwritePaths);
         Assert.Equal($"McpServers_Sandbox_Runtime_StateFolder:{StateFolder("github_2")}", vm.RuntimeStateFolderText);
-        _ = runtime.Received().DetectAsync("npx", Arg.Any<IReadOnlyList<string>>(), null, "github_2", Arg.Any<CancellationToken>());
+        _ = runtime.Received().DetectAsync(
+            "npx", Arg.Any<IReadOnlyList<string>>(), null, "github_2", Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
         plugins.Received().PreviewLocalMcpToolPrefix(null, "GitHub");
 
         await vm.TestConnectionCommand.ExecuteAsync(null);
