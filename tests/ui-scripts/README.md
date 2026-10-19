@@ -292,11 +292,13 @@ fixture must stay **outside** the profile roots, because the path guard refuses 
   `toolchain\node-user`, and without the switch the file clears the variable. `-DryRun` writes and prints
   the launch and starts nothing.
 - **Elevated launch.** `Launch -Elevated` starts the Debug exe straight from the elevated shell with the same
-  variables, against `profile-elevated\` (seeded once from the fixture; sign in there once more). Files an
-  elevated Pia creates are read-only to the de-elevated user later, so the two launch modes never share a
-  profile. `Status` then reports `elevated=True` and skips the medium-IL check for that launch only; a
-  normal launch that ends up elevated still warns. `Status`, `EndSession` and `ResetSandboxRoot` cover both
-  profiles, and the logs are read from the profile of the last launch.
+  variables, against `profile-elevated\` (seeded once from the fixture; sign in there once more). It starts
+  it through ShellExecute, which hands Pia none of the shell's handles, so a caller that pipes the output
+  gets it back at once, not when Pia exits. The variables are set on the harness process for that start
+  and put back after it. Files an elevated Pia creates are read-only to the de-elevated user later, so the
+  two launch modes never share a profile. `Status` then reports `elevated=True` and skips the medium-IL
+  check for that launch only; a normal launch that ends up elevated still warns. `Status`, `EndSession` and
+  `ResetSandboxRoot` cover both profiles, and the logs are read from the profile of the last launch.
 - **Toolchains.** `StageToolchain` resolves the newest Node LTS from `nodejs.org/dist/index.json`, checks the
   zip against `SHASUMS256.txt` and extracts it with the Windows `tar` into `toolchain\node-user`, owned by
   your user. `toolchain\node-admin` is a copy in the shape of the Node MSI's install: `icacls /setowner
@@ -361,6 +363,14 @@ fixture must stay **outside** the profile roots, because the path guard refuses 
   WRITE_DAC, and its `S-1-15-2-1` entry; each `.runtime` folder's entry count and size; and every grant
   record under `local\McpSandboxGrants` with its roots. No walk follows a junction or symlink, so a link a
   contained server planted never leads it out of the tree. `EndSession` checks the same ACE roots.
+- **Active or leaked.** An explicit ACE is `active` while Pia from the last launch runs and a process whose
+  token is in that ACE's AppContainer is alive. Any other explicit ACE is a `LEAK`. Each ACE line names its
+  `pia-mcp-<prefix>` container, so two running servers can be told apart. The name comes from the
+  AppContainer Mappings, or is derived from the container profile, grant record and server folder names, so
+  a leak still shows whose it was after Pia deleted the container. The helper processes are the ones in a
+  `pia-mcp-*` AppContainer, wherever their exe lives (a dnx server runs `C:\Program Files\dotnet\dotnet.exe`),
+  plus `plm`, `wxc-wslc-daemon` and anything run from under the artifacts root. The containers of the
+  real-container unit tests (`pia-mcp-test-*`) are not counted.
 - **Grant roots outside the tree.** A grant record can name a root outside `artifacts\mxc-sandbox-e2e` —
   after a bare `Launch`, Pia grants the host's own toolchain, such as `%LOCALAPPDATA%\Programs\nodejs` —
   and removing the server deletes the record. So `Launch`, `Status` and `EndSession` copy every record's
