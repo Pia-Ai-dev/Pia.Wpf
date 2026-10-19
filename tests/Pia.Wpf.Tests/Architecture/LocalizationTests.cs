@@ -574,17 +574,38 @@ public class LocalizationTests
     {
         var keys = Enum.GetValues<RuntimeIssue>()
             .Where(issue => issue != RuntimeIssue.None)
-            .Select(issue => SandboxRuntimeKeys.ForIssue(issue)!)
+            .Select(issue => SandboxRuntimeKeys.ForIssue(issue, offersFix: false)!)
             .Distinct()
             .ToList();
 
-        Assert.Null(SandboxRuntimeKeys.ForIssue(RuntimeIssue.None));
+        Assert.Null(SandboxRuntimeKeys.ForIssue(RuntimeIssue.None, offersFix: false));
         Assert.True(keys.Count >= 13, $"non-vacuity: expected at least 13 distinct runtime-issue keys, found {keys.Count}");
         Assert.Equal(Enum.GetValues<RuntimeIssue>().Length - 1, keys.Count);
 
         var missing = MissingFromAnyLocale(ViewStrings.ResourceManager, keys);
         Assert.True(missing.Count == 0,
             $"every runtime-issue key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>Only an admin-owned runtime's reason changes once the fix button shows.</summary>
+    [Fact]
+    public void EveryAdminOwnedRuntimeIssueHasAnElevatedKeyInAllThreeLocales()
+    {
+        var issues = Enum.GetValues<RuntimeIssue>().Where(issue => issue != RuntimeIssue.None).ToList();
+        var adminOwned = issues.Where(issue => issue.ToString().EndsWith("AdminOwned", StringComparison.Ordinal)).ToList();
+
+        Assert.Null(SandboxRuntimeKeys.ForIssue(RuntimeIssue.None, offersFix: true));
+        Assert.True(adminOwned.Count >= 2, $"non-vacuity: expected at least 2 admin-owned issues, found {adminOwned.Count}");
+        foreach (var issue in issues)
+        {
+            var plain = SandboxRuntimeKeys.ForIssue(issue, offersFix: false);
+            Assert.Equal(adminOwned.Contains(issue) ? $"{plain}_Elevated" : plain, SandboxRuntimeKeys.ForIssue(issue, offersFix: true));
+        }
+
+        var missing = MissingFromAnyLocale(ViewStrings.ResourceManager,
+            adminOwned.Select(issue => SandboxRuntimeKeys.ForIssue(issue, offersFix: true)!).ToList());
+        Assert.True(missing.Count == 0,
+            $"every elevated runtime-issue key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
     /// <summary>The runner key comes from a helper, so this file's literal-key regexes cannot see it.</summary>
@@ -711,6 +732,8 @@ public class LocalizationTests
     [InlineData("McpServers_Sandbox_Runtime_Guide_DotnetRuntime", 1)]
     [InlineData("McpServers_Sandbox_Runtime_Guide_Dotnet", 0)]
     [InlineData("McpServers_Sandbox_Runtime_Issue_UvInWritableFolder", 0)]
+    [InlineData("McpServers_Sandbox_Runtime_Issue_NodeAdminOwned_Elevated", 0)]
+    [InlineData("McpServers_Sandbox_Runtime_Issue_DotnetAdminOwned_Elevated", 0)]
     [InlineData("McpServers_Sandbox_Runtime_CheckFailed", 0)]
     [InlineData("McpServers_Detail_SandboxRuntime", 2)]
     public void ASandboxRuntimeKeyCarriesTheSamePlaceholdersInEveryLocale(string key, int expected)

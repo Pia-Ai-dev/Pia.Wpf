@@ -467,7 +467,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         Assert.Equal($"McpServers_Sandbox_Runtime_FixText:{AdminRoot}", vm.RuntimeFixText);
         Assert.True(vm.GrantRuntimeReadCommand.CanExecute(null));
         Assert.False(vm.ShowRuntimeGuide);
-        Assert.Equal("McpServers_Sandbox_Runtime_Issue_NodeAdminOwned", vm.RuntimeReason);
+        Assert.Equal("McpServers_Sandbox_Runtime_Issue_NodeAdminOwned_Elevated", vm.RuntimeReason);
         Assert.NotNull(vm.RuntimeSummary);
     }
 
@@ -486,6 +486,29 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         Assert.False(vm.GrantRuntimeReadCommand.CanExecute(null));
         Assert.True(vm.ShowRuntimeGuide);
         Assert.Equal(RuntimeInstallGuides.GuideFor(RuntimeFamily.Node).Command, vm.RuntimeGuideCommand);
+        Assert.Equal("McpServers_Sandbox_Runtime_Issue_NodeAdminOwned", vm.RuntimeReason);
+    }
+
+    [Theory]
+    [InlineData(RuntimeIssue.NodeAdminOwned, true)]
+    [InlineData(RuntimeIssue.NodeAdminOwned, false)]
+    [InlineData(RuntimeIssue.DotnetAdminOwned, true)]
+    [InlineData(RuntimeIssue.DotnetAdminOwned, false)]
+    public void AnAdminOwnedRuntimesReason_AsksForElevation_OnlyWhenPiaIsNotElevated(RuntimeIssue issue, bool elevated)
+    {
+        var (kind, command, arguments, install) = issue == RuntimeIssue.NodeAdminOwned
+            ? (RunnerKind.Npx, "npx", NpxArgs, Node(AdminRoot, adminOwned: true))
+            : (RunnerKind.Dnx, "dnx", "Contoso.Mcp", new RuntimeInstall(RuntimeFamily.Dotnet, @"C:\Program Files\dotnet",
+                @"C:\Program Files\dotnet\dotnet.exe", "10.0.100", null, null, ReadableAlready: false, AdminOwned: true));
+        var (vm, _, _, _, _, _, _) = Create(Detection(kind, RuntimeOutcome.NeedsAdminFix, issue, install), elevated: elevated);
+
+        NewServer(vm, command, arguments);
+
+        WaitFor(() => vm.RuntimeOutcomeValue == RuntimeOutcome.NeedsAdminFix);
+        Assert.Equal(elevated, vm.ShowRuntimeFix);
+        Assert.Equal(
+            elevated ? $"McpServers_Sandbox_Runtime_Issue_{issue}_Elevated" : $"McpServers_Sandbox_Runtime_Issue_{issue}",
+            vm.RuntimeReason);
     }
 
     [Theory]
