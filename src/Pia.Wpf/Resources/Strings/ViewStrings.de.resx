@@ -1753,6 +1753,21 @@
   <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Halte sie getrennt von den Ordnern mit Schreibzugriff: Ein Ordner darin wäre ebenfalls beschreibbar.</value></data>
   <data name="McpServers_Sandbox_FolderCreatedHint" xml:space="preserve"><value>Pia legt hier einen Ordner an, wenn der Server startet und er noch nicht existiert.</value></data>
   <data name="McpServers_Sandbox_GuardLead" xml:space="preserve"><value>Dieser Server startet nicht, bis das behoben ist:</value></data>
+  <data name="McpServers_Sandbox_Guard_NotRooted" xml:space="preserve"><value>Gib den vollständigen Pfad des Ordners an, zum Beispiel C:\Users\du\Documents\Referenz.</value></data>
+  <data name="McpServers_Sandbox_Guard_UncPath" xml:space="preserve"><value>Netzwerkordner können noch nicht für die Sandbox freigegeben werden. Verwende einen Ordner auf diesem PC.</value></data>
+  <data name="McpServers_Sandbox_Guard_Missing" xml:space="preserve"><value>Dieser Ordner existiert nicht.</value></data>
+  <data name="McpServers_Sandbox_Guard_SystemFolder" xml:space="preserve"><value>Windows und Program Files können nicht für eine Sandbox freigegeben werden.</value></data>
+  <data name="McpServers_Sandbox_Guard_ProfileOrAncestor" xml:space="preserve"><value>Dieser Ordner enthält dein ganzes Benutzerprofil. Wähle einen Ordner darin.</value></data>
+  <data name="McpServers_Sandbox_Guard_PiaDataFolder" xml:space="preserve"><value>Dieser Ordner enthält Pias eigene Daten. Wähle einen anderen Ordner.</value></data>
+  <data name="McpServers_Sandbox_Guard_SandboxRootItself" xml:space="preserve"><value>Dieser Ordner enthält die Daten aller Server in der Sandbox. Wähle einen Ordner darin.</value></data>
+  <data name="McpServers_Sandbox_Guard_ReadonlyInsideReadwrite" xml:space="preserve"><value>Dieser Ordner nur mit Lesezugriff liegt in einem Ordner mit Lese- und Schreibzugriff und wäre damit beschreibbar. Verschiebe ihn dort heraus oder entferne ihn.</value></data>
+  <data name="McpServers_Sandbox_Guard_NestedReadwrite" xml:space="preserve"><value>Dieser Ordner ist schon durch einen anderen Ordner mit Lese- und Schreibzugriff abgedeckt. Behalte nur einen davon.</value></data>
+  <data name="McpServers_Sandbox_Guard_CommandFolderTooWide" xml:space="preserve"><value>Lege den Server in einen eigenen Ordner: Pia müsste sonst diesen ganzen Ordner für ihn freigeben.</value></data>
+  <data name="McpServers_Sandbox_Guard_WideFolder" xml:space="preserve"><value>Gib stattdessen einen Unterordner frei: Pia müsste sonst die Berechtigungen von allem in diesem Ordner ändern.</value></data>
+  <data name="McpServers_Sandbox_Guard_TooManyFiles" xml:space="preserve"><value>Dieser Ordner enthält zu viele Dateien, um ihn für einen Server in der Sandbox freizugeben. Wähle einen kleineren Unterordner.</value></data>
+  <data name="McpServers_Sandbox_Guard_CommandFolderTooLarge" xml:space="preserve"><value>Der Ordner des Servers enthält zu viele Dateien, um ihn für einen Server in der Sandbox freizugeben. Lege den Server in einen kleineren Ordner.</value></data>
+  <data name="McpServers_Sandbox_Guard_ManagedRuntimeFolder" xml:space="preserve"><value>Pia verwaltet diesen Ordner für die Laufzeitumgebung eines Servers. Wähle einen anderen Ordner.</value></data>
+  <data name="McpServers_Sandbox_Guard_HostProgramFolder" xml:space="preserve"><value>Dieser Ordner enthält Programme, die außerhalb der Sandbox laufen (ein Ordner in deinem PATH oder einer, aus dem Pia uv startet). Ein Server in der Sandbox darf ihn deshalb nicht ändern. Gib ihn nur mit Lesezugriff frei oder wähle einen anderen Ordner.</value></data>
   <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Vollständiger Pfad eines vorhandenen Ordners</value></data>
   <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Hinzufügen</value></data>
   <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Durchsuchen …</value></data>

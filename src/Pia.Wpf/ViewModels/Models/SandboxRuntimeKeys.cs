@@ -1,3 +1,4 @@
+using Pia.Services.Plugins.Sandbox;
 using Pia.Services.Plugins.Sandbox.Runtimes;
 
 namespace Pia.ViewModels.Models;
@@ -37,4 +38,6 @@ public static class SandboxRuntimeKeys
 
     public static string? ForGrantFailure(MachineWideGrantFailure failure) =>
         failure == MachineWideGrantFailure.None ? null : $"McpServers_Sandbox_Runtime_FixFailed_{failure}";
+
+    public static string ForPathIssue(SandboxPathIssueKind kind) => $"McpServers_Sandbox_Guard_{kind}";
 }

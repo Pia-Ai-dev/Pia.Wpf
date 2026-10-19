@@ -10,6 +10,7 @@ using Pia.Resources.Strings;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.Operators;
+using Pia.Services.Plugins.Sandbox;
 using Pia.Services.Plugins.Sandbox.Runtimes;
 using Pia.Services.Screen;
 using Pia.Shared.Operators;
@@ -585,6 +586,20 @@ public class LocalizationTests
         var missing = MissingFromAnyLocale(ViewStrings.ResourceManager, keys);
         Assert.True(missing.Count == 0,
             $"every runtime-issue key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>The editor shows every path-guard issue under a localized lead line, so each kind needs its own text.</summary>
+    [Fact]
+    public void EveryPathIssueKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<SandboxPathIssueKind>().Select(SandboxRuntimeKeys.ForPathIssue).Distinct().ToList();
+
+        Assert.True(keys.Count >= 15, $"non-vacuity: expected at least 15 distinct path-issue keys, found {keys.Count}");
+        Assert.Equal(Enum.GetValues<SandboxPathIssueKind>().Length, keys.Count);
+
+        var missing = MissingFromAnyLocale(ViewStrings.ResourceManager, keys);
+        Assert.True(missing.Count == 0,
+            $"every path-issue key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
     /// <summary>Only an admin-owned runtime's reason changes once the fix button shows.</summary>

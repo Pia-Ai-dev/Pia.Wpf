@@ -1753,6 +1753,21 @@
   <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Gardez-les séparés des dossiers en écriture : un dossier situé dans l'un d'eux serait aussi modifiable.</value></data>
   <data name="McpServers_Sandbox_FolderCreatedHint" xml:space="preserve"><value>Pia crée un dossier ici au démarrage du serveur s'il n'existe pas encore.</value></data>
   <data name="McpServers_Sandbox_GuardLead" xml:space="preserve"><value>Ce serveur ne démarrera pas tant que ceci n'est pas corrigé :</value></data>
+  <data name="McpServers_Sandbox_Guard_NotRooted" xml:space="preserve"><value>Indiquez le chemin complet du dossier, par exemple C:\Users\vous\Documents\Référence.</value></data>
+  <data name="McpServers_Sandbox_Guard_UncPath" xml:space="preserve"><value>Les dossiers réseau ne peuvent pas encore être partagés avec le bac à sable. Utilisez un dossier de ce PC.</value></data>
+  <data name="McpServers_Sandbox_Guard_Missing" xml:space="preserve"><value>Ce dossier n'existe pas.</value></data>
+  <data name="McpServers_Sandbox_Guard_SystemFolder" xml:space="preserve"><value>Windows et Program Files ne peuvent pas être partagés avec un bac à sable.</value></data>
+  <data name="McpServers_Sandbox_Guard_ProfileOrAncestor" xml:space="preserve"><value>Ce dossier contient tout votre profil utilisateur. Choisissez un dossier à l'intérieur.</value></data>
+  <data name="McpServers_Sandbox_Guard_PiaDataFolder" xml:space="preserve"><value>Ce dossier contient les données de Pia. Choisissez un autre dossier.</value></data>
+  <data name="McpServers_Sandbox_Guard_SandboxRootItself" xml:space="preserve"><value>Ce dossier contient les données de tous les serveurs en bac à sable. Choisissez un dossier à l'intérieur.</value></data>
+  <data name="McpServers_Sandbox_Guard_ReadonlyInsideReadwrite" xml:space="preserve"><value>Ce dossier en lecture seule se trouve dans un dossier en lecture et écriture : il serait donc modifiable. Sortez-le de ce dossier ou retirez-le.</value></data>
+  <data name="McpServers_Sandbox_Guard_NestedReadwrite" xml:space="preserve"><value>Ce dossier est déjà couvert par un autre dossier en lecture et écriture. N'en gardez qu'un.</value></data>
+  <data name="McpServers_Sandbox_Guard_CommandFolderTooWide" xml:space="preserve"><value>Placez le serveur dans un dossier dédié : sinon, Pia devrait partager tout ce dossier avec lui.</value></data>
+  <data name="McpServers_Sandbox_Guard_WideFolder" xml:space="preserve"><value>Partagez plutôt un sous-dossier : sinon, Pia devrait modifier les autorisations de tout le contenu de ce dossier.</value></data>
+  <data name="McpServers_Sandbox_Guard_TooManyFiles" xml:space="preserve"><value>Ce dossier contient trop de fichiers pour être partagé avec un serveur en bac à sable. Choisissez un sous-dossier plus petit.</value></data>
+  <data name="McpServers_Sandbox_Guard_CommandFolderTooLarge" xml:space="preserve"><value>Le dossier du serveur contient trop de fichiers pour être partagé avec un serveur en bac à sable. Placez le serveur dans un dossier plus petit.</value></data>
+  <data name="McpServers_Sandbox_Guard_ManagedRuntimeFolder" xml:space="preserve"><value>Pia gère ce dossier pour l'environnement d'exécution d'un serveur. Choisissez un autre dossier.</value></data>
+  <data name="McpServers_Sandbox_Guard_HostProgramFolder" xml:space="preserve"><value>Ce dossier contient des programmes qui s'exécutent hors du bac à sable (un dossier de votre PATH, ou un dossier depuis lequel Pia lance uv) : un serveur en bac à sable ne peut donc pas être autorisé à le modifier. Partagez-le en lecture seule ou choisissez un autre dossier.</value></data>
   <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Chemin complet d'un dossier existant</value></data>
   <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Ajouter</value></data>
   <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Parcourir…</value></data>

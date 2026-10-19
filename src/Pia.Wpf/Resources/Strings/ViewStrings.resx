@@ -1763,6 +1763,21 @@
   <data name="McpServers_Sandbox_ReadOnlyHint" xml:space="preserve"><value>Keep these apart from the read and write folders: a folder inside one of those would be writable too.</value></data>
   <data name="McpServers_Sandbox_FolderCreatedHint" xml:space="preserve"><value>Pia creates a folder here when the server starts if it does not exist yet.</value></data>
   <data name="McpServers_Sandbox_GuardLead" xml:space="preserve"><value>This server won't start until these are fixed:</value></data>
+  <data name="McpServers_Sandbox_Guard_NotRooted" xml:space="preserve"><value>Use the full path of the folder, for example C:\Users\you\Documents\Reference.</value></data>
+  <data name="McpServers_Sandbox_Guard_UncPath" xml:space="preserve"><value>Network folders can't be shared with the sandbox yet. Use a folder on this PC.</value></data>
+  <data name="McpServers_Sandbox_Guard_Missing" xml:space="preserve"><value>This folder does not exist.</value></data>
+  <data name="McpServers_Sandbox_Guard_SystemFolder" xml:space="preserve"><value>Windows and Program Files can't be shared with a sandbox.</value></data>
+  <data name="McpServers_Sandbox_Guard_ProfileOrAncestor" xml:space="preserve"><value>This folder contains your whole user profile. Choose a folder inside it.</value></data>
+  <data name="McpServers_Sandbox_Guard_PiaDataFolder" xml:space="preserve"><value>This folder holds Pia's own data. Choose a different folder.</value></data>
+  <data name="McpServers_Sandbox_Guard_SandboxRootItself" xml:space="preserve"><value>This folder holds the data of every sandboxed server. Choose a folder inside it.</value></data>
+  <data name="McpServers_Sandbox_Guard_ReadonlyInsideReadwrite" xml:space="preserve"><value>This read-only folder is inside a read-write folder, so it would be writable. Move it out or remove it.</value></data>
+  <data name="McpServers_Sandbox_Guard_NestedReadwrite" xml:space="preserve"><value>This folder is already covered by another read-write folder. Keep only one of them.</value></data>
+  <data name="McpServers_Sandbox_Guard_CommandFolderTooWide" xml:space="preserve"><value>Put the server in its own folder: Pia would have to share that whole folder with it.</value></data>
+  <data name="McpServers_Sandbox_Guard_WideFolder" xml:space="preserve"><value>Share a subfolder instead: Pia would have to change the permissions of everything in this folder.</value></data>
+  <data name="McpServers_Sandbox_Guard_TooManyFiles" xml:space="preserve"><value>This folder holds too many files to share with a sandboxed server. Pick a smaller subfolder.</value></data>
+  <data name="McpServers_Sandbox_Guard_CommandFolderTooLarge" xml:space="preserve"><value>The server's folder holds too many files to share with a sandboxed server. Put the server in a smaller folder.</value></data>
+  <data name="McpServers_Sandbox_Guard_ManagedRuntimeFolder" xml:space="preserve"><value>Pia manages this folder for a server's runtime. Choose a different folder.</value></data>
+  <data name="McpServers_Sandbox_Guard_HostProgramFolder" xml:space="preserve"><value>This folder holds programs that run outside the sandbox (a folder on your PATH, or one Pia runs uv from), so a sandboxed server can't be allowed to change it. Share it read-only or choose a different folder.</value></data>
   <data name="McpServers_Sandbox_PathPlaceholder" xml:space="preserve"><value>Full path of an existing folder</value></data>
   <data name="McpServers_Sandbox_Add" xml:space="preserve"><value>Add</value></data>
   <data name="McpServers_Sandbox_Browse" xml:space="preserve"><value>Browse…</value></data>

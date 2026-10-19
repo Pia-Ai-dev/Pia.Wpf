@@ -894,12 +894,14 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         });
     }
 
-    private static string? GuardMessageFor(McpSandboxPolicy? policy, string? command)
+    // The issue's own Message stays English: it is the start error's text.
+    private string? GuardMessageFor(McpSandboxPolicy? policy, string? command)
     {
         var issues = policy is null ? [] : SandboxPathGuard.Validate(policy, command);
         return issues.Count == 0
             ? null
-            : string.Join(Environment.NewLine, issues.Select(i => $"{i.Path}: {i.Message}"));
+            : string.Join(Environment.NewLine,
+                issues.Select(i => $"{i.Path}: {_localizationService[SandboxRuntimeKeys.ForPathIssue(i.Kind)]}"));
     }
 
     partial void OnSandboxStatusChanged(MxcAvailabilityStatus value)

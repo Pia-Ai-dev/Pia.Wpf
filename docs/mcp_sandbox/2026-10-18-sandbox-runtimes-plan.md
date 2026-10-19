@@ -943,7 +943,9 @@ Behaviour:
 - The editor's guard (`GuardMessageFor` and the debounced `UpdateSandboxGuardAfterTyping`) passes
   `SandboxPathGuard.Validate` the parse's effective command for `Kind None` and no command for a runner, as
   the factory does, so `cmd /c C:\Tools\s.exe` is judged the same way in the editor and at start. The detail
-  pane's `SelectedSandboxAlsoReadable` uses the effective command too.
+  pane's `SelectedSandboxAlsoReadable` uses the effective command too. Each issue shows as its path and the
+  localized text for its kind (`McpServers_Sandbox_Guard_<Kind>`); the issue's English `Message` stays the
+  text of the start error.
 - Step 2 shows when the outcome is `NeedsAdminFix`, an install was found and `CanGrantMachineWide`
   (`ShowRuntimeFix`). The admin-owned reason then uses its `_Elevated` text, which points at the button, so
   the text never names a button that is not there. Step 3 (the guide) shows for
@@ -996,9 +998,10 @@ the existing `McpServers_Sandbox_*` entries; commands are never translated. `Mcp
 is reworded and now serves `NonGoalLauncher` and `ScriptFile`.
 
 `ViewModels/Models/SandboxRuntimeKeys.cs` (static) maps `RunnerRefusal` (with the `UnsupportedForm` subject),
-`RuntimeIssue` and `RunnerKind` to keys. `LocalizationTests`' literal-key regexes cannot see those, so it gets
-`EveryRunnerRefusalKeyResolvesInAllThreeLocales`, `EveryRuntimeIssueKeyResolvesInAllThreeLocales` and
-`EveryRunnerKindKeyResolvesInAllThreeLocales`, shaped like `EveryRunStateLabelKeyResolvesInAllThreeLocales`,
+`RuntimeIssue`, `RunnerKind` and `SandboxPathIssueKind` to keys. `LocalizationTests`' literal-key regexes
+cannot see those, so it gets `EveryRunnerRefusalKeyResolvesInAllThreeLocales`,
+`EveryRuntimeIssueKeyResolvesInAllThreeLocales`, `EveryRunnerKindKeyResolvesInAllThreeLocales` and
+`EveryPathIssueKeyResolvesInAllThreeLocales`, shaped like `EveryRunStateLabelKeyResolvesInAllThreeLocales`,
 and a placeholder-parity theory `ASandboxRuntimeKeyCarriesTheSamePlaceholdersInEveryLocale` shaped like
 `ADiagnosticsKeyCarriesTheSamePlaceholdersInEveryLocale`, with one row per key that takes placeholders
 (Appendix C marks them). A de or fr text that drops `{2}` from `_FixConfirmMessage` would hide the removal
@@ -1665,6 +1668,31 @@ Reworded:
 - `McpServers_Sandbox_Reason_Shim`: "Pia can't sandbox servers started with pnpm, yarn, bun, deno, pipx or
   docker, or with .cmd, .bat or .ps1 scripts. npx, npm exec, uvx and dnx work; otherwise point the command at
   the server program itself."
+
+Path guard (`McpServers_Sandbox_Guard_<Kind>`, one per `SandboxPathIssueKind`; the same English text as the
+guard's `Message`):
+- `_NotRooted`: "Use the full path of the folder, for example C:\Users\you\Documents\Reference."
+- `_UncPath`: "Network folders can't be shared with the sandbox yet. Use a folder on this PC."
+- `_Missing`: "This folder does not exist."
+- `_SystemFolder`: "Windows and Program Files can't be shared with a sandbox."
+- `_ProfileOrAncestor`: "This folder contains your whole user profile. Choose a folder inside it."
+- `_PiaDataFolder`: "This folder holds Pia's own data. Choose a different folder."
+- `_SandboxRootItself`: "This folder holds the data of every sandboxed server. Choose a folder inside it."
+- `_ReadonlyInsideReadwrite`: "This read-only folder is inside a read-write folder, so it would be writable.
+  Move it out or remove it."
+- `_NestedReadwrite`: "This folder is already covered by another read-write folder. Keep only one of them."
+- `_CommandFolderTooWide`: "Put the server in its own folder: Pia would have to share that whole folder with
+  it."
+- `_WideFolder`: "Share a subfolder instead: Pia would have to change the permissions of everything in this
+  folder."
+- `_TooManyFiles`: "This folder holds too many files to share with a sandboxed server. Pick a smaller
+  subfolder."
+- `_CommandFolderTooLarge`: "The server's folder holds too many files to share with a sandboxed server. Put
+  the server in a smaller folder."
+- `_ManagedRuntimeFolder`: "Pia manages this folder for a server's runtime. Choose a different folder."
+- `_HostProgramFolder`: "This folder holds programs that run outside the sandbox (a folder on your PATH, or
+  one Pia runs uv from), so a sandboxed server can't be allowed to change it. Share it read-only or choose a
+  different folder."
 
 Refusals:
 - `McpServers_Sandbox_Reason_CmdNotSystem`: "Pia can't sandbox this server: 'cmd' must be the Windows command

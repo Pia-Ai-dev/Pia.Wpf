@@ -793,7 +793,7 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
             vm.AddReadonlyPathCommand.Execute(null);
 
             Assert.NotNull(vm.SandboxGuardMessage);
-            Assert.Contains(inner, vm.SandboxGuardMessage);
+            Assert.Contains($"{inner}: McpServers_Sandbox_Guard_ReadonlyInsideReadwrite", vm.SandboxGuardMessage);
 
             vm.RemoveReadonlyPathCommand.Execute(inner);
 
@@ -805,16 +805,16 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
         }
     }
 
+    // The echoing localizer shows that the text comes from the issue kind's key, not the guard's English message.
     [Fact]
-    public void AMissingReadOnlyFolder_IsFlaggedWithItsPath()
+    public void AMissingReadOnlyFolder_IsFlaggedWithItsPath_InTheLocalizedText()
     {
         var missing = Path.Combine(Path.GetTempPath(), "pia-missing-" + Guid.NewGuid().ToString("N"));
         var (vm, _, _, _) = Create(Stored(new McpSandboxPolicy([], [missing], false)));
 
         vm.EditSelectedCommand.Execute(null);
 
-        Assert.NotNull(vm.SandboxGuardMessage);
-        Assert.Contains(missing, vm.SandboxGuardMessage);
+        Assert.Equal($"{missing}: McpServers_Sandbox_Guard_Missing", vm.SandboxGuardMessage);
     }
 
     [Fact]
@@ -828,8 +828,7 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
         Assert.Null(vm.SandboxGuardMessage);
 
         vm.EditSandboxEnabled = true;
-        Assert.NotNull(vm.SandboxGuardMessage);
-        Assert.Contains(@"relative\folder", vm.SandboxGuardMessage);
+        Assert.Equal(@"relative\folder: McpServers_Sandbox_Guard_NotRooted", vm.SandboxGuardMessage);
 
         vm.EditSandboxEnabled = false;
         Assert.Null(vm.SandboxGuardMessage);
@@ -903,7 +902,7 @@ public sealed class McpServersSandboxEditorTests : IClassFixture<RedirectedProfi
             vm.EditCommand = program;
 
             Assert.True(SpinWait.SpinUntil(() => vm.SandboxGuardMessage is not null, TimeSpan.FromSeconds(10)));
-            Assert.Contains("its own folder", vm.SandboxGuardMessage);
+            Assert.Contains("McpServers_Sandbox_Guard_CommandFolderTooWide", vm.SandboxGuardMessage);
         }
         finally
         {

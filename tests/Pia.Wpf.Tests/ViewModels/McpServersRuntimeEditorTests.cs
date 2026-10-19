@@ -836,7 +836,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
 
             Assert.False(vm.IsRunnerCommand);
             WaitFor(() => vm.SandboxGuardMessage is not null);
-            Assert.Contains("its own folder", vm.SandboxGuardMessage);
+            Assert.Contains("McpServers_Sandbox_Guard_CommandFolderTooWide", vm.SandboxGuardMessage);
             _ = AnyDetect(runtime.DidNotReceive());
         }
         finally
@@ -869,7 +869,7 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
             vm.EditSandboxEnabled = true;
 
             Assert.False(vm.IsRunnerCommand);
-            Assert.Contains("its own folder", vm.SandboxGuardMessage);
+            Assert.Contains("McpServers_Sandbox_Guard_CommandFolderTooWide", vm.SandboxGuardMessage);
         }
         finally
         {
