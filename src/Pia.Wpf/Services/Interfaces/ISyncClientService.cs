@@ -47,10 +47,11 @@ public interface ISyncClientService
     event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
 
     /// <summary>
-    /// Raised when the current device is no longer in the server's device list
-    /// (or has been revoked). Subscribers should disable E2EE locally.
+    /// Raised when the server no longer accepts this device: its row says Revoked, or it is gone
+    /// (deleted or expired) — <see cref="CurrentDeviceRevokedEventArgs.WasRevoked"/> tells the two apart.
+    /// Background sync is already stopped when it fires. Subscribers should forget the local UMK.
     /// </summary>
-    event EventHandler? CurrentDeviceRevoked;
+    event EventHandler<CurrentDeviceRevokedEventArgs>? CurrentDeviceRevoked;
 
     /// <summary>
     /// Raised once after a successful pull cycle, regardless of whether anything

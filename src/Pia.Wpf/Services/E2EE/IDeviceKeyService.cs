@@ -50,4 +50,10 @@ public interface IDeviceKeyService
     /// Check if device keys exist (have been initialized).
     /// </summary>
     bool HasDeviceKeys();
+
+    /// <summary>
+    /// True when this device holds a stored account key but its CNG device keys were gone and had
+    /// to be recreated under the same device id — old wrapped copies can no longer be opened here.
+    /// </summary>
+    bool KeyLossDetected { get; }
 }

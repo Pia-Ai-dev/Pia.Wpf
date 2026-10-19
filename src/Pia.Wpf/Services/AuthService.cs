@@ -51,6 +51,8 @@ public class AuthService : IAuthService
 
     public event EventHandler<bool>? LoginStateChanged;
 
+    public event EventHandler<AuthSignedOutEventArgs>? SignedOutUnexpectedly;
+
     public AuthService(
         ISettingsService settingsService,
         DpapiHelper dpapiHelper,
@@ -373,22 +375,12 @@ public class AuthService : IAuthService
         settings.SyncDeviceId ??= Guid.NewGuid().ToString();
         // A marker surviving from an earlier connection would suppress this account's history upload.
         settings.AssistantChatsBackfilledAt = null;
-        ForgetE2EEKey(settings);
+        settings.ForgetE2EEKey();
         if (reportedMetadata)
             settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);
 
         LoginStateChanged?.Invoke(this, true);
-    }
-
-    // The key belongs to one account and records no owner, so it goes on sign-out and on every sign-in; the
-    // server keeps this device's wrapped copy, which the sign-in paths take back.
-    private static void ForgetE2EEKey(AppSettings settings)
-    {
-        settings.IsE2EEEnabled = false;
-        settings.E2EEEncryptedUmk = null;
-        settings.E2EEUmkVersion = 0;
-        settings.E2EERecoveryConfigured = false;
     }
 
     internal const string DeviceIdHeader = "X-Pia-Device-Id";
@@ -589,7 +581,9 @@ public class AuthService : IAuthService
             settings.LastChatPullETag = null;
             settings.LastPullETag = null;
             settings.ClientPolicyInitialized = false;
-            ForgetE2EEKey(settings);
+            // The key belongs to one account and records no owner, so it goes on sign-out and on every
+            // sign-in; the server keeps this device's wrapped copy, which the sign-in paths take back.
+            settings.ForgetE2EEKey();
             await _settingsService.SaveSettingsAsync(settings);
 
             // Sync stays off until the next login, so a kept group policy would go on being applied
@@ -612,6 +606,14 @@ public class AuthService : IAuthService
         {
             _logger.LogError(ex, "Logout failed");
         }
+    }
+
+    // Signs out through the normal path, then tells listeners why — LoginStateChanged alone
+    // cannot say that this was not the user's own doing.
+    private async Task SignOutUnexpectedlyAsync(AuthSignOutReason reason)
+    {
+        await LogoutAsync();
+        SignedOutUnexpectedly?.Invoke(this, new AuthSignedOutEventArgs(reason));
     }
 
     public async Task<string?> GetAccessTokenAsync(bool forceRefresh = false, string? staleAccessToken = null)
@@ -651,7 +653,13 @@ public class AuthService : IAuthService
 
             var refreshToken = DecryptRefreshToken();
             if (refreshToken is null)
+            {
+                // A session whose own token cannot be opened here can never be refreshed; signing out
+                // is the only way out of the logged-in-with-no-tokens state.
+                _logger.LogWarning("The stored session cannot be opened; signing out");
+                await SignOutUnexpectedlyAsync(AuthSignOutReason.LocalSessionUnusable);
                 return null;
+            }
 
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
@@ -668,11 +676,14 @@ public class AuthService : IAuthService
 
             if (!response.IsSuccessStatusCode)
             {
+                var status = (int)response.StatusCode;
                 _logger.LogWarning("Token refresh failed with status {Status}", response.StatusCode);
                 if (response.StatusCode == HttpStatusCode.Unauthorized)
-                {
-                    await LogoutAsync();
-                }
+                    await SignOutUnexpectedlyAsync(AuthSignOutReason.SessionExpired);
+                else if (status is not (408 or 429) && status < 500)
+                    // A 4xx that is not a transient limit will not pass on retry: end the session
+                    // instead of letting the app idle "signed in" with nothing to authenticate calls.
+                    await SignOutUnexpectedlyAsync(AuthSignOutReason.ServerRejectedSession);
                 return null;
             }
 
