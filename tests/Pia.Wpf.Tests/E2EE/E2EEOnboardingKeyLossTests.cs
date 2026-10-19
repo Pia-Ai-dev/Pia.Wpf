@@ -59,6 +59,55 @@ public class E2EEOnboardingKeyLossTests
         Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"], sut.ErrorMessage);
     }
 
+    [Fact]
+    public async Task Reset_DiscardsThePreviousRecoverySession()
+    {
+        _settingsService.GetSettingsAsync().Returns(new AppSettings());
+        _deviceMgmt.RegisterPendingDeviceAsync().Returns(
+            new DeviceRegistrationResponse { OnboardingSessionId = "old-session", ServerChallenge = "old" },
+            new DeviceRegistrationResponse { OnboardingSessionId = "new-session", ServerChallenge = "new" });
+        var sut = CreateSut();
+        sut.RecoveryCodeInput = "first-code";
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+        Assert.Equal(OnboardingState.Success, sut.State);
+
+        sut.Reset();
+        sut.RecoveryCodeInput = "second-code";
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ActivateViaRecoveryAsync("first-code", "old-session");
+        await _deviceMgmt.Received(1).ActivateViaRecoveryAsync("second-code", "new-session");
+        await _deviceMgmt.Received(2).RegisterPendingDeviceAsync();
+    }
+
+    [Fact]
+    public async Task KeyLossDuringApprovalPolling_RoutesToRecovery()
+    {
+        _deviceKeys.GetDeviceId().Returns("device-001");
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
+            (DeviceStatusResponse?)null,
+            new DeviceStatusResponse { DeviceId = "device-001", Status = DeviceStatus.Active });
+        _deviceMgmt.RegisterPendingDeviceAsync().Returns(
+            new DeviceRegistrationResponse { OnboardingSessionId = "session", ServerChallenge = "challenge" });
+        _deviceMgmt.FetchKeyHandoverAsync().ThrowsAsync(new DeviceKeyLostException());
+        var reachedRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sut = new E2EEOnboardingViewModel(
+            _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _syncService, _settingsService,
+            NullLogger<E2EEOnboardingViewModel>.Instance, pollIntervalOverride: TimeSpan.FromMilliseconds(1));
+        sut.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(sut.State) && sut.State == OnboardingState.EnteringRecoveryCode)
+                reachedRecovery.TrySetResult();
+        };
+
+        await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
+        await reachedRecovery.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_KeyLost"], sut.ErrorMessage);
+        await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());
+        sut.Cleanup();
+    }
+
     private void AnApprovedDeviceWhoseCopyWillNotOpen(bool keyLost)
     {
         _deviceKeys.GetDeviceId().Returns("device-001");

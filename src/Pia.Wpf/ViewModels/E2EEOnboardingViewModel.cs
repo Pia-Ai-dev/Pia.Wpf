@@ -89,6 +89,11 @@ public partial class E2EEOnboardingViewModel : ObservableObject
 
             handover = await _deviceMgmt.FetchKeyHandoverAsync();
         }
+        catch (DeviceKeyLostException)
+        {
+            RouteKeyLossToRecovery(confirmed: true);
+            return true;
+        }
         catch (UnverifiedApprovalException)
         {
             ShowUnverifiedApproval();
@@ -298,11 +303,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         State = OnboardingState.Error;
     }
 
-    // The key was recreated after this device's CNG keys went missing, so no already-wrapped copy
-    // can open here; repeating the attempt only fails the same way. The recovery flow re-registers.
-    private bool RouteKeyLossToRecovery()
+    // Recovery re-registers the device before replacing a copy wrapped for its lost keys.
+    private bool RouteKeyLossToRecovery(bool confirmed = false)
     {
-        if (!_deviceKeys.KeyLossDetected)
+        if (!confirmed && !_deviceKeys.KeyLossDetected)
             return false;
 
         _logger.LogWarning("This device's E2EE keys were lost; routing onboarding to recovery");
@@ -365,6 +369,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                 try
                 {
                     var status = await _deviceMgmt.GetDeviceStatusAsync(deviceId);
+                    ct.ThrowIfCancellationRequested();
                     _consecutivePollErrors = 0; // Reset on success
 
                     if (status is null)
@@ -395,6 +400,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         try
                         {
                             handover = await _deviceMgmt.FetchKeyHandoverAsync();
+                            ct.ThrowIfCancellationRequested();
                         }
                         catch (UnverifiedApprovalException)
                         {
@@ -405,6 +411,11 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         await OfferHandoverAsync(handover);
                         return;
                     }
+                }
+                catch (DeviceKeyLostException)
+                {
+                    RouteKeyLossToRecovery(confirmed: true);
+                    return;
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception pollEx)
@@ -458,5 +469,17 @@ public partial class E2EEOnboardingViewModel : ObservableObject
     public void Cleanup()
     {
         StopPolling();
+    }
+
+    public void Reset()
+    {
+        StopPolling();
+        ForgetPendingHandover();
+        _onboardingSessionId = null;
+        RecoveryCodeInput = "";
+        DeviceFingerprint = "";
+        StatusMessage = "";
+        ErrorMessage = null;
+        State = OnboardingState.Initial;
     }
 }

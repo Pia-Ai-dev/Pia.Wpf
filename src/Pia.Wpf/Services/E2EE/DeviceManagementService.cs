@@ -256,6 +256,14 @@ public class DeviceManagementService : IDeviceManagementService
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
         var devices = await GetDevicesAsync();
+        var registered = devices.Devices.FirstOrDefault(d => d.DeviceId == deviceId);
+        if (registered is not null
+            && (registered.AgreementPublicKey != _deviceKeys.GetAgreementPublicKey()
+                || registered.SigningPublicKey != _deviceKeys.GetSigningPublicKey()))
+        {
+            throw new DeviceKeyLostException();
+        }
+
         if (wrappedBlob.CreatedByDeviceId == deviceId)
             return new KeyHandover(wrappedBlob, _deviceKeys.GetAgreementPublicKey(), devices.UmkVersion, null, null);
 

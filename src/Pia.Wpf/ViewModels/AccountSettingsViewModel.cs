@@ -30,6 +30,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private readonly IFileDialogService _fileDialogs;
     private readonly ICreditStatusService _creditStatus;
     private int _creditsGeneration;
+    private CurrentDeviceRevokedEventArgs? _lastDeviceRevocationNotice;
 
     /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
     public PolicyLock Policy { get; }
@@ -144,44 +145,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger));
         };
 
-        _syncClientService.CurrentDeviceRevoked += (_, e) =>
-        {
-            Post(async () =>
-            {
-                // Sync is already stopped by the service. The key would only open ciphertext this
-                // device can no longer receive, so it goes with it.
-                _isLoading = true;
-                IsE2EEEnabled = false;
-                DeviceFingerprint = string.Empty;
-                _isLoading = false;
-
-                var settings = await _settingsService.GetSettingsAsync();
-                settings.ForgetE2EEKey();
-                await _settingsService.SaveSettingsAsync(settings);
-                // Reads the now-empty persisted key, which drops the in-memory copy too.
-                _deviceManagement.IsInitialized();
-
-                var title = _localizationService["Settings_E2EE_Gone_Title"];
-                var message = _localizationService[e.WasRevoked
-                    ? "Settings_E2EE_Gone_Revoked"
-                    : "Settings_E2EE_Gone_Missing"];
-                var choice = await _dialogService.ShowChoiceDialogAsync(
-                    title,
-                    message,
-                    _localizationService["Settings_E2EE_Gone_SetUpAgain"],
-                    _localizationService["Settings_E2EE_Gone_SignOut"]);
-
-                if (choice == DialogChoice.Primary)
-                {
-                    IsE2EEOnboardingRequired = true;
-                    _syncClientService.NotifyE2EEOnboardingRequired();
-                }
-                else if (choice == DialogChoice.Secondary)
-                {
-                    await SyncLogoutAsync();
-                }
-            });
-        };
+        _syncClientService.CurrentDeviceRevoked += OnCurrentDeviceRevoked;
 
         _authService.SignedOutUnexpectedly += (_, e) =>
         {
@@ -209,10 +173,47 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             return;
 
         _disposed = true;
+        _syncClientService.CurrentDeviceRevoked -= OnCurrentDeviceRevoked;
         _policyService.LocksChanged -= OnLocksChanged;
         _settingsService.SettingsChanged -= OnSettingsChanged;
         Policy.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    private void OnCurrentDeviceRevoked(object? sender, CurrentDeviceRevokedEventArgs e) =>
+        Post(() => HandleCurrentDeviceRevokedAsync(e).SafeFireAndForget(_logger));
+
+    private async Task HandleCurrentDeviceRevokedAsync(CurrentDeviceRevokedEventArgs notice)
+    {
+        if (_disposed || ReferenceEquals(_lastDeviceRevocationNotice, notice)
+            || !ReferenceEquals(_syncClientService.PendingDeviceRevocation, notice))
+            return;
+
+        _lastDeviceRevocationNotice = notice;
+        _isLoading = true;
+        IsE2EEEnabled = false;
+        DeviceFingerprint = string.Empty;
+        _isLoading = false;
+        OnboardingViewModel.Reset();
+
+        var choice = await _dialogService.ShowChoiceDialogAsync(
+            _localizationService["Settings_E2EE_Gone_Title"],
+            _localizationService[notice.WasRevoked ? "Settings_E2EE_Gone_Revoked" : "Settings_E2EE_Gone_Missing"],
+            _localizationService["Settings_E2EE_Gone_SetUpAgain"],
+            _localizationService["Settings_E2EE_Gone_SignOut"]);
+
+        if (_disposed || !ReferenceEquals(_syncClientService.PendingDeviceRevocation, notice))
+            return;
+
+        if (choice == DialogChoice.Primary)
+        {
+            IsE2EEOnboardingRequired = true;
+            _syncClientService.NotifyE2EEOnboardingRequired();
+        }
+        else if (choice == DialogChoice.Secondary)
+        {
+            await SyncLogoutAsync();
+        }
     }
 
     public ObservableCollection<CreditMeter> CreditMeters { get; } = [];
@@ -427,6 +428,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             DeviceFingerprint = _deviceKeys.GetFingerprint();
 
         _isLoading = false;
+
+        if (_syncClientService.PendingDeviceRevocation is { } notice)
+            await HandleCurrentDeviceRevokedAsync(notice);
 
         // A restored session carries no answer, so ask — off the initialization path, which the UI waits on.
         // No IsLoggedIn guard: it races the service's own token load, and the probe answers null without a token.

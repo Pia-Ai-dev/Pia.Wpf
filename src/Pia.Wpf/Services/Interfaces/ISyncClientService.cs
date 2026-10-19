@@ -15,6 +15,9 @@ public interface ISyncClientService
     /// </summary>
     bool IsE2EEOnboardingRequired { get; }
 
+    /// <summary>The device-removal notice retained until sign-out or successful onboarding.</summary>
+    CurrentDeviceRevokedEventArgs? PendingDeviceRevocation { get; }
+
     /// <summary>
     /// Raised when sync detects E2EE is enabled but UMK is not available.
     /// The new device needs to complete the onboarding flow before sync can proceed.
@@ -46,11 +49,7 @@ public interface ISyncClientService
     /// </summary>
     event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
 
-    /// <summary>
-    /// Raised when the server no longer accepts this device: its row says Revoked, or it is gone
-    /// (deleted or expired) — <see cref="CurrentDeviceRevokedEventArgs.WasRevoked"/> tells the two apart.
-    /// Background sync is already stopped when it fires. Subscribers should forget the local UMK.
-    /// </summary>
+    /// <summary>Raised after sync stops and this device's account key is forgotten.</summary>
     event EventHandler<CurrentDeviceRevokedEventArgs>? CurrentDeviceRevoked;
 
     /// <summary>

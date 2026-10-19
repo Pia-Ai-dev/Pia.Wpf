@@ -31,7 +31,6 @@ public class SyncClientServiceDeviceGoneTests
     private readonly ISettingsService _settingsService = Substitute.For<ISettingsService>();
     private readonly ITemplateService _templateService = Substitute.For<ITemplateService>();
 
-    // Starting a fresh session (a re-login, a restart) must be able to report a new revocation.
     [Fact]
     public async Task ASecondSyncSession_RaisesAgain()
     {
@@ -41,14 +40,61 @@ public class SyncClientServiceDeviceGoneTests
 
         using (var client = JsonClient(HttpStatusCode.Forbidden, """{"error":"device_revoked"}"""))
             await InvokePushChangesAsync(sut, client);
-        sut.StartBackgroundSync();
-        sut.StopBackgroundSync();
+        _authService.LoginStateChanged += Raise.Event<EventHandler<bool>>(this, true);
         sut.StartBackgroundSync();
         using (var client = JsonClient(HttpStatusCode.Forbidden, """{"error":"device_revoked"}"""))
             await InvokePushChangesAsync(sut, client);
 
         Assert.Equal(2, count);
         sut.Dispose();
+    }
+
+    [Fact]
+    public async Task RevocationWithoutSubscribers_ForgetsStoredAndCachedKeysAndRetainsTheNotice()
+    {
+        var e2ee = new E2EEService(
+            new CryptoService(), _deviceKeys, new IdentityDpapi(), _settingsService,
+            NullLogger<E2EEService>.Instance);
+        using var sut = CreateSut(HttpStatusCode.Forbidden, """{"error":"device_revoked"}""", e2ee);
+        var stored = await _settingsService.GetSettingsAsync();
+        stored.IsE2EEEnabled = true;
+        stored.E2EEUmkVersion = 2;
+        stored.E2EERecoveryConfigured = true;
+        await e2ee.StoreUmkAsync(Enumerable.Repeat((byte)42, 32).ToArray());
+        var cached = e2ee.LoadUmk()!;
+        sut.StartBackgroundSync();
+
+        using var client = JsonClient(HttpStatusCode.Forbidden, """{"error":"device_revoked"}""");
+        await InvokePushChangesAsync(sut, client);
+
+        Assert.False(sut.IsSyncActive);
+        Assert.False(stored.IsE2EEEnabled);
+        Assert.Null(stored.E2EEEncryptedUmk);
+        Assert.Equal(0, stored.E2EEUmkVersion);
+        Assert.False(stored.E2EERecoveryConfigured);
+        Assert.Equal(new byte[32], cached);
+        Assert.True(sut.PendingDeviceRevocation?.WasRevoked);
+        Assert.True(sut.IsE2EEOnboardingRequired);
+
+        sut.StartBackgroundSync();
+        Assert.False(sut.IsSyncActive);
+        sut.NotifyE2EEOnboardingCompleted();
+        Assert.Null(sut.PendingDeviceRevocation);
+        sut.StartBackgroundSync();
+        Assert.True(sut.IsSyncActive);
+    }
+
+    [Fact]
+    public async Task SignOut_ClearsTheRetainedRemovalNotice()
+    {
+        using var sut = CreateSut(HttpStatusCode.Forbidden, """{"error":"device_revoked"}""");
+        using var client = JsonClient(HttpStatusCode.Forbidden, """{"error":"device_revoked"}""");
+        await InvokePushChangesAsync(sut, client);
+
+        _authService.LoginStateChanged += Raise.Event<EventHandler<bool>>(this, false);
+
+        Assert.Null(sut.PendingDeviceRevocation);
+        Assert.False(sut.IsE2EEOnboardingRequired);
     }
 
     // The first-sync push shares the verdict: it throws after the notice, exactly once per session.
@@ -153,7 +199,7 @@ public class SyncClientServiceDeviceGoneTests
     private static HttpClient JsonClient(HttpStatusCode status, string body) =>
         new(new StubHandler(status, body));
 
-    private SyncClientService CreateSut(HttpStatusCode status, string body)
+    private SyncClientService CreateSut(HttpStatusCode status, string body, IE2EEService? e2ee = null)
     {
         var dpapiHelper = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
         var mapper = new SyncMapper(dpapiHelper);
@@ -187,9 +233,16 @@ public class SyncClientServiceDeviceGoneTests
             mapper, _httpClientFactory,
             NullLogger<SyncClientService>.Instance,
             deleteTracker,
+            e2ee: e2ee,
             deviceMgmt: _deviceMgmt,
             deviceKeys: _deviceKeys,
             pluginService: _pluginService);
+    }
+
+    private sealed class IdentityDpapi() : DpapiHelper(NullLogger<DpapiHelper>.Instance)
+    {
+        public override string Encrypt(string plainText) => plainText;
+        public override string Decrypt(string encryptedText) => encryptedText;
     }
 
     private sealed class StubHandler(HttpStatusCode status, string body) : HttpMessageHandler

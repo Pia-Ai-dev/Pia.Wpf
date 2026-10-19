@@ -129,6 +129,7 @@ public class SyncMapperCiphertextFallbackTests
 
         public Task<byte[]> GenerateAndStoreUmkAsync() => throw new NotSupportedException();
         public byte[]? LoadUmk() => throw new NotSupportedException();
+        public void ClearCachedUmk() => throw new NotSupportedException();
         public Task StoreUmkAsync(byte[] umk) => throw new NotSupportedException();
         public bool HasUmk() => true;
         public (string Ciphertext, string HkdfSalt) WrapUmkForSelf() => throw new NotSupportedException();

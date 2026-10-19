@@ -637,6 +637,9 @@ public class AuthService : IAuthService
         await _refreshLock.WaitAsync();
         try
         {
+            if (!IsLoggedIn || string.IsNullOrEmpty(_encryptedRefreshToken))
+                return null;
+
             var current = DecryptAccessToken();
             if (current is not null)
             {

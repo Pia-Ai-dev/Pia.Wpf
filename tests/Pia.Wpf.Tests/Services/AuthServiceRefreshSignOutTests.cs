@@ -55,6 +55,26 @@ public class AuthServiceRefreshSignOutTests
         Assert.Equal([AuthSignOutReason.ServerRejectedSession], reasons);
     }
 
+    [Fact]
+    public async Task ConcurrentRefreshCallers_ReportOnlyTheOriginalSignOutReason()
+    {
+        using var handler = new BlockedRefreshHandler();
+        var (sut, _) = CreateSut(HttpStatusCode.Unauthorized, handler: handler);
+        var reasons = new List<AuthSignOutReason>();
+        sut.SignedOutUnexpectedly += (_, e) => reasons.Add(e.Reason);
+
+        var first = sut.GetAccessTokenAsync();
+        await handler.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var queued = sut.GetAccessTokenAsync();
+        handler.Release.SetResult();
+        await Task.WhenAll(first, queued).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.False(sut.IsLoggedIn);
+        Assert.Equal([AuthSignOutReason.SessionExpired], reasons);
+        Assert.Equal(1, handler.RefreshCalls);
+        Assert.Equal(1, handler.LogoutCalls);
+    }
+
     // A server outage or a rate limit says nothing about the session's validity: stay signed in
     // and let the next call refresh again, rather than logging the user out of a hiccup.
     [Theory]
@@ -90,7 +110,7 @@ public class AuthServiceRefreshSignOutTests
     }
 
     private static (AuthService Sut, AppSettings Settings) CreateSut(
-        HttpStatusCode refreshStatus, string? decryptsTo = null)
+        HttpStatusCode refreshStatus, string? decryptsTo = null, HttpMessageHandler? handler = null)
     {
         var stored = new AppSettings
         {
@@ -104,7 +124,7 @@ public class AuthServiceRefreshSignOutTests
 
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>())
-            .Returns(_ => new HttpClient(new HandlerFactory(refreshStatus), disposeHandler: true));
+            .Returns(_ => new HttpClient(handler ?? new HandlerFactory(refreshStatus), disposeHandler: handler is null));
 
         var sut = new AuthService(
             settings, new FixedDpapi(NullLogger<DpapiHelper>.Instance, decryptsTo), factory,
@@ -118,6 +138,28 @@ public class AuthServiceRefreshSignOutTests
         public override string Decrypt(string encryptedText) => decrypted ?? encryptedText;
 
         public override string Encrypt(string plainText) => plainText;
+    }
+
+    private sealed class BlockedRefreshHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int RefreshCalls { get; private set; }
+        public int LogoutCalls { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/auth/refresh"))
+            {
+                RefreshCalls++;
+                Entered.SetResult();
+                await Release.Task.WaitAsync(ct);
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("{}") };
+            }
+
+            LogoutCalls++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+        }
     }
 
     private sealed class HandlerFactory(HttpStatusCode status) : HttpMessageHandler
