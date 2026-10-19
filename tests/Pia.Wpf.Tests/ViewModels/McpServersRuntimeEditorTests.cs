@@ -641,7 +641,8 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         var preview = RealPreview(AdminRoot);
         runtime.PreviewMachineWideGrant(AdminRoot).Returns(preview);
         dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-        runtime.GrantMachineWideReadAsync(AdminRoot, Arg.Any<CancellationToken>()).Returns(new MachineWideGrantResult(true, null));
+        runtime.GrantMachineWideReadAsync(AdminRoot, Arg.Any<CancellationToken>())
+            .Returns(new MachineWideGrantResult(MachineWideGrantFailure.None));
 
         await vm.GrantRuntimeReadCommand.ExecuteAsync(null);
 
@@ -687,32 +688,37 @@ public sealed class McpServersRuntimeEditorTests : IClassFixture<RedirectedProfi
         Assert.Null(vm.EditorMessage);
     }
 
-    [Fact]
-    public async Task AFailedGrant_ShowsTheError()
+    [Theory]
+    [InlineData(MachineWideGrantFailure.NotElevated)]
+    [InlineData(MachineWideGrantFailure.WindowsFolder)]
+    [InlineData(MachineWideGrantFailure.TooWide)]
+    [InlineData(MachineWideGrantFailure.ExistingAce)]
+    [InlineData(MachineWideGrantFailure.Unexpected)]
+    public async Task AFailedGrant_ShowsItsLocalizedReason(MachineWideGrantFailure failure)
     {
         var (vm, _, runtime, dialogs, _, snackbar, _) = CreateAdminFix();
         var preview = RealPreview(AdminRoot);
         runtime.PreviewMachineWideGrant(AdminRoot).Returns(preview);
         dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
-        runtime.GrantMachineWideReadAsync(AdminRoot, Arg.Any<CancellationToken>())
-            .Returns(new MachineWideGrantResult(false, "Access is denied."));
+        runtime.GrantMachineWideReadAsync(AdminRoot, Arg.Any<CancellationToken>()).Returns(new MachineWideGrantResult(failure));
 
         await vm.GrantRuntimeReadCommand.ExecuteAsync(null);
 
-        Assert.Equal("McpServers_Sandbox_Runtime_FixFailed:Access is denied.", vm.EditorMessage);
+        Assert.Equal($"McpServers_Sandbox_Runtime_FixFailed:McpServers_Sandbox_Runtime_FixFailed_{failure}", vm.EditorMessage);
         Assert.True(vm.EditorMessageIsError);
         snackbar.DidNotReceiveWithAnyArgs().Show(default!, default!, default, default, default);
     }
 
+    /// <summary>The exception's text is English and may name the folder, so only the generic reason is shown.</summary>
     [Fact]
-    public async Task AnUnreadablePermissionList_ShowsTheErrorWithoutADialog()
+    public async Task AnUnreadablePermissionList_ShowsTheGenericReasonWithoutADialog()
     {
         var (vm, _, runtime, dialogs, _, _, _) = CreateAdminFix();
-        runtime.PreviewMachineWideGrant(AdminRoot).Returns(_ => throw new UnauthorizedAccessException("denied"));
+        runtime.PreviewMachineWideGrant(AdminRoot).Returns(_ => throw new UnauthorizedAccessException($"Access to the path '{AdminRoot}' is denied."));
 
         await vm.GrantRuntimeReadCommand.ExecuteAsync(null);
 
-        Assert.Equal("McpServers_Sandbox_Runtime_FixFailed:denied", vm.EditorMessage);
+        Assert.Equal("McpServers_Sandbox_Runtime_FixFailed:McpServers_Sandbox_Runtime_FixFailed_Unexpected", vm.EditorMessage);
         Assert.True(vm.EditorMessageIsError);
         await dialogs.DidNotReceiveWithAnyArgs().ShowConfirmationDialogAsync(default!, default!);
     }

@@ -1,3 +1,5 @@
+using System.IO;
+using System.Security.AccessControl;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Paths;
@@ -67,7 +69,7 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(NodeRoot, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+        Assert.Equal(MachineWideGrantFailure.NotElevated, result.Failure);
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
     }
 
@@ -82,7 +84,7 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+        Assert.Equal(MachineWideGrantFailure.WindowsFolder, result.Failure);
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
     }
 
@@ -98,8 +100,7 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.Equal(SandboxRuntimeMessages.ToolchainTooWide, result.Error);
-        PathFreeAssert.IsPathFree(new InvalidOperationException(result.Error));
+        Assert.Equal(MachineWideGrantFailure.TooWide, result.Failure);
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
     }
 
@@ -117,8 +118,7 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.Equal(SandboxRuntimeMessages.ToolchainTooWide, result.Error);
-        PathFreeAssert.IsPathFree(new InvalidOperationException(result.Error));
+        Assert.Equal(MachineWideGrantFailure.TooWide, result.Failure);
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
         _acl.DidNotReceive().HasAllAppPackagesAce(Arg.Any<string>());
     }
@@ -155,7 +155,7 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(NodeRoot, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+        Assert.Equal(MachineWideGrantFailure.ExistingAce, result.Failure);
         _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
     }
 
@@ -169,21 +169,37 @@ public sealed class SandboxRuntimeServiceTests
         var result = await Service().GrantMachineWideReadAsync(root, CancellationToken.None);
 
         Assert.True(result.Ok);
-        Assert.Null(result.Error);
+        Assert.Equal(MachineWideGrantFailure.None, result.Failure);
         _acl.Received(1).GrantAllAppPackagesRead(root);
     }
 
-    [Fact]
-    public async Task Grant_ThatThrows_ReturnsTheExceptionMessage()
+    /// <summary>The exception's text is English and may name the folder, so the editor gets a code it can localize.</summary>
+    [Theory]
+    [InlineData(typeof(UnauthorizedAccessException))]
+    [InlineData(typeof(IOException))]
+    [InlineData(typeof(PrivilegeNotHeldException))]
+    public async Task Grant_ThatThrows_ReportsAnUnexpectedFailure(Type exceptionType)
     {
         _elevation.IsElevated.Returns(true);
-        _acl.When(acl => acl.GrantAllAppPackagesRead(NodeRoot))
-            .Do(_ => throw new UnauthorizedAccessException("Access is denied."));
+        var thrown = (Exception)Activator.CreateInstance(exceptionType)!;
+        _acl.When(acl => acl.GrantAllAppPackagesRead(NodeRoot)).Do(_ => throw thrown);
 
         var result = await Service().GrantMachineWideReadAsync(NodeRoot, CancellationToken.None);
 
         Assert.False(result.Ok);
-        Assert.Equal("Access is denied.", result.Error);
+        Assert.Equal(MachineWideGrantFailure.Unexpected, result.Failure);
+    }
+
+    [Fact]
+    public async Task Grant_WhoseEntryCheckThrows_ReportsAnUnexpectedFailure()
+    {
+        _elevation.IsElevated.Returns(true);
+        _acl.HasAllAppPackagesAce(NodeRoot).Returns(_ => throw new DirectoryNotFoundException(@"C:\Program Files\nodejs"));
+
+        var result = await Service().GrantMachineWideReadAsync(NodeRoot, CancellationToken.None);
+
+        Assert.Equal(MachineWideGrantFailure.Unexpected, result.Failure);
+        _acl.DidNotReceive().GrantAllAppPackagesRead(Arg.Any<string>());
     }
 
     [Fact]

@@ -43,13 +43,13 @@ public sealed class SandboxRuntimeService(
     public async Task<MachineWideGrantResult> GrantMachineWideReadAsync(string root, CancellationToken cancellationToken)
     {
         if (!elevation.IsElevated)
-            return new MachineWideGrantResult(false, "Pia is not running as administrator.");
+            return new MachineWideGrantResult(MachineWideGrantFailure.NotElevated);
 
         var folder = SandboxLaunchSpecBuilder.Normalize(root);
         if (SandboxLaunchSpecBuilder.IsVolumeRoot(folder))
-            return new MachineWideGrantResult(false, SandboxRuntimeMessages.ToolchainTooWide);
+            return new MachineWideGrantResult(MachineWideGrantFailure.TooWide);
         if (SandboxLaunchSpecBuilder.IsSameOrUnder(folder, SandboxLaunchSpecBuilder.Normalize(host.WindowsDirectory)))
-            return new MachineWideGrantResult(false, "Pia does not change permissions inside the Windows folder.");
+            return new MachineWideGrantResult(MachineWideGrantFailure.WindowsFolder);
 
         try
         {
@@ -57,22 +57,21 @@ public sealed class SandboxRuntimeService(
             {
                 // The entry is inheritable and has no undo in Pia, so a wide folder would open far more than one runtime.
                 if (roots.Check(folder, false) == RuntimeIssue.ToolchainTooWide)
-                    return new MachineWideGrantResult(false, SandboxRuntimeMessages.ToolchainTooWide);
+                    return new MachineWideGrantResult(MachineWideGrantFailure.TooWide);
 
                 // A new grant would merge into the existing entry, and a later removal would take the old access away.
                 if (acl.HasAllAppPackagesAce(root))
-                    return new MachineWideGrantResult(false,
-                        "The folder already carries a permission for all app packages; removing a new grant would also remove it.");
+                    return new MachineWideGrantResult(MachineWideGrantFailure.ExistingAce);
 
                 acl.GrantAllAppPackagesRead(root);
-                return new MachineWideGrantResult(true, null);
+                return new MachineWideGrantResult(MachineWideGrantFailure.None);
             }, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning("Granting all-app-packages read on a runtime folder failed: {ExceptionType}", ex.GetType().Name);
             logger.SensitiveDebug("Granting all-app-packages read failed: {Message}", ex.Message);
-            return new MachineWideGrantResult(false, ex.Message);
+            return new MachineWideGrantResult(MachineWideGrantFailure.Unexpected);
         }
     }
 
