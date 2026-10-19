@@ -269,6 +269,10 @@ public class PluginService : IPluginService
 
         foreach (var plugin in serverPlugins)
         {
+            // The switch may have started it meanwhile; a second start would replace and stop the running one.
+            if (HasHandler(plugin.Id))
+                continue;
+
             await ActivateMcpPluginAsync(plugin);
 
             // Per server, not once at the end: Settings is built while this loop is still running, and
@@ -1222,6 +1226,10 @@ public class PluginService : IPluginService
 
         foreach (var plugin in waiting)
         {
+            // An earlier activation in this loop can take long enough for the switch to start this one.
+            if (HasHandler(plugin.Id))
+                continue;
+
             if (status.IsReady)
             {
                 _startFailures.TryRemove(plugin.Id, out _);

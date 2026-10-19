@@ -749,6 +749,10 @@ connection (`ProbeLocalMcpAsync` → `McpServerProbe`), Save (`ActivateMcpPlugin
   `IDisposable`). Each rewrites ACLs below every root, and two containers sharing a toolchain or state root at
   the same moment was never measured. The cost is serial starts: 0.2–2 s each. ACE sweeps run under the same
   gate, and a sweep never strips the SID of a container that holds a live `SandboxContainerLease`.
+- `PluginService` starts a saved server once. A second activation joins a start that is still pending. The
+  startup loop and the loop that runs when the sandbox runtime becomes ready each skip a server that already
+  has a handler: while an earlier server in the loop starts, the user's switch may have started it, and a
+  second start would fail at the lease and replace the running handler with a broken one.
 - The probe and the running server share the npm cache and rely on npm's own locking (a known limit).
 
 ### Runtime state folder lifecycle

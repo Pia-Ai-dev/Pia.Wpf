@@ -4,6 +4,7 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using Pia.Infrastructure;
+using Pia.Services.Interfaces;
 using Pia.Services.Plugins;
 using Pia.Services.Plugins.Sandbox;
 using Pia.Tests.TestInfrastructure;
@@ -74,18 +75,71 @@ public sealed class PluginServiceInFlightStartTests : IDisposable
         }
     }
 
-    private PluginService Create(GatedFactory factory)
+    /// <summary>Only the first connect waits at the gate, so a later start can finish while it is held.</summary>
+    private sealed class FirstConnectHeldFactory : IMcpTransportFactory
+    {
+        private readonly string _suffix = Guid.NewGuid().ToString("N")[..8];
+        private int _creates;
+
+        public FakeMxcProcessLauncher Launcher { get; } = new();
+
+        /// <summary>Completes with the name of the server whose connect is held.</summary>
+        public TaskCompletionSource<string> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IClientTransport Create(McpTransportRequest request)
+        {
+            var verifier = Substitute.For<ISandboxGrantVerifier>();
+            verifier.Verify(Arg.Any<SandboxLaunchSpec>()).Returns(new SandboxGrantResult(true, 0, null));
+            var spec = Spec with { ContainerName = SandboxLaunchSpecBuilder.ContainerName($"{request.ToolPrefix}-{_suffix}", request.IsProbe) };
+            var inner = new MxcClientTransport(spec, Launcher, verifier, NullLogger.Instance, NullLoggerFactory.Instance);
+            return Interlocked.Increment(ref _creates) == 1 ? new HeldTransport(this, request.Name, inner) : inner;
+        }
+
+        private sealed class HeldTransport(FirstConnectHeldFactory factory, string server, IClientTransport inner) : IClientTransport
+        {
+            public string Name => inner.Name;
+
+            public async Task<ITransport> ConnectAsync(CancellationToken cancellationToken = default)
+            {
+                factory.Entered.TrySetResult(server);
+                await factory.Release.Task.WaitAsync(cancellationToken);
+                return await inner.ConnectAsync(cancellationToken);
+            }
+        }
+    }
+
+    private sealed class ChangingAvailability(MxcAvailabilityStatus initial) : IMxcAvailability
+    {
+        public MxcAvailabilityStatus Status { get; private set; } = initial;
+
+        public event EventHandler<MxcAvailabilityStatus>? StatusChanged;
+
+        public void Change(MxcAvailabilityStatus next)
+        {
+            Status = next;
+            StatusChanged?.Invoke(this, next);
+        }
+
+        public Task<MxcAvailabilityStatus> RefreshAsync(CancellationToken cancellationToken = default) => Task.FromResult(Status);
+
+        public Task<MxcAvailabilityStatus> InstallRuntimeAsync(
+            IProgress<ModelDownloadProgress>? progress = null, CancellationToken cancellationToken = default) => Task.FromResult(Status);
+    }
+
+    private PluginService Create(IMcpTransportFactory factory, IMxcAvailability? availability = null)
     {
         var sqlite = new SqliteContext(_dbPath);
         _contexts.Add(sqlite);
-        var service = SandboxPluginServices.Create(sqlite, factory, new ReadyMxcAvailability());
+        var service = SandboxPluginServices.Create(sqlite, factory, availability ?? new ReadyMxcAvailability());
         _services.Add(service);
         return service;
     }
 
-    private static LocalMcpDefinition Definition(string name = "Files") =>
+    private static LocalMcpDefinition Definition(string name = "Files", McpSandboxPolicy? sandbox = null) =>
         new(name, @"C:\Tools\fs\fs.exe", [], new Dictionary<string, string>(), null,
-            LocalMcpConfig.DeriveToolPrefix(name), null);
+            LocalMcpConfig.DeriveToolPrefix(name), null, Sandbox: sandbox);
 
     private static async Task<(Guid Id, Task Saving)> SaveWhileTheStartWaitsAsync(PluginService service, GatedFactory factory)
     {
@@ -171,5 +225,75 @@ public sealed class PluginServiceInFlightStartTests : IDisposable
         Assert.Single(service.ActiveHandlers, h => h.PluginId == id);
         Assert.Single(factory.Launcher.Launched);
         Assert.Equal(0, factory.Launcher.ShutdownCalls);
+    }
+
+    private static readonly string[] TwoServers = ["Alpha", "Beta"];
+
+    private async Task<Dictionary<string, Guid>> SeedAsync(McpSandboxPolicy? sandbox = null)
+    {
+        var seeding = new GatedFactory(honorsCancellation: false);
+        seeding.Release.SetResult();
+        var service = Create(seeding);
+        var ids = new Dictionary<string, Guid>();
+        foreach (var name in TwoServers)
+            ids[name] = await service.SaveLocalMcpAsync(Guid.NewGuid(), Definition(name, sandbox), Ct);
+        await service.ShutdownAllAsync();
+        return ids;
+    }
+
+    // While startup is held on one server, the user switches the other off and on, which starts it.
+    private static async Task<Guid> StartTheOtherServerWhileTheFirstIsHeldAsync(
+        PluginService service, FirstConnectHeldFactory factory, Dictionary<string, Guid> ids)
+    {
+        var held = await factory.Entered.Task.WaitAsync(Patience, Ct);
+        var other = ids.Single(server => server.Key != held).Value;
+        await service.SetPluginEnabledAsync(other, false).WaitAsync(Patience, Ct);
+        await service.SetPluginEnabledAsync(other, true).WaitAsync(Patience, Ct);
+        Assert.Single(service.ActiveHandlers, h => h.PluginId == other);
+        return other;
+    }
+
+    private static void AssertStillRunsOnce(PluginService service, FirstConnectHeldFactory factory, Guid id)
+    {
+        var handler = Assert.Single(service.ActiveHandlers, h => h.PluginId == id);
+        Assert.NotEmpty(handler.GetTools());
+        Assert.Equal(2, factory.Launcher.Launched.Count);
+        Assert.Equal(0, factory.Launcher.ShutdownCalls);
+    }
+
+    [Fact]
+    public async Task TheStartupLoop_ReachingAServerTheSwitchAlreadyStarted_LeavesThatServerRunning()
+    {
+        var ids = await SeedAsync();
+        var factory = new FirstConnectHeldFactory();
+        var service = Create(factory);
+
+        var initializing = service.InitializePersistedPluginsAsync();
+        var other = await StartTheOtherServerWhileTheFirstIsHeldAsync(service, factory, ids);
+        factory.Release.SetResult();
+        await initializing.WaitAsync(Patience, Ct);
+
+        AssertStillRunsOnce(service, factory, other);
+    }
+
+    [Fact]
+    public async Task TheRuntimeReadyLoop_ReachingAServerTheSwitchAlreadyStarted_LeavesThatServerRunning()
+    {
+        var availability = new ChangingAvailability(new MxcAvailabilityStatus(MxcRuntimeState.NotInstalled));
+        var factory = new FirstConnectHeldFactory();
+        var service = Create(factory, availability);
+        var ids = new Dictionary<string, Guid>();
+        foreach (var name in TwoServers)
+            ids[name] = await service.SaveLocalMcpAsync(Guid.NewGuid(), Definition(name, McpSandboxPolicy.Empty), Ct);
+        Assert.Empty(factory.Launcher.Launched);
+
+        availability.Change(new MxcAvailabilityStatus(MxcRuntimeState.Ready));
+        var other = await StartTheOtherServerWhileTheFirstIsHeldAsync(service, factory, ids);
+        var loopDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.PluginsChanged += (_, _) => loopDone.TrySetResult();
+        factory.Release.SetResult();
+        await loopDone.Task.WaitAsync(Patience, Ct);
+
+        AssertStillRunsOnce(service, factory, other);
     }
 }
