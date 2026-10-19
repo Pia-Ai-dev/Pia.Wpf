@@ -10,4 +10,25 @@ public static class E2EEErrorCodes
 
     /// <summary>A different proof key is already on file; the first write wins.</summary>
     public const string ProofKeyConflict = "proof_key_conflict";
+
+    /// <summary>The calling device has been revoked; its session is refused on sync and the E2EE write routes.</summary>
+    public const string DeviceRevoked = "device_revoked";
+
+    /// <summary>The session is bound to a different device than the one being registered or re-keyed.</summary>
+    public const string DeviceMismatch = "device_mismatch";
+
+    /// <summary>The account hit its cap of devices waiting for approval.</summary>
+    public const string TooManyPendingDevices = "too_many_pending_devices";
+
+    /// <summary>A malformed registration field; the server states the problem in the message.</summary>
+    public const string InvalidField = "invalid_field";
+
+    /// <summary>The device row changed while it was being registered; the caller should retry.</summary>
+    public const string DeviceChanged = "device_changed";
+
+    /// <summary>The account is E2EE-enabled, so plaintext writes are refused.</summary>
+    public const string E2EERequired = "e2ee_required";
+
+    /// <summary>The onboarding session is spent, invalid or expired.</summary>
+    public const string InvalidOnboardingSession = "invalid_onboarding_session";
 }

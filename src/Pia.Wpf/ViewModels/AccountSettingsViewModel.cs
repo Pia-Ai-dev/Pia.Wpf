@@ -144,21 +144,57 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger));
         };
 
-        _syncClientService.CurrentDeviceRevoked += (_, _) =>
+        _syncClientService.CurrentDeviceRevoked += (_, e) =>
         {
             Post(async () =>
             {
+                // Sync is already stopped by the service. The key would only open ciphertext this
+                // device can no longer receive, so it goes with it.
                 _isLoading = true;
                 IsE2EEEnabled = false;
                 DeviceFingerprint = string.Empty;
                 _isLoading = false;
 
                 var settings = await _settingsService.GetSettingsAsync();
-                settings.IsE2EEEnabled = false;
+                settings.ForgetE2EEKey();
                 await _settingsService.SaveSettingsAsync(settings);
+                // Reads the now-empty persisted key, which drops the in-memory copy too.
+                _deviceManagement.IsInitialized();
 
-                _snackbarService.Show("E2EE Disabled",
-                    "This device was removed from E2EE. Encryption has been disabled.",
+                var title = _localizationService["Settings_E2EE_Gone_Title"];
+                var message = _localizationService[e.WasRevoked
+                    ? "Settings_E2EE_Gone_Revoked"
+                    : "Settings_E2EE_Gone_Missing"];
+                var choice = await _dialogService.ShowChoiceDialogAsync(
+                    title,
+                    message,
+                    _localizationService["Settings_E2EE_Gone_SetUpAgain"],
+                    _localizationService["Settings_E2EE_Gone_SignOut"]);
+
+                if (choice == DialogChoice.Primary)
+                {
+                    IsE2EEOnboardingRequired = true;
+                    _syncClientService.NotifyE2EEOnboardingRequired();
+                }
+                else if (choice == DialogChoice.Secondary)
+                {
+                    await SyncLogoutAsync();
+                }
+            });
+        };
+
+        _authService.SignedOutUnexpectedly += (_, e) =>
+        {
+            Post(() =>
+            {
+                LoginErrorMessage = _localizationService[e.Reason switch
+                {
+                    AuthSignOutReason.SessionExpired => "Auth_SignedOut_Expired",
+                    AuthSignOutReason.ServerRejectedSession => "Auth_SignedOut_Rejected",
+                    _ => "Auth_SignedOut_Unreadable",
+                }];
+                _snackbarService.Show(
+                    _localizationService["Auth_SignedOut_Title"], LoginErrorMessage,
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(8));
             });
         };

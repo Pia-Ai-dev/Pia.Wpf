@@ -89,6 +89,9 @@ public class SyncClientService : ISyncClientService, IDisposable
     private int _consecutiveIdleCycles;
     private int _deviceCheckCounter;
     private bool _hasVerifiedServerE2EEStatus;
+    // One revoked notice per session: a failing cycle hits push AND pull, and neither should
+    // raise the dialog twice. Reset when sync starts again or a new sign-in arrives.
+    private bool _revokedNoticeRaised;
     // Bumped on every Start/Stop so a sync cycle in flight during a Stop+Start cannot re-arm
     // the newly-started timer with a stale (non-InitialSyncDelay) period.
     private int _syncGeneration;
@@ -99,7 +102,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     public event EventHandler? E2EEOnboardingCleared;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
     public event EventHandler? EncryptedMigrationCompleted;
-    public event EventHandler? CurrentDeviceRevoked;
+    public event EventHandler<CurrentDeviceRevokedEventArgs>? CurrentDeviceRevoked;
     public event EventHandler<SyncCompletedEventArgs>? SyncCompleted;
 
     public void NotifyE2EEOnboardingRequired()
@@ -162,9 +165,14 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     private void OnAuthLoginStateChanged(object? sender, bool isLoggedIn)
     {
-        if (isLoggedIn) return;
-        _hasVerifiedServerE2EEStatus = false;
-        NotifyE2EEOnboardingCompleted();
+        if (!isLoggedIn)
+        {
+            _hasVerifiedServerE2EEStatus = false;
+            NotifyE2EEOnboardingCompleted();
+            return;
+        }
+
+        _revokedNoticeRaised = false;
     }
 
     public void StartBackgroundSync()
@@ -173,6 +181,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         _consecutiveIdleCycles = 0;
         _deviceCheckCounter = 0;
+        _revokedNoticeRaised = false;
         var generation = ++_syncGeneration;
 
         // One-shot timer: it fires once after InitialSyncDelay, then each cycle re-arms the
@@ -934,7 +943,13 @@ public class SyncClientService : ISyncClientService, IDisposable
             var body = await response.Content.ReadAsStringAsync();
             _logger.LogWarning("Push failed with status {Status}", response.StatusCode);
             _logger.SensitiveDebug("Push failure body: {Body}", body);
-            if ((int)response.StatusCode == 403 && body.Contains("e2ee_required"))
+            var code = ReadErrorCodeFromBody(body);
+            if (code == E2EEErrorCodes.DeviceRevoked)
+            {
+                // The server revoked this device; every further write is futile.
+                RaiseCurrentDeviceRevoked(wasRevoked: true);
+            }
+            else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EERequired)
             {
                 // The account is E2EE-enabled server-side but this client pushed
                 // plaintext (no local UMK / stale settings). Silent retries can never
@@ -1156,7 +1171,14 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         if (!response.IsSuccessStatusCode)
         {
+            var body = await response.Content.ReadAsStringAsync();
             _logger.LogWarning("Pull failed with status {Status}", response.StatusCode);
+            _logger.SensitiveDebug("Pull failure body: {Body}", body);
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden
+                && ReadErrorCodeFromBody(body) == E2EEErrorCodes.DeviceRevoked)
+            {
+                RaiseCurrentDeviceRevoked(wasRevoked: true);
+            }
             return (false, false, 0, 0, null, false);
         }
 
@@ -1880,8 +1902,38 @@ public class SyncClientService : ISyncClientService, IDisposable
         var body = await response.Content.ReadAsStringAsync();
         _logger.LogError("{Operation} failed ({Status})", operation, (int)response.StatusCode);
         _logger.SensitiveDebug("{Operation} failure body: {Body}", operation, body);
+        if (ReadErrorCodeFromBody(body) == E2EEErrorCodes.DeviceRevoked)
+        {
+            RaiseCurrentDeviceRevoked(wasRevoked: true);
+        }
         throw new HttpRequestException(
             $"{operation} failed ({(int)response.StatusCode}): {body}");
+    }
+
+    private static string? ReadErrorCodeFromBody(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
+                ? error.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    // The server has made this decision for the account: stop knocking, and tell the UI once.
+    // A cycle already in flight may still finish; its re-arm is cancelled by the generation bump.
+    private void RaiseCurrentDeviceRevoked(bool wasRevoked)
+    {
+        if (_revokedNoticeRaised) return;
+        _revokedNoticeRaised = true;
+        StopBackgroundSync();
+        CurrentDeviceRevoked?.Invoke(this, new CurrentDeviceRevokedEventArgs(wasRevoked));
     }
 
     private async Task CheckForPendingDevicesAsync()
@@ -1903,7 +1955,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                         "Current device {DeviceId} was {Status} on server — raising CurrentDeviceRevoked",
                         currentDeviceId,
                         currentDevice is null ? "not found" : "revoked");
-                    CurrentDeviceRevoked?.Invoke(this, EventArgs.Empty);
+                    RaiseCurrentDeviceRevoked(wasRevoked: currentDevice is not null);
                     return;
                 }
 

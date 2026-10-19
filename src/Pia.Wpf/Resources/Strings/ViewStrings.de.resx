@@ -1038,6 +1038,15 @@
   <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du {0} ablehnen und entfernen? Wenn du dieses Gerät nicht kennst, entferne es.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Gerät bestätigt</value></data>
   <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} wurde bestätigt und kann jetzt synchronisieren.</value></data>
+  <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Gerät entfernt</value></data>
+  <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>Dieses Gerät wurde auf dem Server widerrufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
+  <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Dieses Gerät ist auf dem Server nicht mehr registriert – sein Eintrag wurde gelöscht oder ist abgelaufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
+  <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Dieses Gerät erneut einrichten</value></data>
+  <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Abgemeldet</value></data>
+  <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Deine Sitzung wurde beendet oder auf dem Server widerrufen. Bitte melde dich erneut an.</value></data>
+  <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>Der Server hat die Verlängerung deiner Sitzung abgelehnt. Bitte melde dich erneut an.</value></data>
+  <data name="Auth_SignedOut_Unreadable" xml:space="preserve"><value>Die gespeicherte Sitzung ließ sich auf diesem Gerät nicht öffnen. Bitte melde dich erneut an.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung einrichten</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Dieses Konto verwendet Ende-zu-Ende-Verschlüsselung. Richte dieses Gerät ein, um auf deine verschlüsselten Daten zugreifen zu können.</value></data>
@@ -1066,6 +1075,11 @@
   <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Stimmt nicht überein</value></data>
   <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>Dieses Gerät hat den Schlüssel nicht übernommen. Das bestätigende Gerät gehört möglicherweise nicht dir: Lehne auf deinen anderen Geräten jede Anfrage ab, die du nicht kennst, und richte dieses Gerät stattdessen mit deinem Wiederherstellungscode ein.</value></data>
   <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>Der bestätigte Schlüssel ließ sich auf diesem Gerät nicht öffnen. Versuche es erneut oder verwende deinen Wiederherstellungscode.</value></data>
+  <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>Die Schlüssel dieses Geräts sind verloren gegangen, der gespeicherte Schlüssel lässt sich hier nicht mehr öffnen. Richte das Gerät mit deinem Wiederherstellungscode erneut ein.</value></data>
+  <data name="E2EE_Register_DeviceMismatch" xml:space="preserve"><value>Der Server kennt diese Sitzung als ein anderes Gerät und hat die Registrierung abgelehnt. Melde dich ab, melde dich auf diesem Gerät erneut an und versuche es noch einmal.</value></data>
+  <data name="E2EE_Register_TooManyPending" xml:space="preserve"><value>Es warten zu viele Geräte auf Genehmigung. Genehmige oder entferne zuerst auf einem anderen Gerät eines davon und versuche es erneut.</value></data>
+  <data name="E2EE_Register_DeviceChanged" xml:space="preserve"><value>Dieses Gerät hat sich auf dem Server während der Registrierung geändert. Versuche es erneut.</value></data>
+  <data name="E2EE_Register_Generic" xml:space="preserve"><value>Der Server hat die Registrierung dieses Geräts abgelehnt.</value></data>
   <!-- Wiederherstellungscode-Dialog (beim Aktivieren der E2EE in den Einstellungen) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Wiederherstellungscode speichern</value></data>

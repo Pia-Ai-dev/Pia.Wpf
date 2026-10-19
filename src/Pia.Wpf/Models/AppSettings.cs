@@ -555,6 +555,15 @@ public class AppSettings
     public int E2EEUmkVersion { get; set; }
     public bool E2EERecoveryConfigured { get; set; }
 
+    /// <summary>Drops this device's copy of the account key and the state that says it can be used.</summary>
+    public void ForgetE2EEKey()
+    {
+        IsE2EEEnabled = false;
+        E2EEEncryptedUmk = null;
+        E2EEUmkVersion = 0;
+        E2EERecoveryConfigured = false;
+    }
+
     // One-shot marker for the blanked-row repair. A build before the E2EE pull guard could write
     // empty rows over real ones and then advance the cursor past them; the repair resets the cursor
     // so they re-pull. Marked once so a repair that finds nothing left on the server (the rows were
