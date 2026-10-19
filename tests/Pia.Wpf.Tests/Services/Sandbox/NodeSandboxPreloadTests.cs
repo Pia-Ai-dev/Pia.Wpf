@@ -26,6 +26,8 @@ public sealed class NodeSandboxPreloadTests : IDisposable
         fs.writeFileSync(rootFile, 'x');
         fs.writeFileSync(path.join(outside, 'secret.txt'), 'x');
         fs.writeFileSync(path.join(granted, 'plain.txt'), 'x');
+        // A UNC path misread as drive-relative lands on the current drive, which must be the roots' drive to show.
+        process.chdir(base);
         fs.symlinkSync(outside, path.join(granted, 'link'), 'junction');
         fs.symlinkSync(path.join(granted, 'loop-b'), path.join(granted, 'loop-a'), 'junction');
         fs.symlinkSync(path.join(granted, 'loop-a'), path.join(granted, 'loop-b'), 'junction');
@@ -40,8 +42,8 @@ public sealed class NodeSandboxPreloadTests : IDisposable
           ancestors.add(idOf(real.statSync, d));
           if (path.dirname(d) === d) break;
         }
-        // A share that does not exist stands in for a server whose every folder is denied.
-        const offline = (p) => /pia-unc-host/i.test(String(p));
+        // A share that does not exist stands in for a server whose every folder is denied, and so does a UNC path without a share.
+        const offline = (p) => /pia-unc-host|^[\\/]{2}[?.][\\/]unc(?:[\\/][^\\/]*)?[\\/]?$/i.test(String(p));
         const isAncestor = (stat, p) => {
           if (offline(p)) return true;
           const id = idOf(stat, p);
@@ -130,10 +132,21 @@ public sealed class NodeSandboxPreloadTests : IDisposable
             underARootSpelledWithAPrefix: await attempt(() => fs.statSync(deep).isDirectory()),
             uncUnderAPrefixedRoot: await attempt(() => fs.statSync('\\\\pia-unc-host\\share\\users').isDirectory()),
             uncPrefixedAndRecased: await attempt(() => fs.lstatSync('\\\\?\\UNC\\PIA-UNC-HOST\\Share\\Users\\').isDirectory()),
+            uncPrefixedShareRoot: await attempt(() => fs.statSync('\\\\?\\UNC\\pia-unc-host\\share').isDirectory()),
           };
           r.uncCodes = [
             code(() => fs.statSync('\\\\?\\UNC\\pia-unc-host\\share\\other')),
             code(() => fs.statSync('\\\\pia-unc-host\\share\\users\\granted\\')),
+          ];
+          // Read as drive-relative, each would name the drive root or a folder above the roots.
+          const firstFolder = path.resolve(base).split(path.sep)[1];
+          r.uncWithoutAShare = [
+            code(() => fs.statSync('\\\\?\\UNC\\' + firstFolder)),
+            code(() => fs.lstatSync('\\\\?\\UNC\\')),
+            code(() => fs.statSync('\\\\?\\UNC')),
+            await attempt(async () => { await fs.promises.stat('\\\\.\\UNC\\' + firstFolder + '\\'); return 'none'; }),
+            await attempt(async () => { await viaCb((cb) => fs.lstat('\\\\?\\UNC\\', cb)); return 'none'; }),
+            code(() => fs.realpathSync('\\\\?\\UNC\\pia-no-share')),
           ];
           r.prefixedRealpaths = [
             await attempt(() => fs.realpathSync(prefixed + viaLink)),
@@ -254,6 +267,14 @@ public sealed class NodeSandboxPreloadTests : IDisposable
         Assert.All(result.GetProperty("spellings").EnumerateObject(),
             spelling => Assert.True(spelling.Value.ValueKind == JsonValueKind.True, $"{spelling.Name} gave {spelling.Value}"));
         Assert.All(result.GetProperty("uncCodes").EnumerateArray(), item => Assert.Equal("EPERM", item.GetString()));
+    }
+
+    [Fact]
+    public async Task AUncPathWithoutAShare_IsNeverAnsweredAsAFolder()
+    {
+        var result = await RunHarnessAsync("plain-first");
+
+        Assert.All(result.GetProperty("uncWithoutAShare").EnumerateArray(), item => Assert.Equal("EPERM", item.GetString()));
     }
 
     [Fact]
