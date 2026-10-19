@@ -514,6 +514,29 @@ public sealed class RuntimeStateProvisionerTests : IClassFixture<RedirectedProfi
         Assert.Equal(uvxBeforeTheProgram ? 2 : 1, _uv.Calls.Count);
     }
 
+    // A program start under a running uvx server's name fails at the lease, so it must not hide that server's state grant.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AProgramStart_UnderARunningUvxServersName_KeepsItsRecord_SoAChangedSpecIsStillRefused(bool probe)
+    {
+        var (running, other) = probe ? (ProbeContainer, Container) : (Container, ProbeContainer);
+        await PrepareWithRecords(UvxSpec() with { ContainerName = running });
+        using var lease = SandboxContainerLease.Acquire(running);
+
+        await PrepareWithRecords(ProgramSpec(running));
+
+        var store = new RuntimeStateStore(NullLogger<RuntimeStateStore>.Instance);
+        Assert.True(store.StateGranted(running));
+        Assert.True(store.StateGrantedReadOnly(running));
+        var ex = await Assert.ThrowsAsync<SandboxStartException>(
+            () => PrepareWithRecords(UvxSpec(uvx: TimeOnPython312) with { ContainerName = other }));
+        Assert.Equal("This server's package is in use by the running server. Stop the server, then try again.", ex.Message);
+        Assert.True(File.Exists(Path.Combine(State, "tools", "mcp-server-time", "uv-receipt.toml")));
+        Assert.DoesNotContain("3.12", File.ReadAllText(Path.Combine(State, "pia-uv-spec.json")));
+        Assert.Single(_uv.Calls);
+    }
+
     // A runner start fails without its record, so a running container without one was given no state folder.
     [Fact]
     public async Task Uvx_WhileAContainerWithoutAGrantRecordRuns_Installs()

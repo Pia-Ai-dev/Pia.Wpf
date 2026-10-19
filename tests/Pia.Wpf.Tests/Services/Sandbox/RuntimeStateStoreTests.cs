@@ -150,6 +150,30 @@ public sealed class RuntimeStateStoreTests : IClassFixture<RedirectedProfileFixt
     }
 
     [Fact]
+    public void ARunningContainersRecord_IsNotRewritten_ItsSiblingsIs()
+    {
+        var prefix = NewPrefix();
+        var container = $"pia-mcp-{prefix}";
+        var probe = $"pia-mcp-{prefix}-probe";
+        _store.WriteGrantRecord(container, [@"C:\Tools\uv", StateOf(prefix)], stateReadOnly: true, policyRoots: [@"C:\box"]);
+        var written = File.ReadAllText(Record(container));
+
+        using (SandboxContainerLease.Acquire(container))
+        {
+            _store.WriteGrantRecord(container, [@"C:\Tools\server"], policyRoots: [@"C:\other"]);
+            _store.WriteGrantRecord(probe, [@"C:\Tools\server"]);
+        }
+
+        Assert.Equal(written, File.ReadAllText(Record(container)));
+        Assert.True(_store.StateGranted(container));
+        Assert.True(_store.StateGrantedReadOnly(container));
+        Assert.True(File.Exists(Record(probe)));
+
+        _store.WriteGrantRecord(container, [@"C:\Tools\server"]);
+        Assert.False(_store.StateGranted(container));
+    }
+
+    [Fact]
     public void PolicyFolders_AreRecordedApart_AndOnlySweepRootsHoldThem()
     {
         var prefix = NewPrefix();

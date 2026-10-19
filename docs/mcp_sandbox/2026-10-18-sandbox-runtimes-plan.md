@@ -1361,24 +1361,28 @@ Not run yet.
 const fs = require('fs');
 const path = require('path');
 
-// The container denies a folder under every spelling, so drop a \\?\ or \\.\ prefix before comparing.
+// The container denies a folder under every spelling, so drop a \\?\ or \\.\ prefix before resolving.
+// Null for a UNC path without server and share, which path.resolve would turn into a folder on the current drive.
 function plain(p) {
-  const s = path.resolve(p instanceof URL ? require('url').fileURLToPath(p) : String(p));
-  if (/^\\\\[?.]\\unc\\/i.test(s)) return path.resolve('\\\\' + s.slice(8));
-  return /^\\\\[?.]\\[a-z]:\\/i.test(s) ? s.slice(4) : s;
+  let s = p instanceof URL ? require('url').fileURLToPath(p) : String(p);
+  s = /^[\\/]{2}[?.][\\/]unc(?:[\\/]|$)/i.test(s) ? '\\\\' + s.slice(8) : s.replace(/^[\\/]{2}[?.][\\/]([a-z]:)(?:[\\/]|$)/i, '$1\\');
+  if (/^[\\/]{2}/.test(s) && !/^[\\/]{2}[^\\/]+[\\/]+[^\\/]/.test(s)) return null;
+  return path.resolve(s);
 }
 function key(p) {
-  const s = plain(p).toLowerCase();
-  return s.endsWith(path.sep) ? s : s + path.sep;
+  const s = plain(p);
+  if (s === null) return null;
+  const k = s.toLowerCase();
+  return k.endsWith(path.sep) ? k : k + path.sep;
 }
 
-const roots = (process.env.PIA_SANDBOX_ROOTS || '').split('|').filter(Boolean).map(key);
+const roots = (process.env.PIA_SANDBOX_ROOTS || '').split('|').filter(Boolean).map(key).filter(Boolean);
 const denied = (e) => e && (e.code === 'EPERM' || e.code === 'EACCES');
 
 function isAncestor(p) {
   if (typeof p !== 'string' && !(p instanceof URL) && !Buffer.isBuffer(p)) return false;
   const s = key(p);
-  return roots.some((r) => r.startsWith(s) && r !== s);
+  return s !== null && roots.some((r) => r.startsWith(s) && r !== s);
 }
 
 const orig = {
@@ -1445,8 +1449,10 @@ function resolveLinks(start) {
     s = next;
   }
 }
-function realFallback(p, opts) {
-  const s = resolveLinks(plain(p));
+function realFallback(p, opts, denial) {
+  const start = plain(p);
+  if (start === null) throw denial;
+  const s = resolveLinks(start);
   orig.statSync(s);
   const enc = typeof opts === 'string' ? opts : opts && opts.encoding;
   if (enc === 'buffer') return Buffer.from(s);
@@ -1454,14 +1460,14 @@ function realFallback(p, opts) {
 }
 function wrapRealSync(fn) {
   return function (p, opts) {
-    try { return fn.call(fs, p, opts); } catch (e) { if (denied(e)) return realFallback(p, opts); throw e; }
+    try { return fn.call(fs, p, opts); } catch (e) { if (denied(e)) return realFallback(p, opts, e); throw e; }
   };
 }
 function wrapRealCb(fn) {
   return function (p, opts, cb) {
     if (typeof opts === 'function') { cb = opts; opts = undefined; }
     fn.call(fs, p, opts, (e, r) => {
-      if (denied(e)) { try { r = realFallback(p, opts); } catch (e2) { return cb(e2); } return cb(null, r); }
+      if (denied(e)) { try { r = realFallback(p, opts, e); } catch (e2) { return cb(e2); } return cb(null, r); }
       cb(e, r);
     });
   };
@@ -1478,7 +1484,7 @@ fs.realpath.native = wrapRealCb(orig.realpathNative);
 fs.promises.lstat = wrapP(orig.pLstat);
 fs.promises.stat = wrapP(orig.pStat);
 fs.promises.realpath = async function (p, opts) {
-  try { return await orig.pRealpath.call(fs.promises, p, opts); } catch (e) { if (denied(e)) return realFallback(p, opts); throw e; }
+  try { return await orig.pRealpath.call(fs.promises, p, opts); } catch (e) { if (denied(e)) return realFallback(p, opts, e); throw e; }
 };
 require('module').syncBuiltinESMExports();
 ```
