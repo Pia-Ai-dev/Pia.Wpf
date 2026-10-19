@@ -221,7 +221,12 @@ public sealed class SandboxPathGuardTests
     public void TheHostProgramFolders_AreAskedOnlyForAReadwriteFolder()
     {
         var asked = 0;
-        var environment = Fake with { HostProgramFolders = () => { asked++; return [PathFolderWithoutUv]; } };
+        var resolved = new List<string>();
+        var environment = Fake with
+        {
+            HostProgramFolders = () => { asked++; return [PathFolderWithoutUv]; },
+            FinalPath = path => { resolved.Add(path); return null; }
+        };
 
         Assert.Null(SandboxPathGuard.JudgeRuntimeRoot(@"C:\Users\me\tools\node", isProgramFolder: false, environment));
         Assert.Null(SandboxPathGuard.JudgeRuntimeRoot(@"C:\Users\me\tools\node", isProgramFolder: true, environment));
@@ -230,9 +235,92 @@ public sealed class SandboxPathGuardTests
         Assert.Empty(SandboxPathGuard.Validate(new McpSandboxPolicy([], [@"C:\Work\reference"], false), @"C:\Tools\fs\fs.exe",
             environment, fileExists: _ => true));
         Assert.Equal(0, asked);
+        Assert.Empty(resolved);
 
         Assert.Empty(SandboxPathGuard.Validate(new McpSandboxPolicy([@"C:\Work\box"], [], false), null, environment, fileExists: _ => true));
         Assert.Equal(1, asked);
+        Assert.Equal([@"C:\Work\box"], resolved);
+    }
+
+    private const string NodeOnPath = @"C:\Program Files\nodejs";
+    private const string NvmVersion = @"C:\Users\me\AppData\Roaming\nvm\v20.11.0";
+    private const string LinkToPathFolder = @"C:\Work\tools-link";
+    private const string LinkAbovePathFolder = @"C:\Work\drive-link";
+
+    /// <summary>nvm-windows puts a link on PATH; Pia runs what sits in its target, so that target is a PATH folder too.</summary>
+    private static (SandboxGuardEnvironment Environment, FakeRuntimeHost Host) LinkedPathFolders()
+    {
+        var host = new FakeRuntimeHost();
+        host.PathEntries.AddRange([NodeOnPath, PathFolderWithoutUv]);
+        host.WithDirectory(NvmVersion).WithDirectory(PathFolderWithoutUv);
+        host.FinalPaths[NodeOnPath] = NvmVersion;
+        host.FinalPaths[LinkToPathFolder] = PathFolderWithoutUv;
+        host.FinalPaths[LinkAbovePathFolder] = @"D:\tools";
+
+        var environment = Fake with
+        {
+            HostProgramFolders = () => RuntimeCandidates.HostProgramFolders(host, _ => true),
+            FinalPath = host.ResolveFinalPath
+        };
+        return (environment, host);
+    }
+
+    [Theory]
+    [InlineData(NvmVersion)]
+    [InlineData(@"C:\Users\me\AppData\Roaming\nvm")]
+    public void AReadwriteFolderThatIsOrHoldsWhereAPathLinkLeads_IsRefused(string path)
+    {
+        var (environment, _) = LinkedPathFolders();
+
+        var issue = Single(SandboxPathGuard.Validate(new McpSandboxPolicy([path], [], false), null, environment, fileExists: _ => true));
+
+        Assert.Equal(SandboxPathIssueKind.HostProgramFolder, issue.Kind);
+        Assert.Equal(path, issue.Path);
+    }
+
+    /// <summary>A read-write folder that is itself a link writes into its target.</summary>
+    [Theory]
+    [InlineData(LinkToPathFolder)]
+    [InlineData(LinkAbovePathFolder)]
+    public void AReadwriteFolderThatLeadsToOrAboveAPathFolder_IsRefused(string path)
+    {
+        var (environment, _) = LinkedPathFolders();
+
+        var issue = Single(SandboxPathGuard.Validate(new McpSandboxPolicy([path], [], false), null, environment, fileExists: _ => true));
+
+        Assert.Equal(SandboxPathIssueKind.HostProgramFolder, issue.Kind);
+        Assert.Equal(path, issue.Path);
+        PathFreeAssert.IsPathFree(new SandboxStartException(issue.Message));
+    }
+
+    [Fact]
+    public void LinkedPathFolders_MayStillBeSharedReadOnly()
+    {
+        var (environment, _) = LinkedPathFolders();
+
+        Assert.Empty(SandboxPathGuard.Validate(
+            new McpSandboxPolicy([], [NvmVersion, LinkToPathFolder, LinkAbovePathFolder], false), null, environment, fileExists: _ => true));
+    }
+
+    [Fact]
+    public void AReadwriteFolderBesideALinkTarget_IsFine()
+    {
+        var (environment, _) = LinkedPathFolders();
+
+        Assert.Empty(SandboxPathGuard.Validate(
+            new McpSandboxPolicy([@"C:\Users\me\AppData\Roaming\nvm\v18.20.0"], [], false), null, environment, fileExists: _ => true));
+    }
+
+    [Fact]
+    public void TheCache_ResolvesAPolicyFolderOnThisPc_ButNeverANetworkOne()
+    {
+        var host = CountingHost();
+        host.ResolveFinalPath(Environment.SystemDirectory).Returns(@"D:\elsewhere");
+        var environment = SandboxGuardEnvironment.Current(new HostProgramFolderCache(host, () => 0));
+
+        Assert.Equal(@"D:\elsewhere", environment.FinalPath!(Environment.SystemDirectory));
+        Assert.Null(environment.FinalPath(@"\\fileserver\share\box"));
+        host.DidNotReceive().ResolveFinalPath(Arg.Is<string>(path => path.StartsWith(@"\\", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -284,6 +372,25 @@ public sealed class SandboxPathGuardTests
         Assert.Contains(withoutUv, folders);
         Assert.Contains(notThereYet, folders);
         Assert.DoesNotContain(folders, folder => folder.Contains("relative", StringComparison.Ordinal) || folder.Contains('%'));
+        Assert.Equal(folders.Count, folders.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public void TheHostProgramFolders_HoldWhereEveryPathAndUvFolderLeads_WithOrWithoutUv()
+    {
+        var (_, host) = LinkedPathFolders();
+        var fixedUv = Path.Combine(host.UserProfile, ".local", "bin");
+        var fixedUvTarget = Path.Combine(@"D:\", "uv-home", "bin");
+        host.WithDirectory(fixedUvTarget);
+        host.FinalPaths[fixedUv] = fixedUvTarget;
+
+        var folders = RuntimeCandidates.HostProgramFolders(host, _ => true);
+
+        Assert.Contains(NodeOnPath, folders);
+        Assert.Contains(NvmVersion, folders);
+        Assert.Contains(fixedUv, folders);
+        Assert.Contains(fixedUvTarget, folders);
+        Assert.False(host.FileExists(Path.Combine(NvmVersion, "uv.exe")));
         Assert.Equal(folders.Count, folders.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 

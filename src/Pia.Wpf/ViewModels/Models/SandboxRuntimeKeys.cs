@@ -28,4 +28,7 @@ public static class SandboxRuntimeKeys
 
     public static string? ForRunner(RunnerKind kind) =>
         kind == RunnerKind.None ? null : $"McpServers_Sandbox_Runner_{kind}";
+
+    public static string? ForGrantFailure(MachineWideGrantFailure failure) =>
+        failure == MachineWideGrantFailure.None ? null : $"McpServers_Sandbox_Runtime_FixFailed_{failure}";
 }

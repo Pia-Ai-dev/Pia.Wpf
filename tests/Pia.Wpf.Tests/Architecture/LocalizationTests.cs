@@ -606,6 +606,25 @@ public class LocalizationTests
             $"every runner-kind key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
+    /// <summary>The grant-failure key comes from a helper, so this file's literal-key regexes cannot see it.</summary>
+    [Fact]
+    public void EveryMachineWideGrantFailureKeyResolvesInAllThreeLocales()
+    {
+        var keys = Enum.GetValues<MachineWideGrantFailure>()
+            .Where(failure => failure != MachineWideGrantFailure.None)
+            .Select(failure => SandboxRuntimeKeys.ForGrantFailure(failure)!)
+            .Distinct()
+            .ToList();
+
+        Assert.Null(SandboxRuntimeKeys.ForGrantFailure(MachineWideGrantFailure.None));
+        Assert.True(keys.Count >= 5, $"non-vacuity: expected at least 5 distinct grant-failure keys, found {keys.Count}");
+        Assert.Equal(Enum.GetValues<MachineWideGrantFailure>().Length - 1, keys.Count);
+
+        var missing = MissingFromAnyLocale(ViewStrings.ResourceManager, keys);
+        Assert.True(missing.Count == 0,
+            $"every grant-failure key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
     private static List<string> MissingFromAnyLocale(ResourceManager rm, IEnumerable<string> keys)
     {
         var missing = new List<string>();

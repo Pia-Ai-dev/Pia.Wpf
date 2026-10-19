@@ -1813,6 +1813,11 @@
   <data name="McpServers_Sandbox_Runtime_FixConfirmMessage" xml:space="preserve"><value>Pia will let every sandboxed app on this PC read {0}. That is read-only access, the same Program Files gives elsewhere. Pia can't undo it; an administrator can, with the second command.&#xA;&#xA;Grant: {1}&#xA;Remove: {2}</value></data>
   <data name="McpServers_Sandbox_Runtime_FixExistingAce" xml:space="preserve"><value>This folder already carries a permission for all sandboxed apps. Pia leaves it alone, because removing Pia's change later would take that permission away too.</value></data>
   <data name="McpServers_Sandbox_Runtime_FixFailed" xml:space="preserve"><value>Pia could not change the folder's permissions: {0}</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixFailed_NotElevated" xml:space="preserve"><value>Pia is not running as administrator.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixFailed_WindowsFolder" xml:space="preserve"><value>Pia does not change permissions inside the Windows folder.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixFailed_TooWide" xml:space="preserve"><value>The folder is a whole drive, a network share or a folder Pia won't share, such as your profile, Desktop, Documents or Downloads.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixFailed_ExistingAce" xml:space="preserve"><value>The folder already carries a permission for all sandboxed apps, and removing Pia's change later would take that permission away too.</value></data>
+  <data name="McpServers_Sandbox_Runtime_FixFailed_Unexpected" xml:space="preserve"><value>Windows reported an unexpected error. Try again, or ask an administrator to change the folder's permissions.</value></data>
   <data name="McpServers_Sandbox_Runtime_FixDone" xml:space="preserve"><value>Sandboxed apps can now read the folder.</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_Node" xml:space="preserve"><value>Install Node.js for your user only, no administrator needed. Run this in a terminal, then press Detect again:</value></data>
   <data name="McpServers_Sandbox_Runtime_Guide_NodeAlt" xml:space="preserve"><value>No winget? This PowerShell command puts Node.js into your user folder instead:</value></data>

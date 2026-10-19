@@ -52,8 +52,8 @@ public static partial class RuntimeCandidates
             yield return scoopUv;
     }
 
-    /// <summary>Every fixed uv folder and registry PATH folder, normalized, whether or not it holds a program yet, and
-    /// where a uv.exe link in one leads; <paramref name="mayProbe"/> keeps the file system out of slow folders.</summary>
+    /// <summary>Every fixed uv folder and registry PATH folder, whether or not it holds a program yet, where it and a uv.exe
+    /// link in it lead; <paramref name="mayProbe"/> keeps the file system out of slow folders.</summary>
     public static IReadOnlyList<string> HostProgramFolders(IRuntimeHostService host, Func<string, bool> mayProbe)
     {
         var folders = new List<string>();
@@ -63,9 +63,14 @@ public static partial class RuntimeCandidates
                 continue;
 
             folders.Add(folder);
+            if (!mayProbe(folder))
+                continue;
+
+            if (host.ResolveFinalPath(folder) is { } final && NormalizedFolder(final) is { } finalFolder)
+                folders.Add(finalFolder);
+
             var uv = Path.Combine(folder, "uv.exe");
-            if (mayProbe(folder)
-                && host.FileExists(uv)
+            if (host.FileExists(uv)
                 && host.ResolveFinalPath(uv) is { } target
                 && NormalizedFolder(Path.GetDirectoryName(target) ?? string.Empty) is { } targetFolder)
                 folders.Add(targetFolder);

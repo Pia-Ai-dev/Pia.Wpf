@@ -80,7 +80,12 @@ public sealed record RuntimeDetection(RunnerParseResult Parse, RuntimeResolution
 
 public sealed record MachineWideGrantPreview(string Root, string GrantCommand, string RemoveCommand, bool HasExistingAce);
 
-public sealed record MachineWideGrantResult(bool Ok, string? Error);
+public enum MachineWideGrantFailure { None, NotElevated, WindowsFolder, TooWide, ExistingAce, Unexpected }
+
+public sealed record MachineWideGrantResult(MachineWideGrantFailure Failure)
+{
+    public bool Ok => Failure == MachineWideGrantFailure.None;
+}
 
 /// <param name="Runtime">The dotnet-install.ps1 -Runtime value: dotnet, aspnetcore or windowsdesktop.</param>
 /// <param name="Product">The name shown to the user, such as ASP.NET Core 8.0.</param>

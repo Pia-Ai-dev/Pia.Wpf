@@ -1381,7 +1381,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         {
             _logger.LogWarning("Reading a runtime folder's permissions failed: {ExceptionType}", ex.GetType().Name);
             _logger.SensitiveDebug("Reading a runtime folder's permissions failed: {Message}", ex.Message);
-            SetMessage(_localizationService.Format("McpServers_Sandbox_Runtime_FixFailed", ex.Message), isError: true);
+            SetMessage(GrantFailureText(MachineWideGrantFailure.Unexpected), isError: true);
             return;
         }
 
@@ -1401,7 +1401,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         var result = await runtime.GrantMachineWideReadAsync(root, CancellationToken.None);
         if (!result.Ok)
         {
-            SetMessage(_localizationService.Format("McpServers_Sandbox_Runtime_FixFailed", result.Error ?? string.Empty), isError: true);
+            SetMessage(GrantFailureText(result.Failure), isError: true);
             return;
         }
 
@@ -1413,6 +1413,10 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
             TimeSpan.FromSeconds(3));
         StartRuntimeDetection(0);
     }
+
+    private string GrantFailureText(MachineWideGrantFailure failure) =>
+        _localizationService.Format("McpServers_Sandbox_Runtime_FixFailed", _localizationService[
+            SandboxRuntimeKeys.ForGrantFailure(failure) ?? SandboxRuntimeKeys.ForGrantFailure(MachineWideGrantFailure.Unexpected)!]);
 
     [RelayCommand]
     private void CopyRuntimeGuide(string? which)

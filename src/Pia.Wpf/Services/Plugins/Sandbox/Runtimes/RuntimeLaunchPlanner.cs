@@ -222,21 +222,14 @@ public static class RuntimeLaunchPlanner
         return string.IsNullOrEmpty(rest) ? root : root + ";" + rest;
     }
 
-    // A backslash inside the quotes would be read as an escape. Values are compared whole, never split into
-    // options, so a --require keeps its module; a machine value the server's own value repeats is dropped.
+    // A backslash inside the quotes would be read as an escape. A server value, even an empty one, replaces the
+    // machine value, which may name a file the sandbox can't read.
     private static string NodeOptions(string preloadPath, string? machineOptions, string? serverOptions)
     {
         var preload = NodeOptionsPrefix + "\"" + preloadPath.Replace('\\', '/') + "\"";
-        var machine = machineOptions?.Trim() ?? string.Empty;
-        var server = serverOptions?.Trim() ?? string.Empty;
-        if (machine.Length > 0 && (" " + Collapsed(server) + " ").Contains(" " + Collapsed(machine) + " ", StringComparison.Ordinal))
-            machine = string.Empty;
-
-        return string.Join(' ', new[] { preload, machine, server }.Where(part => part.Length > 0));
+        var rest = (serverOptions ?? machineOptions)?.Trim();
+        return string.IsNullOrEmpty(rest) ? preload : preload + " " + rest;
     }
-
-    private static string Collapsed(string options) =>
-        string.Join(' ', options.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private static string? UserValue(IReadOnlyDictionary<string, string>? environment, string name)
     {
