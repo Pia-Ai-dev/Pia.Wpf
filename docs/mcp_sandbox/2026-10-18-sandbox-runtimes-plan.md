@@ -471,7 +471,9 @@ between candidates.
   write, in a read-write folder of any other saved sandboxed server, or under `McpSandboxRoot`, is skipped
   (`UvInWritableFolder`): a server could have planted it. That holds for the folder of a full-path `uvx.exe`
   too, which is tried first. `PluginService.GetSandboxedReadwriteFolders` collects the saved servers' folders,
-  switched-off ones included; a start and a Test connection get them through
+  switched-off ones included, minus folders the guard refuses whatever the policy
+  (`SandboxPathGuard.CanNeverBeGranted`: the profile or a folder above it, system and Pia data folders, the
+  sandbox root, network and relative paths), which no container ever wrote; a start and a Test connection get them through
   `McpTransportRequest.SandboxedReadwriteFolders`, the editor through `ISandboxRuntimeService.DetectAsync`.
 - Readable already when the root, the executable and the entry script all pass `IsContainerReadable`:
   Ready, no toolchain roots. (`C:\Program Files\dotnet` inherits `S-1-15-2-1` and `S-1-15-2-2` RX.)

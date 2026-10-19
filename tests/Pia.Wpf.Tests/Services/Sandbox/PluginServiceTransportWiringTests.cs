@@ -4,6 +4,7 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using Pia.Infrastructure;
+using Pia.Paths;
 using Pia.Services.Interfaces;
 using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
@@ -178,6 +179,20 @@ public sealed class PluginServiceTransportWiringTests : IDisposable
         var probe = Assert.Single(factory.Requests, r => r.IsProbe);
         Assert.Equal(expected, probe.SandboxedReadwriteFolders!.Order(StringComparer.OrdinalIgnoreCase));
         Assert.Null(Assert.Single(factory.Requests, r => r.Name == "Bare").SandboxedReadwriteFolders);
+    }
+
+    // A saved server can hold a folder the guard always refuses; it never starts, so it never wrote there.
+    [Fact]
+    public async Task AReadwriteFolderTheGuardNeverGrants_IsLeftOutOfTheSandboxedFolders()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var factory = new RecordingFactory();
+        var service = CreateService(factory);
+        await service.SaveLocalMcpAsync(null, Server("Writer", new([@"D:\tools"], [], true)), ct);
+        await service.SaveLocalMcpAsync(null,
+            Server("Never", new([PiaPaths.UserProfileRoot, @"\\server\share\x", @"relative\x"], [], true), enabled: false), ct);
+
+        Assert.Equal([@"D:\tools"], service.GetSandboxedReadwriteFolders());
     }
 
     [Fact]

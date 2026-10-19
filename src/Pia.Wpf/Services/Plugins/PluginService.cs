@@ -585,14 +585,14 @@ public class PluginService : IPluginService
     public LocalMcpDefinition? GetLocalMcpDefinition(Guid pluginId) =>
         _pluginConfigs.TryGetValue(pluginId, out var plugin) ? ReadLocalDefinition(plugin) : null;
 
-    // Switched-off servers count too: one that ran before may have left a program there. The policy holds no
-    // secret, so the read skips the DPAPI call per env value.
+    // Switched-off servers count: one may have run and left a program there. A folder the guard never grants is
+    // left out, or it would deny uv to every server. No secret is read, so env values skip DPAPI.
     public IReadOnlyList<string> GetSandboxedReadwriteFolders() =>
         [.. _pluginConfigs.Values.ToList()
             .Where(p => LocalMcpConfig.IsLocal(p.ConfigJson))
             .SelectMany(p => LocalMcpConfig.FromConfigJson(p.Name, p.Description, p.ConfigJson, static value => value)
                 ?.Sandbox?.ReadwritePaths ?? [])
-            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Where(path => !string.IsNullOrWhiteSpace(path) && !SandboxPathGuard.CanNeverBeGranted(path))
             .Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private LocalMcpDefinition? ReadLocalDefinition(SyncPlugin plugin) =>

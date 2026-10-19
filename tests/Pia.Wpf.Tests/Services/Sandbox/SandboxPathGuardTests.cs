@@ -70,6 +70,24 @@ public sealed class SandboxPathGuardTests
     }
 
     [Theory]
+    [InlineData(@"C:\Users\me", true)]
+    [InlineData(@"C:\", true)]
+    [InlineData(@"C:\Windows\Temp", true)]
+    [InlineData(@"C:\Program Files\tool", true)]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox", true)]
+    [InlineData(@"C:\Users\me\AppData\Roaming\Pia\vault", true)]
+    [InlineData(@"\\server\share\folder", true)]
+    [InlineData(@"relative\folder", true)]
+    [InlineData(@"C:\Work\box", false)]
+    [InlineData(@"C:\Users\me\.local\bin", false)]
+    [InlineData(@"C:\Users\me\AppData\Local\Pia\McpSandbox\files", false)]
+    [InlineData(PathFolderWithoutUv, false)]
+    public void CanNeverBeGranted_HoldsOnlyForFoldersTheGuardRefusesWhateverThePolicy(string path, bool never)
+    {
+        Assert.Equal(never, SandboxPathGuard.CanNeverBeGranted(path, Fake));
+    }
+
+    [Theory]
     [InlineData(@"\\server\share\folder")]
     [InlineData(@"//server/share")]
     public void ANetworkPath_IsRefused(string path)

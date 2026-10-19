@@ -200,6 +200,21 @@ public static class SandboxPathGuard
         return issues;
     }
 
+    /// <summary>True when the guard refuses this folder whatever the rest of the policy says, so no container ever writes it.</summary>
+    public static bool CanNeverBeGranted(string path) => CanNeverBeGranted(path, SandboxGuardEnvironment.Current());
+
+    internal static bool CanNeverBeGranted(string path, SandboxGuardEnvironment environment)
+    {
+        var trimmed = path.Trim();
+        if (trimmed.StartsWith(@"\\", StringComparison.Ordinal) || trimmed.StartsWith("//", StringComparison.Ordinal)
+            || !Path.IsPathFullyQualified(trimmed))
+            return true;
+
+        var full = SandboxLaunchSpecBuilder.Normalize(trimmed);
+        var sandboxRoot = SandboxLaunchSpecBuilder.Normalize(environment.SandboxRoot);
+        return FindProblem(full, sandboxRoot, SandboxLaunchSpecBuilder.IsStrictlyUnder(full, sandboxRoot), environment) is not null;
+    }
+
     /// <summary>The program's folder when the sandbox is given read access to it and the guard accepts that; otherwise null.</summary>
     public static string? GrantedCommandFolder(McpSandboxPolicy policy, string? command) =>
         GrantedCommandFolder(policy, command, SandboxGuardEnvironment.Current(), File.Exists);
