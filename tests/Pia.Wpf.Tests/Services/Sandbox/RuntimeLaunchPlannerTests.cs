@@ -411,18 +411,44 @@ public sealed class RuntimeLaunchPlannerTests
         Assert.Equal(NodeOptions + " --max-old-space-size=4096", plan.Environment["NODE_OPTIONS"]);
     }
 
-    /// <summary>The plan's NODE_OPTIONS replaces the one the container would inherit, so a machine value must be merged in.</summary>
+    /// <summary>The plan's NODE_OPTIONS replaces the one the container would inherit, so the machine value is carried over.</summary>
+    [Fact]
+    public void NodeOptions_WithoutAServerValue_KeepTheMachineValue()
+    {
+        var runner = Runner(RunnerKind.NodeScript, [], @"C:\srv\index.js");
+        var user = new Dictionary<string, string> { ["API_KEY"] = "x" };
+
+        var plan = Plan(Input(runner, Ready(RunnerKind.NodeScript, NodeInstall(null)), userEnvironment: user,
+            machineNodeOptions: "--use-openssl-ca"));
+
+        Assert.Equal(NodeOptions + " --use-openssl-ca", plan.Environment["NODE_OPTIONS"]);
+    }
+
+    /// <summary>A machine value can name a file outside the granted roots and break every start; the server's own value is the way out.</summary>
+    [Fact]
+    public void NodeOptions_WithAServerValue_ReplaceTheMachineValue()
+    {
+        var runner = Runner(RunnerKind.NodeScript, [], @"C:\srv\index.js");
+        var user = new Dictionary<string, string> { ["NODE_OPTIONS"] = "--max-old-space-size=4096" };
+
+        var plan = Plan(Input(runner, Ready(RunnerKind.NodeScript, NodeInstall(null)), userEnvironment: user,
+            machineNodeOptions: "--require \"C:/ProgramData/corp/hook.js\""));
+
+        Assert.Equal(NodeOptions + " --max-old-space-size=4096", plan.Environment["NODE_OPTIONS"]);
+    }
+
     [Theory]
     [InlineData("--use-openssl-ca", null, NodeOptions + " --use-openssl-ca")]
-    [InlineData("--use-openssl-ca", "--max-old-space-size=4096", NodeOptions + " --use-openssl-ca --max-old-space-size=4096")]
-    [InlineData(" --use-openssl-ca ", "--use-openssl-ca", NodeOptions + " --use-openssl-ca")]
-    [InlineData("--use-openssl-ca", "--max-old-space-size=4096  --use-openssl-ca", NodeOptions + " --max-old-space-size=4096  --use-openssl-ca")]
-    [InlineData("--use-openssl-ca", "--use-openssl-ca-store", NodeOptions + " --use-openssl-ca --use-openssl-ca-store")]
-    [InlineData("--require \"C:/ca/hook.js\"", "--require \"C:/app/trace.js\"",
-        NodeOptions + " --require \"C:/ca/hook.js\" --require \"C:/app/trace.js\"")]
+    [InlineData(" --use-openssl-ca ", null, NodeOptions + " --use-openssl-ca")]
+    [InlineData("--use-openssl-ca", "--max-old-space-size=4096", NodeOptions + " --max-old-space-size=4096")]
+    [InlineData("--use-openssl-ca", "--use-openssl-ca", NodeOptions + " --use-openssl-ca")]
+    [InlineData("--import \"C:/ProgramData/corp/hook.mjs\"", "--use-openssl-ca --inspect", NodeOptions + " --use-openssl-ca --inspect")]
+    [InlineData("--openssl-config=C:/ProgramData/corp/openssl.cnf", "", NodeOptions)]
+    [InlineData("--use-openssl-ca", "   ", NodeOptions)]
     [InlineData("   ", "--inspect", NodeOptions + " --inspect")]
+    [InlineData(null, "--inspect", NodeOptions + " --inspect")]
     [InlineData(null, null, NodeOptions)]
-    public void NodeOptions_AreThePreload_ThenTheMachineValue_ThenTheServersOwn(string? machine, string? server, string expected)
+    public void NodeOptions_AreThePreload_ThenTheServersOwnValue_ElseTheMachineValue(string? machine, string? server, string expected)
     {
         var runner = Runner(RunnerKind.NodeScript, [], @"C:\srv\index.js");
         var user = server is null ? null : new Dictionary<string, string> { ["NODE_OPTIONS"] = server };

@@ -475,14 +475,13 @@ public sealed class SandboxLaunchSpecBuilderTests
             MachineEnvironment = { ["NODE_OPTIONS"] = "--use-openssl-ca" },
             RegistryEnvironment = { ["NODE_OPTIONS"] = "--users-registry-value" }
         };
-        var request = Request("npx", env: new Dictionary<string, string> { ["NODE_OPTIONS"] = "--max-old-space-size=4096" },
-            args: ["-y", "@x/y"]);
+        var request = Request("npx", env: new Dictionary<string, string> { ["API_KEY"] = "mine" }, args: ["-y", "@x/y"]);
 
         var spec = Build(request, new SandboxRuntimeContext(detector, host, CanProvision: true, ["NODE_OPTIONS"])).Spec!;
 
         var preload = Path.Combine(PiaPaths.McpSandboxSupportDirectory, "node-sandbox.cjs").Replace('\\', '/');
         Assert.Equal(
-            $"--preserve-symlinks --preserve-symlinks-main --require \"{preload}\" --use-openssl-ca --max-old-space-size=4096",
+            $"--preserve-symlinks --preserve-symlinks-main --require \"{preload}\" --use-openssl-ca",
             spec.Environment["NODE_OPTIONS"]);
     }
 

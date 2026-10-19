@@ -270,8 +270,9 @@ public interface IRuntimeHostService
 {
     IReadOnlyList<string> RegistryPathEntries();     // HKLM then HKCU Path, expanded, in order
     string RegistryPath();                           // the same, joined with ';'
-    IReadOnlyList<string> UserEnvironmentNames();    // value names under HKCU\Environment
+    IReadOnlyList<string> UserEnvironmentNames();    // value names under HKCU\Environment; throws when unreadable
     string? RegistryEnvironmentValue(string name);   // HKCU over HKLM, expanded
+    string? MachineEnvironmentValue(string name);    // HKLM only, expanded
     IReadOnlyList<string>? CandidateOverride { get; } // PIA_DEBUG_SANDBOX_RUNTIME_ROOTS, DEBUG builds only
     string LocalAppData { get; }
     string RoamingAppData { get; }
@@ -525,10 +526,11 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
   `NpmExec` → `<root>\node_modules\npm\bin\npm-cli.js`, `exec` + the rest; `NodeScript` → runtime options,
   the script's full path, the script args.
 - `NODE_OPTIONS=--preserve-symlinks --preserve-symlinks-main --require "<support>/node-sandbox.cjs"` with
-  forward slashes (a backslash inside the quotes is an escape), then the machine-wide (`HKLM`) `NODE_OPTIONS`
-  read through `IRuntimeHostService.MachineEnvironmentValue`, then the server's own `NODE_OPTIONS`, each after
-  a space. Values are compared whole, never split into options: a machine value the server's own value already
-  repeats is dropped. The user-level (`HKCU`) value stays blanked like every user variable.
+  forward slashes (a backslash inside the quotes is an escape), then, after a space, one more value, never
+  split into options. When the server's own env entries define `NODE_OPTIONS`, that value, even an empty one,
+  and the machine value is left out: the server's own entries win, as everywhere else. Otherwise the
+  machine-wide (`HKLM`) `NODE_OPTIONS`, read through `IRuntimeHostService.MachineEnvironmentValue`. The
+  user-level (`HKCU`) value stays blanked like every user variable.
 - `PIA_SANDBOX_ROOTS` = every granted root, joined with `|` (illegal in Windows paths; the spike's `;`
   breaks on a folder name with a semicolon): the user's rw and ro folders, the program folder, the install
   root, `<state>`, `<support>`.
@@ -1126,7 +1128,8 @@ runtime with a reason. Anything that downloads (npm, NuGet, PyPI, CPython) is `[
   *S-1-5-18`) with a protected DACL of Users RX, Administrators F and SYSTEM F is not grantable through the
   linked token (runtime-skipped when not elevated).
 - `RuntimeLaunchPlanner`: the exact environment per kind and network state, `NODE_OPTIONS` with a path that
-  has a space (forward slashes, quoted), user `NODE_OPTIONS` appended, `PATH` merge with and without a user
+  has a space (forward slashes, quoted), the machine `NODE_OPTIONS` appended when the server defines none, the
+  server's own value (even an empty one) replacing the machine value, `PATH` merge with and without a user
   `PATH`, `PIA_SANDBOX_ROOTS` separator and members, both `NuGet.Config` bodies, `--yes` insertion and its
   absence when present, `DOTNET_CLI_HOME` for a dll, the `AC\Temp` directory per container name,
   readable-already → no roots, uvx → read-only state and a `UvPrepareRequest`. The preload resource loads and
@@ -1295,6 +1298,10 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
 - Step 2 has no undo in Pia, and an MSI repair may remove it.
 - Bare `python` still uses today's exe path; a user Python (26,099 entries here) exceeds the 20,000-entry cap.
 - Machine-level (`HKLM`) environment variables still reach containers; only `HKCU\Environment` is blanked.
+- A machine `NODE_OPTIONS` that names a file outside the granted roots (`--require`, `--import`,
+  `--openssl-config=<path>`) breaks every sandboxed Node start. The per-server way out is a `NODE_OPTIONS`
+  entry in that server's own env entries: it replaces the machine value, and an empty one keeps only Pia's
+  preload options.
 - The probe and the running server share one npm cache and rely on npm's own locking.
 - Startup sweeps the ACEs a never-saved probe leaked only as far as its grant record reaches, and nothing is
   recorded when the factory has no provisioner.
