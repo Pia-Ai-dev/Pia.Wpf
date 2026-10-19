@@ -30,8 +30,9 @@
                    <Root>\profile-elevated; -DryRun writes and prints the launch and starts nothing
     Status         integrity level, fixture verdicts, ownership, ACEs (fixture, servers, toolchain, McpSandbox
                    with its .runtime folders, McpSandboxSupport, both profiles, and every root a grant record or
-                   Launch named, kept in state.json past a Remove), .runtime sizes, grant records, orphans,
-                   container profiles
+                   Launch named, kept in state.json past a Remove; each labelled with its pia-mcp-* container
+                   and active only while Pia runs a process in it), .runtime sizes, grant records, contained
+                   and orphaned processes, container profiles
     EndSession     send WM_QUERYENDSESSION then WM_ENDSESSION (logoff) to Pia's own window, then check the log,
                    ACEs (the roots Status scans) and helper processes; exits 3 unless Pia exited and left
                    nothing behind
@@ -285,6 +286,73 @@ public static class MxcE2eWindowProbe
 '@
 }
 
+if (-not ('MxcE2eContainerProbe' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class MxcE2eContainerProbe
+{
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr buffer, int length, out int returned);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool ConvertSidToStringSid(IntPtr sid, out IntPtr text);
+    [DllImport("advapi32.dll")] static extern IntPtr FreeSid(IntPtr sid);
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode)] static extern int DeriveAppContainerSidFromAppContainerName(string name, out IntPtr sid);
+
+    const int TokenAppContainerSid = 31;
+
+    static string SidText(IntPtr sid)
+    {
+        IntPtr text;
+        if (!ConvertSidToStringSid(sid, out text)) return null;
+        try { return Marshal.PtrToStringUni(text); }
+        finally { LocalFree(text); }
+    }
+
+    // "" for a process outside any AppContainer, null when its token cannot be read.
+    public static string ProcessContainerSid(int pid)
+    {
+        var process = OpenProcess(0x1000, false, pid);
+        if (process == IntPtr.Zero) return null;
+        try
+        {
+            IntPtr token;
+            if (!OpenProcessToken(process, 0x8, out token)) return null;
+            try
+            {
+                int needed;
+                GetTokenInformation(token, TokenAppContainerSid, IntPtr.Zero, 0, out needed);
+                if (needed <= 0) return null;
+                var buffer = Marshal.AllocHGlobal(needed);
+                try
+                {
+                    if (!GetTokenInformation(token, TokenAppContainerSid, buffer, needed, out needed)) return null;
+                    var sid = Marshal.ReadIntPtr(buffer);
+                    return sid == IntPtr.Zero ? "" : SidText(sid);
+                }
+                finally { Marshal.FreeHGlobal(buffer); }
+            }
+            finally { CloseHandle(token); }
+        }
+        finally { CloseHandle(process); }
+    }
+
+    // The SID depends on the name alone, so it is known after the profile is deleted.
+    public static string NameToSid(string name)
+    {
+        IntPtr sid;
+        if (DeriveAppContainerSidFromAppContainerName(name, out sid) != 0) return null;
+        try { return SidText(sid); }
+        finally { FreeSid(sid); }
+    }
+}
+'@
+}
+
 function Get-IntegrityText([int]$processId) {
     $rid = [MxcE2eTokenProbe]::IntegrityRid($processId)
     $name = switch ($rid) { 0x1000 { 'Low' } 0x2000 { 'Medium' } 0x2100 { 'MediumPlus' } 0x3000 { 'High' } 0x4000 { 'System' } default { "0x$($rid.ToString('x'))" } }
@@ -398,15 +466,59 @@ function Get-AppContainerAces([string[]]$roots) {
     }
 }
 
-function Get-SandboxProcesses {
-    $candidates = Get-CimInstance Win32_Process | Where-Object {
-        $name = [IO.Path]::GetFileNameWithoutExtension($_.Name)
-        ($sandboxHelperNames -contains $name) -or
-        ($_.ExecutablePath -and ($_.ExecutablePath.StartsWith($Root, [StringComparison]::OrdinalIgnoreCase)))
+# A contained server runs wherever its runtime lives (dnx runs Program Files\dotnet), so its token decides.
+function Get-SandboxProcesses($containerSids = (Get-ContainerSidMap @(Get-GrantRecords))) {
+    foreach ($process in @(Get-CimInstance Win32_Process)) {
+        $sid = [MxcE2eContainerProbe]::ProcessContainerSid([int]$process.ProcessId)
+        $container = if ($sid -and $containerSids.ContainsKey($sid) -and -not (Test-TestContainerName $containerSids[$sid])) { $containerSids[$sid] } else { $null }
+        $name = [IO.Path]::GetFileNameWithoutExtension($process.Name)
+        $helper = ($sandboxHelperNames -contains $name) -or
+            ($process.ExecutablePath -and $process.ExecutablePath.StartsWith($Root, [StringComparison]::OrdinalIgnoreCase))
+        if (-not $container -and -not $helper) { continue }
+        [pscustomobject]@{
+            Pid       = $process.ProcessId
+            Parent    = $process.ParentProcessId
+            Name      = $process.Name
+            Path      = $process.ExecutablePath
+            Sid       = $sid
+            Container = $container
+        }
     }
-    $candidates | ForEach-Object {
-        [pscustomobject]@{ Pid = $_.ProcessId; Parent = $_.ParentProcessId; Name = $_.Name; Path = $_.ExecutablePath }
+}
+
+# Mappings name the containers that exist; the rest are derived from the names Pia uses, so a leak left by a
+# deleted container still shows whose it was.
+function Get-ContainerSidMap($records) {
+    $map = @{}
+    $key = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppContainer\Mappings'
+    if (Test-Path -LiteralPath $key) {
+        foreach ($mapping in @(Get-ChildItem -LiteralPath $key)) {
+            $moniker = $mapping.GetValue('Moniker')
+            if ($moniker -like 'pia-mcp-*') { $map[$mapping.PSChildName] = [string]$moniker }
+        }
     }
+    $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in @(Get-ContainerProfiles)) { [void]$names.Add($name) }
+    foreach ($record in @($records)) { if ($record.Container -like 'pia-mcp-*') { [void]$names.Add($record.Container) } }
+    foreach ($profileName in $piaProfiles.Keys) {
+        $sandbox = Join-Path (Get-ProfileLocal $profileName) 'McpSandbox'
+        if (-not (Test-Path -LiteralPath $sandbox)) { continue }
+        foreach ($dir in @(Get-ChildItem -LiteralPath $sandbox -Directory -Force)) {
+            $prefix = $dir.Name -replace '\.runtime$', ''
+            [void]$names.Add("pia-mcp-$prefix")
+            [void]$names.Add("pia-mcp-$prefix-probe")
+        }
+    }
+    foreach ($name in $names) {
+        $sid = [MxcE2eContainerProbe]::NameToSid($name)
+        if ($sid -and -not $map.ContainsKey($sid)) { $map[$sid] = $name }
+    }
+    $map
+}
+
+function Get-ContainerName([string]$sid, $containerSids) {
+    if ($containerSids.ContainsKey($sid)) { return $containerSids[$sid] }
+    '(unknown container)'
 }
 
 function Get-OurPiaProcess($state) {
@@ -523,7 +635,7 @@ function Get-GrantRecords {
                 Container     = if ($record) { $record['container'] } else { '(unreadable)' }
                 StateReadOnly = if ($record) { $record['stateReadOnly'] } else { $null }
                 Written       = if ($record) { $record['writtenUtc'] } else { $null }
-                Roots         = if ($record -and $record['roots']) { @($record['roots']) } else { @() }
+                Roots         = @(if ($record -and $record['roots']) { $record['roots'] })
             }
         }
     }
@@ -890,15 +1002,30 @@ function Initialize-ElevatedProfile {
     Write-Host "profile:   seeded $settings (first run only; sign in once more in the elevated Pia)"
 }
 
+# PowerShell turns a $null .NET argument into "", which defines the variable empty instead of removing it.
+function Set-ProcessVariable([string]$name, $value) {
+    if ($value) { [Environment]::SetEnvironmentVariable($name, [string]$value) }
+    else { Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue }
+}
+
+# ShellExecute hands Pia none of this shell's handles, so a caller piping the output is not held open until Pia
+# exits. It passes this process's environment on, so the variables are set here for the start only.
 function Start-ElevatedPia([System.Collections.Specialized.OrderedDictionary]$environment, [string]$exeDir) {
-    $startInfo = [Diagnostics.ProcessStartInfo]::new($ExePath)
-    $startInfo.UseShellExecute = $false
-    $startInfo.WorkingDirectory = $exeDir
+    $saved = @{}
     foreach ($entry in $environment.GetEnumerator()) {
-        if ($entry.Value) { $startInfo.Environment[$entry.Key] = $entry.Value }
-        else { [void]$startInfo.Environment.Remove($entry.Key) }
+        $saved[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key)
+        Set-ProcessVariable $entry.Key $entry.Value
     }
-    $started = [Diagnostics.Process]::Start($startInfo)
+    try {
+        $startInfo = [Diagnostics.ProcessStartInfo]::new($ExePath)
+        $startInfo.UseShellExecute = $true
+        $startInfo.WorkingDirectory = $exeDir
+        $started = [Diagnostics.Process]::Start($startInfo)
+    }
+    finally {
+        foreach ($entry in $saved.GetEnumerator()) { Set-ProcessVariable $entry.Key $entry.Value }
+    }
+    if (-not $started) { Fail 'Pia.Wpf.exe did not start (ShellExecute returned no process).' 3 }
     # A second instance hands over to a running Pia and exits at once.
     Start-Sleep -Seconds 3
     if ($started.HasExited) { Fail "Pia.Wpf.exe exited at once (code $($started.ExitCode)); is another Pia running?" 3 }
@@ -1062,20 +1189,23 @@ function Invoke-Status {
     Write-Section "Toolchain ($($paths.Toolchain))"
     $report.toolchain = Write-ToolchainStatus $state
 
-    # A running sandbox legitimately holds explicit ACEs on its policy paths; once nothing runs they are leaks.
-    $procs = @(Get-SandboxProcesses)
-    $sandboxRunning = $null -ne $pia -and $procs.Count -gt 0
     $records = @(Get-GrantRecords)
     Update-GrantRootsSeen $state @($records | ForEach-Object Roots)
+    $containerSids = Get-ContainerSidMap $records
+    $procs = @(Get-SandboxProcesses $containerSids)
+    # A container's explicit ACEs are legitimate while Pia runs a process in it; any other explicit ACE is a leak.
+    $runningSids = @(if ($pia) { $procs | Where-Object Container | ForEach-Object Sid })
 
-    Write-Section 'AppContainer ACEs (S-1-15-2-*; explicit ones are active while a sandbox runs, leaks after)'
+    Write-Section 'AppContainer ACEs (S-1-15-2-*; explicit ones are active while their container runs under Pia, leaks otherwise)'
     $aceRoots = @(Get-AceRoots $state)
     $harnessRoots = @(Get-AceRoots @{})
     foreach ($root in @($aceRoots | Where-Object { $harnessRoots -notcontains $_ })) { Write-Host "scanned  $root (named by a grant record or a launch)" }
     $aces = @(Get-AppContainerAces $aceRoots)
     $explicit = @($aces | Where-Object { $_.Explicit -and -not $_.WellKnown })
+    $active = @($explicit | Where-Object { $runningSids -contains $_.Sid })
     foreach ($ace in $explicit) {
-        Write-Host ("{0,-8} {1}  {2}" -f $(if ($sandboxRunning) { 'active' } else { 'LEAK' }), $ace.Sid, $ace.Path)
+        $verdict = if ($runningSids -contains $ace.Sid) { 'active' } else { 'LEAK' }
+        Write-Host ("{0,-8} {1}  {2}  {3}" -f $verdict, $ace.Sid, (Get-ContainerName $ace.Sid $containerSids), $ace.Path)
     }
     # The two well-known SIDs are never leaks; a machine-wide read grant on a toolchain shows here.
     foreach ($ace in @($aces | Where-Object { $_.Explicit -and $_.WellKnown })) {
@@ -1084,10 +1214,10 @@ function Invoke-Status {
     $inherited = @($aces | Where-Object { -not $_.Explicit -and -not $_.WellKnown })
     if ($inherited.Count -gt 0) { Write-Host "inherited: $($inherited.Count) item(s) below the explicit ones carry the same SID" }
     if (-not $aces) { Write-Host 'none' }
-    $leakedCount = if ($sandboxRunning) { 0 } else { $explicit.Count }
+    $leakedCount = $explicit.Count - $active.Count
     Write-Host "explicit ACEs: $($explicit.Count)  leaked: $leakedCount"
     $report.leakedAces = $leakedCount
-    $report.activeAces = if ($sandboxRunning) { $explicit.Count } else { 0 }
+    $report.activeAces = $active.Count
 
     Write-Section 'Runtime state folders (<profile>\local\McpSandbox\*.runtime)'
     $stateFolders = @(Get-RuntimeStateFolders)
@@ -1099,14 +1229,17 @@ function Invoke-Status {
 
     Write-Section 'Grant records (<profile>\local\McpSandboxGrants)'
     foreach ($record in $records) {
-        Write-Host ("{0,-9} {1}  stateReadOnly={2}  written {3}  {4} root(s)" -f $record.Profile, $record.Container, $record.StateReadOnly, $record.Written, $record.Roots.Count)
-        foreach ($root in $record.Roots) { Write-Host "            $root" }
+        Write-Host ("{0,-9} {1}  stateReadOnly={2}  written {3}  {4} root(s)" -f $record.Profile, $record.Container, $record.StateReadOnly, $record.Written, @($record.Roots).Count)
+        foreach ($root in @($record.Roots)) { Write-Host "            $root" }
     }
     if ($records.Count -eq 0) { Write-Host 'none' }
-    $report.grantRecords = @($records | ForEach-Object { @{ profile = $_.Profile; container = $_.Container; stateReadOnly = $_.StateReadOnly; roots = $_.Roots } })
+    $report.grantRecords = @($records | ForEach-Object { @{ profile = $_.Profile; container = $_.Container; stateReadOnly = $_.StateReadOnly; roots = @($_.Roots) } })
 
-    Write-Section 'Sandbox helper processes'
-    foreach ($p in $procs) { Write-Host ("pid {0,-6} parent {1,-6} {2}  {3}" -f $p.Pid, $p.Parent, $p.Name, $p.Path) }
+    Write-Section 'Sandbox helper processes (in a pia-mcp-* container, plm, wxc-wslc-daemon, or run from under -Root)'
+    foreach ($p in $procs) {
+        $where = if ($p.Container) { $p.Container } elseif ($null -eq $p.Sid) { '(token unreadable)' } elseif ($p.Sid) { $p.Sid } else { '(no container)' }
+        Write-Host ("pid {0,-6} parent {1,-6} {2}  {3}  {4}" -f $p.Pid, $p.Parent, $p.Name, $where, $p.Path)
+    }
     $orphans = @(if ($pia) { @() } else { $procs })
     Write-Host "helpers: $($procs.Count)  orphans (Pia not running): $($orphans.Count)"
     $report.orphans = $orphans.Count
@@ -1199,9 +1332,10 @@ function Invoke-EndSession {
     }
 
     $explicit = @(Get-AppContainerAces (Get-AceRoots $state) | Where-Object { $_.Explicit -and -not $_.WellKnown })
-    $helpersAfter = @(Get-SandboxProcesses).Count
+    $containerSids = Get-ContainerSidMap @(Get-GrantRecords)
+    $helpersAfter = @(Get-SandboxProcesses $containerSids).Count
     Write-Host "after:     explicit S-1-15-2-* ACEs=$($explicit.Count)  helper processes=$helpersAfter"
-    foreach ($ace in $explicit) { Write-Host "  ACE on $($ace.Path)" }
+    foreach ($ace in $explicit) { Write-Host "  ACE on $($ace.Path)  $(Get-ContainerName $ace.Sid $containerSids)" }
 
     if ($exited -and $explicit.Count -eq 0 -and $helpersAfter -eq 0) { Write-Host 'result:    clean'; return }
     Write-Host 'result:    NOT clean' -ForegroundColor Red
@@ -1374,9 +1508,11 @@ function Invoke-MirrorLocal {
 }
 
 # The real-container unit tests name theirs pia-mcp-test-*; those are not the app's.
+function Test-TestContainerName([string]$name) { $name -like 'pia-mcp-test*' -or $name -like 'pia-mcp-t1-*' }
+
 function Get-ContainerLabel([string]$name, $baseline) {
     if ($baseline -contains $name) { return '(existed at Init)' }
-    if ($name -like 'pia-mcp-test*' -or $name -like 'pia-mcp-t1-*') { return '(known test artefact)' }
+    if (Test-TestContainerName $name) { return '(known test artefact)' }
     '(new)'
 }
 
@@ -1386,7 +1522,7 @@ function Invoke-Baseline {
     $state['baselineMappings'] = @(Get-ContainerMappings)
     $state['realRuntimeFolders'] = Get-RealRuntimeSnapshot
     Write-State $state
-    Write-Host "baseline:  $($state['baselinePackages'].Count) container profile(s), $($state['baselineMappings'].Count) mapping(s), real npm/NuGet/uv folders snapshotted"
+    Write-Host "baseline:  $(@($state['baselinePackages']).Count) container profile(s), $(@($state['baselineMappings']).Count) mapping(s), real npm/NuGet/uv folders snapshotted"
 }
 
 function Write-LeftoverWarnings($state) {
