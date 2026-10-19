@@ -5,7 +5,7 @@
 cannot write (G-LINK), a uv tool starts after its caches are pruned (G-UVCACHE), and Pia reinstalls on a spec
 change (G-UVSPEC). Open: the owner's authenticated tool call for scenario 14 (with the PAT, from a signed-in
 assistant); whether an elevated Pia should start sandboxed servers from its elevated token (*Known limits*);
-the release items of [2026-10-17-mcp-sandbox.md](2026-10-17-mcp-sandbox.md), such as O1.
+the release items of [2026-10-17-mcp-sandbox-checklist.md](2026-10-17-mcp-sandbox-checklist.md), such as O1.
 **Owner:** Marco Altmann
 **Written:** 2026-10-18
 **Origin:** The owner-approved concept [2026-10-18-sandbox-runtimes-design.md](2026-10-18-sandbox-runtimes-design.md)
@@ -1400,8 +1400,9 @@ elevated (the editor's `_Elevated` reason does not).
 
 **Status:** run 2026-10-19. Scenarios 1-9, 11-13 and 15 pass. Scenario 14 passes without a token; the
 authenticated tool call with the owner's PAT stays with the owner. Scenario 10 is blocked: it needs a
-signed-in assistant turn, and real-container tests cover it. No product defect found. The full record is
-local, not checked in: `%LOCALAPPDATA%\PiaRuntimeSpike\runtimes-live-results.md`. The harness is
+signed-in assistant turn, and real-container tests cover it. No product defect beyond one copy fix
+(finding 2). The full record is local, not checked in:
+`%LOCALAPPDATA%\PiaRuntimeSpike\runtimes-live-results.md`. The harness is
 `tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1`.
 
 Run setup:
