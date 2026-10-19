@@ -338,10 +338,11 @@ public sealed class RuntimeHostServiceTests : IDisposable
         Assert.Contains(names, name => name.Equals("TEMP", StringComparison.OrdinalIgnoreCase) || name.Equals("TMP", StringComparison.OrdinalIgnoreCase));
     }
 
+    // The developer's real hive: one key directly under an existing parent, so the cleanup removes all it created.
     [Fact]
     public void TheUserEnvironmentNames_AreReadFromTheGivenKey_AndAMissingKeyGivesNone()
     {
-        var subKey = @"Software\Pia.Tests\" + Guid.NewGuid().ToString("N");
+        var subKey = @"Software\Pia.Tests-" + Guid.NewGuid().ToString("N");
         var unique = "PIA_TEST_NAME_" + Guid.NewGuid().ToString("N");
         try
         {
@@ -352,32 +353,27 @@ public sealed class RuntimeHostServiceTests : IDisposable
             }
 
             Assert.Equal([unique], RuntimeHostService.ReadUserEnvironmentNames(Registry.CurrentUser, subKey));
-            Assert.Empty(RuntimeHostService.ReadUserEnvironmentNames(Registry.CurrentUser, subKey + "-missing"));
+            Assert.Empty(RuntimeHostService.ReadUserEnvironmentNames(
+                Registry.CurrentUser, @"Software\pia-missing-" + Guid.NewGuid().ToString("N")));
         }
         finally
         {
             Registry.CurrentUser.DeleteSubKeyTree(subKey, throwOnMissingSubKey: false);
         }
+
+        using var left = Registry.CurrentUser.OpenSubKey(subKey);
+        Assert.Null(left);
     }
 
     /// <summary>No names would mean nothing gets blanked, so a read that fails must not look like an empty key.</summary>
     [Fact]
     public void AUserEnvironmentReadThatFails_Throws_InsteadOfGivingNoNames()
     {
-        var subKey = @"Software\Pia.Tests\" + Guid.NewGuid().ToString("N");
-        try
-        {
-            var parent = Registry.CurrentUser.CreateSubKey(subKey);
-            using (var environment = parent.CreateSubKey("Environment"))
-                environment.SetValue("PIA_TEST_SECRET", "1");
-            parent.Dispose();
+        var parent = Registry.CurrentUser.OpenSubKey("Software");
+        Assert.NotNull(parent);
+        parent.Dispose();
 
-            Assert.Throws<ObjectDisposedException>(() => RuntimeHostService.ReadUserEnvironmentNames(parent, "Environment"));
-        }
-        finally
-        {
-            Registry.CurrentUser.DeleteSubKeyTree(subKey, throwOnMissingSubKey: false);
-        }
+        Assert.Throws<ObjectDisposedException>(() => RuntimeHostService.ReadUserEnvironmentNames(parent, "Environment"));
     }
 
     [Fact]
