@@ -547,8 +547,9 @@ Static and pure. `<state>` is `PiaPaths.McpRuntimeStateDirectory(prefix)`, `<sup
 `NodeSandboxPreload.Content`. Its full text is in *Appendix A*. It answers `lstat`/`stat` of an ancestor of
 a granted root that fails with `EPERM`/`EACCES` with the stats of its own folder, `<support>` (a directory,
 in the `bigint` form when asked for it). Roots and paths compare regardless of a `\\?\` or `\\.\` prefix
-(`\\?\UNC\x` is `\\x`), letter case and trailing separators. A `realpath*` call that fails with
-`EPERM`/`EACCES` resolves the path by hand, prefix dropped: the ancestors count as plain folders, every
+(`\\?\UNC\x\y` is `\\x\y`), letter case and trailing separators; a UNC path without server and share is
+never an ancestor. A `realpath*` call that fails with `EPERM`/`EACCES` resolves the path by hand, prefix
+dropped (one without server and share rethrows): the ancestors count as plain folders, every
 component below them is `lstat`ed, and a link is read with `readlink`, spliced in (a relative target against
 the link's parent) and the walk restarted, at most 32 times (then `ELOOP`). Any other error from a component
 is rethrown, a missing leaf gives `ENOENT`, and the `encoding` option is honoured. A junction inside a
