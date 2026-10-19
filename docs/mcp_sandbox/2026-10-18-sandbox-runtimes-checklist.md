@@ -1,6 +1,9 @@
 # Sandboxed MCP servers on npx, uvx and dnx: checklist
 
-**Status:** In progress. A1–A3 done; every decision gate is answered.
+**Status:** Implemented and live-verified on `feature/mxc-sandboxed-mcp`, not pushed. Every step is done and
+every decision gate is answered. Open: the owner's authenticated scenario-14 tool call with the PAT; whether an
+elevated Pia should sandbox from its elevated token (the plan's *Known limits*); the release items of
+[2026-10-17-mcp-sandbox-checklist.md](2026-10-17-mcp-sandbox-checklist.md), such as O1.
 **Owner:** Marco Altmann
 **Written:** 2026-10-18
 **Origin:** [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md)
@@ -151,7 +154,7 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
   `Launch -RuntimeRoots`, `Launch -Elevated` with its own profile, `UndoToolchainGrant`, toolchain, support and
   `.runtime` roots in `Status` and `EndSession`, real-profile runtime folders in `Verify`, and the README section.
   *Deps:* C3 · *Effort:* S · *Value:* Enabler
-- [ ] **X2 Live run.** Scenarios 1–15 of the plan through WinWright on the e2e stack, results written into the
+- [x] **X2 Live run.** Scenarios 1–15 of the plan through WinWright on the e2e stack, results written into the
   plan's *Live verification*.
   *Deps:* X1, U2, T1, D2 · *Effort:* M · *Value:* High
 
@@ -193,5 +196,6 @@ G step 2 and guides · U editor · T real-container tests · X end to end · W d
 - `FilesystemEnumeratePaths` containment once a Windows build offers it, which could retire the preload.
 - Logging `MxcContainer.Probe` warnings at startup.
 - The grant verifier using the linked token when Pia runs elevated.
+- Starting sandboxed servers from the linked token when Pia runs elevated, or refusing to (an owner question).
 - The sandbox line on the action card naming the runtime.
 - The Pia.Docs desktop guide page and the help-corpus refresh at the next `release/*`.

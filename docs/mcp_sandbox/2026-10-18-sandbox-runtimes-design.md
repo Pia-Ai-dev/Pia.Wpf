@@ -1,6 +1,6 @@
 # Sandboxed MCP servers on npx, uvx and dnx
 
-**Status:** Owner-approved and planned in [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md).
+**Status:** Owner-approved and implemented; see [2026-10-18-sandbox-runtimes-plan.md](2026-10-18-sandbox-runtimes-plan.md).
 Measured in [2026-10-18-sandbox-runtimes-spike-results.md](2026-10-18-sandbox-runtimes-spike-results.md), which
 changes the Node and uv recipes; where this concept and the plan differ, the plan holds.
 **Owner:** Marco Altmann

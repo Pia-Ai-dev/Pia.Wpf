@@ -1,8 +1,11 @@
 # Sandboxed MCP servers on npx, uvx and dnx: plan
 
-**Status:** In progress on `feature/mxc-sandboxed-mcp`. All gates are answered (see the checklist): an empty
-value blanks a variable (G-ENV), a container cannot plant a link to a folder it cannot write (G-LINK), a uv
-tool starts after its caches are pruned (G-UVCACHE), and Pia reinstalls on a spec change (G-UVSPEC).
+**Status:** Implemented and live-verified on `feature/mxc-sandboxed-mcp`, not pushed. All gates are answered
+(see the checklist): an empty value blanks a variable (G-ENV), a container cannot plant a link to a folder it
+cannot write (G-LINK), a uv tool starts after its caches are pruned (G-UVCACHE), and Pia reinstalls on a spec
+change (G-UVSPEC). Open: the owner's authenticated tool call for scenario 14 (with the PAT, from a signed-in
+assistant); whether an elevated Pia should start sandboxed servers from its elevated token (*Known limits*);
+the release items of [2026-10-17-mcp-sandbox.md](2026-10-17-mcp-sandbox.md), such as O1.
 **Owner:** Marco Altmann
 **Written:** 2026-10-18
 **Origin:** The owner-approved concept [2026-10-18-sandbox-runtimes-design.md](2026-10-18-sandbox-runtimes-design.md)
@@ -257,7 +260,12 @@ public sealed record RuntimeDetection(RunnerParseResult Parse, RuntimeResolution
 
 public sealed record MachineWideGrantPreview(string Root, string GrantCommand, string RemoveCommand, bool HasExistingAce);
 
-public sealed record MachineWideGrantResult(bool Ok, string? Error);
+public enum MachineWideGrantFailure { None, NotElevated, WindowsFolder, TooWide, ExistingAce, Unexpected }
+
+public sealed record MachineWideGrantResult(MachineWideGrantFailure Failure)
+{
+    public bool Ok => Failure == MachineWideGrantFailure.None;
+}
 
 public sealed record RuntimeGuide(RuntimeFamily Family, string Command, string? AlternativeCommand);
 ```
@@ -485,9 +493,9 @@ dll it is the dll's folder. `roots.Check(folder, true)` refuses a too-wide or to
 - Registry through `Microsoft.Win32.Registry`: `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
   and `HKCU\Environment`, read with `RegistryValueOptions.DoNotExpandEnvironmentNames`, `%NAME%` expanded
   against the registry environment (HKCU over HKLM), then Pia's process environment.
-- `public static IReadOnlyList<string> ReadUserEnvironmentNames()`: the value names under `HKCU\Environment`,
-  empty on any error. The instance member returns the same; the factory uses the static one when DI gave it
-  no host, so blanking never depends on DI.
+- `public static IReadOnlyList<string> ReadUserEnvironmentNames()`: the value names under `HKCU\Environment`.
+  A missing key gives none; any other failed read throws. The instance member returns the same; the factory
+  uses the static one when DI gave it no host, so blanking never depends on DI.
 - Profile roots from `PiaPaths.LocalProfileRoot`, `RoamingProfileRoot`, `UserProfileRoot`: the real roots,
   never the routed data roots. `DataDirectoryRoutingTests` forbids `SpecialFolder.(Local)ApplicationData`
   elsewhere; update the comment on those three properties to say they also serve toolchain discovery.
@@ -814,8 +822,10 @@ falls back to `DeriveToolPrefix(name)`, so existing editor tests keep their `fil
   `SandboxGuardEnvironment.Current().PiaDataRoots` holds, so `FindProblem` already refuses them as Pia data;
   E1 pins that with a test for each. A read-write policy folder that is, or sits above, a registry `PATH`
   entry (machine or user, expanded) or a fixed uv folder is refused too (`HostProgramFolder`), whether or not
-  a program is there yet; read-only stays allowed. The guard asks for those folders only when it judges a
-  read-write folder, caches them for 20 s, and never probes a UNC or network-drive entry for uv.exe links.
+  a program is there yet; read-only stays allowed. Each `PATH` entry and uv folder also counts by its
+  link-resolved final path, plus the folder a `uv.exe` link in it points to; the judged read-write folder
+  matches by its own spelling and by its final path. The guard asks for those folders only when it judges a
+  read-write folder, caches them for 20 s, and resolves no link on a UNC path or a network drive.
 - `RuntimeRootVerifier : IRuntimeRootVerifier`, against `SandboxGuardEnvironment.Current()`: a path with
   `;` → `ToolchainPathUnsupported`; the profile root or above, a wide folder itself (Desktop, Documents,
   Downloads, OneDrive roots), a Pia data root outside `McpSandboxRoot` → `ToolchainTooWide` /
@@ -921,7 +931,9 @@ Behaviour:
   `SandboxPathGuard.Validate` the parse's effective command for `Kind None` and no command for a runner, as
   the factory does, so `cmd /c C:\Tools\s.exe` is judged the same way in the editor and at start. The detail
   pane's `SelectedSandboxAlsoReadable` uses the effective command too.
-- Step 2 shows when the outcome is `NeedsAdminFix` and `CanGrantMachineWide`. Step 3 (the guide) shows for
+- Step 2 shows when the outcome is `NeedsAdminFix`, an install was found and `CanGrantMachineWide`
+  (`ShowRuntimeFix`). The admin-owned reason then uses its `_Elevated` text, which points at the button, so
+  the text never names a button that is not there. Step 3 (the guide) shows for
   `NotFound`, for the toolchain `Refused` issues, and for `NeedsAdminFix` when not elevated.
 - Copy puts the command on the clipboard through `IClipboardService` and shows a snackbar.
 - An always-visible hint in the sandbox panel says user environment variables are hidden and how to pass one.
@@ -991,9 +1003,12 @@ command, the only undo of step 2.
 `SandboxRuntimeService.PreviewMachineWideGrant(root)` returns the exact commands
 `icacls "<root>" /grant *S-1-15-2-1:(OI)(CI)(RX)` and `icacls "<root>" /remove:g *S-1-15-2-1`, and whether an
 ACE exists already. If one exists, Pia refuses: the new grant would merge into it and a later removal would
-take the old access away too. `GrantMachineWideReadAsync` runs the grant through `Task.Run`, only when
-`CanGrantMachineWide` (`IElevationService.IsElevated`), never for a folder under `%WINDIR%`, and returns the
-exception message on failure. The root is the detector's install root, the folder holding the executable.
+take the old access away too. `GrantMachineWideReadAsync` runs the grant through `Task.Run` and returns a
+`MachineWideGrantFailure` code: `NotElevated` unless `CanGrantMachineWide` (`IElevationService.IsElevated`),
+`TooWide` for a volume root or a folder the verifier calls `ToolchainTooWide`, `WindowsFolder` under
+`%WINDIR%`, `ExistingAce`, or `Unexpected` (a Warning with the exception type, the message only in
+`SensitiveDebug`). The editor shows `_FixFailed` with the localized text for that code. The root is the
+detector's install root, the folder holding the executable.
 
 The editor's flow: preview → refuse with `_FixExistingAce` if an ACE exists → confirmation dialog
 (`IDialogService.ShowConfirmationDialogAsync`) naming the folder, saying it changes the folder for all
@@ -1216,14 +1231,23 @@ The harness `tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1` gains (X
   `<Root>\toolchain\uv`. Everything under `artifacts\`, never `%TEMP%`.
 - `Launch -RuntimeRoots <dirs>` writes `PIA_DEBUG_SANDBOX_RUNTIME_ROOTS` into `launch.cmd`.
 - `Launch -Elevated`: starts the Debug exe straight from the elevated shell, with its own profile
-  `<Root>\profile-elevated` (files an elevated Pia creates are read-only to the de-elevated user later).
+  `<Root>\profile-elevated` (files an elevated Pia creates are read-only to the de-elevated user later). It
+  starts Pia through ShellExecute, so Pia inherits none of the shell's handles and a piped caller gets its
+  output at once. The variables are set on the harness process for that start and put back after it; an
+  empty value removes the variable.
 - `UndoToolchainGrant`: `icacls <node-admin> /remove:g *S-1-15-2-1`, then compares the SDDL with the recorded
   one (read through .NET, never by parsing localised `icacls` output).
 - `Status` and `EndSession` add `<Root>\toolchain`, every `*.runtime` folder and the support folder to the ACE
   roots; `Status` prints each `.runtime` folder's entry count and size and lists the grant records; `Verify`
   snapshots `%LOCALAPPDATA%\npm-cache`, `%APPDATA%\npm`, `%USERPROFILE%\.nuget\packages`, `%LOCALAPPDATA%\uv`,
   `%APPDATA%\uv` (other tools on the host write `npm-cache` too, so a change there needs a look, not an
-  automatic fail).
+  automatic fail). A grant record with one root (dnx, uvx) is listed like any other.
+- `Status` decides `active` per container: an explicit ACE is active while Pia from the last launch runs and
+  a process in that ACE's AppContainer is alive; any other is a `LEAK`. Each ACE and helper line names its
+  `pia-mcp-*` container. Helpers are the processes in a `pia-mcp-*` AppContainer wherever their exe lives (a
+  dnx server runs `Program Files\dotnet\dotnet.exe`), plus `plm`, `wxc-wslc-daemon` and anything run from
+  under the root. A single `LEAK` while a server restarts can be the gap between its exit and its sweep: run
+  `Status` again before calling it a leak.
 
 Scenarios. Verdicts from files, ACLs and log lines, never from the model's wording:
 
@@ -1277,7 +1301,8 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
   path guard refuses a read-write folder that is, or sits above, a registry `PATH` entry or a fixed uv folder.
   A `PATH` entry added after a server with read-write access to its folder was saved is caught at that
   server's next start, since the factory runs the guard on every start; until then a running server can still
-  plant a program there. A uv.exe link on a network drive is not followed by the guard.
+  plant a program there. The guard follows links of local `PATH` entries and uv folders, and of a `uv.exe` in
+  them; it follows no link on a UNC path or a network drive, so a `uv.exe` link there is not traced.
 - The user's `.npmrc`, `uv.toml` and `NuGet.Config` do not apply, so private registries, registry auth and
   proxy settings from there do not reach sandboxed servers (proxy environment variables do reach the uv
   install). Cached CLI logins (`az login`) do not reach them either; use a token in the server's env.
@@ -1322,6 +1347,17 @@ Results go into *Live verification* below, the way the 2026-10-17 plan records i
 - Windows 10/11 client editions were not measured; their `C:\` ACL may make the preload unnecessary there,
   where it is harmless.
 - An elevated Pia's grant verifier still uses the elevated token; only detection uses the linked token.
+- **Owner question.** An elevated Pia starts sandboxed servers from its elevated token. The container is Low IL
+  and AppContainer-checked, but keeps `BUILTIN\Administrators` as an enabled group, so it can read objects that
+  grant ALL APPLICATION PACKAGES and Administrators but not Users (scenario 7). A small widening; the fixes
+  would be to spawn from the linked token or to refuse to sandbox from an elevated session.
+- Every npx start logs `Zugriff verweigert` (access denied) on stderr, most likely the `title` call in npm's
+  cmd-shim, which a contained `cmd.exe` without a console is refused. Harmless; the server starts.
+- Under network Deny with an empty cache, the reason shows npm's raw stderr tail: about 10 lines, with the
+  path of npm's log inside the state folder.
+- A start whose grant-record write is skipped, because a running container of that name holds the lease, runs
+  under the previous record if that container exits in the gap. This only changes which roots a later sweep
+  sees.
 
 ## Docs to update
 
@@ -1355,9 +1391,77 @@ not in `develop` yet, so this plan assumes a branch from `feature/mxc-sandboxed-
 whether proxy and CA variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`) should join the
 blanking allowlist in a later change. Decision 4 stays as decided until then.
 
+Still open after the live run: the authenticated scenario-14 tool call with the owner's PAT; whether an
+elevated Pia should sandbox from its elevated token (*Known limits*); and the start error
+`SandboxRuntimeMessages.AdminOwned`, which still says "run Pia as administrator once" when Pia already runs
+elevated (the editor's `_Elevated` reason does not).
+
 ## Live verification
 
-Not run yet.
+**Status:** run 2026-10-19. Scenarios 1-9, 11-13 and 15 pass. Scenario 14 passes without a token; the
+authenticated tool call with the owner's PAT stays with the owner. Scenario 10 is blocked: it needs a
+signed-in assistant turn, and real-container tests cover it. No product defect found. The full record is
+local, not checked in: `%LOCALAPPDATA%\PiaRuntimeSpike\runtimes-live-results.md`. The harness is
+`tests/ui-scripts/mxc-sandbox-e2e/Invoke-MxcSandboxE2e.ps1`.
+
+Run setup:
+- **Build:** Debug exe of `69bdfd36`. The later commits change only the elevated admin-owned text
+  (`58f73a1d`) and the harness (`af1de10a`).
+- **Host:** Windows Server 2025 Standard 10.0.26100, German locale. Pia ran de-elevated through `explorer.exe`
+  (Medium `S-1-16-8192`, `elevated=False`); only scenario 7 ran elevated (High `S-1-16-12288`).
+- **Stack and profile:** e2e stack `https://localhost:18081`, not signed in. The editor, Detect, Test
+  connection and Save work signed out. The throwaway profile `artifacts\mxc-sandbox-e2e\profile`, seeded by
+  `Init`; scenario 7 used `profile-elevated`.
+- **Toolchains:** Node 24.22.0 with npm 11.19.1 in `node-user` (2,458 entries, user-owned); `node-admin`
+  owned by SYSTEM with a protected MSI-shaped DACL, its SDDL recorded; an empty `node-empty`; the junction
+  `node-link` to `node-user`; uv 0.13.1. dnx used the host's `C:\Program Files\dotnet` (SDK 11.0.100-rc.2).
+- **`Status` at the start:** 0 explicit `S-1-15-2-*` ACEs, no `.runtime` folder, no grant record, no
+  helper; MXC runtime 1.0.1 already installed.
+
+Verdicts come from UIA values, files, ACLs, process tokens and log lines. Log times are local.
+
+| # | Scenario | Verdict source | Result | Evidence |
+|---|---|---|---|---|
+| 1 | npx on a user-owned Node | UIA, log | pass | Toggle on, network Allow with its warning, "Found Node.js 24.22.0, npm 11.19.1.", read-only folder `toolchain\node-user`, managed folder `McpSandbox\everything.runtime`. Cold Test connection: "Connected. 13 tool(s) available." 6.0 s to the tool list, 7.6 s end to end, far under the 90 s probe timeout; `Runtime for pia-mcp-everything-probe: Npx Ready, 1 toolchain root(s)`, `Starting … under MXC: rw=2 ro=2 net=allow runtime=Npx`. A full UIA walk of the editor answered in 896 ms while the probe ran. Save: `Running · 13 tool(s)`, warm start 0.85 s. |
+| 2 | Containment | `Status`, files, log | pass | The server ran from `everything.runtime\npm-cache\_npx\…`. While running: 4 explicit ACEs of one container, all active, on `toolchain\node-user`, `McpSandbox\everything`, `everything.runtime` and `McpSandboxSupport`; 0 leaked. State folder 6,153 entries, 43.8 MiB. `EndSession`: `Stopped 1 MCP server(s) in 962 ms`, then 0 ACEs, 0 helpers, clean. |
+| 3 | Hard kill | `Status`, sweep line | pass | After `Stop -Kill`: the same 4 ACEs as `LEAK`, 0 helpers. Next start: `ACE sweep: 4 folder(s) checked, 4 leaked sandbox ACE(s) removed, 0 entry(ies) failed` for the server, state, toolchain and support roots, in about 1.0 s. `Status` then showed only the new run's 4 active ACEs. |
+| 4 | Deny | UIA, log | pass | Network off on the saved server: the deny hint showed; warm start `net=deny`, 13 tools in 0.67 s. Removed and added again under Deny: stderr `npm error code ENOTFOUND … getaddrinfo ENOTFOUND registry.npmjs.org`, `exited with code 1`, row `Not running` with npm's stderr tail. 0 ACEs afterwards. |
+| 5 | Not found and the guide | UIA, clipboard, log | pass | `node-empty`: "Node.js was not found. Install it for your user only, as shown below.", the winget command, the PowerShell alternative, the caveat; no fix button. Both Copy buttons put the exact command on the clipboard (case-sensitive match, 113 and 405 chars). Node copied in, Detect again: "Found Node.js 24.22.0, npm 11.19.1.", Test connection 13 tools. An Administrators-owned copy passed as well: the verifier checks WRITE_DAC, and the copy inherited the user's full control. |
+| 6 | Admin-owned, not elevated | UIA, log, process trace, ACL | pass | The admin-owned reason, no fix button, the guide. Save: `Runtime for pia-mcp-adminnode: Npx NeedsAdminFix, 0 toolchain root(s)`, `SandboxStartException`, row `Not running` with the admin-owned reason. No `Starting … under MXC` line, a process-start trace over the Save caught no `node.exe`, 0 ACEs, the `node-admin` SDDL unchanged. |
+| 7 | Step 2, elevated | UIA, ACL, log, tokens | pass | Fix text and button, no guide. The confirmation named the folder and both `icacls` lines. Yes: `Granted all-app-packages read on a runtime folder in 49 ms`; the SDDL gained `(A;OICI;0x1200a9;;;AC)`, the DACL stayed protected, the owner SYSTEM; the panel read "readable already" 0.3 s later. Test connection 13 tools, `readable already True`, `rw=2 ro=1` (support folder only, no toolchain root). Saved and running: the contained processes were Low IL in their AppContainer with two privileges left. `UndoToolchainGrant`: SDDL string-equal to the recorded one, 0 `S-1-15-2-1` entries left. The reason above the button was the non-elevated text then; the `_Elevated` text replaced it after the run. |
+| 8 | dnx | UIA, log, ACL, files, tokens | pass | "Found .NET SDK 11.0.100-rc.2…", "readable already". Launch line ends `dnx Community.Mcp.DotNet@1.* --yes` (inserted by Pia), `rw=2 ro=0`. Cold Test connection 12 tools in 2.3 s; warm Save 0.62 s. The package landed only in `dotnetmcp.runtime\nuget\packages`; the real `.nuget\packages` has none. No ACE on `Program Files\dotnet`; both contained `dotnet.exe` were Low IL in the server's AppContainer. |
+| 9 | uvx | log, ACL, files | pass | "Found uv." with the read-only state-folder text. First start: `uv install … exit 0 in 4480 ms` (CPython 3.15.0, 33 packages), 2 tools, uv caches pruned. Running: the state folder's ACE is `ReadAndExecute, Synchronize` only, the server folder `Modify`, no ACE on `toolchain\uv`. Warm Deny start 1.4 s, no uv run. A spec change under Deny was refused with nothing touched; with network on, `--with tzdata` rebuilt `tools` (`exit 0 in 1936 ms`), 2 tools. |
+| 10 | Environment blanking | tests, log | blocked | `get_environment` is a tool call and needs a signed-in assistant turn. Covered by the real-container tests `MxcSandboxGateTests` and `McpTransportFactoryTests`. Every live start logged `Blanked 15 user environment variable(s)`: the host's `HKCU\Environment` names minus `Path`, `TEMP` and `TMP`, with the host's two PAT names among them. |
+| 11 | cmd metacharacters | UIA | pass | Args `/c`, `npx -y x & calc`: toggle off and disabled, the cmd-features reason, no runtime block. With the arguments one per line the toggle came back on. Cancelled; nothing started. |
+| 12 | Prefix | UIA, files, log | pass | The second `everything` previewed `everything_2.runtime`. Test connection created only `everything_2` and `everything_2.runtime`; `everything.runtime` kept its write time and entry count. Saved with prefix `everything_2`; 8 active ACEs of two containers, 0 leaked. |
+| 13 | Rename and remove | log, files, `Status` | pass | Rename: `Runtime state for prefix everything_2 deleted: 6687 entries`, both of its profiles and grant records gone, its SID on no ACE; the renamed server started cold into `renamed.runtime`. Remove: the state folder (6,687 entries), both profiles and both grant records deleted, 0 leaked. |
+| 14 | The originating server | UIA, log, `Status` | pass without a token | The first attempt stopped before any credential was entered. The coordinator reran it with only `AZURE_DEVOPS_ORG_URL` and no PAT: Test connection never calls the API (the server lists its tools statically and connects lazily). Cold Test connection 49 tools in 11.8 s; Save `initialized with 49 of 49 tools`, warm 1.3 s; 4 active ACEs, 0 leaked; state folder 15,974 entries, 124.3 MiB; remove deleted 16,508 entries; `EndSession` clean. The tool call with the owner's PAT needs a signed-in assistant and is the owner's to run. |
+| 15 | A link-resolved install | UIA, `Status`, grant record | pass | `node-link`: the panel names `toolchain\node-user`, the launch runs `node-user\node.exe`, the ACEs and the grant record name `node-user`; `node-link` appears nowhere. |
+
+Closing checks:
+- `Verify` after each part: "real profile untouched". The real `settings.json` and `history.db` hashes match
+  `Init`; `npm-cache`, `%APPDATA%\npm`, `.nuget\packages` and the uv folders are unchanged.
+- Final `Status`, Pia stopped: 0 explicit ACEs, 0 leaked, no `.runtime` folder, no grant record, 0 helpers,
+  0 orphans; container profiles and mappings back to the five from `Init`.
+- The `node-admin` SDDL matches the recorded one after `UndoToolchainGrant`, with no `S-1-15-2-1` entry.
+
+Findings:
+1. Harness, fixed after the run in `af1de10a`: `Status` called a running dnx server's ACEs `LEAK` and died on
+   a grant record with one root (8, 9); a piped `Launch -Elevated` returned only when Pia exited (7). Those
+   readings were taken directly.
+2. Copy, fixed after the run in `58f73a1d`: the editor told the user of an elevated Pia to run Pia as
+   administrator (7). The start error still does (*Open questions*).
+3. *Known limits* gained the elevated token (7), the `Zugriff verweigert` stderr line (1) and npm's raw tail
+   under Deny (4).
+4. A dispose pays the ACL rewrite back over the state folder and toolchain: `Stopped 1 MCP server(s) in
+   962 ms` (2), against 20-43 ms for an exe server on 2026-10-17.
+5. Cosmetic: a remove logs `AppContainer profile … deleted` also for a profile that never existed (6).
+6. A server's own read-write folder survives rename and remove: it is user data, outside the state-folder
+   lifecycle, and Pia never deletes it. `ResetSandboxRoot` wipes the harness's.
+7. Pre-existing (2026-10-17 finding 2): the assistant files folder ignores the data-dir override. No chat ran,
+   so nothing was written there.
+8. Not sandbox-related: uvx logs "Failed to find real location" from the venv launcher and starts anyway;
+   the Python and .NET servers refuse `server/discover` before `initialize`.
 
 ## Appendix A: the shipped Node preload
 
@@ -1607,6 +1711,12 @@ Issues (`McpServers_Sandbox_Runtime_Issue_<RuntimeIssue>`):
   your user only, as shown below." (`{0}` names the runtime, composed in code from the runtimeconfig)
 - `_DotnetAdminOwned`: "The only .NET found is installed for all users, and sandboxed apps can't read its
   folder. Run Pia as administrator once to allow it, or install .NET for your user only."
+- `_NodeAdminOwned_Elevated`: "The only Node.js found is installed for all users, and sandboxed apps can't
+  read its folder. Use the button below to allow it, or install Node.js for your user only."
+- `_DotnetAdminOwned_Elevated`: "The only .NET found is installed for all users, and sandboxed apps can't
+  read its folder. Use the button below to allow it, or install .NET for your user only."
+- The two `_Elevated` texts replace the two above while `ShowRuntimeFix` is true, so they never point at a
+  missing button. German uses "du", French "vous", as in the rest of the file.
 - `_UvNotFound`: "uv was not found. Install it for your user only, as shown below."
 - `_ToolchainTooLarge`: "The runtime's folder holds too many files to share with a sandbox. Install a separate
   copy for your user only, as shown below."
@@ -1634,7 +1744,17 @@ Step 2:
   can, with the second command." then a blank line, "Grant: {1}", a line break, "Remove: {2}".
 - `McpServers_Sandbox_Runtime_FixExistingAce`: "This folder already carries a permission for all sandboxed
   apps. Pia leaves it alone, because removing Pia's change later would take that permission away too."
-- `McpServers_Sandbox_Runtime_FixFailed` *(1)*: "Pia could not change the folder's permissions: {0}"
+- `McpServers_Sandbox_Runtime_FixFailed` *(1)*: "Pia could not change the folder's permissions: {0}" (`{0}`
+  is one of the five texts below, by `MachineWideGrantFailure`)
+- `McpServers_Sandbox_Runtime_FixFailed_NotElevated`: "Pia is not running as administrator."
+- `McpServers_Sandbox_Runtime_FixFailed_WindowsFolder`: "Pia does not change permissions inside the Windows
+  folder."
+- `McpServers_Sandbox_Runtime_FixFailed_TooWide`: "The folder is a whole drive, a network share or a folder Pia
+  won't share, such as your profile, Desktop, Documents or Downloads."
+- `McpServers_Sandbox_Runtime_FixFailed_ExistingAce`: "The folder already carries a permission for all
+  sandboxed apps, and removing Pia's change later would take that permission away too."
+- `McpServers_Sandbox_Runtime_FixFailed_Unexpected`: "Windows reported an unexpected error. Try again, or ask
+  an administrator to change the folder's permissions."
 - `McpServers_Sandbox_Runtime_FixDone`: "Sandboxed apps can now read the folder."
 
 Step 3:
