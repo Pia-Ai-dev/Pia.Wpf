@@ -175,9 +175,10 @@ fresh defaults. Two things in today's first sync would do exactly that:
 - The reseeded kanban columns would be pushed too. The server does compare timestamps for
   columns, so seeding them with an epoch `UpdatedAt` lets the account's renamed columns win.
 
-Required: the clear sets a one-shot latch in settings (*designer's call*); the next first-sync
-migration omits `Settings` from its push while the latch is set, pulls the account's settings
-normally, and clears the latch only after that first sync succeeds. A brand-new device has the
+Required: the clear sets a one-shot latch in settings (*designer's call*). While it is set, every
+push — the first-sync migration and the delta push alike, since a manual *Sync now* can run
+before the first sync — omits `Settings`. The latch is cleared in the same save that advances
+`LastSyncTimestamp` after a successful pull, i.e. once the account's settings have been applied. A brand-new device has the
 same settings problem today; fixing that is outside this change.
 
 ### What stays
@@ -231,6 +232,9 @@ Dialog — reuse `IDialogService.ShowChoiceDialogAsync`:
     available after you switch accounts.* Never list "memories" among the removed kinds.
   - E2EE is off and a provider that would be cleared has an API key → *API keys for your own AI
     providers are not stored in Pia Cloud; you will need to enter them again.*
+  - At sign-in nobody is signed in and `ForgetE2EEKey` has already reset `IsE2EEEnabled`, so the
+    account's mode is unknown. If a provider has an API key, the line says the keys must be
+    re-entered *unless the account uses end-to-end encryption*.
 - Primary: *Sign out and clear* · Secondary: *Sign out and keep* · Third: *Cancel* (nothing happens).
 
 `ShowChoiceDialogAsync` hard-codes its third button to `Common_Close`. Add an optional
@@ -274,18 +278,20 @@ Sign-out from the button — the final sync runs for **both** *clear* and *keep*
 call*), so data kept on the device is also safe in the account if the user clears it later at a
 sign-in:
 
-1. Final sync, covering both engines:
+1. Stop background sync and wait (`StopBackgroundSyncAndWaitAsync`), so the final sync is not
+   skipped for a cycle already holding the sync lock.
+2. Final sync, covering both engines:
    - `SyncClientService.SyncNowAsync`. It can report success while the push failed; judge by the
      push outcome, not the returned result.
    - `AssistantChatSyncService`: its queue (`_desired`) is in memory only, failed uploads are
      logged and dropped, and the initial upload of older chats (`AssistantChatsBackfilledAt`) is
      rate-limited and can span launches. Add a flush-and-wait with a timeout that reports whether
      every chat reached the server; un-uploaded or not-yet-backfilled chats count as a failure.
-     `StopBackgroundSyncAndWaitAsync` does not stop this service; stop it too.
-2. If any part failed, or was skipped because E2EE is not ready: on *clear*, show *Couldn't upload
+     The chat worker itself need not be stopped: after sign-out it can no longer push, and on
+     *clear* the restart ends it.
+3. If any part failed, or was skipped because E2EE is not ready: on *clear*, show *Couldn't upload
    your latest changes* with *Clear anyway* / *Cancel*; on *keep*, sign out anyway (nothing is
-   lost — the data stays on the device).
-3. Stop background sync and wait.
+   lost — the data stays on the device). *Cancel* resumes background sync.
 4. On *clear*: write the marker.
 5. `AuthService.LogoutAsync` (revokes the refresh token on the server).
 6. On *clear*: restart.
