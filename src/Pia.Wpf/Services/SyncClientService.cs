@@ -340,15 +340,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return null;
             }
 
-            // Server E2EE check: if local E2EE is off, verify against server to catch cases where
-            // E2EE was enabled on another device (e.g., first-run wizard login, app restart).
-            // Without this, sync would push IsE2EEEncrypted=false and pull rows it cannot decrypt.
-            //
-            // The latch is set only on a CONCLUSIVE answer. It used to be set before the call, so a
-            // device awaiting recovery-code onboarding checked once, bailed, and then sailed straight
-            // through this guard on every later cycle — pulling ciphertext with E2EE inactive. An
-            // unreachable server is likewise "unknown", not "off": skip the cycle rather than sync
-            // under an assumption that silently blanks encrypted rows.
+            // E2EE may be on for the account from another device. Latch only a conclusive "off": an onboarding
+            // device or an unreachable server must keep skipping cycles rather than pull ciphertext it cannot read.
             if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
@@ -401,16 +394,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
             }
 
-            // Check for pending devices (only if this device is active with E2EE).
-            // Interim (Phase 2.2): moved off the hot path onto a slower cadence — every Nth
-            // eligible cycle instead of every cycle — until the pull response carries
-            // PendingDevices (Phase 5). The first eligible cycle still checks so a device
-            // awaiting approval is surfaced promptly. Worst-case latency at the backoff
-            // ceiling is bounded by also checking on every 200 pull (ServerTimestamp != null):
-            // under the Phase 1 server that is the only signal that something — possibly a
-            // device registration — changed server-side, so it is cheap insurance against the
-            // cadence alone taking up to ~90 min (6 cycles x the 15 min ceiling) to surface a
-            // pending device.
+            // Pending devices are checked every Nth cycle, and on any 200 pull since that is the only hint a
+            // device registered; otherwise the cadence at the backoff ceiling could take ~90 min.
             if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
             {
                 await _deviceMgmt.EnsureRecoveryProofKeyAsync();
@@ -502,9 +487,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 ? await _personaService.GetPersonasAsync()
                 : [];
             var providers = await _providerService.GetProvidersAsync();
-            // Load every session in pages instead of the old silent 10k cap (GetSessionsAsync(0, 10_000)),
-            // so accounts with more than 10k sessions still migrate fully. The chunked push below bounds
-            // the request bodies, so there is no reason to cap the load either.
+            // Uncapped: the chunked push below already bounds the request bodies.
             var sessions = new List<OptimizationSession>();
             for (var offset = 0; ; offset += SessionLoadPageSize)
             {
@@ -520,10 +503,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var todos = _todoService is not null
                 ? await _todoService.GetAllAsync()
                 : [];
-            // MinValue = "everything": scheduled jobs are cursor-gated in the delta push and
-            // were previously omitted here, so a job edited during an E2EE-onboarding window
-            // (pushed plaintext -> 403, cursor advanced on pull) could never re-sync. Include
-            // them in the full re-push like every other entity.
+            // MinValue: the delta push is cursor-gated, so only a full re-push recovers a job rejected mid-onboarding.
             var scheduledJobs = _scheduledJobService is not null
                 ? await _scheduledJobService.GetModifiedSinceAsync(DateTime.MinValue)
                 : [];
@@ -1008,21 +988,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     // cursor can never spin forever.
     private const int MaxPullPages = 1000;
 
-    /// <summary>
-    /// Pulls remote changes, draining the opt-in <c>?limit=</c> pagination (Sec 6.3): each page is
-    /// applied, and while the server reports <see cref="SyncPullResponse.HasMore"/> the loop re-pulls
-    /// with the advanced <c>since</c> cursor (the continuation token). The returned tuple reports the
-    /// aggregate across all drained pages; the returned <c>ServerTimestamp</c> is the last page's, so
-    /// the caller advances the cursor past everything drained.
-    ///
-    /// Server contract this drain depends on (not verifiable from this repo — see the Pia-server
-    /// unit that implements <c>?limit=</c>): on a <c>HasMore=true</c> page, <c>ServerTimestamp</c>
-    /// must be the max <c>SyncedAt</c> actually included in that page (never "server now"), and
-    /// pagination must never split rows that share the same <c>SyncedAt</c> across two pages.
-    /// Otherwise advancing <c>since</c> to it — including the later-page-drain-failure path below,
-    /// which advances the cursor past only the pages successfully applied so far — would silently
-    /// and permanently skip un-drained rows.
-    /// </summary>
+    /// <summary>Drains every pull page. Relies on the server stamping a HasMore page with its own max SyncedAt
+    /// and never splitting a SyncedAt across pages; otherwise advancing <c>since</c> skips rows.</summary>
     private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp, bool SettingsUndecryptable)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
@@ -1076,13 +1043,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         return (totalPulled, totalDecryptErrors, true, lastServerTimestamp, settingsUndecryptable);
     }
 
-    /// <summary>
-    /// Requests and applies a single pull page. Returns the page outcome including
-    /// <c>HasMore</c> so the <see cref="PullChangesAsync"/> drain loop knows whether to continue.
-    /// </summary>
-    /// <summary>
-    /// True when the page holds at least one E2EE row and this client is not in a state to decrypt it.
-    /// </summary>
+    /// <summary>True when the page holds at least one E2EE row and this client is not in a state to decrypt it.</summary>
     private bool CarriesUnreadableCiphertext(SyncPullResponse pull, string? userId)
     {
         if (_e2ee?.IsReady() == true && userId is not null)

@@ -539,7 +539,6 @@ public class AuthService : IAuthService
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
 
-            // Revoke refresh token on server
             var refreshToken = DecryptRefreshToken();
             if (!string.IsNullOrEmpty(serverUrl) && !string.IsNullOrEmpty(refreshToken))
             {
@@ -555,7 +554,6 @@ public class AuthService : IAuthService
                 }
             }
 
-            // Clear local state
             _encryptedAccessToken = null;
             _encryptedRefreshToken = null;
             UserDisplayName = null;

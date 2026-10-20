@@ -372,8 +372,6 @@ public partial class App : Application
         using var scope = Bootstrapper.ServiceProvider.CreateScope();
         var wizard = scope.ServiceProvider.GetRequiredService<Views.FirstRunWizardWindow>();
 
-        // ShowDialog blocks until the wizard is closed
-        // If user closes without completing (X button), treat as skip
         var result = wizard.ShowDialog();
         if (ShouldMarkWizardCompletedOnClose(result, LocalDataResetMarker.IsPending))
         {
