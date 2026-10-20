@@ -959,6 +959,7 @@ public static class Bootstrapper
         // Provider tool-calling capability probe for the Agent lever/suggestion (R10).
         services.AddSingleton<IProviderCapabilityService, ProviderCapabilityService>();
         services.AddSingleton<AssistantChatSyncService>();
+        services.AddSingleton<IChatSyncFlusher>(sp => sp.GetRequiredService<AssistantChatSyncService>());
 
         // Background services
         services.AddSingleton<ReminderBackgroundService>();

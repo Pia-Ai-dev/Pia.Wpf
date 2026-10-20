@@ -18,7 +18,7 @@ namespace Pia.Services;
 /// startup. See docs/server/assistant-chat-history.md §4. Best-effort: any
 /// failure logs and is swallowed; the local store remains authoritative.
 /// </summary>
-public sealed class AssistantChatSyncService : BackgroundService
+public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlusher
 {
     private enum OpKind { Upsert, Delete }
     private readonly record struct SyncOp(Guid ChatId, OpKind Kind);
@@ -43,6 +43,11 @@ public sealed class AssistantChatSyncService : BackgroundService
 
     private readonly object _stateLock = new();
     private readonly Dictionary<Guid, OpKind> _desired = new();
+    private readonly List<TaskCompletionSource<bool>> _flushWaiters = new();
+
+    // Both guarded by _stateLock so a flush cannot register after the loop has handed out its last results.
+    private bool _disabled;
+    private bool _loopExited;
 
     /// <summary>Set by the upsert path on a 429 so the backfill can abandon a pass the server has already
     /// closed the window on, instead of spending the rest of the catalogue on rejections. Unsynchronized
@@ -94,12 +99,20 @@ public sealed class AssistantChatSyncService : BackgroundService
         return base.StartAsync(cancellationToken);
     }
 
-    public override Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _chatService.ChatsChanged -= OnChatsChanged;
         _chatService.ChatAccessed -= OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted -= OnEncryptedMigrationCompleted;
-        return base.StopAsync(cancellationToken);
+        try
+        {
+            await base.StopAsync(cancellationToken);
+        }
+        finally
+        {
+            // A stop before ExecuteAsync ever ran skips its finally.
+            CloseFlushes();
+        }
     }
 
     /// <summary>
@@ -142,15 +155,73 @@ public sealed class AssistantChatSyncService : BackgroundService
         _signal.Writer.TryWrite(0);
     }
 
+    public async Task<bool> FlushAsync(TimeSpan timeout, CancellationToken ct = default)
+    {
+        var signedIn = _authService.IsLoggedIn;
+        var waiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_stateLock)
+        {
+            if (_disabled) return true;
+            if (_loopExited || !signedIn) return false;
+            _flushWaiters.Add(waiter);
+        }
+
+        _signal.Writer.TryWrite(0);
+        try
+        {
+            return await waiter.Task.WaitAsync(timeout, ct);
+        }
+        catch (TimeoutException)
+        {
+            _logger.LogInformation("Assistant chat sync flush timed out after {Timeout}", timeout);
+            return false;
+        }
+        finally
+        {
+            lock (_stateLock) _flushWaiters.Remove(waiter);
+        }
+    }
+
+    private List<TaskCompletionSource<bool>> TakeFlushWaiters()
+    {
+        lock (_stateLock)
+        {
+            var taken = _flushWaiters.ToList();
+            _flushWaiters.Clear();
+            return taken;
+        }
+    }
+
+    private void CloseFlushes()
+    {
+        bool disabled;
+        lock (_stateLock)
+        {
+            _loopExited = true;
+            disabled = _disabled;
+        }
+        Complete(TakeFlushWaiters(), disabled);
+    }
+
+    private static void Complete(IEnumerable<TaskCompletionSource<bool>> waiters, bool result)
+    {
+        foreach (var waiter in waiters) waiter.TrySetResult(result);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("AssistantChatSyncService started");
 
+        List<TaskCompletionSource<bool>> covered = [];
         try
         {
             await Task.Delay(_startupDelay, stoppingToken);
 
-            if (!await RunStartupCycleAsync(stoppingToken)) return;
+            if (!await RunStartupCycleAsync(stoppingToken))
+            {
+                lock (_stateLock) _disabled = true;
+                return;
+            }
 
             // A pass gets one rate-limit window, so without a nudge the remainder waits for the next launch
             // — weeks, on a catalogue of any size. Armed even when startup finished, since an encrypted
@@ -162,7 +233,11 @@ public sealed class AssistantChatSyncService : BackgroundService
 
             await foreach (var _ in _signal.Reader.ReadAllAsync(stoppingToken))
             {
-                await DrainAsync(stoppingToken);
+                // A flush that registers mid-pass may have enqueued ops this pass never saw; its own signal
+                // gives it the next one.
+                covered = TakeFlushWaiters();
+
+                var drainOk = await DrainAsync(stoppingToken);
 
                 if (_resendAllRequested)
                 {
@@ -173,11 +248,28 @@ public sealed class AssistantChatSyncService : BackgroundService
 
                 if (_backfillPaced)
                     _backfillPaced = await RunStartupPushAsync(stoppingToken);
+
+                if (!drainOk)
+                {
+                    // A dropped op is lost for every flush already waiting, including ones registered mid-pass.
+                    Complete(covered.Concat(TakeFlushWaiters()), false);
+                }
+                else
+                {
+                    var backfilled = (await _settingsService.GetSettingsAsync()).AssistantChatsBackfilledAt is not null;
+                    Complete(covered, backfilled);
+                }
+                covered = [];
             }
         }
         catch (OperationCanceledException)
         {
             // Normal shutdown.
+        }
+        finally
+        {
+            Complete(covered, false);
+            CloseFlushes();
         }
     }
 
@@ -237,14 +329,16 @@ public sealed class AssistantChatSyncService : BackgroundService
         }
     }
 
-    private async Task DrainAsync(CancellationToken ct)
+    /// <summary>False when an op did not reach the server and was dropped.</summary>
+    private async Task<bool> DrainAsync(CancellationToken ct)
     {
+        var allReached = true;
         while (true)
         {
             SyncOp next;
             lock (_stateLock)
             {
-                if (_desired.Count == 0) return;
+                if (_desired.Count == 0) return allReached;
                 var kvp = _desired.First();
                 _desired.Remove(kvp.Key);
                 next = new SyncOp(kvp.Key, kvp.Value);
@@ -252,7 +346,8 @@ public sealed class AssistantChatSyncService : BackgroundService
 
             try
             {
-                await ProcessOpAsync(next, ct);
+                if (!await ProcessOpAsync(next, ct))
+                    allReached = false;
             }
             catch (OperationCanceledException)
             {
@@ -262,6 +357,7 @@ public sealed class AssistantChatSyncService : BackgroundService
             {
                 _logger.LogWarning(ex,
                     "Sync op {Kind} for chat {ChatId} failed", next.Kind, next.ChatId);
+                allReached = false;
             }
         }
     }

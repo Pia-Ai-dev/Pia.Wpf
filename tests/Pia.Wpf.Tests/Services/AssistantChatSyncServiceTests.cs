@@ -706,7 +706,173 @@ public class AssistantChatSyncServiceTests
         await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task Flush_AfterQueuedUpsertsReachTheServer_ReturnsTrue()
+    {
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.OK);
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        EnqueueUpsert(sut, chat.Id);
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.True(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+    }
+
+    [Fact]
+    public async Task Flush_WhenAnUpsertFails_ReturnsFalse()
+    {
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.InternalServerError);
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        EnqueueUpsert(sut, chat.Id);
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+    }
+
+    [Fact]
+    public async Task Flush_WhenCapabilityIsOff_ReturnsTrueImmediately()
+    {
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(false);
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+            Assert.True(flush.IsCompletedSuccessfully);
+            Assert.True(await flush);
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Flush_BeforeTheWorkerIsListening_ReturnsFalseAtTheTimeout()
+    {
+        var sut = CreateWorker(TimeSpan.FromSeconds(30));
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var result = await sut.FlushAsync(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken);
+            stopwatch.Stop();
+
+            Assert.False(result);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"flush took {stopwatch.Elapsed}");
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Flush_WithBackfillStillOwed_ReturnsFalse()
+    {
+        var chat = SampleChat();
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Null((await _settings.GetSettingsAsync()).AssistantChatsBackfilledAt);
+    }
+
+    [Fact]
+    public async Task Flush_WhenSignedOut_ReturnsFalseImmediately()
+    {
+        SignOut();
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        Assert.True(flush.IsCompletedSuccessfully);
+        Assert.False(await flush);
+    }
+
+    [Fact]
+    public async Task Flush_WhenTheWorkerStops_ReturnsFalseWithoutWaitingForTheTimeout()
+    {
+        var sut = CreateWorker(TimeSpan.FromSeconds(30));
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        await sut.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+    }
+
     // ===== Helpers =====
+
+    private SyncAssistantChat ArrangeBackfilledWorkerWithChat(HttpStatusCode putStatus)
+    {
+        var chat = SampleChat();
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            AssistantChatsBackfilledAt = DateTime.UtcNow,
+        });
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, putStatus, "{}");
+        return chat;
+    }
+
+    // Enqueued before StartAsync so the op and the flush are both in place before the worker's first pass.
+    private static void EnqueueUpsert(AssistantChatSyncService sut, Guid chatId)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("EnqueueOp", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var upsert = Enum.Parse(m.GetParameters()[1].ParameterType, "Upsert");
+        m.Invoke(sut, [chatId, upsert]);
+    }
+
+    private AssistantChatSyncService CreateWorker(TimeSpan startupDelay) =>
+        new(_chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
+            Substitute.For<ISyncClientService>(), NullLogger<AssistantChatSyncService>.Instance,
+            startupDelayOverride: startupDelay, backfillRetryIntervalOverride: TimeSpan.FromMinutes(10));
 
     private void SignOut()
     {
