@@ -392,6 +392,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (pullOk && serverTimestamp.HasValue)
             {
                 settings.LastSyncTimestamp = serverTimestamp.Value;
+                settings.SuppressSettingsPushAfterReset = false;
                 await _settingsService.SaveSettingsAsync(settings);
             }
             else if (!pullOk)
@@ -529,15 +530,10 @@ public class SyncClientService : ISyncClientService, IDisposable
             var isE2EE = _e2ee?.IsReady() == true;
             var userId = isE2EE ? settings.SyncUserId : null;
 
-            // Unlike the delta push, first sync never gates Settings on the hash: it's the one
-            // path where an unchanged-since-last-push local hash can still mean the server needs
-            // a fresh Settings row — e.g. EnableE2EEAsync migrating a previously-plaintext-synced
-            // account (settings content unchanged, but the server's row must switch from
-            // plaintext to E2EE), or a first sync to a brand-new account/server that has no
-            // Settings row at all yet. The byte win from omitting Settings only matters on the
-            // frequent delta push; first sync is rare, so always include them here.
+            // No hash gate here: an unchanged hash can still need a fresh server row (E2EE migration,
+            // new account). Only reset defaults are held back, so they never overwrite the account's.
             var settingsHash = SyncMapper.ComputeSettingsHash(settings);
-            const bool settingsChanged = true;
+            var settingsChanged = !settings.SuppressSettingsPushAfterReset;
 
             // Project every entity to its Sync DTO once, up front. Sessions dominate the volume, so
             // the push is chunked below by session slices; the (typically small) non-session entities
@@ -619,6 +615,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (pullOk && serverTimestamp.HasValue)
             {
                 settings.LastSyncTimestamp = serverTimestamp.Value;
+                settings.SuppressSettingsPushAfterReset = false;
                 await _settingsService.SaveSettingsAsync(settings);
             }
             else
@@ -816,13 +813,10 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         var pendingDeletes = _deleteTracker.GetPendingDeletes();
 
-        // Settings-hash gate: omit Settings from the push unless the plaintext projection changed
-        // since the last successful push. ToSyncSettings stamps ModifiedAt = UtcNow and (under
-        // E2EE) re-encrypts with a fresh DEK/nonce every call, so the payload always differs on
-        // the wire — hashing plaintext is the only stable change-signal. The server treats absent
-        // Settings as no-change, so omitting them is safe.
+        // Hash the plaintext: the wire payload differs every call (ModifiedAt, fresh DEK). Absent
+        // Settings is no-change to the server; reset defaults are held back until a pull lands.
         var settingsHash = SyncMapper.ComputeSettingsHash(settings);
-        var settingsChanged = settingsHash != settings.LastPushedSettingsHash;
+        var settingsChanged = !settings.SuppressSettingsPushAfterReset && settingsHash != settings.LastPushedSettingsHash;
 
         var request = new SyncPushRequest
         {

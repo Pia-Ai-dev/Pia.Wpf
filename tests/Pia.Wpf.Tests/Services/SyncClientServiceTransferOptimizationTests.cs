@@ -184,18 +184,121 @@ public class SyncClientServiceTransferOptimizationTests
         Assert.True(doc.RootElement.TryGetProperty("clientTimestamp", out _));
     }
 
+    // --- First sync after a local-data clear: never push reset preferences over the account's ---
+
+    private AppSettings ArrangeFirstSync(CapturingHandler handler, bool suppressSettingsPush)
+    {
+        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
+        _authService.IsLoggedIn.Returns(true);
+        _authService.GetAccessTokenAsync().Returns("token");
+        var settings = new AppSettings
+        {
+            SyncEnabled = true,
+            ServerUrl = "http://test",
+            SuppressSettingsPushAfterReset = suppressSettingsPush
+        };
+        _settingsService.GetSettingsAsync().Returns(settings);
+        return settings;
+    }
+
+    private static string PullResponseJson(SyncSettings? accountSettings = null) =>
+        JsonSerializer.Serialize(new SyncPullResponse { ServerTimestamp = DateTime.UtcNow, Settings = accountSettings });
+
+    [Fact]
+    public async Task FirstSync_AfterReset_AppliesTheAccountsSettings()
+    {
+        var sut = CreateSut();
+        var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(),
+            HttpStatusCode.OK, PullResponseJson(new SyncSettings { Theme = (int)AppTheme.Dark }));
+        var settings = ArrangeFirstSync(handler, suppressSettingsPush: true);
+
+        await sut.PerformFirstSyncMigrationAsync();
+
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
+    [Fact]
+    public async Task FirstSync_AfterReset_OmitsSettings_ThenClearsTheFlag()
+    {
+        var sut = CreateSut();
+        var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(), HttpStatusCode.OK, PullResponseJson());
+        var settings = ArrangeFirstSync(handler, suppressSettingsPush: true);
+
+        await sut.PerformFirstSyncMigrationAsync();
+
+        Assert.NotEmpty(handler.PushBodies);
+        foreach (var body in handler.PushBodies)
+        {
+            using var doc = JsonDocument.Parse(body);
+            Assert.False(doc.RootElement.TryGetProperty("settings", out _), "reset preferences must not be pushed");
+        }
+        Assert.Null(settings.LastPushedSettingsHash);
+        Assert.NotNull(settings.LastSyncTimestamp);
+        Assert.False(settings.SuppressSettingsPushAfterReset);
+    }
+
+    [Fact]
+    public async Task FirstSync_AfterReset_PullFails_KeepsTheFlag()
+    {
+        var sut = CreateSut();
+        var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(), HttpStatusCode.InternalServerError, "{}");
+        var settings = ArrangeFirstSync(handler, suppressSettingsPush: true);
+
+        await sut.PerformFirstSyncMigrationAsync();
+
+        Assert.Null(settings.LastSyncTimestamp);
+        Assert.True(settings.SuppressSettingsPushAfterReset);
+    }
+
+    [Fact]
+    public async Task DeltaPush_AfterReset_OmitsSettings()
+    {
+        var sut = CreateSut();
+        // A plugin pref forces the POST so the body can be inspected.
+        _pluginService.GetPendingPreferenceChanges().Returns(
+            [new SyncPluginPreference { PluginId = Guid.NewGuid(), IsEnabled = true }]);
+        var settings = new AppSettings { LastPushedSettingsHash = null, SuppressSettingsPushAfterReset = true };
+
+        var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson());
+        using var client = OkClient(handler);
+
+        var result = await InvokePushChangesAsync(sut, client, settings);
+
+        Assert.Equal(1, handler.PushCount);
+        Assert.True(result.PushSucceeded);
+        using var doc = JsonDocument.Parse(handler.LastPushBody!);
+        Assert.False(doc.RootElement.TryGetProperty("settings", out _), "reset preferences must not be pushed");
+        Assert.Null(settings.LastPushedSettingsHash);
+        Assert.True(settings.SuppressSettingsPushAfterReset);
+    }
+
+    [Fact]
+    public async Task FirstSync_WithoutReset_StillSendsSettings()
+    {
+        var sut = CreateSut();
+        var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(), HttpStatusCode.OK, PullResponseJson());
+        var settings = ArrangeFirstSync(handler, suppressSettingsPush: false);
+
+        await sut.PerformFirstSyncMigrationAsync();
+
+        using var doc = JsonDocument.Parse(handler.PushBodies[0]);
+        Assert.True(doc.RootElement.TryGetProperty("settings", out _), "the first sync must send local settings");
+        Assert.Equal(SyncMapper.ComputeSettingsHash(settings), settings.LastPushedSettingsHash);
+    }
+
     private static string PushResponseJson() =>
         JsonSerializer.Serialize(new SyncPushResponse { ServerTimestamp = DateTime.UtcNow });
 
-    /// <summary>
-    /// Captures the (gzip-decompressed) push body and its Content-Encoding, and answers pushes with
-    /// a canned SyncPushResponse and pulls with 304 (so the first-sync migration's follow-up pull is
-    /// a cheap no-op).
-    /// </summary>
-    private sealed class CapturingHandler(HttpStatusCode pushStatus, string pushBody) : HttpMessageHandler
+    /// <summary>Captures the gzip-decompressed push bodies; pulls answer 304 unless a pull response is given.</summary>
+    private sealed class CapturingHandler(
+        HttpStatusCode pushStatus,
+        string pushBody,
+        HttpStatusCode pullStatus = HttpStatusCode.NotModified,
+        string? pullBody = null) : HttpMessageHandler
     {
         public int PushCount { get; private set; }
         public string? LastPushBody { get; private set; }
+        public List<string> PushBodies { get; } = [];
         public string LastPushContentEncoding { get; private set; } = "";
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -211,6 +314,7 @@ public class SyncClientServiceTransferOptimizationTests
                     LastPushBody = request.Content.Headers.ContentEncoding.Contains("gzip")
                         ? Decompress(bytes)
                         : System.Text.Encoding.UTF8.GetString(bytes);
+                    PushBodies.Add(LastPushBody);
                 }
                 return new HttpResponseMessage(pushStatus)
                 {
@@ -218,8 +322,12 @@ public class SyncClientServiceTransferOptimizationTests
                 };
             }
 
-            // Pull (first-sync only): a 304 keeps the follow-up pull a no-op.
-            return new HttpResponseMessage(HttpStatusCode.NotModified);
+            if (pullBody is null)
+                return new HttpResponseMessage(pullStatus);
+            return new HttpResponseMessage(pullStatus)
+            {
+                Content = new StringContent(pullBody, System.Text.Encoding.UTF8, "application/json")
+            };
         }
 
         private static string Decompress(byte[] bytes)
