@@ -1040,7 +1040,17 @@
   <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Synchroniser sans chiffrement ?</value></data>
   <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Ne continuez que si le chiffrement de ce compte a été réinitialisé volontairement. Vos données seront alors envoyées au serveur sans chiffrement de bout en bout, et cet appareil ne vous avertira plus.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Un nouvel appareil demande l'accès</value></data>
-  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>Un nouvel appareil souhaite rejoindre votre compte.&#xA;&#xA;Appareil : {0}&#xA;Empreinte : {1}&#xA;&#xA;Comparez cette empreinte avec celle affichée sur le nouvel appareil et n'approuvez que si elles correspondent. Le nouvel appareil vous demande ensuite de comparer l'empreinte de cet appareil : {2}&#xA;&#xA;Voulez-vous approuver cet appareil ?</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>Un nouvel appareil souhaite rejoindre votre compte. Ne l'approuvez que si vous venez de vous connecter vous-même sur cet appareil et que les deux empreintes ci-dessous correspondent.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>Le nom de cet appareil contenait des caractères masqués ou de contrôle. Ils ont été supprimés avant l'affichage. Soyez prudent : n'approuvez que si vous êtes certain qu'il s'agit de votre appareil.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Appareil demandeur</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Nom de l'appareil</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Empreinte</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Comparez cette empreinte caractère par caractère avec celle affichée sur le nouvel appareil.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>Cet appareil</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>Après votre approbation, le nouvel appareil vous demande de confirmer cette empreinte.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Approuver</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Ne pas approuver</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Appareil sans nom</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Refuser l'appareil ?</value></data>
   <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Voulez-vous refuser et révoquer {0} ? Si vous ne reconnaissez pas cet appareil, révoquez-le.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Appareil approuvé</value></data>

@@ -1003,7 +1003,17 @@
   <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Sync without encryption?</value></data>
   <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Only continue if this account's encryption was reset on purpose. Your data will then be sent to the server without end-to-end encryption, and this device will stop warning you about it.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>New device requesting access</value></data>
-  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>A new device wants to join your account.&#xA;&#xA;Device: {0}&#xA;Fingerprint: {1}&#xA;&#xA;Compare this fingerprint with the one shown on the new device and approve only if they match. The new device then asks you to compare the fingerprint of this device: {2}&#xA;&#xA;Do you want to approve this device?</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>A new device wants to join your account. Approve it only if you just signed in on that device yourself and both fingerprints below match.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>The name of this device contained hidden or control characters. They were removed before display. Be cautious: approve only if you are certain this is your device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Requesting device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Device name</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Fingerprint</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Compare this fingerprint character by character with the one shown on the new device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>This device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>After you approve, the new device asks you to confirm this fingerprint.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Approve</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Don't approve</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unnamed device</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Reject device?</value></data>
   <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke {0}? If you don't recognize this device, revoke it.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Device approved</value></data>

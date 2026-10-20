@@ -442,7 +442,7 @@
                    Foreground="{DynamicResource TextMutedBrush}"
                    Margin="0,0,0,8">
           <Run Text="{loc:Str Settings_E2EE_FingerprintLabel}"/>
-          <Run Text="{Binding DeviceFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaMonoFont}"/>
+          <Run Text="{Binding DeviceFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaFingerprintFont}"/>
         </TextBlock>
         <ui:Button Visibility="{Binding IsE2EEEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
                    Content="{loc:Str Settings_E2EE_CheckDeviceRequests}"

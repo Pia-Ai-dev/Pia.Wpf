@@ -111,24 +111,62 @@ public class AccountSettingsE2EENoticeTests
     {
         _deviceKeys.ComputeFingerprint("join-key").Returns("JOIN-FP");
         _deviceKeys.GetFingerprint().Returns("OWN-FP");
+        GivenPendingDevice("New PC");
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowDeviceApprovalDialogAsync(
+            new DeviceApprovalPrompt("New PC", false, "JOIN-FP", "OWN-FP"));
+        await _deviceMgmt.DidNotReceive().ApproveDeviceAsync(Arg.Any<string>(), Arg.Any<DeviceInfo>());
+    }
+
+    [Fact]
+    public async Task TheApprovalDialog_ShowsAForgedFingerprintLineAsPartOfTheNameAndFlagsIt()
+    {
+        GivenPendingDevice("New PC\r\n\r\nFingerprint: AAAA-AAAA-AAAA-AAAA");
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowDeviceApprovalDialogAsync(Arg.Is<DeviceApprovalPrompt>(p =>
+            p.DeviceName == "New PC Fingerprint: AAAA-AAAA-AAAA-AAAA" && p.NameHadHiddenCharacters));
+        await _dialogs.Received(1).ShowConfirmationDialogAsync(
+            "Settings_E2EE_RejectDevice_Title",
+            "Settings_E2EE_RejectDevice_Message|New PC Fingerprint: AAAA-AAAA-AAAA-AAAA");
+    }
+
+    [Fact]
+    public async Task TheApprovalDialog_NamesADeviceWithoutAVisibleName()
+    {
+        GivenPendingDevice("\u202E\u200B");
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowDeviceApprovalDialogAsync(Arg.Is<DeviceApprovalPrompt>(p =>
+            p.DeviceName == "Settings_E2EE_UnnamedDevice" && p.NameHadHiddenCharacters));
+    }
+
+    [Fact]
+    public async Task ApprovingSignsTheDeviceAsReported_NotTheDisplayName()
+    {
+        const string rawName = "New PC\u202Etxt";
+        GivenPendingDevice(rawName);
+        _dialogs.ShowDeviceApprovalDialogAsync(Arg.Any<DeviceApprovalPrompt>()).Returns(true);
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ApproveDeviceAsync("session-1", Arg.Is<DeviceInfo>(d => d.DeviceName == rawName));
+    }
+
+    private void GivenPendingDevice(string deviceName) =>
         _deviceMgmt.GetDevicesAsync().Returns(new DeviceListResponse
         {
             Devices =
             [
                 new DeviceInfo
                 {
-                    DeviceId = "dev-new", DeviceName = "New PC", Status = DeviceStatus.Pending,
+                    DeviceId = "dev-new", DeviceName = deviceName, Status = DeviceStatus.Pending,
                     AgreementPublicKey = "join-key", SigningPublicKey = "sign-key", OnboardingSessionId = "session-1",
                 },
             ],
         });
-        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(false);
-
-        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
-
-        await _dialogs.Received(1).ShowConfirmationDialogAsync(
-            "Settings_E2EE_ApproveDevice_Title",
-            "Settings_E2EE_ApproveDevice_Message|New PC|JOIN-FP|OWN-FP");
-        await _deviceMgmt.DidNotReceive().ApproveDeviceAsync(Arg.Any<string>(), Arg.Any<DeviceInfo>());
-    }
 }

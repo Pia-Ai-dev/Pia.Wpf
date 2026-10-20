@@ -897,11 +897,11 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             try
             {
                 var fingerprint = _deviceKeys.ComputeFingerprint(device.AgreementPublicKey);
-                var message = _localizationService.Format(
-                    "Settings_E2EE_ApproveDevice_Message", device.DeviceName, fingerprint, _deviceKeys.GetFingerprint());
+                var name = DeviceNameDisplay.Sanitize(device.DeviceName);
+                var displayName = name.Text.Length > 0 ? name.Text : _localizationService["Settings_E2EE_UnnamedDevice"];
 
-                var approved = await _dialogService.ShowConfirmationDialogAsync(
-                    _localizationService["Settings_E2EE_ApproveDevice_Title"], message);
+                var approved = await _dialogService.ShowDeviceApprovalDialogAsync(new DeviceApprovalPrompt(
+                    displayName, name.HadHiddenCharacters, fingerprint, _deviceKeys.GetFingerprint()));
 
                 if (approved && device.OnboardingSessionId is not null)
                 {
@@ -909,14 +909,14 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                     await _deviceManagement.ApproveDeviceAsync(
                         device.OnboardingSessionId, device);
                     _snackbarService.Show(_localizationService["Settings_E2EE_DeviceApproved_Title"],
-                        _localizationService.Format("Settings_E2EE_DeviceApproved_Message", device.DeviceName),
+                        _localizationService.Format("Settings_E2EE_DeviceApproved_Message", displayName),
                         Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
                 }
                 else if (!approved)
                 {
                     var reject = await _dialogService.ShowConfirmationDialogAsync(
                         _localizationService["Settings_E2EE_RejectDevice_Title"],
-                        _localizationService.Format("Settings_E2EE_RejectDevice_Message", device.DeviceName));
+                        _localizationService.Format("Settings_E2EE_RejectDevice_Message", displayName));
                     if (reject)
                     {
                         await _deviceManagement.RevokeDeviceAsync(device.DeviceId);

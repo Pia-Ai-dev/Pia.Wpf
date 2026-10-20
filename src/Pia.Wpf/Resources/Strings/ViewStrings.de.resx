@@ -1040,7 +1040,17 @@
   <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Ohne Verschlüsselung synchronisieren?</value></data>
   <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Fahre nur fort, wenn die Verschlüsselung dieses Kontos absichtlich zurückgesetzt wurde. Deine Daten gehen dann ohne Ende-zu-Ende-Verschlüsselung an den Server, und dieses Gerät warnt dich nicht mehr davor.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Neues Gerät möchte Zugriff</value></data>
-  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>Ein neues Gerät möchte deinem Konto beitreten.&#xA;&#xA;Gerät: {0}&#xA;Fingerabdruck: {1}&#xA;&#xA;Vergleiche diesen Fingerabdruck mit dem auf dem neuen Gerät und bestätige nur, wenn beide übereinstimmen. Das neue Gerät bittet dich danach, den Fingerabdruck dieses Geräts zu vergleichen: {2}&#xA;&#xA;Möchtest du dieses Gerät bestätigen?</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>Ein neues Gerät möchte deinem Konto beitreten. Bestätige es nur, wenn du dich gerade selbst auf diesem Gerät angemeldet hast und beide Fingerabdrücke unten übereinstimmen.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>Der Name dieses Geräts enthielt versteckte oder Steuerzeichen. Sie wurden vor der Anzeige entfernt. Sei vorsichtig: Bestätige nur, wenn du sicher bist, dass es dein Gerät ist.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Anfragendes Gerät</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Gerätename</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Fingerabdruck</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Vergleiche diesen Fingerabdruck Zeichen für Zeichen mit dem auf dem neuen Gerät.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>Dieses Gerät</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>Nach deiner Bestätigung bittet dich das neue Gerät, diesen Fingerabdruck zu prüfen.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Bestätigen</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Nicht bestätigen</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unbenanntes Gerät</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Gerät ablehnen?</value></data>
   <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du {0} ablehnen und entfernen? Wenn du dieses Gerät nicht kennst, entferne es.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Gerät bestätigt</value></data>

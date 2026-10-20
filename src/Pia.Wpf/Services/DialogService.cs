@@ -164,6 +164,14 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
+    public async Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new DeviceApprovalContentDialog(dialogHost, prompt);
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
     public async Task<DialogChoice> ShowChoiceDialogAsync(
         string title, string message, string primaryText, string secondaryText, string? closeText = null)
     {
