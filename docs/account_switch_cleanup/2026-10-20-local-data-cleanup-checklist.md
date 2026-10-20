@@ -15,7 +15,7 @@ little standalone value, unblocks a High.
 
 ## Steps
 
-- [ ] **1. Marker file** — `PiaPaths.LocalDataResetMarkerPath` and `LocalDataResetMarker` with an atomic write.
+- [x] **1. Marker file** — `PiaPaths.LocalDataResetMarkerPath` and `LocalDataResetMarker` with an atomic write.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
 - [ ] **2. Settings resets** — `ClearAccountState`, `ResetSyncedData`, the 13 synced preference names and the post-reset push latch on `AppSettings`.
   *Deps:* none · *Effort:* XS · *Value:* Enabler

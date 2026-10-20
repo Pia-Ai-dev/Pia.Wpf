@@ -44,6 +44,9 @@ public static class PiaPaths
     /// leave rows in the user's real trail.</summary>
     public static string ScreenCaptureAuditDirectory => Path.Combine(LocalDataDirectory, "ScreenCaptureAudit");
 
+    /// <summary>Marks a local-data clear that has not finished, so the next launch completes it.</summary>
+    public static string LocalDataResetMarkerPath => Path.Combine(RoamingDataDirectory, "pending-local-data-reset");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);

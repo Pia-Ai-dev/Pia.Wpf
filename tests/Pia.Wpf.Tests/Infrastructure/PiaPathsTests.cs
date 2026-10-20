@@ -222,6 +222,16 @@ public sealed class PiaPathsTests : IDisposable
         internal sealed class Payload;
     }
 
+    [Fact]
+    public void LocalDataResetMarkerPath_FollowsTheRoamingOverride()
+    {
+        var roaming = TempRoot("roaming");
+        using (PiaPaths.OverrideForTests(roaming, TempRoot("local")))
+        {
+            Assert.Equal(Path.Combine(roaming, "pending-local-data-reset"), PiaPaths.LocalDataResetMarkerPath);
+        }
+    }
+
     /// <summary>An export written inside Logs would be picked up and shipped by the next one.</summary>
     [Fact]
     public void TheDiagnosticsDirectoryIsASiblingOfTheLogDirectory_NotAChildOfIt()
