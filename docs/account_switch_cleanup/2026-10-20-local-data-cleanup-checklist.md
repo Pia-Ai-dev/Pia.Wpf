@@ -17,7 +17,7 @@ little standalone value, unblocks a High.
 
 - [x] **1. Marker file** — `PiaPaths.LocalDataResetMarkerPath` and `LocalDataResetMarker` with an atomic write.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
-- [ ] **2. Settings resets** — `ClearAccountState`, `ResetSyncedData`, the 13 synced preference names and the post-reset push latch on `AppSettings`.
+- [x] **2. Settings resets** — `ClearAccountState`, `ResetSyncedData`, the 13 synced preference names and the post-reset push latch on `AppSettings`.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
 - [ ] **3. Wiper** — `LocalDataWiper` empties every synced store with plain SQL and file operations and reseeds the kanban columns.
   *Deps:* 2 · *Effort:* S · *Value:* High

@@ -564,6 +564,54 @@ public class AppSettings
         E2EERecoveryConfigured = false;
     }
 
+    /// <summary>Set by a local-data clear; the next pushes omit Settings until a pull has applied the account's.</summary>
+    public bool SuppressSettingsPushAfterReset { get; set; }
+
+    internal static readonly IReadOnlyList<string> SyncedPreferenceNames =
+    [
+        nameof(DefaultOutputAction), nameof(DefaultTemplateId), nameof(WhisperModel), nameof(AutoTypeDelayMs),
+        nameof(Theme), nameof(StartMinimized), nameof(TargetLanguage), nameof(TargetSpeechLanguage),
+        nameof(DefaultWindowMode), nameof(ModeProviderDefaults), nameof(ModePersonaDefaults),
+        nameof(UseSameProviderForAllModes), nameof(AssistantDefaultWorkingDirectory),
+    ];
+
+    public void ClearAccountState()
+    {
+        SyncEnabled = false;
+        EncryptedAccessToken = null;
+        EncryptedRefreshToken = null;
+        SyncUserId = null;
+        SyncUserEmail = null;
+        SyncUserDisplayName = null;
+        SyncProvider = null;
+        LastSyncTimestamp = null;
+        AssistantChatsBackfilledAt = null;
+        // Stale hash or ETags would let a later login, same or different account, skip rows or pull nothing.
+        LastPushedSettingsHash = null;
+        LastChatPullETag = null;
+        LastPullETag = null;
+        ClientPolicyInitialized = false;
+        // The key belongs to one account and records no owner; the server keeps this device's wrapped copy.
+        ForgetE2EEKey();
+    }
+
+    public void ResetSyncedData()
+    {
+        var defaults = new AppSettings();
+        var type = typeof(AppSettings);
+        foreach (var name in SyncedPreferenceNames)
+        {
+            var property = type.GetProperty(name)!;
+            property.SetValue(this, property.GetValue(defaults));
+        }
+
+        ManagedPersonaStoreInitialized = false;
+        LastCatalogVersion = null;
+        AssistantChatsEncryptedResendAt = null;
+        BlankedSyncRowRepairAt = null;
+        SuppressSettingsPushAfterReset = true;
+    }
+
     // One-shot marker for the blanked-row repair. A build before the E2EE pull guard could write
     // empty rows over real ones and then advance the cursor past them; the repair resets the cursor
     // so they re-pull. Marked once so a repair that finds nothing left on the server (the rows were

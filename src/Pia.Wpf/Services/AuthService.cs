@@ -564,26 +564,7 @@ public class AuthService : IAuthService
             RequiresBusinessProfile = false;
             IsLoggedIn = false;
 
-            settings.SyncEnabled = false;
-            settings.EncryptedAccessToken = null;
-            settings.EncryptedRefreshToken = null;
-            settings.SyncUserId = null;
-            settings.SyncUserEmail = null;
-            settings.SyncUserDisplayName = null;
-            settings.SyncProvider = null;
-            settings.LastSyncTimestamp = null;
-            settings.AssistantChatsBackfilledAt = null;
-            // Clear cross-account sync gate/ETag state so a subsequent login (same or different
-            // account) never inherits stale state: a stale LastPushedSettingsHash could suppress
-            // the settings row on the next first sync, and stale ETags rely on the server never
-            // colliding tag values across accounts.
-            settings.LastPushedSettingsHash = null;
-            settings.LastChatPullETag = null;
-            settings.LastPullETag = null;
-            settings.ClientPolicyInitialized = false;
-            // The key belongs to one account and records no owner, so it goes on sign-out and on every
-            // sign-in; the server keeps this device's wrapped copy, which the sign-in paths take back.
-            settings.ForgetE2EEKey();
+            settings.ClearAccountState();
             await _settingsService.SaveSettingsAsync(settings);
 
             // Sync stays off until the next login, so a kept group policy would go on being applied
