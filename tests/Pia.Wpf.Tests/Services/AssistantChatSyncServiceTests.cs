@@ -908,9 +908,53 @@ public class AssistantChatSyncServiceTests
         Assert.True(PutCount(chat.Id) >= 2, $"only {PutCount(chat.Id)} PUT(s); the flush did not retry the drop");
     }
 
+    [Fact]
+    public async Task Flush_AfterAFailedDeleteThenASave_DoesNotReplayTheDeleteBehindTheUpload()
+    {
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.OK);
+        _handler.SetDelete("/api/v1/chats/" + chat.Id, HttpStatusCode.InternalServerError, "");
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        // Drained before the worker starts, so the failure is recorded with nothing else in flight.
+        Enqueue(sut, chat.Id, "Delete");
+        await InvokeDrainAsync(sut);
+        Assert.Equal(1, DeleteCount(chat.Id));
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _handler.PutGate = gate;
+        Enqueue(sut, chat.Id, "Upsert");
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await _handler.PutStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            _handler.SetDelete("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "");
+            var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            gate.SetResult();
+
+            Assert.True(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+            Assert.Equal(1, DeleteCount(chat.Id));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(1, PutCount(chat.Id));
+    }
+
     // ===== Helpers =====
 
     private int PutCount(Guid chatId) => _handler.PutCounts.GetValueOrDefault("/api/v1/chats/" + chatId);
+
+    private int DeleteCount(Guid chatId) => _handler.DeleteCounts.GetValueOrDefault("/api/v1/chats/" + chatId);
+
+    private static void Enqueue(AssistantChatSyncService sut, Guid chatId, string kind)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("EnqueueOp", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        m.Invoke(sut, [chatId, Enum.Parse(m.GetParameters()[1].ParameterType, kind)]);
+    }
 
     private SyncAssistantChat ArrangeBackfilledWorkerWithChat(HttpStatusCode putStatus)
     {
@@ -1066,6 +1110,11 @@ public class AssistantChatSyncServiceTests
         public ConcurrentDictionary<string, HttpRequestMessage> RequestsByUri { get; } = new();
         public string? LastPutBody { get; private set; }
         public ConcurrentDictionary<string, int> PutCounts { get; } = new();
+        public ConcurrentDictionary<string, int> DeleteCounts { get; } = new();
+
+        // When set, every PUT signals PutStarted and then waits here, so a test can act while one is in flight.
+        public TaskCompletionSource? PutGate { get; set; }
+        public TaskCompletionSource PutStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void SetGet(string pathPrefix, string body) =>
             GetResponses[pathPrefix] = (HttpStatusCode.OK, body);
@@ -1118,6 +1167,11 @@ public class AssistantChatSyncServiceTests
             else if (request.Method == HttpMethod.Put)
             {
                 PutCounts.AddOrUpdate(request.RequestUri!.AbsolutePath, 1, (_, n) => n + 1);
+                if (PutGate is { } gate)
+                {
+                    PutStarted.TrySetResult();
+                    await gate.Task.WaitAsync(cancellationToken);
+                }
                 if (request.Content is not null)
                     LastPutBody = await ReadBodyAsync(request.Content, cancellationToken);
                 foreach (var (path, resp) in PutResponses)
@@ -1131,6 +1185,7 @@ public class AssistantChatSyncServiceTests
             }
             else if (request.Method == HttpMethod.Delete)
             {
+                DeleteCounts.AddOrUpdate(request.RequestUri!.AbsolutePath, 1, (_, n) => n + 1);
                 foreach (var (path, resp) in DeleteResponses)
                 {
                     if (uri.EndsWith(path))

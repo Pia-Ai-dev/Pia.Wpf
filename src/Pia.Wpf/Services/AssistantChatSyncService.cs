@@ -13,11 +13,7 @@ using Pia.Shared.Models;
 
 namespace Pia.Services;
 
-/// <summary>
-/// Pushes local assistant chats to the Pia cloud and pulls remote updates on
-/// startup. See docs/server/assistant-chat-history.md §4. Best-effort: any
-/// failure logs and is swallowed; the local store remains authoritative.
-/// </summary>
+/// <summary>Pushes and pulls assistant chats; failed ops are kept so a flush can retry and report them.</summary>
 public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlusher
 {
     private enum OpKind { Upsert, Delete }
@@ -47,6 +43,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     // Dropped ops a flush puts back in the queue, so a failure from an earlier pass is retried and reported.
     private readonly Dictionary<Guid, OpKind> _failed = new();
+    private Guid? _inFlight;
 
     // Both guarded by _stateLock so a flush cannot register after the loop has handed out its last results.
     private bool _disabled;
@@ -152,8 +149,9 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
     {
         lock (_stateLock)
         {
-            // Per-chat coalescing: keep only the latest desired state.
             _desired[id] = kind;
+            // A newer op supersedes an earlier failure; if this one fails too, DrainAsync records it again.
+            _failed.Remove(id);
         }
         _signal.Writer.TryWrite(0);
     }
@@ -167,7 +165,9 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
             if (_disabled) return true;
             if (_loopExited || !permitted) return false;
             foreach (var (id, kind) in _failed)
-                _desired.TryAdd(id, kind);
+            {
+                if (id != _inFlight) _desired.TryAdd(id, kind);
+            }
             _flushWaiters.Add(waiter);
         }
 
@@ -349,6 +349,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 var kvp = _desired.First();
                 _desired.Remove(kvp.Key);
                 next = new SyncOp(kvp.Key, kvp.Value);
+                _inFlight = kvp.Key;
             }
 
             var reached = false;
@@ -368,6 +369,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
             lock (_stateLock)
             {
+                _inFlight = null;
                 if (reached) _failed.Remove(next.ChatId);
                 else _failed[next.ChatId] = next.Kind;
             }
