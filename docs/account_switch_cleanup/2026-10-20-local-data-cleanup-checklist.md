@@ -31,7 +31,7 @@ little standalone value, unblocks a High.
   *Deps:* 6 · *Effort:* S · *Value:* Enabler
 - [x] **8. Account settings wiring** — sign-in guard on four commands, the sign-out prompt on the button, the revoked dialog and account deletion.
   *Deps:* 7 · *Effort:* S · *Value:* High
-- [ ] **9. Wizard wiring** — the sign-in guard in the first-run wizard, and the wizard is not marked done when a clear restarts it.
+- [x] **9. Wizard wiring** — the sign-in guard in the first-run wizard, and the wizard is not marked done when a clear restarts it.
   *Deps:* 7 · *Effort:* XS · *Value:* High
 - [x] **10. First sync after a clear** — pushes omit the settings row until a pull has applied the account's.
   *Deps:* 2 · *Effort:* XS · *Value:* High

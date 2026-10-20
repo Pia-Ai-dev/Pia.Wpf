@@ -38,7 +38,8 @@ public class FirstRunWizardProviderLockTests
             settings, Substitute.For<IMemoryService>(), Substitute.For<IVoiceInputService>(),
             Substitute.For<ILocalizationService>(), Substitute.For<IAuthService>(), providers, sync,
             deviceMgmt, policy, onboarding, e2eeSetup,
-            NullLogger<FirstRunWizardViewModel>.Instance);
+            NullLogger<FirstRunWizardViewModel>.Instance,
+            Substitute.For<IDialogService>(), Substitute.For<ILocalDataResetService>());
     }
 
     private static async Task<FirstRunWizardViewModel> LoadedSut(AppSettings stored, IProviderService providers)

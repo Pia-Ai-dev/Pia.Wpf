@@ -374,7 +374,7 @@ public partial class App : Application
         // ShowDialog blocks until the wizard is closed
         // If user closes without completing (X button), treat as skip
         var result = wizard.ShowDialog();
-        if (result != true)
+        if (ShouldMarkWizardCompletedOnClose(result, LocalDataResetMarker.IsPending))
         {
             var settingsService = scope.ServiceProvider.GetRequiredService<ISettingsService>();
             var settings = await settingsService.GetSettingsAsync();
@@ -385,6 +385,9 @@ public partial class App : Application
             }
         }
     }
+
+    internal static bool ShouldMarkWizardCompletedOnClose(bool? dialogResult, bool resetPending) =>
+        dialogResult != true && !resetPending;
 
     private async Task EnsureEmbeddingModelAsync()
     {
