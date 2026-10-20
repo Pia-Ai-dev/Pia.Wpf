@@ -182,6 +182,7 @@ public partial class App : Application
         if (!settings.HasCompletedFirstRunWizard)
         {
             await ShowFirstRunWizardAsync();
+            if (!ShouldContinueStartup(Volatile.Read(ref _restartRequested) != 0)) return;
             settings = await settingsService.GetSettingsAsync();
         }
 
@@ -385,6 +386,8 @@ public partial class App : Application
             }
         }
     }
+
+    internal static bool ShouldContinueStartup(bool restartRequested) => !restartRequested;
 
     internal static bool ShouldMarkWizardCompletedOnClose(bool? dialogResult, bool resetPending) =>
         dialogResult != true && !resetPending;

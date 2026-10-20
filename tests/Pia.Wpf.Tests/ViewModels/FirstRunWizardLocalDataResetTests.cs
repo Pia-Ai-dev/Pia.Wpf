@@ -52,6 +52,12 @@ public class FirstRunWizardLocalDataResetTests
     public void ShouldMarkWizardCompletedOnClose(bool? dialogResult, bool resetPending, bool expected) =>
         Assert.Equal(expected, App.ShouldMarkWizardCompletedOnClose(dialogResult, resetPending));
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void ShouldContinueStartup(bool restartRequested, bool expected) =>
+        Assert.Equal(expected, App.ShouldContinueStartup(restartRequested));
+
     private void Answer(DialogChoice choice) =>
         _dialogs.ShowChoiceDialogAsync(
             "LocalReset_SignIn_Title", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
