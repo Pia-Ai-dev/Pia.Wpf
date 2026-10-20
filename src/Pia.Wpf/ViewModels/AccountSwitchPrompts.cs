@@ -87,6 +87,12 @@ internal static class AccountSwitchPrompts
         ILocalDataResetService reset, IDialogService dialogs, ILocalizationService loc)
     {
         var notices = await reset.GetNoticesAsync();
+        // The account is gone, so no encrypted copy of the keys survives on the server.
+        if (notices.ApiKeys != ApiKeyNotice.None)
+        {
+            notices = notices with { ApiKeys = ApiKeyNotice.WillBeLost };
+        }
+
         var choice = await dialogs.ShowChoiceDialogAsync(
             loc["LocalReset_Deleted_Title"],
             ComposeMessage(loc, "LocalReset_Deleted_Message", notices),

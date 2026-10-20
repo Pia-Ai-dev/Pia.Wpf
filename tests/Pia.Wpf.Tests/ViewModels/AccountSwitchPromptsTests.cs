@@ -212,6 +212,20 @@ public class AccountSwitchPromptsTests
     }
 
     [Fact]
+    public async Task OfferClearAfterDeletion_WithKeys_SaysTheyWillBeLost()
+    {
+        Choose(DialogChoice.Secondary);
+        _reset.GetNoticesAsync().Returns(new LocalDataNotices(false, ApiKeyNotice.MayBeLost));
+
+        await AccountSwitchPrompts.OfferClearAfterDeletionAsync(_reset, _dialogs, _loc);
+
+        await _dialogs.Received(1).ShowChoiceDialogAsync(
+            "LocalReset_Deleted_Title",
+            Arg.Is<string>(m => m.EndsWith("LocalReset_Notice_KeysLost")),
+            "LocalReset_Deleted_Clear", "LocalReset_Deleted_Keep", Arg.Any<string?>());
+    }
+
+    [Fact]
     public void ComposeMessage_AddsOnlyTheNoticesThatApply()
     {
         Assert.Equal("Base", AccountSwitchPrompts.ComposeMessage(
