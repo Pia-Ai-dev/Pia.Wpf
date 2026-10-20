@@ -226,6 +226,7 @@ Use any `WindowMode` member that exists if `Assistant` does not.
 **Files:**
 - Create: `src/Pia.Wpf/Services/LocalDataReset/LocalDataResetStartup.cs`
 - Modify: `src/Pia.Wpf/Bootstrapper.cs` (register `LocalDataWiper` as singleton; call the startup hook right after the "Data directories" log line, before `IPolicyService` is resolved)
+- Modify: `src/Pia.Wpf/App.xaml.cs` (background-sync start guard)
 - Test: `tests/Pia.Wpf.Tests/Services/LocalDataReset/LocalDataResetStartupTests.cs`
 - Test: `tests/Pia.Wpf.Tests/Architecture/BootstrapperGraphValidationTests.cs` (add a test)
 
@@ -253,7 +254,7 @@ Use any `WindowMode` member that exists if `Assistant` does not.
 In `BootstrapperGraphValidationTests` add `TheLocalDataWiper_DoesNotPullInAuthService`: walk constructor parameters transitively from `LocalDataWiper` through the `ServiceDescriptor.ImplementationType`s of `BuildConfiguredServices()` (skip `ILogger<>`; for a type with several public constructors, walk the one the container picks — the longest whose parameters are all registered or `ILogger<>` (`PolicyService` and `SqliteContext` resolve through their logger-only constructors); fail on a factory descriptor so nothing hides behind a lambda), and assert `typeof(IAuthService)` is never reached. Also assert the walk visited `SqliteContext` and `ISettingsService` (non-vacuity).
 
 - [ ] **Step 2: Build and run both classes; expect compile failure.**
-- [ ] **Step 3: Implement `RunIfPendingAsync`** (log error on throw, keep the marker); **wire it into `Bootstrapper.InitializeAsync`.**
+- [ ] **Step 3: Implement `RunIfPendingAsync`** (log error on throw, keep the marker); **wire it into `Bootstrapper.InitializeAsync`.** Also, in `App.OnStartup`, start background sync only when `authService.IsLoggedIn && !LocalDataResetMarker.IsPending` — a crash between writing the marker and signing out, followed by a failed clear, would otherwise boot signed in and syncing with the marker still set.
 - [ ] **Step 4: Run both classes; expect PASS.**
 - [ ] **Step 5: Commit** — `feat: finish a pending local-data clear at startup`.
 
@@ -480,7 +481,7 @@ Match the dialogs on their title argument (`"LocalReset_SignOut_Title"`, `"Setti
 
 **Interfaces:**
 - Consumes: `AccountSwitchPrompts.ConfirmSignInAsync` (Task 7).
-- Produces: `FirstRunWizardViewModel` gains `IDialogService dialogService` and `ILocalDataResetService localDataReset` as its last two constructor parameters (the wizard's DI scope resolves the scoped `IDialogService` bound to `FirstRunWizardWindow`'s dialog host).
+- Produces: `FirstRunWizardViewModel` gains `IDialogService dialogService` and `ILocalDataResetService localDataReset` as its last two constructor parameters. The VM is registered `AddTransient` and resolved inside the wizard's scope (`App.ShowFirstRunWizardAsync`), so it gets the scoped `IDialogService` bound to `FirstRunWizardWindow`'s dialog host — no captive dependency.
 - Produces: `internal static bool App.ShouldMarkWizardCompletedOnClose(bool? dialogResult, bool resetPending) => dialogResult != true && !resetPending;` used by `ShowFirstRunWizardAsync` with `LocalDataResetMarker.IsPending`.
 
 Changes: `LoginAsync(string provider)` and `LoginWithPasswordAsync` (after its empty-field check) start with the same `ConfirmSignInAsync` guard as Task 8.
@@ -517,7 +518,10 @@ Changes:
 
 - [ ] **Step 1: Write the failing tests:**
 
+`SyncMapper.ApplySyncSettings` has no "local is newer" guard — a pulled settings row always applies — so omitting the push is enough for the account's values to land.
+
 ```csharp
+[Fact] public async Task FirstSync_AfterReset_AppliesTheAccountsSettings()        // pull response carries Theme = Dark; local Theme default → after first sync, Theme == Dark
 [Fact] public async Task FirstSync_AfterReset_OmitsSettings_ThenClearsTheFlag()   // decompress the captured push: no "settings" property; after a 200 pull, flag false
 [Fact] public async Task FirstSync_AfterReset_PullFails_KeepsTheFlag()
 [Fact] public async Task DeltaPush_AfterReset_OmitsSettings()                     // LastPushedSettingsHash null, flag true → body has no settings
