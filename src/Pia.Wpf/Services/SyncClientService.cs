@@ -381,7 +381,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return null;
 
             // Pull remote changes
-            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             if (PendingDeviceRevocation is not null)
                 return null;
 
@@ -392,7 +392,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (pullOk && serverTimestamp.HasValue)
             {
                 settings.LastSyncTimestamp = serverTimestamp.Value;
-                settings.SuppressSettingsPushAfterReset = false;
+                if (!settingsUndecryptable)
+                    settings.SuppressSettingsPushAfterReset = false;
                 await _settingsService.SaveSettingsAsync(settings);
             }
             else if (!pullOk)
@@ -609,13 +610,14 @@ public class SyncClientService : ISyncClientService, IDisposable
                 memoryDtos.Count, kanbanDtos.Count, todoDtos.Count, jobDtos.Count);
 
             // Pull all data from server (including other devices' data)
-            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
 
             if (pullOk && serverTimestamp.HasValue)
             {
                 settings.LastSyncTimestamp = serverTimestamp.Value;
-                settings.SuppressSettingsPushAfterReset = false;
+                if (!settingsUndecryptable)
+                    settings.SuppressSettingsPushAfterReset = false;
                 await _settingsService.SaveSettingsAsync(settings);
             }
             else
@@ -1021,7 +1023,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     /// which advances the cursor past only the pages successfully applied so far — would silently
     /// and permanently skip un-drained rows.
     /// </summary>
-    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp, bool SettingsUndecryptable)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
         // Ensure UTC Kind so ToString("O") includes the Z suffix — prevents Npgsql
@@ -1032,6 +1034,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         var totalPulled = 0;
         var totalDecryptErrors = 0;
         DateTime? lastServerTimestamp = null;
+        var settingsUndecryptable = false;
 
         for (var page = 0; page < MaxPullPages; page++)
         {
@@ -1041,7 +1044,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var pageResult = await PullPageAsync(client, serverUrl, settings, lastSync, isFirstPage: page == 0);
 
             if (pageResult.NotModified)
-                return (0, 0, true, null); // only reachable on the first page
+                return (0, 0, true, null, false); // only reachable on the first page
 
             if (!pageResult.PullSucceeded)
             {
@@ -1049,13 +1052,14 @@ public class SyncClientService : ISyncClientService, IDisposable
                 // earlier pages were already applied: advance the cursor to the last drained page so
                 // the next sync resumes after them instead of re-pulling from the start.
                 if (page == 0)
-                    return (0, 0, false, null);
+                    return (0, 0, false, null, false);
                 _logger.LogWarning("Pull drain failed on page {Page}; keeping earlier pages and advancing cursor", page);
-                return (totalPulled, totalDecryptErrors, true, lastServerTimestamp);
+                return (totalPulled, totalDecryptErrors, true, lastServerTimestamp, settingsUndecryptable);
             }
 
             totalPulled += pageResult.Pulled;
             totalDecryptErrors += pageResult.DecryptionErrors;
+            settingsUndecryptable |= pageResult.SettingsUndecryptable;
             lastServerTimestamp = pageResult.ServerTimestamp;
 
             // Continue draining only while the server both flags more data AND advances the cursor
@@ -1069,7 +1073,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             break;
         }
 
-        return (totalPulled, totalDecryptErrors, true, lastServerTimestamp);
+        return (totalPulled, totalDecryptErrors, true, lastServerTimestamp, settingsUndecryptable);
     }
 
     /// <summary>
@@ -1125,7 +1129,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             + pull.ScheduledJobs.Upserted.RemoveAll(x => x.EncryptedPayload is null);
     }
 
-    private async Task<(bool NotModified, bool PullSucceeded, int Pulled, int DecryptionErrors, DateTime? ServerTimestamp, bool HasMore)> PullPageAsync(HttpClient client, string serverUrl, AppSettings settings, DateTime sinceUtc, bool isFirstPage)
+    private async Task<(bool NotModified, bool PullSucceeded, int Pulled, int DecryptionErrors, DateTime? ServerTimestamp, bool HasMore, bool SettingsUndecryptable)> PullPageAsync(HttpClient client, string serverUrl, AppSettings settings, DateTime sinceUtc, bool isFirstPage)
     {
         var since = sinceUtc.ToString("O");
 
@@ -1167,7 +1171,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
         {
             _logger.LogDebug("Pull returned 304 Not Modified — no changes since last sync");
-            return (true, true, 0, 0, null, false);
+            return (true, true, 0, 0, null, false, false);
         }
 
         if (!response.IsSuccessStatusCode)
@@ -1180,7 +1184,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             {
                 await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
             }
-            return (false, false, 0, 0, null, false);
+            return (false, false, 0, 0, null, false, false);
         }
 
         // Read the response ETag here but PERSIST IT ONLY AFTER EVERY APPLY BELOW SUCCEEDS — it rides the
@@ -1198,7 +1202,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             : null;
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
-        if (pullResponse is null) return (false, false, 0, 0, null, false);
+        if (pullResponse is null) return (false, false, 0, 0, null, false, false);
 
         // The server's current catalog version is applied further down, only after the page's
         // entities have been fully applied (see the persist just before the return below). The
@@ -1245,7 +1249,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 + "(e2eeReady: {Ready}, userId present: {HasUserId}) — refusing the page and keeping the sync cursor",
                 _e2ee?.IsReady() == true, userId is not null);
             NotifyE2EEOnboardingRequired();
-            return (false, false, 0, 0, null, false);
+            return (false, false, 0, 0, null, false, false);
         }
 
         var shellsDropped = DropUnmigratedShells(pullResponse);
@@ -1264,6 +1268,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         var mergeDeleted = 0;
 
         var settingsApplied = false;
+        var settingsUndecryptable = false;
         var providersApplied = false;
 
         // Apply settings
@@ -1280,6 +1285,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             catch (CryptographicException ex)
             {
                 decryptionErrors++;
+                settingsUndecryptable = true;
                 _logger.LogWarning(ex, "Failed to decrypt synced settings; skipping");
             }
         }
@@ -1893,7 +1899,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             _logger.LogWarning(ex, "SyncCompleted handler threw — sync continues");
         }
 
-        return (false, true, pulledCount, decryptionErrors, pullResponse.ServerTimestamp, pullResponse.HasMore == true);
+        return (false, true, pulledCount, decryptionErrors, pullResponse.ServerTimestamp, pullResponse.HasMore == true, settingsUndecryptable);
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)

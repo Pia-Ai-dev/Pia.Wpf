@@ -9,6 +9,7 @@ using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.Shared.Sync;
@@ -34,10 +35,10 @@ public class SyncClientServiceTransferOptimizationTests
     private readonly IPluginService _pluginService = Substitute.For<IPluginService>();
     private readonly IScheduledJobService _scheduledJobService = Substitute.For<IScheduledJobService>();
 
-    private SyncClientService CreateSut()
+    private SyncClientService CreateSut(IE2EEService? e2ee = null)
     {
         var dpapiHelper = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
-        var mapper = new SyncMapper(dpapiHelper);
+        var mapper = new SyncMapper(dpapiHelper, e2ee);
         var deleteTracker = new SyncDeleteTrackerService(Path.GetTempPath(), NullLogger<SyncDeleteTrackerService>.Instance);
 
         _templateService.GetTemplatesAsync().Returns(Array.Empty<OptimizationTemplate>());
@@ -60,7 +61,8 @@ public class SyncClientServiceTransferOptimizationTests
             NullLogger<SyncClientService>.Instance,
             deleteTracker,
             scheduledJobService: _scheduledJobService,
-            pluginService: _pluginService);
+            pluginService: _pluginService,
+            e2ee: e2ee);
     }
 
     private static async Task<(int PushedCount, bool PushSucceeded, bool SentChanges)> InvokePushChangesAsync(SyncClientService sut, HttpClient client, AppSettings settings)
@@ -247,6 +249,26 @@ public class SyncClientServiceTransferOptimizationTests
         await sut.PerformFirstSyncMigrationAsync();
 
         Assert.Null(settings.LastSyncTimestamp);
+        Assert.True(settings.SuppressSettingsPushAfterReset);
+    }
+
+    [Fact]
+    public async Task FirstSync_AfterReset_UndecryptableAccountSettings_KeepsTheFlag()
+    {
+        var e2ee = Substitute.For<IE2EEService>();
+        e2ee.IsReady().Returns(true);
+        e2ee.DecryptRecord<SyncSettings>(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(_ => throw new System.Security.Cryptography.CryptographicException("bad tag"));
+        var sut = CreateSut(e2ee);
+        var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(), HttpStatusCode.OK,
+            PullResponseJson(new SyncSettings { EncryptedPayload = "cipher", WrappedDek = "dek" }));
+        var settings = ArrangeFirstSync(handler, suppressSettingsPush: true);
+        settings.SyncUserId = "user-1";
+
+        await sut.PerformFirstSyncMigrationAsync();
+
+        Assert.NotNull(settings.LastSyncTimestamp);
         Assert.True(settings.SuppressSettingsPushAfterReset);
     }
 
