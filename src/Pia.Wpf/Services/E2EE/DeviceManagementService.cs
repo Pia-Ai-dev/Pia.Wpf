@@ -88,6 +88,7 @@ public class DeviceManagementService : IDeviceManagementService
         // 6. Update local settings
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         settings.E2EEUmkVersion = 1;
         settings.E2EERecoveryConfigured = true;
         await _settings.SaveSettingsAsync(settings);
@@ -189,6 +190,7 @@ public class DeviceManagementService : IDeviceManagementService
 
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         settings.E2EEUmkVersion = recoveryBlob.UmkVersion;
         await _settings.SaveSettingsAsync(settings);
 
@@ -296,6 +298,7 @@ public class DeviceManagementService : IDeviceManagementService
 
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         settings.E2EEUmkVersion = handover.UmkVersion;
         await _settings.SaveSettingsAsync(settings);
 
@@ -574,7 +577,14 @@ public class DeviceManagementService : IDeviceManagementService
             using var client = await CreateAuthorizedClientAsync();
             var response = await client.GetAsync("api/e2ee/status");
             if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync<E2EEStatusResponse>();
+            var status = await response.Content.ReadFromJsonAsync<E2EEStatusResponse>();
+            if (status is { IsEnabled: true })
+            {
+                var settings = await _settings.GetSettingsAsync();
+                if (settings.MarkE2EERequiredForAccount())
+                    await _settings.SaveSettingsAsync(settings);
+            }
+            return status;
         }
         catch (Exception ex)
         {

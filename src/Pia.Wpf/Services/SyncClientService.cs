@@ -97,9 +97,11 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public bool IsSyncActive => _syncTimer is not null;
     public bool IsE2EEOnboardingRequired { get; private set; }
+    public bool IsE2EEDowngradeDetected { get; private set; }
     public CurrentDeviceRevokedEventArgs? PendingDeviceRevocation { get; private set; }
     public event EventHandler? E2EEOnboardingRequired;
     public event EventHandler? E2EEOnboardingCleared;
+    public event EventHandler? E2EEDowngradeChanged;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
     public event EventHandler? EncryptedMigrationCompleted;
     public event EventHandler<CurrentDeviceRevokedEventArgs>? CurrentDeviceRevoked;
@@ -112,10 +114,58 @@ public class SyncClientService : ISyncClientService, IDisposable
         E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
     }
 
+    private void NotifyE2EEDowngradeDetected()
+    {
+        if (IsE2EEDowngradeDetected) return;
+        IsE2EEDowngradeDetected = true;
+        E2EEDowngradeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ClearE2EEDowngrade()
+    {
+        if (!IsE2EEDowngradeDetected) return;
+        IsE2EEDowngradeDetected = false;
+        E2EEDowngradeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public async Task AllowUnencryptedSyncAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        settings.UnmarkE2EERequiredForAccount();
+        await _settingsService.SaveSettingsAsync(settings);
+        _logger.LogWarning("User allowed unencrypted sync for an account that previously required E2EE");
+        ClearE2EEDowngrade();
+    }
+
+    // The key is gone from this device but the account needed E2EE: onboarding if the server agrees, else a downgrade.
+    private async Task<bool> BlocksMarkedAccountWithoutKeyAsync(AppSettings settings)
+    {
+        if (settings.IsE2EEEnabled || !settings.IsE2EERequiredForAccount())
+            return false;
+
+        var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
+        if (serverStatus is { IsEnabled: true })
+        {
+            _logger.LogWarning("E2EE required for this account but UMK not available; onboarding required");
+            NotifyE2EEOnboardingRequired();
+        }
+        else if (serverStatus is not null)
+        {
+            _logger.LogWarning("Server reports E2EE off for an account that required it; refusing plaintext sync");
+            NotifyE2EEDowngradeDetected();
+        }
+        else
+        {
+            _logger.LogWarning("Could not determine server E2EE status for an account that required it; skipping sync");
+        }
+        return true;
+    }
+
     public void NotifyE2EEOnboardingCompleted()
     {
         PendingDeviceRevocation = null;
         _revokedNoticeRaised = false;
+        ClearE2EEDowngrade();
         if (!IsE2EEOnboardingRequired) return;
         IsE2EEOnboardingRequired = false;
         E2EEOnboardingCleared?.Invoke(this, EventArgs.Empty);
@@ -340,6 +390,9 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return null;
             }
 
+            if (await BlocksMarkedAccountWithoutKeyAsync(settings))
+                return null;
+
             // E2EE may be on for the account from another device. Latch only a conclusive "off": an onboarding
             // device or an unreachable server must keep skipping cycles rather than pull ciphertext it cannot read.
             if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
@@ -453,6 +506,9 @@ public class SyncClientService : ISyncClientService, IDisposable
                 NotifyE2EEOnboardingRequired();
                 return;
             }
+
+            if (await BlocksMarkedAccountWithoutKeyAsync(settings))
+                return;
 
             // Local E2EE off is not proof the account's is: a restored device has not activated yet.
             // Callers reach this method after a CheckE2EEStatusAsync that returns null on an

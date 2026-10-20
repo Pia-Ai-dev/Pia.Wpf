@@ -119,6 +119,10 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             });
         };
 
+        IsE2EEDowngradeDetected = _syncClientService.IsE2EEDowngradeDetected;
+        _syncClientService.E2EEDowngradeChanged += (_, _) =>
+            Post(() => IsE2EEDowngradeDetected = _syncClientService.IsE2EEDowngradeDetected);
+
         _authService.LoginStateChanged += (_, isLoggedIn) =>
         {
             if (isLoggedIn)
@@ -369,6 +373,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [NotifyPropertyChangedFor(nameof(CanSyncNow))]
     [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
     private bool _isE2EEOnboardingRequired;
+
+    [ObservableProperty]
+    private bool _isE2EEDowngradeDetected;
 
     // Sync status
     [ObservableProperty]
@@ -797,6 +804,19 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Done", Wpf.Ui.Controls.ControlAppearance.Success);
         else
             ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Failed", Wpf.Ui.Controls.ControlAppearance.Danger);
+    }
+
+    [RelayCommand]
+    private async Task AllowUnencryptedSyncAsync()
+    {
+        if (!await _dialogService.ShowConfirmationDialogAsync(
+                _localizationService["E2EE_Downgrade_Confirm_Title"],
+                _localizationService["E2EE_Downgrade_Confirm_Message"]))
+            return;
+
+        await _syncClientService.AllowUnencryptedSyncAsync();
+        await _syncClientService.PerformFirstSyncMigrationAsync();
+        _syncClientService.StartBackgroundSync();
     }
 
     [RelayCommand]

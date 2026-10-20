@@ -449,6 +449,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         // Persist E2EE state
         var settings = await _settingsService.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         await _settingsService.SaveSettingsAsync(settings);
 
         DeviceFingerprint = _deviceKeys.GetFingerprint();

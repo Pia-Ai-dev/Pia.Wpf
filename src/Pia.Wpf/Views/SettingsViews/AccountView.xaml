@@ -335,6 +335,29 @@
         </StackPanel>
       </StackPanel>
 
+      <Border Style="{StaticResource PiaFieldNoticeStyle}"
+              Margin="0,0,0,20"
+              Visibility="{Binding IsE2EEDowngradeDetected, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <StackPanel>
+          <TextBlock Text="{loc:Str E2EE_Downgrade_Title}"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource PiaDangerBrush}"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,4"/>
+          <TextBlock Text="{loc:Str E2EE_Downgrade_Message}"
+                     AutomationProperties.AutomationId="Settings_Account_E2EEDowngradeNotice"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextDefaultBrush}"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,8"/>
+          <ui:Button Content="{loc:Str E2EE_Downgrade_Allow}"
+                     Appearance="Secondary"
+                     Foreground="{DynamicResource PiaDangerBrush}"
+                     Command="{Binding AllowUnencryptedSyncCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_E2EEDowngrade_AllowUnencrypted"/>
+        </StackPanel>
+      </Border>
+
       <!-- E2EE Onboarding -->
       <localSettings:E2EEOnboardingView
           Margin="0,0,0,20"

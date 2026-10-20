@@ -327,6 +327,45 @@ public class AssistantChatSyncServiceTests
     }
 
     [Fact]
+    public async Task SendUpsert_ForAnAccountThatRequiresE2EE_WithoutTheKey_SendsNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            E2EERequiredAccountIds = [UserId],
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
+    public async Task SendUpsert_ForAnotherAccountMarkedOnThisDevice_StillSends()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            E2EERequiredAccountIds = ["someone-else"],
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.NotNull(_handler.LastPutBody);
+    }
+
+    [Fact]
     public async Task StartupPull_WhenSignedOut_SendsNothing()
     {
         SignOut();

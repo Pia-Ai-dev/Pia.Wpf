@@ -564,6 +564,27 @@ public class AppSettings
         E2EERecoveryConfigured = false;
     }
 
+    // Outlives sign-out and the local-data wipe: a later "E2EE off" from the server is a downgrade to refuse.
+    public List<string> E2EERequiredAccountIds { get; set; } = [];
+
+    public bool IsE2EERequiredForAccount() =>
+        SyncUserId is { } id && E2EERequiredAccountIds.Contains(id, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True when the signed-in account was newly marked, so the caller knows to save.</summary>
+    public bool MarkE2EERequiredForAccount()
+    {
+        if (SyncUserId is not { Length: > 0 } id || IsE2EERequiredForAccount())
+            return false;
+        E2EERequiredAccountIds.Add(id);
+        return true;
+    }
+
+    public void UnmarkE2EERequiredForAccount()
+    {
+        if (SyncUserId is { } id)
+            E2EERequiredAccountIds.RemoveAll(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>Set by a local-data clear; the next pushes omit Settings until a pull has applied the account's.</summary>
     public bool SuppressSettingsPushAfterReset { get; set; }
 

@@ -29,6 +29,15 @@ public interface ISyncClientService
     /// </summary>
     event EventHandler? E2EEOnboardingCleared;
 
+    /// <summary>Raised when <see cref="IsE2EEDowngradeDetected"/> changes.</summary>
+    event EventHandler? E2EEDowngradeChanged;
+
+    /// <summary>The server reports E2EE off for an account this device knows required it; sync is held.</summary>
+    bool IsE2EEDowngradeDetected { get; }
+
+    /// <summary>Forgets that this account required E2EE, so sync may go unencrypted. Only on the user's confirmation.</summary>
+    Task AllowUnencryptedSyncAsync();
+
     /// <summary>
     /// Called by onboarding UI once the device has successfully onboarded so
     /// that app-wide indicators can clear.

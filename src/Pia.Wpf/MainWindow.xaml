@@ -87,38 +87,70 @@
         </Grid>
       </Border>
 
-      <!-- E2EE onboarding required bar -->
-      <Border Grid.Row="2"
-              Background="{DynamicResource SystemFillColorCautionBrush}"
-              Padding="12,6"
-              Visibility="{Binding ShowE2EEOnboardingBar, Converter={StaticResource BooleanToVisibilityConverter}}">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
+      <StackPanel Grid.Row="2">
+        <Border Background="{DynamicResource SystemFillColorCriticalBrush}"
+                Padding="12,6"
+                Visibility="{Binding IsE2EEDowngradeDetected, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-          <ui:SymbolIcon Grid.Column="0"
-                         Symbol="ShieldKeyhole24"
-                         VerticalAlignment="Center"
-                         Margin="0,0,8,0"/>
+            <ui:SymbolIcon Grid.Column="0"
+                           Symbol="ShieldError24"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0"/>
 
-          <TextBlock Grid.Column="1"
-                     VerticalAlignment="Center"
-                     FontSize="13"
-                     TextWrapping="Wrap"
-                     Text="{loc:Str E2EE_Onboarding_Bar_Message}"/>
+            <TextBlock Grid.Column="1"
+                       VerticalAlignment="Center"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       Text="{loc:Str E2EE_Downgrade_Bar_Message}"/>
 
-          <ui:Button Grid.Column="2"
-                     Content="{loc:Str E2EE_Onboarding_Bar_Action}"
-                     Command="{Binding OpenE2EEOnboardingCommand}"
-                     AutomationProperties.AutomationId="E2EE_OpenOnboarding"
-                     Appearance="Primary"
-                     Margin="8,0,0,0"
-                     Padding="12,4"/>
-        </Grid>
-      </Border>
+            <ui:Button Grid.Column="2"
+                       Content="{loc:Str E2EE_Downgrade_Bar_Action}"
+                       Command="{Binding OpenE2EEOnboardingCommand}"
+                       AutomationProperties.AutomationId="E2EE_OpenDowngradeReview"
+                       Appearance="Danger"
+                       Margin="8,0,0,0"
+                       Padding="12,4"/>
+          </Grid>
+        </Border>
+
+        <!-- E2EE onboarding required bar -->
+        <Border Background="{DynamicResource SystemFillColorCautionBrush}"
+                Padding="12,6"
+                Visibility="{Binding ShowE2EEOnboardingBar, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:SymbolIcon Grid.Column="0"
+                           Symbol="ShieldKeyhole24"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0"/>
+
+            <TextBlock Grid.Column="1"
+                       VerticalAlignment="Center"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       Text="{loc:Str E2EE_Onboarding_Bar_Message}"/>
+
+            <ui:Button Grid.Column="2"
+                       Content="{loc:Str E2EE_Onboarding_Bar_Action}"
+                       Command="{Binding OpenE2EEOnboardingCommand}"
+                       AutomationProperties.AutomationId="E2EE_OpenOnboarding"
+                       Appearance="Primary"
+                       Margin="8,0,0,0"
+                       Padding="12,4"/>
+          </Grid>
+        </Border>
+      </StackPanel>
 
       <ContentPresenter x:Name="NavigationContentPresenter"
                         Grid.Row="3"

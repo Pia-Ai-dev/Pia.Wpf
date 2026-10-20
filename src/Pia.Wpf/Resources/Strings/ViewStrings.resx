@@ -995,6 +995,13 @@
   <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Content you sync from this account is stored unencrypted on the Pia server. Turn on end-to-end encryption so that only your devices can read it.</value></data>
   <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Turn on encryption</value></data>
   <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Not now</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Sync is paused: the server says this account is no longer end-to-end encrypted.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Review</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Encryption turned off on the server</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>This account used end-to-end encryption, but the server now reports it as unencrypted. Sync is paused so your data is not sent in plain text. If nobody reset this account's encryption on purpose, do not continue, and contact your administrator.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Sync without encryption</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Sync without encryption?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Only continue if this account's encryption was reset on purpose. Your data will then be sent to the server without end-to-end encryption, and this device will stop warning you about it.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>New device requesting access</value></data>
   <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>A new device wants to join your account.&#xA;&#xA;Device: {0}&#xA;Fingerprint: {1}&#xA;&#xA;Compare this fingerprint with the one shown on the new device and approve only if they match. The new device then asks you to compare the fingerprint of this device: {2}&#xA;&#xA;Do you want to approve this device?</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Reject device?</value></data>

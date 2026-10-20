@@ -1032,6 +1032,13 @@
   <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Le contenu que vous synchronisez avec ce compte est stocké sans chiffrement sur le serveur Pia. Activez le chiffrement de bout en bout pour que seuls vos appareils puissent le lire.</value></data>
   <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Activer le chiffrement</value></data>
   <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Plus tard</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Synchronisation suspendue : selon le serveur, ce compte n'est plus chiffré de bout en bout.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Vérifier</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Chiffrement désactivé sur le serveur</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>Ce compte utilisait le chiffrement de bout en bout, mais le serveur le signale désormais comme non chiffré. La synchronisation est suspendue pour que vos données ne soient pas envoyées en clair. Si personne n'a réinitialisé volontairement le chiffrement de ce compte, n'allez pas plus loin et contactez votre administrateur.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Synchroniser sans chiffrement</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Synchroniser sans chiffrement ?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Ne continuez que si le chiffrement de ce compte a été réinitialisé volontairement. Vos données seront alors envoyées au serveur sans chiffrement de bout en bout, et cet appareil ne vous avertira plus.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Un nouvel appareil demande l'accès</value></data>
   <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>Un nouvel appareil souhaite rejoindre votre compte.&#xA;&#xA;Appareil : {0}&#xA;Empreinte : {1}&#xA;&#xA;Comparez cette empreinte avec celle affichée sur le nouvel appareil et n'approuvez que si elles correspondent. Le nouvel appareil vous demande ensuite de comparer l'empreinte de cet appareil : {2}&#xA;&#xA;Voulez-vous approuver cet appareil ?</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Refuser l'appareil ?</value></data>

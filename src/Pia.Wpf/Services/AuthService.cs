@@ -376,6 +376,8 @@ public class AuthService : IAuthService
         // A marker surviving from an earlier connection would suppress this account's history upload.
         settings.AssistantChatsBackfilledAt = null;
         settings.ForgetE2EEKey();
+        if (login.IsE2EEEnabled || AccessTokenClaims.ReadE2EE(login.AccessToken) == true)
+            settings.MarkE2EERequiredForAccount();
         if (reportedMetadata)
             settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);
@@ -685,6 +687,9 @@ public class AuthService : IAuthService
             // Persist new tokens
             settings.EncryptedAccessToken = _encryptedAccessToken;
             settings.EncryptedRefreshToken = _encryptedRefreshToken;
+            if (json.TryGetProperty("isE2EEEnabled", out var e2ee) && e2ee.ValueKind == JsonValueKind.True
+                || AccessTokenClaims.ReadE2EE(newAccessToken) == true)
+                settings.MarkE2EERequiredForAccount();
             if (reportMetadata)
                 settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
             await _settingsService.SaveSettingsAsync(settings);

@@ -395,6 +395,14 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     private async Task<bool> SendUpsertAsync(SyncAssistantChat chat, bool retried, CancellationToken ct)
     {
+        // Without the key the mapper would send the chat in plaintext; it goes out encrypted after onboarding.
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!settings.IsE2EEEnabled && settings.IsE2EERequiredForAccount())
+        {
+            _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chat.Id);
+            return false;
+        }
+
         var (client, baseUrl, userId) = await BuildClientAsync(ct);
         if (client is null || baseUrl is null) return false;
 
