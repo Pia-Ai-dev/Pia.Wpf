@@ -111,6 +111,23 @@ public sealed class LocalDataWiperTests : IDisposable
     }
 
     [Fact]
+    public async Task Wipe_WithUnreadableSettings_ThrowsBeforeClearingAnything()
+    {
+        await SeedAsync();
+        var settingsPath = Path.Combine(_roaming, "settings.json");
+        var before = File.ReadAllBytes(settingsPath);
+
+        using (new FileStream(settingsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            await Assert.ThrowsAsync<IOException>(() => NewWiper().WipeAsync());
+        }
+
+        Assert.Equal(before, File.ReadAllBytes(settingsPath));
+        Assert.True(File.Exists(Path.Combine(_roaming, "templates.json")));
+        Assert.Equal(1, Count("SELECT COUNT(*) FROM Todos"));
+    }
+
+    [Fact]
     public async Task Wipe_RunTwice_Converges()
     {
         await SeedAsync();

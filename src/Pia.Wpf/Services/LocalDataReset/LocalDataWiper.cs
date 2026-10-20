@@ -36,6 +36,8 @@ public sealed class LocalDataWiper(SqliteContext db, ISettingsService settingsSe
 
     public async Task WipeAsync()
     {
+        await EnsureSettingsReadableAsync();
+
         var deletedFiles = DeleteSyncedFiles();
         var removedProviders = await KeepOnlyPiaCloudProvidersAsync();
 
@@ -49,6 +51,15 @@ public sealed class LocalDataWiper(SqliteContext db, ISettingsService settingsSe
         logger.LogInformation(
             "Local synced data cleared: files {Files}, providers removed {Providers}, rows {Rows}",
             deletedFiles, removedProviders, string.Join(", ", counts.Select(c => $"{c.Key}={c.Value}")));
+    }
+
+    // GetSettingsAsync answers any read failure with defaults, which the save below would make permanent.
+    // An I/O failure throws here instead, before anything is cleared, so the marker stays and the next start retries.
+    private static async Task EnsureSettingsReadableAsync()
+    {
+        var path = Path.Combine(PiaPaths.RoamingDataDirectory, "settings.json");
+        if (File.Exists(path))
+            await File.ReadAllTextAsync(path);
     }
 
     private static int DeleteSyncedFiles()
