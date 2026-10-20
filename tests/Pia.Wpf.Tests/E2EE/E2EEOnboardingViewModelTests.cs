@@ -318,6 +318,21 @@ public class E2EEOnboardingViewModelTests
         _deviceMgmt, _deviceKeys, _e2ee, _syncService, _settingsService,
         NullLogger<E2EEOnboardingViewModel>.Instance, pollIntervalOverride: TimeSpan.FromMilliseconds(10));
 
+    // The approver's name comes from the server, so a forged fingerprint line must not survive as its own line.
+    [Fact]
+    public async Task TheApproverName_IsShownWithoutLineBreaksOrInvisibleCharacters()
+    {
+        var sut = await ApprovedAsync(Handover("AAAA-BBBB-CCCC-DDDD") with
+        {
+            ApproverDeviceName = "Laptop\r\n‮Fingerprint: 1111-2222-3333-4444",
+        });
+
+        await WaitForState(sut, OnboardingState.ConfirmingApprover, timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal("Laptop Fingerprint: 1111-2222-3333-4444", sut.ApproverDeviceName);
+        sut.Cleanup();
+    }
+
     // The server decides which device counts as the approver, so the key waits for a person to compare.
     [Fact]
     public async Task AnApprovalByAnotherDevice_WaitsForTheFingerprintToBeConfirmed()

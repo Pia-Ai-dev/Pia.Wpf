@@ -292,7 +292,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         StopPolling();
         _pendingHandover = handover;
         ApproverFingerprint = handover.ApproverFingerprint ?? "";
-        ApproverDeviceName = DeviceNameDisplay.Sanitize(handover.ApproverDeviceName).Text;
+        var approverName = DeviceNameDisplay.Sanitize(handover.ApproverDeviceName).Text;
+        ApproverDeviceName = approverName.Length > 0
+            ? approverName
+            : LocalizationSource.Instance["Settings_E2EE_UnnamedDevice"];
         StatusMessage = "";
         State = OnboardingState.ConfirmingApprover;
     }
