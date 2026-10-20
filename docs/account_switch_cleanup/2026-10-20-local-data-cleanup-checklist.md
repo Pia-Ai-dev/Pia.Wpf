@@ -19,7 +19,7 @@ little standalone value, unblocks a High.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
 - [x] **2. Settings resets** — `ClearAccountState`, `ResetSyncedData`, the 13 synced preference names and the post-reset push latch on `AppSettings`.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
-- [ ] **3. Wiper** — `LocalDataWiper` empties every synced store with plain SQL and file operations and reseeds the kanban columns.
+- [x] **3. Wiper** — `LocalDataWiper` empties every synced store with plain SQL and file operations and reseeds the kanban columns.
   *Deps:* 2 · *Effort:* S · *Value:* High
 - [ ] **4. Startup hook** — `LocalDataResetStartup` runs a pending clear in `Bootstrapper` before any store is read, and keeps the marker on failure.
   *Deps:* 1, 3 · *Effort:* XS · *Value:* High

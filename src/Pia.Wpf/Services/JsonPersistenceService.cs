@@ -18,7 +18,7 @@ public abstract class JsonPersistenceService<T> where T : class
     /// <summary>Overridable so a test can point one store at a directory of its own.</summary>
     protected virtual string DirectoryPath => SettingsDirectory;
 
-    protected static readonly JsonSerializerOptions JsonOptions = new()
+    protected internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
