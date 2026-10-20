@@ -909,14 +909,14 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                     await _deviceManagement.ApproveDeviceAsync(
                         device.OnboardingSessionId, device);
                     _snackbarService.Show(_localizationService["Settings_E2EE_DeviceApproved_Title"],
-                        _localizationService.Format("Settings_E2EE_DeviceApproved_Message", displayName),
+                        _localizationService["Settings_E2EE_DeviceApproved_Message"],
                         Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
                 }
                 else if (!approved)
                 {
                     var reject = await _dialogService.ShowConfirmationDialogAsync(
                         _localizationService["Settings_E2EE_RejectDevice_Title"],
-                        _localizationService.Format("Settings_E2EE_RejectDevice_Message", displayName));
+                        _localizationService["Settings_E2EE_RejectDevice_Message"]);
                     if (reject)
                     {
                         await _deviceManagement.RevokeDeviceAsync(device.DeviceId);

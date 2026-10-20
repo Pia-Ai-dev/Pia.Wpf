@@ -1015,9 +1015,9 @@
   <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Don't approve</value></data>
   <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unnamed device</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Reject device?</value></data>
-  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke {0}? If you don't recognize this device, revoke it.</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke this device? If you don't recognize it, revoke it.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Device approved</value></data>
-  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} has been approved and can now sync.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>The device has been approved and can now sync.</value></data>
   <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Device removed</value></data>
   <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>This device was revoked on the server. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>
   <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>This device is no longer registered on the server — its record was deleted or expired. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>

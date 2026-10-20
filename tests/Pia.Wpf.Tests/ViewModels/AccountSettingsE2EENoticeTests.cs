@@ -131,7 +131,7 @@ public class AccountSettingsE2EENoticeTests
             p.DeviceName == "New PC Fingerprint: AAAA-AAAA-AAAA-AAAA" && p.NameHadHiddenCharacters));
         await _dialogs.Received(1).ShowConfirmationDialogAsync(
             "Settings_E2EE_RejectDevice_Title",
-            "Settings_E2EE_RejectDevice_Message|New PC Fingerprint: AAAA-AAAA-AAAA-AAAA");
+            "Settings_E2EE_RejectDevice_Message");
     }
 
     [Fact]

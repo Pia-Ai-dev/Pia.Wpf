@@ -1052,9 +1052,9 @@
   <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Nicht bestätigen</value></data>
   <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unbenanntes Gerät</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Gerät ablehnen?</value></data>
-  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du {0} ablehnen und entfernen? Wenn du dieses Gerät nicht kennst, entferne es.</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du dieses Gerät ablehnen und entfernen? Wenn du es nicht kennst, entferne es.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Gerät bestätigt</value></data>
-  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} wurde bestätigt und kann jetzt synchronisieren.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>Das Gerät wurde bestätigt und kann jetzt synchronisieren.</value></data>
   <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Gerät entfernt</value></data>
   <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>Dieses Gerät wurde auf dem Server widerrufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
   <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Dieses Gerät ist auf dem Server nicht mehr registriert – sein Eintrag wurde gelöscht oder ist abgelaufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>

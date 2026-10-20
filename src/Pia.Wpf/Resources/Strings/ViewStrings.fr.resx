@@ -1052,9 +1052,9 @@
   <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Ne pas approuver</value></data>
   <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Appareil sans nom</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Refuser l'appareil ?</value></data>
-  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Voulez-vous refuser et révoquer {0} ? Si vous ne reconnaissez pas cet appareil, révoquez-le.</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Voulez-vous refuser et révoquer cet appareil ? Si vous ne le reconnaissez pas, révoquez-le.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Appareil approuvé</value></data>
-  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} a été approuvé et peut maintenant synchroniser.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>L'appareil a été approuvé et peut maintenant synchroniser.</value></data>
   <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Appareil supprimé</value></data>
   <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>Cet appareil a été révoqué sur le serveur. La synchronisation en arrière-plan est arrêtée et la copie de la clé de chiffrement de cet appareil a été oubliée. Configurez à nouveau cet appareil, ou déconnectez-vous.</value></data>
   <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Cet appareil n'est plus enregistré sur le serveur — son enregistrement a été supprimé ou a expiré. La synchronisation en arrière-plan est arrêtée et la copie de la clé de chiffrement de cet appareil a été oubliée. Configurez à nouveau cet appareil, ou déconnectez-vous.</value></data>
