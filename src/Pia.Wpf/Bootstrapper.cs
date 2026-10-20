@@ -123,7 +123,7 @@ public static class Bootstrapper
 
         // Before the policy, settings or any store is read, so nothing caches pre-clear state.
         await LocalDataResetStartup.RunIfPendingAsync(
-            () => _serviceProvider.GetRequiredService<LocalDataWiper>().WipeAsync(), bootstrapLogger);
+            () => _serviceProvider.GetRequiredService<LocalDataWipeService>().WipeAsync(), bootstrapLogger);
 
         bootstrapLogger.LogInformation(
             "Log retention: kept {Kept}, deleted {Deleted}, skipped {Skipped}, cutoff {Cutoff:yyyy-MM-dd}",
@@ -472,7 +472,7 @@ public static class Bootstrapper
 
         // Infrastructure
         services.AddSingleton<SqliteContext>();
-        services.AddSingleton<LocalDataWiper>();
+        services.AddSingleton<LocalDataWipeService>();
         services.AddSingleton<ILocalDataResetService, LocalDataResetService>();
         services.AddSingleton<VaultPathProvider>();
         services.AddSingleton<MarkdownVaultParser>();

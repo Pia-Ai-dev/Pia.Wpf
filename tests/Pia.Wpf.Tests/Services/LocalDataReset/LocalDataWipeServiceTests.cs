@@ -18,7 +18,7 @@ using Xunit;
 namespace Pia.Tests.Services.LocalDataReset;
 
 [Collection("PiaPathsStatic")]
-public sealed class LocalDataWiperTests : IDisposable
+public sealed class LocalDataWipeServiceTests : IDisposable
 {
     private const string ChatId = "c0000000-0000-0000-0000-000000000001";
     private const string ServerPluginId = "20000000-0000-0000-0000-000000000001";
@@ -35,7 +35,7 @@ public sealed class LocalDataWiperTests : IDisposable
     private readonly IDisposable _override;
     private SqliteContext _db;
 
-    public LocalDataWiperTests()
+    public LocalDataWipeServiceTests()
     {
         _override = PiaPaths.OverrideForTests(_roaming, _local);
         Directory.CreateDirectory(_roaming);
@@ -150,8 +150,8 @@ public sealed class LocalDataWiperTests : IDisposable
     private static SettingsService NewSettingsService() =>
         new(NullLogger<SettingsService>.Instance, Substitute.For<IPolicyService>());
 
-    private LocalDataWiper NewWiper() =>
-        new(_db, NewSettingsService(), NullLogger<LocalDataWiper>.Instance);
+    private LocalDataWipeService NewWiper() =>
+        new(_db, NewSettingsService(), NullLogger<LocalDataWipeService>.Instance);
 
     private async Task SeedAsync()
     {

@@ -11,7 +11,7 @@ using Pia.Services.Plugins;
 namespace Pia.Services.LocalDataReset;
 
 /// <summary>Empties every synced store with plain SQL and file operations; the per-entity deletes would reach the server.</summary>
-public sealed class LocalDataWiper(SqliteContext db, ISettingsService settingsService, ILogger<LocalDataWiper> logger)
+public sealed class LocalDataWipeService(SqliteContext db, ISettingsService settingsService, ILogger<LocalDataWipeService> logger)
 {
     private static readonly string[] SyncedFiles = ["templates.json", "pending-sync-deletes.json", "policy-cache.json"];
 

@@ -40,12 +40,12 @@ public class BootstrapperGraphValidationTests
     }
 
     [Fact]
-    public void TheLocalDataWiper_DoesNotPullInAuthService()
+    public void TheLocalDataWipeService_DoesNotPullInAuthService()
     {
         var services = BuildConfiguredServices();
         var visited = new HashSet<Type>();
 
-        Walk(typeof(LocalDataWiper));
+        Walk(typeof(LocalDataWipeService));
 
         Assert.Contains(typeof(SqliteContext), visited);
         Assert.Contains(typeof(ISettingsService), visited);

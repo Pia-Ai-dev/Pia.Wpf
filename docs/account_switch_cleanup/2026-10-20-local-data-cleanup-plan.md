@@ -9,7 +9,7 @@
 
 **Goal:** Let the user drop every local copy of synced data at sign-out or before sign-in, guarded by a marker file so an interrupted clear finishes at the next start before any sign-in.
 
-**Architecture:** Choosing *clear* writes a marker file and restarts Pia. Early in `Bootstrapper.InitializeAsync`, before any store is read, `LocalDataResetStartup` sees the marker and runs `LocalDataWiper`, which empties every synced store with plain SQL and file operations — never the per-entity deletes, which would delete on the server. The prompts are shared by `AccountSettingsViewModel` and `FirstRunWizardViewModel` through a static `AccountSwitchPrompts` helper over an `ILocalDataResetService`. The first sync after a clear omits the settings row so the account's preferences win.
+**Architecture:** Choosing *clear* writes a marker file and restarts Pia. Early in `Bootstrapper.InitializeAsync`, before any store is read, `LocalDataResetStartup` sees the marker and runs `LocalDataWipeService`, which empties every synced store with plain SQL and file operations — never the per-entity deletes, which would delete on the server. The prompts are shared by `AccountSettingsViewModel` and `FirstRunWizardViewModel` through a static `AccountSwitchPrompts` helper over an `ILocalDataResetService`. The first sync after a clear omits the settings row so the account's preferences win.
 
 **Tech Stack:** .NET 10 WPF, CommunityToolkit.Mvvm, Microsoft.Data.Sqlite (encrypted `history.db`), xunit v3, NSubstitute.
 
@@ -158,19 +158,19 @@ Use any `WindowMode` member that exists if `Assistant` does not.
 
 ---
 
-### Task 3: `LocalDataWiper` — the clear itself
+### Task 3: `LocalDataWipeService` — the clear itself
 
 **Files:**
-- Create: `src/Pia.Wpf/Services/LocalDataReset/LocalDataWiper.cs`
+- Create: `src/Pia.Wpf/Services/LocalDataReset/LocalDataWipeService.cs`
 - Modify: `src/Pia.Wpf/Infrastructure/SqliteContext.cs` (extract the kanban seed)
 - Modify: `src/Pia.Wpf/Services/JsonPersistenceService.cs` (`JsonOptions` becomes `protected internal`)
-- Test: `tests/Pia.Wpf.Tests/Services/LocalDataReset/LocalDataWiperTests.cs`
+- Test: `tests/Pia.Wpf.Tests/Services/LocalDataReset/LocalDataWipeServiceTests.cs`
 
 **Interfaces:**
 - Consumes: `AppSettings.ClearAccountState()`, `AppSettings.ResetSyncedData()` (Task 2).
 - Produces:
   - `internal static void SqliteContext.SeedDefaultKanbanColumns(SqliteConnection connection, SqliteTransaction? transaction, DateTime stampUtc)` — the two inserts `EnsureSchema` runs today (`…0001` "To Do" sort 0 default-view; `…0002` "Closed" sort `2147483647` closed). `EnsureSchema` calls it with `DateTime.UtcNow` when the table is empty.
-  - `public sealed class LocalDataWiper(SqliteContext db, ISettingsService settingsService, ILogger<LocalDataWiper> logger)` with `public Task WipeAsync()`.
+  - `public sealed class LocalDataWipeService(SqliteContext db, ISettingsService settingsService, ILogger<LocalDataWipeService> logger)` with `public Task WipeAsync()`.
 
 `WipeAsync` does, in this order:
 
@@ -214,9 +214,9 @@ Use any `WindowMode` member that exists if `Assistant` does not.
 // second WipeAsync on a fresh wiper/context does not throw; same asserts as above hold
 ```
 
-- [ ] **Step 2: Build and run `Pia.Tests.Services.LocalDataReset.LocalDataWiperTests`; expect compile failure.**
-- [ ] **Step 3: Extract `SeedDefaultKanbanColumns`, widen `JsonOptions`, implement `LocalDataWiper`.**
-- [ ] **Step 4: Run `LocalDataWiperTests` and `Pia.Tests.Infrastructure.SqliteContextTests`; expect PASS.**
+- [ ] **Step 2: Build and run `Pia.Tests.Services.LocalDataReset.LocalDataWipeServiceTests`; expect compile failure.**
+- [ ] **Step 3: Extract `SeedDefaultKanbanColumns`, widen `JsonOptions`, implement `LocalDataWipeService`.**
+- [ ] **Step 4: Run `LocalDataWipeServiceTests` and `Pia.Tests.Infrastructure.SqliteContextTests`; expect PASS.**
 - [ ] **Step 5: Commit** — `feat: add the local synced-data wiper`.
 
 ---
@@ -225,14 +225,14 @@ Use any `WindowMode` member that exists if `Assistant` does not.
 
 **Files:**
 - Create: `src/Pia.Wpf/Services/LocalDataReset/LocalDataResetStartup.cs`
-- Modify: `src/Pia.Wpf/Bootstrapper.cs` (register `LocalDataWiper` as singleton; call the startup hook right after the "Data directories" log line, before `IPolicyService` is resolved)
+- Modify: `src/Pia.Wpf/Bootstrapper.cs` (register `LocalDataWipeService` as singleton; call the startup hook right after the "Data directories" log line, before `IPolicyService` is resolved)
 - Modify: `src/Pia.Wpf/App.xaml.cs` (background-sync start guard)
 - Test: `tests/Pia.Wpf.Tests/Services/LocalDataReset/LocalDataResetStartupTests.cs`
 - Test: `tests/Pia.Wpf.Tests/Architecture/BootstrapperGraphValidationTests.cs` (add a test)
 
 **Interfaces:**
-- Consumes: `LocalDataResetMarker` (Task 1), `LocalDataWiper` (Task 3).
-- Produces: `internal static class LocalDataResetStartup { static Task<bool> RunIfPendingAsync(Func<Task> wipe, ILogger logger); }` — returns `true` when a clear ran and the marker was removed. Bootstrapper passes `() => _serviceProvider.GetRequiredService<LocalDataWiper>().WipeAsync()`.
+- Consumes: `LocalDataResetMarker` (Task 1), `LocalDataWipeService` (Task 3).
+- Produces: `internal static class LocalDataResetStartup { static Task<bool> RunIfPendingAsync(Func<Task> wipe, ILogger logger); }` — returns `true` when a clear ran and the marker was removed. Bootstrapper passes `() => _serviceProvider.GetRequiredService<LocalDataWipeService>().WipeAsync()`.
 
 - [ ] **Step 1: Write the failing tests** (`[Collection("PiaPathsStatic")]`, temp override):
 
@@ -251,7 +251,7 @@ Use any `WindowMode` member that exists if `Assistant` does not.
   Assert.True(LocalDataResetMarker.IsPending); }
 ```
 
-In `BootstrapperGraphValidationTests` add `TheLocalDataWiper_DoesNotPullInAuthService`: walk constructor parameters transitively from `LocalDataWiper` through the `ServiceDescriptor.ImplementationType`s of `BuildConfiguredServices()` (skip `ILogger<>`; for a type with several public constructors, walk the one the container picks — the longest whose parameters are all registered or `ILogger<>` (`PolicyService` and `SqliteContext` resolve through their logger-only constructors); fail on a factory descriptor so nothing hides behind a lambda), and assert `typeof(IAuthService)` is never reached. Also assert the walk visited `SqliteContext` and `ISettingsService` (non-vacuity).
+In `BootstrapperGraphValidationTests` add `TheLocalDataWipeService_DoesNotPullInAuthService`: walk constructor parameters transitively from `LocalDataWipeService` through the `ServiceDescriptor.ImplementationType`s of `BuildConfiguredServices()` (skip `ILogger<>`; for a type with several public constructors, walk the one the container picks — the longest whose parameters are all registered or `ILogger<>` (`PolicyService` and `SqliteContext` resolve through their logger-only constructors); fail on a factory descriptor so nothing hides behind a lambda), and assert `typeof(IAuthService)` is never reached. Also assert the walk visited `SqliteContext` and `ISettingsService` (non-vacuity).
 
 - [ ] **Step 2: Build and run both classes; expect compile failure.**
 - [ ] **Step 3: Implement `RunIfPendingAsync`** (log error on throw, keep the marker); **wire it into `Bootstrapper.InitializeAsync`.** Also, in `App.OnStartup`, start background sync only when `authService.IsLoggedIn && !LocalDataResetMarker.IsPending` — a crash between writing the marker and signing out, followed by a failed clear, would otherwise boot signed in and syncing with the marker still set.
