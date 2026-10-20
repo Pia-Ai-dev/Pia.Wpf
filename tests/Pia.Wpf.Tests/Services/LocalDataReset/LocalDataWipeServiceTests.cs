@@ -128,6 +128,21 @@ public sealed class LocalDataWipeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Wipe_WhenAFileCannotBeDeleted_StillSignsOutAndThrows()
+    {
+        await SeedAsync();
+
+        using (new FileStream(Path.Combine(_roaming, "templates.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            await Assert.ThrowsAsync<IOException>(() => NewWiper().WipeAsync());
+        }
+
+        var settings = await NewSettingsService().GetSettingsAsync();
+        Assert.Null(settings.EncryptedRefreshToken);
+        Assert.False(settings.SyncEnabled);
+    }
+
+    [Fact]
     public async Task Wipe_RunTwice_Converges()
     {
         await SeedAsync();

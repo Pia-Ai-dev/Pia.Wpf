@@ -38,14 +38,14 @@ public sealed class LocalDataWipeService(SqliteContext db, ISettingsService sett
     {
         await EnsureSettingsReadableAsync();
 
-        var deletedFiles = DeleteSyncedFiles();
-        var removedProviders = await KeepOnlyPiaCloudProvidersAsync();
-
+        // Signed out first, so a failure further down never leaves the old account signed in.
         var settings = await settingsService.GetSettingsAsync();
         settings.ClearAccountState();
         settings.ResetSyncedData();
         await settingsService.SaveSettingsAsync(settings);
 
+        var deletedFiles = DeleteSyncedFiles();
+        var removedProviders = await KeepOnlyPiaCloudProvidersAsync();
         var counts = ClearDatabase();
 
         logger.LogInformation(
