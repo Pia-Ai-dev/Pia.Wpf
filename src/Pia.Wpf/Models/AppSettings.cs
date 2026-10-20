@@ -598,6 +598,9 @@ public class AppSettings
 
     public void ClearAccountState()
     {
+        // An install that predates the marker learns it here, before the account id is gone.
+        if (IsE2EEEnabled)
+            MarkE2EERequiredForAccount();
         SyncEnabled = false;
         EncryptedAccessToken = null;
         EncryptedRefreshToken = null;

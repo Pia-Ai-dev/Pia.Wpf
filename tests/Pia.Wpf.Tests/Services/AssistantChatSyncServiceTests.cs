@@ -347,6 +347,25 @@ public class AssistantChatSyncServiceTests
     }
 
     [Fact]
+    public async Task SendUpsert_WhenE2EEIsOnButTheKeyIsNotLoaded_SendsNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            IsE2EEEnabled = true,
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+    }
+
+    [Fact]
     public async Task SendUpsert_ForAnotherAccountMarkedOnThisDevice_StillSends()
     {
         _settings.GetSettingsAsync().Returns(new AppSettings

@@ -66,6 +66,16 @@ public class E2EEDowngradeTests
         Assert.False(settings.MarkE2EERequiredForAccount());
     }
 
+    [Fact]
+    public void SignOut_OfAnEncryptedAccount_MarksItFirst()
+    {
+        var settings = new AppSettings { SyncUserId = Account, IsE2EEEnabled = true };
+
+        settings.ClearAccountState();
+
+        Assert.Equal([Account], settings.E2EERequiredAccountIds);
+    }
+
     // A pushed policy could otherwise empty the list and reopen the downgrade.
     [Fact]
     public void Marker_IsOutOfPolicyReach() =>
@@ -136,6 +146,7 @@ public class E2EEDowngradeTests
     private readonly IAuthService _syncAuth = Substitute.For<IAuthService>();
     private readonly ISettingsService _syncSettings = Substitute.For<ISettingsService>();
     private readonly IDeviceManagementService _deviceMgmt = Substitute.For<IDeviceManagementService>();
+    private readonly IE2EEService _syncE2EE = Substitute.For<IE2EEService>();
     private readonly AppSettings _syncStored = new()
     {
         ServerUrl = "https://server.example",
@@ -150,7 +161,7 @@ public class E2EEDowngradeTests
         var dpapi = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(new FailingHandler()));
-        var e2ee = Substitute.For<IE2EEService>();
+        var e2ee = _syncE2EE;
         return new SyncClientService(
             _syncAuth, _syncSettings, Substitute.For<ITemplateService>(),
             Substitute.For<IProviderService>(), Substitute.For<IHistoryService>(), Substitute.For<IMemoryService>(),
@@ -229,6 +240,38 @@ public class E2EEDowngradeTests
 
         Assert.False(sut.IsE2EEDowngradeDetected);
         await _syncAuth.Received().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task Downgrade_ClearsWhenTheServerReportsE2EEAgain()
+    {
+        _syncStored.E2EERequiredAccountIds = [Account];
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync();
+        Assert.True(sut.IsE2EEDowngradeDetected);
+
+        ServerSays(true);
+        await sut.SyncNowAsync();
+
+        Assert.False(sut.IsE2EEDowngradeDetected);
+        Assert.True(sut.IsE2EEOnboardingRequired);
+    }
+
+    [Fact]
+    public async Task Downgrade_ClearsOnceThisDeviceHoldsTheKey()
+    {
+        _syncStored.E2EERequiredAccountIds = [Account];
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync();
+        Assert.True(sut.IsE2EEDowngradeDetected);
+
+        _syncStored.IsE2EEEnabled = true;
+        _syncE2EE.IsReady().Returns(true);
+        await sut.SyncNowAsync();
+
+        Assert.False(sut.IsE2EEDowngradeDetected);
     }
 
     [Fact]

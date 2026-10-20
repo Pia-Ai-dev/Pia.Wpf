@@ -137,16 +137,19 @@ public class SyncClientService : ISyncClientService, IDisposable
         ClearE2EEDowngrade();
     }
 
-    // The key is gone from this device but the account needed E2EE: onboarding if the server agrees, else a downgrade.
     private async Task<bool> BlocksMarkedAccountWithoutKeyAsync(AppSettings settings)
     {
         if (settings.IsE2EEEnabled || !settings.IsE2EERequiredForAccount())
+        {
+            ClearE2EEDowngrade();
             return false;
+        }
 
         var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
         if (serverStatus is { IsEnabled: true })
         {
             _logger.LogWarning("E2EE required for this account but UMK not available; onboarding required");
+            ClearE2EEDowngrade();
             NotifyE2EEOnboardingRequired();
         }
         else if (serverStatus is not null)
@@ -369,7 +372,6 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         if (!_authService.IsLoggedIn) return null;
 
-        // Non-blocking: skip if another sync is already running
         if (!await _syncLock.WaitAsync(0)) return null;
 
         SyncResult? result = null;
@@ -381,8 +383,6 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return null;
 
-            // E2EE initialization check: if E2EE is enabled but UMK not available,
-            // this is a second device that needs onboarding before sync can proceed.
             if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
             {
                 _logger.LogWarning("E2EE enabled but UMK not available; onboarding required");
@@ -421,12 +421,10 @@ public class SyncClientService : ISyncClientService, IDisposable
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
 
-            // Push local changes
             var (pushedCount, pushSucceeded, pushSentChanges) = await PushChangesAsync(client, serverUrl, settings);
             if (PendingDeviceRevocation is not null)
                 return null;
 
-            // Pull remote changes
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             if (PendingDeviceRevocation is not null)
                 return null;
@@ -459,8 +457,6 @@ public class SyncClientService : ISyncClientService, IDisposable
                 }
             }
 
-            // Adaptive scheduling: classify this cycle and update the consecutive-idle counter
-            // that ArmNextSyncCycle reads to decide the next delay.
             var outcome = ClassifyCycle(pushSucceeded, pushSentChanges, pulled, pullOk, serverTimestamp);
             _consecutiveIdleCycles = UpdateIdleCycleCount(_consecutiveIdleCycles, outcome);
 
@@ -484,7 +480,6 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         if (!_authService.IsLoggedIn) return;
 
-        // Blocking: wait for any in-progress sync to finish first
         await _syncLock.WaitAsync();
         try
         {
@@ -496,10 +491,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return;
 
-            // Same readiness gate SyncNowAsync applies. This path pushes EVERY local row with no
-            // dirty filter, so running it while the UMK is missing does double damage: it pulls
-            // ciphertext it cannot read, and it re-uploads whatever is in the local store over the
-            // server's copy. On a restored device the server holds the only copy.
+            // Every local row goes up unfiltered: without the key it would overwrite the server's only copy.
             if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
             {
                 _logger.LogWarning("E2EE enabled but UMK not available; skipping first-sync migration");
@@ -511,8 +503,6 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return;
 
             // Local E2EE off is not proof the account's is: a restored device has not activated yet.
-            // Callers reach this method after a CheckE2EEStatusAsync that returns null on an
-            // unreachable server, and null used to read as "no E2EE" and fall straight through.
             if (_e2ee is not null && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
@@ -534,7 +524,6 @@ public class SyncClientService : ISyncClientService, IDisposable
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
 
-            // Build full push request with all local data
             var templates = await _templateService.GetTemplatesAsync();
             var personas = _personaService is not null
                 ? await _personaService.GetPersonasAsync()
