@@ -27,7 +27,7 @@ little standalone value, unblocks a High.
   *Deps:* none · *Effort:* S · *Value:* Med
 - [x] **6. Reset service** — `ILocalDataResetService`: the "has data" check, the notices, the final upload, schedule and restart.
   *Deps:* 1, 5 · *Effort:* S · *Value:* Enabler
-- [ ] **7. Prompts and strings** — `AccountSwitchPrompts`, the dialog close label and the 19 strings in en/de/fr.
+- [x] **7. Prompts and strings** — `AccountSwitchPrompts`, the dialog close label and the 19 strings in en/de/fr.
   *Deps:* 6 · *Effort:* S · *Value:* Enabler
 - [ ] **8. Account settings wiring** — sign-in guard on four commands, the sign-out prompt on the button, the revoked dialog and account deletion.
   *Deps:* 7 · *Effort:* S · *Value:* High

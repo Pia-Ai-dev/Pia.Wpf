@@ -1782,4 +1782,23 @@
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Locked by your organization: this setting is enforced by Pia policy and cannot be changed here.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Sign out of Pia Cloud</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Do you also want to remove this account's data from this device? This covers chats, history, todos, templates, personas, your own AI providers and synced preferences. Everything stays in your Pia Cloud account and comes back when you sign in again. Clearing restarts Pia.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Sign out and clear</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Sign out and keep</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Before you sign in</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>There is data on this device. If you keep it, it is uploaded into the account you sign in to. If you clear it first, Pia removes it from this device, including changes made while you were signed out, and restarts. You then need to sign in again.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Keep and sign in</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Clear first</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>Pia's memory on this device is not removed and stays available after you switch accounts.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>API keys for your own AI providers are not stored in Pia Cloud. You will need to enter them again.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API keys for your own AI providers are removed from this device. Unless your account uses end-to-end encryption, you will need to enter them again.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Couldn't upload your latest changes</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Some changes on this device have not reached Pia Cloud. Clear this device anyway? Changes that were not uploaded are lost.</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Local data not removed yet</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia couldn't finish removing local data. Restart Pia now to try again?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Account deleted</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Your Pia Cloud account has been deleted. Do you also want to remove its data from this device? Clearing restarts Pia.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Clear this device</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Keep on this device</value></data>
 </root>

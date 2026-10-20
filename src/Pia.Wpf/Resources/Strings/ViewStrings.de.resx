@@ -1772,4 +1772,23 @@
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>gesperrt</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Wird gespeichert… der Server startet neu.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Von Ihrer Organisation gesperrt: Diese Einstellung wird per Pia-Richtlinie vorgegeben und kann hier nicht geändert werden.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Von Pia Cloud abmelden</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Möchtest du auch die Daten dieses Kontos von diesem Gerät entfernen? Das betrifft Chats, Verlauf, Todos, Vorlagen, Personas, deine eigenen KI-Anbieter und synchronisierte Einstellungen. Alles bleibt in deinem Pia-Cloud-Konto und ist nach der nächsten Anmeldung wieder da. Beim Entfernen wird Pia neu gestartet.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Abmelden und entfernen</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Abmelden und behalten</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Vor der Anmeldung</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>Auf diesem Gerät sind Daten vorhanden. Wenn du sie behältst, werden sie in das Konto hochgeladen, bei dem du dich anmeldest. Wenn du sie zuerst entfernst, löscht Pia sie von diesem Gerät, auch Änderungen, die du im abgemeldeten Zustand gemacht hast, und startet neu. Danach musst du dich erneut anmelden.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Behalten und anmelden</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Zuerst entfernen</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>Das Gedächtnis von Pia auf diesem Gerät wird nicht entfernt und bleibt auch nach einem Kontowechsel verfügbar.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>API-Schlüssel für deine eigenen KI-Anbieter werden nicht in Pia Cloud gespeichert. Du musst sie erneut eingeben.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API-Schlüssel für deine eigenen KI-Anbieter werden von diesem Gerät entfernt. Wenn dein Konto keine Ende-zu-Ende-Verschlüsselung verwendet, musst du sie erneut eingeben.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Letzte Änderungen konnten nicht hochgeladen werden</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Einige Änderungen auf diesem Gerät haben Pia Cloud nicht erreicht. Dieses Gerät trotzdem leeren? Nicht hochgeladene Änderungen gehen verloren.</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Lokale Daten noch nicht entfernt</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia konnte das Entfernen der lokalen Daten nicht abschließen. Pia jetzt neu starten und es erneut versuchen?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Konto gelöscht</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Dein Pia-Cloud-Konto wurde gelöscht. Möchtest du auch dessen Daten von diesem Gerät entfernen? Beim Entfernen wird Pia neu gestartet.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Dieses Gerät leeren</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Auf diesem Gerät behalten</value></data>
 </root>

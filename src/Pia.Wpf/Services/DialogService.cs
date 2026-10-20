@@ -164,7 +164,8 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
-    public async Task<DialogChoice> ShowChoiceDialogAsync(string title, string message, string primaryText, string secondaryText)
+    public async Task<DialogChoice> ShowChoiceDialogAsync(
+        string title, string message, string primaryText, string secondaryText, string? closeText = null)
     {
         var result = await _contentDialogService.ShowSimpleDialogAsync(
             new SimpleContentDialogCreateOptions
@@ -173,7 +174,7 @@ public class DialogService : IDialogService
                 Content = message,
                 PrimaryButtonText = primaryText,
                 SecondaryButtonText = secondaryText,
-                CloseButtonText = _localizationService["Common_Close"]
+                CloseButtonText = closeText ?? _localizationService["Common_Close"]
             });
 
         return result switch

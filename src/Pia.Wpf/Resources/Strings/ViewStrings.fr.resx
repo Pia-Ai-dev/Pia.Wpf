@@ -1772,4 +1772,23 @@
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>bloqué</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Enregistrement… le serveur redémarre.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Verrouillé par votre organisation : ce paramètre est imposé par la stratégie Pia et ne peut pas être modifié ici.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Se déconnecter de Pia Cloud</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Voulez-vous aussi supprimer les données de ce compte de cet appareil ? Cela concerne les chats, l'historique, les todos, les modèles, les personas, vos propres fournisseurs d'IA et les préférences synchronisées. Tout reste dans votre compte Pia Cloud et revient lors de votre prochaine connexion. La suppression redémarre Pia.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Se déconnecter et supprimer</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Se déconnecter et conserver</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Avant de vous connecter</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>Cet appareil contient des données. Si vous les conservez, elles sont envoyées vers le compte auquel vous vous connectez. Si vous les supprimez d'abord, Pia les retire de cet appareil, y compris les modifications effectuées pendant que vous étiez déconnecté, puis redémarre. Vous devrez ensuite vous reconnecter.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Conserver et se connecter</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Supprimer d'abord</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>La mémoire de Pia sur cet appareil n'est pas supprimée et reste disponible après un changement de compte.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>Les clés API de vos propres fournisseurs d'IA ne sont pas stockées dans Pia Cloud. Vous devrez les saisir à nouveau.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>Les clés API de vos propres fournisseurs d'IA sont supprimées de cet appareil. Si votre compte n'utilise pas le chiffrement de bout en bout, vous devrez les saisir à nouveau.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Impossible d'envoyer vos dernières modifications</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Certaines modifications effectuées sur cet appareil n'ont pas atteint Pia Cloud. Vider quand même cet appareil ? Les modifications non envoyées seront perdues.</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Données locales pas encore supprimées</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia n'a pas pu terminer la suppression des données locales. Redémarrer Pia maintenant pour réessayer ?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Compte supprimé</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Votre compte Pia Cloud a été supprimé. Voulez-vous aussi supprimer ses données de cet appareil ? La suppression redémarre Pia.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Vider cet appareil</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Conserver sur cet appareil</value></data>
 </root>
