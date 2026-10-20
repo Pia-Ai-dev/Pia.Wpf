@@ -45,6 +45,9 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
     private readonly Dictionary<Guid, OpKind> _desired = new();
     private readonly List<TaskCompletionSource<bool>> _flushWaiters = new();
 
+    // Dropped ops a flush puts back in the queue, so a failure from an earlier pass is retried and reported.
+    private readonly Dictionary<Guid, OpKind> _failed = new();
+
     // Both guarded by _stateLock so a flush cannot register after the loop has handed out its last results.
     private bool _disabled;
     private bool _loopExited;
@@ -157,12 +160,14 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     public async Task<bool> FlushAsync(TimeSpan timeout, CancellationToken ct = default)
     {
-        var signedIn = _authService.IsLoggedIn;
+        var permitted = await SyncPermittedAsync();
         var waiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_stateLock)
         {
             if (_disabled) return true;
-            if (_loopExited || !signedIn) return false;
+            if (_loopExited || !permitted) return false;
+            foreach (var (id, kind) in _failed)
+                _desired.TryAdd(id, kind);
             _flushWaiters.Add(waiter);
         }
 
@@ -219,7 +224,9 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
             if (!await RunStartupCycleAsync(stoppingToken))
             {
-                lock (_stateLock) _disabled = true;
+                // An unreachable server also reads as capability off, and that must not tell a flush all is synced.
+                var confirmedOff = await _capabilities.ChatsConfirmedOffAsync(stoppingToken);
+                lock (_stateLock) _disabled = confirmedOff;
                 return;
             }
 
@@ -329,7 +336,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         }
     }
 
-    /// <summary>False when an op did not reach the server and was dropped.</summary>
+    /// <summary>False when an op did not reach the server.</summary>
     private async Task<bool> DrainAsync(CancellationToken ct)
     {
         var allReached = true;
@@ -344,10 +351,10 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 next = new SyncOp(kvp.Key, kvp.Value);
             }
 
+            var reached = false;
             try
             {
-                if (!await ProcessOpAsync(next, ct))
-                    allReached = false;
+                reached = await ProcessOpAsync(next, ct);
             }
             catch (OperationCanceledException)
             {
@@ -357,8 +364,14 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
             {
                 _logger.LogWarning(ex,
                     "Sync op {Kind} for chat {ChatId} failed", next.Kind, next.ChatId);
-                allReached = false;
             }
+
+            lock (_stateLock)
+            {
+                if (reached) _failed.Remove(next.ChatId);
+                else _failed[next.ChatId] = next.Kind;
+            }
+            allReached &= reached;
         }
     }
 
