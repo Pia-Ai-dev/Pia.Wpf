@@ -429,7 +429,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var outcome = ClassifyCycle(pushSucceeded, pushSentChanges, pulled, pullOk, serverTimestamp);
             _consecutiveIdleCycles = UpdateIdleCycleCount(_consecutiveIdleCycles, outcome);
 
-            result = new SyncResult(pushedCount, pulled, decryptErrors);
+            result = new SyncResult(pushedCount, pulled, decryptErrors, pushSucceeded);
             syncSw.Stop();
             _logger.LogInformation("SyncNowAsync completed in {ElapsedMs}ms — Pushed: {Pushed}, Pulled: {Pulled}, DecryptionErrors: {DecryptErrors}",
                 syncSw.ElapsedMilliseconds, result.PushedCount, result.PulledCount, result.DecryptionErrors);

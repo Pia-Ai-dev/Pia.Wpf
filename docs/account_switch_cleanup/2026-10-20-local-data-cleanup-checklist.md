@@ -25,7 +25,7 @@ little standalone value, unblocks a High.
   *Deps:* 1, 3 · *Effort:* XS · *Value:* High
 - [x] **5. Chat flush** — `IChatSyncFlusher` on `AssistantChatSyncService` reports whether every chat change reached the server.
   *Deps:* none · *Effort:* S · *Value:* Med
-- [ ] **6. Reset service** — `ILocalDataResetService`: the "has data" check, the notices, the final upload, schedule and restart.
+- [x] **6. Reset service** — `ILocalDataResetService`: the "has data" check, the notices, the final upload, schedule and restart.
   *Deps:* 1, 5 · *Effort:* S · *Value:* Enabler
 - [ ] **7. Prompts and strings** — `AccountSwitchPrompts`, the dialog close label and the 19 strings in en/de/fr.
   *Deps:* 6 · *Effort:* S · *Value:* Enabler

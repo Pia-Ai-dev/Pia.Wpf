@@ -140,6 +140,19 @@ public class SyncClientServiceTransferOptimizationTests
         Assert.False(result.SentChanges);
     }
 
+    [Fact]
+    public async Task DeltaPush_ServerRejects_ReportsPushNotSucceeded()
+    {
+        var sut = CreateSut();
+        var handler = new CapturingHandler(HttpStatusCode.InternalServerError, "{}");
+        ArrangeFirstSync(handler, suppressSettingsPush: false);
+
+        var result = await sut.SyncNowAsync();
+
+        Assert.Equal(1, handler.PushCount);
+        Assert.False(result!.PushSucceeded);
+    }
+
     // --- Sec 5.2: shared serializer (camelCase + null elision) on the delta push body ---
 
     [Fact]
