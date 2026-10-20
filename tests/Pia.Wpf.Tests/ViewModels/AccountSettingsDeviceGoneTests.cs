@@ -75,6 +75,9 @@ public class AccountSettingsDeviceGoneTests
         _dialogs.ShowChoiceDialogAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(DialogChoice.Secondary);
+        _dialogs.ShowChoiceDialogAsync(
+            "LocalReset_SignOut_Title", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(DialogChoice.Secondary);
         CreateSut();
 
         RaiseRevocation(true);
@@ -141,6 +144,7 @@ public class AccountSettingsDeviceGoneTests
                 _deviceMgmt, Substitute.For<IDeviceKeyService>(), Substitute.For<IE2EEService>(),
                 _sync, _settings, NullLogger<E2EEOnboardingViewModel>.Instance),
             Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
-            Substitute.For<ICreditStatusService>());
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
     }
 }

@@ -62,7 +62,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IAdvancedCreationLauncher advancedCreation,
         IAccountDataService accountData,
         IFileDialogService fileDialogs,
-        ICreditStatusService creditStatus)
+        ICreditStatusService creditStatus,
+        ILocalDataResetService localDataReset)
     {
         _logger = logger;
 
@@ -83,7 +84,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService, diagnosticsExportService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, accountData, fileDialogs, creditStatus);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, accountData, fileDialogs, creditStatus, localDataReset);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }

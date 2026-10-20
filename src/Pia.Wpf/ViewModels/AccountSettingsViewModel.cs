@@ -29,6 +29,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private readonly IAccountDataService _accountData;
     private readonly IFileDialogService _fileDialogs;
     private readonly ICreditStatusService _creditStatus;
+    private readonly ILocalDataResetService _localDataReset;
     private int _creditsGeneration;
     private CurrentDeviceRevokedEventArgs? _lastDeviceRevocationNotice;
 
@@ -54,12 +55,14 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         E2EEOnboardingViewModel onboardingViewModel,
         IAccountDataService accountData,
         IFileDialogService fileDialogs,
-        ICreditStatusService creditStatus)
+        ICreditStatusService creditStatus,
+        ILocalDataResetService localDataReset)
         : base(requireUiThread: true)
     {
         _accountData = accountData;
         _fileDialogs = fileDialogs;
         _creditStatus = creditStatus;
+        _localDataReset = localDataReset;
         _logger = logger;
         _settingsService = settingsService;
         _dialogService = dialogService;
@@ -212,7 +215,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         }
         else if (choice == DialogChoice.Secondary)
         {
-            await SyncLogoutAsync();
+            await AccountSwitchPrompts.SignOutAsync(
+                _localDataReset, _dialogService, _localizationService, uploadFirst: false, SignOutAsync);
         }
     }
 
@@ -485,6 +489,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task LoginWithGoogleAsync()
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsSyncLoggingIn = true;
         try
         {
@@ -515,6 +521,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task LoginWithMicrosoftAsync()
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsSyncLoggingIn = true;
         try
         {
@@ -545,6 +553,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task LoginWithEntraIdAsync()
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsSyncLoggingIn = true;
         try
         {
@@ -580,6 +590,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             LoginErrorMessage = _localizationService["Sync_LocalAuth_FieldsRequired"];
             return;
         }
+
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
 
         IsSyncLoggingIn = true;
         LoginErrorMessage = null;
@@ -765,7 +777,10 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     [RelayCommand]
-    private async Task SyncLogoutAsync()
+    private Task SyncLogoutAsync() => AccountSwitchPrompts.SignOutAsync(
+        _localDataReset, _dialogService, _localizationService, uploadFirst: true, SignOutAsync);
+
+    private async Task SignOutAsync()
     {
         _syncClientService.StopBackgroundSync();
         await _authService.LogoutAsync();
@@ -810,8 +825,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
         if (outcome == AccountDeletionOutcome.Deleted)
         {
-            await SyncLogoutAsync();
+            await SignOutAsync();
             ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_Done", Wpf.Ui.Controls.ControlAppearance.Success);
+            await AccountSwitchPrompts.OfferClearAfterDeletionAsync(_localDataReset, _dialogService, _localizationService);
             return;
         }
 

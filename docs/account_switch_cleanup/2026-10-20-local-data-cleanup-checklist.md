@@ -29,7 +29,7 @@ little standalone value, unblocks a High.
   *Deps:* 1, 5 · *Effort:* S · *Value:* Enabler
 - [x] **7. Prompts and strings** — `AccountSwitchPrompts`, the dialog close label and the 19 strings in en/de/fr.
   *Deps:* 6 · *Effort:* S · *Value:* Enabler
-- [ ] **8. Account settings wiring** — sign-in guard on four commands, the sign-out prompt on the button, the revoked dialog and account deletion.
+- [x] **8. Account settings wiring** — sign-in guard on four commands, the sign-out prompt on the button, the revoked dialog and account deletion.
   *Deps:* 7 · *Effort:* S · *Value:* High
 - [ ] **9. Wizard wiring** — the sign-in guard in the first-run wizard, and the wizard is not marked done when a clear restarts it.
   *Deps:* 7 · *Effort:* XS · *Value:* High
