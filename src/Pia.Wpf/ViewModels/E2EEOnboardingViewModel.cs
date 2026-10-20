@@ -148,7 +148,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         catch (DeviceRegistrationRejectedException ex)
         {
             _logger.LogWarning(ex, "Device registration refused in onboarding");
-            ErrorMessage = ex.Message;
+            ErrorMessage = ex.UserMessage;
             State = OnboardingState.Error;
         }
         catch (Exception ex)
@@ -205,14 +205,16 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             catch (Exception retryEx)
             {
                 _logger.LogError(retryEx, "Recovery activation retry failed");
-                ErrorMessage = "Activation failed. The session may have been invalidated. Please try again.";
+                ErrorMessage = retryEx is DeviceRegistrationRejectedException rejection
+                    ? rejection.UserMessage
+                    : "Activation failed. The session may have been invalidated. Please try again.";
                 State = OnboardingState.EnteringRecoveryCode;
             }
         }
         catch (DeviceRegistrationRejectedException ex)
         {
             _logger.LogWarning(ex, "Device registration refused during recovery activation");
-            ErrorMessage = ex.Message;
+            ErrorMessage = ex.UserMessage;
             State = OnboardingState.EnteringRecoveryCode;
         }
         catch (Exception ex)

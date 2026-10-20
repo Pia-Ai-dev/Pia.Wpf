@@ -31,6 +31,19 @@ public class E2EESetupStepViewModelTests
         NullLogger<E2EESetupStepViewModel>.Instance);
 
     [Fact]
+    public async Task Proceed_WhenRegistrationIsRefused_ShowsTheServerExplanation()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync()
+            .ThrowsAsync(new DeviceRegistrationRejectedException("invalid_field", "DeviceName is required.", 400));
+        var sut = CreateSut();
+
+        await sut.ProceedCommand.ExecuteAsync(null);
+
+        Assert.Equal("DeviceName is required.", sut.ErrorMessage);
+        Assert.Equal(E2EESetupState.Choice, sut.State);
+    }
+
+    [Fact]
     public void InitialState_ShouldBeChoice_WithToggleOn()
     {
         var sut = CreateSut();

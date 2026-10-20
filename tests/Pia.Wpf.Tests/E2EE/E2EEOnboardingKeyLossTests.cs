@@ -1,5 +1,6 @@
 namespace Pia.Tests.E2EE;
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -33,6 +34,47 @@ public class E2EEOnboardingKeyLossTests
 
         Assert.Equal(OnboardingState.Error, sut.State);
         Assert.Equal("Too many devices are waiting for approval.", sut.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData("approval")]
+    [InlineData("recovery")]
+    [InlineData("retry")]
+    public async Task ARefusedRegistration_ShowsPrivateDetailsButLogsOnlySafeExceptionText(string path)
+    {
+        const string detail = "private server response body";
+        if (path != "retry")
+            _deviceMgmt.RegisterPendingDeviceAsync()
+                .ThrowsAsync(new DeviceRegistrationRejectedException("private error code", detail, 400));
+        var logger = Substitute.For<ILogger<E2EEOnboardingViewModel>>();
+        var sut = new E2EEOnboardingViewModel(
+            _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _syncService, _settingsService, logger);
+
+        if (path == "approval")
+            await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
+        else
+        {
+            if (path == "retry")
+            {
+                _deviceMgmt.RegisterPendingDeviceAsync().Returns(
+                    _ => new DeviceRegistrationResponse { OnboardingSessionId = "expired", ServerChallenge = "challenge" },
+                    _ => throw new DeviceRegistrationRejectedException("private error code", detail, 400));
+                _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), "expired")
+                    .ThrowsAsync(new OnboardingSessionExpiredException("The session expired."));
+            }
+            sut.RecoveryCodeInput = "recovery-code";
+            await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+        }
+
+        Assert.Equal(detail, sut.ErrorMessage);
+        var logs = logger.ReceivedCalls().Where(c => c.GetMethodInfo().Name == nameof(ILogger.Log)).ToList();
+        Assert.NotEmpty(logs);
+        Assert.All(logs, call =>
+        {
+            var args = call.GetArguments();
+            Assert.DoesNotContain("private", args[2]?.ToString() ?? "");
+            Assert.DoesNotContain("private", args[3]?.ToString() ?? "");
+        });
     }
 
     [Fact]

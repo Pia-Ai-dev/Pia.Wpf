@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Localization;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
@@ -485,19 +486,18 @@ public class DeviceManagementService : IDeviceManagementService
             ?? throw new InvalidOperationException("Invalid registration response");
     }
 
-    // A 400 carries a bare JSON string (the server's own explanation), shown as-is; the
-    // 403/409 refusals carry an { error } envelope whose code decides the readable message.
-    private static async Task<DeviceRegistrationRejectedException> ReadRegistrationRejectionAsync(
+    private async Task<DeviceRegistrationRejectedException> ReadRegistrationRejectionAsync(
         HttpResponseMessage response)
     {
         var body = await response.Content.ReadAsStringAsync();
+        _logger.SensitiveDebug("Device registration rejection body: {Body}", body);
         var code = ReadErrorCodeFromBody(body);
         if (code is not null)
-            return new DeviceRegistrationRejectedException(code, LocalizationSource.Instance[MessageKeyFor(code)]);
+            return new DeviceRegistrationRejectedException(code, LocalizationSource.Instance[MessageKeyFor(code)], (int)response.StatusCode);
 
         return new DeviceRegistrationRejectedException(
             (int)response.StatusCode == 400 ? E2EEErrorCodes.InvalidField : $"http_{(int)response.StatusCode}",
-            ReadBareString(body) ?? body);
+            ReadBareString(body) ?? body, (int)response.StatusCode);
     }
 
     private static string MessageKeyFor(string code) => code switch

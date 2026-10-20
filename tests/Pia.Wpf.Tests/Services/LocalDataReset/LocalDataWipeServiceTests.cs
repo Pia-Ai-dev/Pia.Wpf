@@ -127,6 +127,33 @@ public sealed class LocalDataWipeServiceTests : IDisposable
         Assert.Equal(1, Count("SELECT COUNT(*) FROM Todos"));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Wipe_ClearsServerPolicyBeforeApplyingSettings(bool policyAlreadyLoaded)
+    {
+        await SeedAsync();
+        var policyPath = Path.Combine(_roaming, "device-policy.json");
+        await File.WriteAllTextAsync(policyPath, """{ "enforce": { "theme": "Dark" } }""", TestContext.Current.CancellationToken);
+        var policy = new PolicyService(NullLogger<PolicyService>.Instance, policyPath, _roaming);
+        await policy.ReplaceServerPolicyAsync("""{ "enforce": { "allowedSyncProviders": ["microsoft"] } }""");
+        if (policyAlreadyLoaded)
+        {
+            await policy.GetPolicyAsync();
+            Assert.False(policy.IsLoginProviderAllowed("google"));
+        }
+        var settingsService = new SettingsService(NullLogger<SettingsService>.Instance, policy);
+        var wiper = new LocalDataWipeService(_db, settingsService, policy, NullLogger<LocalDataWipeService>.Instance);
+
+        await wiper.WipeAsync();
+
+        Assert.True(policy.IsLoginProviderAllowed("google"));
+        Assert.False(File.Exists(Path.Combine(_roaming, "policy-cache.json")));
+        var settings = await settingsService.GetSettingsAsync();
+        Assert.Null(settings.AllowedSyncProviders);
+        Assert.Equal(AppTheme.Dark, settings.Theme);
+    }
+
     [Fact]
     public async Task Wipe_WhenAFileCannotBeDeleted_StillSignsOutAndThrows()
     {
@@ -166,7 +193,7 @@ public sealed class LocalDataWipeServiceTests : IDisposable
         new(NullLogger<SettingsService>.Instance, Substitute.For<IPolicyService>());
 
     private LocalDataWipeService NewWiper() =>
-        new(_db, NewSettingsService(), NullLogger<LocalDataWipeService>.Instance);
+        new(_db, NewSettingsService(), Substitute.For<IPolicyService>(), NullLogger<LocalDataWipeService>.Instance);
 
     private async Task SeedAsync()
     {

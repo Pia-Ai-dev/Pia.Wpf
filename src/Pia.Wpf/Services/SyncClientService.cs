@@ -378,11 +378,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (PendingDeviceRevocation is not null)
                 return null;
 
-            // Only advance the sync cursor if the pull HTTP request succeeded.
-            // Use the server's timestamp as the cursor to avoid clock-skew issues between devices.
-            // If pull failed (network error, server 500, etc.), keep the old timestamp
-            // so the next sync retries from the same point instead of permanently missing data.
-            if (pullOk && serverTimestamp.HasValue)
+            // Keep skipped account settings in the next pull until reset preferences can be replaced.
+            if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
             {
                 settings.LastSyncTimestamp = serverTimestamp.Value;
                 if (!settingsUndecryptable)
@@ -593,7 +590,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
 
-            if (pullOk && serverTimestamp.HasValue)
+            if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
             {
                 settings.LastSyncTimestamp = serverTimestamp.Value;
                 if (!settingsUndecryptable)
@@ -992,7 +989,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     /// and never splitting a SyncedAt across pages; otherwise advancing <c>since</c> skips rows.</summary>
     private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp, bool SettingsUndecryptable)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
-        var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
+        // The reset guard also covers profiles whose cursor already passed unreadable account settings.
+        var lastSync = settings.SuppressSettingsPushAfterReset ? DateTime.MinValue : settings.LastSyncTimestamp ?? DateTime.MinValue;
         // Ensure UTC Kind so ToString("O") includes the Z suffix — prevents Npgsql
         // timestamptz comparison failures when the server uses PostgreSQL.
         if (lastSync.Kind != DateTimeKind.Utc)
@@ -1116,7 +1114,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         // TryParse (not the EntityTagHeaderValue ctor) so a weak (W/"...") stored ETag never
         // throws FormatException and aborts the whole pull cycle — see AssistantChatSyncService's
         // identical guard for the chat ETag. Only the first page is conditional (see PullChangesAsync).
-        if (isFirstPage && !forceFullCatalog && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
+        if (isFirstPage && !forceFullCatalog && !settings.SuppressSettingsPushAfterReset
+            && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
             pullRequest.Headers.IfNoneMatch.Add(lastPullTag);
 
         if (forceFullCatalog)

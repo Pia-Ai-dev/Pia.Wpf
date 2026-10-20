@@ -906,7 +906,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle pending device {DeviceId}", device.DeviceId);
-                _snackbarService.Show("Error", $"Failed to approve device: {ex.Message}",
+                var message = ex is DeviceRegistrationRejectedException rejection ? rejection.UserMessage : ex.Message;
+                _snackbarService.Show("Error", $"Failed to approve device: {message}",
                     Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
             }
         }
@@ -951,7 +952,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             }
             else
             {
-                _snackbarService.Show("Error", $"Failed to enable E2EE: {ex.Message}",
+                var message = ex is DeviceRegistrationRejectedException rejection ? rejection.UserMessage : ex.Message;
+                _snackbarService.Show("Error", $"Failed to enable E2EE: {message}",
                     Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
             }
         }

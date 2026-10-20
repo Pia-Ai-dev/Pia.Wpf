@@ -183,7 +183,7 @@ public class SyncClientServiceTransferOptimizationTests
     {
         var sut = CreateSut();
         var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson());
-        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
+        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(handler, disposeHandler: false));
 
         _authService.IsLoggedIn.Returns(true);
         _authService.GetAccessTokenAsync().Returns("token");
@@ -203,7 +203,7 @@ public class SyncClientServiceTransferOptimizationTests
 
     private AppSettings ArrangeFirstSync(CapturingHandler handler, bool suppressSettingsPush)
     {
-        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
+        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(handler, disposeHandler: false));
         _authService.IsLoggedIn.Returns(true);
         _authService.GetAccessTokenAsync().Returns("token");
         var settings = new AppSettings
@@ -281,8 +281,76 @@ public class SyncClientServiceTransferOptimizationTests
 
         await sut.PerformFirstSyncMigrationAsync();
 
-        Assert.NotNull(settings.LastSyncTimestamp);
+        Assert.Null(settings.LastSyncTimestamp);
         Assert.True(settings.SuppressSettingsPushAfterReset);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task AfterReset_UndecryptableSettings_AreRetriedUntilRecoveredOrAbsent(bool firstSyncMigration, bool remoteSettingsRemoved)
+    {
+        var canDecrypt = false;
+        var e2ee = Substitute.For<IE2EEService>();
+        e2ee.IsReady().Returns(true);
+        e2ee.DecryptRecord<SyncSettings>(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(_ => canDecrypt
+                ? new SyncSettings { Theme = (int)AppTheme.Dark }
+                : throw new System.Security.Cryptography.CryptographicException("bad tag"));
+        e2ee.EncryptRecord(Arg.Any<object>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(("recovered-settings", "dek"));
+        var handler = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(), HttpStatusCode.OK,
+            PullResponseJson(new SyncSettings { EncryptedPayload = "cipher", WrappedDek = "dek" }));
+        var settings = ArrangeFirstSync(handler, suppressSettingsPush: true);
+        settings.SyncUserId = "user-1";
+        DateTime? originalCursor = firstSyncMigration ? null : new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        settings.LastSyncTimestamp = originalCursor;
+
+        using (var sut = CreateSut(e2ee))
+        {
+            if (firstSyncMigration)
+                await sut.PerformFirstSyncMigrationAsync();
+            else
+                Assert.NotNull(await sut.SyncNowAsync());
+        }
+        Assert.Equal(originalCursor, settings.LastSyncTimestamp);
+        Assert.True(settings.SuppressSettingsPushAfterReset);
+
+        settings = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings))!;
+        _settingsService.GetSettingsAsync().Returns(settings);
+        using var restarted = CreateSut(e2ee);
+        Assert.NotNull(await restarted.SyncNowAsync());
+        Assert.Equal(originalCursor, settings.LastSyncTimestamp);
+        Assert.True(settings.SuppressSettingsPushAfterReset);
+
+        canDecrypt = true;
+        if (remoteSettingsRemoved)
+            handler.PullBody = PullResponseJson();
+        Assert.NotNull(await restarted.SyncNowAsync());
+        var expectedTheme = remoteSettingsRemoved ? new AppSettings().Theme : AppTheme.Dark;
+        Assert.Equal(expectedTheme, settings.Theme);
+        Assert.False(settings.SuppressSettingsPushAfterReset);
+        Assert.NotNull(settings.LastSyncTimestamp);
+        Assert.All(handler.PullRequests, request =>
+        {
+            Assert.False(request.Conditional);
+            Assert.Contains($"since={DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc):O}", request.Query);
+        });
+        Assert.All(handler.PushBodies, body =>
+        {
+            using var doc = JsonDocument.Parse(body);
+            Assert.False(doc.RootElement.TryGetProperty("settings", out _));
+        });
+
+        Assert.NotNull(await restarted.SyncNowAsync());
+        using var lastPush = JsonDocument.Parse(handler.PushBodies[^1]);
+        Assert.Equal("recovered-settings", lastPush.RootElement.GetProperty("settings").GetProperty("encryptedPayload").GetString());
+        e2ee.Received(1).EncryptRecord(Arg.Is<object>(payload =>
+                JsonSerializer.SerializeToElement(payload, (JsonSerializerOptions?)null).GetProperty("Theme").GetInt32() == (int)expectedTheme),
+            "user-1", "settings", "user-settings");
     }
 
     [Fact]
@@ -334,6 +402,8 @@ public class SyncClientServiceTransferOptimizationTests
         public int PushCount { get; private set; }
         public string? LastPushBody { get; private set; }
         public List<string> PushBodies { get; } = [];
+        public List<(string Query, bool Conditional)> PullRequests { get; } = [];
+        public string? PullBody { get; set; } = pullBody;
         public string LastPushContentEncoding { get; private set; } = "";
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -357,12 +427,16 @@ public class SyncClientServiceTransferOptimizationTests
                 };
             }
 
-            if (pullBody is null)
+            PullRequests.Add((request.RequestUri!.GetComponents(UriComponents.Query, UriFormat.Unescaped),
+                request.Headers.IfNoneMatch.Count > 0));
+            if (PullBody is null)
                 return new HttpResponseMessage(pullStatus);
-            return new HttpResponseMessage(pullStatus)
+            var response = new HttpResponseMessage(pullStatus)
             {
-                Content = new StringContent(pullBody, System.Text.Encoding.UTF8, "application/json")
+                Content = new StringContent(PullBody, System.Text.Encoding.UTF8, "application/json")
             };
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"settings-version\"");
+            return response;
         }
 
         private static string Decompress(byte[] bytes)

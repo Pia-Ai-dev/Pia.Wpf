@@ -11,7 +11,8 @@ using Pia.Services.Plugins;
 namespace Pia.Services.LocalDataReset;
 
 /// <summary>Empties every synced store with plain SQL and file operations; the per-entity deletes would reach the server.</summary>
-public sealed class LocalDataWipeService(SqliteContext db, ISettingsService settingsService, ILogger<LocalDataWipeService> logger)
+public sealed class LocalDataWipeService(
+    SqliteContext db, ISettingsService settingsService, IPolicyService policyService, ILogger<LocalDataWipeService> logger)
 {
     private static readonly string[] SyncedFiles = ["templates.json", "pending-sync-deletes.json", "policy-cache.json"];
 
@@ -37,6 +38,7 @@ public sealed class LocalDataWipeService(SqliteContext db, ISettingsService sett
     public async Task WipeAsync()
     {
         await EnsureSettingsReadableAsync();
+        await policyService.ClearServerPolicyAsync();
 
         // Signed out first, so a failure further down never leaves the old account signed in.
         var settings = await settingsService.GetSettingsAsync();

@@ -1,10 +1,12 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Localization;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -13,8 +15,7 @@ using Xunit;
 
 namespace Pia.Tests.Services.E2EE;
 
-/// <summary>A refused registration must surface as a readable message for every caller that
-/// re-throws it.</summary>
+/// <summary>Registration refusals retain UI details without exposing response bodies through exceptions.</summary>
 public class DeviceManagementServiceRegistrationTests
 {
     // A refused 400 is a bare JSON string — the server's own explanation, shown as-is.
@@ -25,7 +26,7 @@ public class DeviceManagementServiceRegistrationTests
             System.Text.Json.JsonSerializer.Serialize("DeviceName is required."));
 
         Assert.Equal(E2EEErrorCodes.InvalidField, ex.Code);
-        Assert.Equal("DeviceName is required.", ex.Message);
+        Assert.Equal("DeviceName is required.", ex.UserMessage);
     }
 
     [Fact]
@@ -50,7 +51,7 @@ public class DeviceManagementServiceRegistrationTests
         var ex = await RegisterRefused(HttpStatusCode.Conflict, """{"error":"brand_new_code"}""");
 
         Assert.Equal("brand_new_code", ex.Code);
-        Assert.Equal(LocalizationSource.Instance["E2EE_Register_Generic"], ex.Message);
+        Assert.Equal(LocalizationSource.Instance["E2EE_Register_Generic"], ex.UserMessage);
     }
 
     [Fact]
@@ -59,7 +60,7 @@ public class DeviceManagementServiceRegistrationTests
         var ex = await RegisterRefused(HttpStatusCode.Conflict, """{"error":"device_changed"}""");
 
         Assert.Equal(E2EEErrorCodes.DeviceChanged, ex.Code);
-        Assert.Equal(LocalizationSource.Instance["E2EE_Register_DeviceChanged"], ex.Message);
+        Assert.Equal(LocalizationSource.Instance["E2EE_Register_DeviceChanged"], ex.UserMessage);
     }
 
     [Fact]
@@ -68,8 +69,8 @@ public class DeviceManagementServiceRegistrationTests
         var ex = await RegisterRefused(HttpStatusCode.Forbidden, """{"error":"device_mismatch"}""");
 
         Assert.Equal(E2EEErrorCodes.DeviceMismatch, ex.Code);
-        Assert.Equal(LocalizationSource.Instance["E2EE_Register_DeviceMismatch"], ex.Message);
-        Assert.DoesNotContain("[E2EE_Register_", ex.Message); // the key resolves, it is not echoed raw
+        Assert.Equal(LocalizationSource.Instance["E2EE_Register_DeviceMismatch"], ex.UserMessage);
+        Assert.DoesNotContain("[E2EE_Register_", ex.UserMessage);
     }
 
     [Fact]
@@ -78,10 +79,31 @@ public class DeviceManagementServiceRegistrationTests
         var ex = await RegisterRefused(HttpStatusCode.Conflict, """{"error":"too_many_pending_devices"}""");
 
         Assert.Equal(E2EEErrorCodes.TooManyPendingDevices, ex.Code);
-        Assert.Equal(LocalizationSource.Instance["E2EE_Register_TooManyPending"], ex.Message);
+        Assert.Equal(LocalizationSource.Instance["E2EE_Register_TooManyPending"], ex.UserMessage);
     }
 
-    private static DeviceManagementService CreateSut(HttpStatusCode status, string body)
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, "\"private server explanation\"")]
+    [InlineData(HttpStatusCode.BadGateway, "private gateway response")]
+    [InlineData(HttpStatusCode.Conflict, "{\"error\":\"private unknown error\"}")]
+    public async Task RejectionDetails_StayOutOfExceptionTextAndReleaseDiagnostics(HttpStatusCode status, string body)
+    {
+        var logger = Substitute.For<ILogger<DeviceManagementService>>();
+        var sut = CreateSut(status, body, logger);
+
+        var ex = await Assert.ThrowsAsync<DeviceRegistrationRejectedException>(() => sut.RegisterPendingDeviceAsync());
+
+        Assert.Equal((int)status, ex.StatusCode);
+        Assert.Contains(((int)status).ToString(), ex.Message);
+        Assert.DoesNotContain("private", ex.ToString());
+        if (status != HttpStatusCode.Conflict)
+            Assert.Contains("private", ex.UserMessage);
+        if (!SafeLog.SensitiveLoggingCompiledIn)
+            Assert.Empty(logger.ReceivedCalls());
+    }
+
+    private static DeviceManagementService CreateSut(HttpStatusCode status, string body,
+        ILogger<DeviceManagementService>? logger = null)
     {
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings { ServerUrl = "https://test.example.com" });
@@ -101,7 +123,7 @@ public class DeviceManagementServiceRegistrationTests
         return new DeviceManagementService(
             Substitute.For<IE2EEService>(), deviceKeys, Substitute.For<IRecoveryCodeService>(),
             settings, auth, factory, Substitute.For<IConfirmedApproverStore>(),
-            NullLogger<DeviceManagementService>.Instance);
+            logger ?? NullLogger<DeviceManagementService>.Instance);
     }
 
     private static async Task<DeviceRegistrationRejectedException> RegisterRefused(
