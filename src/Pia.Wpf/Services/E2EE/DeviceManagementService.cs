@@ -57,25 +57,20 @@ public class DeviceManagementService : IDeviceManagementService
             throw new E2EEAlreadyEnabledException("End-to-end encryption is already set up for this account.");
         }
 
-        // 1. Generate device keys (happens lazily in DeviceKeyService)
         var deviceId = _deviceKeys.GetDeviceId();
         var agreementPubKey = _deviceKeys.GetAgreementPublicKey();
         var signingPubKey = _deviceKeys.GetSigningPublicKey();
 
-        // 2. Register device on server
         var registration = await RegisterDeviceOnServerAsync(deviceId, agreementPubKey, signingPubKey);
 
         if (!registration.IsFirstDevice)
             throw new InvalidOperationException("Cannot bootstrap: other devices already exist for this user");
 
-        // 3. Generate UMK
         var umk = await _e2ee.GenerateAndStoreUmkAsync();
 
-        // 4. Self-wrap UMK and upload to server
         var (selfWrapped, hkdfSalt) = _e2ee.WrapUmkForSelf();
         await UploadWrappedUmkAsync(deviceId, selfWrapped, hkdfSalt, deviceId);
 
-        // 5. Generate recovery code and upload recovery-wrapped UMK
         var recoveryCode = _recovery.GenerateRecoveryCode();
         var recoveryBlob = _recovery.WrapUmkForRecovery(umk, recoveryCode);
         await UploadRecoveryWrappedUmkAsync(recoveryBlob);
@@ -85,7 +80,6 @@ public class DeviceManagementService : IDeviceManagementService
         await TryPutRecoveryProofKeyAsync(umk);
         Array.Clear(umk);
 
-        // 6. Update local settings
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
         settings.MarkE2EERequiredForAccount();

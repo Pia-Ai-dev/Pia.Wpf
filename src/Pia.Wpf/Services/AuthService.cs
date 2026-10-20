@@ -684,7 +684,6 @@ public class AuthService : IAuthService
             _encryptedRefreshToken = string.IsNullOrEmpty(newRefreshToken)
                 ? null : _dpapiHelper.Encrypt(newRefreshToken);
 
-            // Persist new tokens
             settings.EncryptedAccessToken = _encryptedAccessToken;
             settings.EncryptedRefreshToken = _encryptedRefreshToken;
             if (json.TryGetProperty("isE2EEEnabled", out var e2ee) && e2ee.ValueKind == JsonValueKind.True

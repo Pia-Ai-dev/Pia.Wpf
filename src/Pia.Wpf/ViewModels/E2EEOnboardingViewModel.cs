@@ -446,7 +446,6 @@ public partial class E2EEOnboardingViewModel : ObservableObject
 
     private async Task CompleteOnboardingAsync()
     {
-        // Persist E2EE state
         var settings = await _settingsService.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
         settings.MarkE2EERequiredForAccount();
