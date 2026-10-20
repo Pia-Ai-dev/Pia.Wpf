@@ -21,7 +21,7 @@ little standalone value, unblocks a High.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
 - [x] **3. Wiper** — `LocalDataWiper` empties every synced store with plain SQL and file operations and reseeds the kanban columns.
   *Deps:* 2 · *Effort:* S · *Value:* High
-- [ ] **4. Startup hook** — `LocalDataResetStartup` runs a pending clear in `Bootstrapper` before any store is read, and keeps the marker on failure.
+- [x] **4. Startup hook** — `LocalDataResetStartup` runs a pending clear in `Bootstrapper` before any store is read, and keeps the marker on failure.
   *Deps:* 1, 3 · *Effort:* XS · *Value:* High
 - [ ] **5. Chat flush** — `IChatSyncFlusher` on `AssistantChatSyncService` reports whether every chat change reached the server.
   *Deps:* none · *Effort:* S · *Value:* Med

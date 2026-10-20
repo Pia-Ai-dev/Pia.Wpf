@@ -9,6 +9,7 @@ using Pia.Models;
 using Pia.Paths;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.LocalDataReset;
 using Velopack;
 
 namespace Pia;
@@ -284,7 +285,7 @@ public partial class App : Application
 
         // Start background sync if user is logged in
         var authService = Bootstrapper.ServiceProvider.GetRequiredService<IAuthService>();
-        if (authService.IsLoggedIn)
+        if (authService.IsLoggedIn && !LocalDataResetMarker.IsPending)
         {
             var syncService = Bootstrapper.ServiceProvider.GetRequiredService<ISyncClientService>();
             RepairThenSyncAsync(syncService).SafeFireAndForget(
