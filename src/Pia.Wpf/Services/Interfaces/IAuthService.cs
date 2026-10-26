@@ -49,4 +49,10 @@ public interface IAuthService
 
     /// <summary>Fired when login state changes.</summary>
     event EventHandler<bool>? LoginStateChanged;
+
+    /// <summary>
+    /// Fired after a sign-out the user did not initiate, carrying why. <see cref="LoginStateChanged"/>
+    /// has already gone false by then.
+    /// </summary>
+    event EventHandler<AuthSignedOutEventArgs>? SignedOutUnexpectedly;
 }

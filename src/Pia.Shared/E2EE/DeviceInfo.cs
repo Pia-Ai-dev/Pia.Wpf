@@ -2,7 +2,7 @@ namespace Pia.Shared.E2EE;
 
 /// <summary>
 /// Device metadata visible to other devices and the server.
-/// Public keys are base64-encoded raw EC point bytes (X + Y, 64 bytes for P-256).
+/// Public keys are base64-encoded raw uncompressed EC point bytes (0x04 || X || Y, 65 bytes for P-256).
 /// </summary>
 public class DeviceInfo
 {

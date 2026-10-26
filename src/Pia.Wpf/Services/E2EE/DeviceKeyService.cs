@@ -12,6 +12,8 @@ public class DeviceKeyService : IDeviceKeyService
     private ECDsa? _ecdsa;
     private string? _cachedDeviceId;
 
+    public bool KeyLossDetected { get; private set; }
+
     public DeviceKeyService(ISettingsService settings, ILogger<DeviceKeyService> logger)
     {
         _settings = settings;
@@ -113,6 +115,7 @@ public class DeviceKeyService : IDeviceKeyService
         }
         catch (CryptographicException)
         {
+            NoteKeyLossIfPreviouslyUnlocked(keyName);
             var creationParams = new CngKeyCreationParameters
             {
                 ExportPolicy = CngExportPolicies.None,
@@ -142,6 +145,7 @@ public class DeviceKeyService : IDeviceKeyService
         }
         catch (CryptographicException)
         {
+            NoteKeyLossIfPreviouslyUnlocked(keyName);
             var creationParams = new CngKeyCreationParameters
             {
                 ExportPolicy = CngExportPolicies.None,
@@ -155,6 +159,21 @@ public class DeviceKeyService : IDeviceKeyService
             _ecdsa = new ECDsaCng(cngKey);
             _logger.LogInformation("Created new ECDSA key: {KeyName}", keyName);
         }
+    }
+
+    // Only a device that already holds a UMK ever had keys worth missing; on a fresh device
+    // this creation is the normal first use. New keys under the old id re-register (and the
+    // server may refuse), but they make the recovery-code flow possible at all.
+    private void NoteKeyLossIfPreviouslyUnlocked(string keyName)
+    {
+        var settings = _settings.GetSettingsAsync().GetAwaiter().GetResult();
+        if (settings.E2EEEncryptedUmk is null)
+            return;
+
+        KeyLossDetected = true;
+        _logger.LogWarning(
+            "Device key {KeyName} is gone while this device still holds the account key; " +
+            "a fresh key is created under the same id and the device must be recovered", keyName);
     }
 
     private static string ExportUncompressedPoint(ECParameters parameters)

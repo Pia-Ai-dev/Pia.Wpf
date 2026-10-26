@@ -107,8 +107,11 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Accepting this device's own copy of the key failed");
-            ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
-            State = OnboardingState.Error;
+            if (!RouteKeyLossToRecovery())
+            {
+                ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
+                State = OnboardingState.Error;
+            }
         }
         return true;
     }
@@ -136,6 +139,12 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             _pollCts = new CancellationTokenSource();
             _consecutivePollErrors = 0;
             _ = PollForApprovalAsync(_pollCts.Token);
+        }
+        catch (DeviceRegistrationRejectedException ex)
+        {
+            _logger.LogWarning(ex, "Device registration refused in onboarding");
+            ErrorMessage = ex.Message;
+            State = OnboardingState.Error;
         }
         catch (Exception ex)
         {
@@ -195,6 +204,12 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                 State = OnboardingState.EnteringRecoveryCode;
             }
         }
+        catch (DeviceRegistrationRejectedException ex)
+        {
+            _logger.LogWarning(ex, "Device registration refused during recovery activation");
+            ErrorMessage = ex.Message;
+            State = OnboardingState.EnteringRecoveryCode;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Recovery code activation failed");
@@ -233,9 +248,12 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         {
             _logger.LogError(ex, "Accepting the approved key failed");
             StatusMessage = "";
-            ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
-            _onboardingSessionId = null;
-            State = OnboardingState.Error;
+            if (!RouteKeyLossToRecovery())
+            {
+                ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
+                _onboardingSessionId = null;
+                State = OnboardingState.Error;
+            }
         }
     }
 
@@ -278,6 +296,24 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         ErrorMessage = "The approval could not be verified, so this device did not accept the key. Use your recovery code instead.";
         _onboardingSessionId = null;
         State = OnboardingState.Error;
+    }
+
+    // The key was recreated after this device's CNG keys went missing, so no already-wrapped copy
+    // can open here; repeating the attempt only fails the same way. The recovery flow re-registers.
+    private bool RouteKeyLossToRecovery()
+    {
+        if (!_deviceKeys.KeyLossDetected)
+            return false;
+
+        _logger.LogWarning("This device's E2EE keys were lost; routing onboarding to recovery");
+        StopPolling();
+        ForgetPendingHandover();
+        _onboardingSessionId = null;
+        RecoveryCodeInput = "";
+        StatusMessage = "";
+        ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_KeyLost"];
+        State = OnboardingState.EnteringRecoveryCode;
+        return true;
     }
 
     private void ForgetPendingHandover()

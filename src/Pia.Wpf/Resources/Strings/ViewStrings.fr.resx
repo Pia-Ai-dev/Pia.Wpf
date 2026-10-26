@@ -1038,6 +1038,15 @@
   <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Voulez-vous refuser et révoquer {0} ? Si vous ne reconnaissez pas cet appareil, révoquez-le.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Appareil approuvé</value></data>
   <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} a été approuvé et peut maintenant synchroniser.</value></data>
+  <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Appareil supprimé</value></data>
+  <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>Cet appareil a été révoqué sur le serveur. La synchronisation en arrière-plan est arrêtée et la copie de la clé de chiffrement de cet appareil a été oubliée. Configurez à nouveau cet appareil, ou déconnectez-vous.</value></data>
+  <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Cet appareil n'est plus enregistré sur le serveur — son enregistrement a été supprimé ou a expiré. La synchronisation en arrière-plan est arrêtée et la copie de la clé de chiffrement de cet appareil a été oubliée. Configurez à nouveau cet appareil, ou déconnectez-vous.</value></data>
+  <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Configurer à nouveau cet appareil</value></data>
+  <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Se déconnecter</value></data>
+  <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Déconnecté</value></data>
+  <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Votre session a pris fin ou a été révoquée sur le serveur. Veuillez vous reconnecter.</value></data>
+  <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>Le serveur a refusé de renouveler votre session. Veuillez vous reconnecter.</value></data>
+  <data name="Auth_SignedOut_Unreadable" xml:space="preserve"><value>La session enregistrée n'a pas pu être ouverte sur cet appareil. Veuillez vous reconnecter.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Configuration du chiffrement de bout en bout</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Ce compte utilise le chiffrement de bout en bout. Configurez cet appareil pour accéder à vos données chiffrées.</value></data>
@@ -1066,6 +1075,11 @@
   <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Elle ne correspond pas</value></data>
   <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>Cet appareil n'a pas accepté la clé. L'appareil approbateur n'est peut-être pas le vôtre : refusez sur vos autres appareils toute demande que vous ne reconnaissez pas, et configurez plutôt cet appareil avec votre code de récupération.</value></data>
   <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>La clé approuvée n'a pas pu être ouverte sur cet appareil. Réessayez ou utilisez votre code de récupération.</value></data>
+  <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>Les clés de chiffrement de cet appareil ont été perdues ; la clé enregistrée ne peut plus être ouverte ici. Configurez à nouveau l'appareil avec votre code de récupération.</value></data>
+  <data name="E2EE_Register_DeviceMismatch" xml:space="preserve"><value>Le serveur connaît cette session comme appartenant à un autre appareil et a refusé l'enregistrement. Déconnectez-vous, reconnectez-vous sur cet appareil, puis réessayez.</value></data>
+  <data name="E2EE_Register_TooManyPending" xml:space="preserve"><value>Trop d'appareils attendent une approbation. Approuvez-en ou supprimez-en un d'abord sur un autre appareil, puis réessayez.</value></data>
+  <data name="E2EE_Register_DeviceChanged" xml:space="preserve"><value>Cet appareil a changé sur le serveur pendant son enregistrement. Réessayez.</value></data>
+  <data name="E2EE_Register_Generic" xml:space="preserve"><value>Le serveur a refusé d'enregistrer cet appareil.</value></data>
   <!-- Boîte de dialogue du code de récupération (affichée lors de l'activation du E2EE depuis les paramètres) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Code de récupération</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Enregistrez votre code de récupération</value></data>

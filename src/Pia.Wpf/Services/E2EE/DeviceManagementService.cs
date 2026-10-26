@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Pia.Localization;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
@@ -230,7 +231,7 @@ public class DeviceManagementService : IDeviceManagementService
             {
                 JsonValueKind.String => MentionsOnboardingSession(doc.RootElement.GetString()),
                 JsonValueKind.Object => doc.RootElement.TryGetProperty("error", out var error)
-                    && error.ValueKind == JsonValueKind.String && error.GetString() == "invalid_onboarding_session",
+                    && error.ValueKind == JsonValueKind.String && error.GetString() == E2EEErrorCodes.InvalidOnboardingSession,
                 _ => false,
             };
         }
@@ -434,21 +435,8 @@ public class DeviceManagementService : IDeviceManagementService
         return string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(email) ? null : $"{serverUrl}|{email}";
     }
 
-    private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            return doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
-                ? error.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response) =>
+        ReadErrorCodeFromBody(await response.Content.ReadAsStringAsync());
 
     public async Task RevokeDeviceAsync(string deviceId)
     {
@@ -482,10 +470,63 @@ public class DeviceManagementService : IDeviceManagementService
 
         using var client = await CreateAuthorizedClientAsync();
         var response = await client.PostAsJsonAsync("api/e2ee/devices/register", request);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+            throw await ReadRegistrationRejectionAsync(response);
 
         return await response.Content.ReadFromJsonAsync<DeviceRegistrationResponse>()
             ?? throw new InvalidOperationException("Invalid registration response");
+    }
+
+    // A 400 carries a bare JSON string (the server's own explanation), shown as-is; the
+    // 403/409 refusals carry an { error } envelope whose code decides the readable message.
+    private static async Task<DeviceRegistrationRejectedException> ReadRegistrationRejectionAsync(
+        HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        var code = ReadErrorCodeFromBody(body);
+        if (code is not null)
+            return new DeviceRegistrationRejectedException(code, LocalizationSource.Instance[MessageKeyFor(code)]);
+
+        return new DeviceRegistrationRejectedException(
+            (int)response.StatusCode == 400 ? E2EEErrorCodes.InvalidField : $"http_{(int)response.StatusCode}",
+            ReadBareString(body) ?? body);
+    }
+
+    private static string MessageKeyFor(string code) => code switch
+    {
+        E2EEErrorCodes.DeviceMismatch => "E2EE_Register_DeviceMismatch",
+        E2EEErrorCodes.TooManyPendingDevices => "E2EE_Register_TooManyPending",
+        E2EEErrorCodes.DeviceChanged => "E2EE_Register_DeviceChanged",
+        _ => "E2EE_Register_Generic",
+    };
+
+    private static string? ReadBareString(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind == JsonValueKind.String ? doc.RootElement.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadErrorCodeFromBody(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
+                ? error.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task UploadWrappedUmkAsync(
