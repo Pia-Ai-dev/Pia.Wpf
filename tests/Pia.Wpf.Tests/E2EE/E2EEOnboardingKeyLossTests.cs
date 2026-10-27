@@ -102,6 +102,19 @@ public class E2EEOnboardingKeyLossTests
     }
 
     [Fact]
+    public async Task AnOwnCopyChangedOnTheServer_SaysSoInsteadOfTheGenericFailure()
+    {
+        AnApprovedDeviceWhoseCopyWillNotOpen(keyLost: false);
+        _deviceMgmt.AcceptKeyHandoverAsync(Arg.Any<KeyHandover>()).ThrowsAsync(new StoredKeyCopyChangedException());
+        var sut = CreateSut();
+
+        await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
+
+        Assert.Equal(OnboardingState.Error, sut.State);
+        Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_OwnCopyChanged"], sut.ErrorMessage);
+    }
+
+    [Fact]
     public async Task Reset_DiscardsThePreviousRecoverySession()
     {
         _settingsService.GetSettingsAsync().Returns(new AppSettings());
