@@ -24,12 +24,13 @@ public class SettingsSectionInitializeTests
     };
 
     private readonly IProviderService _providers = Substitute.For<IProviderService>();
+    private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
 
     private SettingsViewModel CreateRoot()
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
 
-        var settings = Substitute.For<ISettingsService>();
+        var settings = _settings;
         settings.GetSettingsAsync().Returns(_stored);
         var policy = Substitute.For<IPolicyService>();
 
@@ -95,5 +96,18 @@ public class SettingsSectionInitializeTests
 
         Assert.Equal("https://localhost:18081", root.AccountVm.ServerUrl);
         Assert.True(root.AccountVm.TrustSelfSignedCertificates);
+    }
+
+    [Fact]
+    public async Task ALockedProvidersFile_LetsNoLaterSectionWriteSettings()
+    {
+        _providers.RepairModeDefaultsAsync()
+            .ThrowsAsync(new IOException("The process cannot access the file 'providers.json'."));
+        using var root = CreateRoot();
+
+        await root.OnNavigatedToAsync(null);
+
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+        await _providers.DidNotReceive().UpdateProviderAsync(Arg.Any<AiProvider>(), Arg.Any<string?>());
     }
 }
