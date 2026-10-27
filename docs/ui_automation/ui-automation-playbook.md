@@ -616,6 +616,9 @@ session before it is recognised for what it is.
   `%LOCALAPPDATA%PiaTtsoices` bundle; only a re-download restored it.
 - **So.** Read those surfaces, never actuate the delete. Confirm the button's presence and id with
   `ww_query` / `ww_count` and stop there, or back the directory up first.
+- **Seed rules.** A fresh profile needs `assistantFilesFolder` in `roaming\settings.json`, because
+  `PIA_DATA_DIR` does not redirect it; `Invoke-UiScripts.ps1` seeds `<DataDir>\files`. A profile
+  copied from a live one also copies its MCP plugins, and they start on launch.
 
 ### The same run wipes the real vault, and that one costs an LLM re-synthesis
 

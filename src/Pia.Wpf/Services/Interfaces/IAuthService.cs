@@ -29,6 +29,9 @@ public interface IAuthService
     /// <summary>Logs out and clears stored tokens.</summary>
     Task LogoutAsync();
 
+    /// <summary>Signs out on the app's own initiative and raises <see cref="SignedOutUnexpectedly"/> with the reason.</summary>
+    Task SignOutUnexpectedlyAsync(AuthSignOutReason reason);
+
     /// <summary>
     /// Asks the server whether it still wants a trader declaration. Null when the question could
     /// not be answered, so callers keep whatever state they already have.

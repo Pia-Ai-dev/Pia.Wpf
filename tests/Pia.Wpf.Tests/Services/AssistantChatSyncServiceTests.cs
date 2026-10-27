@@ -327,6 +327,84 @@ public class AssistantChatSyncServiceTests
     }
 
     [Fact]
+    public async Task SendUpsert_ForAnAccountThatRequiresE2EE_WithoutTheKey_SendsNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            E2EERequiredAccountIds = [UserId],
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
+    public async Task SendUpsert_WhenTheTokenRefreshMarksTheAccount_SendsNothing()
+    {
+        var stored = new AppSettings { ServerUrl = ServerUrl, SyncUserId = UserId, SyncEnabled = true };
+        _settings.GetSettingsAsync().Returns(stored);
+        _auth.GetAccessTokenAsync().Returns(_ =>
+        {
+            stored.MarkE2EERequiredForAccount();
+            return "test-token";
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
+    public async Task SendUpsert_WhenE2EEIsOnButTheKeyIsNotLoaded_SendsNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            IsE2EEEnabled = true,
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+    }
+
+    [Fact]
+    public async Task SendUpsert_ForAnotherAccountMarkedOnThisDevice_StillSends()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            E2EERequiredAccountIds = ["someone-else"],
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.NotNull(_handler.LastPutBody);
+    }
+
+    [Fact]
     public async Task StartupPull_WhenSignedOut_SendsNothing()
     {
         SignOut();
@@ -706,7 +784,309 @@ public class AssistantChatSyncServiceTests
         await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task Flush_AfterQueuedUpsertsReachTheServer_ReturnsTrue()
+    {
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.OK);
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        EnqueueUpsert(sut, chat.Id);
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.True(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+    }
+
+    [Fact]
+    public async Task Flush_WhenAnUpsertFails_ReturnsFalse()
+    {
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.InternalServerError);
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        EnqueueUpsert(sut, chat.Id);
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
+    }
+
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public async Task Flush_WhenCapabilityIsOff_ReportsWhetherAnyChatIsLocal(int localChats, bool expected)
+    {
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(false);
+        _capabilities.ChatsConfirmedOffAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Range(0, localChats).Select(_ => Guid.NewGuid()).ToList().AsReadOnly());
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            Assert.Equal(expected, await sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Flush_WaitingWhenTheCapabilityTurnsOutOff_WithALocalChat_ReturnsFalse()
+    {
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(false);
+        _capabilities.ChatsConfirmedOffAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { Guid.NewGuid() }.AsReadOnly());
+        var sut = CreateWorker(TimeSpan.FromMilliseconds(200));
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Flush_BeforeTheWorkerIsListening_ReturnsFalseAtTheTimeout()
+    {
+        var sut = CreateWorker(TimeSpan.FromSeconds(30));
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var result = await sut.FlushAsync(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken);
+            stopwatch.Stop();
+
+            Assert.False(result);
+            Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"flush took {stopwatch.Elapsed}");
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Flush_WithBackfillStillOwed_ReturnsFalse()
+    {
+        var chat = SampleChat();
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Null((await _settings.GetSettingsAsync()).AssistantChatsBackfilledAt);
+    }
+
+    [Fact]
+    public async Task Flush_WhenSignedOut_ReturnsFalseImmediately()
+    {
+        SignOut();
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        Assert.True(flush.IsCompletedSuccessfully);
+        Assert.False(await flush);
+    }
+
+    [Fact]
+    public async Task Flush_WhenTheWorkerStops_ReturnsFalseWithoutWaitingForTheTimeout()
+    {
+        var sut = CreateWorker(TimeSpan.FromSeconds(30));
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        await sut.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+    }
+
+    // An offline launch caches "chats unsupported" too; that is not the server saying chats are off.
+    [Fact]
+    public async Task Flush_WhenTheCapabilityProbeFailed_ReturnsFalseImmediately()
+    {
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(false);
+        _capabilities.ChatsConfirmedOffAsync(Arg.Any<CancellationToken>()).Returns(false);
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+            Assert.True(flush.IsCompletedSuccessfully);
+            Assert.False(await flush);
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Flush_WhenSyncDisabled_ReturnsFalseImmediately()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings { ServerUrl = ServerUrl, SyncUserId = UserId });
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+
+        Assert.True(flush.IsCompletedSuccessfully);
+        Assert.False(await flush);
+    }
+
+    [Fact]
+    public async Task Flush_AfterAnEarlierPassDroppedAnUpload_RetriesItAndReportsTheOutcome()
+    {
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.InternalServerError);
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        EnqueueUpsert(sut, chat.Id);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline && PutCount(chat.Id) == 0)
+                await Task.Delay(10, TestContext.Current.CancellationToken);
+            Assert.Equal(1, PutCount(chat.Id));
+
+            Assert.False(await sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+
+            _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
+            Assert.True(await sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.True(PutCount(chat.Id) >= 2, $"only {PutCount(chat.Id)} PUT(s); the flush did not retry the drop");
+    }
+
+    [Fact]
+    public async Task Flush_AfterAFailedDeleteThenASave_DoesNotReplayTheDeleteBehindTheUpload()
+    {
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.OK);
+        _handler.SetDelete("/api/v1/chats/" + chat.Id, HttpStatusCode.InternalServerError, "");
+        var sut = CreateWorker(TimeSpan.Zero);
+
+        // Drained before the worker starts, so the failure is recorded with nothing else in flight.
+        Enqueue(sut, chat.Id, "Delete");
+        await InvokeDrainAsync(sut);
+        Assert.Equal(1, DeleteCount(chat.Id));
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _handler.PutGate = gate;
+        Enqueue(sut, chat.Id, "Upsert");
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await _handler.PutStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            _handler.SetDelete("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "");
+            var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            gate.SetResult();
+
+            Assert.True(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+            Assert.Equal(1, DeleteCount(chat.Id));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(1, PutCount(chat.Id));
+    }
+
     // ===== Helpers =====
+
+    private int PutCount(Guid chatId) => _handler.PutCounts.GetValueOrDefault("/api/v1/chats/" + chatId);
+
+    private int DeleteCount(Guid chatId) => _handler.DeleteCounts.GetValueOrDefault("/api/v1/chats/" + chatId);
+
+    private static void Enqueue(AssistantChatSyncService sut, Guid chatId, string kind)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("EnqueueOp", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        m.Invoke(sut, [chatId, Enum.Parse(m.GetParameters()[1].ParameterType, kind)]);
+    }
+
+    private SyncAssistantChat ArrangeBackfilledWorkerWithChat(HttpStatusCode putStatus)
+    {
+        var chat = SampleChat();
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            AssistantChatsBackfilledAt = DateTime.UtcNow,
+        });
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _handler.SetGet("/api/v1/chats", @"{""chats"":[],""deleted"":[],""hasMore"":false}");
+        _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
+        _handler.SetPut("/api/v1/chats/" + chat.Id, putStatus, "{}");
+        return chat;
+    }
+
+    // Enqueued before StartAsync so the op and the flush are both in place before the worker's first pass.
+    private static void EnqueueUpsert(AssistantChatSyncService sut, Guid chatId)
+    {
+        var m = typeof(AssistantChatSyncService)
+            .GetMethod("EnqueueOp", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var upsert = Enum.Parse(m.GetParameters()[1].ParameterType, "Upsert");
+        m.Invoke(sut, [chatId, upsert]);
+    }
+
+    private AssistantChatSyncService CreateWorker(TimeSpan startupDelay) =>
+        new(_chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
+            Substitute.For<ISyncClientService>(), NullLogger<AssistantChatSyncService>.Instance,
+            startupDelayOverride: startupDelay, backfillRetryIntervalOverride: TimeSpan.FromMinutes(10));
 
     private void SignOut()
     {
@@ -830,6 +1210,12 @@ public class AssistantChatSyncServiceTests
         public ConcurrentDictionary<string, Queue<(HttpStatusCode Status, string Body, string? ETag)>> GetSequences { get; } = new();
         public ConcurrentDictionary<string, HttpRequestMessage> RequestsByUri { get; } = new();
         public string? LastPutBody { get; private set; }
+        public ConcurrentDictionary<string, int> PutCounts { get; } = new();
+        public ConcurrentDictionary<string, int> DeleteCounts { get; } = new();
+
+        // When set, every PUT signals PutStarted and then waits here, so a test can act while one is in flight.
+        public TaskCompletionSource? PutGate { get; set; }
+        public TaskCompletionSource PutStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public void SetGet(string pathPrefix, string body) =>
             GetResponses[pathPrefix] = (HttpStatusCode.OK, body);
@@ -881,6 +1267,12 @@ public class AssistantChatSyncServiceTests
             }
             else if (request.Method == HttpMethod.Put)
             {
+                PutCounts.AddOrUpdate(request.RequestUri!.AbsolutePath, 1, (_, n) => n + 1);
+                if (PutGate is { } gate)
+                {
+                    PutStarted.TrySetResult();
+                    await gate.Task.WaitAsync(cancellationToken);
+                }
                 if (request.Content is not null)
                     LastPutBody = await ReadBodyAsync(request.Content, cancellationToken);
                 foreach (var (path, resp) in PutResponses)
@@ -894,6 +1286,7 @@ public class AssistantChatSyncServiceTests
             }
             else if (request.Method == HttpMethod.Delete)
             {
+                DeleteCounts.AddOrUpdate(request.RequestUri!.AbsolutePath, 1, (_, n) => n + 1);
                 foreach (var (path, resp) in DeleteResponses)
                 {
                     if (uri.EndsWith(path))

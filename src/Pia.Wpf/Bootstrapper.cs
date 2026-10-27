@@ -14,6 +14,7 @@ using Pia.Paths;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.LocalDataReset;
 using Pia.Services.Providers;
 using Pia.Services.Scheduling;
 using Pia.ViewModels;
@@ -119,6 +120,10 @@ public static class Bootstrapper
         bootstrapLogger.LogInformation(
             "Data directories: Roaming={Roaming}, Local={Local}, Overridden={Overridden}",
             PiaPaths.RoamingDataDirectory, PiaPaths.LocalDataDirectory, PiaPaths.IsOverridden);
+
+        // Before the policy, settings or any store is read, so nothing caches pre-clear state.
+        await LocalDataResetStartup.RunIfPendingAsync(
+            () => _serviceProvider.GetRequiredService<LocalDataWipeService>().WipeAsync(), bootstrapLogger);
 
         bootstrapLogger.LogInformation(
             "Log retention: kept {Kept}, deleted {Deleted}, skipped {Skipped}, cutoff {Cutoff:yyyy-MM-dd}",
@@ -467,6 +472,8 @@ public static class Bootstrapper
 
         // Infrastructure
         services.AddSingleton<SqliteContext>();
+        services.AddSingleton<LocalDataWipeService>();
+        services.AddSingleton<ILocalDataResetService, LocalDataResetService>();
         services.AddSingleton<VaultPathProvider>();
         services.AddSingleton<MarkdownVaultParser>();
         services.AddSingleton<Pia.Infrastructure.Vault.IVaultWriteGate, Pia.Infrastructure.Vault.VaultWriteGate>();
@@ -953,6 +960,7 @@ public static class Bootstrapper
         // Provider tool-calling capability probe for the Agent lever/suggestion (R10).
         services.AddSingleton<IProviderCapabilityService, ProviderCapabilityService>();
         services.AddSingleton<AssistantChatSyncService>();
+        services.AddSingleton<IChatSyncFlusher>(sp => sp.GetRequiredService<AssistantChatSyncService>());
 
         // Background services
         services.AddSingleton<ReminderBackgroundService>();

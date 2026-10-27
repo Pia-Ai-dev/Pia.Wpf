@@ -53,6 +53,8 @@ public class AuthService : IAuthService
 
     public event EventHandler<AuthSignedOutEventArgs>? SignedOutUnexpectedly;
 
+    internal TimeSpan LogoutTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
     public AuthService(
         ISettingsService settingsService,
         DpapiHelper dpapiHelper,
@@ -365,6 +367,8 @@ public class AuthService : IAuthService
         RequiresBusinessProfile = login.User.RequiresBusinessProfile;
         IsLoggedIn = true;
 
+        // Before the new identity is written, so a leftover key marks the account it belonged to.
+        settings.ForgetE2EEKey();
         settings.SyncEnabled = true;
         settings.EncryptedAccessToken = _encryptedAccessToken;
         settings.EncryptedRefreshToken = _encryptedRefreshToken;
@@ -375,7 +379,8 @@ public class AuthService : IAuthService
         settings.SyncDeviceId ??= Guid.NewGuid().ToString();
         // A marker surviving from an earlier connection would suppress this account's history upload.
         settings.AssistantChatsBackfilledAt = null;
-        settings.ForgetE2EEKey();
+        if (login.IsE2EEEnabled || AccessTokenClaims.ReadE2EE(login.AccessToken) == true)
+            settings.MarkE2EERequiredForAccount();
         if (reportedMetadata)
             settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);
@@ -539,15 +544,15 @@ public class AuthService : IAuthService
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
 
-            // Revoke refresh token on server
             var refreshToken = DecryptRefreshToken();
             if (!string.IsNullOrEmpty(serverUrl) && !string.IsNullOrEmpty(refreshToken))
             {
                 try
                 {
+                    using var timeout = new CancellationTokenSource(LogoutTimeout);
                     using var client = _httpClientFactory.CreateClient();
                     await client.PostAsJsonAsync($"{serverUrl}/auth/logout",
-                        new { refreshToken });
+                        new { refreshToken }, timeout.Token);
                 }
                 catch (Exception ex)
                 {
@@ -555,7 +560,6 @@ public class AuthService : IAuthService
                 }
             }
 
-            // Clear local state
             _encryptedAccessToken = null;
             _encryptedRefreshToken = null;
             UserDisplayName = null;
@@ -564,26 +568,7 @@ public class AuthService : IAuthService
             RequiresBusinessProfile = false;
             IsLoggedIn = false;
 
-            settings.SyncEnabled = false;
-            settings.EncryptedAccessToken = null;
-            settings.EncryptedRefreshToken = null;
-            settings.SyncUserId = null;
-            settings.SyncUserEmail = null;
-            settings.SyncUserDisplayName = null;
-            settings.SyncProvider = null;
-            settings.LastSyncTimestamp = null;
-            settings.AssistantChatsBackfilledAt = null;
-            // Clear cross-account sync gate/ETag state so a subsequent login (same or different
-            // account) never inherits stale state: a stale LastPushedSettingsHash could suppress
-            // the settings row on the next first sync, and stale ETags rely on the server never
-            // colliding tag values across accounts.
-            settings.LastPushedSettingsHash = null;
-            settings.LastChatPullETag = null;
-            settings.LastPullETag = null;
-            settings.ClientPolicyInitialized = false;
-            // The key belongs to one account and records no owner, so it goes on sign-out and on every
-            // sign-in; the server keeps this device's wrapped copy, which the sign-in paths take back.
-            settings.ForgetE2EEKey();
+            settings.ClearAccountState();
             await _settingsService.SaveSettingsAsync(settings);
 
             // Sync stays off until the next login, so a kept group policy would go on being applied
@@ -608,9 +593,7 @@ public class AuthService : IAuthService
         }
     }
 
-    // Signs out through the normal path, then tells listeners why — LoginStateChanged alone
-    // cannot say that this was not the user's own doing.
-    private async Task SignOutUnexpectedlyAsync(AuthSignOutReason reason)
+    public async Task SignOutUnexpectedlyAsync(AuthSignOutReason reason)
     {
         await LogoutAsync();
         SignedOutUnexpectedly?.Invoke(this, new AuthSignedOutEventArgs(reason));
@@ -637,6 +620,9 @@ public class AuthService : IAuthService
         await _refreshLock.WaitAsync();
         try
         {
+            if (!IsLoggedIn || string.IsNullOrEmpty(_encryptedRefreshToken))
+                return null;
+
             var current = DecryptAccessToken();
             if (current is not null)
             {
@@ -700,9 +686,11 @@ public class AuthService : IAuthService
             _encryptedRefreshToken = string.IsNullOrEmpty(newRefreshToken)
                 ? null : _dpapiHelper.Encrypt(newRefreshToken);
 
-            // Persist new tokens
             settings.EncryptedAccessToken = _encryptedAccessToken;
             settings.EncryptedRefreshToken = _encryptedRefreshToken;
+            if (json.TryGetProperty("isE2EEEnabled", out var e2ee) && e2ee.ValueKind == JsonValueKind.True
+                || AccessTokenClaims.ReadE2EE(newAccessToken) == true)
+                settings.MarkE2EERequiredForAccount();
             if (reportMetadata)
                 settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
             await _settingsService.SaveSettingsAsync(settings);

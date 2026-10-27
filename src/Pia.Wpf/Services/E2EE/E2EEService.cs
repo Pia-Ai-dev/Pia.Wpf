@@ -46,11 +46,7 @@ public class E2EEService : IE2EEService
         var settings = _settings.GetSettingsAsync().GetAwaiter().GetResult();
         if (string.IsNullOrEmpty(settings.E2EEEncryptedUmk))
         {
-            if (_cachedUmk is not null)
-            {
-                Array.Clear(_cachedUmk);
-                _cachedUmk = null;
-            }
+            ClearCachedUmk();
             return null;
         }
 
@@ -65,6 +61,13 @@ public class E2EEService : IE2EEService
             System.Security.Cryptography.SHA256.HashData(_cachedUmk)[..4]);
         _logger.LogInformation("UMK loaded from DPAPI (fingerprint: {Fingerprint})", fingerprint);
         return _cachedUmk;
+    }
+
+    public void ClearCachedUmk()
+    {
+        var umk = Interlocked.Exchange(ref _cachedUmk, null);
+        if (umk is not null)
+            Array.Clear(umk);
     }
 
     public async Task StoreUmkAsync(byte[] umk)

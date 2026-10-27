@@ -1,8 +1,10 @@
 namespace Pia.Services.E2EE;
 
-/// <summary>Device registration was refused; <see cref="Exception.Message"/> is already readable.</summary>
-public sealed class DeviceRegistrationRejectedException(string code, string message) : Exception(message)
+/// <summary>Keeps the server's explanation separate from the safe exception message.</summary>
+public sealed class DeviceRegistrationRejectedException(string code, string userMessage, int? statusCode = null)
+    : Exception($"Device registration was refused (HTTP status: {statusCode}).")
 {
-    /// <summary>The server's <c>error</c> value (an <see cref="Pia.Shared.E2EE.E2EEErrorCodes"/> member).</summary>
     public string Code { get; } = code;
+    public string UserMessage { get; } = userMessage;
+    public int? StatusCode { get; } = statusCode;
 }

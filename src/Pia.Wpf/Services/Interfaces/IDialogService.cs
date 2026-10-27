@@ -18,9 +18,11 @@ public interface IDialogService
     /// <summary>True when the user confirmed the deletion; the caller then sends it with the dialog's password.</summary>
     Task<bool> ShowAccountDeletionDialogAsync(AccountDeletionViewModel viewModel);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
+    Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt);
 
-    /// <summary>Offers two named actions; <see cref="DialogChoice.Dismissed"/> when the user closed it without choosing.</summary>
-    Task<DialogChoice> ShowChoiceDialogAsync(string title, string message, string primaryText, string secondaryText);
+    /// <summary>Offers two named actions; <see cref="DialogChoice.Dismissed"/> when closed without choosing. A null <paramref name="closeText"/> labels the close button "Close"; an empty one hides it.</summary>
+    Task<DialogChoice> ShowChoiceDialogAsync(
+        string title, string message, string primaryText, string secondaryText, string? closeText = null);
 
     /// <summary>A confirmation that also carries back a "don't ask again" tick — where the suppression is
     /// stored is the caller's business. Declining is the answer for a dialog that could not be shown.</summary>

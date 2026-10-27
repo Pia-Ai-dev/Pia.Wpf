@@ -9,6 +9,7 @@ using Pia.Models;
 using Pia.Paths;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Services.LocalDataReset;
 using Velopack;
 
 namespace Pia;
@@ -92,13 +93,11 @@ public partial class App : Application
         // beat WPF-UI's, and ThemeService already swaps entries in Application.Resources.MergedDictionaries.
         ScrollBarAutoFadeBehavior.Install();
 
-        // Set shutdown mode to explicit (don't exit when window closes)
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         // Nothing a virtual-file drop wrote outlives the run that read it.
         Helpers.ShellDropCache.Clear();
 
-        // Initialize DI container
         await Bootstrapper.InitializeAsync();
 
         // Initialize localization — auto-detect from Windows locale on first run
@@ -167,11 +166,7 @@ public partial class App : Application
         var settingsService = Bootstrapper.ServiceProvider.GetRequiredService<ISettingsService>();
         var settings = await settingsService.GetSettingsAsync();
 
-        // NOTE: the assistant files folder + vault root are seeded/derived earlier in
-        // Bootstrapper.InitializeAssistantFoldersAsync (before vault scaffolding/migration/watcher),
-        // so there is no folder seeding here anymore.
 
-        // Sync autostart registry state with setting (covers existing installs upgrading to this version)
         var autostartService = Bootstrapper.ServiceProvider.GetRequiredService<IAutostartService>();
         if (settings.LaunchAtStartup && !autostartService.IsEnabled())
             autostartService.Enable();
@@ -181,6 +176,7 @@ public partial class App : Application
         if (!settings.HasCompletedFirstRunWizard)
         {
             await ShowFirstRunWizardAsync();
+            if (!ShouldContinueStartup(Volatile.Read(ref _restartRequested) != 0)) return;
             settings = await settingsService.GetSettingsAsync();
         }
 
@@ -190,9 +186,7 @@ public partial class App : Application
             windowManager.ShowWindow(settings.DefaultWindowMode);
         }
 
-        // Force the scheduled-job notification surface to attach its toast activation
-        // handler immediately, so toasts left in Action Center across app sessions still
-        // route correctly when clicked.
+        // Resolved eagerly so toasts left in Action Center from an earlier session still route when clicked.
         _ = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledJobNotificationSurface>();
 
         // Attach the agent-run notification surface eagerly so it subscribes to RunChanged at startup.
@@ -201,10 +195,8 @@ public partial class App : Application
         // Same reason: nothing else resolves it, and it must be subscribed before the first drain pass.
         _ = Bootstrapper.ServiceProvider.GetRequiredService<IAssignmentNotificationSurface>();
 
-        // G-4: settle any agent run left non-terminal by a crash / forced-exit BEFORE the scheduler can
-        // start new headless runs, so nothing dangles Running across sessions. Then sweep orphaned/aged
-        // run workspaces (decision c) in the background so startup is not blocked on disk I/O. Failure-
-        // isolated — recovery never blocks app startup.
+        // Settle runs a crash left non-terminal before the scheduler can start new ones; the workspace sweep
+        // runs in the background so startup never waits on disk I/O.
         try
         {
             var agentRunService = Bootstrapper.ServiceProvider.GetRequiredService<IAgentRunService>();
@@ -218,12 +210,8 @@ public partial class App : Application
             System.Diagnostics.Debug.WriteLine($"Headless run startup recovery failed: {ex.Message}");
         }
 
-        // T0-1: book the outcome of any scheduled firing whose run settled with nobody left alive to record it
-        // (the process died mid-run). Strictly AFTER FailInterruptedRunsAsync above — a crashed run is
-        // non-terminal until that sweep settles it, and this reconcile only reads SETTLED runs — and strictly
-        // BEFORE the scheduler starts below, so no tick can be writing the same job rows. Its OWN try/catch,
-        // not the block above's: a reconcile fault must not skip the workspace sweep, and startup must never
-        // block on it.
+        // Books firings whose run settled after the process died: after the sweep above settles crashed runs,
+        // before the scheduler writes job rows. Own try/catch, so a fault here skips nothing else.
         try
         {
             var firingReconciler = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledFiringReconciler>();
@@ -234,9 +222,7 @@ public partial class App : Application
             System.Diagnostics.Debug.WriteLine($"Scheduled firing reconcile failed: {ex.Message}");
         }
 
-        // Pin the firing day of recurring jobs that never had one, before the scheduler below can recompute
-        // their NextFireAt off today's date and relocate them again. Own try/catch for the same reason as the
-        // reconcile above.
+        // Before the scheduler can recompute NextFireAt off today's date and relocate these jobs again.
         try
         {
             var jobService = Bootstrapper.ServiceProvider.GetRequiredService<IScheduledJobService>();
@@ -251,18 +237,22 @@ public partial class App : Application
         var flowService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.IFlowService>();
         await flowService.LoadAsync();
 
-        // Start background services
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);
 
         var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
         await scheduledJobService.StartAsync(CancellationToken.None);
 
-        var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
-        await chatSyncService.StartAsync(CancellationToken.None);
+        // A clear that failed may have left the old account signed in; nothing account-bound may run until it lands.
+        var resetPending = LocalDataResetMarker.IsPending;
+        if (!resetPending)
+        {
+            var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
+            await chatSyncService.StartAsync(CancellationToken.None);
 
-        var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
-        await chatRetentionService.StartAsync(CancellationToken.None);
+            var chatRetentionService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatRetentionService>();
+            await chatRetentionService.StartAsync(CancellationToken.None);
+        }
 
         var consentRetentionService = Bootstrapper.ServiceProvider
             .GetRequiredService<Services.Consent.ConsentRetentionBackgroundService>();
@@ -271,38 +261,35 @@ public partial class App : Application
         var todoDeadlineService = Bootstrapper.ServiceProvider.GetRequiredService<Services.Flow.TodoDeadlineBackgroundService>();
         await todoDeadlineService.StartAsync(CancellationToken.None);
 
-        // Its first pass is the one that matters: a background assignment that finished while the app was
-        // closed is stored locally only because this runs at startup. The server drops the plaintext on its own
-        // retention window whether or not anyone ever comes back for it.
-        var AssignmentDrainService = Bootstrapper.ServiceProvider
-            .GetRequiredService<Services.Operators.AssignmentDrainService>();
-        await AssignmentDrainService.StartAsync(CancellationToken.None);
+        // Its startup pass stores assignments that finished while the app was closed, before the server's
+        // retention drops their plaintext.
+        if (!resetPending)
+        {
+            var AssignmentDrainService = Bootstrapper.ServiceProvider
+                .GetRequiredService<Services.Operators.AssignmentDrainService>();
+            await AssignmentDrainService.StartAsync(CancellationToken.None);
+        }
 
-        // Initialize persisted MCP plugins from local database
         var pluginService = Bootstrapper.ServiceProvider.GetRequiredService<IPluginService>();
         _ = pluginService.InitializePersistedPluginsAsync();
 
-        // Start background sync if user is logged in
         var authService = Bootstrapper.ServiceProvider.GetRequiredService<IAuthService>();
-        if (authService.IsLoggedIn)
+        if (authService.IsLoggedIn && !resetPending)
         {
             var syncService = Bootstrapper.ServiceProvider.GetRequiredService<ISyncClientService>();
             RepairThenSyncAsync(syncService).SafeFireAndForget(
                 Bootstrapper.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("SyncRepair"));
         }
 
-        // Silently check for updates in the background
         _ = CheckForUpdateOnStartupAsync();
 
-        // Periodically re-check for updates (randomized 4–6 hour interval)
+        // Randomized 4–6 hour interval.
         _ = StartPeriodicUpdateCheckAsync();
 
-        // Pre-download embedding model in background
         _ = EnsureEmbeddingModelAsync();
 
-        // Warm the git-installed probe and the VS Code / Obsidian detection off the UI thread (they spawn
-        // where.exe / read the registry). All cache their result, so the git-tools settings toggle and the
-        // first file chip or vault header render without first-use latency.
+        // Off the UI thread, since these probes spawn where.exe or read the registry; each caches its result so
+        // the first file chip or vault header renders without the delay.
         _ = Task.Run(() =>
         {
             _ = GitLocator.IsAvailable;
@@ -370,10 +357,8 @@ public partial class App : Application
         using var scope = Bootstrapper.ServiceProvider.CreateScope();
         var wizard = scope.ServiceProvider.GetRequiredService<Views.FirstRunWizardWindow>();
 
-        // ShowDialog blocks until the wizard is closed
-        // If user closes without completing (X button), treat as skip
         var result = wizard.ShowDialog();
-        if (result != true)
+        if (ShouldMarkWizardCompletedOnClose(result, LocalDataResetMarker.IsPending))
         {
             var settingsService = scope.ServiceProvider.GetRequiredService<ISettingsService>();
             var settings = await settingsService.GetSettingsAsync();
@@ -384,6 +369,11 @@ public partial class App : Application
             }
         }
     }
+
+    internal static bool ShouldContinueStartup(bool restartRequested) => !restartRequested;
+
+    internal static bool ShouldMarkWizardCompletedOnClose(bool? dialogResult, bool resetPending) =>
+        dialogResult != true && !resetPending;
 
     private async Task EnsureEmbeddingModelAsync()
     {

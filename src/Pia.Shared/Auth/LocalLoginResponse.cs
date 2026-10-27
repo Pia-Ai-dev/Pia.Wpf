@@ -6,6 +6,7 @@ public class LocalLoginResponse
     public required string RefreshToken { get; set; }
     public int ExpiresIn { get; set; }
     public required LocalLoginUser User { get; set; }
+    public bool IsE2EEEnabled { get; set; }
 }
 
 public class LocalLoginUser

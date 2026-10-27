@@ -164,17 +164,33 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
-    public async Task<DialogChoice> ShowChoiceDialogAsync(string title, string message, string primaryText, string secondaryText)
+    public async Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt)
     {
-        var result = await _contentDialogService.ShowSimpleDialogAsync(
-            new SimpleContentDialogCreateOptions
-            {
-                Title = title,
-                Content = message,
-                PrimaryButtonText = primaryText,
-                SecondaryButtonText = secondaryText,
-                CloseButtonText = _localizationService["Common_Close"]
-            });
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new DeviceApprovalContentDialog(dialogHost, prompt);
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    public async Task<DialogChoice> ShowChoiceDialogAsync(
+        string title, string message, string primaryText, string secondaryText, string? closeText = null)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primaryText,
+            SecondaryButtonText = secondaryText,
+            CloseButtonText = closeText ?? _localizationService["Common_Close"],
+        };
+        if (closeText == "")
+        {
+            // A hidden default button would still answer Enter, so Enter picks the secondary action instead.
+            dialog.DefaultButton = ContentDialogButton.Secondary;
+            ContentDialogCloseButton.HideOnLoad(dialog);
+        }
+
+        var result = await _contentDialogService.ShowAsync(dialog, CancellationToken.None);
 
         return result switch
         {

@@ -29,7 +29,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private readonly IAccountDataService _accountData;
     private readonly IFileDialogService _fileDialogs;
     private readonly ICreditStatusService _creditStatus;
+    private readonly ILocalDataResetService _localDataReset;
     private int _creditsGeneration;
+    private CurrentDeviceRevokedEventArgs? _lastDeviceRevocationNotice;
 
     /// <summary>Bind IsEnabled to Policy[nameof(AppSettings.X)] to grey a control out while policy enforces it.</summary>
     public PolicyLock Policy { get; }
@@ -53,12 +55,14 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         E2EEOnboardingViewModel onboardingViewModel,
         IAccountDataService accountData,
         IFileDialogService fileDialogs,
-        ICreditStatusService creditStatus)
+        ICreditStatusService creditStatus,
+        ILocalDataResetService localDataReset)
         : base(requireUiThread: true)
     {
         _accountData = accountData;
         _fileDialogs = fileDialogs;
         _creditStatus = creditStatus;
+        _localDataReset = localDataReset;
         _logger = logger;
         _settingsService = settingsService;
         _dialogService = dialogService;
@@ -115,6 +119,10 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             });
         };
 
+        IsE2EEDowngradeDetected = _syncClientService.IsE2EEDowngradeDetected;
+        _syncClientService.E2EEDowngradeChanged += (_, _) =>
+            Post(() => IsE2EEDowngradeDetected = _syncClientService.IsE2EEDowngradeDetected);
+
         _authService.LoginStateChanged += (_, isLoggedIn) =>
         {
             if (isLoggedIn)
@@ -144,44 +152,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 HandlePendingDevicesAsync(args.PendingDevices).SafeFireAndForget(_logger));
         };
 
-        _syncClientService.CurrentDeviceRevoked += (_, e) =>
-        {
-            Post(async () =>
-            {
-                // Sync is already stopped by the service. The key would only open ciphertext this
-                // device can no longer receive, so it goes with it.
-                _isLoading = true;
-                IsE2EEEnabled = false;
-                DeviceFingerprint = string.Empty;
-                _isLoading = false;
-
-                var settings = await _settingsService.GetSettingsAsync();
-                settings.ForgetE2EEKey();
-                await _settingsService.SaveSettingsAsync(settings);
-                // Reads the now-empty persisted key, which drops the in-memory copy too.
-                _deviceManagement.IsInitialized();
-
-                var title = _localizationService["Settings_E2EE_Gone_Title"];
-                var message = _localizationService[e.WasRevoked
-                    ? "Settings_E2EE_Gone_Revoked"
-                    : "Settings_E2EE_Gone_Missing"];
-                var choice = await _dialogService.ShowChoiceDialogAsync(
-                    title,
-                    message,
-                    _localizationService["Settings_E2EE_Gone_SetUpAgain"],
-                    _localizationService["Settings_E2EE_Gone_SignOut"]);
-
-                if (choice == DialogChoice.Primary)
-                {
-                    IsE2EEOnboardingRequired = true;
-                    _syncClientService.NotifyE2EEOnboardingRequired();
-                }
-                else if (choice == DialogChoice.Secondary)
-                {
-                    await SyncLogoutAsync();
-                }
-            });
-        };
+        _syncClientService.CurrentDeviceRevoked += OnCurrentDeviceRevoked;
 
         _authService.SignedOutUnexpectedly += (_, e) =>
         {
@@ -209,10 +180,49 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             return;
 
         _disposed = true;
+        _syncClientService.CurrentDeviceRevoked -= OnCurrentDeviceRevoked;
         _policyService.LocksChanged -= OnLocksChanged;
         _settingsService.SettingsChanged -= OnSettingsChanged;
         Policy.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    private void OnCurrentDeviceRevoked(object? sender, CurrentDeviceRevokedEventArgs e) =>
+        Post(() => HandleCurrentDeviceRevokedAsync(e).SafeFireAndForget(_logger));
+
+    private async Task HandleCurrentDeviceRevokedAsync(CurrentDeviceRevokedEventArgs notice)
+    {
+        if (_disposed || ReferenceEquals(_lastDeviceRevocationNotice, notice)
+            || !ReferenceEquals(_syncClientService.PendingDeviceRevocation, notice))
+            return;
+
+        _lastDeviceRevocationNotice = notice;
+        _isLoading = true;
+        IsE2EEEnabled = false;
+        DeviceFingerprint = string.Empty;
+        _isLoading = false;
+        OnboardingViewModel.Reset();
+
+        var choice = await _dialogService.ShowChoiceDialogAsync(
+            _localizationService["Settings_E2EE_Gone_Title"],
+            _localizationService[notice.WasRevoked ? "Settings_E2EE_Gone_Revoked" : "Settings_E2EE_Gone_Missing"],
+            _localizationService["Settings_E2EE_Gone_SetUpAgain"],
+            _localizationService["Settings_E2EE_Gone_SignOut"]);
+
+        if (_disposed || !ReferenceEquals(_syncClientService.PendingDeviceRevocation, notice))
+            return;
+
+        if (choice == DialogChoice.Primary)
+        {
+            IsE2EEOnboardingRequired = true;
+            _syncClientService.NotifyE2EEOnboardingRequired();
+        }
+        else if (choice == DialogChoice.Secondary)
+        {
+            await AccountSwitchPrompts.SignOutAsync(
+                _localDataReset, _dialogService, _localizationService, uploadFirst: false, SignOutAsync,
+                text => SignOutProgressText = text);
+        }
     }
 
     public ObservableCollection<CreditMeter> CreditMeters { get; } = [];
@@ -365,6 +375,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
     private bool _isE2EEOnboardingRequired;
 
+    [ObservableProperty]
+    private bool _isE2EEDowngradeDetected;
+
     // Sync status
     [ObservableProperty]
     private string _lastSyncText = "";
@@ -428,6 +441,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
         _isLoading = false;
 
+        if (_syncClientService.PendingDeviceRevocation is { } notice)
+            await HandleCurrentDeviceRevokedAsync(notice);
+
         // A restored session carries no answer, so ask — off the initialization path, which the UI waits on.
         // No IsLoggedIn guard: it races the service's own token load, and the probe answers null without a token.
         if (!_businessProfileAnswered)
@@ -481,6 +497,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task LoginWithGoogleAsync()
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsSyncLoggingIn = true;
         try
         {
@@ -511,6 +529,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task LoginWithMicrosoftAsync()
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsSyncLoggingIn = true;
         try
         {
@@ -541,6 +561,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task LoginWithEntraIdAsync()
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsSyncLoggingIn = true;
         try
         {
@@ -576,6 +598,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             LoginErrorMessage = _localizationService["Sync_LocalAuth_FieldsRequired"];
             return;
         }
+
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
 
         IsSyncLoggingIn = true;
         LoginErrorMessage = null;
@@ -760,8 +784,18 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         }
     }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSigningOut))]
+    private string? _signOutProgressText;
+
+    public bool IsSigningOut => SignOutProgressText is not null;
+
     [RelayCommand]
-    private async Task SyncLogoutAsync()
+    private Task SyncLogoutAsync() => AccountSwitchPrompts.SignOutAsync(
+        _localDataReset, _dialogService, _localizationService, uploadFirst: true, SignOutAsync,
+        text => SignOutProgressText = text);
+
+    private async Task SignOutAsync()
     {
         _syncClientService.StopBackgroundSync();
         await _authService.LogoutAsync();
@@ -778,6 +812,25 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Done", Wpf.Ui.Controls.ControlAppearance.Success);
         else
             ShowAccountSnackbar("Sync_ExportData", "Sync_ExportData_Failed", Wpf.Ui.Controls.ControlAppearance.Danger);
+    }
+
+    [RelayCommand]
+    private async Task AllowUnencryptedSyncAsync()
+    {
+        var accountId = (await _settingsService.GetSettingsAsync()).SyncUserId;
+        if (accountId is null || !_syncClientService.IsE2EEDowngradeDetected)
+            return;
+
+        if (!await _dialogService.ShowConfirmationDialogAsync(
+                _localizationService["E2EE_Downgrade_Confirm_Title"],
+                _localizationService["E2EE_Downgrade_Confirm_Message"]))
+            return;
+
+        // Sync kept running behind the dialog, so the answer may now be stale.
+        if (!await _syncClientService.AllowUnencryptedSyncAsync(accountId))
+            return;
+        await _syncClientService.PerformFirstSyncMigrationAsync();
+        _syncClientService.StartBackgroundSync();
     }
 
     [RelayCommand]
@@ -806,8 +859,9 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
         if (outcome == AccountDeletionOutcome.Deleted)
         {
-            await SyncLogoutAsync();
+            await SignOutAsync();
             ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_Done", Wpf.Ui.Controls.ControlAppearance.Success);
+            await AccountSwitchPrompts.OfferClearAfterDeletionAsync(_localDataReset, _dialogService, _localizationService);
             return;
         }
 
@@ -838,30 +892,40 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             }
             else
             {
-                _snackbarService.Show("No Requests", "No pending device requests found.",
-                    Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(3));
+                ShowAccountSnackbar("Settings_E2EE_PendingDevices_None_Title",
+                    "Settings_E2EE_PendingDevices_None_Message", Wpf.Ui.Controls.ControlAppearance.Info);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to check for pending devices");
-            _snackbarService.Show("Error", "Failed to check for pending devices.",
-                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+            ShowAccountSnackbar("Settings_E2EE_PendingDevices_CheckFailed_Title",
+                "Settings_E2EE_PendingDevices_CheckFailed_Message", Wpf.Ui.Controls.ControlAppearance.Danger);
         }
     }
 
     private async Task HandlePendingDevicesAsync(List<DeviceInfo> pendingDevices)
     {
-        foreach (var device in pendingDevices)
+        for (var i = 0; i < pendingDevices.Count; i++)
         {
+            var device = pendingDevices[i];
+            if (i > 0)
+            {
+                var (canApprove, stillPending) = await RecheckPendingDeviceAsync(device.DeviceId);
+                if (!canApprove)
+                    return;
+                if (stillPending is null)
+                    continue;
+                device = stillPending;
+            }
+
+            var name = DeviceNameDisplay.Sanitize(device.DeviceName);
+            var displayName = name.Text.Length > 0 ? name.Text : _localizationService["Settings_E2EE_UnnamedDevice"];
             try
             {
                 var fingerprint = _deviceKeys.ComputeFingerprint(device.AgreementPublicKey);
-                var message = _localizationService.Format(
-                    "Settings_E2EE_ApproveDevice_Message", device.DeviceName, fingerprint, _deviceKeys.GetFingerprint());
-
-                var approved = await _dialogService.ShowConfirmationDialogAsync(
-                    _localizationService["Settings_E2EE_ApproveDevice_Title"], message);
+                var approved = await _dialogService.ShowDeviceApprovalDialogAsync(new DeviceApprovalPrompt(
+                    displayName, name.HadHiddenCharacters, fingerprint, _deviceKeys.GetFingerprint()));
 
                 if (approved && device.OnboardingSessionId is not null)
                 {
@@ -869,27 +933,68 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                     await _deviceManagement.ApproveDeviceAsync(
                         device.OnboardingSessionId, device);
                     _snackbarService.Show(_localizationService["Settings_E2EE_DeviceApproved_Title"],
-                        _localizationService.Format("Settings_E2EE_DeviceApproved_Message", device.DeviceName),
+                        _localizationService["Settings_E2EE_DeviceApproved_Message"],
                         Wpf.Ui.Controls.ControlAppearance.Success, null, TimeSpan.FromSeconds(4));
                 }
                 else if (!approved)
                 {
                     var reject = await _dialogService.ShowConfirmationDialogAsync(
                         _localizationService["Settings_E2EE_RejectDevice_Title"],
-                        _localizationService.Format("Settings_E2EE_RejectDevice_Message", device.DeviceName));
+                        _localizationService["Settings_E2EE_RejectDevice_Message"]);
                     if (reject)
                     {
                         await _deviceManagement.RevokeDeviceAsync(device.DeviceId);
                     }
                 }
             }
+            catch (DeviceRegistrationRejectedException ex) when (ex.Code == E2EEErrorCodes.SessionEnded)
+            {
+                // The sign-out notice already told the user; no device can be approved from here now.
+                _logger.LogWarning("Stopped handling pending devices: this session has ended");
+                return;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle pending device {DeviceId}", device.DeviceId);
-                _snackbarService.Show("Error", $"Failed to approve device: {ex.Message}",
-                    Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+                // A dialog, not a snackbar: the prompt can be raised while Settings is not the open view.
+                var message = ex is DeviceRegistrationRejectedException rejection
+                    ? rejection.UserMessage
+                    : _localizationService.Format("Settings_E2EE_PendingDevices_ApproveFailed_Message", displayName);
+                await _dialogService.ShowMessageDialogAsync(
+                    _localizationService["Settings_E2EE_PendingDevices_ApproveFailed_Title"], message);
             }
         }
+    }
+
+    // CanApprove is false once this device is no longer Active or signed in; Device is null when that request is settled.
+    private async Task<(bool CanApprove, DeviceInfo? Device)> RecheckPendingDeviceAsync(string deviceId)
+    {
+        if (!_authService.IsLoggedIn)
+            return (false, null);
+
+        DeviceListResponse devices;
+        try
+        {
+            devices = await _deviceManagement.GetDevicesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not re-read the device list; stopped handling pending devices");
+            return (false, null);
+        }
+
+        var ownId = _deviceKeys.GetDeviceId();
+        if (devices.Devices.FirstOrDefault(d => d.DeviceId == ownId) is not { Status: DeviceStatus.Active })
+        {
+            _logger.LogWarning("Stopped handling pending devices: this device is no longer active");
+            return (false, null);
+        }
+
+        var device = devices.Devices.FirstOrDefault(d =>
+            d.DeviceId == deviceId && d.Status == DeviceStatus.Pending && d.OnboardingSessionId is not null);
+        if (device is null)
+            _logger.LogInformation("Skipping device {DeviceId}: it is no longer pending", deviceId);
+        return (true, device);
     }
 
     private async Task EnableE2EEAsync()
@@ -931,7 +1036,10 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             }
             else
             {
-                _snackbarService.Show("Error", $"Failed to enable E2EE: {ex.Message}",
+                var message = ex is DeviceRegistrationRejectedException rejection
+                    ? rejection.UserMessage
+                    : _localizationService["Settings_E2EE_EnableFailed_Message"];
+                _snackbarService.Show(_localizationService["Settings_E2EE_EnableFailed_Title"], message,
                     Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
             }
         }

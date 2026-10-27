@@ -23,6 +23,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
     private readonly IDeviceManagementService _deviceManagement;
     private readonly IPolicyService _policyService;
     private readonly ILogger<FirstRunWizardViewModel> _logger;
+    private readonly IDialogService _dialogService;
+    private readonly ILocalDataResetService _localDataReset;
 
     public const int TotalSteps = 7;
 
@@ -299,7 +301,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
         IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel,
         E2EESetupStepViewModel e2eeSetupViewModel,
-        ILogger<FirstRunWizardViewModel> logger)
+        ILogger<FirstRunWizardViewModel> logger,
+        IDialogService dialogService,
+        ILocalDataResetService localDataReset)
     {
         _settingsService = settingsService;
         _memoryService = memoryService;
@@ -313,6 +317,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
         OnboardingViewModel = onboardingViewModel;
         E2EESetupViewModel = e2eeSetupViewModel;
         _logger = logger;
+        _dialogService = dialogService;
+        _localDataReset = localDataReset;
         _uiLanguage = _localizationService.CurrentLanguage;
         _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(NextButtonText));
 
@@ -520,6 +526,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     private async Task LoginAsync(string provider)
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsLoggingIn = true;
         LoginError = null;
 
@@ -567,6 +575,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
             LoginError = _localizationService["Sync_LocalAuth_FieldsRequired"];
             return;
         }
+
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
 
         IsLoggingIn = true;
         LoginError = null;

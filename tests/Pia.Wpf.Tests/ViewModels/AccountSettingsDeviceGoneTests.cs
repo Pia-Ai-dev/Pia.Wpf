@@ -11,8 +11,7 @@ using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
 
-/// <summary>The revoked device lands here: the notice must forget the local key and offer
-/// re-onboarding or sign-out — and the reason the user did not choose must reach the UI.</summary>
+/// <summary>Removal notices offer setup or sign-out, including after opening Settings later.</summary>
 public class AccountSettingsDeviceGoneTests
 {
     private readonly IAuthService _auth = Substitute.For<IAuthService>();
@@ -54,11 +53,18 @@ public class AccountSettingsDeviceGoneTests
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(DialogChoice.Primary);
         var sut = CreateSut();
+        sut.OnboardingViewModel.State = OnboardingState.Success;
+        sut.OnboardingViewModel.RecoveryCodeInput = "old-code";
+        sut.OnboardingViewModel.StatusMessage = "previous success";
+        sut.OnboardingViewModel.DeviceFingerprint = "old-fingerprint";
 
-        _sync.CurrentDeviceRevoked += Raise.Event<EventHandler<CurrentDeviceRevokedEventArgs>>(
-            this, new CurrentDeviceRevokedEventArgs(true));
+        RaiseRevocation(true);
 
         Assert.True(sut.IsE2EEOnboardingRequired);
+        Assert.Equal(OnboardingState.Initial, sut.OnboardingViewModel.State);
+        Assert.Empty(sut.OnboardingViewModel.RecoveryCodeInput);
+        Assert.Empty(sut.OnboardingViewModel.StatusMessage);
+        Assert.Empty(sut.OnboardingViewModel.DeviceFingerprint);
         _sync.Received(1).NotifyE2EEOnboardingRequired();
         await _auth.DidNotReceive().LogoutAsync();
     }
@@ -69,10 +75,12 @@ public class AccountSettingsDeviceGoneTests
         _dialogs.ShowChoiceDialogAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(DialogChoice.Secondary);
+        _dialogs.ShowChoiceDialogAsync(
+            "LocalReset_SignOut_Title", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(DialogChoice.Secondary);
         CreateSut();
 
-        _sync.CurrentDeviceRevoked += Raise.Event<EventHandler<CurrentDeviceRevokedEventArgs>>(
-            this, new CurrentDeviceRevokedEventArgs(true));
+        RaiseRevocation(true);
 
         await _auth.Received(1).LogoutAsync();
         Assert.False(_stored.IsE2EEEnabled);
@@ -81,23 +89,47 @@ public class AccountSettingsDeviceGoneTests
     [Theory]
     [InlineData(true, "Settings_E2EE_Gone_Revoked")]
     [InlineData(false, "Settings_E2EE_Gone_Missing")]
-    public async Task TheNotice_ForgetsTheKeyAndNamesWhatHappened(bool wasRevoked, string expectedMessageKey)
+    public async Task TheNotice_NamesWhatHappened(bool wasRevoked, string expectedMessageKey)
     {
         var sut = CreateSut();
 
-        _sync.CurrentDeviceRevoked += Raise.Event<EventHandler<CurrentDeviceRevokedEventArgs>>(
-            this, new CurrentDeviceRevokedEventArgs(wasRevoked));
+        RaiseRevocation(wasRevoked);
 
         Assert.False(sut.IsE2EEEnabled);
         Assert.False(_stored.IsE2EEEnabled);
         Assert.Null(_stored.E2EEEncryptedUmk);
         Assert.Equal(0, _stored.E2EEUmkVersion);
         Assert.False(_stored.E2EERecoveryConfigured);
-        await _settings.Received(1).SaveSettingsAsync(_stored);
+        await _settings.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
         await _dialogs.Received(1).ShowChoiceDialogAsync(
             "Settings_E2EE_Gone_Title", expectedMessageKey,
             "Settings_E2EE_Gone_SetUpAgain", "Settings_E2EE_Gone_SignOut");
         await _auth.DidNotReceive().LogoutAsync();
+    }
+
+    [Fact]
+    public async Task ARemovalBeforeSettingsOpens_IsShownOnceOnInitialization()
+    {
+        RaiseRevocation(false);
+        var sut = CreateSut();
+
+        await sut.InitializeAsync();
+        await sut.InitializeAsync();
+
+        Assert.True(sut.IsE2EEOnboardingRequired);
+        Assert.False(sut.IsE2EEEnabled);
+        await _dialogs.Received(1).ShowChoiceDialogAsync(
+            "Settings_E2EE_Gone_Title", "Settings_E2EE_Gone_Missing",
+            "Settings_E2EE_Gone_SetUpAgain", "Settings_E2EE_Gone_SignOut");
+    }
+
+    private void RaiseRevocation(bool wasRevoked)
+    {
+        _stored.ForgetE2EEKey();
+        var notice = new CurrentDeviceRevokedEventArgs(wasRevoked);
+        _sync.PendingDeviceRevocation.Returns(notice);
+        _sync.IsE2EEOnboardingRequired.Returns(true);
+        _sync.CurrentDeviceRevoked += Raise.Event<EventHandler<CurrentDeviceRevokedEventArgs>>(this, notice);
     }
 
     private AccountSettingsViewModel CreateSut()
@@ -112,6 +144,7 @@ public class AccountSettingsDeviceGoneTests
                 _deviceMgmt, Substitute.For<IDeviceKeyService>(), Substitute.For<IE2EEService>(),
                 _sync, _settings, NullLogger<E2EEOnboardingViewModel>.Instance),
             Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
-            Substitute.For<ICreditStatusService>());
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
     }
 }

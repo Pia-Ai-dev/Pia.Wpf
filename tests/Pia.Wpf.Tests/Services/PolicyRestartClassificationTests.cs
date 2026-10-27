@@ -119,6 +119,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.E2EEDeviceId),
         nameof(AppSettings.E2EEEncryptedUmk),
         nameof(AppSettings.E2EERecoveryConfigured),
+        nameof(AppSettings.E2EERequiredAccountIds),
         nameof(AppSettings.E2EEUmkVersion),
         nameof(AppSettings.EncryptedAccessToken),
         nameof(AppSettings.FlowPinned),
@@ -131,6 +132,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.LastSyncTimestamp),
         nameof(AppSettings.ManagedPersonaStoreInitialized),
         nameof(AppSettings.ReportedDeviceMetadata),
+        nameof(AppSettings.SuppressSettingsPushAfterReset),
         nameof(AppSettings.SyncDeviceId),
         nameof(AppSettings.SyncUserDisplayName),
         nameof(AppSettings.SyncUserId),
@@ -187,7 +189,7 @@ public class PolicyRestartClassificationTests
     {
         Assert.True(
             LiveAlready.Length == 51 && LiveWithWork.Length == 24
-                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 28,
+                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 30,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
 

@@ -104,10 +104,8 @@
                      Foreground="{DynamicResource TextMutedBrush}"
                      Margin="0,0,0,4"/>
           <TextBlock Text="{Binding OnboardingViewModel.DeviceFingerprint}"
-                     FontFamily="{StaticResource PiaMonoFont}"
+                     Style="{StaticResource PiaFingerprintTextStyle}"
                      FontSize="16"
-                     FontWeight="SemiBold"
-                     Foreground="{DynamicResource TextDefaultBrush}"
                      Margin="0,0,0,12"/>
           <TextBlock Text="{loc:Str E2EE_Onboarding_Waiting_VerifyInstruction}"
                      FontSize="12"
@@ -159,16 +157,18 @@
 
           <TextBlock FontSize="12"
                      Foreground="{DynamicResource TextMutedBrush}"
+                     TextWrapping="Wrap"
+                     TextTrimming="CharacterEllipsis"
+                     MaxHeight="36"
+                     ClipToBounds="True"
                      Margin="0,0,0,4">
             <Run Text="{loc:Str E2EE_Onboarding_Confirm_ApproverLabel}"/>
             <Run Text="{Binding OnboardingViewModel.ApproverDeviceName, Mode=OneWay}"/>
           </TextBlock>
           <TextBlock Text="{Binding OnboardingViewModel.ApproverFingerprint}"
                      AutomationProperties.AutomationId="E2EEOnboarding_ApproverFingerprint"
-                     FontFamily="{StaticResource PiaMonoFont}"
+                     Style="{StaticResource PiaFingerprintTextStyle}"
                      FontSize="16"
-                     FontWeight="SemiBold"
-                     Foreground="{DynamicResource TextDefaultBrush}"
                      Margin="0,0,0,12"/>
 
           <StackPanel Orientation="Horizontal">
@@ -295,7 +295,7 @@
           <TextBlock FontSize="12"
                      Foreground="{DynamicResource TextMutedBrush}">
             <Run Text="{loc:Str E2EE_Onboarding_FingerprintPrefix}"/>
-            <Run Text="{Binding OnboardingViewModel.DeviceFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaMonoFont}"/>
+            <Run Text="{Binding OnboardingViewModel.DeviceFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaFingerprintFont}"/>
           </TextBlock>
         </StackPanel>
       </Border>

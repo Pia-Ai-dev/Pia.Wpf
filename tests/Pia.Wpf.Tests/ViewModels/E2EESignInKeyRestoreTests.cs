@@ -108,7 +108,8 @@ public class E2EESignInKeyRestoreTests
             Substitute.For<global::Wpf.Ui.ISnackbarService>(), _auth, _sync, loc, _deviceMgmt,
             _deviceKeys, Substitute.For<IMemoryService>(), Substitute.For<IPolicyService>(), Onboarding(),
             Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
-            Substitute.For<ICreditStatusService>());
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
     }
 
     private FirstRunWizardViewModel CreateWizard()
@@ -123,6 +124,7 @@ public class E2EESignInKeyRestoreTests
             _settings, Substitute.For<IMemoryService>(), Substitute.For<IVoiceInputService>(),
             Substitute.For<ILocalizationService>(), _auth, Substitute.For<IProviderService>(), _sync,
             _deviceMgmt, policy, Onboarding(), e2eeSetup,
-            NullLogger<FirstRunWizardViewModel>.Instance);
+            NullLogger<FirstRunWizardViewModel>.Instance,
+            Substitute.For<IDialogService>(), Substitute.For<ILocalDataResetService>());
     }
 }

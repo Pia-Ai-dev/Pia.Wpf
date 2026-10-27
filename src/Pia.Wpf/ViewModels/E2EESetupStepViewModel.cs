@@ -100,7 +100,7 @@ public partial class E2EESetupStepViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "E2EE bootstrap failed during wizard");
-            ErrorMessage = ex.Message;
+            ErrorMessage = ex is DeviceRegistrationRejectedException rejection ? rejection.UserMessage : ex.Message;
             State = E2EESetupState.Choice;
         }
         finally

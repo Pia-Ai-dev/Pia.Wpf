@@ -43,7 +43,8 @@ public class AccountSettingsCreditsTests
             new E2EEOnboardingViewModel(
                 _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
                 NullLogger<E2EEOnboardingViewModel>.Instance),
-            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(), _credits);
+            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(), _credits,
+            Substitute.For<ILocalDataResetService>());
     }
 
     private static CreditStatusResponse Limited(bool? suspended = null) => new(

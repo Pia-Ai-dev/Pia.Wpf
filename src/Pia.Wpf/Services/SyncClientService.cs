@@ -89,17 +89,21 @@ public class SyncClientService : ISyncClientService, IDisposable
     private int _consecutiveIdleCycles;
     private int _deviceCheckCounter;
     private bool _hasVerifiedServerE2EEStatus;
-    // One revoked notice per session: a failing cycle hits push AND pull, and neither should
-    // raise the dialog twice. Reset when sync starts again or a new sign-in arrives.
+    // Push and pull may both report the same removal in one cycle.
     private bool _revokedNoticeRaised;
     // Bumped on every Start/Stop so a sync cycle in flight during a Stop+Start cannot re-arm
     // the newly-started timer with a stale (non-InitialSyncDelay) period.
     private int _syncGeneration;
+    // Set for one SyncNowAsync cycle; _syncLock keeps cycles from overlapping.
+    private CancellationToken _cycleToken;
 
     public bool IsSyncActive => _syncTimer is not null;
     public bool IsE2EEOnboardingRequired { get; private set; }
+    public bool IsE2EEDowngradeDetected { get; private set; }
+    public CurrentDeviceRevokedEventArgs? PendingDeviceRevocation { get; private set; }
     public event EventHandler? E2EEOnboardingRequired;
     public event EventHandler? E2EEOnboardingCleared;
+    public event EventHandler? E2EEDowngradeChanged;
     public event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
     public event EventHandler? EncryptedMigrationCompleted;
     public event EventHandler<CurrentDeviceRevokedEventArgs>? CurrentDeviceRevoked;
@@ -112,8 +116,91 @@ public class SyncClientService : ISyncClientService, IDisposable
         E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
     }
 
+    private void NotifyE2EEDowngradeDetected()
+    {
+        if (IsE2EEDowngradeDetected) return;
+        IsE2EEDowngradeDetected = true;
+        E2EEDowngradeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ClearE2EEDowngrade()
+    {
+        if (!IsE2EEDowngradeDetected) return;
+        IsE2EEDowngradeDetected = false;
+        E2EEDowngradeChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // A token refresh can be what marks the account as requiring E2EE, so the gate runs again before any push.
+    private async Task<string?> GetAccessTokenPastE2EEGateAsync()
+    {
+        var accessToken = await _authService.GetAccessTokenAsync();
+        if (string.IsNullOrEmpty(accessToken))
+            return null;
+        return await BlocksMarkedAccountWithoutKeyAsync(await _settingsService.GetSettingsAsync()) ? null : accessToken;
+    }
+
+    public async Task<bool> AllowUnencryptedSyncAsync(string accountId)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!IsE2EEDowngradeDetected || settings.IsE2EEEnabled || !settings.IsE2EERequiredForAccount()
+            || !string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Unencrypted sync not allowed: the downgrade has cleared or the account changed");
+            return false;
+        }
+
+        // Asked again: the server may have turned E2EE back on while the user read the warning.
+        var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
+        if (serverStatus is not { IsEnabled: false })
+        {
+            if (serverStatus is not null)
+            {
+                ClearE2EEDowngrade();
+                NotifyE2EEOnboardingRequired();
+            }
+            _logger.LogInformation("Unencrypted sync not allowed: the server did not confirm E2EE is off");
+            return false;
+        }
+
+        settings.UnmarkE2EERequiredForAccount();
+        await _settingsService.SaveSettingsAsync(settings);
+        _logger.LogWarning("User allowed unencrypted sync for an account that previously required E2EE");
+        ClearE2EEDowngrade();
+        return true;
+    }
+
+    private async Task<bool> BlocksMarkedAccountWithoutKeyAsync(AppSettings settings)
+    {
+        if (settings.IsE2EEEnabled || !settings.IsE2EERequiredForAccount())
+        {
+            ClearE2EEDowngrade();
+            return false;
+        }
+
+        var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
+        if (serverStatus is { IsEnabled: true })
+        {
+            _logger.LogWarning("E2EE required for this account but UMK not available; onboarding required");
+            ClearE2EEDowngrade();
+            NotifyE2EEOnboardingRequired();
+        }
+        else if (serverStatus is not null)
+        {
+            _logger.LogWarning("Server reports E2EE off for an account that required it; refusing plaintext sync");
+            NotifyE2EEDowngradeDetected();
+        }
+        else
+        {
+            _logger.LogWarning("Could not determine server E2EE status for an account that required it; skipping sync");
+        }
+        return true;
+    }
+
     public void NotifyE2EEOnboardingCompleted()
     {
+        PendingDeviceRevocation = null;
+        _revokedNoticeRaised = false;
+        ClearE2EEDowngrade();
         if (!IsE2EEOnboardingRequired) return;
         IsE2EEOnboardingRequired = false;
         E2EEOnboardingCleared?.Invoke(this, EventArgs.Empty);
@@ -173,11 +260,12 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         _revokedNoticeRaised = false;
+        PendingDeviceRevocation = null;
     }
 
     public void StartBackgroundSync()
     {
-        if (_syncTimer is not null) return;
+        if (_syncTimer is not null || PendingDeviceRevocation is not null) return;
 
         _consecutiveIdleCycles = 0;
         _deviceCheckCounter = 0;
@@ -312,15 +400,15 @@ public class SyncClientService : ISyncClientService, IDisposable
         return (shouldCheck, nextCounter);
     }
 
-    public async Task<SyncResult?> SyncNowAsync()
+    public async Task<SyncResult?> SyncNowAsync(CancellationToken ct = default)
     {
         if (!_authService.IsLoggedIn) return null;
 
-        // Non-blocking: skip if another sync is already running
         if (!await _syncLock.WaitAsync(0)) return null;
 
         SyncResult? result = null;
         var syncSw = Stopwatch.StartNew();
+        _cycleToken = ct;
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
@@ -328,8 +416,6 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return null;
 
-            // E2EE initialization check: if E2EE is enabled but UMK not available,
-            // this is a second device that needs onboarding before sync can proceed.
             if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
             {
                 _logger.LogWarning("E2EE enabled but UMK not available; onboarding required");
@@ -337,15 +423,11 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return null;
             }
 
-            // Server E2EE check: if local E2EE is off, verify against server to catch cases where
-            // E2EE was enabled on another device (e.g., first-run wizard login, app restart).
-            // Without this, sync would push IsE2EEEncrypted=false and pull rows it cannot decrypt.
-            //
-            // The latch is set only on a CONCLUSIVE answer. It used to be set before the call, so a
-            // device awaiting recovery-code onboarding checked once, bailed, and then sailed straight
-            // through this guard on every later cycle — pulling ciphertext with E2EE inactive. An
-            // unreachable server is likewise "unknown", not "off": skip the cycle rather than sync
-            // under an assumption that silently blanks encrypted rows.
+            if (await BlocksMarkedAccountWithoutKeyAsync(settings))
+                return null;
+
+            // E2EE may be on for the account from another device. Latch only a conclusive "off": an onboarding
+            // device or an unreachable server must keep skipping cycles rather than pull ciphertext it cannot read.
             if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
@@ -365,26 +447,31 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _hasVerifiedServerE2EEStatus = true;
             }
 
-            var accessToken = await _authService.GetAccessTokenAsync();
-            if (string.IsNullOrEmpty(accessToken))
+            var accessToken = await GetAccessTokenPastE2EEGateAsync();
+            if (accessToken is null)
                 return null;
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
 
-            // Push local changes
             var (pushedCount, pushSucceeded, pushSentChanges) = await PushChangesAsync(client, serverUrl, settings);
+            if (PendingDeviceRevocation is not null)
+                return null;
 
-            // Pull remote changes
-            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
+            if (PendingDeviceRevocation is not null)
+                return null;
 
-            // Only advance the sync cursor if the pull HTTP request succeeded.
-            // Use the server's timestamp as the cursor to avoid clock-skew issues between devices.
-            // If pull failed (network error, server 500, etc.), keep the old timestamp
-            // so the next sync retries from the same point instead of permanently missing data.
-            if (pullOk && serverTimestamp.HasValue)
+            // Keep skipped account settings in the next pull until reset preferences can be replaced.
+            if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
             {
-                settings.LastSyncTimestamp = serverTimestamp.Value;
+                // The push selects rows by this cursor too, so moving it past a failed push strands those edits.
+                if (pushSucceeded)
+                    settings.LastSyncTimestamp = serverTimestamp.Value;
+                else
+                    _logger.LogWarning("Push failed — LastSyncTimestamp NOT updated so the next push retries the same changes");
+                if (!settingsUndecryptable)
+                    settings.SuppressSettingsPushAfterReset = false;
                 await _settingsService.SaveSettingsAsync(settings);
             }
             else if (!pullOk)
@@ -392,16 +479,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
             }
 
-            // Check for pending devices (only if this device is active with E2EE).
-            // Interim (Phase 2.2): moved off the hot path onto a slower cadence — every Nth
-            // eligible cycle instead of every cycle — until the pull response carries
-            // PendingDevices (Phase 5). The first eligible cycle still checks so a device
-            // awaiting approval is surfaced promptly. Worst-case latency at the backoff
-            // ceiling is bounded by also checking on every 200 pull (ServerTimestamp != null):
-            // under the Phase 1 server that is the only signal that something — possibly a
-            // device registration — changed server-side, so it is cheap insurance against the
-            // cadence alone taking up to ~90 min (6 cycles x the 15 min ceiling) to surface a
-            // pending device.
+            // Pending devices are checked every Nth cycle, and on any 200 pull since that is the only hint a
+            // device registered; otherwise the cadence at the backoff ceiling could take ~90 min.
             if (_deviceMgmt is not null && _e2ee?.IsReady() == true)
             {
                 await _deviceMgmt.EnsureRecoveryProofKeyAsync();
@@ -415,12 +494,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                 }
             }
 
-            // Adaptive scheduling: classify this cycle and update the consecutive-idle counter
-            // that ArmNextSyncCycle reads to decide the next delay.
             var outcome = ClassifyCycle(pushSucceeded, pushSentChanges, pulled, pullOk, serverTimestamp);
             _consecutiveIdleCycles = UpdateIdleCycleCount(_consecutiveIdleCycles, outcome);
 
-            result = new SyncResult(pushedCount, pulled, decryptErrors);
+            result = new SyncResult(pushedCount, pulled, decryptErrors, pushSucceeded);
             syncSw.Stop();
             _logger.LogInformation("SyncNowAsync completed in {ElapsedMs}ms — Pushed: {Pushed}, Pulled: {Pulled}, DecryptionErrors: {DecryptErrors}",
                 syncSw.ElapsedMilliseconds, result.PushedCount, result.PulledCount, result.DecryptionErrors);
@@ -431,6 +508,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
         finally
         {
+            _cycleToken = default;
             _syncLock.Release();
         }
         return result;
@@ -440,7 +518,6 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         if (!_authService.IsLoggedIn) return;
 
-        // Blocking: wait for any in-progress sync to finish first
         await _syncLock.WaitAsync();
         try
         {
@@ -452,10 +529,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
                 return;
 
-            // Same readiness gate SyncNowAsync applies. This path pushes EVERY local row with no
-            // dirty filter, so running it while the UMK is missing does double damage: it pulls
-            // ciphertext it cannot read, and it re-uploads whatever is in the local store over the
-            // server's copy. On a restored device the server holds the only copy.
+            // Every local row goes up unfiltered: without the key it would overwrite the server's only copy.
             if (_e2ee is not null && settings.IsE2EEEnabled && !_e2ee.IsReady())
             {
                 _logger.LogWarning("E2EE enabled but UMK not available; skipping first-sync migration");
@@ -463,9 +537,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return;
             }
 
+            if (await BlocksMarkedAccountWithoutKeyAsync(settings))
+                return;
+
             // Local E2EE off is not proof the account's is: a restored device has not activated yet.
-            // Callers reach this method after a CheckE2EEStatusAsync that returns null on an
-            // unreachable server, and null used to read as "no E2EE" and fall straight through.
             if (_e2ee is not null && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
@@ -480,22 +555,19 @@ public class SyncClientService : ISyncClientService, IDisposable
                 }
             }
 
-            var accessToken = await _authService.GetAccessTokenAsync();
-            if (string.IsNullOrEmpty(accessToken))
+            var accessToken = await GetAccessTokenPastE2EEGateAsync();
+            if (accessToken is null)
                 return;
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
 
-            // Build full push request with all local data
             var templates = await _templateService.GetTemplatesAsync();
             var personas = _personaService is not null
                 ? await _personaService.GetPersonasAsync()
                 : [];
             var providers = await _providerService.GetProvidersAsync();
-            // Load every session in pages instead of the old silent 10k cap (GetSessionsAsync(0, 10_000)),
-            // so accounts with more than 10k sessions still migrate fully. The chunked push below bounds
-            // the request bodies, so there is no reason to cap the load either.
+            // Uncapped: the chunked push below already bounds the request bodies.
             var sessions = new List<OptimizationSession>();
             for (var offset = 0; ; offset += SessionLoadPageSize)
             {
@@ -511,10 +583,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var todos = _todoService is not null
                 ? await _todoService.GetAllAsync()
                 : [];
-            // MinValue = "everything": scheduled jobs are cursor-gated in the delta push and
-            // were previously omitted here, so a job edited during an E2EE-onboarding window
-            // (pushed plaintext -> 403, cursor advanced on pull) could never re-sync. Include
-            // them in the full re-push like every other entity.
+            // MinValue: the delta push is cursor-gated, so only a full re-push recovers a job rejected mid-onboarding.
             var scheduledJobs = _scheduledJobService is not null
                 ? await _scheduledJobService.GetModifiedSinceAsync(DateTime.MinValue)
                 : [];
@@ -522,41 +591,27 @@ public class SyncClientService : ISyncClientService, IDisposable
             var isE2EE = _e2ee?.IsReady() == true;
             var userId = isE2EE ? settings.SyncUserId : null;
 
-            // Unlike the delta push, first sync never gates Settings on the hash: it's the one
-            // path where an unchanged-since-last-push local hash can still mean the server needs
-            // a fresh Settings row — e.g. EnableE2EEAsync migrating a previously-plaintext-synced
-            // account (settings content unchanged, but the server's row must switch from
-            // plaintext to E2EE), or a first sync to a brand-new account/server that has no
-            // Settings row at all yet. The byte win from omitting Settings only matters on the
-            // frequent delta push; first sync is rare, so always include them here.
+            // No hash gate: an E2EE migration or a new account needs a fresh server row even when unchanged.
             var settingsHash = SyncMapper.ComputeSettingsHash(settings);
-            const bool settingsChanged = true;
+            var settingsChanged = !settings.SuppressSettingsPushAfterReset;
 
-            // Project every entity to its Sync DTO once, up front. Sessions dominate the volume, so
-            // the push is chunked below by session slices; the (typically small) non-session entities
-            // and Settings ride only the first chunk.
+            // Sessions dominate the volume, so only they are chunked; everything else rides the first batch.
             var templateDtos = templates.Where(t => !t.IsBuiltIn).Select(t => _mapper.ToSyncTemplate(t, userId)).ToList();
-            // !IsManaged as well as !IsBuiltIn: GetPersonasAsync returns built-ins ∪ managed ∪ user rows, and
-            // managed rows are pull-only — an id in personas.upserted would be quarantined server-side, but
-            // the client contract is to never emit one. The filter states that invariant at the push site.
+            // Managed personas are pull-only; the server would quarantine one sent back.
             var personaDtos = personas.Where(p => !p.IsBuiltIn && !p.IsManaged).Select(p => _mapper.ToSyncPersona(p, userId)).ToList();
             var providerDtos = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Select(p => _mapper.ToSyncProvider(p, userId)).ToList();
             var sessionDtos = sessions.Select(s => _mapper.ToSyncSession(s, userId)).ToList();
             var memoryDtos = memories.Select(m => _mapper.ToSyncMemory(m, userId)).ToList();
             var kanbanDtos = kanbanColumns.Select(c => _mapper.ToSyncKanbanColumn(c, userId)).ToList();
             var todoDtos = todos.Select(t => _mapper.ToSyncTodo(t, userId)).ToList();
-            // Meeting-attendance jobs are device-local and never pushed: their MeetingUrl is a bearer token
-            // for the meeting and has no wire field, and a peer on an older build would cast the unknown
-            // Kind ordinal and run the meeting's title through the Research leg.
+            // Device-local: the MeetingUrl is a bearer token with no wire field, and an older peer would run the
+            // unknown Kind as Research.
             var jobDtos = scheduledJobs
                 .Where(j => j.Kind != ScheduledJobKind.MeetingAttendance)
                 .Select(j => _mapper.ToSyncScheduledJob(j, userId)).ToList();
 
-            // Chunk the push into <=FirstSyncBatchSize-session bodies (Sec 6.4) so a large first sync
-            // stays well within the 30/60s rate limit and never ships one multi-MB body. At least one
-            // batch always runs (so an account with no sessions still pushes its other entities +
-            // Settings). Each batch is gzipped via the shared PostPushAsync (server runs
-            // UseRequestDecompression), same as the delta push.
+            // Bounded bodies keep a large first sync inside the 30/60 s rate limit; at least one batch always
+            // runs so an account without sessions still pushes everything else.
             var batchCount = Math.Max(1, (int)Math.Ceiling(sessionDtos.Count / (double)FirstSyncBatchSize));
             var batchSendTimes = new Queue<DateTime>();
             for (var batch = 0; batch < batchCount; batch++)
@@ -594,8 +649,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count, request.ScheduledJobs.Upserted.Count);
             }
 
-            // Persist the settings hash only after every batch pushed successfully (EnsureSuccessAsync
-            // throws otherwise), so a failed push never strands settings behind an advanced hash.
+            // Only after every batch landed (EnsureSuccessAsync throws), or failed settings hide behind the hash.
             await PersistSettingsHashIfChangedAsync(settings, settingsHash, settingsChanged);
 
             if (isE2EE)
@@ -605,13 +659,14 @@ public class SyncClientService : ISyncClientService, IDisposable
                 batchCount, sessionDtos.Count, templateDtos.Count, personaDtos.Count, providerDtos.Count,
                 memoryDtos.Count, kanbanDtos.Count, todoDtos.Count, jobDtos.Count);
 
-            // Pull all data from server (including other devices' data)
-            var (pulled, decryptErrors, pullOk, serverTimestamp) = await PullChangesAsync(client, serverUrl, settings);
+            var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
 
-            if (pullOk && serverTimestamp.HasValue)
+            if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
             {
                 settings.LastSyncTimestamp = serverTimestamp.Value;
+                if (!settingsUndecryptable)
+                    settings.SuppressSettingsPushAfterReset = false;
                 await _settingsService.SaveSettingsAsync(settings);
             }
             else
@@ -750,7 +805,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Headers.ContentEncoding.Add("gzip");
         var pushSw = Stopwatch.StartNew();
-        var response = await client.PostAsync($"{serverUrl}/api/sync/push", content);
+        var response = await client.PostAsync($"{serverUrl}/api/sync/push", content, _cycleToken);
         pushSw.Stop();
         _logger.LogInformation("Push HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pushSw.ElapsedMilliseconds);
         return response;
@@ -809,13 +864,10 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         var pendingDeletes = _deleteTracker.GetPendingDeletes();
 
-        // Settings-hash gate: omit Settings from the push unless the plaintext projection changed
-        // since the last successful push. ToSyncSettings stamps ModifiedAt = UtcNow and (under
-        // E2EE) re-encrypts with a fresh DEK/nonce every call, so the payload always differs on
-        // the wire — hashing plaintext is the only stable change-signal. The server treats absent
-        // Settings as no-change, so omitting them is safe.
+        // Hash the plaintext: the wire payload differs every call (ModifiedAt, fresh DEK). Absent
+        // Settings is no-change to the server; reset defaults are held back until a pull lands.
         var settingsHash = SyncMapper.ComputeSettingsHash(settings);
-        var settingsChanged = settingsHash != settings.LastPushedSettingsHash;
+        var settingsChanged = !settings.SuppressSettingsPushAfterReset && settingsHash != settings.LastPushedSettingsHash;
 
         var request = new SyncPushRequest
         {
@@ -947,7 +999,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (code == E2EEErrorCodes.DeviceRevoked)
             {
                 // The server revoked this device; every further write is futile.
-                RaiseCurrentDeviceRevoked(wasRevoked: true);
+                await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
             }
             else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EERequired)
             {
@@ -1005,24 +1057,12 @@ public class SyncClientService : ISyncClientService, IDisposable
     // cursor can never spin forever.
     private const int MaxPullPages = 1000;
 
-    /// <summary>
-    /// Pulls remote changes, draining the opt-in <c>?limit=</c> pagination (Sec 6.3): each page is
-    /// applied, and while the server reports <see cref="SyncPullResponse.HasMore"/> the loop re-pulls
-    /// with the advanced <c>since</c> cursor (the continuation token). The returned tuple reports the
-    /// aggregate across all drained pages; the returned <c>ServerTimestamp</c> is the last page's, so
-    /// the caller advances the cursor past everything drained.
-    ///
-    /// Server contract this drain depends on (not verifiable from this repo — see the Pia-server
-    /// unit that implements <c>?limit=</c>): on a <c>HasMore=true</c> page, <c>ServerTimestamp</c>
-    /// must be the max <c>SyncedAt</c> actually included in that page (never "server now"), and
-    /// pagination must never split rows that share the same <c>SyncedAt</c> across two pages.
-    /// Otherwise advancing <c>since</c> to it — including the later-page-drain-failure path below,
-    /// which advances the cursor past only the pages successfully applied so far — would silently
-    /// and permanently skip un-drained rows.
-    /// </summary>
-    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
+    /// <summary>Drains every pull page. Relies on the server stamping a HasMore page with its own max SyncedAt
+    /// and never splitting a SyncedAt across pages; otherwise advancing <c>since</c> skips rows.</summary>
+    private async Task<(int Pulled, int DecryptionErrors, bool PullSucceeded, DateTime? ServerTimestamp, bool SettingsUndecryptable)> PullChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
-        var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
+        // The reset guard also covers profiles whose cursor already passed unreadable account settings.
+        var lastSync = settings.SuppressSettingsPushAfterReset ? DateTime.MinValue : settings.LastSyncTimestamp ?? DateTime.MinValue;
         // Ensure UTC Kind so ToString("O") includes the Z suffix — prevents Npgsql
         // timestamptz comparison failures when the server uses PostgreSQL.
         if (lastSync.Kind != DateTimeKind.Utc)
@@ -1031,6 +1071,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         var totalPulled = 0;
         var totalDecryptErrors = 0;
         DateTime? lastServerTimestamp = null;
+        var settingsUndecryptable = false;
 
         for (var page = 0; page < MaxPullPages; page++)
         {
@@ -1040,7 +1081,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var pageResult = await PullPageAsync(client, serverUrl, settings, lastSync, isFirstPage: page == 0);
 
             if (pageResult.NotModified)
-                return (0, 0, true, null); // only reachable on the first page
+                return (0, 0, true, null, false); // only reachable on the first page
 
             if (!pageResult.PullSucceeded)
             {
@@ -1048,13 +1089,14 @@ public class SyncClientService : ISyncClientService, IDisposable
                 // earlier pages were already applied: advance the cursor to the last drained page so
                 // the next sync resumes after them instead of re-pulling from the start.
                 if (page == 0)
-                    return (0, 0, false, null);
+                    return (0, 0, false, null, false);
                 _logger.LogWarning("Pull drain failed on page {Page}; keeping earlier pages and advancing cursor", page);
-                return (totalPulled, totalDecryptErrors, true, lastServerTimestamp);
+                return (totalPulled, totalDecryptErrors, true, lastServerTimestamp, settingsUndecryptable);
             }
 
             totalPulled += pageResult.Pulled;
             totalDecryptErrors += pageResult.DecryptionErrors;
+            settingsUndecryptable |= pageResult.SettingsUndecryptable;
             lastServerTimestamp = pageResult.ServerTimestamp;
 
             // Continue draining only while the server both flags more data AND advances the cursor
@@ -1068,16 +1110,10 @@ public class SyncClientService : ISyncClientService, IDisposable
             break;
         }
 
-        return (totalPulled, totalDecryptErrors, true, lastServerTimestamp);
+        return (totalPulled, totalDecryptErrors, true, lastServerTimestamp, settingsUndecryptable);
     }
 
-    /// <summary>
-    /// Requests and applies a single pull page. Returns the page outcome including
-    /// <c>HasMore</c> so the <see cref="PullChangesAsync"/> drain loop knows whether to continue.
-    /// </summary>
-    /// <summary>
-    /// True when the page holds at least one E2EE row and this client is not in a state to decrypt it.
-    /// </summary>
+    /// <summary>True when the page holds at least one E2EE row and this client is not in a state to decrypt it.</summary>
     private bool CarriesUnreadableCiphertext(SyncPullResponse pull, string? userId)
     {
         if (_e2ee?.IsReady() == true && userId is not null)
@@ -1124,7 +1160,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             + pull.ScheduledJobs.Upserted.RemoveAll(x => x.EncryptedPayload is null);
     }
 
-    private async Task<(bool NotModified, bool PullSucceeded, int Pulled, int DecryptionErrors, DateTime? ServerTimestamp, bool HasMore)> PullPageAsync(HttpClient client, string serverUrl, AppSettings settings, DateTime sinceUtc, bool isFirstPage)
+    private async Task<(bool NotModified, bool PullSucceeded, int Pulled, int DecryptionErrors, DateTime? ServerTimestamp, bool HasMore, bool SettingsUndecryptable)> PullPageAsync(HttpClient client, string serverUrl, AppSettings settings, DateTime sinceUtc, bool isFirstPage)
     {
         var since = sinceUtc.ToString("O");
 
@@ -1150,7 +1186,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         // TryParse (not the EntityTagHeaderValue ctor) so a weak (W/"...") stored ETag never
         // throws FormatException and aborts the whole pull cycle — see AssistantChatSyncService's
         // identical guard for the chat ETag. Only the first page is conditional (see PullChangesAsync).
-        if (isFirstPage && !forceFullCatalog && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
+        if (isFirstPage && !forceFullCatalog && !settings.SuppressSettingsPushAfterReset
+            && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
             pullRequest.Headers.IfNoneMatch.Add(lastPullTag);
 
         if (forceFullCatalog)
@@ -1159,14 +1196,14 @@ public class SyncClientService : ISyncClientService, IDisposable
                 settings.ManagedPersonaStoreInitialized, settings.ClientPolicyInitialized);
 
         var pullSw = Stopwatch.StartNew();
-        var response = await client.SendAsync(pullRequest);
+        var response = await client.SendAsync(pullRequest, _cycleToken);
         pullSw.Stop();
         _logger.LogInformation("Pull HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pullSw.ElapsedMilliseconds);
 
         if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
         {
             _logger.LogDebug("Pull returned 304 Not Modified — no changes since last sync");
-            return (true, true, 0, 0, null, false);
+            return (true, true, 0, 0, null, false, false);
         }
 
         if (!response.IsSuccessStatusCode)
@@ -1177,9 +1214,9 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden
                 && ReadErrorCodeFromBody(body) == E2EEErrorCodes.DeviceRevoked)
             {
-                RaiseCurrentDeviceRevoked(wasRevoked: true);
+                await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
             }
-            return (false, false, 0, 0, null, false);
+            return (false, false, 0, 0, null, false, false);
         }
 
         // Read the response ETag here but PERSIST IT ONLY AFTER EVERY APPLY BELOW SUCCEEDS — it rides the
@@ -1197,7 +1234,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             : null;
 
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
-        if (pullResponse is null) return (false, false, 0, 0, null, false);
+        if (pullResponse is null) return (false, false, 0, 0, null, false, false);
 
         // The server's current catalog version is applied further down, only after the page's
         // entities have been fully applied (see the persist just before the return below). The
@@ -1244,7 +1281,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 + "(e2eeReady: {Ready}, userId present: {HasUserId}) — refusing the page and keeping the sync cursor",
                 _e2ee?.IsReady() == true, userId is not null);
             NotifyE2EEOnboardingRequired();
-            return (false, false, 0, 0, null, false);
+            return (false, false, 0, 0, null, false, false);
         }
 
         var shellsDropped = DropUnmigratedShells(pullResponse);
@@ -1263,6 +1300,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         var mergeDeleted = 0;
 
         var settingsApplied = false;
+        var settingsUndecryptable = false;
         var providersApplied = false;
 
         // Apply settings
@@ -1279,6 +1317,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             catch (CryptographicException ex)
             {
                 decryptionErrors++;
+                settingsUndecryptable = true;
                 _logger.LogWarning(ex, "Failed to decrypt synced settings; skipping");
             }
         }
@@ -1892,7 +1931,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             _logger.LogWarning(ex, "SyncCompleted handler threw — sync continues");
         }
 
-        return (false, true, pulledCount, decryptionErrors, pullResponse.ServerTimestamp, pullResponse.HasMore == true);
+        return (false, true, pulledCount, decryptionErrors, pullResponse.ServerTimestamp, pullResponse.HasMore == true, settingsUndecryptable);
     }
 
     private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)
@@ -1904,7 +1943,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _logger.SensitiveDebug("{Operation} failure body: {Body}", operation, body);
         if (ReadErrorCodeFromBody(body) == E2EEErrorCodes.DeviceRevoked)
         {
-            RaiseCurrentDeviceRevoked(wasRevoked: true);
+            await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
         }
         throw new HttpRequestException(
             $"{operation} failed ({(int)response.StatusCode}): {body}");
@@ -1926,14 +1965,24 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
     }
 
-    // The server has made this decision for the account: stop knocking, and tell the UI once.
-    // A cycle already in flight may still finish; its re-arm is cancelled by the generation bump.
-    private void RaiseCurrentDeviceRevoked(bool wasRevoked)
+    private async Task RaiseCurrentDeviceRevokedAsync(bool wasRevoked)
     {
         if (_revokedNoticeRaised) return;
         _revokedNoticeRaised = true;
         StopBackgroundSync();
-        CurrentDeviceRevoked?.Invoke(this, new CurrentDeviceRevokedEventArgs(wasRevoked));
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            settings.ForgetE2EEKey();
+            await _settingsService.SaveSettingsAsync(settings);
+        }
+        finally
+        {
+            _e2ee?.ClearCachedUmk();
+            PendingDeviceRevocation = new CurrentDeviceRevokedEventArgs(wasRevoked);
+            NotifyE2EEOnboardingRequired();
+            CurrentDeviceRevoked?.Invoke(this, PendingDeviceRevocation);
+        }
     }
 
     private async Task CheckForPendingDevicesAsync()
@@ -1955,7 +2004,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                         "Current device {DeviceId} was {Status} on server — raising CurrentDeviceRevoked",
                         currentDeviceId,
                         currentDevice is null ? "not found" : "revoked");
-                    RaiseCurrentDeviceRevoked(wasRevoked: currentDevice is not null);
+                    await RaiseCurrentDeviceRevokedAsync(wasRevoked: currentDevice is not null);
                     return;
                 }
 

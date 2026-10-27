@@ -558,10 +558,82 @@ public class AppSettings
     /// <summary>Drops this device's copy of the account key and the state that says it can be used.</summary>
     public void ForgetE2EEKey()
     {
+        // An active key may be the only local record that the account requires E2EE.
+        if (IsE2EEEnabled)
+            MarkE2EERequiredForAccount();
         IsE2EEEnabled = false;
         E2EEEncryptedUmk = null;
         E2EEUmkVersion = 0;
         E2EERecoveryConfigured = false;
+    }
+
+    // Outlives sign-out and the local-data wipe: a later "E2EE off" from the server is a downgrade to refuse.
+    public List<string> E2EERequiredAccountIds { get; set; } = [];
+
+    public bool IsE2EERequiredForAccount() =>
+        SyncUserId is { } id && E2EERequiredAccountIds.Contains(id, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True when the signed-in account was newly marked, so the caller knows to save.</summary>
+    public bool MarkE2EERequiredForAccount()
+    {
+        if (SyncUserId is not { Length: > 0 } id || IsE2EERequiredForAccount())
+            return false;
+        E2EERequiredAccountIds.Add(id);
+        return true;
+    }
+
+    public void UnmarkE2EERequiredForAccount()
+    {
+        if (SyncUserId is { } id)
+            E2EERequiredAccountIds.RemoveAll(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Set by a local-data clear; the next pushes omit Settings until a pull has applied the account's.</summary>
+    public bool SuppressSettingsPushAfterReset { get; set; }
+
+    internal static readonly IReadOnlyList<string> SyncedPreferenceNames =
+    [
+        nameof(DefaultOutputAction), nameof(DefaultTemplateId), nameof(WhisperModel), nameof(AutoTypeDelayMs),
+        nameof(Theme), nameof(StartMinimized), nameof(TargetLanguage), nameof(TargetSpeechLanguage),
+        nameof(DefaultWindowMode), nameof(ModeProviderDefaults), nameof(ModePersonaDefaults),
+        nameof(UseSameProviderForAllModes), nameof(AssistantDefaultWorkingDirectory),
+    ];
+
+    public void ClearAccountState()
+    {
+        // First, while the account id still names the key's owner; the server keeps this device's wrapped copy.
+        ForgetE2EEKey();
+        SyncEnabled = false;
+        EncryptedAccessToken = null;
+        EncryptedRefreshToken = null;
+        SyncUserId = null;
+        SyncUserEmail = null;
+        SyncUserDisplayName = null;
+        SyncProvider = null;
+        LastSyncTimestamp = null;
+        AssistantChatsBackfilledAt = null;
+        // Stale hash or ETags would let a later login, same or different account, skip rows or pull nothing.
+        LastPushedSettingsHash = null;
+        LastChatPullETag = null;
+        LastPullETag = null;
+        ClientPolicyInitialized = false;
+    }
+
+    public void ResetSyncedData()
+    {
+        var defaults = new AppSettings();
+        var type = typeof(AppSettings);
+        foreach (var name in SyncedPreferenceNames)
+        {
+            var property = type.GetProperty(name)!;
+            property.SetValue(this, property.GetValue(defaults));
+        }
+
+        ManagedPersonaStoreInitialized = false;
+        LastCatalogVersion = null;
+        AssistantChatsEncryptedResendAt = null;
+        BlankedSyncRowRepairAt = null;
+        SuppressSettingsPushAfterReset = true;
     }
 
     // One-shot marker for the blanked-row repair. A build before the E2EE pull guard could write

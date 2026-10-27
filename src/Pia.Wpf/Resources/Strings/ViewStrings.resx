@@ -995,17 +995,42 @@
   <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Content you sync from this account is stored unencrypted on the Pia server. Turn on end-to-end encryption so that only your devices can read it.</value></data>
   <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Turn on encryption</value></data>
   <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Not now</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Sync is paused: the server says this account is no longer end-to-end encrypted.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Review</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Encryption turned off on the server</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>This account used end-to-end encryption, but the server now reports it as unencrypted. Sync is paused so your data is not sent in plain text. If nobody reset this account's encryption on purpose, do not continue, and contact your administrator.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Sync without encryption</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Sync without encryption?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Only continue if this account's encryption was reset on purpose. Your data will then be sent to the server without end-to-end encryption, and this device will stop warning you about it.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>New device requesting access</value></data>
-  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>A new device wants to join your account.&#xA;&#xA;Device: {0}&#xA;Fingerprint: {1}&#xA;&#xA;Compare this fingerprint with the one shown on the new device and approve only if they match. The new device then asks you to compare the fingerprint of this device: {2}&#xA;&#xA;Do you want to approve this device?</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>A new device wants to join your account. Approve it only if you just signed in on that device yourself and both fingerprints below match.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>The name of this device contained hidden or control characters. They were removed before display. Be cautious: approve only if you are certain this is your device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Requesting device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Device name</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Fingerprint</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Compare this fingerprint character by character with the one shown on the new device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>This device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>After you approve, the new device asks you to confirm this fingerprint.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Approve</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Don't approve</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unnamed device</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Reject device?</value></data>
-  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke {0}? If you don't recognize this device, revoke it.</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke this device? If you don't recognize it, revoke it.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Device approved</value></data>
-  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} has been approved and can now sync.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>The device has been approved and can now sync.</value></data>
   <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Device removed</value></data>
   <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>This device was revoked on the server. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>
   <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>This device is no longer registered on the server — its record was deleted or expired. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>
   <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Set up this device again</value></data>
   <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Sign out</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Device not approved</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} could not be approved. Check your connection and try again from Settings → Account.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>No requests</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>No device is waiting for approval.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Check failed</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia could not check for devices waiting for approval.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Encryption not turned on</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>End-to-end encryption could not be turned on. Check your connection and try again.</value></data>
   <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Signed out</value></data>
   <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Your session ended or was revoked on the server. Please sign in again.</value></data>
   <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>The server refused to renew your session. Please sign in again.</value></data>
@@ -1782,4 +1807,25 @@
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Locked by your organization: this setting is enforced by Pia policy and cannot be changed here.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Sign out of Pia Cloud</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Do you also want to remove this account's data from this device? This covers chats, history, todos, templates, personas, your own AI providers and synced preferences. Everything stays in your Pia Cloud account and comes back when you sign in again. Clearing restarts Pia.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Sign out and clear</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Sign out and keep</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Before you sign in</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>There is data on this device. If you keep it, it is uploaded into the account you sign in to. If you clear it first, Pia removes it from this device, including changes made while you were signed out, and restarts. You then need to sign in again.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Keep and sign in</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Clear first</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>Pia's memory on this device is not removed and stays available after you switch accounts.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>API keys for your own AI providers are not stored in Pia Cloud. You will need to enter them again.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API keys for your own AI providers are removed from this device. Unless your account uses end-to-end encryption, you will need to enter them again.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Couldn't upload your latest changes</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Some changes on this device have not reached Pia Cloud. Clear this device anyway? Changes that were not uploaded are lost.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Uploading your latest changes…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Signing out…</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Local data not removed yet</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia couldn't finish removing local data. Restart Pia now to try again?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Account deleted</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Your Pia Cloud account has been deleted. Do you also want to remove its data from this device? Clearing restarts Pia. This cannot be undone.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Clear this device</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Keep on this device</value></data>
 </root>

@@ -56,7 +56,7 @@ public class AppRestartService : IAppRestartService
             _logger.LogWarning(ex, "Failed to tear the UI down before restarting");
         }
 
-        _logger.LogInformation("Restarting to apply a changed policy");
+        _logger.LogInformation("Restarting Pia");
         RequestRestartAndShutdown();
     }
 
