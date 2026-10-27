@@ -593,9 +593,7 @@ public class AuthService : IAuthService
         }
     }
 
-    // Signs out through the normal path, then tells listeners why — LoginStateChanged alone
-    // cannot say that this was not the user's own doing.
-    private async Task SignOutUnexpectedlyAsync(AuthSignOutReason reason)
+    public async Task SignOutUnexpectedlyAsync(AuthSignOutReason reason)
     {
         await LogoutAsync();
         SignedOutUnexpectedly?.Invoke(this, new AuthSignedOutEventArgs(reason));

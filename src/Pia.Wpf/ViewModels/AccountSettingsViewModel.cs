@@ -892,28 +892,38 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             }
             else
             {
-                _snackbarService.Show("No Requests", "No pending device requests found.",
-                    Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(3));
+                ShowAccountSnackbar("Settings_E2EE_PendingDevices_None_Title",
+                    "Settings_E2EE_PendingDevices_None_Message", Wpf.Ui.Controls.ControlAppearance.Info);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to check for pending devices");
-            _snackbarService.Show("Error", "Failed to check for pending devices.",
-                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+            ShowAccountSnackbar("Settings_E2EE_PendingDevices_CheckFailed_Title",
+                "Settings_E2EE_PendingDevices_CheckFailed_Message", Wpf.Ui.Controls.ControlAppearance.Danger);
         }
     }
 
     private async Task HandlePendingDevicesAsync(List<DeviceInfo> pendingDevices)
     {
-        foreach (var device in pendingDevices)
+        for (var i = 0; i < pendingDevices.Count; i++)
         {
+            var device = pendingDevices[i];
+            if (i > 0)
+            {
+                var (canApprove, stillPending) = await RecheckPendingDeviceAsync(device.DeviceId);
+                if (!canApprove)
+                    return;
+                if (stillPending is null)
+                    continue;
+                device = stillPending;
+            }
+
+            var name = DeviceNameDisplay.Sanitize(device.DeviceName);
+            var displayName = name.Text.Length > 0 ? name.Text : _localizationService["Settings_E2EE_UnnamedDevice"];
             try
             {
                 var fingerprint = _deviceKeys.ComputeFingerprint(device.AgreementPublicKey);
-                var name = DeviceNameDisplay.Sanitize(device.DeviceName);
-                var displayName = name.Text.Length > 0 ? name.Text : _localizationService["Settings_E2EE_UnnamedDevice"];
-
                 var approved = await _dialogService.ShowDeviceApprovalDialogAsync(new DeviceApprovalPrompt(
                     displayName, name.HadHiddenCharacters, fingerprint, _deviceKeys.GetFingerprint()));
 
@@ -937,14 +947,54 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                     }
                 }
             }
+            catch (DeviceRegistrationRejectedException ex) when (ex.Code == E2EEErrorCodes.SessionEnded)
+            {
+                // The sign-out notice already told the user; no device can be approved from here now.
+                _logger.LogWarning("Stopped handling pending devices: this session has ended");
+                return;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle pending device {DeviceId}", device.DeviceId);
-                var message = ex is DeviceRegistrationRejectedException rejection ? rejection.UserMessage : ex.Message;
-                _snackbarService.Show("Error", $"Failed to approve device: {message}",
-                    Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+                // A dialog, not a snackbar: the prompt can be raised while Settings is not the open view.
+                var message = ex is DeviceRegistrationRejectedException rejection
+                    ? rejection.UserMessage
+                    : _localizationService.Format("Settings_E2EE_PendingDevices_ApproveFailed_Message", displayName);
+                await _dialogService.ShowMessageDialogAsync(
+                    _localizationService["Settings_E2EE_PendingDevices_ApproveFailed_Title"], message);
             }
         }
+    }
+
+    // CanApprove is false once this device is no longer Active or signed in; Device is null when that request is settled.
+    private async Task<(bool CanApprove, DeviceInfo? Device)> RecheckPendingDeviceAsync(string deviceId)
+    {
+        if (!_authService.IsLoggedIn)
+            return (false, null);
+
+        DeviceListResponse devices;
+        try
+        {
+            devices = await _deviceManagement.GetDevicesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not re-read the device list; stopped handling pending devices");
+            return (false, null);
+        }
+
+        var ownId = _deviceKeys.GetDeviceId();
+        if (devices.Devices.FirstOrDefault(d => d.DeviceId == ownId) is not { Status: DeviceStatus.Active })
+        {
+            _logger.LogWarning("Stopped handling pending devices: this device is no longer active");
+            return (false, null);
+        }
+
+        var device = devices.Devices.FirstOrDefault(d =>
+            d.DeviceId == deviceId && d.Status == DeviceStatus.Pending && d.OnboardingSessionId is not null);
+        if (device is null)
+            _logger.LogInformation("Skipping device {DeviceId}: it is no longer pending", deviceId);
+        return (true, device);
     }
 
     private async Task EnableE2EEAsync()
@@ -986,8 +1036,10 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             }
             else
             {
-                var message = ex is DeviceRegistrationRejectedException rejection ? rejection.UserMessage : ex.Message;
-                _snackbarService.Show("Error", $"Failed to enable E2EE: {message}",
+                var message = ex is DeviceRegistrationRejectedException rejection
+                    ? rejection.UserMessage
+                    : _localizationService["Settings_E2EE_EnableFailed_Message"];
+                _snackbarService.Show(_localizationService["Settings_E2EE_EnableFailed_Title"], message,
                     Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
             }
         }

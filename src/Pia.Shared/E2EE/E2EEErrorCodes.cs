@@ -31,4 +31,7 @@ public static class E2EEErrorCodes
 
     /// <summary>The onboarding session is spent, invalid or expired.</summary>
     public const string InvalidOnboardingSession = "invalid_onboarding_session";
+
+    /// <summary>The session behind the bearer token is gone on the server; only a new sign-in helps.</summary>
+    public const string SessionEnded = "session_ended";
 }

@@ -246,9 +246,12 @@ public class DeviceManagementService : IDeviceManagementService
         var deviceId = _deviceKeys.GetDeviceId();
         using var client = await CreateAuthorizedClientAsync();
 
-        var wrappedBlob = await client.GetFromJsonAsync<WrappedUmkBlob>(
-            $"api/e2ee/devices/{deviceId}/wrapped-umk");
+        using var response = await client.GetAsync($"api/e2ee/devices/{deviceId}/wrapped-umk");
+        if (!response.IsSuccessStatusCode)
+            await SignOutIfSessionEndedAsync(response.StatusCode, await ReadErrorCodeAsync(response));
+        response.EnsureSuccessStatusCode();
 
+        var wrappedBlob = await response.Content.ReadFromJsonAsync<WrappedUmkBlob>();
         if (wrappedBlob is null)
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
@@ -477,10 +480,24 @@ public class DeviceManagementService : IDeviceManagementService
         using var client = await CreateAuthorizedClientAsync();
         var response = await client.PostAsJsonAsync("api/e2ee/devices/register", request);
         if (!response.IsSuccessStatusCode)
-            throw await ReadRegistrationRejectionAsync(response);
+        {
+            var rejection = await ReadRegistrationRejectionAsync(response);
+            await SignOutIfSessionEndedAsync(response.StatusCode, rejection.Code);
+            throw rejection;
+        }
 
         return await response.Content.ReadFromJsonAsync<DeviceRegistrationResponse>()
             ?? throw new InvalidOperationException("Invalid registration response");
+    }
+
+    // No refresh first: the refresh token died with the session, so only a new sign-in helps.
+    private async Task SignOutIfSessionEndedAsync(HttpStatusCode status, string? code)
+    {
+        if (status != HttpStatusCode.Conflict || code != E2EEErrorCodes.SessionEnded)
+            return;
+
+        _logger.LogWarning("The server ended this session; signing out");
+        await _auth.SignOutUnexpectedlyAsync(AuthSignOutReason.ServerRejectedSession);
     }
 
     private async Task<DeviceRegistrationRejectedException> ReadRegistrationRejectionAsync(
@@ -502,6 +519,7 @@ public class DeviceManagementService : IDeviceManagementService
         E2EEErrorCodes.DeviceMismatch => "E2EE_Register_DeviceMismatch",
         E2EEErrorCodes.TooManyPendingDevices => "E2EE_Register_TooManyPending",
         E2EEErrorCodes.DeviceChanged => "E2EE_Register_DeviceChanged",
+        E2EEErrorCodes.SessionEnded => "Auth_SignedOut_Rejected",
         _ => "E2EE_Register_Generic",
     };
 

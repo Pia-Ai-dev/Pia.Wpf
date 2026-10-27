@@ -102,13 +102,50 @@ public class DeviceManagementServiceRegistrationTests
             Assert.Empty(logger.ReceivedCalls());
     }
 
+    [Fact]
+    public async Task SessionEndedOnRegister_SignsOutOnceWithTheRejectedReason()
+    {
+        var auth = Substitute.For<IAuthService>();
+        var sut = CreateSut(HttpStatusCode.Conflict, """{"error":"session_ended"}""", auth: auth);
+
+        var ex = await Assert.ThrowsAsync<DeviceRegistrationRejectedException>(
+            () => sut.RegisterPendingDeviceAsync());
+
+        Assert.Equal(E2EEErrorCodes.SessionEnded, ex.Code);
+        await auth.Received(1).SignOutUnexpectedlyAsync(Arg.Any<AuthSignOutReason>());
+        await auth.Received(1).SignOutUnexpectedlyAsync(AuthSignOutReason.ServerRejectedSession);
+        await auth.DidNotReceive().GetAccessTokenAsync(true, Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task SessionEndedOnTheKeyFetch_SignsOutOnce()
+    {
+        var auth = Substitute.For<IAuthService>();
+        var sut = CreateSut(HttpStatusCode.Conflict, """{"error":"session_ended"}""", auth: auth);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => sut.FetchKeyHandoverAsync());
+
+        await auth.Received(1).SignOutUnexpectedlyAsync(AuthSignOutReason.ServerRejectedSession);
+    }
+
+    [Fact]
+    public async Task TooManyPendingDevices_DoesNotSignOut()
+    {
+        var auth = Substitute.For<IAuthService>();
+        var sut = CreateSut(HttpStatusCode.Conflict, """{"error":"too_many_pending_devices"}""", auth: auth);
+
+        await Assert.ThrowsAsync<DeviceRegistrationRejectedException>(() => sut.RegisterPendingDeviceAsync());
+
+        await auth.DidNotReceive().SignOutUnexpectedlyAsync(Arg.Any<AuthSignOutReason>());
+    }
+
     private static DeviceManagementService CreateSut(HttpStatusCode status, string body,
-        ILogger<DeviceManagementService>? logger = null)
+        ILogger<DeviceManagementService>? logger = null, IAuthService? auth = null)
     {
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings { ServerUrl = "https://test.example.com" });
 
-        var auth = Substitute.For<IAuthService>();
+        auth ??= Substitute.For<IAuthService>();
         auth.GetAccessTokenAsync().Returns("token");
 
         var deviceKeys = Substitute.For<IDeviceKeyService>();
