@@ -953,6 +953,28 @@ public class ScheduledJobServiceTests : IDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
+    [Fact]
+    public async Task ReassignOwnerAsync_MovesOnlyTheOldDevicesJobsAndMarksThemForSync()
+    {
+        var oldDevice = Guid.NewGuid();
+        var newDevice = Guid.NewGuid();
+        var otherDevice = Guid.NewGuid();
+        var mine = await _service.CreateAsync("TEST_Mine", "q", RecurrenceType.Daily, new TimeOnly(8, 0));
+        var theirs = await _service.CreateAsync("TEST_Theirs", "q", RecurrenceType.Daily, new TimeOnly(8, 0));
+        await ForceOwnerAsync(mine.Id, oldDevice);
+        await ForceOwnerAsync(theirs.Id, otherDevice);
+        var before = (await _service.GetAsync(mine.Id))!.UpdatedAt;
+
+        var moved = await _service.ReassignOwnerAsync(oldDevice, newDevice);
+
+        Assert.Equal(1, moved);
+        var reowned = (await _service.GetAsync(mine.Id))!;
+        Assert.Equal(newDevice, reowned.OwnerDeviceId);
+        Assert.True(reowned.UpdatedAt >= before);
+        Assert.Contains(reowned.Id, (await _service.GetModifiedSinceAsync(before)).Select(j => j.Id));
+        Assert.Equal(otherDevice, (await _service.GetAsync(theirs.Id))!.OwnerDeviceId);
+    }
+
     private async Task ForceNextFireAtAsync(Guid id, DateTime when)
     {
         var conn = _ctx.GetConnection();

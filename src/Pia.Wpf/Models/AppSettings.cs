@@ -535,6 +535,23 @@ public class AppSettings
     public string? LastChatPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
+    // The id this computer had before its keys were lost; outlives sign-out so the new device can revoke it.
+    public string? ReplacedDeviceId { get; set; }
+    public string? ReplacedDeviceAccountId { get; set; }
+
+    /// <summary>The replaced id of this computer, when it belongs to the signed-in account.</summary>
+    public string? PreviousInstallationToRemove() =>
+        ReplacedDeviceId is { Length: > 0 } id && SyncUserId is { Length: > 0 } user
+            && string.Equals(user, ReplacedDeviceAccountId, StringComparison.OrdinalIgnoreCase)
+            ? id
+            : null;
+
+    public void ForgetPreviousInstallation()
+    {
+        ReplacedDeviceId = null;
+        ReplacedDeviceAccountId = null;
+    }
+
     // App+OS version last accepted by the server, so the token requests that carry them stay bare
     // once the pair is current. Cleared value = report on the next token request.
     public string? ReportedDeviceMetadata { get; set; }

@@ -50,7 +50,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 48, 6, "McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView's one DataTemplate (the credit rows) holds no interactive control, so no per-item floor.
-    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 19, 0, "E2EEOnboardingView")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 20, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 4, 0, "TemplatesView")]
     [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 13, 0, "PiaEmptyState")]
     [InlineData(typeof(Pia.Views.AssistantView), 34, 7,

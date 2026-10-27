@@ -51,11 +51,11 @@ public interface IDeviceKeyService
     /// </summary>
     bool HasDeviceKeys();
 
-    /// <summary>
-    /// True when this device holds a stored account key but its CNG device keys were gone and had
-    /// to be recreated under the same device id — old wrapped copies can no longer be opened here.
-    /// </summary>
+    /// <summary>True when this device held the account key but its CNG keys were gone and had to be recreated.</summary>
     bool KeyLossDetected { get; }
+
+    /// <summary>Switches to a new device id with fresh keys and remembers the old id for removal; returns the old id.</summary>
+    string StartNewDevice();
 
     /// <summary>True when a signing key exists locally; never creates one.</summary>
     bool CanSign();

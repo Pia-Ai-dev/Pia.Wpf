@@ -162,6 +162,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 {
                     AuthSignOutReason.SessionExpired => "Auth_SignedOut_Expired",
                     AuthSignOutReason.ServerRejectedSession => "Auth_SignedOut_Rejected",
+                    AuthSignOutReason.DeviceKeysLost => "E2EE_Onboarding_KeyLost",
                     _ => "Auth_SignedOut_Unreadable",
                 }];
                 _snackbarService.Show(
@@ -346,7 +347,15 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [NotifyPropertyChangedFor(nameof(IsE2EEToggleEnabled))]
     [NotifyPropertyChangedFor(nameof(IsE2EEOffNoticeVisible))]
     [NotifyCanExecuteChangedFor(nameof(EnableE2EEFromNoticeCommand))]
+    [NotifyPropertyChangedFor(nameof(IsPreviousInstallationVisible))]
     private bool _isE2EEEnabled;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPreviousInstallationVisible))]
+    private string? _previousInstallationId;
+
+    // Only an active device can sign the revoke of the id this computer had before its keys were lost.
+    public bool IsPreviousInstallationVisible => IsE2EEEnabled && PreviousInstallationId is not null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsE2EEToggleEnabled))]
@@ -470,6 +479,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     {
         TrustSelfSignedCertificates = settings.TrustSelfSignedCertificates;
         LastSyncText = FormatRelativeTime(settings.LastSyncTimestamp);
+        PreviousInstallationId = settings.PreviousInstallationToRemove();
     }
 
     private void UpdateSyncState()
@@ -875,6 +885,43 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private void ShowAccountSnackbar(string titleKey, string messageKey, Wpf.Ui.Controls.ControlAppearance appearance) =>
         _snackbarService.Show(_localizationService[titleKey], _localizationService[messageKey],
             appearance, null, TimeSpan.FromSeconds(6));
+
+    [RelayCommand]
+    private async Task RemovePreviousInstallationAsync()
+    {
+        if (PreviousInstallationId is not { } previous)
+            return;
+        if (!await _dialogService.ShowConfirmationDialogAsync(
+                _localizationService["Settings_E2EE_RemovePreviousInstallation_Confirm_Title"],
+                _localizationService["Settings_E2EE_RemovePreviousInstallation_Confirm_Message"]))
+            return;
+
+        try
+        {
+            await _deviceManagement.RevokeDeviceAsync(previous);
+        }
+        catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            _logger.LogInformation("The previous installation of this computer is no longer on the server");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Removing the previous installation of this computer failed");
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Settings_E2EE_RemovePreviousInstallation_Failed_Title"],
+                _localizationService[ex is DeviceSignatureRefusedException
+                    ? "Settings_E2EE_SignatureRefused_Message"
+                    : "Settings_E2EE_RemovePreviousInstallation_Failed_Message"]);
+            return;
+        }
+
+        var settings = await _settingsService.GetSettingsAsync();
+        settings.ForgetPreviousInstallation();
+        await _settingsService.SaveSettingsAsync(settings);
+        PreviousInstallationId = null;
+        ShowAccountSnackbar("Settings_E2EE_RemovePreviousInstallation_Done_Title",
+            "Settings_E2EE_RemovePreviousInstallation_Done_Message", Wpf.Ui.Controls.ControlAppearance.Success);
+    }
 
     [RelayCommand]
     private async Task CheckForPendingDevicesAsync()

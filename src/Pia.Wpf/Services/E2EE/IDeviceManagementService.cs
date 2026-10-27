@@ -45,6 +45,9 @@ public interface IDeviceManagementService
     /// </summary>
     Task RevokeDeviceAsync(string deviceId);
 
+    /// <summary>Gives this computer a new device id after its keys were lost, then signs out for a fresh session.</summary>
+    Task ReplaceLostDeviceAsync();
+
     /// <summary>
     /// Get the list of all devices for the current user.
     /// </summary>

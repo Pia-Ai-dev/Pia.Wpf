@@ -465,6 +465,20 @@
                    AutomationProperties.AutomationId="Settings_Account_CheckForPendingDevices"
                    HorizontalAlignment="Left"
                    Margin="0,0,0,8"/>
+        <StackPanel Visibility="{Binding IsPreviousInstallationVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <TextBlock Text="{loc:Str Settings_E2EE_PreviousInstallation_Text}"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,8"/>
+          <ui:Button Content="{loc:Str Settings_E2EE_RemovePreviousInstallation}"
+                     Icon="{ui:SymbolIcon Delete24}"
+                     Appearance="Secondary"
+                     Command="{Binding RemovePreviousInstallationCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_RemovePreviousInstallation"
+                     HorizontalAlignment="Left"
+                     Margin="0,0,0,8"/>
+        </StackPanel>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

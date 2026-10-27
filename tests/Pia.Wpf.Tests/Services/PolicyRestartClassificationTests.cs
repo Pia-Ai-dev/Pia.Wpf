@@ -131,6 +131,8 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.LastPushedSettingsHash),
         nameof(AppSettings.LastSyncTimestamp),
         nameof(AppSettings.ManagedPersonaStoreInitialized),
+        nameof(AppSettings.ReplacedDeviceAccountId),
+        nameof(AppSettings.ReplacedDeviceId),
         nameof(AppSettings.ReportedDeviceMetadata),
         nameof(AppSettings.SuppressSettingsPushAfterReset),
         nameof(AppSettings.SyncDeviceId),
@@ -189,7 +191,7 @@ public class PolicyRestartClassificationTests
     {
         Assert.True(
             LiveAlready.Length == 51 && LiveWithWork.Length == 24
-                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 30,
+                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 32,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
 

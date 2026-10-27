@@ -123,7 +123,7 @@ public sealed class DeviceManagementServiceRecoveryTests : IDisposable
         auth.GetAccessTokenAsync().Returns("token-1");
 
         return new DeviceManagementService(
-            _e2ee, _keys, _recovery, _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(),
+            _e2ee, _keys, _recovery, _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), Substitute.For<IScheduledJobService>(), new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
     }
 

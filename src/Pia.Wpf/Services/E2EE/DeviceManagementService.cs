@@ -21,6 +21,7 @@ public class DeviceManagementService : IDeviceManagementService
     private readonly IAuthService _auth;
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfirmedApproverStore _confirmedApprovers;
+    private readonly IScheduledJobService _scheduledJobs;
     private readonly IDeviceRequestSigner _signer;
     private readonly ILogger<DeviceManagementService> _logger;
 
@@ -35,6 +36,7 @@ public class DeviceManagementService : IDeviceManagementService
         IAuthService auth,
         IHttpClientFactory httpFactory,
         IConfirmedApproverStore confirmedApprovers,
+        IScheduledJobService scheduledJobs,
         IDeviceRequestSigner signer,
         ILogger<DeviceManagementService> logger)
     {
@@ -45,6 +47,7 @@ public class DeviceManagementService : IDeviceManagementService
         _auth = auth;
         _httpFactory = httpFactory;
         _confirmedApprovers = confirmedApprovers;
+        _scheduledJobs = scheduledJobs;
         _signer = signer;
         _logger = logger;
     }
@@ -94,6 +97,27 @@ public class DeviceManagementService : IDeviceManagementService
         _logger.LogInformation("E2EE bootstrap complete for device {DeviceId}", deviceId);
 
         return recoveryCode;
+    }
+
+    public async Task ReplaceLostDeviceAsync()
+    {
+        var previous = _deviceKeys.StartNewDevice();
+        var current = _deviceKeys.GetDeviceId();
+        if (Guid.TryParse(previous, out var from) && Guid.TryParse(current, out var to))
+        {
+            try
+            {
+                var moved = await _scheduledJobs.ReassignOwnerAsync(from, to);
+                _logger.LogInformation("Moved {Count} scheduled job(s) to the new device id", moved);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not move this computer's scheduled jobs to the new device id");
+            }
+        }
+
+        // The session stays tied to the old id on the server, so only a fresh sign-in can register the new one.
+        await _auth.SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
     }
 
     public async Task<DeviceRegistrationResponse> RegisterPendingDeviceAsync()

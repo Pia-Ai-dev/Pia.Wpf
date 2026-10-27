@@ -35,6 +35,25 @@ public class DeviceKeyService : IDeviceKeyService
         return _cachedDeviceId;
     }
 
+    public string StartNewDevice()
+    {
+        var settings = _settings.GetSettingsAsync().GetAwaiter().GetResult();
+        var previous = GetDeviceId();
+        settings.ReplacedDeviceId = previous;
+        settings.ReplacedDeviceAccountId = settings.SyncUserId;
+        settings.SyncDeviceId = Guid.NewGuid().ToString();
+        _settings.SaveSettingsAsync(settings).GetAwaiter().GetResult();
+
+        _cachedDeviceId = settings.SyncDeviceId;
+        _ecdh?.Dispose();
+        _ecdh = null;
+        _ecdsa?.Dispose();
+        _ecdsa = null;
+        KeyLossDetected = false;
+        _logger.LogWarning("Replaced device {Previous} with new device id {DeviceId}", previous, _cachedDeviceId);
+        return previous;
+    }
+
     public string GetAgreementPublicKey()
     {
         EnsureEcdhKey();
@@ -176,8 +195,7 @@ public class DeviceKeyService : IDeviceKeyService
     }
 
     // Only a device that already holds a UMK ever had keys worth missing; on a fresh device
-    // this creation is the normal first use. New keys under the old id re-register (and the
-    // server may refuse), but they make the recovery-code flow possible at all.
+    // this creation is the normal first use.
     private void NoteKeyLossIfPreviouslyUnlocked(string keyName)
     {
         var settings = _settings.GetSettingsAsync().GetAwaiter().GetResult();
@@ -187,7 +205,7 @@ public class DeviceKeyService : IDeviceKeyService
         KeyLossDetected = true;
         _logger.LogWarning(
             "Device key {KeyName} is gone while this device still holds the account key; " +
-            "a fresh key is created under the same id and the device must be recovered", keyName);
+            "the device must be replaced under a new id", keyName);
     }
 
     private static string ExportUncompressedPoint(ECParameters parameters)

@@ -636,6 +636,18 @@ public class ScheduledJobService : IScheduledJobService
         return nextFire;
     }
 
+    public async Task<int> ReassignOwnerAsync(Guid from, Guid to)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "UPDATE ScheduledJobs SET OwnerDeviceId = @To, UpdatedAt = @UpdatedAt WHERE OwnerDeviceId = @From";
+        command.Parameters.AddWithValue("@To", to.ToString());
+        command.Parameters.AddWithValue("@From", from.ToString());
+        command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+        return await command.ExecuteNonQueryAsync();
+    }
+
     public async Task<int> BackfillRecurrenceDaysAsync()
     {
         var localDeviceId = await ResolveLocalDeviceIdAsync();
