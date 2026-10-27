@@ -41,6 +41,8 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
   snackbar.
   *Deps:* none · *Effort:* S · *Value:* High
   *Landed:* `feature/device-session-errors` `f9a3960e`.
+  *Follow-up:* develop has no `UserMessage`, so the body uses `.Message` in two places; switch it once
+  this branch and the cleanup branch meet.
 - [x] **4. Stop prompting once this device cannot approve (F4, own branch).** The pending-device loop
   ends when this device turns out to be revoked or its session has ended. It also re-checks each
   device's status right before showing that device's prompt.
@@ -50,6 +52,9 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
   fetches that get `session_ended` sign the client out with the same notice a refresh 401 gives.
   *Deps:* G2 (decided) · *Effort:* S · *Value:* High
   *Landed:* `feature/device-session-errors` `683ee7cb`.
+  *Follow-up:* after the merge, check that this sign-out raises no local-data prompt and that the notice
+  reads as the checklist quotes (develop's `Auth_SignedOut_Rejected` differs). The merge conflicts in
+  `DeviceManagementService`, `AccountSettingsViewModel` and the registration tests.
 - [x] **6. Show progress and bound the wait on sign-out (F6, branch).** *Sign out and clear* / *keep*
   shows a busy state during the final upload and the logout call. Both are bounded by short timeouts
   instead of the 60 s / 100 s HttpClient defaults.
