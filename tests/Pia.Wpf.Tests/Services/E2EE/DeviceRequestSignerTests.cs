@@ -71,12 +71,23 @@ public sealed class DeviceRequestSignerTests : IDisposable
     [Fact]
     public async Task WithoutAKey_SendsUnsigned_AndAsksForNoChallenge()
     {
-        _keys.KeyLossDetected = true;
+        _keys.HasSigningKey = false;
 
         using var response = await SendAsync(WrapPath, []);
 
         Assert.False(Assert.Single(_server.Requests).Signed);
         Assert.Equal(0, _server.ChallengesIssued);
+    }
+
+    [Fact]
+    public async Task AfterRecoveryWithTheSigningKey_SignsDespiteKeyLossDetection()
+    {
+        _keys.KeyLossDetected = true;
+
+        using var response = await SendAsync(WrapPath, []);
+
+        Assert.True(Assert.Single(_server.Requests).SignatureVerified);
+        Assert.Equal(1, _server.ChallengesIssued);
     }
 
     [Fact]

@@ -160,7 +160,7 @@ public class DeviceManagementServiceRegistrationTests
 
         return new DeviceManagementService(
             Substitute.For<IE2EEService>(), deviceKeys, Substitute.For<IRecoveryCodeService>(),
-            settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(), TimeProvider.System,
+            settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(),
             logger ?? NullLogger<DeviceManagementService>.Instance);
     }
 

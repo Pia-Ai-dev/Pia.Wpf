@@ -22,11 +22,7 @@ public class DeviceManagementService : IDeviceManagementService
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfirmedApproverStore _confirmedApprovers;
     private readonly IDeviceRequestSigner _signer;
-    private readonly TimeProvider _time;
     private readonly ILogger<DeviceManagementService> _logger;
-
-    // From then on a wrap from another device must carry a version-2 signature, which covers the wrapped key.
-    private static readonly DateTimeOffset ApprovalSignatureV2Required = new(2026, 12, 1, 0, 0, 0, TimeSpan.Zero);
 
     // Server URL and account the proof key is settled for, so a sign-in to another account checks again.
     private string? _proofKeySettledFor;
@@ -40,7 +36,6 @@ public class DeviceManagementService : IDeviceManagementService
         IHttpClientFactory httpFactory,
         IConfirmedApproverStore confirmedApprovers,
         IDeviceRequestSigner signer,
-        TimeProvider time,
         ILogger<DeviceManagementService> logger)
     {
         _e2ee = e2ee;
@@ -51,7 +46,6 @@ public class DeviceManagementService : IDeviceManagementService
         _httpFactory = httpFactory;
         _confirmedApprovers = confirmedApprovers;
         _signer = signer;
-        _time = time;
         _logger = logger;
     }
 
@@ -304,7 +298,9 @@ public class DeviceManagementService : IDeviceManagementService
                 deviceId);
         }
         // Only this device's key opens its own copy, so with the keys intact a failure means the copy was altered.
-        catch (CryptographicException) when (handover.IsOwnCopy && !_deviceKeys.KeyLossDetected)
+        catch (Exception ex) when (
+            ex is CryptographicException or FormatException
+            && handover.IsOwnCopy && !_deviceKeys.KeyLossDetected)
         {
             _logger.LogWarning("This device's own copy of the key does not open: it was changed on the server");
             throw new StoredKeyCopyChangedException();
@@ -333,10 +329,8 @@ public class DeviceManagementService : IDeviceManagementService
                 blob.SignatureVersion, blob.OnboardingSessionId, deviceId, _deviceKeys.GetAgreementPublicKey(),
                 blob.Ciphertext, blob.HkdfSalt);
 
-        var minimumVersion = _time.GetUtcNow() >= ApprovalSignatureV2Required ? 2 : 1;
-
         if (approver is null || payload is null || string.IsNullOrEmpty(blob.ApproverSignature)
-            || blob.SignatureVersion < minimumVersion
+            || blob.SignatureVersion < DeviceApprovalSignature.Current
             || !_deviceKeys.Verify(payload, blob.ApproverSignature, approver.SigningPublicKey))
         {
             _logger.LogWarning(

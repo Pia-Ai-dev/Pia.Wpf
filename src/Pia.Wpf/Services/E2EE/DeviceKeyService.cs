@@ -102,7 +102,6 @@ public class DeviceKeyService : IDeviceKeyService
 
     public bool CanSign()
     {
-        if (KeyLossDetected) return false;
         if (_ecdsa is not null) return true;
         try
         {

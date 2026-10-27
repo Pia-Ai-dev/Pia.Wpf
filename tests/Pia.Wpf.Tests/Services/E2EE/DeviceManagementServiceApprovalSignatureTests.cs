@@ -17,8 +17,7 @@ using Pia.Shared.E2EE;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
 
-/// <summary>A joining device takes a key only from an active device that signed the hand-over. Version 1, which
-/// clients up to 1.4.278 sign, covers session and target but not the wrapped key, and still counts.</summary>
+/// <summary>A joining device takes a key only from an active device whose signature covers that exact wrap.</summary>
 public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
 {
     private const string Session = "session-1";
@@ -35,10 +34,6 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
     private readonly E2EEService _targetE2ee;
     private readonly string _approverFile = Path.Combine(Path.GetTempPath(), $"pia-approvers-{Guid.NewGuid():N}.json");
     private readonly ConfirmedApproverStore _approvers;
-    private TimeProvider _clock = new FixedClock(BeforeTheV2Floor);
-
-    private static readonly DateTimeOffset BeforeTheV2Floor = new(2026, 11, 30, 23, 59, 59, TimeSpan.Zero);
-    private static readonly DateTimeOffset AtTheV2Floor = new(2026, 12, 1, 0, 0, 0, TimeSpan.Zero);
 
     public DeviceManagementServiceApprovalSignatureTests()
     {
@@ -65,12 +60,10 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         Assert.True(_approverKeys.Verify(payload, sent.ApproverSignature!, _approverKeys.GetSigningPublicKey()));
     }
 
-    [Theory]
-    [InlineData(2)]
-    [InlineData(1)]
-    public async Task Joining_TakesAKeyTheActiveApproverSigned(int version)
+    [Fact]
+    public async Task Joining_TakesAKeyTheActiveApproverSigned()
     {
-        _server.Wrapped = await HandoverAsync(version);
+        _server.Wrapped = await HandoverAsync(2);
 
         var sut = TargetSut();
         await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync());
@@ -80,24 +73,11 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
     }
 
     [Fact]
-    public async Task Joining_FromTheV2Floor_RefusesAVersion1Signature()
+    public async Task Joining_RefusesAVersion1Signature()
     {
-        _clock = new FixedClock(AtTheV2Floor);
         _server.Wrapped = await HandoverAsync(1);
 
         await Assert.ThrowsAsync<UnverifiedApprovalException>(() => TargetSut().FetchKeyHandoverAsync());
-    }
-
-    [Fact]
-    public async Task Joining_FromTheV2Floor_StillTakesAVersion2Signature()
-    {
-        _clock = new FixedClock(AtTheV2Floor);
-        _server.Wrapped = await HandoverAsync(2);
-
-        var sut = TargetSut();
-        await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync());
-
-        Assert.Equal(_umk, _targetE2ee.LoadUmk());
     }
 
     // The joining side shows this fingerprint so a person can tell their own approver from a server-added one.
@@ -208,6 +188,32 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         Assert.Null(_targetE2ee.LoadUmk());
     }
 
+    [Theory]
+    [InlineData("ciphertext")]
+    [InlineData("salt")]
+    public async Task JoiningFromItsOwnCopy_WithMalformedServerData_SaysTheCopyWasChanged(string field)
+    {
+        using var forger = new InMemoryDeviceKeys(Target);
+        var forgerE2ee = E2EEFor(forger, new AppSettings());
+        await forgerE2ee.StoreUmkAsync(RandomNumberGenerator.GetBytes(32));
+        var (ciphertext, salt) = forgerE2ee.WrapUmkForDevice(_targetKeys.GetAgreementPublicKey(), Target);
+        var blob = new WrappedUmkBlob
+        {
+            DeviceId = Target, Ciphertext = ciphertext, HkdfSalt = salt, CreatedByDeviceId = Target,
+        };
+        if (field == "ciphertext")
+            blob.Ciphertext = "not-base64";
+        else
+            blob.HkdfSalt = "not-base64";
+        _server.Wrapped = blob;
+
+        var sut = TargetSut();
+        await Assert.ThrowsAsync<StoredKeyCopyChangedException>(
+            async () => await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync()));
+
+        Assert.Null(_targetE2ee.LoadUmk());
+    }
+
     // Sign-out forgets the key; signing back in must not take a copy from a device nobody here compared.
     [Fact]
     public async Task Restoring_RefusesAnotherDevicesCopyThatWasNeverConfirmed()
@@ -309,13 +315,8 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         auth.GetAccessTokenAsync().Returns("token-1");
 
         return new DeviceManagementService(
-            e2ee, keys, Substitute.For<IRecoveryCodeService>(), settings, auth, factory, _approvers, new UnsignedRequests(), _clock,
+            e2ee, keys, Substitute.For<IRecoveryCodeService>(), settings, auth, factory, _approvers, new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
-    }
-
-    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private sealed class PassthroughDpapi(ILogger<DpapiHelper> logger) : DpapiHelper(logger)

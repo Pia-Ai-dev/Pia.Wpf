@@ -154,7 +154,7 @@ public class DeviceManagementServiceTests
 
         return new DeviceManagementService(
             _e2eeMock, _deviceKeysMock, _recoveryMock,
-            _settingsMock, _authMock, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(), TimeProvider.System,
+            _settingsMock, _authMock, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
     }
 

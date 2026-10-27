@@ -57,6 +57,6 @@ public interface IDeviceKeyService
     /// </summary>
     bool KeyLossDetected { get; }
 
-    /// <summary>True when the signing key the server knows is held here; never creates one.</summary>
+    /// <summary>True when a signing key exists locally; never creates one.</summary>
     bool CanSign();
 }

@@ -132,7 +132,7 @@ public class DeviceManagementServiceSignedCallsTests
         return new DeviceManagementService(
             e2ee ?? Substitute.For<IE2EEService>(), keys ?? Substitute.For<IDeviceKeyService>(),
             recovery ?? Substitute.For<IRecoveryCodeService>(), settings, auth, factory,
-            Substitute.For<IConfirmedApproverStore>(), _signer, TimeProvider.System,
+            Substitute.For<IConfirmedApproverStore>(), _signer,
             NullLogger<DeviceManagementService>.Instance);
     }
 }
