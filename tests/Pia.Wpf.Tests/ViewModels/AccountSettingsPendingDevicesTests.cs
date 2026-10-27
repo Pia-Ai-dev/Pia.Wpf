@@ -114,6 +114,22 @@ public class AccountSettingsPendingDevicesTests
     }
 
     [Fact]
+    public async Task ARejectionTheServerRefusesForWantOfASignature_PointsToRecovery()
+    {
+        _dialogs.ShowDeviceApprovalDialogAsync(Arg.Any<DeviceApprovalPrompt>()).Returns(false);
+        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active), Device("a", DeviceStatus.Pending)));
+        _deviceMgmt.RevokeDeviceAsync("a")
+            .ThrowsAsync(new DeviceSignatureRefusedException(E2EEErrorCodes.SignatureRequired));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowMessageDialogAsync(
+            "Settings_E2EE_PendingDevices_ApproveFailed_Title", "Settings_E2EE_SignatureRefused_Message");
+    }
+
+    [Fact]
     public async Task NoPendingDevice_SaysSoWithTheResourceStrings()
     {
         _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active)));

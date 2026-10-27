@@ -9,6 +9,7 @@ using Pia.Localization;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Tests.TestInfrastructure;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using Xunit;
@@ -159,7 +160,7 @@ public class DeviceManagementServiceRegistrationTests
 
         return new DeviceManagementService(
             Substitute.For<IE2EEService>(), deviceKeys, Substitute.For<IRecoveryCodeService>(),
-            settings, auth, factory, Substitute.For<IConfirmedApproverStore>(),
+            settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(),
             logger ?? NullLogger<DeviceManagementService>.Instance);
     }
 

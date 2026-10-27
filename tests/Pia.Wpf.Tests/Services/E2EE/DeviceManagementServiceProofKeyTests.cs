@@ -301,7 +301,7 @@ public sealed class DeviceManagementServiceProofKeyTests : IDisposable
 
         return new DeviceManagementService(
             _e2ee, _keys, recovery ?? Substitute.For<IRecoveryCodeService>(), _settings, _auth, factory,
-            Substitute.For<IConfirmedApproverStore>(), _log);
+            Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(), _log);
     }
 
     private sealed class PassthroughDpapi(ILogger<DpapiHelper> logger) : DpapiHelper(logger)

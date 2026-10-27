@@ -34,4 +34,13 @@ public static class E2EEErrorCodes
 
     /// <summary>The session behind the bearer token is gone on the server; only a new sign-in helps.</summary>
     public const string SessionEnded = "session_ended";
+
+    /// <summary>The route needs a device signature and the request carried none.</summary>
+    public const string SignatureRequired = "signature_required";
+
+    /// <summary>The device signature does not verify, or its challenge is expired or spent.</summary>
+    public const string InvalidSignature = "invalid_signature";
+
+    /// <summary>The device asking for a challenge is unknown, pending or revoked.</summary>
+    public const string DeviceNotActive = "device_not_active";
 }

@@ -17,8 +17,7 @@ using Pia.Shared.E2EE;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
 
-/// <summary>A joining device takes a key only from an active device that signed the hand-over. Version 1, which
-/// clients up to 1.4.278 sign, covers session and target but not the wrapped key, and still counts.</summary>
+/// <summary>A joining device takes a key only from an active device whose signature covers that exact wrap.</summary>
 public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
 {
     private const string Session = "session-1";
@@ -61,18 +60,24 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         Assert.True(_approverKeys.Verify(payload, sent.ApproverSignature!, _approverKeys.GetSigningPublicKey()));
     }
 
-    [Theory]
-    [InlineData(2)]
-    [InlineData(1)]
-    public async Task Joining_TakesAKeyTheActiveApproverSigned(int version)
+    [Fact]
+    public async Task Joining_TakesAKeyTheActiveApproverSigned()
     {
-        _server.Wrapped = await HandoverAsync(version);
+        _server.Wrapped = await HandoverAsync(2);
 
         var sut = TargetSut();
         await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync());
 
         Assert.Equal(_umk, _targetE2ee.LoadUmk());
         Assert.True(_targetSettings.IsE2EEEnabled);
+    }
+
+    [Fact]
+    public async Task Joining_RefusesAVersion1Signature()
+    {
+        _server.Wrapped = await HandoverAsync(1);
+
+        await Assert.ThrowsAsync<UnverifiedApprovalException>(() => TargetSut().FetchKeyHandoverAsync());
     }
 
     // The joining side shows this fingerprint so a person can tell their own approver from a server-added one.
@@ -159,6 +164,51 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
 
         var sut = TargetSut();
         await Assert.ThrowsAnyAsync<CryptographicException>(
+            async () => await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync()));
+
+        Assert.Null(_targetE2ee.LoadUmk());
+    }
+
+    [Fact]
+    public async Task JoiningFromItsOwnCopy_ThatWasReplacedOnTheServer_SaysTheCopyWasChanged()
+    {
+        using var forger = new InMemoryDeviceKeys(Target);
+        var forgerE2ee = E2EEFor(forger, new AppSettings());
+        await forgerE2ee.StoreUmkAsync(RandomNumberGenerator.GetBytes(32));
+        var (ciphertext, salt) = forgerE2ee.WrapUmkForDevice(_targetKeys.GetAgreementPublicKey(), Target);
+        _server.Wrapped = new WrappedUmkBlob
+        {
+            DeviceId = Target, Ciphertext = ciphertext, HkdfSalt = salt, CreatedByDeviceId = Target,
+        };
+
+        var sut = TargetSut();
+        await Assert.ThrowsAsync<StoredKeyCopyChangedException>(
+            async () => await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync()));
+
+        Assert.Null(_targetE2ee.LoadUmk());
+    }
+
+    [Theory]
+    [InlineData("ciphertext")]
+    [InlineData("salt")]
+    public async Task JoiningFromItsOwnCopy_WithMalformedServerData_SaysTheCopyWasChanged(string field)
+    {
+        using var forger = new InMemoryDeviceKeys(Target);
+        var forgerE2ee = E2EEFor(forger, new AppSettings());
+        await forgerE2ee.StoreUmkAsync(RandomNumberGenerator.GetBytes(32));
+        var (ciphertext, salt) = forgerE2ee.WrapUmkForDevice(_targetKeys.GetAgreementPublicKey(), Target);
+        var blob = new WrappedUmkBlob
+        {
+            DeviceId = Target, Ciphertext = ciphertext, HkdfSalt = salt, CreatedByDeviceId = Target,
+        };
+        if (field == "ciphertext")
+            blob.Ciphertext = "not-base64";
+        else
+            blob.HkdfSalt = "not-base64";
+        _server.Wrapped = blob;
+
+        var sut = TargetSut();
+        await Assert.ThrowsAsync<StoredKeyCopyChangedException>(
             async () => await sut.AcceptKeyHandoverAsync(await sut.FetchKeyHandoverAsync()));
 
         Assert.Null(_targetE2ee.LoadUmk());
@@ -265,7 +315,7 @@ public sealed class DeviceManagementServiceApprovalSignatureTests : IDisposable
         auth.GetAccessTokenAsync().Returns("token-1");
 
         return new DeviceManagementService(
-            e2ee, keys, Substitute.For<IRecoveryCodeService>(), settings, auth, factory, _approvers,
+            e2ee, keys, Substitute.For<IRecoveryCodeService>(), settings, auth, factory, _approvers, new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
     }
 

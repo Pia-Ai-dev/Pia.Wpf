@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Tests.TestInfrastructure;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using Xunit;
@@ -153,7 +154,7 @@ public class DeviceManagementServiceTests
 
         return new DeviceManagementService(
             _e2eeMock, _deviceKeysMock, _recoveryMock,
-            _settingsMock, _authMock, factory, Substitute.For<IConfirmedApproverStore>(),
+            _settingsMock, _authMock, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
     }
 

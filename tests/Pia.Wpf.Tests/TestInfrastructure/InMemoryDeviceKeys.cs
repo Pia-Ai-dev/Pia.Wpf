@@ -39,6 +39,10 @@ internal sealed class InMemoryDeviceKeys(string deviceId) : IDeviceKeyService, I
 
     public bool KeyLossDetected { get; set; }
 
+    public bool HasSigningKey { get; set; } = true;
+
+    public bool CanSign() => HasSigningKey;
+
     public void Dispose()
     {
         _agreement.Dispose();

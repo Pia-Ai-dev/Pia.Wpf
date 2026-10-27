@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Pia.Localization;
@@ -20,6 +21,7 @@ public class DeviceManagementService : IDeviceManagementService
     private readonly IAuthService _auth;
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfirmedApproverStore _confirmedApprovers;
+    private readonly IDeviceRequestSigner _signer;
     private readonly ILogger<DeviceManagementService> _logger;
 
     // Server URL and account the proof key is settled for, so a sign-in to another account checks again.
@@ -33,6 +35,7 @@ public class DeviceManagementService : IDeviceManagementService
         IAuthService auth,
         IHttpClientFactory httpFactory,
         IConfirmedApproverStore confirmedApprovers,
+        IDeviceRequestSigner signer,
         ILogger<DeviceManagementService> logger)
     {
         _e2ee = e2ee;
@@ -42,6 +45,7 @@ public class DeviceManagementService : IDeviceManagementService
         _auth = auth;
         _httpFactory = httpFactory;
         _confirmedApprovers = confirmedApprovers;
+        _signer = signer;
         _logger = logger;
     }
 
@@ -284,11 +288,23 @@ public class DeviceManagementService : IDeviceManagementService
     private async Task StoreHandoverAsync(KeyHandover handover)
     {
         var deviceId = _deviceKeys.GetDeviceId();
-        var umk = _e2ee.UnwrapUmkForDevice(
-            handover.Blob.Ciphertext,
-            handover.Blob.HkdfSalt,
-            handover.SenderAgreementPublicKey,
-            deviceId);
+        byte[] umk;
+        try
+        {
+            umk = _e2ee.UnwrapUmkForDevice(
+                handover.Blob.Ciphertext,
+                handover.Blob.HkdfSalt,
+                handover.SenderAgreementPublicKey,
+                deviceId);
+        }
+        // Only this device's key opens its own copy, so with the keys intact a failure means the copy was altered.
+        catch (Exception ex) when (
+            ex is CryptographicException or FormatException
+            && handover.IsOwnCopy && !_deviceKeys.KeyLossDetected)
+        {
+            _logger.LogWarning("This device's own copy of the key does not open: it was changed on the server");
+            throw new StoredKeyCopyChangedException();
+        }
 
         await _e2ee.StoreUmkAsync(umk);
         Array.Clear(umk);
@@ -314,6 +330,7 @@ public class DeviceManagementService : IDeviceManagementService
                 blob.Ciphertext, blob.HkdfSalt);
 
         if (approver is null || payload is null || string.IsNullOrEmpty(blob.ApproverSignature)
+            || blob.SignatureVersion < DeviceApprovalSignature.Current
             || !_deviceKeys.Verify(payload, blob.ApproverSignature, approver.SigningPublicKey))
         {
             _logger.LogWarning(
@@ -444,15 +461,30 @@ public class DeviceManagementService : IDeviceManagementService
         return string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(email) ? null : $"{serverUrl}|{email}";
     }
 
-    private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response) =>
-        ReadErrorCodeFromBody(await response.Content.ReadAsStringAsync());
+    private static Task<string?> ReadErrorCodeAsync(HttpResponseMessage response) =>
+        E2EEErrorBody.ReadCodeAsync(response);
 
     public async Task RevokeDeviceAsync(string deviceId)
     {
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsync($"api/e2ee/devices/{deviceId}/revoke", null);
+        using var response = await _signer.SendAsync(
+            client, HttpMethod.Post, $"api/e2ee/devices/{deviceId}/revoke", null);
+        await ThrowIfSignatureRefusedAsync(response);
         response.EnsureSuccessStatusCode();
         _logger.LogInformation("Revoked device {DeviceId}", deviceId);
+    }
+
+    private async Task ThrowIfSignatureRefusedAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode != HttpStatusCode.Forbidden)
+            return;
+
+        var code = await ReadErrorCodeAsync(response);
+        if (code is E2EEErrorCodes.SignatureRequired or E2EEErrorCodes.InvalidSignature or E2EEErrorCodes.DeviceNotActive)
+        {
+            _logger.LogWarning("The server refused this device's signature ({Code})", code);
+            throw new DeviceSignatureRefusedException(code);
+        }
     }
 
     public async Task<DeviceListResponse> GetDevicesAsync()
@@ -505,7 +537,7 @@ public class DeviceManagementService : IDeviceManagementService
     {
         var body = await response.Content.ReadAsStringAsync();
         _logger.SensitiveDebug("Device registration rejection body: {Body}", body);
-        var code = ReadErrorCodeFromBody(body);
+        var code = E2EEErrorBody.ReadCode(body);
         if (code is not null)
             return new DeviceRegistrationRejectedException(code, LocalizationSource.Instance[MessageKeyFor(code)], (int)response.StatusCode);
 
@@ -536,22 +568,6 @@ public class DeviceManagementService : IDeviceManagementService
         }
     }
 
-    private static string? ReadErrorCodeFromBody(string body)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(body);
-            return doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
-                ? error.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
     private async Task UploadWrappedUmkAsync(
         string deviceId, string ciphertext, string hkdfSalt, string createdByDeviceId)
     {
@@ -565,7 +581,10 @@ public class DeviceManagementService : IDeviceManagementService
         };
 
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsJsonAsync($"api/e2ee/devices/{deviceId}/wrapped-umk", blob);
+        using var response = await _signer.SendAsync(
+            client, HttpMethod.Post, $"api/e2ee/devices/{deviceId}/wrapped-umk",
+            JsonSerializer.SerializeToUtf8Bytes(blob, JsonSerializerOptions.Web));
+        await ThrowIfSignatureRefusedAsync(response);
         response.EnsureSuccessStatusCode();
     }
 
