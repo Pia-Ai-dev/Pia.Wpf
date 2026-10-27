@@ -852,8 +852,19 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
     private async Task HandlePendingDevicesAsync(List<DeviceInfo> pendingDevices)
     {
-        foreach (var device in pendingDevices)
+        for (var i = 0; i < pendingDevices.Count; i++)
         {
+            var device = pendingDevices[i];
+            if (i > 0)
+            {
+                var (canApprove, stillPending) = await RecheckPendingDeviceAsync(device.DeviceId);
+                if (!canApprove)
+                    return;
+                if (stillPending is null)
+                    continue;
+                device = stillPending;
+            }
+
             try
             {
                 var fingerprint = _deviceKeys.ComputeFingerprint(device.AgreementPublicKey);
@@ -883,6 +894,12 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                     }
                 }
             }
+            catch (DeviceRegistrationRejectedException ex) when (ex.Code == E2EEErrorCodes.SessionEnded)
+            {
+                // The sign-out notice already told the user; no device can be approved from here now.
+                _logger.LogWarning("Stopped handling pending devices: this session has ended");
+                return;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle pending device {DeviceId}", device.DeviceId);
@@ -890,6 +907,37 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                     Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
             }
         }
+    }
+
+    // CanApprove is false once this device is no longer Active or signed in; Device is null when that request is settled.
+    private async Task<(bool CanApprove, DeviceInfo? Device)> RecheckPendingDeviceAsync(string deviceId)
+    {
+        if (!_authService.IsLoggedIn)
+            return (false, null);
+
+        DeviceListResponse devices;
+        try
+        {
+            devices = await _deviceManagement.GetDevicesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not re-read the device list; stopped handling pending devices");
+            return (false, null);
+        }
+
+        var ownId = _deviceKeys.GetDeviceId();
+        if (devices.Devices.FirstOrDefault(d => d.DeviceId == ownId) is not { Status: DeviceStatus.Active })
+        {
+            _logger.LogWarning("Stopped handling pending devices: this device is no longer active");
+            return (false, null);
+        }
+
+        var device = devices.Devices.FirstOrDefault(d =>
+            d.DeviceId == deviceId && d.Status == DeviceStatus.Pending && d.OnboardingSessionId is not null);
+        if (device is null)
+            _logger.LogInformation("Skipping device {DeviceId}: it is no longer pending", deviceId);
+        return (true, device);
     }
 
     private async Task EnableE2EEAsync()
