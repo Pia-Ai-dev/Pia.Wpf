@@ -1043,6 +1043,14 @@
   <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Cet appareil n'est plus enregistré sur le serveur — son enregistrement a été supprimé ou a expiré. La synchronisation en arrière-plan est arrêtée et la copie de la clé de chiffrement de cet appareil a été oubliée. Configurez à nouveau cet appareil, ou déconnectez-vous.</value></data>
   <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Configurer à nouveau cet appareil</value></data>
   <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Se déconnecter</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Appareil non approuvé</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} n'a pas pu être approuvé. Vérifiez votre connexion et réessayez depuis Paramètres → Compte.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>Aucune demande</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>Aucun appareil n'attend d'approbation.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Vérification impossible</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia n'a pas pu vérifier si des appareils attendent une approbation.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Chiffrement non activé</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>Le chiffrement de bout en bout n'a pas pu être activé. Vérifiez votre connexion et réessayez.</value></data>
   <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Déconnecté</value></data>
   <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Votre session a pris fin ou a été révoquée sur le serveur. Veuillez vous reconnecter.</value></data>
   <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>Le serveur a refusé de renouveler votre session. Veuillez vous reconnecter.</value></data>

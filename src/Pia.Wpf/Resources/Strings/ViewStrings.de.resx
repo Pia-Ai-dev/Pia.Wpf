@@ -1043,6 +1043,14 @@
   <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Dieses Gerät ist auf dem Server nicht mehr registriert – sein Eintrag wurde gelöscht oder ist abgelaufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
   <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Dieses Gerät erneut einrichten</value></data>
   <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Gerät nicht freigegeben</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} konnte nicht freigegeben werden. Prüfe deine Verbindung und versuche es unter Einstellungen → Konto erneut.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>Keine Anfragen</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>Kein Gerät wartet auf Freigabe.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Prüfung fehlgeschlagen</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia konnte nicht prüfen, ob Geräte auf Freigabe warten.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Verschlüsselung nicht aktiviert</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung konnte nicht aktiviert werden. Prüfe deine Verbindung und versuche es erneut.</value></data>
   <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Abgemeldet</value></data>
   <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Deine Sitzung wurde beendet oder auf dem Server widerrufen. Bitte melde dich erneut an.</value></data>
   <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>Der Server hat die Verlängerung deiner Sitzung abgelehnt. Bitte melde dich erneut an.</value></data>

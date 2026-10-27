@@ -838,15 +838,15 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             }
             else
             {
-                _snackbarService.Show("No Requests", "No pending device requests found.",
-                    Wpf.Ui.Controls.ControlAppearance.Info, null, TimeSpan.FromSeconds(3));
+                ShowAccountSnackbar("Settings_E2EE_PendingDevices_None_Title",
+                    "Settings_E2EE_PendingDevices_None_Message", Wpf.Ui.Controls.ControlAppearance.Info);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to check for pending devices");
-            _snackbarService.Show("Error", "Failed to check for pending devices.",
-                Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+            ShowAccountSnackbar("Settings_E2EE_PendingDevices_CheckFailed_Title",
+                "Settings_E2EE_PendingDevices_CheckFailed_Message", Wpf.Ui.Controls.ControlAppearance.Danger);
         }
     }
 
@@ -903,8 +903,12 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle pending device {DeviceId}", device.DeviceId);
-                _snackbarService.Show("Error", $"Failed to approve device: {ex.Message}",
-                    Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(4));
+                // A dialog, not a snackbar: the prompt can be raised while Settings is not the open view.
+                var message = ex is DeviceRegistrationRejectedException rejection
+                    ? rejection.Message
+                    : _localizationService.Format("Settings_E2EE_PendingDevices_ApproveFailed_Message", device.DeviceName);
+                await _dialogService.ShowMessageDialogAsync(
+                    _localizationService["Settings_E2EE_PendingDevices_ApproveFailed_Title"], message);
             }
         }
     }
@@ -979,7 +983,10 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             }
             else
             {
-                _snackbarService.Show("Error", $"Failed to enable E2EE: {ex.Message}",
+                var message = ex is DeviceRegistrationRejectedException rejection
+                    ? rejection.Message
+                    : _localizationService["Settings_E2EE_EnableFailed_Message"];
+                _snackbarService.Show(_localizationService["Settings_E2EE_EnableFailed_Title"], message,
                     Wpf.Ui.Controls.ControlAppearance.Danger, null, TimeSpan.FromSeconds(5));
             }
         }

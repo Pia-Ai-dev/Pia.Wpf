@@ -1,6 +1,7 @@
 namespace Pia.Tests.ViewModels;
 
 using System.Globalization;
+using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -13,7 +14,7 @@ using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
 
-/// <summary>The approval prompts stop once this device cannot approve, and never ask about a settled request.</summary>
+/// <summary>The approval prompts stop once this device cannot approve, skip settled requests, and show failures from any view.</summary>
 public class AccountSettingsPendingDevicesTests
 {
     private const string OwnId = "own-device";
@@ -25,6 +26,7 @@ public class AccountSettingsPendingDevicesTests
     private readonly IDialogService _dialogs = Substitute.For<IDialogService>();
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
+    private readonly global::Wpf.Ui.ISnackbarService _snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
     private readonly ISyncClientService _sync = Substitute.For<ISyncClientService>();
 
     public AccountSettingsPendingDevicesTests()
@@ -82,6 +84,49 @@ public class AccountSettingsPendingDevicesTests
         await _dialogs.Received(1).ShowConfirmationDialogAsync(ApproveTitle, Arg.Any<string>());
     }
 
+    [Fact]
+    public async Task AFailedApproval_IsShownInADialogWithTheResourceStrings()
+    {
+        _loc.Format("Settings_E2EE_PendingDevices_ApproveFailed_Message", Arg.Any<object[]>())
+            .Returns("approve-failed-body");
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active), Device("a", DeviceStatus.Pending)));
+        _deviceMgmt.ApproveDeviceAsync(Arg.Any<string>(), Arg.Any<DeviceInfo>())
+            .ThrowsAsync(new HttpRequestException("500 Internal Server Error"));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowMessageDialogAsync(
+            "Settings_E2EE_PendingDevices_ApproveFailed_Title", "approve-failed-body");
+    }
+
+    [Fact]
+    public async Task ARefusedApproval_ShowsTheServersReadableReason()
+    {
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active), Device("a", DeviceStatus.Pending)));
+        _deviceMgmt.ApproveDeviceAsync(Arg.Any<string>(), Arg.Any<DeviceInfo>())
+            .ThrowsAsync(new DeviceRegistrationRejectedException(E2EEErrorCodes.DeviceMismatch, "readable reason"));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowMessageDialogAsync(
+            "Settings_E2EE_PendingDevices_ApproveFailed_Title", "readable reason");
+    }
+
+    [Fact]
+    public async Task NoPendingDevice_SaysSoWithTheResourceStrings()
+    {
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active)));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        _snackbar.Received(1).Show("Settings_E2EE_PendingDevices_None_Title", "Settings_E2EE_PendingDevices_None_Message",
+            Arg.Any<global::Wpf.Ui.Controls.ControlAppearance>(), Arg.Any<global::Wpf.Ui.Controls.IconElement?>(),
+            Arg.Any<TimeSpan>());
+    }
+
     private static DeviceInfo Device(string id, DeviceStatus status) => new()
     {
         DeviceId = id,
@@ -99,7 +144,7 @@ public class AccountSettingsPendingDevicesTests
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
         return new AccountSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, _settings, _dialogs,
-            Substitute.For<global::Wpf.Ui.ISnackbarService>(), _auth, _sync, _loc, _deviceMgmt,
+            _snackbar, _auth, _sync, _loc, _deviceMgmt,
             _deviceKeys, Substitute.For<IMemoryService>(),
             Substitute.For<IPolicyService>(),
             new E2EEOnboardingViewModel(
