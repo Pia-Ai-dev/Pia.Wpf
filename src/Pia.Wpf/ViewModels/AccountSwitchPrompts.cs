@@ -46,7 +46,7 @@ internal static class AccountSwitchPrompts
 
     public static async Task SignOutAsync(
         ILocalDataResetService reset, IDialogService dialogs, ILocalizationService loc,
-        bool uploadFirst, Func<Task> signOut)
+        bool uploadFirst, Func<Task> signOut, Action<string?> showProgress)
     {
         var notices = await reset.GetNoticesAsync();
         var choice = await dialogs.ShowChoiceDialogAsync(
@@ -61,13 +61,26 @@ internal static class AccountSwitchPrompts
         }
 
         var clear = choice == DialogChoice.Primary;
-        if (uploadFirst
-            && !await reset.UploadPendingChangesAsync()
-            && clear
-            && !await dialogs.ShowConfirmationDialogAsync(
-                loc["LocalReset_UploadFailed_Title"], loc["LocalReset_UploadFailed_Message"]))
+        if (uploadFirst)
         {
-            return;
+            bool uploaded;
+            showProgress(loc["LocalReset_Progress_Uploading"]);
+            try
+            {
+                uploaded = await reset.UploadPendingChangesAsync();
+            }
+            finally
+            {
+                showProgress(null);
+            }
+
+            if (!uploaded
+                && clear
+                && !await dialogs.ShowConfirmationDialogAsync(
+                    loc["LocalReset_UploadFailed_Title"], loc["LocalReset_UploadFailed_Message"]))
+            {
+                return;
+            }
         }
 
         if (clear)
@@ -75,7 +88,15 @@ internal static class AccountSwitchPrompts
             reset.ScheduleReset();
         }
 
-        await signOut();
+        showProgress(loc["LocalReset_Progress_SigningOut"]);
+        try
+        {
+            await signOut();
+        }
+        finally
+        {
+            showProgress(null);
+        }
 
         if (clear)
         {

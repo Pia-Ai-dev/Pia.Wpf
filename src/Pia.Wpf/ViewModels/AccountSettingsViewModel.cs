@@ -220,7 +220,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         else if (choice == DialogChoice.Secondary)
         {
             await AccountSwitchPrompts.SignOutAsync(
-                _localDataReset, _dialogService, _localizationService, uploadFirst: false, SignOutAsync);
+                _localDataReset, _dialogService, _localizationService, uploadFirst: false, SignOutAsync,
+                text => SignOutProgressText = text);
         }
     }
 
@@ -783,9 +784,16 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         }
     }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSigningOut))]
+    private string? _signOutProgressText;
+
+    public bool IsSigningOut => SignOutProgressText is not null;
+
     [RelayCommand]
     private Task SyncLogoutAsync() => AccountSwitchPrompts.SignOutAsync(
-        _localDataReset, _dialogService, _localizationService, uploadFirst: true, SignOutAsync);
+        _localDataReset, _dialogService, _localizationService, uploadFirst: true, SignOutAsync,
+        text => SignOutProgressText = text);
 
     private async Task SignOutAsync()
     {

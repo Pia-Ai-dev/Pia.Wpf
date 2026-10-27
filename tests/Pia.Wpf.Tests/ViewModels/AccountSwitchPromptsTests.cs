@@ -12,6 +12,7 @@ public class AccountSwitchPromptsTests
     private readonly ILocalDataResetService _reset = Substitute.For<ILocalDataResetService>();
     private readonly IDialogService _dialogs = Substitute.For<IDialogService>();
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
+    private readonly List<string?> _progress = [];
     private int _signOutCalls;
 
     public AccountSwitchPromptsTests()
@@ -25,7 +26,7 @@ public class AccountSwitchPromptsTests
         {
             _signOutCalls++;
             return Task.CompletedTask;
-        });
+        }, _progress.Add);
 
     private void Choose(DialogChoice choice) =>
         _dialogs.ShowChoiceDialogAsync(
@@ -117,7 +118,7 @@ public class AccountSwitchPromptsTests
         {
             order.Add("signOut");
             return Task.CompletedTask;
-        });
+        }, _ => { });
 
         Assert.Equal(["upload", "schedule", "signOut", "restart"], order);
         await _dialogs.Received(1).ShowChoiceDialogAsync(
@@ -136,6 +137,35 @@ public class AccountSwitchPromptsTests
         Assert.Equal(1, _signOutCalls);
         _reset.DidNotReceive().ScheduleReset();
         await _reset.DidNotReceive().RestartAsync();
+    }
+
+    [Fact]
+    public async Task SignOut_ShowsUploadThenSignOutProgress_AndClearsIt()
+    {
+        Choose(DialogChoice.Secondary);
+
+        await SignOutAsync();
+
+        Assert.Equal(["LocalReset_Progress_Uploading", null, "LocalReset_Progress_SigningOut", null], _progress);
+    }
+
+    [Fact]
+    public async Task SignOut_UploadFailedPrompt_IsNotShownUnderTheProgress()
+    {
+        Choose(DialogChoice.Primary);
+        _reset.UploadPendingChangesAsync().Returns(false);
+        string? progressWhenAsked = "unset";
+        _dialogs.ShowConfirmationDialogAsync("LocalReset_UploadFailed_Title", "LocalReset_UploadFailed_Message")
+            .Returns(_ =>
+            {
+                progressWhenAsked = _progress[^1];
+                return false;
+            });
+
+        await SignOutAsync();
+
+        Assert.Null(progressWhenAsked);
+        Assert.Equal(["LocalReset_Progress_Uploading", null], _progress);
     }
 
     [Fact]
@@ -264,7 +294,7 @@ public class AccountSwitchPromptsTests
                 .ToDictionary(d => (string)d.Attribute("name")!, d => (string?)d.Element("value")))
             .ToList();
 
-        Assert.Equal(19, sets[0].Count);
+        Assert.Equal(21, sets[0].Count);
         foreach (var set in sets)
         {
             Assert.Equal(sets[0].Keys.OrderBy(k => k), set.Keys.OrderBy(k => k));

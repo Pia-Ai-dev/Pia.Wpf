@@ -53,6 +53,8 @@ public class AuthService : IAuthService
 
     public event EventHandler<AuthSignedOutEventArgs>? SignedOutUnexpectedly;
 
+    internal TimeSpan LogoutTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
     public AuthService(
         ISettingsService settingsService,
         DpapiHelper dpapiHelper,
@@ -547,9 +549,10 @@ public class AuthService : IAuthService
             {
                 try
                 {
+                    using var timeout = new CancellationTokenSource(LogoutTimeout);
                     using var client = _httpClientFactory.CreateClient();
                     await client.PostAsJsonAsync($"{serverUrl}/auth/logout",
-                        new { refreshToken });
+                        new { refreshToken }, timeout.Token);
                 }
                 catch (Exception ex)
                 {

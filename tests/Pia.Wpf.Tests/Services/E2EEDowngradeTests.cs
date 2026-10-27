@@ -200,7 +200,7 @@ public class E2EEDowngradeTests
         var raised = 0;
         sut.E2EEDowngradeChanged += (_, _) => raised++;
 
-        Assert.Null(await sut.SyncNowAsync());
+        Assert.Null(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
 
         Assert.True(sut.IsE2EEDowngradeDetected);
         Assert.Equal(1, raised);
@@ -214,7 +214,7 @@ public class E2EEDowngradeTests
         ServerSays(null);
         var sut = CreateSync();
 
-        Assert.Null(await sut.SyncNowAsync());
+        Assert.Null(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
 
         Assert.False(sut.IsE2EEDowngradeDetected);
         await _syncAuth.DidNotReceive().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
@@ -227,7 +227,7 @@ public class E2EEDowngradeTests
         ServerSays(true);
         var sut = CreateSync();
 
-        Assert.Null(await sut.SyncNowAsync());
+        Assert.Null(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
 
         Assert.True(sut.IsE2EEOnboardingRequired);
         Assert.False(sut.IsE2EEDowngradeDetected);
@@ -252,7 +252,7 @@ public class E2EEDowngradeTests
         ServerSays(false);
         var sut = CreateSync();
 
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.False(sut.IsE2EEDowngradeDetected);
         await _syncAuth.Received().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
@@ -264,11 +264,11 @@ public class E2EEDowngradeTests
         _syncStored.E2EERequiredAccountIds = [Account];
         ServerSays(false);
         var sut = CreateSync();
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
         Assert.True(sut.IsE2EEDowngradeDetected);
 
         ServerSays(true);
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.False(sut.IsE2EEDowngradeDetected);
         Assert.True(sut.IsE2EEOnboardingRequired);
@@ -280,12 +280,12 @@ public class E2EEDowngradeTests
         _syncStored.E2EERequiredAccountIds = [Account];
         ServerSays(false);
         var sut = CreateSync();
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
         Assert.True(sut.IsE2EEDowngradeDetected);
 
         _syncStored.IsE2EEEnabled = true;
         _syncE2EE.IsReady().Returns(true);
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.False(sut.IsE2EEDowngradeDetected);
     }
@@ -296,10 +296,10 @@ public class E2EEDowngradeTests
         _syncStored.E2EERequiredAccountIds = [Account];
         ServerSays(false);
         var sut = CreateSync();
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.True(await sut.AllowUnencryptedSyncAsync(Account));
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.False(sut.IsE2EEDowngradeDetected);
         Assert.Empty(_syncStored.E2EERequiredAccountIds);
@@ -312,9 +312,9 @@ public class E2EEDowngradeTests
         _syncStored.E2EERequiredAccountIds = [Account];
         ServerSays(false);
         var sut = CreateSync();
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
         ServerSays(true);
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
         ServerSays(false);
 
         Assert.False(await sut.AllowUnencryptedSyncAsync(Account));
@@ -328,7 +328,7 @@ public class E2EEDowngradeTests
         _syncStored.E2EERequiredAccountIds = [Account];
         ServerSays(false);
         var sut = CreateSync();
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
         ServerSays(true);
 
         Assert.False(await sut.AllowUnencryptedSyncAsync(Account));
@@ -344,7 +344,7 @@ public class E2EEDowngradeTests
         _syncStored.E2EERequiredAccountIds = [Account];
         ServerSays(false);
         var sut = CreateSync();
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.False(await sut.AllowUnencryptedSyncAsync("0f8fad5b-d9cb-469f-a165-70867728950e"));
 
@@ -356,7 +356,7 @@ public class E2EEDowngradeTests
     {
         ServerSays(false);
         var sut = CreateSync();
-        await sut.SyncNowAsync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
         var before = _syncServer.Requests;
         _syncAuth.GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>()).Returns(_ =>
         {
@@ -365,7 +365,7 @@ public class E2EEDowngradeTests
         });
         ServerSays(true);
 
-        Assert.Null(await sut.SyncNowAsync());
+        Assert.Null(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(before, _syncServer.Requests);
         Assert.True(sut.IsE2EEOnboardingRequired);

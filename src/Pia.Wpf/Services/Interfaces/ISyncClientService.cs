@@ -73,7 +73,7 @@ public interface ISyncClientService
     event EventHandler? EncryptedMigrationCompleted;
 
     /// <summary>Triggers a full sync cycle (push then pull). Returns counts, or null if sync was skipped.</summary>
-    Task<SyncResult?> SyncNowAsync();
+    Task<SyncResult?> SyncNowAsync(CancellationToken ct = default);
 
     /// <summary>Starts the background sync timer.</summary>
     void StartBackgroundSync();

@@ -94,6 +94,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     // Bumped on every Start/Stop so a sync cycle in flight during a Stop+Start cannot re-arm
     // the newly-started timer with a stale (non-InitialSyncDelay) period.
     private int _syncGeneration;
+    // Set for one SyncNowAsync cycle; _syncLock keeps cycles from overlapping.
+    private CancellationToken _cycleToken;
 
     public bool IsSyncActive => _syncTimer is not null;
     public bool IsE2EEOnboardingRequired { get; private set; }
@@ -398,7 +400,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         return (shouldCheck, nextCounter);
     }
 
-    public async Task<SyncResult?> SyncNowAsync()
+    public async Task<SyncResult?> SyncNowAsync(CancellationToken ct = default)
     {
         if (!_authService.IsLoggedIn) return null;
 
@@ -406,6 +408,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         SyncResult? result = null;
         var syncSw = Stopwatch.StartNew();
+        _cycleToken = ct;
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
@@ -505,6 +508,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
         finally
         {
+            _cycleToken = default;
             _syncLock.Release();
         }
         return result;
@@ -801,7 +805,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Headers.ContentEncoding.Add("gzip");
         var pushSw = Stopwatch.StartNew();
-        var response = await client.PostAsync($"{serverUrl}/api/sync/push", content);
+        var response = await client.PostAsync($"{serverUrl}/api/sync/push", content, _cycleToken);
         pushSw.Stop();
         _logger.LogInformation("Push HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pushSw.ElapsedMilliseconds);
         return response;
@@ -1192,7 +1196,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 settings.ManagedPersonaStoreInitialized, settings.ClientPolicyInitialized);
 
         var pullSw = Stopwatch.StartNew();
-        var response = await client.SendAsync(pullRequest);
+        var response = await client.SendAsync(pullRequest, _cycleToken);
         pullSw.Stop();
         _logger.LogInformation("Pull HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pullSw.ElapsedMilliseconds);
 

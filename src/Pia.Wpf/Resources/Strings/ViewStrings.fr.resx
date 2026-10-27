@@ -1802,6 +1802,8 @@
   <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>Les clés API de vos propres fournisseurs d'IA sont supprimées de cet appareil. Si votre compte n'utilise pas le chiffrement de bout en bout, vous devrez les saisir à nouveau.</value></data>
   <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Impossible d'envoyer vos dernières modifications</value></data>
   <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Certaines modifications effectuées sur cet appareil n'ont pas atteint Pia Cloud. Vider quand même cet appareil ? Les modifications non envoyées seront perdues.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Envoi de vos dernières modifications…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Déconnexion…</value></data>
   <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Données locales pas encore supprimées</value></data>
   <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia n'a pas pu terminer la suppression des données locales. Redémarrer Pia maintenant pour réessayer ?</value></data>
   <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Compte supprimé</value></data>

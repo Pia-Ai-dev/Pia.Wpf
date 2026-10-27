@@ -93,6 +93,29 @@ public class AccountSettingsLocalDataResetTests
     }
 
     [Fact]
+    public async Task SignOutButton_ShowsProgressWhileUploadingAndSigningOut_ThenClearsIt()
+    {
+        Answer("LocalReset_SignOut_Title", DialogChoice.Secondary);
+        var sut = CreateSut();
+        var seen = new List<(bool Busy, string? Text)>();
+        _reset.UploadPendingChangesAsync().Returns(_ =>
+        {
+            seen.Add((sut.IsSigningOut, sut.SignOutProgressText));
+            return true;
+        });
+        _auth.LogoutAsync().Returns(_ =>
+        {
+            seen.Add((sut.IsSigningOut, sut.SignOutProgressText));
+            return Task.CompletedTask;
+        });
+
+        await sut.SyncLogoutCommand.ExecuteAsync(null);
+
+        Assert.Equal([(true, "LocalReset_Progress_Uploading"), (true, "LocalReset_Progress_SigningOut")], seen);
+        Assert.False(sut.IsSigningOut);
+    }
+
+    [Fact]
     public async Task RevokedSignOut_PromptsWithoutUploading()
     {
         Answer("Settings_E2EE_Gone_Title", DialogChoice.Secondary);

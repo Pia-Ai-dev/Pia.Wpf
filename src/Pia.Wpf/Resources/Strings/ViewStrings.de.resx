@@ -1802,6 +1802,8 @@
   <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API-Schlüssel für deine eigenen KI-Anbieter werden von diesem Gerät entfernt. Wenn dein Konto keine Ende-zu-Ende-Verschlüsselung verwendet, musst du sie erneut eingeben.</value></data>
   <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Letzte Änderungen konnten nicht hochgeladen werden</value></data>
   <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Einige Änderungen auf diesem Gerät haben Pia Cloud nicht erreicht. Dieses Gerät trotzdem leeren? Nicht hochgeladene Änderungen gehen verloren.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Letzte Änderungen werden hochgeladen…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Abmeldung läuft…</value></data>
   <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Lokale Daten noch nicht entfernt</value></data>
   <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia konnte das Entfernen der lokalen Daten nicht abschließen. Pia jetzt neu starten und es erneut versuchen?</value></data>
   <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Konto gelöscht</value></data>

@@ -45,7 +45,7 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
 - [ ] **5. Treat `409 session_ended` as a sign-out (F5, own branch).** Device registration and key
   fetches that get `session_ended` sign the client out with the same notice a refresh 401 gives.
   *Deps:* G2 (decided) · *Effort:* S · *Value:* High
-- [ ] **6. Show progress and bound the wait on sign-out (F6, branch).** *Sign out and clear* / *keep*
+- [x] **6. Show progress and bound the wait on sign-out (F6, branch).** *Sign out and clear* / *keep*
   shows a busy state during the final upload and the logout call. Both are bounded by short timeouts
   instead of the 60 s / 100 s HttpClient defaults.
   *Deps:* none · *Effort:* S · *Value:* High

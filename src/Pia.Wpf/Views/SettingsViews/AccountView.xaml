@@ -308,7 +308,8 @@
           </StackPanel>
         </StackPanel>
 
-        <StackPanel Orientation="Horizontal">
+        <StackPanel Orientation="Horizontal"
+                    IsEnabled="{Binding IsSigningOut, Converter={StaticResource InverseBooleanConverter}}">
           <ui:Button Content="{loc:Str Sync_ExportData}"
                      Icon="{ui:SymbolIcon ArrowDownload24}"
                      Command="{Binding ExportAccountDataCommand}"
@@ -332,6 +333,18 @@
                      AutomationProperties.AutomationId="Settings_Account_DeleteAccount"
                      Appearance="Secondary"
                      Foreground="{DynamicResource PiaDangerBrush}"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,12,0,0"
+                    Visibility="{Binding IsSigningOut, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ui:ProgressRing IsIndeterminate="True"
+                           Width="16" Height="16"
+                           Margin="0,0,8,0"/>
+          <TextBlock Text="{Binding SignOutProgressText}"
+                     AutomationProperties.AutomationId="Settings_Account_SignOutProgress"
+                     VerticalAlignment="Center"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"/>
         </StackPanel>
       </StackPanel>
 

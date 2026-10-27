@@ -44,15 +44,23 @@ public sealed class LocalDataResetService(
         return new LocalDataNotices(vaultHasMemories, await GetApiKeyNoticeAsync());
     }
 
+    internal TimeSpan UploadTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
     public async Task<bool> UploadPendingChangesAsync()
     {
         var wasActive = sync.IsSyncActive;
+        using var timeout = new CancellationTokenSource(UploadTimeout);
         try
         {
-            await sync.StopBackgroundSyncAndWaitAsync();
-            var result = await sync.SyncNowAsync();
-            var chatsOk = await chats.FlushAsync(TimeSpan.FromSeconds(30));
+            // WaitAsync as well: token refresh and the E2EE checks inside a sync cycle take no token.
+            await sync.StopBackgroundSyncAndWaitAsync().WaitAsync(timeout.Token);
+            var result = await sync.SyncNowAsync(timeout.Token).WaitAsync(timeout.Token);
+            var chatsOk = await chats.FlushAsync(UploadTimeout, timeout.Token);
             return result is { PushSucceeded: true } && chatsOk;
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            return false;
         }
         finally
         {

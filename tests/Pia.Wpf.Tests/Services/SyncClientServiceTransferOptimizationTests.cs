@@ -147,7 +147,7 @@ public class SyncClientServiceTransferOptimizationTests
         var handler = new CapturingHandler(HttpStatusCode.InternalServerError, "{}");
         ArrangeFirstSync(handler, suppressSettingsPush: false);
 
-        var result = await sut.SyncNowAsync();
+        var result = await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, handler.PushCount);
         Assert.False(result!.PushSucceeded);
@@ -314,7 +314,7 @@ public class SyncClientServiceTransferOptimizationTests
             if (firstSyncMigration)
                 await sut.PerformFirstSyncMigrationAsync();
             else
-                Assert.NotNull(await sut.SyncNowAsync());
+                Assert.NotNull(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
         }
         Assert.Equal(originalCursor, settings.LastSyncTimestamp);
         Assert.True(settings.SuppressSettingsPushAfterReset);
@@ -322,14 +322,14 @@ public class SyncClientServiceTransferOptimizationTests
         settings = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings))!;
         _settingsService.GetSettingsAsync().Returns(settings);
         using var restarted = CreateSut(e2ee);
-        Assert.NotNull(await restarted.SyncNowAsync());
+        Assert.NotNull(await restarted.SyncNowAsync(TestContext.Current.CancellationToken));
         Assert.Equal(originalCursor, settings.LastSyncTimestamp);
         Assert.True(settings.SuppressSettingsPushAfterReset);
 
         canDecrypt = true;
         if (remoteSettingsRemoved)
             handler.PullBody = PullResponseJson();
-        Assert.NotNull(await restarted.SyncNowAsync());
+        Assert.NotNull(await restarted.SyncNowAsync(TestContext.Current.CancellationToken));
         var expectedTheme = remoteSettingsRemoved ? new AppSettings().Theme : AppTheme.Dark;
         Assert.Equal(expectedTheme, settings.Theme);
         Assert.False(settings.SuppressSettingsPushAfterReset);
@@ -345,7 +345,7 @@ public class SyncClientServiceTransferOptimizationTests
             Assert.False(doc.RootElement.TryGetProperty("settings", out _));
         });
 
-        Assert.NotNull(await restarted.SyncNowAsync());
+        Assert.NotNull(await restarted.SyncNowAsync(TestContext.Current.CancellationToken));
         using var lastPush = JsonDocument.Parse(handler.PushBodies[^1]);
         Assert.Equal("recovered-settings", lastPush.RootElement.GetProperty("settings").GetProperty("encryptedPayload").GetString());
         e2ee.Received(1).EncryptRecord(Arg.Is<object>(payload =>
@@ -401,13 +401,13 @@ public class SyncClientServiceTransferOptimizationTests
         var edit = new MemoryObject { Type = MemoryObjectTypes.Note, Label = "l", UpdatedAt = cursor.AddHours(1) };
         _memoryService.GetAllObjectsAsync().Returns(new[] { edit });
 
-        Assert.False((await sut.SyncNowAsync())!.PushSucceeded);
+        Assert.False((await sut.SyncNowAsync(TestContext.Current.CancellationToken))!.PushSucceeded);
         Assert.Equal(cursor, settings.LastSyncTimestamp);
 
         var healthy = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(), HttpStatusCode.OK, PullResponseJson());
         _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(healthy, disposeHandler: false));
 
-        Assert.True((await sut.SyncNowAsync())!.PushSucceeded);
+        Assert.True((await sut.SyncNowAsync(TestContext.Current.CancellationToken))!.PushSucceeded);
         Assert.Equal(1, healthy.PushCount);
         Assert.Contains(edit.Id.ToString(), healthy.LastPushBody);
         Assert.True(settings.LastSyncTimestamp > cursor);

@@ -192,7 +192,7 @@ public sealed class LocalDataResetServiceTests : IDisposable
     public async Task Upload_PushFailed_ReturnsFalse_AndRestartsBackgroundSync()
     {
         _sync.IsSyncActive.Returns(true);
-        _sync.SyncNowAsync().Returns(new SyncResult(0, 0, 0, PushSucceeded: false));
+        _sync.SyncNowAsync(Arg.Any<CancellationToken>()).Returns(new SyncResult(0, 0, 0, PushSucceeded: false));
 
         var ok = await NewSut().UploadPendingChangesAsync();
 
@@ -203,7 +203,7 @@ public sealed class LocalDataResetServiceTests : IDisposable
     [Fact]
     public async Task Upload_SyncSkipped_ReturnsFalse()
     {
-        _sync.SyncNowAsync().Returns((SyncResult?)null);
+        _sync.SyncNowAsync(Arg.Any<CancellationToken>()).Returns((SyncResult?)null);
 
         Assert.False(await NewSut().UploadPendingChangesAsync());
     }
@@ -211,7 +211,7 @@ public sealed class LocalDataResetServiceTests : IDisposable
     [Fact]
     public async Task Upload_ChatsNotFlushed_ReturnsFalse()
     {
-        _sync.SyncNowAsync().Returns(new SyncResult(0, 0, 0, PushSucceeded: true));
+        _sync.SyncNowAsync(Arg.Any<CancellationToken>()).Returns(new SyncResult(0, 0, 0, PushSucceeded: true));
         _chats.FlushAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(false);
 
         Assert.False(await NewSut().UploadPendingChangesAsync());
@@ -220,16 +220,38 @@ public sealed class LocalDataResetServiceTests : IDisposable
     [Fact]
     public async Task Upload_PushAndChatsOk_ReturnsTrue()
     {
-        _sync.SyncNowAsync().Returns(new SyncResult(2, 0, 0, PushSucceeded: true));
+        _sync.SyncNowAsync(Arg.Any<CancellationToken>()).Returns(new SyncResult(2, 0, 0, PushSucceeded: true));
 
         Assert.True(await NewSut().UploadPendingChangesAsync());
+    }
+
+    [Fact]
+    public async Task Upload_HangingSync_ReportsNotUploadedWithinTheBound()
+    {
+        _sync.IsSyncActive.Returns(true);
+        CancellationToken seen = default;
+        _sync.SyncNowAsync(Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            seen = call.Arg<CancellationToken>();
+            return new TaskCompletionSource<SyncResult?>().Task;
+        });
+        var sut = new LocalDataResetService(_db, _templates, _providers, _settings, _memory, _auth, _sync, _chats, _restart)
+        {
+            UploadTimeout = TimeSpan.FromMilliseconds(200),
+        };
+
+        var ok = await sut.UploadPendingChangesAsync().WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        Assert.False(ok);
+        Assert.True(seen.IsCancellationRequested);
+        _sync.Received(1).StartBackgroundSync();
     }
 
     [Fact]
     public async Task Upload_SyncWasInactive_DoesNotStartBackgroundSync()
     {
         _sync.IsSyncActive.Returns(false);
-        _sync.SyncNowAsync().Returns(new SyncResult(0, 0, 0, PushSucceeded: true));
+        _sync.SyncNowAsync(Arg.Any<CancellationToken>()).Returns(new SyncResult(0, 0, 0, PushSucceeded: true));
 
         await NewSut().UploadPendingChangesAsync();
 
