@@ -30,7 +30,7 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
   save can replace it, a settings file that fails to parse is moved aside as
   `settings.json.unreadable-<UTC timestamp>`, and the log says so.
   *Deps:* G1 (decided) · *Effort:* S · *Value:* High
-- [ ] **2. Show the server URL and trust setting while a clear is pending (F2, branch).** Find out why
+- [x] **2. Show the server URL and trust setting while a clear is pending (F2, branch).** Find out why
   Settings → Account shows an empty Server URL and an unticked trust box when a pending clear failed at
   startup, and make the view load them.
   *Deps:* none · *Effort:* XS · *Value:* Med
