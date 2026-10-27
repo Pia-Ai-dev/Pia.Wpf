@@ -48,6 +48,9 @@ public interface IDeviceManagementService
     /// <summary>Gives this computer a new device id after its keys were lost, then signs out for a fresh session.</summary>
     Task ReplaceLostDeviceAsync();
 
+    /// <summary>Throws <see cref="DeviceKeyLostException"/> when the server lists this device as active with other keys.</summary>
+    Task ThrowIfDeviceKeysLostAsync();
+
     /// <summary>
     /// Get the list of all devices for the current user.
     /// </summary>

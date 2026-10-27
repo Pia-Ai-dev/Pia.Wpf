@@ -178,12 +178,16 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             return;
         }
 
+        if (await ReplaceLostDeviceAsync())
+            return;
+
         try
         {
             ErrorMessage = null;
             State = OnboardingState.Activating;
             StatusMessage = "Verifying recovery code...";
 
+            await _deviceMgmt.ThrowIfDeviceKeysLostAsync();
             // Register or re-register if session expired
             await EnsureOnboardingSessionAsync();
 
@@ -211,6 +215,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                     : "Activation failed. The session may have been invalidated. Please try again.";
                 State = OnboardingState.EnteringRecoveryCode;
             }
+        }
+        catch (DeviceKeyLostException)
+        {
+            await ReplaceLostDeviceAsync(confirmed: true);
         }
         catch (DeviceRegistrationRejectedException ex)
         {

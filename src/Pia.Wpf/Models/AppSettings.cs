@@ -535,8 +535,10 @@ public class AppSettings
     public string? LastChatPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
-    // The id this computer had before its keys were lost; outlives sign-out so the new device can revoke it.
+    // The id this computer had before its keys were lost; outlives sign-out so the new device can revoke it, and
+    // outlives the revoke so a synced job still filed under it comes back to this computer.
     public string? ReplacedDeviceId { get; set; }
+    // Cleared once the old id is revoked, which ends the offer.
     public string? ReplacedDeviceAccountId { get; set; }
 
     /// <summary>The replaced id of this computer, when it belongs to the signed-in account.</summary>
@@ -546,11 +548,7 @@ public class AppSettings
             ? id
             : null;
 
-    public void ForgetPreviousInstallation()
-    {
-        ReplacedDeviceId = null;
-        ReplacedDeviceAccountId = null;
-    }
+    public void ForgetPreviousInstallation() => ReplacedDeviceAccountId = null;
 
     // App+OS version last accepted by the server, so the token requests that carry them stay bare
     // once the pair is current. Cleared value = report on the next token request.

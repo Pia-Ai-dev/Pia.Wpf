@@ -33,7 +33,7 @@ public class AppSettingsPreviousInstallationTests
     }
 
     [Fact]
-    public void ForgettingThePreviousInstallation_ClearsIt()
+    public void ForgettingThePreviousInstallation_EndsTheOfferButKeepsTheFormerId()
     {
         var settings = new AppSettings
         {
@@ -43,6 +43,6 @@ public class AppSettingsPreviousInstallationTests
         settings.ForgetPreviousInstallation();
 
         Assert.Null(settings.PreviousInstallationToRemove());
-        Assert.Null(settings.ReplacedDeviceId);
+        Assert.Equal("old-id", settings.ReplacedDeviceId);
     }
 }

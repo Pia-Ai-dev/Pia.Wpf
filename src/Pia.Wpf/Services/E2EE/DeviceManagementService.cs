@@ -185,6 +185,9 @@ public class DeviceManagementService : IDeviceManagementService
     public async Task ActivateViaRecoveryAsync(string recoveryCode, string onboardingSessionId)
     {
         var deviceId = _deviceKeys.GetDeviceId();
+        var status = await GetDeviceStatusAsync(deviceId);
+        if (status is { Status: DeviceStatus.Active })
+            await ThrowIfDeviceKeysLostAsync();
 
         using var client = await CreateAuthorizedClientAsync();
         var recoveryBlob = await client.GetFromJsonAsync<RecoveryWrappedUmkBlob>(
@@ -198,7 +201,6 @@ public class DeviceManagementService : IDeviceManagementService
         var (selfWrapped, hkdfSalt) = _e2ee.WrapUmkForSelf();
 
         // The server activates only a pending device; an active one replaces its unopenable copy with its own wrap.
-        var status = await GetDeviceStatusAsync(deviceId);
         if (status is { Status: DeviceStatus.Active })
         {
             await UploadWrappedUmkAsync(deviceId, selfWrapped, hkdfSalt, deviceId);
@@ -269,6 +271,28 @@ public class DeviceManagementService : IDeviceManagementService
     private static bool MentionsOnboardingSession(string? text) =>
         text?.Contains("onboarding session", StringComparison.OrdinalIgnoreCase) == true;
 
+    public async Task ThrowIfDeviceKeysLostAsync()
+    {
+        var deviceId = _deviceKeys.GetDeviceId();
+        DeviceInfo? registered;
+        try
+        {
+            registered = (await GetDevicesAsync()).Devices.FirstOrDefault(d => d.DeviceId == deviceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not compare this device's keys with the server's");
+            return;
+        }
+        if (registered is { Status: DeviceStatus.Active } && HoldsOtherKeys(registered))
+            throw new DeviceKeyLostException();
+    }
+
+    private bool HoldsOtherKeys(DeviceInfo? registered) =>
+        registered is not null
+        && (registered.AgreementPublicKey != _deviceKeys.GetAgreementPublicKey()
+            || registered.SigningPublicKey != _deviceKeys.GetSigningPublicKey());
+
     public async Task<KeyHandover> FetchKeyHandoverAsync()
     {
         var deviceId = _deviceKeys.GetDeviceId();
@@ -284,13 +308,8 @@ public class DeviceManagementService : IDeviceManagementService
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
         var devices = await GetDevicesAsync();
-        var registered = devices.Devices.FirstOrDefault(d => d.DeviceId == deviceId);
-        if (registered is not null
-            && (registered.AgreementPublicKey != _deviceKeys.GetAgreementPublicKey()
-                || registered.SigningPublicKey != _deviceKeys.GetSigningPublicKey()))
-        {
+        if (HoldsOtherKeys(devices.Devices.FirstOrDefault(d => d.DeviceId == deviceId)))
             throw new DeviceKeyLostException();
-        }
 
         if (wrappedBlob.CreatedByDeviceId == deviceId)
             return new KeyHandover(wrappedBlob, _deviceKeys.GetAgreementPublicKey(), devices.UmkVersion, null, null);

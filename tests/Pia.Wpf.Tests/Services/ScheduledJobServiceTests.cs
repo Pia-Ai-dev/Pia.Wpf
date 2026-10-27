@@ -975,6 +975,42 @@ public class ScheduledJobServiceTests : IDisposable
         Assert.Equal(otherDevice, (await _service.GetAsync(theirs.Id))!.OwnerDeviceId);
     }
 
+    [Fact]
+    public async Task APulledJobStillFiledUnderThisComputersFormerId_ComesBackHereAndIsPushedAgain()
+    {
+        var formerId = Guid.NewGuid();
+        var currentId = Guid.NewGuid();
+        var settings = new AppSettings { SyncDeviceId = currentId.ToString(), ReplacedDeviceId = formerId.ToString() };
+        var service = new ScheduledJobService(_ctx, new RecurrenceCalculator(), new FixedSettingsService(settings),
+            new SyncDeleteTrackerService(_tmpDir, NullLogger<SyncDeleteTrackerService>.Instance),
+            NullLogger<ScheduledJobService>.Instance);
+        var pulledAt = DateTime.Now.AddDays(-1);
+        var pulled = new ScheduledJob
+        {
+            Id = Guid.NewGuid(), Name = "TEST_Pulled", Query = "q", Recurrence = RecurrenceType.Daily,
+            TimeOfDay = new TimeOnly(8, 0), Status = ScheduledJobStatus.Active, CreatedAt = pulledAt,
+            UpdatedAt = pulledAt, OwnerDeviceId = formerId,
+        };
+
+        await service.UpsertFromSyncAsync(pulled);
+
+        var stored = (await service.GetAsync(pulled.Id))!;
+        Assert.Equal(currentId, stored.OwnerDeviceId);
+        Assert.True(await service.IsOwnedByThisDeviceAsync(stored));
+        Assert.Contains(stored.Id, (await service.GetModifiedSinceAsync(pulledAt.AddHours(1))).Select(j => j.Id));
+    }
+
+    private sealed class FixedSettingsService(AppSettings settings) : ISettingsService
+    {
+#pragma warning disable CS0067
+        public event EventHandler<AppSettings>? SettingsChanged;
+#pragma warning restore CS0067
+        public Task<AppSettings> GetSettingsAsync() => Task.FromResult(settings);
+        public Task SaveSettingsAsync(AppSettings s) => Task.CompletedTask;
+        public Task SaveDraftAsync(string? draftText) => Task.CompletedTask;
+        public Task<string?> GetDraftAsync() => Task.FromResult<string?>(null);
+    }
+
     private async Task ForceNextFireAtAsync(Guid id, DateTime when)
     {
         var conn = _ctx.GetConnection();

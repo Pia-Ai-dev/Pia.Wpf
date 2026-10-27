@@ -69,7 +69,7 @@ public class AccountSettingsPreviousInstallationTests
         await sut.RemovePreviousInstallationCommand.ExecuteAsync(null);
 
         await _deviceMgmt.Received(1).RevokeDeviceAsync("old-id");
-        Assert.Null(_stored.ReplacedDeviceId);
+        Assert.Null(_stored.PreviousInstallationToRemove());
         Assert.False(sut.IsPreviousInstallationVisible);
     }
 
@@ -82,7 +82,7 @@ public class AccountSettingsPreviousInstallationTests
 
         await sut.RemovePreviousInstallationCommand.ExecuteAsync(null);
 
-        Assert.Null(_stored.ReplacedDeviceId);
+        Assert.Null(_stored.PreviousInstallationToRemove());
         await _dialogs.DidNotReceive().ShowMessageDialogAsync(Arg.Any<string>(), Arg.Any<string>());
     }
 
@@ -97,7 +97,7 @@ public class AccountSettingsPreviousInstallationTests
 
         await _dialogs.Received(1).ShowMessageDialogAsync(
             "Settings_E2EE_RemovePreviousInstallation_Failed_Title", "Settings_E2EE_SignatureRefused_Message");
-        Assert.Equal("old-id", _stored.ReplacedDeviceId);
+        Assert.Equal("old-id", _stored.PreviousInstallationToRemove());
         Assert.True(sut.IsPreviousInstallationVisible);
     }
 
@@ -110,7 +110,7 @@ public class AccountSettingsPreviousInstallationTests
         await sut.RemovePreviousInstallationCommand.ExecuteAsync(null);
 
         await _deviceMgmt.DidNotReceive().RevokeDeviceAsync(Arg.Any<string>());
-        Assert.Equal("old-id", _stored.ReplacedDeviceId);
+        Assert.Equal("old-id", _stored.PreviousInstallationToRemove());
     }
 
     [Fact]

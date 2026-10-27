@@ -135,6 +135,34 @@ public class E2EEOnboardingKeyLossTests
     }
 
     [Fact]
+    public async Task ARecoveryCodeEnteredAfterKeyLoss_ReplacesTheDeviceInstead()
+    {
+        _deviceKeys.KeyLossDetected.Returns(true);
+        var sut = CreateSut();
+        sut.RecoveryCodeInput = "recovery-code";
+
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ReplaceLostDeviceAsync();
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+        await _deviceMgmt.DidNotReceive().ActivateViaRecoveryAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task ARecoveryCodeOnADeviceTheServerKnowsWithOtherKeys_ReplacesTheDevice()
+    {
+        _deviceMgmt.ThrowIfDeviceKeysLostAsync().ThrowsAsync(new DeviceKeyLostException());
+        var sut = CreateSut();
+        sut.RecoveryCodeInput = "recovery-code";
+
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ReplaceLostDeviceAsync();
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+        Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_KeyLost"], sut.ErrorMessage);
+    }
+
+    [Fact]
     public async Task Reset_DiscardsThePreviousRecoverySession()
     {
         _settingsService.GetSettingsAsync().Returns(new AppSettings());

@@ -77,6 +77,24 @@ public sealed class DeviceManagementServiceRecoveryTests : IDisposable
         Assert.DoesNotContain(_server.Posts, p => p.EndsWith($"/devices/{ThisDevice}/wrapped-umk"));
     }
 
+    // Recreated keys cannot sign for this id, so only a replacement under a new id helps.
+    [Fact]
+    public async Task AnActiveDeviceWhoseKeysWereLost_UploadsNoCopyForTheOldId()
+    {
+        using var keysTheServerKnows = new InMemoryDeviceKeys(ThisDevice);
+        var server = new ScriptedServer(keysTheServerKnows, _otherKeys)
+        {
+            Status = DeviceStatus.Active,
+            Recovery = _server.Recovery,
+        };
+
+        await Assert.ThrowsAsync<DeviceKeyLostException>(
+            () => CreateSut(server).ActivateViaRecoveryAsync(_code, "session-1"));
+
+        Assert.Empty(server.Posts);
+        Assert.Null(_e2ee.LoadUmk());
+    }
+
     [Fact]
     public async Task AWrongCode_LeavesTheServerCopyAlone()
     {
@@ -115,10 +133,10 @@ public sealed class DeviceManagementServiceRecoveryTests : IDisposable
         };
     }
 
-    private DeviceManagementService CreateSut()
+    private DeviceManagementService CreateSut(ScriptedServer? server = null)
     {
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_server, disposeHandler: false));
+        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(server ?? _server, disposeHandler: false));
         var auth = Substitute.For<IAuthService>();
         auth.GetAccessTokenAsync().Returns("token-1");
 
