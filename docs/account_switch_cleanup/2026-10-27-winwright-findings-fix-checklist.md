@@ -26,25 +26,30 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
 
 ## Steps
 
-- [ ] **1. Keep an unreadable settings.json instead of overwriting it (F1, own branch).** Before any
+- [x] **1. Keep an unreadable settings.json instead of overwriting it (F1, own branch).** Before any
   save can replace it, a settings file that fails to parse is moved aside as
   `settings.json.unreadable-<UTC timestamp>`, and the log says so.
   *Deps:* G1 (decided) · *Effort:* S · *Value:* High
+  *Landed:* `feature/settings-keep-unreadable` `09b7007f`. The wipe-order test needs
+  `LocalDataWipeService`, so it follows on this branch once both are merged.
 - [x] **2. Show the server URL and trust setting while a clear is pending (F2, branch).** Find out why
   Settings → Account shows an empty Server URL and an unticked trust box when a pending clear failed at
   startup, and make the view load them.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **3. Make a failed device approval visible and localized (F3, own branch).** The pending-device
+- [x] **3. Make a failed device approval visible and localized (F3, own branch).** The pending-device
   errors use resource strings and show where the approval prompt was raised, not only in a Settings
   snackbar.
   *Deps:* none · *Effort:* S · *Value:* High
-- [ ] **4. Stop prompting once this device cannot approve (F4, own branch).** The pending-device loop
+  *Landed:* `feature/device-session-errors` `f9a3960e`.
+- [x] **4. Stop prompting once this device cannot approve (F4, own branch).** The pending-device loop
   ends when this device turns out to be revoked or its session has ended. It also re-checks each
   device's status right before showing that device's prompt.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **5. Treat `409 session_ended` as a sign-out (F5, own branch).** Device registration and key
+  *Landed:* `feature/device-session-errors` `fced5a3a`.
+- [x] **5. Treat `409 session_ended` as a sign-out (F5, own branch).** Device registration and key
   fetches that get `session_ended` sign the client out with the same notice a refresh 401 gives.
   *Deps:* G2 (decided) · *Effort:* S · *Value:* High
+  *Landed:* `feature/device-session-errors` `683ee7cb`.
 - [x] **6. Show progress and bound the wait on sign-out (F6, branch).** *Sign out and clear* / *keep*
   shows a busy state during the final upload and the logout call. Both are bounded by short timeouts
   instead of the 60 s / 100 s HttpClient defaults.
@@ -52,10 +57,11 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
 - [x] **7. Drop the redundant Close button from the account-deleted prompt (F7, branch).** The prompt
   offers exactly *Clear this device* and *Keep on this device*.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **8. Harden the throwaway-profile rules for UI runs (round lessons, own branch).** The UI
+- [x] **8. Harden the throwaway-profile rules for UI runs (round lessons, own branch).** The UI
   automation docs and `Invoke-UiScripts.ps1` seed `assistantFilesFolder` for a fresh profile, and warn
   that a copied profile starts the live profile's MCP plugins.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
+  *Landed:* `feature/ui-profile-hardening` `b1911d58`.
 
 ## Step details
 
