@@ -350,7 +350,6 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         {
             while (!ct.IsCancellationRequested)
             {
-                // Check session timeout
                 var elapsed = DateTime.UtcNow - startTime;
                 if (elapsed > SessionTimeout)
                 {
@@ -362,7 +361,6 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                     return;
                 }
 
-                // Show remaining time after 5 minutes
                 if (elapsed > TimeSpan.FromMinutes(5))
                 {
                     var remaining = SessionTimeout - elapsed;
@@ -375,11 +373,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                 {
                     var status = await _deviceMgmt.GetDeviceStatusAsync(deviceId);
                     ct.ThrowIfCancellationRequested();
-                    _consecutivePollErrors = 0; // Reset on success
+                    _consecutivePollErrors = 0;
 
                     if (status is null)
                     {
-                        // Device not found — may have been revoked or re-keyed
                         _logger.LogWarning("Device status returned null, device may have been revoked");
                         ErrorMessage = "This device was not found on the server. It may have been rejected or the encryption was re-keyed. Please try again.";
                         _onboardingSessionId = null;
@@ -407,7 +404,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                             handover = await _deviceMgmt.FetchKeyHandoverAsync();
                             ct.ThrowIfCancellationRequested();
                         }
-                        catch (UnverifiedApprovalException)
+                        catch (UnverifiedApprovalException) when (!ct.IsCancellationRequested)
                         {
                             ShowUnverifiedApproval();
                             return;
@@ -416,6 +413,11 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         await OfferHandoverAsync(handover);
                         return;
                     }
+                }
+                // Reset or Cancel already set the screen; a cancelled poll must not overwrite it.
+                catch (Exception) when (ct.IsCancellationRequested)
+                {
+                    return;
                 }
                 catch (DeviceKeyLostException)
                 {
@@ -436,14 +438,13 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         return;
                     }
 
-                    // Transient error — continue polling
                     StatusMessage = "Connection issue, retrying...";
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            // Polling was cancelled (user navigated away)
+            // The user navigated away.
         }
     }
 
