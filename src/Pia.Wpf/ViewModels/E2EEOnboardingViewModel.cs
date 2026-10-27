@@ -114,7 +114,9 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             _logger.LogError(ex, "Accepting this device's own copy of the key failed");
             if (!RouteKeyLossToRecovery())
             {
-                ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
+                ErrorMessage = LocalizationSource.Instance[ex is StoredKeyCopyChangedException
+                    ? "E2EE_Onboarding_OwnCopyChanged"
+                    : "E2EE_Onboarding_Confirm_AcceptFailed"];
                 State = OnboardingState.Error;
             }
         }

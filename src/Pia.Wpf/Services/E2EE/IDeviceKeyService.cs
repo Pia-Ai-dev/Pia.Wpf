@@ -56,4 +56,7 @@ public interface IDeviceKeyService
     /// to be recreated under the same device id — old wrapped copies can no longer be opened here.
     /// </summary>
     bool KeyLossDetected { get; }
+
+    /// <summary>True when the signing key the server knows is held here; never creates one.</summary>
+    bool CanSign();
 }

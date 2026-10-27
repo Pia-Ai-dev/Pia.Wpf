@@ -100,6 +100,21 @@ public class DeviceKeyService : IDeviceKeyService
         }
     }
 
+    public bool CanSign()
+    {
+        if (KeyLossDetected) return false;
+        if (_ecdsa is not null) return true;
+        try
+        {
+            using var key = CngKey.Open($"Pia-Device-ECDSA-{GetDeviceId()}");
+            return true;
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
+    }
+
     private void EnsureEcdhKey()
     {
         if (_ecdh is not null) return;

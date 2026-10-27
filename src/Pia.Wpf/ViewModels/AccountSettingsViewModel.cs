@@ -957,9 +957,12 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             {
                 _logger.LogError(ex, "Failed to handle pending device {DeviceId}", device.DeviceId);
                 // A dialog, not a snackbar: the prompt can be raised while Settings is not the open view.
-                var message = ex is DeviceRegistrationRejectedException rejection
-                    ? rejection.UserMessage
-                    : _localizationService.Format("Settings_E2EE_PendingDevices_ApproveFailed_Message", displayName);
+                var message = ex switch
+                {
+                    DeviceRegistrationRejectedException rejection => rejection.UserMessage,
+                    DeviceSignatureRefusedException => _localizationService["Settings_E2EE_SignatureRefused_Message"],
+                    _ => _localizationService.Format("Settings_E2EE_PendingDevices_ApproveFailed_Message", displayName),
+                };
                 await _dialogService.ShowMessageDialogAsync(
                     _localizationService["Settings_E2EE_PendingDevices_ApproveFailed_Title"], message);
             }

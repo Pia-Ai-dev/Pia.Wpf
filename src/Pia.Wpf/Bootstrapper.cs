@@ -942,6 +942,7 @@ public static class Bootstrapper
         services.AddSingleton<IE2EEService, E2EEService>();
         services.AddSingleton<IRecoveryCodeService, RecoveryCodeService>();
         services.AddSingleton<IConfirmedApproverStore>(_ => new ConfirmedApproverStore());
+        services.AddSingleton<IDeviceRequestSigner, DeviceRequestSigner>();
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
         services.AddSingleton<IAccountDataService, AccountDataService>();
 

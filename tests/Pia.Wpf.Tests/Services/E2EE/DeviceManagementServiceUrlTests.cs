@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Tests.TestInfrastructure;
 using Pia.Services.Interfaces;
 using Xunit;
 
@@ -72,7 +73,7 @@ public class DeviceManagementServiceUrlTests
 
         return new DeviceManagementService(
             Substitute.For<IE2EEService>(), deviceKeys, Substitute.For<IRecoveryCodeService>(),
-            _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(),
+            _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(), TimeProvider.System,
             NullLogger<DeviceManagementService>.Instance);
     }
 
