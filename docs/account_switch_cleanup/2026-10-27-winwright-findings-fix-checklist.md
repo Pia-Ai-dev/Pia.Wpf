@@ -30,8 +30,8 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
   save can replace it, a settings file that fails to parse is moved aside as
   `settings.json.unreadable-<UTC timestamp>`, and the log says so.
   *Deps:* G1 (decided) · *Effort:* S · *Value:* High
-  *Landed:* `feature/settings-keep-unreadable` `09b7007f`. The wipe-order test needs
-  `LocalDataWipeService`, so it follows on this branch once both are merged.
+  *Landed:* `feature/settings-keep-unreadable` `09b7007f`, merged here; `LocalDataWipeOrderTests` locks
+  the wipe-before-store-read order.
 - [x] **2. Show the server URL and trust setting while a clear is pending (F2, branch).** Find out why
   Settings → Account shows an empty Server URL and an unticked trust box when a pending clear failed at
   startup, and make the view load them.
@@ -41,8 +41,7 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
   snackbar.
   *Deps:* none · *Effort:* S · *Value:* High
   *Landed:* `feature/device-session-errors` `f9a3960e`.
-  *Follow-up:* develop has no `UserMessage`, so the body uses `.Message` in two places; switch it once
-  this branch and the cleanup branch meet.
+  *Merged:* failures show `UserMessage` and the sanitized device name.
 - [x] **4. Stop prompting once this device cannot approve (F4, own branch).** The pending-device loop
   ends when this device turns out to be revoked or its session has ended. It also re-checks each
   device's status right before showing that device's prompt.
@@ -52,9 +51,8 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
   fetches that get `session_ended` sign the client out with the same notice a refresh 401 gives.
   *Deps:* G2 (decided) · *Effort:* S · *Value:* High
   *Landed:* `feature/device-session-errors` `683ee7cb`.
-  *Follow-up:* after the merge, check that this sign-out raises no local-data prompt and that the notice
-  reads as the checklist quotes (develop's `Auth_SignedOut_Rejected` differs). The merge conflicts in
-  `DeviceManagementService`, `AccountSettingsViewModel` and the registration tests.
+  *Merged:* it goes through `SignOutUnexpectedlyAsync`, the same path as a refresh 401, so no
+  local-data prompt; the notice is `Auth_SignedOut_Rejected` ("The server refused to renew your session").
 - [x] **6. Show progress and bound the wait on sign-out (F6, branch).** *Sign out and clear* / *keep*
   shows a busy state during the final upload and the logout call. Both are bounded by short timeouts
   instead of the 60 s / 100 s HttpClient defaults.
