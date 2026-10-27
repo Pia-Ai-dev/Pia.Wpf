@@ -45,11 +45,11 @@ internal sealed class InMemoryDeviceKeys(string deviceId) : IDeviceKeyService, I
 
     public bool CanSign() => HasSigningKey;
 
-    public string StartNewDevice()
+    public Task<string> StartNewDeviceAsync(string? accountId)
     {
         var previous = _deviceId;
         _deviceId = Guid.NewGuid().ToString();
-        return previous;
+        return Task.FromResult(previous);
     }
 
     public void Dispose()

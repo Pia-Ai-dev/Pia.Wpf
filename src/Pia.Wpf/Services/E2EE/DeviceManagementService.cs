@@ -101,7 +101,12 @@ public class DeviceManagementService : IDeviceManagementService
 
     public async Task ReplaceLostDeviceAsync()
     {
-        var previous = _deviceKeys.StartNewDevice();
+        // Sign out first: the session stays tied to the old id on the server, and a crash after this point
+        // costs only another sign-in, never a session tied to the wrong id.
+        var account = (await _settings.GetSettingsAsync()).SyncUserId;
+        await _auth.SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
+
+        var previous = await _deviceKeys.StartNewDeviceAsync(account);
         var current = _deviceKeys.GetDeviceId();
         if (Guid.TryParse(previous, out var from) && Guid.TryParse(current, out var to))
         {
@@ -115,9 +120,6 @@ public class DeviceManagementService : IDeviceManagementService
                 _logger.LogWarning(ex, "Could not move this computer's scheduled jobs to the new device id");
             }
         }
-
-        // The session stays tied to the old id on the server, so only a fresh sign-in can register the new one.
-        await _auth.SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
     }
 
     public async Task<DeviceRegistrationResponse> RegisterPendingDeviceAsync()

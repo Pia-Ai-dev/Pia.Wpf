@@ -55,7 +55,7 @@ public interface IDeviceKeyService
     bool KeyLossDetected { get; }
 
     /// <summary>Switches to a new device id with fresh keys and remembers the old id for removal; returns the old id.</summary>
-    string StartNewDevice();
+    Task<string> StartNewDeviceAsync(string? accountId);
 
     /// <summary>True when a signing key exists locally; never creates one.</summary>
     bool CanSign();

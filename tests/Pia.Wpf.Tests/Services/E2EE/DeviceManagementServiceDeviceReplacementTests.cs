@@ -17,28 +17,30 @@ public class DeviceManagementServiceDeviceReplacementTests
     private readonly IDeviceKeyService _keys = Substitute.For<IDeviceKeyService>();
     private readonly IScheduledJobService _jobs = Substitute.For<IScheduledJobService>();
     private readonly IAuthService _auth = Substitute.For<IAuthService>();
+    private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
 
     public DeviceManagementServiceDeviceReplacementTests()
     {
-        _keys.StartNewDevice().Returns(OldId.ToString());
+        _settings.GetSettingsAsync().Returns(new Pia.Models.AppSettings { SyncUserId = "account-1" });
+        _keys.StartNewDeviceAsync(Arg.Any<string?>()).Returns(OldId.ToString());
         _keys.GetDeviceId().Returns(NewId.ToString());
     }
 
     [Fact]
-    public async Task ReplacingTheDevice_MovesItsJobsToTheNewIdThenSignsOut()
+    public async Task ReplacingTheDevice_SignsOutBeforeSwitchingTheIdAndMovingItsJobs()
     {
         await CreateSut().ReplaceLostDeviceAsync();
 
         Received.InOrder(() =>
         {
-            _keys.StartNewDevice();
-            _jobs.ReassignOwnerAsync(OldId, NewId);
             _auth.SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
+            _keys.StartNewDeviceAsync("account-1");
+            _jobs.ReassignOwnerAsync(OldId, NewId);
         });
     }
 
     [Fact]
-    public async Task JobsThatCannotBeMoved_DoNotKeepTheOldSessionAlive()
+    public async Task JobsThatCannotBeMoved_StillEndTheOldSession()
     {
         _jobs.ReassignOwnerAsync(Arg.Any<Guid>(), Arg.Any<Guid>()).ThrowsAsync(new InvalidOperationException("db locked"));
 
@@ -48,7 +50,7 @@ public class DeviceManagementServiceDeviceReplacementTests
     }
 
     private DeviceManagementService CreateSut() => new(
-        Substitute.For<IE2EEService>(), _keys, Substitute.For<IRecoveryCodeService>(), Substitute.For<ISettingsService>(),
+        Substitute.For<IE2EEService>(), _keys, Substitute.For<IRecoveryCodeService>(), _settings,
         _auth, Substitute.For<System.Net.Http.IHttpClientFactory>(), Substitute.For<IConfirmedApproverStore>(), _jobs,
         new UnsignedRequests(), NullLogger<DeviceManagementService>.Instance);
 }

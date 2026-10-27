@@ -35,14 +35,14 @@ public class DeviceKeyService : IDeviceKeyService
         return _cachedDeviceId;
     }
 
-    public string StartNewDevice()
+    public async Task<string> StartNewDeviceAsync(string? accountId)
     {
-        var settings = _settings.GetSettingsAsync().GetAwaiter().GetResult();
         var previous = GetDeviceId();
+        var settings = await _settings.GetSettingsAsync();
         settings.ReplacedDeviceId = previous;
-        settings.ReplacedDeviceAccountId = settings.SyncUserId;
+        settings.ReplacedDeviceAccountId = accountId;
         settings.SyncDeviceId = Guid.NewGuid().ToString();
-        _settings.SaveSettingsAsync(settings).GetAwaiter().GetResult();
+        await _settings.SaveSettingsAsync(settings);
 
         _cachedDeviceId = settings.SyncDeviceId;
         _ecdh?.Dispose();
