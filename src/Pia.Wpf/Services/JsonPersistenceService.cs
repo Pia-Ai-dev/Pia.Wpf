@@ -1,5 +1,9 @@
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Pia.Logging;
 using Pia.Paths;
 
 namespace Pia.Services;
@@ -41,10 +45,10 @@ public abstract class JsonPersistenceService<T> where T : class
     /// </summary>
     protected abstract T CreateDefault();
 
-    /// <summary>
-    /// Loads data from the JSON file with caching.
-    /// </summary>
-    /// <param name="saveDefaultIfMissing">If true, saves the default value when the file doesn't exist.</param>
+    protected virtual ILogger Logger => NullLogger.Instance;
+
+    protected virtual TimeProvider Clock => TimeProvider.System;
+
     protected async Task<T> LoadAsync(bool saveDefaultIfMissing = false)
     {
         if (_cached is not null)
@@ -67,12 +71,38 @@ public abstract class JsonPersistenceService<T> where T : class
             var json = await File.ReadAllTextAsync(FilePath);
             _cached = JsonSerializer.Deserialize<T>(json, JsonOptions) ?? CreateDefault();
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            Logger.SensitiveDebug("{File} parse error: {Error}", FileName, ex.Message);
+            MoveUnreadableFileAside();
             _cached = CreateDefault();
         }
 
         return _cached;
+    }
+
+    // Keeps the unparseable file out of reach of the next save, which would otherwise overwrite it with defaults.
+    private void MoveUnreadableFileAside()
+    {
+        var stamp = Clock.GetUtcNow().ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        var asidePath = $"{FilePath}.unreadable-{stamp}";
+        for (var n = 2; File.Exists(asidePath); n++)
+            asidePath = $"{FilePath}.unreadable-{stamp}-{n}";
+
+        try
+        {
+            File.Move(FilePath, asidePath);
+            Logger.LogWarning(
+                "{File} could not be parsed; moved aside as {AsideFile}, starting with defaults",
+                FileName, Path.GetFileName(asidePath));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning(
+                "{File} could not be parsed and could not be moved aside ({ErrorType}); starting with defaults",
+                FileName, ex.GetType().Name);
+            Logger.SensitiveDebug("Moving {File} aside failed: {Error}", FileName, ex.Message);
+        }
     }
 
     /// <summary>
