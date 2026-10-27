@@ -55,6 +55,27 @@ public class AppSettingsLocalResetTests
     }
 
     [Fact]
+    public void ForgetE2EEKey_KeepsTheAccountsRequirement()
+    {
+        var s = new AppSettings { SyncUserId = "user-1", IsE2EEEnabled = true, E2EEEncryptedUmk = "umk" };
+
+        s.ForgetE2EEKey();
+
+        Assert.False(s.IsE2EEEnabled);
+        Assert.Contains("user-1", s.E2EERequiredAccountIds);
+    }
+
+    [Fact]
+    public void ForgetE2EEKey_WithoutAnActiveKey_MarksNothing()
+    {
+        var s = new AppSettings { SyncUserId = "user-1" };
+
+        s.ForgetE2EEKey();
+
+        Assert.Empty(s.E2EERequiredAccountIds);
+    }
+
+    [Fact]
     public void ClearAccountState_DropsTokensIdentityCursorsAndKey()
     {
         var s = new AppSettings

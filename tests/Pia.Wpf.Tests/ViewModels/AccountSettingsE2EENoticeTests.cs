@@ -169,4 +169,47 @@ public class AccountSettingsE2EENoticeTests
                 },
             ],
         });
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AllowUnencryptedSync_HandsTheServiceTheAccountFromBeforeTheDialog(bool stillHolds)
+    {
+        var stored = new AppSettings { SyncUserId = "account-a" };
+        _settings.GetSettingsAsync().Returns(stored);
+        _sync.IsE2EEDowngradeDetected.Returns(true);
+        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(_ =>
+        {
+            stored.SyncUserId = "account-b";
+            return true;
+        });
+        _sync.AllowUnencryptedSyncAsync(Arg.Any<string>()).Returns(stillHolds);
+        var sut = CreateSut();
+
+        await sut.AllowUnencryptedSyncCommand.ExecuteAsync(null);
+
+        await _sync.Received(1).AllowUnencryptedSyncAsync("account-a");
+        if (stillHolds)
+        {
+            await _sync.Received(1).PerformFirstSyncMigrationAsync();
+            _sync.Received(1).StartBackgroundSync();
+        }
+        else
+        {
+            await _sync.DidNotReceive().PerformFirstSyncMigrationAsync();
+            _sync.DidNotReceive().StartBackgroundSync();
+        }
+    }
+
+    [Fact]
+    public async Task AllowUnencryptedSync_WithoutADowngrade_AsksNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings { SyncUserId = "account-a" });
+        var sut = CreateSut();
+
+        await sut.AllowUnencryptedSyncCommand.ExecuteAsync(null);
+
+        await _dialogs.DidNotReceive().ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+        await _sync.DidNotReceive().AllowUnencryptedSyncAsync(Arg.Any<string>());
+    }
 }

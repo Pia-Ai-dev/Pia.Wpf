@@ -129,6 +129,21 @@ public class E2EEDowngradeTests
     }
 
     [Fact]
+    public async Task SignIn_WithAnotherAccountsKeyLeftOver_MarksThatAccountNotTheNewOne()
+    {
+        const string previous = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        var (auth, stored, server) = CreateAuth();
+        stored.SyncUserId = previous;
+        stored.IsE2EEEnabled = true;
+        server.LoginAccessToken = Token("""{"sub":"x","e2ee":"0"}""");
+
+        await auth.LoginWithPasswordAsync("user@example.com", "pw");
+
+        Assert.Equal([previous], stored.E2EERequiredAccountIds);
+        Assert.False(stored.IsE2EEEnabled);
+    }
+
+    [Fact]
     public async Task Refresh_ReportingE2EE_MarksTheAccount()
     {
         var (auth, stored, server) = CreateAuth();
@@ -147,6 +162,7 @@ public class E2EEDowngradeTests
     private readonly ISettingsService _syncSettings = Substitute.For<ISettingsService>();
     private readonly IDeviceManagementService _deviceMgmt = Substitute.For<IDeviceManagementService>();
     private readonly IE2EEService _syncE2EE = Substitute.For<IE2EEService>();
+    private readonly FailingHandler _syncServer = new();
     private readonly AppSettings _syncStored = new()
     {
         ServerUrl = "https://server.example",
@@ -160,7 +176,7 @@ public class E2EEDowngradeTests
         _syncAuth.IsLoggedIn.Returns(true);
         var dpapi = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(new FailingHandler()));
+        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_syncServer, disposeHandler: false));
         var e2ee = _syncE2EE;
         return new SyncClientService(
             _syncAuth, _syncSettings, Substitute.For<ITemplateService>(),
@@ -282,12 +298,94 @@ public class E2EEDowngradeTests
         var sut = CreateSync();
         await sut.SyncNowAsync();
 
-        await sut.AllowUnencryptedSyncAsync();
+        Assert.True(await sut.AllowUnencryptedSyncAsync(Account));
         await sut.SyncNowAsync();
 
         Assert.False(sut.IsE2EEDowngradeDetected);
         Assert.Empty(_syncStored.E2EERequiredAccountIds);
         await _syncAuth.Received().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task AllowUnencryptedSync_AfterTheDowngradeCleared_KeepsTheMark()
+    {
+        _syncStored.E2EERequiredAccountIds = [Account];
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync();
+        ServerSays(true);
+        await sut.SyncNowAsync();
+        ServerSays(false);
+
+        Assert.False(await sut.AllowUnencryptedSyncAsync(Account));
+
+        Assert.Equal([Account], _syncStored.E2EERequiredAccountIds);
+    }
+
+    [Fact]
+    public async Task AllowUnencryptedSync_WhenTheServerReportsE2EEAgain_KeepsTheMarkAndAsksForOnboarding()
+    {
+        _syncStored.E2EERequiredAccountIds = [Account];
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync();
+        ServerSays(true);
+
+        Assert.False(await sut.AllowUnencryptedSyncAsync(Account));
+
+        Assert.Equal([Account], _syncStored.E2EERequiredAccountIds);
+        Assert.False(sut.IsE2EEDowngradeDetected);
+        Assert.True(sut.IsE2EEOnboardingRequired);
+    }
+
+    [Fact]
+    public async Task AllowUnencryptedSync_ForAnAccountNoLongerSignedIn_KeepsTheMark()
+    {
+        _syncStored.E2EERequiredAccountIds = [Account];
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync();
+
+        Assert.False(await sut.AllowUnencryptedSyncAsync("0f8fad5b-d9cb-469f-a165-70867728950e"));
+
+        Assert.Equal([Account], _syncStored.E2EERequiredAccountIds);
+    }
+
+    [Fact]
+    public async Task SyncNow_WhenTheTokenRefreshMarksTheAccount_SendsNothing()
+    {
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync();
+        var before = _syncServer.Requests;
+        _syncAuth.GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>()).Returns(_ =>
+        {
+            _syncStored.MarkE2EERequiredForAccount();
+            return "token";
+        });
+        ServerSays(true);
+
+        Assert.Null(await sut.SyncNowAsync());
+
+        Assert.Equal(before, _syncServer.Requests);
+        Assert.True(sut.IsE2EEOnboardingRequired);
+    }
+
+    [Fact]
+    public async Task FirstSyncMigration_WhenTheTokenRefreshMarksTheAccount_SendsNothing()
+    {
+        ServerSays(false);
+        _syncAuth.GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>()).Returns(_ =>
+        {
+            _syncStored.MarkE2EERequiredForAccount();
+            return "token";
+        });
+        var sut = CreateSync();
+
+        await sut.PerformFirstSyncMigrationAsync();
+
+        Assert.Equal(0, _syncServer.Requests);
+        Assert.True(sut.IsE2EEDowngradeDetected);
     }
 
     private static (AuthService Auth, AppSettings Stored, AuthHandler Server) CreateAuth()
@@ -334,8 +432,13 @@ public class E2EEDowngradeTests
 
     private sealed class FailingHandler : HttpMessageHandler
     {
+        public int Requests;
+
         protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref Requests);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        }
     }
 }

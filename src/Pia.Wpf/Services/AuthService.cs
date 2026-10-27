@@ -365,6 +365,8 @@ public class AuthService : IAuthService
         RequiresBusinessProfile = login.User.RequiresBusinessProfile;
         IsLoggedIn = true;
 
+        // Before the new identity is written, so a leftover key marks the account it belonged to.
+        settings.ForgetE2EEKey();
         settings.SyncEnabled = true;
         settings.EncryptedAccessToken = _encryptedAccessToken;
         settings.EncryptedRefreshToken = _encryptedRefreshToken;
@@ -375,7 +377,6 @@ public class AuthService : IAuthService
         settings.SyncDeviceId ??= Guid.NewGuid().ToString();
         // A marker surviving from an earlier connection would suppress this account's history upload.
         settings.AssistantChatsBackfilledAt = null;
-        settings.ForgetE2EEKey();
         if (login.IsE2EEEnabled || AccessTokenClaims.ReadE2EE(login.AccessToken) == true)
             settings.MarkE2EERequiredForAccount();
         if (reportedMetadata)

@@ -158,11 +158,16 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     public async Task<bool> FlushAsync(TimeSpan timeout, CancellationToken ct = default)
     {
+        bool disabled;
+        lock (_stateLock) disabled = _disabled;
+        // A server without chat sync never received a chat, so only an empty store counts as all uploaded.
+        if (disabled)
+            return (await _chatService.GetAllIdsAsync(ct)).Count == 0;
+
         var permitted = await SyncPermittedAsync();
         var waiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_stateLock)
         {
-            if (_disabled) return true;
             if (_loopExited || !permitted) return false;
             foreach (var (id, kind) in _failed)
             {
@@ -199,13 +204,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     private void CloseFlushes()
     {
-        bool disabled;
-        lock (_stateLock)
-        {
-            _loopExited = true;
-            disabled = _disabled;
-        }
-        Complete(TakeFlushWaiters(), disabled);
+        lock (_stateLock) _loopExited = true;
+        Complete(TakeFlushWaiters(), false);
     }
 
     private static void Complete(IEnumerable<TaskCompletionSource<bool>> waiters, bool result)
@@ -395,13 +395,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     private async Task<bool> SendUpsertAsync(SyncAssistantChat chat, bool retried, CancellationToken ct)
     {
-        // Without the key the mapper would send the chat in plaintext; it goes out encrypted after onboarding.
-        var settings = await _settingsService.GetSettingsAsync();
-        if (!_mapper.IsE2EEActive && (settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount()))
-        {
-            _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chat.Id);
+        if (await HoldsForMissingKeyAsync(chat.Id))
             return false;
-        }
 
         var (client, baseUrl, userId) = await BuildClientAsync(ct);
         if (client is null || baseUrl is null) return false;
@@ -409,6 +404,10 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         var url = $"{baseUrl}/api/v1/chats/{chat.Id}";
         using (client)
         {
+            // The token refresh can be what tells this device the account requires E2EE.
+            if (await HoldsForMissingKeyAsync(chat.Id))
+                return false;
+
             var wire = _mapper.ToSyncAssistantChat(chat, userId);
             using var content = CreateGzipJsonContent(wire);
             using var response = await client.PutAsync(url, content, ct);
@@ -448,9 +447,6 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 var errorBody = await response.Content.ReadAsStringAsync(ct);
                 if (errorBody.Contains("e2ee_required"))
                 {
-                    // The account is E2EE-enabled server-side but this chat went out in
-                    // plaintext (no local UMK yet). Dropping silently is fine for the op —
-                    // the local store is authoritative — but the user needs onboarding.
                     _logger.LogWarning(
                         "Server requires E2EE for this account; chat {ChatId} not pushed, onboarding required",
                         chat.Id);
@@ -467,6 +463,17 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 chat.Id, (int)response.StatusCode);
             return false;
         }
+    }
+
+    // Without the key the mapper would send the chat in plaintext; it goes out encrypted after onboarding.
+    private async Task<bool> HoldsForMissingKeyAsync(Guid chatId)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (_mapper.IsE2EEActive || !(settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount()))
+            return false;
+
+        _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chatId);
+        return true;
     }
 
     /// <summary>

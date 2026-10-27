@@ -35,8 +35,8 @@ public interface ISyncClientService
     /// <summary>The server reports E2EE off for an account this device knows required it; sync is held.</summary>
     bool IsE2EEDowngradeDetected { get; }
 
-    /// <summary>Forgets that this account required E2EE, so sync may go unencrypted. Only on the user's confirmation.</summary>
-    Task AllowUnencryptedSyncAsync();
+    /// <summary>Forgets that this account required E2EE, on the user's confirmation; false when the downgrade has since cleared.</summary>
+    Task<bool> AllowUnencryptedSyncAsync(string accountId);
 
     /// <summary>
     /// Called by onboarding UI once the device has successfully onboarded so

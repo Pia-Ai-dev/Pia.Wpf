@@ -128,13 +128,43 @@ public class SyncClientService : ISyncClientService, IDisposable
         E2EEDowngradeChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task AllowUnencryptedSyncAsync()
+    // A token refresh can be what marks the account as requiring E2EE, so the gate runs again before any push.
+    private async Task<string?> GetAccessTokenPastE2EEGateAsync()
+    {
+        var accessToken = await _authService.GetAccessTokenAsync();
+        if (string.IsNullOrEmpty(accessToken))
+            return null;
+        return await BlocksMarkedAccountWithoutKeyAsync(await _settingsService.GetSettingsAsync()) ? null : accessToken;
+    }
+
+    public async Task<bool> AllowUnencryptedSyncAsync(string accountId)
     {
         var settings = await _settingsService.GetSettingsAsync();
+        if (!IsE2EEDowngradeDetected || settings.IsE2EEEnabled || !settings.IsE2EERequiredForAccount()
+            || !string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Unencrypted sync not allowed: the downgrade has cleared or the account changed");
+            return false;
+        }
+
+        // Asked again: the server may have turned E2EE back on while the user read the warning.
+        var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
+        if (serverStatus is not { IsEnabled: false })
+        {
+            if (serverStatus is not null)
+            {
+                ClearE2EEDowngrade();
+                NotifyE2EEOnboardingRequired();
+            }
+            _logger.LogInformation("Unencrypted sync not allowed: the server did not confirm E2EE is off");
+            return false;
+        }
+
         settings.UnmarkE2EERequiredForAccount();
         await _settingsService.SaveSettingsAsync(settings);
         _logger.LogWarning("User allowed unencrypted sync for an account that previously required E2EE");
         ClearE2EEDowngrade();
+        return true;
     }
 
     private async Task<bool> BlocksMarkedAccountWithoutKeyAsync(AppSettings settings)
@@ -414,8 +444,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _hasVerifiedServerE2EEStatus = true;
             }
 
-            var accessToken = await _authService.GetAccessTokenAsync();
-            if (string.IsNullOrEmpty(accessToken))
+            var accessToken = await GetAccessTokenPastE2EEGateAsync();
+            if (accessToken is null)
                 return null;
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
@@ -432,7 +462,11 @@ public class SyncClientService : ISyncClientService, IDisposable
             // Keep skipped account settings in the next pull until reset preferences can be replaced.
             if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
             {
-                settings.LastSyncTimestamp = serverTimestamp.Value;
+                // The push selects rows by this cursor too, so moving it past a failed push strands those edits.
+                if (pushSucceeded)
+                    settings.LastSyncTimestamp = serverTimestamp.Value;
+                else
+                    _logger.LogWarning("Push failed — LastSyncTimestamp NOT updated so the next push retries the same changes");
                 if (!settingsUndecryptable)
                     settings.SuppressSettingsPushAfterReset = false;
                 await _settingsService.SaveSettingsAsync(settings);
@@ -517,8 +551,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 }
             }
 
-            var accessToken = await _authService.GetAccessTokenAsync();
-            if (string.IsNullOrEmpty(accessToken))
+            var accessToken = await GetAccessTokenPastE2EEGateAsync();
+            if (accessToken is null)
                 return;
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
@@ -553,36 +587,27 @@ public class SyncClientService : ISyncClientService, IDisposable
             var isE2EE = _e2ee?.IsReady() == true;
             var userId = isE2EE ? settings.SyncUserId : null;
 
-            // No hash gate here: an unchanged hash can still need a fresh server row (E2EE migration,
-            // new account). Only reset defaults are held back, so they never overwrite the account's.
+            // No hash gate: an E2EE migration or a new account needs a fresh server row even when unchanged.
             var settingsHash = SyncMapper.ComputeSettingsHash(settings);
             var settingsChanged = !settings.SuppressSettingsPushAfterReset;
 
-            // Project every entity to its Sync DTO once, up front. Sessions dominate the volume, so
-            // the push is chunked below by session slices; the (typically small) non-session entities
-            // and Settings ride only the first chunk.
+            // Sessions dominate the volume, so only they are chunked; everything else rides the first batch.
             var templateDtos = templates.Where(t => !t.IsBuiltIn).Select(t => _mapper.ToSyncTemplate(t, userId)).ToList();
-            // !IsManaged as well as !IsBuiltIn: GetPersonasAsync returns built-ins ∪ managed ∪ user rows, and
-            // managed rows are pull-only — an id in personas.upserted would be quarantined server-side, but
-            // the client contract is to never emit one. The filter states that invariant at the push site.
+            // Managed personas are pull-only; the server would quarantine one sent back.
             var personaDtos = personas.Where(p => !p.IsBuiltIn && !p.IsManaged).Select(p => _mapper.ToSyncPersona(p, userId)).ToList();
             var providerDtos = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Select(p => _mapper.ToSyncProvider(p, userId)).ToList();
             var sessionDtos = sessions.Select(s => _mapper.ToSyncSession(s, userId)).ToList();
             var memoryDtos = memories.Select(m => _mapper.ToSyncMemory(m, userId)).ToList();
             var kanbanDtos = kanbanColumns.Select(c => _mapper.ToSyncKanbanColumn(c, userId)).ToList();
             var todoDtos = todos.Select(t => _mapper.ToSyncTodo(t, userId)).ToList();
-            // Meeting-attendance jobs are device-local and never pushed: their MeetingUrl is a bearer token
-            // for the meeting and has no wire field, and a peer on an older build would cast the unknown
-            // Kind ordinal and run the meeting's title through the Research leg.
+            // Device-local: the MeetingUrl is a bearer token with no wire field, and an older peer would run the
+            // unknown Kind as Research.
             var jobDtos = scheduledJobs
                 .Where(j => j.Kind != ScheduledJobKind.MeetingAttendance)
                 .Select(j => _mapper.ToSyncScheduledJob(j, userId)).ToList();
 
-            // Chunk the push into <=FirstSyncBatchSize-session bodies (Sec 6.4) so a large first sync
-            // stays well within the 30/60s rate limit and never ships one multi-MB body. At least one
-            // batch always runs (so an account with no sessions still pushes its other entities +
-            // Settings). Each batch is gzipped via the shared PostPushAsync (server runs
-            // UseRequestDecompression), same as the delta push.
+            // Bounded bodies keep a large first sync inside the 30/60 s rate limit; at least one batch always
+            // runs so an account without sessions still pushes everything else.
             var batchCount = Math.Max(1, (int)Math.Ceiling(sessionDtos.Count / (double)FirstSyncBatchSize));
             var batchSendTimes = new Queue<DateTime>();
             for (var batch = 0; batch < batchCount; batch++)
@@ -620,8 +645,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count, request.ScheduledJobs.Upserted.Count);
             }
 
-            // Persist the settings hash only after every batch pushed successfully (EnsureSuccessAsync
-            // throws otherwise), so a failed push never strands settings behind an advanced hash.
+            // Only after every batch landed (EnsureSuccessAsync throws), or failed settings hide behind the hash.
             await PersistSettingsHashIfChangedAsync(settings, settingsHash, settingsChanged);
 
             if (isE2EE)
@@ -631,7 +655,6 @@ public class SyncClientService : ISyncClientService, IDisposable
                 batchCount, sessionDtos.Count, templateDtos.Count, personaDtos.Count, providerDtos.Count,
                 memoryDtos.Count, kanbanDtos.Count, todoDtos.Count, jobDtos.Count);
 
-            // Pull all data from server (including other devices' data)
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
 

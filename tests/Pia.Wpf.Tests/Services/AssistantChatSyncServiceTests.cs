@@ -347,6 +347,26 @@ public class AssistantChatSyncServiceTests
     }
 
     [Fact]
+    public async Task SendUpsert_WhenTheTokenRefreshMarksTheAccount_SendsNothing()
+    {
+        var stored = new AppSettings { ServerUrl = ServerUrl, SyncUserId = UserId, SyncEnabled = true };
+        _settings.GetSettingsAsync().Returns(stored);
+        _auth.GetAccessTokenAsync().Returns(_ =>
+        {
+            stored.MarkE2EERequiredForAccount();
+            return "test-token";
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Empty(_handler.RequestsByUri);
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
     public async Task SendUpsert_WhenE2EEIsOnButTheKeyIsNotLoaded_SendsNothing()
     {
         _settings.GetSettingsAsync().Returns(new AppSettings
@@ -806,11 +826,15 @@ public class AssistantChatSyncServiceTests
         Assert.Contains(_handler.RequestsByUri.Keys, u => u.EndsWith("/api/v1/chats/" + chat.Id));
     }
 
-    [Fact]
-    public async Task Flush_WhenCapabilityIsOff_ReturnsTrueImmediately()
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public async Task Flush_WhenCapabilityIsOff_ReportsWhetherAnyChatIsLocal(int localChats, bool expected)
     {
         _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(false);
         _capabilities.ChatsConfirmedOffAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Range(0, localChats).Select(_ => Guid.NewGuid()).ToList().AsReadOnly());
         var sut = CreateWorker(TimeSpan.Zero);
 
         await sut.StartAsync(TestContext.Current.CancellationToken);
@@ -818,10 +842,29 @@ public class AssistantChatSyncServiceTests
         {
             await sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
-            var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+            Assert.Equal(expected, await sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await sut.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
 
-            Assert.True(flush.IsCompletedSuccessfully);
-            Assert.True(await flush);
+    [Fact]
+    public async Task Flush_WaitingWhenTheCapabilityTurnsOutOff_WithALocalChat_ReturnsFalse()
+    {
+        _capabilities.ChatsSupportedAsync(Arg.Any<CancellationToken>()).Returns(false);
+        _capabilities.ChatsConfirmedOffAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _chatService.GetAllIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { Guid.NewGuid() }.AsReadOnly());
+        var sut = CreateWorker(TimeSpan.FromMilliseconds(200));
+
+        var flush = sut.FlushAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        await sut.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.False(await flush.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
         }
         finally
         {

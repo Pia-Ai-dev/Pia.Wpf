@@ -558,6 +558,9 @@ public class AppSettings
     /// <summary>Drops this device's copy of the account key and the state that says it can be used.</summary>
     public void ForgetE2EEKey()
     {
+        // An active key may be the only local record that the account requires E2EE.
+        if (IsE2EEEnabled)
+            MarkE2EERequiredForAccount();
         IsE2EEEnabled = false;
         E2EEEncryptedUmk = null;
         E2EEUmkVersion = 0;
@@ -598,9 +601,8 @@ public class AppSettings
 
     public void ClearAccountState()
     {
-        // An install that predates the marker learns it here, before the account id is gone.
-        if (IsE2EEEnabled)
-            MarkE2EERequiredForAccount();
+        // First, while the account id still names the key's owner; the server keeps this device's wrapped copy.
+        ForgetE2EEKey();
         SyncEnabled = false;
         EncryptedAccessToken = null;
         EncryptedRefreshToken = null;
@@ -615,8 +617,6 @@ public class AppSettings
         LastChatPullETag = null;
         LastPullETag = null;
         ClientPolicyInitialized = false;
-        // The key belongs to one account and records no owner; the server keeps this device's wrapped copy.
-        ForgetE2EEKey();
     }
 
     public void ResetSyncedData()

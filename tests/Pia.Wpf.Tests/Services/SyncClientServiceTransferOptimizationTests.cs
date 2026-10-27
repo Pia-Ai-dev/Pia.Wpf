@@ -389,6 +389,30 @@ public class SyncClientServiceTransferOptimizationTests
         Assert.Equal(SyncMapper.ComputeSettingsHash(settings), settings.LastPushedSettingsHash);
     }
 
+    [Fact]
+    public async Task SyncNow_PushFailsButPullSucceeds_KeepsTheCursorSoTheNextPushCarriesTheEdit()
+    {
+        var cursor = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var failing = new CapturingHandler(HttpStatusCode.InternalServerError, "{}", HttpStatusCode.OK, PullResponseJson());
+        var settings = ArrangeFirstSync(failing, suppressSettingsPush: false);
+        settings.LastSyncTimestamp = cursor;
+        settings.LastPushedSettingsHash = SyncMapper.ComputeSettingsHash(settings);
+        using var sut = CreateSut();
+        var edit = new MemoryObject { Type = MemoryObjectTypes.Note, Label = "l", UpdatedAt = cursor.AddHours(1) };
+        _memoryService.GetAllObjectsAsync().Returns(new[] { edit });
+
+        Assert.False((await sut.SyncNowAsync())!.PushSucceeded);
+        Assert.Equal(cursor, settings.LastSyncTimestamp);
+
+        var healthy = new CapturingHandler(HttpStatusCode.OK, PushResponseJson(), HttpStatusCode.OK, PullResponseJson());
+        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(healthy, disposeHandler: false));
+
+        Assert.True((await sut.SyncNowAsync())!.PushSucceeded);
+        Assert.Equal(1, healthy.PushCount);
+        Assert.Contains(edit.Id.ToString(), healthy.LastPushBody);
+        Assert.True(settings.LastSyncTimestamp > cursor);
+    }
+
     private static string PushResponseJson() =>
         JsonSerializer.Serialize(new SyncPushResponse { ServerTimestamp = DateTime.UtcNow });
 

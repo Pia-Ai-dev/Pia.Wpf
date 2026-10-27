@@ -809,12 +809,18 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     [RelayCommand]
     private async Task AllowUnencryptedSyncAsync()
     {
+        var accountId = (await _settingsService.GetSettingsAsync()).SyncUserId;
+        if (accountId is null || !_syncClientService.IsE2EEDowngradeDetected)
+            return;
+
         if (!await _dialogService.ShowConfirmationDialogAsync(
                 _localizationService["E2EE_Downgrade_Confirm_Title"],
                 _localizationService["E2EE_Downgrade_Confirm_Message"]))
             return;
 
-        await _syncClientService.AllowUnencryptedSyncAsync();
+        // Sync kept running behind the dialog, so the answer may now be stale.
+        if (!await _syncClientService.AllowUnencryptedSyncAsync(accountId))
+            return;
         await _syncClientService.PerformFirstSyncMigrationAsync();
         _syncClientService.StartBackgroundSync();
     }
