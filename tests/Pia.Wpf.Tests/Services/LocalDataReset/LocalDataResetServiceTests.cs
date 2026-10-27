@@ -124,10 +124,12 @@ public sealed class LocalDataResetServiceTests : IDisposable
     [InlineData("Memories")]
     [InlineData("Todos")]
     [InlineData("Personas")]
+    [InlineData("ManagedPersonas")]
     public async Task HasSyncedLocalData_AnyRowInSyncedTable_IsTrue(string table)
     {
         Execute(table switch
         {
+            "ManagedPersonas" => $"INSERT INTO ManagedPersonas (Id, Name, SystemPrompt, CreatedAt, UpdatedAt) VALUES ('mp1', 'n', 's', '{Now}', '{Now}')",
             "Sessions" => $"INSERT INTO Sessions (Id, OriginalText, OptimizedText, TemplateId, ProviderId, CreatedAt) VALUES ('s1', 'a', 'b', 't', 'p', '{Now}')",
             "AssistantChats" => $"INSERT INTO AssistantChats (Id, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode) VALUES ('c1', '{Now}', '{Now}', '{Now}', 'Assistant')",
             "Memories" => $"INSERT INTO Memories (Id, Type, Label, CreatedAt, UpdatedAt, LastAccessedAt) VALUES ('m1', 'note', 'l', '{Now}', '{Now}', '{Now}')",

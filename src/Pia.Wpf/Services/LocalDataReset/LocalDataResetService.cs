@@ -16,7 +16,7 @@ public sealed class LocalDataResetService(
     IChatSyncFlusher chats,
     IAppRestartService restart) : ILocalDataResetService
 {
-    private static readonly string[] SyncedTables = ["Personas", "Sessions", "AssistantChats", "Memories", "Todos"];
+    private static readonly string[] SyncedTables = ["Personas", "ManagedPersonas", "Sessions", "AssistantChats", "Memories", "Todos"];
 
     public bool IsResetPending => LocalDataResetMarker.IsPending;
 

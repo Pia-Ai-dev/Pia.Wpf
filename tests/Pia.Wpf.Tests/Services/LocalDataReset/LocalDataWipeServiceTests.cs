@@ -128,6 +128,22 @@ public sealed class LocalDataWipeServiceTests : IDisposable
     }
 
     [Theory]
+    [InlineData("{ \"serverUrl\": ")]
+    [InlineData("null")]
+    public async Task Wipe_WithMalformedSettings_ThrowsAndKeepsTheFile(string content)
+    {
+        await SeedAsync();
+        var settingsPath = Path.Combine(_roaming, "settings.json");
+        await File.WriteAllTextAsync(settingsPath, content, TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAnyAsync<JsonException>(() => NewWiper().WipeAsync());
+
+        Assert.Equal(content, await File.ReadAllTextAsync(settingsPath, TestContext.Current.CancellationToken));
+        Assert.True(File.Exists(Path.Combine(_roaming, "templates.json")));
+        Assert.Equal(1, Count("SELECT COUNT(*) FROM Todos"));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Wipe_ClearsServerPolicyBeforeApplyingSettings(bool policyAlreadyLoaded)

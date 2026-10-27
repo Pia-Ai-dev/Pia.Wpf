@@ -55,13 +55,17 @@ public sealed class LocalDataWipeService(
             deletedFiles, removedProviders, string.Join(", ", counts.Select(c => $"{c.Key}={c.Value}")));
     }
 
-    // GetSettingsAsync answers any read failure with defaults, which the save below would make permanent.
-    // An I/O failure throws here instead, before anything is cleared, so the marker stays and the next start retries.
+    // GetSettingsAsync answers an unreadable or malformed file with defaults, which the save below would make
+    // permanent. Throwing here, before anything is cleared, keeps the file and the marker for the next start.
     private static async Task EnsureSettingsReadableAsync()
     {
         var path = Path.Combine(PiaPaths.RoamingDataDirectory, "settings.json");
-        if (File.Exists(path))
-            await File.ReadAllTextAsync(path);
+        if (!File.Exists(path))
+            return;
+
+        var json = await File.ReadAllTextAsync(path);
+        if (JsonSerializer.Deserialize<AppSettings>(json, JsonPersistenceService<AppSettings>.JsonOptions) is null)
+            throw new JsonException("settings.json holds no settings object");
     }
 
     private static int DeleteSyncedFiles()
