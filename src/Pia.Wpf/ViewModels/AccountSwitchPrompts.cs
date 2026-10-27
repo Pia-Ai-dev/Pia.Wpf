@@ -97,7 +97,8 @@ internal static class AccountSwitchPrompts
             loc["LocalReset_Deleted_Title"],
             ComposeMessage(loc, "LocalReset_Deleted_Message", notices),
             loc["LocalReset_Deleted_Clear"],
-            loc["LocalReset_Deleted_Keep"]);
+            loc["LocalReset_Deleted_Keep"],
+            closeText: "");
 
         if (choice == DialogChoice.Primary)
         {

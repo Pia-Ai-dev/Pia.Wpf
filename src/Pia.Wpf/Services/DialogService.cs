@@ -175,15 +175,22 @@ public class DialogService : IDialogService
     public async Task<DialogChoice> ShowChoiceDialogAsync(
         string title, string message, string primaryText, string secondaryText, string? closeText = null)
     {
-        var result = await _contentDialogService.ShowSimpleDialogAsync(
-            new SimpleContentDialogCreateOptions
-            {
-                Title = title,
-                Content = message,
-                PrimaryButtonText = primaryText,
-                SecondaryButtonText = secondaryText,
-                CloseButtonText = closeText ?? _localizationService["Common_Close"]
-            });
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primaryText,
+            SecondaryButtonText = secondaryText,
+            CloseButtonText = closeText ?? _localizationService["Common_Close"],
+        };
+        if (closeText == "")
+        {
+            // A hidden default button would still answer Enter, so Enter picks the secondary action instead.
+            dialog.DefaultButton = ContentDialogButton.Secondary;
+            ContentDialogCloseButton.HideOnLoad(dialog);
+        }
+
+        var result = await _contentDialogService.ShowAsync(dialog, CancellationToken.None);
 
         return result switch
         {

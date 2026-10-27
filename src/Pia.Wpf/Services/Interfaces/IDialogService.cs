@@ -20,7 +20,7 @@ public interface IDialogService
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
     Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt);
 
-    /// <summary>Offers two named actions; <see cref="DialogChoice.Dismissed"/> when closed without choosing. A null <paramref name="closeText"/> labels the close button "Close".</summary>
+    /// <summary>Offers two named actions; <see cref="DialogChoice.Dismissed"/> when closed without choosing. A null <paramref name="closeText"/> labels the close button "Close"; an empty one hides it.</summary>
     Task<DialogChoice> ShowChoiceDialogAsync(
         string title, string message, string primaryText, string secondaryText, string? closeText = null);
 

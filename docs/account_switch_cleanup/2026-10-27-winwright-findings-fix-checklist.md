@@ -49,7 +49,7 @@ branch: they get a `feature/<name>` from `develop` of their own, so the cleanup 
   shows a busy state during the final upload and the logout call. Both are bounded by short timeouts
   instead of the 60 s / 100 s HttpClient defaults.
   *Deps:* none · *Effort:* S · *Value:* High
-- [ ] **7. Drop the redundant Close button from the account-deleted prompt (F7, branch).** The prompt
+- [x] **7. Drop the redundant Close button from the account-deleted prompt (F7, branch).** The prompt
   offers exactly *Clear this device* and *Keep on this device*.
   *Deps:* none · *Effort:* XS · *Value:* Med
 - [ ] **8. Harden the throwaway-profile rules for UI runs (round lessons, own branch).** The UI

@@ -212,6 +212,18 @@ public class AccountSwitchPromptsTests
     }
 
     [Fact]
+    public async Task OfferClearAfterDeletion_OffersOnlyClearAndKeep()
+    {
+        Choose(DialogChoice.Secondary);
+
+        await AccountSwitchPrompts.OfferClearAfterDeletionAsync(_reset, _dialogs, _loc);
+
+        await _dialogs.Received(1).ShowChoiceDialogAsync(
+            "LocalReset_Deleted_Title", Arg.Any<string>(),
+            "LocalReset_Deleted_Clear", "LocalReset_Deleted_Keep", "");
+    }
+
+    [Fact]
     public async Task OfferClearAfterDeletion_WithKeys_SaysTheyWillBeLost()
     {
         Choose(DialogChoice.Secondary);
