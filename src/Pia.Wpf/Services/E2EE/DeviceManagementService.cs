@@ -286,13 +286,14 @@ public class DeviceManagementService : IDeviceManagementService
             _logger.LogWarning(ex, "Could not compare this device's keys with the server's");
             return;
         }
-        if (registered is { Status: DeviceStatus.Active } && HoldsOtherKeys(registered))
+        if (registered is { Status: DeviceStatus.Active } && HoldsOtherKeysThan(registered))
             throw new DeviceKeyLostException();
     }
 
-    private bool HoldsOtherKeys(DeviceInfo? registered) =>
+    public bool HoldsOtherKeysThan(DeviceInfo? registered) =>
         registered is not null
-        && (registered.AgreementPublicKey != _deviceKeys.GetAgreementPublicKey()
+        && (!_deviceKeys.HasDeviceKeys()
+            || registered.AgreementPublicKey != _deviceKeys.GetAgreementPublicKey()
             || registered.SigningPublicKey != _deviceKeys.GetSigningPublicKey());
 
     public async Task<KeyHandover> FetchKeyHandoverAsync()
@@ -310,7 +311,7 @@ public class DeviceManagementService : IDeviceManagementService
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
         var devices = await GetDevicesAsync();
-        if (HoldsOtherKeys(devices.Devices.FirstOrDefault(d => d.DeviceId == deviceId)))
+        if (HoldsOtherKeysThan(devices.Devices.FirstOrDefault(d => d.DeviceId == deviceId)))
             throw new DeviceKeyLostException();
 
         if (wrappedBlob.CreatedByDeviceId == deviceId)

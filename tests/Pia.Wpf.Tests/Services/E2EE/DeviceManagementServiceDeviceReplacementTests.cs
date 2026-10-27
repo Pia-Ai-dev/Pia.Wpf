@@ -49,6 +49,33 @@ public class DeviceManagementServiceDeviceReplacementTests
         await _auth.Received(1).SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
     }
 
+    [Fact]
+    public void ADeviceWhoseKeysAreGoneLocally_HoldsOtherKeysThanTheServerLists()
+    {
+        _keys.HasDeviceKeys().Returns(false);
+        var registered = new Pia.Shared.E2EE.DeviceInfo
+        {
+            DeviceId = NewId.ToString(), DeviceName = "PC", AgreementPublicKey = "a", SigningPublicKey = "s",
+        };
+
+        Assert.True(CreateSut().HoldsOtherKeysThan(registered));
+        _keys.DidNotReceive().GetAgreementPublicKey();
+    }
+
+    [Fact]
+    public void MatchingKeys_AreNotALoss()
+    {
+        _keys.HasDeviceKeys().Returns(true);
+        _keys.GetAgreementPublicKey().Returns("a");
+        _keys.GetSigningPublicKey().Returns("s");
+        var registered = new Pia.Shared.E2EE.DeviceInfo
+        {
+            DeviceId = NewId.ToString(), DeviceName = "PC", AgreementPublicKey = "a", SigningPublicKey = "s",
+        };
+
+        Assert.False(CreateSut().HoldsOtherKeysThan(registered));
+    }
+
     private DeviceManagementService CreateSut() => new(
         Substitute.For<IE2EEService>(), _keys, Substitute.For<IRecoveryCodeService>(), _settings,
         _auth, Substitute.For<System.Net.Http.IHttpClientFactory>(), Substitute.For<IConfirmedApproverStore>(), _jobs,

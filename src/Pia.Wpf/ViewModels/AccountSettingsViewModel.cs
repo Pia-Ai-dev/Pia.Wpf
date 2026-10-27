@@ -141,6 +141,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 IsE2EEEnabled = false;
                 _isLoading = false;
                 DeviceFingerprint = string.Empty;
+                OnboardingViewModel.Reset();
                 UpdateSyncState();
                 ClearCredits();
             });

@@ -51,6 +51,9 @@ public interface IDeviceManagementService
     /// <summary>Throws <see cref="DeviceKeyLostException"/> when the server lists this device as active with other keys.</summary>
     Task ThrowIfDeviceKeysLostAsync();
 
+    /// <summary>True when this device lacks the keys the server lists for it, so nothing it signs is accepted.</summary>
+    bool HoldsOtherKeysThan(DeviceInfo? registered);
+
     /// <summary>
     /// Get the list of all devices for the current user.
     /// </summary>

@@ -124,6 +124,19 @@ public class AccountSettingsPreviousInstallationTests
         Assert.Equal("E2EE_Onboarding_KeyLost", sut.LoginErrorMessage);
     }
 
+    [Fact]
+    public void SigningOut_ClearsTheKeyLossStateOfTheSetupScreen()
+    {
+        var sut = CreateSut();
+        sut.OnboardingViewModel.ErrorMessage = "E2EE_Onboarding_KeyLost";
+        sut.OnboardingViewModel.State = OnboardingState.Error;
+
+        _auth.LoginStateChanged += Raise.Event<EventHandler<bool>>(this, false);
+
+        Assert.Equal(OnboardingState.Initial, sut.OnboardingViewModel.State);
+        Assert.Null(sut.OnboardingViewModel.ErrorMessage);
+    }
+
     private async Task<AccountSettingsViewModel> InitializedSutAsync()
     {
         var sut = CreateSut();
