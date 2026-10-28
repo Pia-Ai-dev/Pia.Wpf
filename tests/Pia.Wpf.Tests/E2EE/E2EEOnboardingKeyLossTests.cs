@@ -12,9 +12,8 @@ using Pia.Shared.E2EE;
 using Pia.ViewModels;
 using Xunit;
 
-/// <summary>The lost-key loop: a device whose CNG keys were recreated can never open an already
-/// wrapped copy, so repeating the attempt must route to recovery instead of the AcceptFailed
-/// error.</summary>
+/// <summary>A device whose keys were lost can never open or sign for its old id, so it is replaced under a new one
+/// instead of looping on the AcceptFailed error.</summary>
 public class E2EEOnboardingKeyLossTests
 {
     private readonly IDeviceKeyService _deviceKeys = Substitute.For<IDeviceKeyService>();
@@ -78,15 +77,35 @@ public class E2EEOnboardingKeyLossTests
     }
 
     [Fact]
-    public async Task TheResumedHandover_RoutesKeyLossToRecovery()
+    public async Task TheResumedHandover_ReplacesTheDeviceOnKeyLoss()
     {
         AnApprovedDeviceWhoseCopyWillNotOpen(keyLost: true);
         var sut = CreateSut();
 
         await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
 
-        Assert.Equal(OnboardingState.EnteringRecoveryCode, sut.State);
+        await _deviceMgmt.Received(1).ReplaceLostDeviceAsync();
+        Assert.Equal(OnboardingState.Error, sut.State);
         Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_KeyLost"], sut.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task AfterARestart_TheServersKeyMismatchAloneReplacesTheDevice()
+    {
+        _deviceKeys.GetDeviceId().Returns("device-001");
+        _deviceKeys.KeyLossDetected.Returns(false);
+        _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(new DeviceStatusResponse
+        {
+            DeviceId = "device-001",
+            Status = DeviceStatus.Active,
+        });
+        _deviceMgmt.FetchKeyHandoverAsync().ThrowsAsync(new DeviceKeyLostException());
+        var sut = CreateSut();
+
+        await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ReplaceLostDeviceAsync();
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
     }
 
     [Fact]
@@ -99,6 +118,7 @@ public class E2EEOnboardingKeyLossTests
 
         Assert.Equal(OnboardingState.Error, sut.State);
         Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"], sut.ErrorMessage);
+        await _deviceMgmt.DidNotReceive().ReplaceLostDeviceAsync();
     }
 
     [Fact]
@@ -112,6 +132,34 @@ public class E2EEOnboardingKeyLossTests
 
         Assert.Equal(OnboardingState.Error, sut.State);
         Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_OwnCopyChanged"], sut.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ARecoveryCodeEnteredAfterKeyLoss_ReplacesTheDeviceInstead()
+    {
+        _deviceKeys.KeyLossDetected.Returns(true);
+        var sut = CreateSut();
+        sut.RecoveryCodeInput = "recovery-code";
+
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ReplaceLostDeviceAsync();
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+        await _deviceMgmt.DidNotReceive().ActivateViaRecoveryAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task ARecoveryCodeOnADeviceTheServerKnowsWithOtherKeys_ReplacesTheDevice()
+    {
+        _deviceMgmt.ThrowIfDeviceKeysLostAsync().ThrowsAsync(new DeviceKeyLostException());
+        var sut = CreateSut();
+        sut.RecoveryCodeInput = "recovery-code";
+
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ReplaceLostDeviceAsync();
+        await _deviceMgmt.DidNotReceive().RegisterPendingDeviceAsync();
+        Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_KeyLost"], sut.ErrorMessage);
     }
 
     [Fact]
@@ -136,7 +184,7 @@ public class E2EEOnboardingKeyLossTests
     }
 
     [Fact]
-    public async Task KeyLossDuringApprovalPolling_RoutesToRecovery()
+    public async Task KeyLossDuringApprovalPolling_ReplacesTheDevice()
     {
         _deviceKeys.GetDeviceId().Returns("device-001");
         _deviceMgmt.GetDeviceStatusAsync("device-001").Returns(
@@ -145,18 +193,18 @@ public class E2EEOnboardingKeyLossTests
         _deviceMgmt.RegisterPendingDeviceAsync().Returns(
             new DeviceRegistrationResponse { OnboardingSessionId = "session", ServerChallenge = "challenge" });
         _deviceMgmt.FetchKeyHandoverAsync().ThrowsAsync(new DeviceKeyLostException());
-        var reachedRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replaced = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _deviceMgmt.ReplaceLostDeviceAsync().Returns(_ =>
+        {
+            replaced.TrySetResult();
+            return Task.CompletedTask;
+        });
         var sut = new E2EEOnboardingViewModel(
             _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _syncService, _settingsService,
             NullLogger<E2EEOnboardingViewModel>.Instance, pollIntervalOverride: TimeSpan.FromMilliseconds(1));
-        sut.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(sut.State) && sut.State == OnboardingState.EnteringRecoveryCode)
-                reachedRecovery.TrySetResult();
-        };
 
         await sut.StartDeviceApprovalCommand.ExecuteAsync(null);
-        await reachedRecovery.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await replaced.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_KeyLost"], sut.ErrorMessage);
         await _deviceMgmt.DidNotReceive().AcceptKeyHandoverAsync(Arg.Any<KeyHandover>());

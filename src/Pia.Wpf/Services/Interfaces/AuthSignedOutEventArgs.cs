@@ -11,6 +11,9 @@ public enum AuthSignOutReason
 
     /// <summary>The stored session cannot be opened here, so no refresh can ever be sent.</summary>
     LocalSessionUnusable,
+
+    /// <summary>This computer's device keys were lost; it continues under a new device id after a fresh sign-in.</summary>
+    DeviceKeysLost,
 }
 
 public class AuthSignedOutEventArgs(AuthSignOutReason reason) : EventArgs

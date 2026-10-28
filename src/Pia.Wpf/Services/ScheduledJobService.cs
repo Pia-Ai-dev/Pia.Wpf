@@ -636,6 +636,18 @@ public class ScheduledJobService : IScheduledJobService
         return nextFire;
     }
 
+    public async Task<int> ReassignOwnerAsync(Guid from, Guid to)
+    {
+        var connection = _context.GetConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "UPDATE ScheduledJobs SET OwnerDeviceId = @To, UpdatedAt = @UpdatedAt WHERE OwnerDeviceId = @From";
+        command.Parameters.AddWithValue("@To", to.ToString());
+        command.Parameters.AddWithValue("@From", from.ToString());
+        command.Parameters.AddWithValue("@UpdatedAt", DateTime.Now.ToString("O"));
+        return await command.ExecuteNonQueryAsync();
+    }
+
     public async Task<int> BackfillRecurrenceDaysAsync()
     {
         var localDeviceId = await ResolveLocalDeviceIdAsync();
@@ -697,6 +709,7 @@ public class ScheduledJobService : IScheduledJobService
 
     public async Task UpsertFromSyncAsync(ScheduledJob job)
     {
+        await ClaimFromReplacedDeviceAsync(job);
         var existing = await GetAsync(job.Id);
         if (existing is null)
         {
@@ -765,6 +778,20 @@ public class ScheduledJobService : IScheduledJobService
         _calculator.ComputeNextFireAt(
             job.Recurrence, job.TimeOfDay, job.SpecificDate,
             job.DayOfWeek, job.DayOfMonth, job.Month, from);
+
+    // A job the server still files under this computer's former id stays here; the bump pushes the new owner.
+    private async Task ClaimFromReplacedDeviceAsync(ScheduledJob job)
+    {
+        if (job.OwnerDeviceId is not { } owner)
+            return;
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!Guid.TryParse(settings.ReplacedDeviceId, out var replaced) || owner != replaced
+            || await ResolveLocalDeviceIdAsync() is not { } current || current == replaced)
+            return;
+
+        job.OwnerDeviceId = current;
+        job.UpdatedAt = DateTime.Now;
+    }
 
     private async Task<Guid?> ResolveLocalDeviceIdAsync()
     {

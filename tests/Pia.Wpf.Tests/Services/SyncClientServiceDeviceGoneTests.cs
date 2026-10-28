@@ -140,6 +140,31 @@ public class SyncClientServiceDeviceGoneTests
         sut.Dispose();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PendingDevicesCheck_ReplacesAnActiveDeviceOnlyWhenItsKeysAreGone(bool keysGone)
+    {
+        var sut = CreateSut(HttpStatusCode.OK, "{}");
+        _deviceKeys.GetDeviceId().Returns("device-1");
+        var self = new Shared.E2EE.DeviceInfo
+        {
+            DeviceId = "device-1", DeviceName = "PC", Status = Shared.E2EE.DeviceStatus.Active,
+            AgreementPublicKey = "k", SigningPublicKey = "k",
+        };
+        _deviceMgmt.GetDevicesAsync().Returns(new Shared.E2EE.DeviceListResponse { Devices = [self] });
+        _deviceMgmt.HoldsOtherKeysThan(self).Returns(keysGone);
+        var revoked = 0;
+        sut.CurrentDeviceRevoked += (_, _) => revoked++;
+
+        await InvokeCheckForPendingDevicesAsync(sut);
+        await InvokeCheckForPendingDevicesAsync(sut);
+
+        await _deviceMgmt.Received(keysGone ? 1 : 0).ReplaceLostDeviceAsync();
+        Assert.Equal(0, revoked);
+        sut.Dispose();
+    }
+
     [Fact]
     public async Task Pull_OnDeviceRevoked_RaisesTheNotice()
     {

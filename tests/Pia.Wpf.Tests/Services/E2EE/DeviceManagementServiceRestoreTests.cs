@@ -28,6 +28,7 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
     private readonly AppSettings _stored = new() { ServerUrl = "https://sync.example" };
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly ScriptedServer _server = new();
+    private readonly IAuthService _auth = Substitute.For<IAuthService>();
     private readonly E2EEService _e2ee;
     private readonly byte[] _umk = RandomNumberGenerator.GetBytes(32);
 
@@ -50,7 +51,7 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
     }
 
     [Fact]
-    public async Task LostDeviceKeysAfterSignInClearsTheUmk_RouteToRecovery()
+    public async Task LostDeviceKeysAfterSignInClearsTheUmk_ReplaceTheDevice()
     {
         _server.Status = DeviceStatus.Active;
         _server.Wrapped = await SelfWrapAsync();
@@ -67,7 +68,8 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
         await onboarding.StartDeviceApprovalCommand.ExecuteAsync(null);
 
         Assert.False(replacementKeys.KeyLossDetected);
-        Assert.Equal(OnboardingState.EnteringRecoveryCode, onboarding.State);
+        Assert.NotEqual(ThisDevice, replacementKeys.GetDeviceId());
+        await _auth.Received(1).SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
         Assert.Null(_stored.E2EEEncryptedUmk);
         Assert.False(_stored.IsE2EEEnabled);
     }
@@ -111,8 +113,7 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
     {
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_server, disposeHandler: false));
-        var auth = Substitute.For<IAuthService>();
-        auth.GetAccessTokenAsync().Returns("token-1");
+        _auth.GetAccessTokenAsync().Returns("token-1");
         _server.Device = new DeviceInfo
         {
             DeviceId = ThisDevice,
@@ -122,8 +123,8 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
         };
 
         return new DeviceManagementService(
-            e2ee ?? _e2ee, keys ?? _keys, Substitute.For<IRecoveryCodeService>(), _settings, auth, factory,
-            Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(), NullLogger<DeviceManagementService>.Instance);
+            e2ee ?? _e2ee, keys ?? _keys, Substitute.For<IRecoveryCodeService>(), _settings, _auth, factory,
+            Substitute.For<IConfirmedApproverStore>(), Substitute.For<IScheduledJobService>(), new UnsignedRequests(), NullLogger<DeviceManagementService>.Instance);
     }
 
     private sealed class PassthroughDpapi(ILogger<DpapiHelper> logger) : DpapiHelper(logger)

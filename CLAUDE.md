@@ -172,7 +172,7 @@ _logger.LogInformation("Fetching from {Url}", SafeUrl.Format(requestUrl));
 
 Every new or changed call from the client to the server (a new endpoint, or a new method or body on an existing one) gets one check before it is done: does it change which devices or keys an account has, or overwrite or delete account data? Device revoke or approve, wrapped-key writes, recovery changes, turning E2EE off and a reset all do. If yes, authorise it with the device key through the device-signed request mechanism (a client signer around `DeviceKeyService.Sign`, `[RequireDeviceSignature]` on the server route), not with the bearer token alone. If no, state in the PR description that the call was checked and why the bearer token is enough. Plain sync, reads and ordinary content writes stay on the bearer token.
 
-Until the signer exists, do not invent a signature format for a single call: name the call as a candidate in the PR description. A call that needs a signature but may be made without an Active device (recovery) must say how it is authorised instead.
+On the client that signer is `IDeviceRequestSigner` (`src/Pia.Wpf/Services/E2EE/`): send such a call through it, never a signature format made up for one call. A call that needs a signature but may be made without an Active device (recovery) must say how it is authorised instead.
 
 ## Documentation Layout
 

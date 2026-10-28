@@ -91,8 +91,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         }
         catch (DeviceKeyLostException)
         {
-            RouteKeyLossToRecovery(confirmed: true);
-            return true;
+            return await ReplaceLostDeviceAsync(confirmed: true);
         }
         catch (UnverifiedApprovalException)
         {
@@ -112,7 +111,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "Accepting this device's own copy of the key failed");
-            if (!RouteKeyLossToRecovery())
+            if (!await ReplaceLostDeviceAsync())
             {
                 ErrorMessage = LocalizationSource.Instance[ex is StoredKeyCopyChangedException
                     ? "E2EE_Onboarding_OwnCopyChanged"
@@ -179,12 +178,16 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             return;
         }
 
+        if (await ReplaceLostDeviceAsync())
+            return;
+
         try
         {
             ErrorMessage = null;
             State = OnboardingState.Activating;
             StatusMessage = "Verifying recovery code...";
 
+            await _deviceMgmt.ThrowIfDeviceKeysLostAsync();
             // Register or re-register if session expired
             await EnsureOnboardingSessionAsync();
 
@@ -212,6 +215,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                     : "Activation failed. The session may have been invalidated. Please try again.";
                 State = OnboardingState.EnteringRecoveryCode;
             }
+        }
+        catch (DeviceKeyLostException)
+        {
+            await ReplaceLostDeviceAsync(confirmed: true);
         }
         catch (DeviceRegistrationRejectedException ex)
         {
@@ -257,7 +264,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         {
             _logger.LogError(ex, "Accepting the approved key failed");
             StatusMessage = "";
-            if (!RouteKeyLossToRecovery())
+            if (!await ReplaceLostDeviceAsync())
             {
                 ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
                 _onboardingSessionId = null;
@@ -310,20 +317,27 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         State = OnboardingState.Error;
     }
 
-    // Recovery re-registers the device before replacing a copy wrapped for its lost keys.
-    private bool RouteKeyLossToRecovery(bool confirmed = false)
+    // Lost keys cannot sign for the old id, so the computer joins again under a new one.
+    private async Task<bool> ReplaceLostDeviceAsync(bool confirmed = false)
     {
         if (!confirmed && !_deviceKeys.KeyLossDetected)
             return false;
 
-        _logger.LogWarning("This device's E2EE keys were lost; routing onboarding to recovery");
+        _logger.LogWarning("This device's E2EE keys were lost; replacing it under a new device id");
         StopPolling();
         ForgetPendingHandover();
         _onboardingSessionId = null;
-        RecoveryCodeInput = "";
         StatusMessage = "";
         ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_KeyLost"];
-        State = OnboardingState.EnteringRecoveryCode;
+        State = OnboardingState.Error;
+        try
+        {
+            await _deviceMgmt.ReplaceLostDeviceAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Replacing this device after its keys were lost failed");
+        }
         return true;
     }
 
@@ -423,7 +437,7 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                 }
                 catch (DeviceKeyLostException)
                 {
-                    RouteKeyLossToRecovery(confirmed: true);
+                    await ReplaceLostDeviceAsync(confirmed: true);
                     return;
                 }
                 catch (OperationCanceledException) { throw; }

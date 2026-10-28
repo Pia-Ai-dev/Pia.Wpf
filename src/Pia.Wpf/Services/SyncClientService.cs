@@ -1985,6 +1985,15 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
     }
 
+    private async Task ReplaceLostDeviceAsync()
+    {
+        if (_revokedNoticeRaised) return;
+        _revokedNoticeRaised = true;
+        StopBackgroundSync();
+        _e2ee?.ClearCachedUmk();
+        await _deviceMgmt!.ReplaceLostDeviceAsync();
+    }
+
     private async Task CheckForPendingDevicesAsync()
     {
         try
@@ -2014,6 +2023,15 @@ public class SyncClientService : ISyncClientService, IDisposable
                     _logger.LogWarning(
                         "Current device {DeviceId} is pending on the server; onboarding required", currentDeviceId);
                     NotifyE2EEOnboardingRequired();
+                    return;
+                }
+
+                // The local copy of the key still opens, so sync alone would never notice the device keys are gone.
+                if (_deviceMgmt.HoldsOtherKeysThan(currentDevice))
+                {
+                    _logger.LogWarning(
+                        "Current device {DeviceId} no longer holds the keys the server lists; replacing it", currentDeviceId);
+                    await ReplaceLostDeviceAsync();
                     return;
                 }
             }

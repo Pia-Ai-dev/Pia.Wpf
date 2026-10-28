@@ -10,7 +10,9 @@ internal sealed class InMemoryDeviceKeys(string deviceId) : IDeviceKeyService, I
     private readonly ECDiffieHellman _agreement = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
     private readonly ECDsa _signing = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-    public string GetDeviceId() => deviceId;
+    private string _deviceId = deviceId;
+
+    public string GetDeviceId() => _deviceId;
 
     public string GetAgreementPublicKey() => Export(_agreement.ExportParameters(false));
 
@@ -42,6 +44,13 @@ internal sealed class InMemoryDeviceKeys(string deviceId) : IDeviceKeyService, I
     public bool HasSigningKey { get; set; } = true;
 
     public bool CanSign() => HasSigningKey;
+
+    public Task<string> StartNewDeviceAsync(string? accountId)
+    {
+        var previous = _deviceId;
+        _deviceId = Guid.NewGuid().ToString();
+        return Task.FromResult(previous);
+    }
 
     public void Dispose()
     {

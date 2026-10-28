@@ -73,7 +73,7 @@ public class DeviceManagementServiceUrlTests
 
         return new DeviceManagementService(
             Substitute.For<IE2EEService>(), deviceKeys, Substitute.For<IRecoveryCodeService>(),
-            _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), new UnsignedRequests(),
+            _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), Substitute.For<IScheduledJobService>(), new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
     }
 

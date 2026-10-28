@@ -187,6 +187,9 @@ public interface IScheduledJobService
     /// </summary>
     Task<int> BackfillRecurrenceDaysAsync();
 
+    /// <summary>Hands this computer's jobs to its new device id; the UpdatedAt bump syncs the new owner.</summary>
+    Task<int> ReassignOwnerAsync(Guid from, Guid to);
+
     /// <summary>
     /// Inserts a new job (no execution state) or updates the synced config of an existing one.
     /// Leaves NextFireAt/LastFiredAt/LastResultEntryId/ConsecutiveFailures untouched on update,
