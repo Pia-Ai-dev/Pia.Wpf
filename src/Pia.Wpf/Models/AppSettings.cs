@@ -583,24 +583,31 @@ public class AppSettings
     }
 
     // Outlives sign-out and the local-data wipe: a later "E2EE off" from the server is a downgrade to refuse.
+    // Entries are E2EERequiredKey values, since one account id can exist on two servers.
     public List<string> E2EERequiredAccountIds { get; set; } = [];
 
+    internal static string E2EERequiredKey(string? serverUrl, string accountId) =>
+        $"{serverUrl?.Trim().TrimEnd('/')}|{accountId}";
+
+    private string? CurrentE2EERequiredKey =>
+        SyncUserId is { Length: > 0 } id ? E2EERequiredKey(ServerUrl, id) : null;
+
     public bool IsE2EERequiredForAccount() =>
-        SyncUserId is { } id && E2EERequiredAccountIds.Contains(id, StringComparer.OrdinalIgnoreCase);
+        CurrentE2EERequiredKey is { } key && E2EERequiredAccountIds.Contains(key, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>True when the signed-in account was newly marked, so the caller knows to save.</summary>
     public bool MarkE2EERequiredForAccount()
     {
-        if (SyncUserId is not { Length: > 0 } id || IsE2EERequiredForAccount())
+        if (CurrentE2EERequiredKey is not { } key || IsE2EERequiredForAccount())
             return false;
-        E2EERequiredAccountIds.Add(id);
+        E2EERequiredAccountIds.Add(key);
         return true;
     }
 
     public void UnmarkE2EERequiredForAccount()
     {
-        if (SyncUserId is { } id)
-            E2EERequiredAccountIds.RemoveAll(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase));
+        if (CurrentE2EERequiredKey is { } key)
+            E2EERequiredAccountIds.RemoveAll(x => string.Equals(x, key, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>Set by a local-data clear; the next pushes omit Settings until a pull has applied the account's.</summary>

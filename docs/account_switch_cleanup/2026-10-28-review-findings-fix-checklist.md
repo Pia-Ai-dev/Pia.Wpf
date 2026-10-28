@@ -42,7 +42,7 @@ little standalone value, unblocks a High.
   `pending-sync-deletes.json`, `policy-cache.json` and, per G1, `settings.json`, each from its own
   store's directory. Device-local asides survive.
   *Deps:* G1 (decided) · *Effort:* XS · *Value:* Med
-- [ ] **5. Scope the E2EE-required marker to the server.**
+- [x] **5. Scope the E2EE-required marker to the server.**
   `E2EERequiredAccountIds` entries become `<server key>|<account id>`. The property name and type do
   not change, so `ClientPolicyContract.DeniedKeys` stays valid. The WinWright test-round steps that
   read the raw list are updated.

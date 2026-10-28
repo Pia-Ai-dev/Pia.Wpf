@@ -19,6 +19,10 @@ namespace Pia.Tests.Services;
 public class E2EEDowngradeTests
 {
     private const string Account = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+    private const string Server = "https://server.example";
+    private static readonly string Marked = Key(Account);
+
+    private static string Key(string account) => AppSettings.E2EERequiredKey(Server, account);
 
     private static string Token(string payloadJson) =>
         "eyJhbGciOiJIUzI1NiJ9." + Convert.ToBase64String(Encoding.UTF8.GetBytes(payloadJson))
@@ -43,7 +47,7 @@ public class E2EEDowngradeTests
     [Fact]
     public void Marker_SurvivesSignOutAndTheLocalDataWipe()
     {
-        var settings = new AppSettings { SyncUserId = Account };
+        var settings = new AppSettings { ServerUrl = Server, SyncUserId = Account };
         Assert.True(settings.MarkE2EERequiredForAccount());
 
         settings.ClearAccountState();
@@ -56,7 +60,7 @@ public class E2EEDowngradeTests
     [Fact]
     public void Marker_BelongsToOneAccount()
     {
-        var settings = new AppSettings { SyncUserId = Account };
+        var settings = new AppSettings { ServerUrl = Server, SyncUserId = Account };
         settings.MarkE2EERequiredForAccount();
 
         settings.SyncUserId = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -67,13 +71,28 @@ public class E2EEDowngradeTests
     }
 
     [Fact]
+    public void Marker_BelongsToOneServer()
+    {
+        var settings = new AppSettings { ServerUrl = Server, SyncUserId = Account };
+        settings.MarkE2EERequiredForAccount();
+
+        settings.ServerUrl = "https://staging.example";
+        Assert.False(settings.IsE2EERequiredForAccount());
+        settings.UnmarkE2EERequiredForAccount();
+        Assert.Equal([Marked], settings.E2EERequiredAccountIds);
+
+        settings.ServerUrl = "https://SERVER.example/";
+        Assert.True(settings.IsE2EERequiredForAccount());
+    }
+
+    [Fact]
     public void SignOut_OfAnEncryptedAccount_MarksItFirst()
     {
-        var settings = new AppSettings { SyncUserId = Account, IsE2EEEnabled = true };
+        var settings = new AppSettings { ServerUrl = Server, SyncUserId = Account, IsE2EEEnabled = true };
 
         settings.ClearAccountState();
 
-        Assert.Equal([Account], settings.E2EERequiredAccountIds);
+        Assert.Equal([Marked], settings.E2EERequiredAccountIds);
     }
 
     // A pushed policy could otherwise empty the list and reopen the downgrade.
@@ -85,7 +104,7 @@ public class E2EEDowngradeTests
     [Fact]
     public void Unmark_ForgetsOnlyTheSignedInAccount()
     {
-        var settings = new AppSettings { SyncUserId = Account, E2EERequiredAccountIds = [Account, "other"] };
+        var settings = new AppSettings { ServerUrl = Server, SyncUserId = Account, E2EERequiredAccountIds = [Marked, "other"] };
 
         settings.UnmarkE2EERequiredForAccount();
 
@@ -102,7 +121,7 @@ public class E2EEDowngradeTests
 
         await auth.LoginWithPasswordAsync("user@example.com", "pw");
 
-        Assert.Equal([Account], stored.E2EERequiredAccountIds);
+        Assert.Equal([Marked], stored.E2EERequiredAccountIds);
     }
 
     [Fact]
@@ -113,19 +132,19 @@ public class E2EEDowngradeTests
 
         await auth.LoginWithPasswordAsync("user@example.com", "pw");
 
-        Assert.Equal([Account], stored.E2EERequiredAccountIds);
+        Assert.Equal([Marked], stored.E2EERequiredAccountIds);
     }
 
     [Fact]
     public async Task SignIn_WithE2EEOff_LeavesAnEarlierMarkInPlace()
     {
         var (auth, stored, server) = CreateAuth();
-        stored.E2EERequiredAccountIds = [Account];
+        stored.E2EERequiredAccountIds = [Marked];
         server.LoginAccessToken = Token("""{"sub":"x","e2ee":"0"}""");
 
         await auth.LoginWithPasswordAsync("user@example.com", "pw");
 
-        Assert.Equal([Account], stored.E2EERequiredAccountIds);
+        Assert.Equal([Marked], stored.E2EERequiredAccountIds);
     }
 
     [Fact]
@@ -139,7 +158,7 @@ public class E2EEDowngradeTests
 
         await auth.LoginWithPasswordAsync("user@example.com", "pw");
 
-        Assert.Equal([previous], stored.E2EERequiredAccountIds);
+        Assert.Equal([Key(previous)], stored.E2EERequiredAccountIds);
         Assert.False(stored.IsE2EEEnabled);
     }
 
@@ -153,7 +172,7 @@ public class E2EEDowngradeTests
 
         await auth.GetAccessTokenAsync(forceRefresh: true);
 
-        Assert.Equal([Account], stored.E2EERequiredAccountIds);
+        Assert.Equal([Marked], stored.E2EERequiredAccountIds);
     }
 
     // --- SyncClientService: the gate ---
@@ -165,7 +184,7 @@ public class E2EEDowngradeTests
     private readonly FailingHandler _syncServer = new();
     private readonly AppSettings _syncStored = new()
     {
-        ServerUrl = "https://server.example",
+        ServerUrl = Server,
         SyncEnabled = true,
         SyncUserId = Account,
     };
@@ -194,7 +213,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task SyncNow_MarkedAccount_ServerSaysOff_SendsNothingAndReportsTheDowngrade()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
         var raised = 0;
@@ -210,7 +229,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task SyncNow_MarkedAccount_StatusUnknown_SendsNothing()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(null);
         var sut = CreateSync();
 
@@ -223,7 +242,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task SyncNow_MarkedAccount_ServerSaysOn_AsksForOnboarding()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(true);
         var sut = CreateSync();
 
@@ -236,7 +255,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task FirstSyncMigration_MarkedAccount_ServerSaysOff_SendsNothing()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
 
@@ -261,7 +280,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task Downgrade_ClearsWhenTheServerReportsE2EEAgain()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
         await sut.SyncNowAsync(TestContext.Current.CancellationToken);
@@ -277,7 +296,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task Downgrade_ClearsOnceThisDeviceHoldsTheKey()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
         await sut.SyncNowAsync(TestContext.Current.CancellationToken);
@@ -293,7 +312,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task AllowUnencryptedSync_UnmarksTheAccountAndLetsSyncGoAhead()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
         await sut.SyncNowAsync(TestContext.Current.CancellationToken);
@@ -309,7 +328,7 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task AllowUnencryptedSync_AfterTheDowngradeCleared_KeepsTheMark()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
         await sut.SyncNowAsync(TestContext.Current.CancellationToken);
@@ -319,13 +338,13 @@ public class E2EEDowngradeTests
 
         Assert.False(await sut.AllowUnencryptedSyncAsync(Account));
 
-        Assert.Equal([Account], _syncStored.E2EERequiredAccountIds);
+        Assert.Equal([Marked], _syncStored.E2EERequiredAccountIds);
     }
 
     [Fact]
     public async Task AllowUnencryptedSync_WhenTheServerReportsE2EEAgain_KeepsTheMarkAndAsksForOnboarding()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
         await sut.SyncNowAsync(TestContext.Current.CancellationToken);
@@ -333,7 +352,7 @@ public class E2EEDowngradeTests
 
         Assert.False(await sut.AllowUnencryptedSyncAsync(Account));
 
-        Assert.Equal([Account], _syncStored.E2EERequiredAccountIds);
+        Assert.Equal([Marked], _syncStored.E2EERequiredAccountIds);
         Assert.False(sut.IsE2EEDowngradeDetected);
         Assert.True(sut.IsE2EEOnboardingRequired);
     }
@@ -341,14 +360,14 @@ public class E2EEDowngradeTests
     [Fact]
     public async Task AllowUnencryptedSync_ForAnAccountNoLongerSignedIn_KeepsTheMark()
     {
-        _syncStored.E2EERequiredAccountIds = [Account];
+        _syncStored.E2EERequiredAccountIds = [Marked];
         ServerSays(false);
         var sut = CreateSync();
         await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.False(await sut.AllowUnencryptedSyncAsync("0f8fad5b-d9cb-469f-a165-70867728950e"));
 
-        Assert.Equal([Account], _syncStored.E2EERequiredAccountIds);
+        Assert.Equal([Marked], _syncStored.E2EERequiredAccountIds);
     }
 
     [Fact]
@@ -390,7 +409,7 @@ public class E2EEDowngradeTests
 
     private static (AuthService Auth, AppSettings Stored, AuthHandler Server) CreateAuth()
     {
-        var stored = new AppSettings { ServerUrl = "https://server.example" };
+        var stored = new AppSettings { ServerUrl = Server };
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(stored);
         var server = new AuthHandler();

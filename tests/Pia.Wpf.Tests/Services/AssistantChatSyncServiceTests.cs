@@ -334,7 +334,7 @@ public class AssistantChatSyncServiceTests
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
             SyncEnabled = true,
-            E2EERequiredAccountIds = [UserId],
+            E2EERequiredAccountIds = [AppSettings.E2EERequiredKey(ServerUrl, UserId)],
         });
         var chat = SampleChat();
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
@@ -385,15 +385,17 @@ public class AssistantChatSyncServiceTests
         Assert.Empty(_handler.RequestsByUri);
     }
 
-    [Fact]
-    public async Task SendUpsert_ForAnotherAccountMarkedOnThisDevice_StillSends()
+    [Theory]
+    [InlineData(ServerUrl, "someone-else")]
+    [InlineData("https://staging.local", UserId)]
+    public async Task SendUpsert_ForAnotherAccountMarkedOnThisDevice_StillSends(string markedServer, string markedAccount)
     {
         _settings.GetSettingsAsync().Returns(new AppSettings
         {
             ServerUrl = ServerUrl,
             SyncUserId = UserId,
             SyncEnabled = true,
-            E2EERequiredAccountIds = ["someone-else"],
+            E2EERequiredAccountIds = [AppSettings.E2EERequiredKey(markedServer, markedAccount)],
         });
         var chat = SampleChat();
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
