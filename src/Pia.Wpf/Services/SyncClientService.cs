@@ -40,6 +40,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly ILogger<SyncClientService> _logger;
     private readonly SyncDeleteTrackerService _deleteTracker;
     private readonly ILocalDataResetIndicator? _resetIndicator;
+    private readonly AccountTransitionCoordinator _accountGate;
 
     // Single serializer for both push sites (first-sync + delta). camelCase unifies the previous
     // PascalCase(delta)/camelCase(first-sync) split; WhenWritingNull trims "field":null keys
@@ -97,12 +98,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     private int _syncGeneration;
     // Set for one SyncNowAsync cycle; _syncLock keeps cycles from overlapping.
     private CancellationToken _cycleToken;
-    // Bumped on every sign-in and sign-out, so a cycle can tell that the account changed under it.
-    private int _accountEpoch;
     // Set for one pull/apply holder of _syncLock.
-    private AccountScope? _cycleScope;
-
-    private readonly record struct AccountScope(int Epoch, string? UserId);
+    private int? _cycleEpoch;
 
     private sealed class AccountChangedException : Exception;
 
@@ -187,7 +184,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
-        await ThrowIfAccountChangedAsync();
+        ThrowIfAccountChanged();
         if (serverStatus is { IsEnabled: true })
         {
             _logger.LogWarning("E2EE required for this account but UMK not available; onboarding required");
@@ -236,7 +233,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         IPluginService? pluginService = null,
         IPersonaService? personaService = null,
         IPolicyService? policyService = null,
-        ILocalDataResetIndicator? resetIndicator = null)
+        ILocalDataResetIndicator? resetIndicator = null,
+        AccountTransitionCoordinator? accountGate = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -258,13 +256,13 @@ public class SyncClientService : ISyncClientService, IDisposable
         _logger = logger;
         _deleteTracker = deleteTracker;
         _resetIndicator = resetIndicator;
+        _accountGate = accountGate ?? new AccountTransitionCoordinator();
 
         _authService.LoginStateChanged += OnAuthLoginStateChanged;
     }
 
     private void OnAuthLoginStateChanged(object? sender, bool isLoggedIn)
     {
-        Interlocked.Increment(ref _accountEpoch);
         if (!isLoggedIn)
         {
             _hasVerifiedServerE2EEStatus = false;
@@ -284,23 +282,19 @@ public class SyncClientService : ISyncClientService, IDisposable
         return true;
     }
 
-    private async Task<AccountScope> CaptureAccountScopeAsync(int epoch) =>
-        new(epoch, (await _settingsService.GetSettingsAsync())?.SyncUserId);
-
-    private async Task<bool> AccountChangedAsync(AccountScope scope)
+    // Synchronous, so nothing can interleave between the check and the send or write it guards.
+    private bool AccountChanged(int epoch)
     {
-        if (scope.Epoch == Volatile.Read(ref _accountEpoch)
-            && string.Equals((await _settingsService.GetSettingsAsync())?.SyncUserId, scope.UserId, StringComparison.OrdinalIgnoreCase))
-            return false;
+        if (_accountGate.IsCurrent(epoch)) return false;
 
-        _logger.LogWarning("Sync abandoned: the signed-in account changed while it ran; nothing from it is applied or saved");
+        _logger.LogWarning("Sync abandoned: the signed-in account changed while it ran; nothing from it is sent, applied or saved");
         return true;
     }
 
     // Once the account changed, the server's answers belong to the old one and the shared settings to the new one.
-    private async Task ThrowIfAccountChangedAsync()
+    private void ThrowIfAccountChanged()
     {
-        if (_cycleScope is { } scope && await AccountChangedAsync(scope))
+        if (_cycleEpoch is { } epoch && AccountChanged(epoch))
             throw new AccountChangedException();
     }
 
@@ -440,8 +434,8 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task<SyncResult?> SyncNowAsync(CancellationToken ct = default)
     {
-        var epoch = Volatile.Read(ref _accountEpoch);
-        if (!_authService.IsLoggedIn || ResetPending()) return null;
+        var epoch = _accountGate.TryCaptureEpoch();
+        if (epoch is null || !_authService.IsLoggedIn || ResetPending()) return null;
 
         if (!await _syncLock.WaitAsync(0)) return null;
 
@@ -450,7 +444,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _cycleToken = ct;
         try
         {
-            _cycleScope = await CaptureAccountScopeAsync(epoch);
+            _cycleEpoch = epoch;
             var settings = await _settingsService.GetSettingsAsync();
             _logger.LogInformation("SyncNowAsync started — LastSyncTimestamp: {LastSync}", settings.LastSyncTimestamp);
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
@@ -471,7 +465,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
-                await ThrowIfAccountChangedAsync();
+                ThrowIfAccountChanged();
                 if (serverStatus is null)
                 {
                     _logger.LogWarning("Could not determine server E2EE status; skipping this sync cycle");
@@ -491,7 +485,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var accessToken = await GetAccessTokenPastE2EEGateAsync();
             if (accessToken is null)
                 return null;
-            await ThrowIfAccountChangedAsync();
+            ThrowIfAccountChanged();
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
@@ -503,23 +497,26 @@ public class SyncClientService : ISyncClientService, IDisposable
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             if (PendingDeviceRevocation is not null)
                 return null;
-            await ThrowIfAccountChangedAsync();
+            using (await _accountGate.EnterWriteAsync())
+            {
+                ThrowIfAccountChanged();
 
-            // Keep skipped account settings in the next pull until reset preferences can be replaced.
-            if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
-            {
-                // The push selects rows by this cursor too, so moving it past a failed push strands those edits.
-                if (pushSucceeded)
-                    settings.LastSyncTimestamp = serverTimestamp.Value;
-                else
-                    _logger.LogWarning("Push failed — LastSyncTimestamp NOT updated so the next push retries the same changes");
-                if (!settingsUndecryptable)
-                    settings.SuppressSettingsPushAfterReset = false;
-                await _settingsService.SaveSettingsAsync(settings);
-            }
-            else if (!pullOk)
-            {
-                _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
+                // Keep skipped account settings in the next pull until reset preferences can be replaced.
+                if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
+                {
+                    // The push selects rows by this cursor too, so moving it past a failed push strands those edits.
+                    if (pushSucceeded)
+                        settings.LastSyncTimestamp = serverTimestamp.Value;
+                    else
+                        _logger.LogWarning("Push failed — LastSyncTimestamp NOT updated so the next push retries the same changes");
+                    if (!settingsUndecryptable)
+                        settings.SuppressSettingsPushAfterReset = false;
+                    await _settingsService.SaveSettingsAsync(settings);
+                }
+                else if (!pullOk)
+                {
+                    _logger.LogWarning("Pull failed — LastSyncTimestamp NOT updated to avoid missing data");
+                }
             }
 
             // Pending devices are checked every Nth cycle, and on any 200 pull since that is the only hint a
@@ -556,7 +553,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         finally
         {
             _cycleToken = default;
-            _cycleScope = null;
+            _cycleEpoch = null;
             _syncLock.Release();
         }
         return result;
@@ -564,13 +561,13 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task PerformFirstSyncMigrationAsync()
     {
-        var epoch = Volatile.Read(ref _accountEpoch);
-        if (!_authService.IsLoggedIn || ResetPending()) return;
+        var epoch = _accountGate.TryCaptureEpoch();
+        if (epoch is null || !_authService.IsLoggedIn || ResetPending()) return;
 
         await _syncLock.WaitAsync();
         try
         {
-            _cycleScope = await CaptureAccountScopeAsync(epoch);
+            _cycleEpoch = epoch;
             var settings = await _settingsService.GetSettingsAsync();
             _logger.LogInformation("PerformFirstSyncMigrationAsync: SyncEnabled={Enabled}, ServerUrl={Url}, LastSyncTimestamp={LastSync}, IsE2EEEnabled={E2EE}",
                 settings.SyncEnabled, SafeUrl.Format(settings.ServerUrl),
@@ -594,7 +591,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (_e2ee is not null && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
-                await ThrowIfAccountChangedAsync();
+                ThrowIfAccountChanged();
                 if (serverStatus is null or { IsEnabled: true })
                 {
                     _logger.LogWarning(
@@ -609,7 +606,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var accessToken = await GetAccessTokenPastE2EEGateAsync();
             if (accessToken is null)
                 return;
-            await ThrowIfAccountChangedAsync();
+            ThrowIfAccountChanged();
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
@@ -692,7 +689,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                 using var response = await PostPushAsync(client, serverUrl, request);
                 batchSendTimes.Enqueue(DateTime.UtcNow);
-                await ThrowIfAccountChangedAsync();
+                ThrowIfAccountChanged();
                 await EnsureSuccessAsync(response, $"First-sync push (batch {batch + 1}/{batchCount})");
 
                 _logger.LogInformation("First-sync push batch {Batch}/{BatchCount} completed (settingsIncluded: {SettingsIncluded}, templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos}, scheduledJobs: {Jobs})",
@@ -714,18 +711,22 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
-            await ThrowIfAccountChangedAsync();
 
-            if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
+            using (await _accountGate.EnterWriteAsync())
             {
-                settings.LastSyncTimestamp = serverTimestamp.Value;
-                if (!settingsUndecryptable)
-                    settings.SuppressSettingsPushAfterReset = false;
-                await _settingsService.SaveSettingsAsync(settings);
-            }
-            else
-            {
-                _logger.LogWarning("First-sync pull failed — LastSyncTimestamp NOT updated; next sync will retry full pull");
+                ThrowIfAccountChanged();
+
+                if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
+                {
+                    settings.LastSyncTimestamp = serverTimestamp.Value;
+                    if (!settingsUndecryptable)
+                        settings.SuppressSettingsPushAfterReset = false;
+                    await _settingsService.SaveSettingsAsync(settings);
+                }
+                else
+                {
+                    _logger.LogWarning("First-sync pull failed — LastSyncTimestamp NOT updated; next sync will retry full pull");
+                }
             }
         }
         catch (AccountChangedException)
@@ -733,7 +734,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
         finally
         {
-            _cycleScope = null;
+            _cycleEpoch = null;
             _syncLock.Release();
         }
     }
@@ -763,8 +764,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     /// <summary>Refetches provider rows an E2EE pull without the key blanked, by resetting the sync cursor.</summary>
     public async Task<bool> RepairBlankedSyncRowsAsync()
     {
-        var scope = await CaptureAccountScopeAsync(Volatile.Read(ref _accountEpoch));
-        if (!_authService.IsLoggedIn) return false;
+        var epoch = _accountGate.TryCaptureEpoch();
+        if (epoch is null || !_authService.IsLoggedIn) return false;
 
         var settings = await _settingsService.GetSettingsAsync();
         if (!settings.SyncEnabled || settings.BlankedSyncRowRepairAt is not null)
@@ -789,7 +790,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         // Marked only once a cycle ran: a skipped one returns null, and burning the one-shot there strands the rows.
         var result = await ForceFullResyncAsync();
-        if (result is null || await AccountChangedAsync(scope))
+        if (result is null || AccountChanged(epoch.Value))
         {
             _logger.LogWarning("Repair resync did not run; leaving the repair armed for a later launch");
             return false;
@@ -803,13 +804,14 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task<SyncResult?> ForceFullResyncAsync()
     {
-        if (ResetPending()) return null;
-        var scope = await CaptureAccountScopeAsync(Volatile.Read(ref _accountEpoch));
+        var epoch = _accountGate.TryCaptureEpoch();
+        if (epoch is null || ResetPending()) return null;
         _logger.LogInformation("ForceFullResyncAsync: resetting LastSyncTimestamp to trigger full pull");
         await _syncLock.WaitAsync();
         try
         {
-            if (await AccountChangedAsync(scope))
+            using var hold = await _accountGate.EnterWriteAsync();
+            if (AccountChanged(epoch.Value))
                 return null;
             var settings = await _settingsService.GetSettingsAsync();
             settings.LastSyncTimestamp = null;
@@ -853,6 +855,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         using var content = new StreamContent(compressedStream);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         content.Headers.ContentEncoding.Add("gzip");
+        ThrowIfAccountChanged();
         var pushSw = Stopwatch.StartNew();
         var response = await client.PostAsync($"{serverUrl}/api/sync/push", content, _cycleToken);
         pushSw.Stop();
@@ -1019,7 +1022,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         using var response = await PostPushAsync(client, serverUrl, request);
-        await ThrowIfAccountChangedAsync();
+        ThrowIfAccountChanged();
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
@@ -1066,6 +1069,8 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         if (!settingsChanged) return;
 
+        using var hold = await _accountGate.EnterWriteAsync();
+        ThrowIfAccountChanged();
         settings.LastPushedSettingsHash = settingsHash;
         await _settingsService.SaveSettingsAsync(settings);
     }
@@ -1207,10 +1212,11 @@ public class SyncClientService : ISyncClientService, IDisposable
                 "Pull forced unconditional: a catalog channel is uninitialized (managed personas: {Personas}, client policy: {Policy})",
                 settings.ManagedPersonaStoreInitialized, settings.ClientPolicyInitialized);
 
+        ThrowIfAccountChanged();
         var pullSw = Stopwatch.StartNew();
         var response = await client.SendAsync(pullRequest, _cycleToken);
         pullSw.Stop();
-        await ThrowIfAccountChangedAsync();
+        ThrowIfAccountChanged();
         _logger.LogInformation("Pull HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pullSw.ElapsedMilliseconds);
 
         if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
@@ -1287,6 +1293,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                 shellsDropped);
         }
 
+        // Held through the token save: a sign-in or sign-out waits for the write in flight, and the checks stop the rest.
+        using var applyHold = await _accountGate.EnterWriteAsync();
+        ThrowIfAccountChanged();
+
         var decryptionErrors = 0;
         var mergeInserted = 0;
         var mergeUpdated = 0;
@@ -1301,6 +1311,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             try
             {
+                ThrowIfAccountChanged();
                 var currentSettings = await _settingsService.GetSettingsAsync();
                 _mapper.ApplySyncSettings(pullResponse.Settings, currentSettings, userId);
                 await _settingsService.SaveSettingsAsync(currentSettings);
@@ -1317,6 +1328,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var template in pullResponse.Templates.Upserted)
         {
+            ThrowIfAccountChanged();
             try
             {
                 var local = _mapper.FromSyncTemplate(template, userId);
@@ -1366,6 +1378,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Templates.Deleted)
         {
+            ThrowIfAccountChanged();
             _logger.LogDebug("Pull deleted: {EntityType} {Id}", "templates", deletedId);
             await _templateService.DeleteTemplateAsync(deletedId, trackForSync: false);
             mergeDeleted++;
@@ -1378,6 +1391,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             foreach (var persona in pullResponse.Personas.Upserted)
             {
+                ThrowIfAccountChanged();
                 try
                 {
                     var local = _mapper.FromSyncPersona(persona, userId);
@@ -1428,6 +1442,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             foreach (var deletedId in pullResponse.Personas.Deleted)
             {
+                ThrowIfAccountChanged();
                 _logger.LogDebug("Pull deleted: {EntityType} {Id}", "personas", deletedId);
                 await _personaService.DeletePersonaAsync(deletedId, trackForSync: false);
                 mergeDeleted++;
@@ -1454,6 +1469,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var provider in pullResponse.Providers.Upserted)
         {
+            ThrowIfAccountChanged();
             try
             {
                 var local = _mapper.FromSyncProvider(provider, userId);
@@ -1523,6 +1539,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Providers.Deleted)
         {
+            ThrowIfAccountChanged();
             _logger.LogDebug("Pull deleted: {EntityType} {Id}", "providers", deletedId);
             await _providerService.DeleteProviderAsync(deletedId, trackForSync: false);
             mergeDeleted++;
@@ -1546,6 +1563,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         // Sessions are append-only.
         foreach (var session in pullResponse.Sessions.Added)
         {
+            ThrowIfAccountChanged();
             try
             {
                 var local = _mapper.FromSyncSession(session, userId);
@@ -1570,6 +1588,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Sessions.Deleted)
         {
+            ThrowIfAccountChanged();
             _logger.LogDebug("Pull deleted: {EntityType} {Id}", "sessions", deletedId);
             await _historyService.DeleteSessionAsync(deletedId);
             mergeDeleted++;
@@ -1579,6 +1598,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var memory in pullResponse.Memories.Upserted)
         {
+            ThrowIfAccountChanged();
             try
             {
                 var local = _mapper.FromSyncMemory(memory, userId);
@@ -1615,6 +1635,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         foreach (var deletedId in pullResponse.Memories.Deleted)
         {
+            ThrowIfAccountChanged();
             _logger.LogDebug("Pull deleted: {EntityType} {Id}", "memories", deletedId);
             await _memoryService.DeleteObjectAsync(deletedId, trackForSync: false);
             mergeDeleted++;
@@ -1627,6 +1648,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             foreach (var syncColumn in pullResponse.KanbanColumns.Upserted)
             {
+                ThrowIfAccountChanged();
                 try
                 {
                     var local = _mapper.FromSyncKanbanColumn(syncColumn, userId);
@@ -1667,6 +1689,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             foreach (var todo in pullResponse.Todos.Upserted)
             {
+                ThrowIfAccountChanged();
                 try
                 {
                     var local = _mapper.FromSyncTodo(todo, userId);
@@ -1720,6 +1743,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             foreach (var deletedId in pullResponse.Todos.Deleted)
             {
+                ThrowIfAccountChanged();
                 _logger.LogDebug("Pull deleted: {EntityType} {Id}", "todos", deletedId);
                 await _todoService.DeleteAsync(deletedId, trackForSync: false);
                 mergeDeleted++;
@@ -1732,6 +1756,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             foreach (var syncJob in pullResponse.ScheduledJobs.Upserted)
             {
+                ThrowIfAccountChanged();
                 try
                 {
                     var local = _mapper.FromSyncScheduledJob(syncJob, userId);
@@ -1765,6 +1790,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             foreach (var deletedId in pullResponse.ScheduledJobs.Deleted)
             {
+                ThrowIfAccountChanged();
                 _logger.LogDebug("Pull deleted: {EntityType} {Id}", "scheduledJobs", deletedId);
                 await _scheduledJobService.DeleteAsync(deletedId, trackForSync: false);
                 mergeDeleted++;
@@ -1783,6 +1809,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (_pluginService is not null &&
             (pullResponse.Plugins.Upserted.Count > 0 || pullResponse.Plugins.Deleted.Count > 0))
         {
+            ThrowIfAccountChanged();
             await _pluginService.ApplyServerPluginsAsync(
                 pullResponse.Plugins.Upserted, pullResponse.Plugins.Deleted);
             _logger.LogInformation("Applied {Upserted} plugin upserts, {Deleted} plugin deletions",
@@ -1798,6 +1825,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (pullResponse.ManagedPersonas is { } managed)
             {
                 // Managed rows are plaintext even under E2EE: a group-shared row cannot be wrapped with one user's key.
+                ThrowIfAccountChanged();
                 await _personaService.ReplaceManagedPersonasAsync(
                     managed.Personas.Select(_mapper.FromSyncManagedPersona).ToList());
 
@@ -1812,6 +1840,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         // and it clears the cache. Absent (null) means the catalog fast-skip fired: keep what is cached.
         if (isFirstPage && _policyService is not null && pullResponse.ClientPolicy is { } policy)
         {
+            ThrowIfAccountChanged();
             await _policyService.ReplaceServerPolicyAsync(policy.Document);
             _logger.LogInformation(
                 "Stored client policy document: {Length} chars; a change takes effect within this sync cycle",
@@ -1825,7 +1854,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         if (newCatalogVersion.HasValue || latchCatalogChannels || storePullETag)
         {
-            await ThrowIfAccountChangedAsync();
+            ThrowIfAccountChanged();
             if (newCatalogVersion.HasValue)
                 settings.LastCatalogVersion = newCatalogVersion;
             if (latchCatalogChannels)
@@ -1854,6 +1883,8 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         _logger.LogInformation("Pull merge: {Inserted} inserted, {Updated} updated, {Skipped} skipped, {Deleted} deleted, {DecryptErrors} decrypt errors",
             mergeInserted, mergeUpdated, mergeSkipped, mergeDeleted, decryptionErrors);
+
+        applyHold.Dispose();
 
         // Raised once per drained page, not once per pull.
         try
@@ -1941,7 +1972,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         try
         {
             var response = await _deviceMgmt!.GetDevicesAsync();
-            if (_cycleScope is { } scope && await AccountChangedAsync(scope))
+            if (_cycleEpoch is { } epoch && AccountChanged(epoch))
                 return;
 
             if (_deviceKeys is not null)

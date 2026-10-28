@@ -1089,6 +1089,44 @@ public class AssistantChatSyncServiceTests
         Assert.Equal(1, PutCount(chat.Id));
     }
 
+    [Fact]
+    public async Task AllowingUnencryptedSync_ResumesAStartupBackfillTheMissingKeyHeld()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = ArrangeBackfilledWorkerWithChat(HttpStatusCode.OK);
+        var stored = new AppSettings { ServerUrl = ServerUrl, SyncUserId = UserId, SyncEnabled = true };
+        stored.MarkE2EERequiredForAccount();
+        _settings.GetSettingsAsync().Returns(stored);
+        _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<Guid> { chat.Id }.AsReadOnly());
+        var syncClient = Substitute.For<ISyncClientService>();
+        var sut = new AssistantChatSyncService(
+            _chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
+            syncClient, NullLogger<AssistantChatSyncService>.Instance,
+            startupDelayOverride: TimeSpan.Zero, backfillRetryIntervalOverride: TimeSpan.FromMinutes(10));
+
+        await sut.StartAsync(ct);
+        try
+        {
+            Assert.False(await sut.FlushAsync(TimeSpan.FromSeconds(30), ct).WaitAsync(TimeSpan.FromSeconds(10), ct));
+            Assert.Equal(0, PutCount(chat.Id));
+
+            stored.UnmarkE2EERequiredForAccount();
+            syncClient.E2EEDowngradeChanged += Raise.Event();
+
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline && PutCount(chat.Id) == 0)
+                await Task.Delay(10, ct);
+        }
+        finally
+        {
+            await sut.StopAsync(ct);
+        }
+
+        Assert.Equal(1, PutCount(chat.Id));
+        await _chatService.Received(1).MarkBackfilledAsync(chat.Id, Arg.Any<CancellationToken>());
+    }
+
     // ===== Helpers =====
 
     private int PutCount(Guid chatId) => _handler.PutCounts.GetValueOrDefault("/api/v1/chats/" + chatId);

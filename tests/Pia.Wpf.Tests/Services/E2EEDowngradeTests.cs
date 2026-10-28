@@ -111,6 +111,34 @@ public class E2EEDowngradeTests
         Assert.Equal(["other"], settings.E2EERequiredAccountIds);
     }
 
+    [Fact]
+    public void ABareLegacyEntry_StillMarksTheAccount_OnAnyServer()
+    {
+        var settings = new AppSettings { ServerUrl = "https://other.example", SyncUserId = Account, E2EERequiredAccountIds = [Account] };
+
+        Assert.True(settings.IsE2EERequiredForAccount());
+    }
+
+    [Fact]
+    public void MarkingAgain_MigratesTheBareLegacyEntry()
+    {
+        var settings = new AppSettings { ServerUrl = Server, SyncUserId = Account, E2EERequiredAccountIds = [Account, "other"] };
+
+        Assert.True(settings.MarkE2EERequiredForAccount());
+
+        Assert.Equal(["other", Marked], settings.E2EERequiredAccountIds);
+    }
+
+    [Fact]
+    public void Unmark_AlsoForgetsTheBareLegacyEntry()
+    {
+        var settings = new AppSettings { ServerUrl = Server, SyncUserId = Account, E2EERequiredAccountIds = [Account, "other"] };
+
+        settings.UnmarkE2EERequiredForAccount();
+
+        Assert.Equal(["other"], settings.E2EERequiredAccountIds);
+    }
+
     // --- AuthService: every token is evidence ---
 
     [Fact]
@@ -223,6 +251,19 @@ public class E2EEDowngradeTests
 
         Assert.True(sut.IsE2EEDowngradeDetected);
         Assert.Equal(1, raised);
+        await _syncAuth.DidNotReceive().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task SyncNow_LegacyMarkedAccount_ServerSaysOff_SendsNothingAndReportsTheDowngrade()
+    {
+        _syncStored.E2EERequiredAccountIds = [Account];
+        ServerSays(false);
+        var sut = CreateSync();
+
+        Assert.Null(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
+
+        Assert.True(sut.IsE2EEDowngradeDetected);
         await _syncAuth.DidNotReceive().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
     }
 

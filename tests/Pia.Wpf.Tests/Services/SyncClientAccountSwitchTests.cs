@@ -31,6 +31,7 @@ public class SyncClientAccountSwitchTests
     private readonly IHistoryService _history = Substitute.For<IHistoryService>();
     private readonly IHttpClientFactory _httpClientFactory = Substitute.For<IHttpClientFactory>();
     private readonly GatedHandler _handler = new();
+    private readonly AccountTransitionCoordinator _gate = new();
     private readonly AppSettings _stored;
 
     public SyncClientAccountSwitchTests()
@@ -67,7 +68,7 @@ public class SyncClientAccountSwitchTests
 
         var sync = sut.SyncNowAsync(ct);
         await _handler.PullStarted(1).WaitAsync(TimeSpan.FromSeconds(10), ct);
-        SwitchToAccountB();
+        await SwitchToAccountBAsync();
         page.SetResult();
 
         Assert.Null(await sync.WaitAsync(TimeSpan.FromSeconds(10), ct));
@@ -87,7 +88,7 @@ public class SyncClientAccountSwitchTests
 
         var sync = sut.SyncNowAsync(ct);
         await _handler.PullStarted(2).WaitAsync(TimeSpan.FromSeconds(10), ct);
-        SwitchToAccountB();
+        await SwitchToAccountBAsync();
         second.SetResult();
 
         Assert.Null(await sync.WaitAsync(TimeSpan.FromSeconds(10), ct));
@@ -111,7 +112,7 @@ public class SyncClientAccountSwitchTests
 
         var sync = sut.SyncNowAsync(ct);
         await _handler.PullStarted(1).WaitAsync(TimeSpan.FromSeconds(10), ct);
-        SwitchToAccountB();
+        await SwitchToAccountBAsync();
         _stored.IsE2EEEnabled = true;
         _stored.E2EEEncryptedUmk = "umk-b";
         page.SetResult();
@@ -133,7 +134,7 @@ public class SyncClientAccountSwitchTests
 
         var migration = sut.PerformFirstSyncMigrationAsync();
         await _handler.PushStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
-        SwitchToAccountB();
+        await SwitchToAccountBAsync();
         push.SetResult();
 
         await migration.WaitAsync(TimeSpan.FromSeconds(10), ct);
@@ -155,17 +156,95 @@ public class SyncClientAccountSwitchTests
         Assert.Equal(Cursor.AddHours(1), _stored.LastSyncTimestamp);
     }
 
-    private void SwitchToAccountB()
+    [Fact]
+    public async Task ADeltaPushReadAfterTheSwitch_IsNeverSent()
     {
-        _auth.LoginStateChanged += Raise.Event<EventHandler<bool>>(_auth, false);
-        _stored.SyncUserId = AccountB;
-        _auth.LoginStateChanged += Raise.Event<EventHandler<bool>>(_auth, true);
+        var ct = TestContext.Current.CancellationToken;
+        var read = GateTemplateRead();
+        using var sut = CreateSut();
+
+        var sync = sut.SyncNowAsync(ct);
+        await read.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await SwitchToAccountBAsync();
+        read.Release.SetResult();
+
+        Assert.Null(await sync.WaitAsync(TimeSpan.FromSeconds(10), ct));
+        Assert.Equal(0, _handler.PushCount);
+        Assert.Equal(0, _handler.PullCount);
     }
 
-    private static HttpResponseMessage PullPage(DateTime serverTimestamp, bool hasMore, string templateName)
+    [Fact]
+    public async Task AFirstSyncBatchReadAfterTheSwitch_IsNeverSent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var read = GateTemplateRead();
+        using var sut = CreateSut();
+
+        var migration = sut.PerformFirstSyncMigrationAsync();
+        await read.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        await SwitchToAccountBAsync();
+        read.Release.SetResult();
+
+        await migration.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Equal(0, _handler.PushCount);
+        await _settingsService.DidNotReceive().SaveSettingsAsync(Arg.Any<AppSettings>());
+    }
+
+    [Fact]
+    public async Task ASwitchDuringAPageApply_WaitsForTheWriteInFlight_AndStopsTheRest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _handler.GatePull(PullPage(Cursor.AddHours(1), hasMore: false, "first", "second")).SetResult();
+        var firstWrite = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstWriteStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _templates.AddTemplateAsync(Arg.Is<OptimizationTemplate>(t => t.Name == "first"))
+            .Returns(call =>
+            {
+                firstWriteStarted.TrySetResult();
+                return firstWrite.Task.ContinueWith(_ => call.Arg<OptimizationTemplate>(), TaskScheduler.Default);
+            });
+        using var sut = CreateSut();
+
+        var sync = sut.SyncNowAsync(ct);
+        await firstWriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        var switching = SwitchToAccountBAsync();
+        await Task.Delay(100, ct);
+        Assert.False(switching.IsCompleted);
+        firstWrite.SetResult();
+
+        await switching.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Null(await sync.WaitAsync(TimeSpan.FromSeconds(10), ct));
+        await _templates.DidNotReceive().AddTemplateAsync(Arg.Is<OptimizationTemplate>(t => t.Name == "second"));
+        Assert.Equal(Cursor, _stored.LastSyncTimestamp);
+        Assert.Equal(OldETag, _stored.LastPullETag);
+    }
+
+    private (TaskCompletionSource Started, TaskCompletionSource Release) GateTemplateRead()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        IReadOnlyList<OptimizationTemplate> dirty =
+            [new OptimizationTemplate { Name = "private", Prompt = "p", CreatedAt = Cursor.AddHours(1) }];
+        _templates.GetTemplatesAsync().Returns(async _ =>
+        {
+            started.TrySetResult();
+            await release.Task;
+            return dirty;
+        });
+        return (started, release);
+    }
+
+    private async Task SwitchToAccountBAsync()
+    {
+        using (await _gate.BeginTransitionAsync())
+            _stored.SyncUserId = AccountB;
+    }
+
+    private static HttpResponseMessage PullPage(DateTime serverTimestamp, bool hasMore, params string[] templateNames)
     {
         var body = new SyncPullResponse { ServerTimestamp = serverTimestamp, HasMore = hasMore };
-        body.Templates.Upserted.Add(new SyncTemplate { Id = Guid.NewGuid(), Name = templateName, Prompt = "p" });
+        foreach (var name in templateNames)
+            body.Templates.Upserted.Add(new SyncTemplate { Id = Guid.NewGuid(), Name = name, Prompt = "p" });
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
@@ -179,7 +258,8 @@ public class SyncClientAccountSwitchTests
         Substitute.For<IMemoryService>(), new SyncMapper(Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance)),
         _httpClientFactory, NullLogger<SyncClientService>.Instance,
         new SyncDeleteTrackerService(Path.GetTempPath(), NullLogger<SyncDeleteTrackerService>.Instance),
-        scheduledJobService: Substitute.For<IScheduledJobService>());
+        scheduledJobService: Substitute.For<IScheduledJobService>(),
+        accountGate: _gate);
 
     private sealed class GatedHandler : HttpMessageHandler
     {
@@ -187,10 +267,13 @@ public class SyncClientAccountSwitchTests
         private readonly List<TaskCompletionSource> _pullStarted = [];
         private TaskCompletionSource? _pushGate;
         private int _pullCount;
+        private int _pushCount;
 
         public TaskCompletionSource PushStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int PullCount => Volatile.Read(ref _pullCount);
+
+        public int PushCount => Volatile.Read(ref _pushCount);
 
         public TaskCompletionSource GatePull(HttpResponseMessage response)
         {
@@ -209,6 +292,7 @@ public class SyncClientAccountSwitchTests
         {
             if (request.Method == HttpMethod.Post)
             {
+                Interlocked.Increment(ref _pushCount);
                 PushStarted.TrySetResult();
                 if (_pushGate is not null)
                     await _pushGate.Task.WaitAsync(ct);

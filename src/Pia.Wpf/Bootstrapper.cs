@@ -954,6 +954,7 @@ public static class Bootstrapper
             return new SyncDeleteTrackerService(PiaPaths.RoamingDataDirectory, logger);
         });
         services.AddSingleton<SyncMapper>();
+        services.AddSingleton<AccountTransitionCoordinator>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();
 

@@ -149,7 +149,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _signal.Writer.TryWrite(0);
     }
 
-    // Allowing unencrypted sync releases the chats the missing-key hold dropped; nothing else would retry them.
+    // Allowing unencrypted sync releases the chats the missing-key hold dropped, live or backfill; nothing else would
+    // retry them.
     private void OnE2EEDowngradeChanged(object? sender, EventArgs e)
     {
         if (_syncClient.IsE2EEDowngradeDetected) return;
@@ -264,6 +265,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 {
                     _requeueHeldRequested = false;
                     lock (_stateLock) RequeueFailedLocked();
+                    _backfillPaced = true;
                 }
 
                 var drainOk = await DrainAsync(stoppingToken);
