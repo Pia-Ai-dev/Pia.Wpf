@@ -23,7 +23,7 @@ little standalone value, unblocks a High.
 
 ## Steps
 
-- [ ] **1. Keep a failed local-data probe from blocking sign-in or sign-out.**
+- [x] **1. Keep a failed local-data probe from blocking sign-in or sign-out.**
   `LocalDataResetService` catches a failing probe and answers with a cautious default: synced data
   present, vault has memories, API keys may be lost. A locked `history.db` or an unreadable vault no
   longer throws out of the sign-in, sign-out or *Device removed* commands.

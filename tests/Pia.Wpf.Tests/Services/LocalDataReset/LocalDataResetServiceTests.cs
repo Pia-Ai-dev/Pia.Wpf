@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Models.Vault;
@@ -189,6 +190,58 @@ public sealed class LocalDataResetServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task HasSyncedLocalData_TemplatesUnreadable_AssumesThereIsData()
+    {
+        _templates.GetTemplatesAsync().ThrowsAsync(new IOException("locked"));
+
+        Assert.True(await NewSut().HasSyncedLocalDataAsync());
+    }
+
+    [Fact]
+    public async Task HasSyncedLocalData_DatabaseQueryFails_AssumesThereIsData()
+    {
+        Execute("DROP TABLE Todos");
+
+        Assert.True(await NewSut().HasSyncedLocalDataAsync());
+    }
+
+    [Fact]
+    public async Task Notices_VaultUnreadable_ReportsMemories_AndStillProbesTheKeys()
+    {
+        _memory.ListMemoriesAsync().ThrowsAsync(new UnauthorizedAccessException("vault"));
+        _providers.GetProvidersAsync().Returns(new List<AiProvider>
+        {
+            new() { Name = "OpenAI", Endpoint = "e", ProviderType = AiProviderType.OpenAI, EncryptedApiKey = "secret" },
+        });
+        _auth.IsLoggedIn.Returns(true);
+        _settings.GetSettingsAsync().Returns(new AppSettings { IsE2EEEnabled = true });
+
+        var notices = await NewSut().GetNoticesAsync();
+
+        Assert.True(notices.VaultHasMemories);
+        Assert.Equal(ApiKeyNotice.None, notices.ApiKeys);
+    }
+
+    [Fact]
+    public async Task Notices_ProvidersUnreadable_ReportsKeysMayBeLost()
+    {
+        _providers.GetProvidersAsync().ThrowsAsync(new IOException("locked"));
+
+        var notices = await NewSut().GetNoticesAsync();
+
+        Assert.False(notices.VaultHasMemories);
+        Assert.Equal(ApiKeyNotice.MayBeLost, notices.ApiKeys);
+    }
+
+    [Fact]
+    public async Task Notices_Cancelled_IsNotSwallowed()
+    {
+        _memory.ListMemoriesAsync().ThrowsAsync(new OperationCanceledException());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => NewSut().GetNoticesAsync());
+    }
+
+    [Fact]
     public async Task Upload_PushFailed_ReturnsFalse_AndRestartsBackgroundSync()
     {
         _sync.IsSyncActive.Returns(true);
@@ -235,7 +288,9 @@ public sealed class LocalDataResetServiceTests : IDisposable
             seen = call.Arg<CancellationToken>();
             return new TaskCompletionSource<SyncResult?>().Task;
         });
-        var sut = new LocalDataResetService(_db, _templates, _providers, _settings, _memory, _auth, _sync, _chats, _restart)
+        var sut = new LocalDataResetService(
+            _db, _templates, _providers, _settings, _memory, _auth, _sync, _chats, _restart,
+            NullLogger<LocalDataResetService>.Instance)
         {
             UploadTimeout = TimeSpan.FromMilliseconds(200),
         };
@@ -272,7 +327,8 @@ public sealed class LocalDataResetServiceTests : IDisposable
     }
 
     private LocalDataResetService NewSut() =>
-        new(_db, _templates, _providers, _settings, _memory, _auth, _sync, _chats, _restart);
+        new(_db, _templates, _providers, _settings, _memory, _auth, _sync, _chats, _restart,
+            NullLogger<LocalDataResetService>.Instance);
 
     private void InsertJob(string id, string kind) =>
         Execute($"""

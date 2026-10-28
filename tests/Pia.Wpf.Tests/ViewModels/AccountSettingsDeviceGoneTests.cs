@@ -1,12 +1,16 @@
 namespace Pia.Tests.ViewModels;
 
 using System.Globalization;
+using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services.Credits;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.LocalDataReset;
 using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
@@ -86,6 +90,40 @@ public class AccountSettingsDeviceGoneTests
         Assert.False(_stored.IsE2EEEnabled);
     }
 
+    [Fact]
+    public async Task ChoosingSignOut_StillEndsTheSession_WhenTheVaultCannotBeRead()
+    {
+        _dialogs.ShowChoiceDialogAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(DialogChoice.Secondary);
+        _dialogs.ShowChoiceDialogAsync(
+            "LocalReset_SignOut_Title", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>())
+            .Returns(DialogChoice.Secondary);
+        var memory = Substitute.For<IMemoryService>();
+        memory.ListMemoriesAsync().ThrowsAsync(new IOException("vault locked"));
+        var providers = Substitute.For<IProviderService>();
+        providers.GetProvidersAsync().Returns(new List<AiProvider>());
+        var dir = Path.Combine(Path.GetTempPath(), $"pia-gone-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            using var db = new SqliteContext(Path.Combine(dir, "history.db"));
+            var reset = new LocalDataResetService(
+                db, Substitute.For<ITemplateService>(), providers, _settings, memory, _auth, _sync,
+                Substitute.For<IChatSyncFlusher>(), Substitute.For<IAppRestartService>(),
+                NullLogger<LocalDataResetService>.Instance);
+            CreateSut(reset);
+
+            RaiseRevocation(true);
+
+            await _auth.Received(1).LogoutAsync();
+        }
+        finally
+        {
+            TempPath.Remove(dir);
+        }
+    }
+
     [Theory]
     [InlineData(true, "Settings_E2EE_Gone_Revoked")]
     [InlineData(false, "Settings_E2EE_Gone_Missing")]
@@ -132,7 +170,7 @@ public class AccountSettingsDeviceGoneTests
         _sync.CurrentDeviceRevoked += Raise.Event<EventHandler<CurrentDeviceRevokedEventArgs>>(this, notice);
     }
 
-    private AccountSettingsViewModel CreateSut()
+    private AccountSettingsViewModel CreateSut(ILocalDataResetService? reset = null)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
         return new AccountSettingsViewModel(
@@ -145,6 +183,6 @@ public class AccountSettingsDeviceGoneTests
                 _sync, _settings, NullLogger<E2EEOnboardingViewModel>.Instance),
             Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
             Substitute.For<ICreditStatusService>(),
-            Substitute.For<ILocalDataResetService>());
+            reset ?? Substitute.For<ILocalDataResetService>());
     }
 }
