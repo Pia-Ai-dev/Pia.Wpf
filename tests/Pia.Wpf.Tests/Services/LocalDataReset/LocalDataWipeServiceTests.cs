@@ -101,6 +101,34 @@ public sealed class LocalDataWipeServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Wipe_DeletesTheUnreadableCopiesOfSyncedStores_AndKeepsDeviceLocalOnes()
+    {
+        await SeedAsync();
+        string[] synced =
+        [
+            "templates.json.unreadable-20261027T101500Z",
+            "templates.json.unreadable-20261027T101500Z-2",
+            "providers.json.unreadable-20261027T101500Z",
+            "pending-sync-deletes.json.unreadable-20261027T101500Z",
+            "policy-cache.json.unreadable-20261027T101500Z",
+            "settings.json.unreadable-20261027T101500Z",
+        ];
+        string[] deviceLocal =
+        [
+            "pending-assignments.json.unreadable-20261027T101500Z",
+            "screen-capture-allowlist.json.unreadable-20261027T101500Z",
+            "templates.json.bak",
+        ];
+        foreach (var name in synced.Concat(deviceLocal))
+            File.WriteAllText(Path.Combine(_roaming, name), "{ not json");
+
+        await NewWiper().WipeAsync();
+
+        Assert.All(synced, name => Assert.False(File.Exists(Path.Combine(_roaming, name)), name));
+        Assert.All(deviceLocal, name => Assert.True(File.Exists(Path.Combine(_roaming, name)), name));
+    }
+
+    [Fact]
     public async Task Wipe_ClearsLeftoverSignInState()
     {
         await SeedAsync();

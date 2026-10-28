@@ -23,6 +23,7 @@ public class AuthService : IAuthService
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<AuthService> _logger;
     private readonly IPolicyService? _policyService;
+    private readonly AccountTransitionCoordinator _accountGate;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly Task _loadStoredTokensTask;
 
@@ -61,9 +62,11 @@ public class AuthService : IAuthService
         IHttpClientFactory httpClientFactory,
         ILocalizationService localizationService,
         ILogger<AuthService> logger,
-        IPolicyService? policyService = null)
+        IPolicyService? policyService = null,
+        AccountTransitionCoordinator? accountGate = null)
     {
         _settingsService = settingsService;
+        _accountGate = accountGate ?? new AccountTransitionCoordinator();
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
         _localizationService = localizationService;
@@ -94,16 +97,17 @@ public class AuthService : IAuthService
             // Keep the refresh token in its already-encrypted form; no plaintext at rest.
             // The persisted access token is intentionally not loaded — it is almost certainly
             // expired by the time the app restarts, so the first GetAccessTokenAsync refreshes it.
-            _encryptedRefreshToken = settings.EncryptedRefreshToken;
-            UserDisplayName = settings.SyncUserDisplayName;
-            UserEmail = settings.SyncUserEmail;
-            Provider = settings.SyncProvider;
-
-            if (!string.IsNullOrEmpty(_encryptedRefreshToken))
+            using (await _accountGate.BeginTransitionAsync())
             {
-                IsLoggedIn = true;
-                LoginStateChanged?.Invoke(this, true);
+                _encryptedRefreshToken = settings.EncryptedRefreshToken;
+                UserDisplayName = settings.SyncUserDisplayName;
+                UserEmail = settings.SyncUserEmail;
+                Provider = settings.SyncProvider;
+                IsLoggedIn = !string.IsNullOrEmpty(_encryptedRefreshToken);
             }
+
+            if (IsLoggedIn)
+                LoginStateChanged?.Invoke(this, true);
         }
         catch (Exception ex)
         {
@@ -358,6 +362,15 @@ public class AuthService : IAuthService
     private async Task ApplyLoginAsync(
         LocalLoginResponse login, string provider, AppSettings settings, bool reportedMetadata)
     {
+        using (await _accountGate.BeginTransitionAsync())
+            await ApplyLoginStateAsync(login, provider, settings, reportedMetadata);
+
+        LoginStateChanged?.Invoke(this, true);
+    }
+
+    private async Task ApplyLoginStateAsync(
+        LocalLoginResponse login, string provider, AppSettings settings, bool reportedMetadata)
+    {
         _encryptedAccessToken = _dpapiHelper.Encrypt(login.AccessToken);
         _encryptedRefreshToken = _dpapiHelper.Encrypt(login.RefreshToken);
         _accessTokenExpiry = AccessTokenExpiryFrom(login.ExpiresIn, DateTime.UtcNow);
@@ -384,8 +397,6 @@ public class AuthService : IAuthService
         if (reportedMetadata)
             settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);
-
-        LoginStateChanged?.Invoke(this, true);
     }
 
     internal const string DeviceIdHeader = "X-Pia-Device-Id";
@@ -560,16 +571,19 @@ public class AuthService : IAuthService
                 }
             }
 
-            _encryptedAccessToken = null;
-            _encryptedRefreshToken = null;
-            UserDisplayName = null;
-            UserEmail = null;
-            Provider = null;
-            RequiresBusinessProfile = false;
-            IsLoggedIn = false;
+            using (await _accountGate.BeginTransitionAsync())
+            {
+                _encryptedAccessToken = null;
+                _encryptedRefreshToken = null;
+                UserDisplayName = null;
+                UserEmail = null;
+                Provider = null;
+                RequiresBusinessProfile = false;
+                IsLoggedIn = false;
 
-            settings.ClearAccountState();
-            await _settingsService.SaveSettingsAsync(settings);
+                settings.ClearAccountState();
+                await _settingsService.SaveSettingsAsync(settings);
+            }
 
             // Sync stays off until the next login, so a kept group policy would go on being applied
             // until then. Cleared after the save, which re-applies policy and would rewrite the cache.

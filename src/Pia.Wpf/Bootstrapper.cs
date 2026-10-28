@@ -474,6 +474,7 @@ public static class Bootstrapper
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<LocalDataWipeService>();
         services.AddSingleton<ILocalDataResetService, LocalDataResetService>();
+        services.AddSingleton<ILocalDataResetIndicator, LocalDataResetIndicator>();
         services.AddSingleton<VaultPathProvider>();
         services.AddSingleton<MarkdownVaultParser>();
         services.AddSingleton<Pia.Infrastructure.Vault.IVaultWriteGate, Pia.Infrastructure.Vault.VaultWriteGate>();
@@ -953,6 +954,7 @@ public static class Bootstrapper
             return new SyncDeleteTrackerService(PiaPaths.RoamingDataDirectory, logger);
         });
         services.AddSingleton<SyncMapper>();
+        services.AddSingleton<AccountTransitionCoordinator>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();
 

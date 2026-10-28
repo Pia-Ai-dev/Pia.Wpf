@@ -1,5 +1,7 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 
@@ -14,7 +16,8 @@ public sealed class LocalDataResetService(
     IAuthService auth,
     ISyncClientService sync,
     IChatSyncFlusher chats,
-    IAppRestartService restart) : ILocalDataResetService
+    IAppRestartService restart,
+    ILogger<LocalDataResetService> logger) : ILocalDataResetService
 {
     private static readonly string[] SyncedTables = ["Personas", "ManagedPersonas", "Sessions", "AssistantChats", "Memories", "Todos"];
 
@@ -24,7 +27,29 @@ public sealed class LocalDataResetService(
 
     public Task RestartAsync() => restart.RestartAsync();
 
-    public async Task<bool> HasSyncedLocalDataAsync()
+    // Every probe answers a failure with the cautious default: asking, or warning, beats silently keeping.
+    public Task<bool> HasSyncedLocalDataAsync() => ProbeAsync("synced data", ProbeSyncedLocalDataAsync, true);
+
+    public async Task<LocalDataNotices> GetNoticesAsync() => new(
+        await ProbeAsync("vault", async () => (await memory.ListMemoriesAsync()).Items.Count > 0, true),
+        await ProbeAsync("API keys", GetApiKeyNoticeAsync, ApiKeyNotice.MayBeLost));
+
+    private async Task<T> ProbeAsync<T>(string probe, Func<Task<T>> read, T fallback)
+    {
+        try
+        {
+            return await read();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Local-data probe {Probe} failed ({ErrorType}); assuming {Fallback}",
+                probe, ex.GetType().Name, fallback);
+            logger.SensitiveDebug("Local-data probe {Probe} failed: {Error}", probe, ex.Message);
+            return fallback;
+        }
+    }
+
+    private async Task<bool> ProbeSyncedLocalDataAsync()
     {
         if ((await templates.GetTemplatesAsync()).Any(t => !t.IsBuiltIn))
             return true;
@@ -36,12 +61,6 @@ public sealed class LocalDataResetService(
         return SyncedTables.Any(table => Exists(connection, $"SELECT 1 FROM {table}"))
             || Exists(connection, "SELECT 1 FROM ScheduledJobs WHERE Kind <> 'MeetingAttendance'")
             || HasCustomKanbanColumns(connection);
-    }
-
-    public async Task<LocalDataNotices> GetNoticesAsync()
-    {
-        var vaultHasMemories = (await memory.ListMemoriesAsync()).Items.Count > 0;
-        return new LocalDataNotices(vaultHasMemories, await GetApiKeyNoticeAsync());
     }
 
     internal TimeSpan UploadTimeout { get; init; } = TimeSpan.FromSeconds(15);

@@ -62,7 +62,7 @@ public class AppSettingsLocalResetTests
         s.ForgetE2EEKey();
 
         Assert.False(s.IsE2EEEnabled);
-        Assert.Contains("user-1", s.E2EERequiredAccountIds);
+        Assert.True(s.IsE2EERequiredForAccount());
     }
 
     [Fact]

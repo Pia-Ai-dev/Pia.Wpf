@@ -208,8 +208,9 @@ little standalone value, unblocks a High.
 
 ### B — E2EE downgrade hardening
 
-- [x] **B1. Marker set and kept.** After onboarding on A, `e2EERequiredAccountIds` holds A's id, and it
-  survives a later sign-out and clear.
+- [x] **B1. Marker set and kept.** After onboarding on A, `e2EERequiredAccountIds` holds A's entry,
+  `<server URL>|<A's id>`, and it survives a later sign-out and clear. An entry with the same id under
+  another server URL does not count for A.
   2026-10-27: pass.
   - "Turn on encryption" bootstrapped device `d48c4e19`, showed the recovery code, and put A's id
     `8b12aa70…` into the marker.
@@ -252,7 +253,7 @@ little standalone value, unblocks a High.
     piaserver confirms no plaintext row landed. Pass for the client behaviour.
   *Deps:* B2 · *Effort:* XS · *Value:* High
 - [x] **B6. Evidence from refresh and login.** A fresh device signing in to A gets marked from the token
-  claim or the refresh body, before the first push.
+  claim or the refresh body, before the first push. The entry is `<server URL>|<A's id>`.
   2026-10-27: pass for the claim, refresh and status path. A fresh client2 profile held A's id in
   `e2EERequiredAccountIds` right after `POST /auth/login/local`, and no push ran before it. The login-body
   half stays blocked (see the P1 gate).
@@ -452,11 +453,14 @@ default template, because A5 checks that the reset defaults do not overwrite the
 **A2 wipe contract.**
 - **Gone:** custom templates, every provider except Pia Cloud, chats, todos, reminders, the kanban
   contents (default columns reseeded), `pending-sync-deletes.json`, and managed personas. The 13 synced
-  preferences are back at their defaults.
-- **Kept:** `hasCompletedFirstRunWizard`, `serverUrl`, `syncDeviceId`, `e2EERequiredAccountIds`, the vault
-  notes and playground files, and `history.db.key`.
+  preferences are back at their defaults. So are the `.unreadable-*` copies of `templates.json`,
+  `providers.json`, `pending-sync-deletes.json`, `policy-cache.json` and `settings.json`.
+- **Kept:** `hasCompletedFirstRunWizard`, `serverUrl`, `syncDeviceId`, `e2EERequiredAccountIds` (entries
+  are `<server URL>|<account id>`), the vault notes and playground files, `history.db.key`, and the
+  `.unreadable-*` copies of device-local stores.
 - **Logs:** the sign-out (`/auth/logout`) is logged before the first wipe line.
-- **Restart:** chat sync, chat retention and the assignment drain do not start while the marker exists.
+- **Restart:** the scheduler, chat sync, chat retention and the assignment drain do not start while the
+  marker exists, and *Sync now* / *Full resync* offer the restart instead of syncing.
 
 **A7 pause.** Ask piaserver to `podman pause` the API container. Run the step, then unpause.
 

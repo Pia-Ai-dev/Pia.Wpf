@@ -738,6 +738,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private async Task SyncNowAsync()
     {
         if (IsSyncing || IsE2EEOnboardingRequired) return;
+        if (await AccountSwitchPrompts.OfferRestartIfResetPendingAsync(_localDataReset, _dialogService, _localizationService)) return;
 
         try
         {
@@ -768,6 +769,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     private async Task ForceFullResyncAsync()
     {
         if (IsSyncing || IsE2EEOnboardingRequired) return;
+        if (await AccountSwitchPrompts.OfferRestartIfResetPendingAsync(_localDataReset, _dialogService, _localizationService)) return;
 
         try
         {

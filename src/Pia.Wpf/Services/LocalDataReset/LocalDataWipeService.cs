@@ -16,6 +16,9 @@ public sealed class LocalDataWipeService(
 {
     private static readonly string[] SyncedFiles = ["templates.json", "pending-sync-deletes.json", "policy-cache.json"];
 
+    // Copies a failed parse moved aside; the device-local stores keep theirs.
+    private static readonly string[] AsideStores = [.. SyncedFiles, "providers.json", "settings.json"];
+
     // Children before parents, so the clear does not depend on the connection enforcing ON DELETE CASCADE.
     private static readonly string[] ClearStatements =
     [
@@ -47,12 +50,13 @@ public sealed class LocalDataWipeService(
         await settingsService.SaveSettingsAsync(settings);
 
         var deletedFiles = DeleteSyncedFiles();
+        var deletedAsides = DeleteUnreadableAsides();
         var removedProviders = await KeepOnlyPiaCloudProvidersAsync();
         var counts = ClearDatabase();
 
         logger.LogInformation(
-            "Local synced data cleared: files {Files}, providers removed {Providers}, rows {Rows}",
-            deletedFiles, removedProviders, string.Join(", ", counts.Select(c => $"{c.Key}={c.Value}")));
+            "Local synced data cleared: files {Files}, unreadable copies {Asides}, providers removed {Providers}, rows {Rows}",
+            deletedFiles, deletedAsides, removedProviders, string.Join(", ", counts.Select(c => $"{c.Key}={c.Value}")));
     }
 
     // GetSettingsAsync answers an unreadable or malformed file with defaults, which the save below would make
@@ -79,6 +83,30 @@ public sealed class LocalDataWipeService(
 
             File.Delete(path);
             deleted++;
+        }
+
+        return deleted;
+    }
+
+    private static int DeleteUnreadableAsides()
+    {
+        var deleted = 0;
+        foreach (var name in AsideStores)
+        {
+            var directory = Path.GetDirectoryName(Path.Combine(PiaPaths.RoamingDataDirectory, name))!;
+            if (!Directory.Exists(directory))
+                continue;
+
+            // The pattern alone would also match 8.3 short names, so the prefix is checked again.
+            var prefix = name + ".unreadable-";
+            foreach (var path in Directory.GetFiles(directory, prefix + "*"))
+            {
+                if (!Path.GetFileName(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                File.Delete(path);
+                deleted++;
+            }
         }
 
         return deleted;

@@ -100,7 +100,6 @@ public partial class App : Application
 
         await Bootstrapper.InitializeAsync();
 
-        // Initialize localization — auto-detect from Windows locale on first run
         var localizationService = Bootstrapper.ServiceProvider.GetRequiredService<ILocalizationService>();
         var earlySettings = await Bootstrapper.ServiceProvider.GetRequiredService<ISettingsService>().GetSettingsAsync();
 
@@ -131,8 +130,6 @@ public partial class App : Application
             args.Handled = true;
         };
 
-        // Ensure built-in Pia Cloud provider exists, collapse any leftover sync
-        // duplicates, and heal stale mode-default references (non-critical).
         try
         {
             var providerService = Bootstrapper.ServiceProvider.GetRequiredService<IProviderService>();
@@ -240,13 +237,14 @@ public partial class App : Application
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);
 
-        var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
-        await scheduledJobService.StartAsync(CancellationToken.None);
-
         // A clear that failed may have left the old account signed in; nothing account-bound may run until it lands.
+        // That holds device-local meeting jobs too, while reminders, which the clear keeps, still run.
         var resetPending = LocalDataResetMarker.IsPending;
         if (!resetPending)
         {
+            var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
+            await scheduledJobService.StartAsync(CancellationToken.None);
+
             var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
             await chatSyncService.StartAsync(CancellationToken.None);
 
@@ -283,7 +281,6 @@ public partial class App : Application
 
         _ = CheckForUpdateOnStartupAsync();
 
-        // Randomized 4–6 hour interval.
         _ = StartPeriodicUpdateCheckAsync();
 
         _ = EnsureEmbeddingModelAsync();
