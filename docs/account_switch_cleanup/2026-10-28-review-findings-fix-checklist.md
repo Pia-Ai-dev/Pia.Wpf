@@ -47,7 +47,7 @@ little standalone value, unblocks a High.
   not change, so `ClientPolicyContract.DeniedKeys` stays valid. The WinWright test-round steps that
   read the raw list are updated.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **6. Stop a stale sync cycle from writing one account's data into another's session.**
+- [x] **6. Stop a stale sync cycle from writing one account's data into another's session.**
   `SyncClientService` has an account epoch that every sign-in and sign-out bumps. Each pull/apply
   holder captures it with `SyncUserId` and re-checks before it applies a page, mutates the shared
   settings, raises a device or E2EE notice, or saves the cursor. A stale cycle applies and saves

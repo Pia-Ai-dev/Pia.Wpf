@@ -97,6 +97,14 @@ public class SyncClientService : ISyncClientService, IDisposable
     private int _syncGeneration;
     // Set for one SyncNowAsync cycle; _syncLock keeps cycles from overlapping.
     private CancellationToken _cycleToken;
+    // Bumped on every sign-in and sign-out, so a cycle can tell that the account changed under it.
+    private int _accountEpoch;
+    // Set for one pull/apply holder of _syncLock.
+    private AccountScope _cycleScope;
+
+    private readonly record struct AccountScope(int Epoch, string? UserId);
+
+    private sealed class AccountChangedException : Exception;
 
     public bool IsSyncActive => _syncTimer is not null;
     public bool IsE2EEOnboardingRequired { get; private set; }
@@ -179,6 +187,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
+        await ThrowIfAccountChangedAsync();
         if (serverStatus is { IsEnabled: true })
         {
             _logger.LogWarning("E2EE required for this account but UMK not available; onboarding required");
@@ -255,6 +264,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     private void OnAuthLoginStateChanged(object? sender, bool isLoggedIn)
     {
+        Interlocked.Increment(ref _accountEpoch);
         if (!isLoggedIn)
         {
             _hasVerifiedServerE2EEStatus = false;
@@ -272,6 +282,26 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (_resetGate?.IsResetPending != true) return false;
         _logger.LogInformation("Sync skipped: a local-data clear is pending");
         return true;
+    }
+
+    private async Task<AccountScope> CaptureAccountScopeAsync(int epoch) =>
+        new(epoch, (await _settingsService.GetSettingsAsync()).SyncUserId);
+
+    private async Task<bool> AccountChangedAsync(AccountScope scope)
+    {
+        if (scope.Epoch == Volatile.Read(ref _accountEpoch)
+            && string.Equals((await _settingsService.GetSettingsAsync()).SyncUserId, scope.UserId, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        _logger.LogWarning("Sync abandoned: the signed-in account changed while it ran; nothing from it is applied or saved");
+        return true;
+    }
+
+    // Once the account changed, the server's answers belong to the old one and the shared settings to the new one.
+    private async Task ThrowIfAccountChangedAsync()
+    {
+        if (await AccountChangedAsync(_cycleScope))
+            throw new AccountChangedException();
     }
 
     public void StartBackgroundSync()
@@ -413,6 +443,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task<SyncResult?> SyncNowAsync(CancellationToken ct = default)
     {
+        var epoch = Volatile.Read(ref _accountEpoch);
         if (!_authService.IsLoggedIn || ResetPending()) return null;
 
         if (!await _syncLock.WaitAsync(0)) return null;
@@ -422,6 +453,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _cycleToken = ct;
         try
         {
+            _cycleScope = await CaptureAccountScopeAsync(epoch);
             var settings = await _settingsService.GetSettingsAsync();
             _logger.LogInformation("SyncNowAsync started — LastSyncTimestamp: {LastSync}", settings.LastSyncTimestamp);
             if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.ServerUrl))
@@ -442,6 +474,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
+                await ThrowIfAccountChangedAsync();
                 if (serverStatus is null)
                 {
                     _logger.LogWarning("Could not determine server E2EE status; skipping this sync cycle");
@@ -461,6 +494,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var accessToken = await GetAccessTokenPastE2EEGateAsync();
             if (accessToken is null)
                 return null;
+            await ThrowIfAccountChangedAsync();
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
@@ -472,6 +506,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             if (PendingDeviceRevocation is not null)
                 return null;
+            await ThrowIfAccountChangedAsync();
 
             // Keep skipped account settings in the next pull until reset preferences can be replaced.
             if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
@@ -513,6 +548,10 @@ public class SyncClientService : ISyncClientService, IDisposable
             _logger.LogInformation("SyncNowAsync completed in {ElapsedMs}ms — Pushed: {Pushed}, Pulled: {Pulled}, DecryptionErrors: {DecryptErrors}",
                 syncSw.ElapsedMilliseconds, result.PushedCount, result.PulledCount, result.DecryptionErrors);
         }
+        catch (AccountChangedException)
+        {
+            result = null;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Sync cycle failed");
@@ -520,6 +559,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         finally
         {
             _cycleToken = default;
+            _cycleScope = default;
             _syncLock.Release();
         }
         return result;
@@ -527,11 +567,13 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task PerformFirstSyncMigrationAsync()
     {
+        var epoch = Volatile.Read(ref _accountEpoch);
         if (!_authService.IsLoggedIn || ResetPending()) return;
 
         await _syncLock.WaitAsync();
         try
         {
+            _cycleScope = await CaptureAccountScopeAsync(epoch);
             var settings = await _settingsService.GetSettingsAsync();
             _logger.LogInformation("PerformFirstSyncMigrationAsync: SyncEnabled={Enabled}, ServerUrl={Url}, LastSyncTimestamp={LastSync}, IsE2EEEnabled={E2EE}",
                 settings.SyncEnabled, SafeUrl.Format(settings.ServerUrl),
@@ -555,6 +597,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (_e2ee is not null && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
+                await ThrowIfAccountChangedAsync();
                 if (serverStatus is null or { IsEnabled: true })
                 {
                     _logger.LogWarning(
@@ -569,6 +612,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var accessToken = await GetAccessTokenPastE2EEGateAsync();
             if (accessToken is null)
                 return;
+            await ThrowIfAccountChangedAsync();
 
             var serverUrl = settings.ServerUrl.TrimEnd('/');
             using var client = CreateAuthenticatedClient(accessToken);
@@ -651,6 +695,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                 using var response = await PostPushAsync(client, serverUrl, request);
                 batchSendTimes.Enqueue(DateTime.UtcNow);
+                await ThrowIfAccountChangedAsync();
                 await EnsureSuccessAsync(response, $"First-sync push (batch {batch + 1}/{batchCount})");
 
                 _logger.LogInformation("First-sync push batch {Batch}/{BatchCount} completed (settingsIncluded: {SettingsIncluded}, templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos}, scheduledJobs: {Jobs})",
@@ -672,6 +717,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
             _logger.LogInformation("First-sync pull: {Pulled} pulled, {Errors} decrypt errors, pullOk={PullOk}", pulled, decryptErrors, pullOk);
+            await ThrowIfAccountChangedAsync();
 
             if (pullOk && serverTimestamp.HasValue && !(settings.SuppressSettingsPushAfterReset && settingsUndecryptable))
             {
@@ -685,8 +731,12 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogWarning("First-sync pull failed — LastSyncTimestamp NOT updated; next sync will retry full pull");
             }
         }
+        catch (AccountChangedException)
+        {
+        }
         finally
         {
+            _cycleScope = default;
             _syncLock.Release();
         }
     }
@@ -728,6 +778,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     /// </remarks>
     public async Task<bool> RepairBlankedSyncRowsAsync()
     {
+        var scope = await CaptureAccountScopeAsync(Volatile.Read(ref _accountEpoch));
         if (!_authService.IsLoggedIn) return false;
 
         var settings = await _settingsService.GetSettingsAsync();
@@ -755,7 +806,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         // one-shot on one of those would strand the rows blank forever. A cycle that ran and left them
         // blank means the server copy is gone, so there is nothing to retry.
         var result = await ForceFullResyncAsync();
-        if (result is null)
+        if (result is null || await AccountChangedAsync(scope))
         {
             _logger.LogWarning("Repair resync did not run; leaving the repair armed for a later launch");
             return false;
@@ -770,10 +821,13 @@ public class SyncClientService : ISyncClientService, IDisposable
     public async Task<SyncResult?> ForceFullResyncAsync()
     {
         if (ResetPending()) return null;
+        var scope = await CaptureAccountScopeAsync(Volatile.Read(ref _accountEpoch));
         _logger.LogInformation("ForceFullResyncAsync: resetting LastSyncTimestamp to trigger full pull");
         await _syncLock.WaitAsync();
         try
         {
+            if (await AccountChangedAsync(scope))
+                return null;
             var settings = await _settingsService.GetSettingsAsync();
             settings.LastSyncTimestamp = null;
             await _settingsService.SaveSettingsAsync(settings);
@@ -1002,6 +1056,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         using var response = await PostPushAsync(client, serverUrl, request);
+        await ThrowIfAccountChangedAsync();
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
@@ -1210,6 +1265,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         var pullSw = Stopwatch.StartNew();
         var response = await client.SendAsync(pullRequest, _cycleToken);
         pullSw.Stop();
+        await ThrowIfAccountChangedAsync();
         _logger.LogInformation("Pull HTTP: {StatusCode} in {ElapsedMs}ms", (int)response.StatusCode, pullSw.ElapsedMilliseconds);
 
         if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
@@ -1894,6 +1950,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         if (newCatalogVersion.HasValue || latchCatalogChannels || storePullETag)
         {
+            await ThrowIfAccountChangedAsync();
             if (newCatalogVersion.HasValue)
                 settings.LastCatalogVersion = newCatalogVersion;
             if (latchCatalogChannels)
@@ -2011,6 +2068,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         try
         {
             var response = await _deviceMgmt!.GetDevicesAsync();
+            if (await AccountChangedAsync(_cycleScope))
+                return;
 
             // Check if current device still exists and is active
             if (_deviceKeys is not null)
