@@ -16,7 +16,7 @@ public class SyncClientResetGateTests
     private readonly IAuthService _auth = Substitute.For<IAuthService>();
     private readonly ISettingsService _settingsService = Substitute.For<ISettingsService>();
     private readonly IHttpClientFactory _httpClientFactory = Substitute.For<IHttpClientFactory>();
-    private readonly ILocalDataResetGate _gate = Substitute.For<ILocalDataResetGate>();
+    private readonly ILocalDataResetIndicator _gate = Substitute.For<ILocalDataResetIndicator>();
     private readonly DateTime _cursor = new(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
     private readonly AppSettings _settings;
 
@@ -67,6 +67,6 @@ public class SyncClientResetGateTests
             NullLogger<SyncClientService>.Instance,
             new SyncDeleteTrackerService(Path.GetTempPath(), NullLogger<SyncDeleteTrackerService>.Instance),
             e2ee: e2ee,
-            resetGate: _gate);
+            resetIndicator: _gate);
     }
 }

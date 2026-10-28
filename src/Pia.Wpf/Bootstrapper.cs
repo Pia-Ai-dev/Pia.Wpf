@@ -474,7 +474,7 @@ public static class Bootstrapper
         services.AddSingleton<SqliteContext>();
         services.AddSingleton<LocalDataWipeService>();
         services.AddSingleton<ILocalDataResetService, LocalDataResetService>();
-        services.AddSingleton<ILocalDataResetGate, LocalDataResetGate>();
+        services.AddSingleton<ILocalDataResetIndicator, LocalDataResetIndicator>();
         services.AddSingleton<VaultPathProvider>();
         services.AddSingleton<MarkdownVaultParser>();
         services.AddSingleton<Pia.Infrastructure.Vault.IVaultWriteGate, Pia.Infrastructure.Vault.VaultWriteGate>();

@@ -39,7 +39,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
     private readonly SyncDeleteTrackerService _deleteTracker;
-    private readonly ILocalDataResetGate? _resetGate;
+    private readonly ILocalDataResetIndicator? _resetIndicator;
 
     // Single serializer for both push sites (first-sync + delta). camelCase unifies the previous
     // PascalCase(delta)/camelCase(first-sync) split; WhenWritingNull trims "field":null keys
@@ -100,7 +100,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     // Bumped on every sign-in and sign-out, so a cycle can tell that the account changed under it.
     private int _accountEpoch;
     // Set for one pull/apply holder of _syncLock.
-    private AccountScope _cycleScope;
+    private AccountScope? _cycleScope;
 
     private readonly record struct AccountScope(int Epoch, string? UserId);
 
@@ -236,7 +236,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         IPluginService? pluginService = null,
         IPersonaService? personaService = null,
         IPolicyService? policyService = null,
-        ILocalDataResetGate? resetGate = null)
+        ILocalDataResetIndicator? resetIndicator = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -257,7 +257,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _deleteTracker = deleteTracker;
-        _resetGate = resetGate;
+        _resetIndicator = resetIndicator;
 
         _authService.LoginStateChanged += OnAuthLoginStateChanged;
     }
@@ -279,18 +279,18 @@ public class SyncClientService : ISyncClientService, IDisposable
     // A clear that failed may have left the old account signed in, so nothing may sync until it lands.
     private bool ResetPending()
     {
-        if (_resetGate?.IsResetPending != true) return false;
+        if (_resetIndicator?.IsResetPending != true) return false;
         _logger.LogInformation("Sync skipped: a local-data clear is pending");
         return true;
     }
 
     private async Task<AccountScope> CaptureAccountScopeAsync(int epoch) =>
-        new(epoch, (await _settingsService.GetSettingsAsync()).SyncUserId);
+        new(epoch, (await _settingsService.GetSettingsAsync())?.SyncUserId);
 
     private async Task<bool> AccountChangedAsync(AccountScope scope)
     {
         if (scope.Epoch == Volatile.Read(ref _accountEpoch)
-            && string.Equals((await _settingsService.GetSettingsAsync()).SyncUserId, scope.UserId, StringComparison.OrdinalIgnoreCase))
+            && string.Equals((await _settingsService.GetSettingsAsync())?.SyncUserId, scope.UserId, StringComparison.OrdinalIgnoreCase))
             return false;
 
         _logger.LogWarning("Sync abandoned: the signed-in account changed while it ran; nothing from it is applied or saved");
@@ -300,7 +300,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     // Once the account changed, the server's answers belong to the old one and the shared settings to the new one.
     private async Task ThrowIfAccountChangedAsync()
     {
-        if (await AccountChangedAsync(_cycleScope))
+        if (_cycleScope is { } scope && await AccountChangedAsync(scope))
             throw new AccountChangedException();
     }
 
@@ -556,7 +556,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         finally
         {
             _cycleToken = default;
-            _cycleScope = default;
+            _cycleScope = null;
             _syncLock.Release();
         }
         return result;
@@ -733,7 +733,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
         finally
         {
-            _cycleScope = default;
+            _cycleScope = null;
             _syncLock.Release();
         }
     }
@@ -1941,7 +1941,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         try
         {
             var response = await _deviceMgmt!.GetDevicesAsync();
-            if (await AccountChangedAsync(_cycleScope))
+            if (_cycleScope is { } scope && await AccountChangedAsync(scope))
                 return;
 
             if (_deviceKeys is not null)
