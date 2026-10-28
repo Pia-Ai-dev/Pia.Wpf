@@ -1426,7 +1426,9 @@ public class MemoryService : IMemoryService
     {
         ArgumentNullException.ThrowIfNull(reference);
 
-        var (path, slug) = VaultReference.Parse(reference);
+        if (!TryResolveForgetTarget(reference, out var path, out var slug, out var error))
+            throw new InvalidOperationException(error);
+
         if (slug is null)
         {
             // Bare path -> delete the whole file. The watcher/indexer drops its chunks on the change.
@@ -1463,6 +1465,46 @@ public class MemoryService : IMemoryService
         var newFile = doc.RawText[..headingLineStart] + doc.RawText[target.BodyEnd..];
         await _vaultStore.WriteAtomicAsync(path, newFile);
         _logger.LogInformation("Forget removed a single vault section");
+    }
+
+    /// <inheritdoc />
+    public string? ValidateForgetReference(string reference) =>
+        TryResolveForgetTarget(reference ?? string.Empty, out _, out _, out var error) ? null : error;
+
+    // Containment AND policy, like read_topic: the canonical vault-relative path must be a recall-visible
+    // record, so a traversal, UNC or rooted ref can never reach a file outside the vault.
+    private bool TryResolveForgetTarget(string reference, out string rel, out string? slug, out string? error)
+    {
+        slug = null;
+        rel = string.Empty;
+
+        var (rawPath, parsedSlug) = VaultReference.Parse(VaultReference.NormalizePath(reference));
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            error = "Error: a memory reference is required.";
+            return false;
+        }
+
+        if (!SafeFolderPath.TryResolveInsideAllowingAbsolute(VaultRoot, rawPath, out var abs))
+        {
+            _logger.LogWarning("forget rejected: reference outside the vault");
+            _logger.SensitiveDebug("forget rejected ref: {Ref}", rawPath);
+            error = "Error: reference is outside the memory vault.";
+            return false;
+        }
+
+        rel = ToVaultRelative(abs);
+        if (!VaultPaths.IsRecallIndexable(rel) || SensitivePathGuard.IsBlocked(abs, out _))
+        {
+            _logger.LogWarning("forget rejected: reference is not a forgettable memory record");
+            _logger.SensitiveDebug("forget rejected non-record ref: {Ref}", rel);
+            error = "Error: not a memory record that can be forgotten. Use a 'memory/...md' reference from recall or browse_index.";
+            return false;
+        }
+
+        slug = parsedSlug;
+        error = null;
+        return true;
     }
 
     // ---- Vault read/list surface (UI) ----

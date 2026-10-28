@@ -144,6 +144,45 @@ public class MemoryWriteTests : IDisposable
         Assert.Null(await _store.ReadAsync(notePath));
     }
 
+    [Theory]
+    [InlineData("../outside.md")]
+    [InlineData("memory/../../outside.md")]
+    [InlineData("memory/../sources/raw.md")]
+    [InlineData("sources/raw.md")]
+    [InlineData("memory/index.md")]
+    [InlineData("memory/.archive/old.md")]
+    [InlineData("memory/notes/q2-retro.txt")]
+    public async Task Forget_rejects_references_that_are_not_vault_records(string reference)
+    {
+        var service = BuildService();
+        Assert.NotNull(service.ValidateForgetReference(reference));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.ForgetAsync(reference));
+    }
+
+    [Fact]
+    public async Task Forget_does_not_delete_a_file_outside_the_vault()
+    {
+        var service = BuildService();
+        var outside = Path.Combine(_tmpDir, "outside.md");
+        File.WriteAllText(outside, "keep me");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.ForgetAsync("../outside.md"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.ForgetAsync(outside));
+
+        Assert.True(File.Exists(outside));
+    }
+
+    [Fact]
+    public async Task Forget_accepts_a_record_reference_in_validation()
+    {
+        var service = BuildService();
+        await service.RememberAsync("note", "Q2 Retro", "- attendees: 8");
+
+        Assert.Null(service.ValidateForgetReference("memory/notes/q2-retro.md"));
+        Assert.Null(service.ValidateForgetReference("memory/contacts.md#John Smith"));
+    }
+
     [Fact]
     public async Task UpdateSection_replaces_section_body_and_preserves_frontmatter_and_siblings()
     {
