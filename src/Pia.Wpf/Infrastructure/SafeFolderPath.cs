@@ -44,17 +44,9 @@ public static class SafeFolderPath
     }
 
     /// <summary>
-    /// Resolves <paramref name="userPath"/> against <paramref name="sandboxRoot"/>, accepting
-    /// BOTH relative and rooted/absolute inputs, and verifies the result stays inside the root.
-    /// Unlike <see cref="TryResolveInside"/> this does NOT reject rooted paths; instead the input
-    /// is normalized and then <b>canonicalized via <see cref="Canonicalize"/></b> (resolving
-    /// junctions/symlinks through the OS, including intermediate reparse points) so links that
-    /// point outside the sandbox are caught.
-    /// <para>
-    /// Non-existent paths are supported (write_file creates new files; read_file may miss):
-    /// canonicalization requires an existing handle, so the longest existing ancestor is
-    /// canonicalized and the non-existent leaf re-appended before the lexical containment check.
-    /// </para>
+    /// Like <see cref="TryResolveInside"/> but also accepts rooted inputs, which are canonicalized
+    /// (junctions/symlinks resolved) before the containment check. Non-existent paths are anchored
+    /// on their longest existing ancestor. Network (UNC/SMB) inputs are always rejected.
     /// </summary>
     public static bool TryResolveInsideAllowingAbsolute(string? sandboxRoot, string? userPath, out string resolved)
     {
@@ -65,6 +57,10 @@ public static class SafeFolderPath
         var trimmed = userPath.Trim();
         if (trimmed.Contains('\0')) return false;
         if (trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return false;
+
+        // Must precede every File.Exists/Directory.Exists below: probing a UNC path opens an SMB
+        // connection and sends the user's NTLM credentials to a server the caller chose.
+        if (IsNetworkPath(trimmed)) return false;
 
         // Canonicalize the root the SAME way as the candidate (below) so the StartsWith
         // containment check is symmetric — a junction/casing difference in the root path
@@ -83,6 +79,8 @@ public static class SafeFolderPath
         string candidate;
         try { candidate = Path.GetFullPath(trimmed, fullRoot); }
         catch { return false; }
+
+        if (IsNetworkPath(candidate)) return false;
 
         // Canonicalize to resolve junctions/symlinks. Canonicalize requires an existing
         // handle, so for a path that does not exist canonicalize the longest existing
@@ -116,6 +114,25 @@ public static class SafeFolderPath
 
         return TryContain(fullRoot, canonical, out resolved);
     }
+
+    /// <summary>
+    /// True for UNC and device-namespace paths (<c>\\server\share</c>, <c>//server/share</c>,
+    /// <c>\\?\UNC\…</c>) and for drive letters mapped to a network share. Performs no I/O.
+    /// </summary>
+    public static bool IsNetworkPath(string path)
+    {
+        if (path.Length >= 2 && IsSeparator(path[0]) && IsSeparator(path[1])) return true;
+
+        if (path.Length >= 2 && path[1] == ':' && char.IsAsciiLetter(path[0]))
+        {
+            try { return new DriveInfo(path[..1]).DriveType == DriveType.Network; }
+            catch { return true; }
+        }
+
+        return false;
+    }
+
+    private static bool IsSeparator(char c) => c == '\\' || c == '/';
 
     /// <summary>
     /// Lexical containment guard shared by both resolvers: <paramref name="candidate"/> is combined
