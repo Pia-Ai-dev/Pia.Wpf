@@ -44,9 +44,8 @@ public static class SafeFolderPath
     }
 
     /// <summary>
-    /// Like <see cref="TryResolveInside"/> but also accepts rooted inputs, which are canonicalized
-    /// (junctions/symlinks resolved) before the containment check. Non-existent paths are anchored
-    /// on their longest existing ancestor. Network (UNC/SMB) inputs are always rejected.
+    /// Like <see cref="TryResolveInside"/> but accepts rooted inputs, canonicalized before the containment
+    /// check; network (UNC/SMB) inputs are rejected.
     /// </summary>
     public static bool TryResolveInsideAllowingAbsolute(string? sandboxRoot, string? userPath, out string resolved)
     {
@@ -58,13 +57,11 @@ public static class SafeFolderPath
         if (trimmed.Contains('\0')) return false;
         if (trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return false;
 
-        // Must precede every File.Exists/Directory.Exists below: probing a UNC path opens an SMB
-        // connection and sends the user's NTLM credentials to a server the caller chose.
+        // Must precede every File.Exists/Directory.Exists: probing a UNC path sends the user's NTLM
+        // credentials to a server the caller chose.
         if (IsNetworkPath(trimmed)) return false;
 
-        // Canonicalize the root the SAME way as the candidate (below) so the StartsWith
-        // containment check is symmetric — a junction/casing difference in the root path
-        // itself must not produce false rejects of legitimately-inside paths.
+        // Root is canonicalized like the candidate so a junction in the root itself doesn't false-reject.
         string fullRoot;
         try
         {
@@ -73,18 +70,11 @@ public static class SafeFolderPath
         }
         catch { return false; }
 
-        // Normalize the candidate (collapses "..", makes absolute) against the root.
-        // The base-path overload handles relative-vs-absolute in one call: an already
-        // absolute "trimmed" is returned as-is; a relative one is combined with fullRoot.
         string candidate;
         try { candidate = Path.GetFullPath(trimmed, fullRoot); }
         catch { return false; }
 
-        if (IsNetworkPath(candidate)) return false;
-
-        // Canonicalize to resolve junctions/symlinks. Canonicalize requires an existing
-        // handle, so for a path that does not exist canonicalize the longest existing
-        // ancestor and re-append the (lexical) remainder.
+        // Canonicalize needs an existing handle, so a missing path anchors on its longest existing ancestor.
         string canonical;
         try
         {
@@ -102,8 +92,6 @@ public static class SafeFolderPath
                     return false; // no existing ancestor to anchor against
 
                 var realAncestor = Canonicalize(ancestor);
-                // candidate was already collapsed by GetFullPath, so the relative
-                // remainder contains no ".." segments — purely lexical recombine.
                 var remainder = Path.GetRelativePath(ancestor, candidate);
                 canonical = remainder == "."
                     ? realAncestor
