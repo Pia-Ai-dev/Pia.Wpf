@@ -248,10 +248,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 return;
             }
 
-            // A pass gets one rate-limit window, so without a nudge the remainder waits for the next launch
-            // — weeks, on a catalogue of any size. Armed even when startup finished, since an encrypted
-            // migration can reopen the backfill later. The callback only wakes the loop below, which keeps
-            // every push on this one thread.
+            // A pass gets one rate-limit window, so the rest is nudged instead of waiting for the next launch. Armed
+            // even after startup finished, since an encrypted migration can reopen the backfill.
             using var backfillNudge = new Timer(
                 _ => { if (_backfillPaced) _signal.Writer.TryWrite(0); },
                 null, _backfillRetryInterval, _backfillRetryInterval);

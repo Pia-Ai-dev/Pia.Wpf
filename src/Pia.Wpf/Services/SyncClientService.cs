@@ -313,11 +313,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         _revokedNoticeRaised = false;
         var generation = ++_syncGeneration;
 
-        // One-shot timer: it fires once after InitialSyncDelay, then each cycle re-arms the
-        // timer for a jittered, adaptively-backed-off delay via ArmNextSyncCycle. An infinite
-        // period keeps the timer from auto-repeating. The timer instance and generation are
-        // captured in the closure so a Stop+Start that races an in-flight cycle can never let
-        // the stale cycle re-arm the new session's timer (see ArmNextSyncCycle).
+        // One-shot, re-armed by each cycle; the closure pins timer and generation so a cycle racing a
+        // Stop+Start cannot re-arm the new session's timer.
         Timer? timer = null;
         timer = new Timer(async _ =>
         {
@@ -763,19 +760,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             await Task.Delay(wait);
     }
 
-    /// <summary>
-    /// Repairs provider rows a pre-guard E2EE pull blanked, by resetting the sync cursor so the
-    /// server's intact ciphertext is fetched again.
-    /// </summary>
-    /// <remarks>
-    /// The tell is unambiguous: a provider typed <see cref="AiProviderType.PiaCloud"/> whose Id is not
-    /// the well-known Pia Cloud Id. Sync never carries a real one — the push filters PiaCloud out — so
-    /// such a row can only be the all-defaults entity the old plaintext fallback produced from a row
-    /// whose plaintext columns the server had blanked.
-    ///
-    /// Providers are repairable because that same push filter kept the blanked rows from being
-    /// uploaded over the server's copies. Templates were not so lucky and are not repairable here.
-    /// </remarks>
+    /// <summary>Refetches provider rows an E2EE pull without the key blanked, by resetting the sync cursor.</summary>
     public async Task<bool> RepairBlankedSyncRowsAsync()
     {
         var scope = await CaptureAccountScopeAsync(Volatile.Read(ref _accountEpoch));
@@ -785,11 +770,12 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (!settings.SyncEnabled || settings.BlankedSyncRowRepairAt is not null)
             return false;
 
-        // Resyncing before onboarding would only hit the pull refusal below. Leave the marker unset
-        // so the launch that finally has the UMK still gets its attempt.
+        // Before onboarding the resync would only meet the pull refusal; the launch that has the key gets the attempt.
         if (settings.IsE2EEEnabled && _e2ee?.IsReady() != true)
             return false;
 
+        // Sync never carries a real Pia Cloud row, so one under another id is a blanked entity; the push filter
+        // kept such rows off the server, which is why the server's copy is still intact.
         var providers = await _providerService.GetProvidersAsync();
         var blanked = providers.Count(p =>
             p.ProviderType == AiProviderType.PiaCloud
@@ -801,10 +787,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             "Found {Count} provider row(s) blanked by an E2EE pull that could not decrypt; forcing a full resync",
             blanked);
 
-        // Mark only once a cycle actually RAN. SyncNowAsync returns null for every reason a cycle can
-        // be skipped — no token, server unreachable, another sync holding the lock — and burning the
-        // one-shot on one of those would strand the rows blank forever. A cycle that ran and left them
-        // blank means the server copy is gone, so there is nothing to retry.
+        // Marked only once a cycle ran: a skipped one returns null, and burning the one-shot there strands the rows.
         var result = await ForceFullResyncAsync();
         if (result is null || await AccountChangedAsync(scope))
         {
@@ -877,15 +860,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         return response;
     }
 
-    /// <summary>
-    /// Pushes local changes and reports the outcome as a (count, succeeded, sent-changes)
-    /// tuple so callers can distinguish "nothing to push" from "the POST failed" — both
-    /// otherwise collapse to a pushed count of 0, but only the former is safe to treat as an
-    /// idle cycle for backoff purposes (see <see cref="ClassifyCycle"/>). <c>SentChanges</c>
-    /// is true whenever the short-circuit below was NOT taken and the POST succeeded, so it
-    /// also covers a deletes-only or plugin-prefs-only push that <c>PushedCount</c> (upserts
-    /// only) would otherwise miss.
-    /// </summary>
+    /// <summary>Separates "nothing to push" from a failed POST, since only the first is an idle cycle for backoff.</summary>
     private async Task<(int PushedCount, bool PushSucceeded, bool SentChanges)> PushChangesAsync(HttpClient client, string serverUrl, AppSettings settings)
     {
         var lastSync = settings.LastSyncTimestamp ?? DateTime.MinValue;
@@ -896,7 +871,6 @@ public class SyncClientService : ISyncClientService, IDisposable
             : [];
         var providers = await _providerService.GetProvidersAsync();
 
-        // Only push sessions created since last sync
         var sessions = await _historyService.SearchSessionsAsync(fromDate: lastSync);
 
         var memories = await _memoryService.GetAllObjectsAsync();
@@ -911,10 +885,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             : [];
 
         var dirtyTemplates = templates.Where(t => !t.IsBuiltIn).Where(t => (t.ModifiedAt ?? t.CreatedAt).ToUniversalTime() >= lastSync).Count();
-        // Same !IsManaged filter as the request builder below: this only feeds the diagnostic log line (the
-        // push short-circuit reads request.*.Upserted.Count, not these), but a freshly-replaced managed
-        // snapshot bumps UpdatedAt on every row, so without it the log would claim N dirty personas on a
-        // cycle with nothing pushable and send someone hunting a phantom.
+        // A replaced managed snapshot bumps every row's UpdatedAt, so without !IsManaged this log counts phantoms.
         var dirtyPersonas = personas.Where(p => !p.IsBuiltIn && !p.IsManaged).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtyProviders = providers.Where(p => p.ProviderType != AiProviderType.PiaCloud).Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync).Count();
         var dirtySessions = sessions.Count;
@@ -954,10 +925,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             Personas = new SyncEntityChanges<SyncPersona>
             {
                 Upserted = personas
-                    // !IsManaged as well as !IsBuiltIn: GetPersonasAsync returns built-ins ∪ managed ∪ user
-                    // rows, and managed personas are pull-only. The server quarantines a managed id it
-                    // receives here, but the client contract is to never emit one — this filter is where
-                    // that invariant is stated.
+                    // Managed personas are pull-only; the server would quarantine one sent back.
                     .Where(p => !p.IsBuiltIn && !p.IsManaged)
                     .Where(p => p.UpdatedAt.ToUniversalTime() >= lastSync)
                     .Select(p => _mapper.ToSyncPersona(p, userId))
@@ -1012,8 +980,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     .ToList(),
                 Deleted = pendingDeletes.GetValueOrDefault("scheduledJobs", [])
             },
-            // Research sessions are no longer produced by the client (results are assistant chats).
-            // The field is kept empty for server wire-contract compatibility.
+            // Always empty: research results are assistant chats, and the wire contract still has the field.
             ResearchSessions = new SyncEntityChanges<SyncResearchSession>(),
             PluginPreferences = _pluginService?.GetPendingPreferenceChanges() ?? []
         };
@@ -1041,11 +1008,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             request.ScheduledJobs.Upserted.Count,
             request.LastSyncTimestamp, request.DeviceId, request.IsE2EEEncrypted);
 
-        // Short-circuit: skip HTTP POST when there are no changes to push. Plugin prefs are
-        // NOT in pushedCount, so they must be checked explicitly — otherwise a prefs-only
-        // change is short-circuited away and (with peek semantics) never leaves the device.
-        // A settings-only change also isn't in pushedCount/deletes/prefs, so it must be counted
-        // here too, or a genuine settings edit would be short-circuited away and never sync.
+        // Plugin prefs and settings are not in pushedCount, so a change to only those must still be sent.
         if (pushedCount == 0
             && pendingDeletes.Values.All(v => v.Count == 0)
             && request.PluginPreferences.Count == 0
@@ -1065,20 +1028,15 @@ public class SyncClientService : ISyncClientService, IDisposable
             var code = ReadErrorCodeFromBody(body);
             if (code == E2EEErrorCodes.DeviceRevoked)
             {
-                // The server revoked this device; every further write is futile.
                 await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
             }
             else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EERequired)
             {
-                // The account is E2EE-enabled server-side but this client pushed
-                // plaintext (no local UMK / stale settings). Silent retries can never
-                // succeed — route into device onboarding instead.
+                // A plaintext push to an E2EE account never succeeds on retry, so onboarding is the only way out.
                 _logger.LogWarning("Server requires E2EE for this account; onboarding required");
                 NotifyE2EEOnboardingRequired();
             }
-            // Failed, not idle: local changes are still pending and must not be treated as
-            // "nothing to push" by ClassifyCycle, or persistent failures would engage backoff
-            // and slow the retry of unpushed data.
+            // Failed, not idle: backoff would slow the retry of changes that are still pending.
             return (0, false, false);
         }
 
@@ -1091,13 +1049,9 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         _deleteTracker.ClearAfterSuccessfulPush();
-        // Only now that the push succeeded is it safe to drop the pending plugin prefs; a
-        // 403/failure/short-circuit above returned without reaching here, so they persist.
         _pluginService?.ClearPreferenceChangesAfterSuccessfulPush();
 
-        // Persist the settings hash only after a successful push (mirrors the cursor save) —
-        // never before, or a failed push would strand the settings behind an advanced hash and
-        // they'd never re-sync.
+        // Only after a successful push, or failed settings would hide behind the advanced hash.
         await PersistSettingsHashIfChangedAsync(settings, settingsHash, settingsChanged);
 
         return (pushedCount, true, true);
@@ -1231,28 +1185,19 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         var since = sinceUtc.ToString("O");
 
-        // Catalog first-run rule, one flag per catalog channel: exactly one pull with BOTH conditional
-        // mechanisms disabled, to force a full catalog snapshot. Needed because a build that predates a
-        // channel still stored the catalogVersion it arrived with, so this profile can be echoing an
-        // already-current token while holding no managed rows and no group policy at all — the server
-        // would fast-skip the catalog forever. Same hole after a profile reset or DB rebuild. Both
-        // mechanisms have to go: ?catalogVersion= gates the catalog block, If-None-Match gates the entire
-        // body (a 304 carries neither managedPersonas nor clientPolicy).
+        // One unconditional pull per uninitialized catalog channel: an older build may echo a current token while
+        // holding no managed rows or policy, and a 304 carries neither, so both conditionals must go.
         var forceFullCatalog = isFirstPage
             && (!settings.ManagedPersonaStoreInitialized || !settings.ClientPolicyInitialized);
 
-        // ?limit caps each collection (Sec 6.3); ?catalogVersion lets the server skip re-sending the
-        // full plugin catalog when it is unchanged (Sec 3.5). Both are opt-in — a pre-upgrade server
-        // ignores them. catalogVersion is omitted on first run (null) so the server sends the full catalog.
+        // Both parameters are opt-in, so an older server ignores them; no catalogVersion means the full catalog.
         var pullUrl = $"{serverUrl}/api/sync/pull?since={since}&limit={PullPageLimit}";
         if (settings.LastCatalogVersion.HasValue && !forceFullCatalog)
             pullUrl += $"&catalogVersion={settings.LastCatalogVersion.Value}";
         _logger.LogInformation("Pull requesting: {Url}", SafeUrl.Format(pullUrl));
 
         var pullRequest = new HttpRequestMessage(HttpMethod.Get, pullUrl);
-        // TryParse (not the EntityTagHeaderValue ctor) so a weak (W/"...") stored ETag never
-        // throws FormatException and aborts the whole pull cycle — see AssistantChatSyncService's
-        // identical guard for the chat ETag. Only the first page is conditional (see PullChangesAsync).
+        // TryParse, so a weak stored ETag cannot throw and abort the pull.
         if (isFirstPage && !forceFullCatalog && !settings.SuppressSettingsPushAfterReset
             && !string.IsNullOrEmpty(settings.LastPullETag) && EntityTagHeaderValue.TryParse(settings.LastPullETag, out var lastPullTag))
             pullRequest.Headers.IfNoneMatch.Add(lastPullTag);
@@ -1287,16 +1232,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             return (false, false, 0, 0, null, false, false);
         }
 
-        // Read the response ETag here but PERSIST IT ONLY AFTER EVERY APPLY BELOW SUCCEEDS — it rides the
-        // same save as LastCatalogVersion, for a stronger version of the same reason. The ETag is
-        // "v{userDataVersion}-c{catalogVersion}-s{sinceTicks}" and a page whose apply throws advances none
-        // of the three (LastSyncTimestamp is only advanced by a completed pull), so storing it up here
-        // would make the next pull echo a string the server recomputes identically and answer 304: the
-        // un-applied page could never be re-fetched, and for the replace-all managed channel that means a
-        // withdrawn persona stays in the store indefinitely — exactly what replace-all exists to prevent.
-        // Keeping the OLD ETag on failure makes the retry unconditional: it mismatched once (that is why
-        // this response is a 200 and not a 304), so it mismatches again. Same shape as
-        // AssistantChatSyncService's LastChatPullETag, whose comment already claims to mirror this one.
+        // Stored only after every apply below succeeds: a stored ETag would 304 away the retry of a page whose
+        // apply threw, and a withdrawn managed persona would then never leave the store.
         var newPullETag = isFirstPage && response.Headers.ETag is not null
             ? response.Headers.ETag.ToString()
             : null;
@@ -1304,22 +1241,14 @@ public class SyncClientService : ISyncClientService, IDisposable
         var pullResponse = await response.Content.ReadFromJsonAsync<SyncPullResponse>();
         if (pullResponse is null) return (false, false, 0, 0, null, false, false);
 
-        // The server's current catalog version is applied further down, only after the page's
-        // entities have been fully applied (see the persist just before the return below). The
-        // catalog query is gated solely on ?catalogVersion= with no SyncedAt filter (Sec 3.5), so
-        // storing it here — before the apply step below has run — would let an apply exception
-        // (thrown by any entity service and propagated out of this method) strand a stored
-        // version that makes the next pull's ?catalogVersion= match the server's and skip resending
-        // the very plugin changes this page never actually applied.
+        // Stored after the apply too: the catalog query has no SyncedAt filter, so a stored version would skip
+        // resending plugin changes this page never applied.
         var newCatalogVersion = isFirstPage && pullResponse.CatalogVersion.HasValue
             && pullResponse.CatalogVersion != settings.LastCatalogVersion
             ? pullResponse.CatalogVersion
             : null;
 
-        // Managed personas are logged as COUNTS ONLY — a name, tagline or prompt is admin-authored user
-        // content and must never reach a support log (CLAUDE.md privacy-first logging). 0u/0d therefore
-        // reads the same whether the key was absent or present-and-empty; the two are distinguished at the
-        // apply site below, not here.
+        // Managed personas as counts only: names, taglines and prompts are admin-authored user content.
         _logger.LogInformation(
             "Pull response — ServerTimestamp: {ServerTs}, Templates: {TU}u/{TD}d, Personas: {PeU}u/{PeD}d, Providers: {PU}u/{PD}d, Sessions: {SA}a/{SD}d, Memories: {MU}u/{MD}d, KanbanColumns: {KCU}u/{KCD}d, Todos: {ToU}u/{ToD}d, Plugins: {PlU}u/{PlD}d, ManagedPersonas: {MpU}u/{MpD}d, ClientPolicy: {PolicyPresent}",
             pullResponse.ServerTimestamp,
@@ -1337,11 +1266,8 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         var userId = settings.SyncUserId;
 
-        // Refuse the whole page rather than apply any of it, when it carries ciphertext this client
-        // cannot read. The server blanks the plaintext columns of an E2EE row, so applying one row at
-        // a time would write empty entities over real data — and because the cursor advances on a
-        // successful pull, those rows would never be fetched again. Reporting the page as failed keeps
-        // LastSyncTimestamp where it is, so the pull retries intact once onboarding completes.
+        // Refuse the whole page when its ciphertext cannot be read: applying blanked rows overwrites real data,
+        // and the kept cursor brings the page down again after onboarding.
         if (CarriesUnreadableCiphertext(pullResponse, userId))
         {
             _logger.LogError(
@@ -1371,7 +1297,6 @@ public class SyncClientService : ISyncClientService, IDisposable
         var settingsUndecryptable = false;
         var providersApplied = false;
 
-        // Apply settings
         if (pullResponse.Settings is not null)
         {
             try
@@ -1390,7 +1315,6 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
         }
 
-        // Apply templates
         foreach (var template in pullResponse.Templates.Upserted)
         {
             try
@@ -1449,7 +1373,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (pullResponse.Templates.Deleted.Count > 0)
             _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "templates", pullResponse.Templates.Deleted.Count);
 
-        // Apply personas — skip built-ins, last-write-wins on UpdatedAt (mirrors templates).
+        // Last write wins on UpdatedAt.
         if (_personaService is not null)
         {
             foreach (var persona in pullResponse.Personas.Upserted)
@@ -1462,10 +1386,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
                     if (existing is not null)
                     {
-                        // IsReadOnly, not IsBuiltIn: GetPersonasAsync also returns managed rows now, and
-                        // UpdatePersonaAsync THROWS on a managed id. Without this, a user persona whose id
-                        // collided with a managed one would abort the whole pull (the catch below only
-                        // handles CryptographicException) on every cycle, forever.
+                        // IsReadOnly, not IsBuiltIn: UpdatePersonaAsync throws on a managed id, which would abort every pull.
                         if (existing.IsReadOnly)
                         {
                             mergeSkipped++;
@@ -1515,9 +1436,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "personas", pullResponse.Personas.Deleted.Count);
         }
 
-        // Apply providers — match by Id first, fall back to content fingerprint
-        // so providers created independently on two devices (each with their own
-        // Guid) collapse into one row instead of duplicating.
+        // Matched by id, then by content fingerprint, so a provider created on two devices becomes one row.
         var localProviders = (await _providerService.GetProvidersAsync()).ToList();
         var localByFingerprint = new Dictionary<string, AiProvider>(StringComparer.Ordinal);
         foreach (var p in localProviders)
@@ -1525,8 +1444,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (p.Id == ProviderService.PiaCloudProviderId) continue;
             var fp = ProviderFingerprint.Compute(p);
             if (fp == ProviderFingerprint.PiaCloudSentinel) continue;
-            // If two locals share a fingerprint, the most-recently-updated wins as the survivor;
-            // the others get cleaned up by ConsolidateLocalDuplicatesAsync at startup.
+            // The newest local wins a shared fingerprint; ConsolidateLocalDuplicatesAsync removes the rest at startup.
             if (!localByFingerprint.TryGetValue(fp, out var current)
                 || p.UpdatedAt.ToUniversalTime() > current.UpdatedAt.ToUniversalTime())
             {
@@ -1545,12 +1463,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     if (local.UpdatedAt.ToUniversalTime() >= existing.UpdatedAt.ToUniversalTime())
                     {
-                        // API keys never travel plaintext (device-local without E2EE);
-                        // under E2EE the mapper has already placed the synced key on
-                        // local.EncryptedApiKey and UpdateProviderAsync honors it.
-                        // The six fields SyncProvider omits are NOT on the wire in either mode, so
-                        // `local` carries only C# defaults for them — carry this device's values over
-                        // or the pull resets them (compaction budget -> null, streaming -> true).
+                        // Keys never travel in plaintext, and under E2EE the mapper has set local.EncryptedApiKey. The fields
+                        // SyncProvider omits hold only defaults in `local`, so this device's values are carried over.
                         _mapper.PreserveDeviceLocalProviderFields(local, existing);
                         await _providerService.UpdateProviderAsync(local);
                         mergeUpdated++;
@@ -1573,12 +1487,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                     && dup.Id != provider.Id
                     && dup.Id != ProviderService.PiaCloudProviderId)
                 {
-                    // Server Id wins as the canonical identifier. Content from whichever
-                    // side has the later UpdatedAt wins; UpdatedAt is set to the max
-                    // so the next push does not regress the server row.
-                    // Same preserve as the update branch above: `dup` is this device's row and holds the
-                    // device-local fields, `local` holds only defaults for them. Doing it before the
-                    // ternary covers both outcomes — when `dup` wins it already has them.
+                    // The server id wins, the later UpdatedAt wins the content, and UpdatedAt takes the max so the next push
+                    // does not regress the server row; the device-local fields come from `dup` either way.
                     _mapper.PreserveDeviceLocalProviderFields(local, dup);
                     var serverNewer = local.UpdatedAt.ToUniversalTime()
                         >= dup.UpdatedAt.ToUniversalTime();
@@ -1596,8 +1506,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     continue;
                 }
 
-                // Plaintext wire keys are ignored (device-local policy); an E2EE-synced
-                // key is already on local.EncryptedApiKey and survives AddProviderAsync.
+                // Plaintext wire keys are ignored; an E2EE-synced key is already on local.EncryptedApiKey.
                 await _providerService.AddProviderAsync(local, null);
                 if (fingerprint != ProviderFingerprint.PiaCloudSentinel)
                     localByFingerprint[fingerprint] = local;
@@ -1624,9 +1533,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         providersApplied = pullResponse.Providers.Upserted.Count > 0
             || pullResponse.Providers.Deleted.Count > 0;
 
-        // Heal mode-defaults whose Ids may have been reassigned or that now point
-        // at providers the pull removed. Cheap idempotent pass — only writes when
-        // it actually finds something to fix.
+        // Heals mode defaults whose provider was reassigned or removed; writes only when it finds one.
         if (providersApplied || settingsApplied)
         {
             try { await _providerService.RepairModeDefaultsAsync(); }
@@ -1636,7 +1543,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             }
         }
 
-        // Apply sessions (append-only)
+        // Sessions are append-only.
         foreach (var session in pullResponse.Sessions.Added)
         {
             try
@@ -1670,7 +1577,6 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (pullResponse.Sessions.Deleted.Count > 0)
             _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "sessions", pullResponse.Sessions.Deleted.Count);
 
-        // Apply memories
         foreach (var memory in pullResponse.Memories.Upserted)
         {
             try
@@ -1716,7 +1622,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         if (pullResponse.Memories.Deleted.Count > 0)
             _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "memories", pullResponse.Memories.Deleted.Count);
 
-        // Apply kanban columns (BEFORE todos, since todos reference columns)
+        // Columns before todos, which reference them.
         if (_columnService is not null)
         {
             foreach (var syncColumn in pullResponse.KanbanColumns.Upserted)
@@ -1754,11 +1660,9 @@ public class SyncClientService : ISyncClientService, IDisposable
                 }
             }
 
-            // Note: we don't process KanbanColumns.Deleted since column deletion
-            // is only allowed for empty columns and is enforced client-side
+            // Column deletes are not applied: only an empty column can be deleted, and the client enforces that.
         }
 
-        // Apply todos
         if (_todoService is not null)
         {
             foreach (var todo in pullResponse.Todos.Upserted)
@@ -1767,7 +1671,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 {
                     var local = _mapper.FromSyncTodo(todo, userId);
 
-                    // Backward compat: assign column based on status if no ColumnId
+                    // An older peer sends no ColumnId, so the status picks the column.
                     if (!local.ColumnId.HasValue && _columnService is not null)
                     {
                         if (local.Status == TodoStatus.Completed)
@@ -1824,7 +1728,6 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "todos", pullResponse.Todos.Deleted.Count);
         }
 
-        // Apply scheduled jobs
         if (_scheduledJobService is not null)
         {
             foreach (var syncJob in pullResponse.ScheduledJobs.Upserted)
@@ -1870,15 +1773,13 @@ public class SyncClientService : ISyncClientService, IDisposable
                 _logger.LogInformation("Pull {EntityType} deletions applied: {Count}", "scheduledJobs", pullResponse.ScheduledJobs.Deleted.Count);
         }
 
-        // Research sessions are no longer stored by the client (results are assistant chats); the
-        // server may still include the field on the wire — it is ignored on pull.
+        // Research sessions on the wire are ignored: research results are assistant chats.
 
         if (decryptionErrors > 0)
         {
             _logger.LogWarning("Pull completed with {Count} decryption error(s) — data may have been encrypted with a different key", decryptionErrors);
         }
 
-        // Apply plugins
         if (_pluginService is not null &&
             (pullResponse.Plugins.Upserted.Count > 0 || pullResponse.Plugins.Deleted.Count > 0))
         {
@@ -1888,30 +1789,19 @@ public class SyncClientService : ISyncClientService, IDisposable
                 pullResponse.Plugins.Upserted.Count, pullResponse.Plugins.Deleted.Count);
         }
 
-        // Apply managed personas. Placed here — after every other apply, before the catalog-version and
-        // ETag persist below — for exactly the reason the plugin apply above is here: a throw inside the
-        // replace must leave BOTH conditional tokens UNCHANGED, so the next pull re-sends the catalog
-        // instead of fast-skipping (or 304-ing away) a snapshot this page never stored. Only the first page
-        // is considered, because that is the only page the catalog block can appear on at all.
+        // Managed personas last, before the token save below, so a throw in the replace leaves both conditional
+        // tokens unchanged. Only the first page can carry the catalog block.
         if (isFirstPage && _personaService is not null)
         {
-            // REPLACE-ALL, unlike every other channel: a non-null managedPersonas is the authoritative
-            // snapshot for this user's group. Null (⇒ key absent, the server omits nulls app-wide) means the
-            // catalog fast-skip fired — keep the store. Never merge, or an unassignment (which carries no
-            // tombstone) would never remove anything. The payload is a SyncManagedPersonaSnapshot, not a
-            // SyncEntityChanges<T>, precisely so this cannot be handed to the merge helper by mistake.
+            // Replace-all: a non-null snapshot is authoritative and null means the catalog fast-skip fired. A merge
+            // would never remove an unassigned persona, which carries no tombstone.
             if (pullResponse.ManagedPersonas is { } managed)
             {
-                // No E2EE path and no decryptionErrors bookkeeping: managed rows carry no encryptedPayload/
-                // wrappedDek by design (a group-shared row cannot be wrapped with one user's UMK), so they
-                // are plaintext even for an E2EE account — see FromSyncManagedPersona (handoff §5.3).
+                // Managed rows are plaintext even under E2EE: a group-shared row cannot be wrapped with one user's key.
                 await _personaService.ReplaceManagedPersonasAsync(
                     managed.Personas.Select(_mapper.FromSyncManagedPersona).ToList());
 
-                // RecentlyRemoved needs no handling under replace-all — absence from `personas` is what
-                // removes a row, and an unassignment never appears here at all. It is logged as
-                // confirmation, not consumed as the mechanism. Counts only (admin-authored names are
-                // user content).
+                // RecentlyRemoved is logged, not applied: absence from the snapshot is what removes a row. Counts only.
                 _logger.LogInformation(
                     "Applied managed persona snapshot: {Count} persona(s), {RecentlyRemoved} recently removed",
                     managed.Personas.Count, managed.RecentlyRemoved.Count);
@@ -1928,23 +1818,8 @@ public class SyncClientService : ISyncClientService, IDisposable
                 policy.Document.Length);
         }
 
-        // Persist the server's current catalog version now that every entity in this page (including
-        // plugins, the managed snapshot and the policy document, applied just above) has been applied
-        // without throwing. Storing it only here, not when it was first read off the response further up,
-        // means a mid-apply exception leaves the stored version unchanged, so the next pull still
-        // omits/mismatches ?catalogVersion= and the server resends the full catalog instead of skipping the
-        // un-applied changes. LastPullETag rides the same save for the same reason (see where it is read,
-        // above), because a stored ETag would otherwise 304 away the retry the un-applied page needs.
-        //
-        // Both catalog first-run latches close here, on ONE rule: the forced unconditional pull reached
-        // this point — i.e. it returned 2xx with a body whose applies all succeeded. Deliberately NOT "the
-        // channel's own block arrived": a pre-upgrade server has no such channel, so waiting for a non-null
-        // block would keep every future pull unconditional and permanently lose the 304 fast path. Closing
-        // it blind is safe because the server folds the caller's group into catalogVersion — a token
-        // stored before the server upgrade can never equal a mixed one, so the upgrade itself forces exactly
-        // one full-catalog pull anyway. Never latched on a 304, a non-2xx or a null body: all three return
-        // above, before this point. forceFullCatalog already carries isFirstPage and both channel flags, so
-        // it is the whole condition.
+        // Stored only now that the whole page applied, so a throw above leaves the tokens for the retry. The
+        // first-run latches close on the same rule, since an older server never sends a channel block to wait for.
         var latchCatalogChannels = forceFullCatalog;
         var storePullETag = newPullETag is not null && newPullETag != settings.LastPullETag;
 
@@ -1980,9 +1855,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _logger.LogInformation("Pull merge: {Inserted} inserted, {Updated} updated, {Skipped} skipped, {Deleted} deleted, {DecryptErrors} decrypt errors",
             mergeInserted, mergeUpdated, mergeSkipped, mergeDeleted, decryptionErrors);
 
-        // Note: SyncCompleted fires once per drained page (not once per overall pull) — a large
-        // multi-page drain raises it repeatedly. This is intentional for now; consumers that refresh
-        // UI state on this event should debounce if that churn becomes noticeable.
+        // Raised once per drained page, not once per pull.
         try
         {
             SyncCompleted?.Invoke(this, new SyncCompletedEventArgs
@@ -2071,7 +1944,6 @@ public class SyncClientService : ISyncClientService, IDisposable
             if (await AccountChangedAsync(_cycleScope))
                 return;
 
-            // Check if current device still exists and is active
             if (_deviceKeys is not null)
             {
                 var currentDeviceId = _deviceKeys.GetDeviceId();
