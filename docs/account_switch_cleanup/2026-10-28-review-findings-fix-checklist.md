@@ -1,6 +1,6 @@
 # Account switch, local-data reset and E2EE downgrade: review fixes — checklist
 
-**Status:** Done on `feature/account-switch-review-fixes`, PR into `develop` pending
+**Status:** Done
 **Owner:** Marco Altmann
 **Written:** 2026-10-28
 **Origin:** A review of the client code that Pia `feature/7938` pins (Pia.Wpf `5107d31d`, PRs #80 and
@@ -56,6 +56,9 @@ little standalone value, unblocks a High.
 
 ## Not yet planned
 
+- **Refuse *Run now* while a clear is pending.** The scheduler no longer starts then, but
+  `IScheduledJobRunner.RunNowAsync` (the Routines page and the assistant's job tool) still runs a job
+  on the unstarted service. Closing it needs a new `ScheduledJobRunNowResult` and its message.
 - **Cancel the stale cycle's HTTP request.** The epoch guard makes a stale cycle harmless, but the
   request still runs to its end. A cancel entry point would have to be separate from
   `StopBackgroundSync`, since the device-revoked and lost-key paths call that from inside a cycle.
