@@ -1,6 +1,6 @@
 # Account switch, local-data reset and E2EE downgrade: review fixes — checklist
 
-**Status:** Open
+**Status:** Done on `feature/account-switch-review-fixes`, PR into `develop` pending
 **Owner:** Marco Altmann
 **Written:** 2026-10-28
 **Origin:** A review of the client code that Pia `feature/7938` pins (Pia.Wpf `5107d31d`, PRs #80 and
