@@ -19,7 +19,7 @@ little standalone value, unblocks a High.
 
 | Gate | Question | Blocks | Decision |
 |---|---|---|---|
-| G1 | Should an explicit *Clear local data* also delete `settings.json.unreadable-*`? Those copies hold encrypted tokens and the wrapped UMK, and keeping them aside is what the owner chose on 2026-10-27 for an unreadable file at startup. | 4 (that one glob only) | Open |
+| G1 | Should an explicit *Clear local data* also delete `settings.json.unreadable-*`? Those copies hold encrypted tokens and the wrapped UMK, and keeping them aside is what the owner chose on 2026-10-27 for an unreadable file at startup. | 4 (that one glob only) | Delete them too; the startup keep-aside is unchanged (owner, 2026-10-28). |
 
 ## Steps
 
@@ -37,11 +37,11 @@ little standalone value, unblocks a High.
   `AssistantChatSyncService` listens to `E2EEDowngradeChanged`. When the downgrade clears, it requeues
   the held chats on the next loop pass through the same helper `FlushAsync` uses.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **4. Delete moved-aside store copies on *Clear local data*.**
+- [x] **4. Delete moved-aside store copies on *Clear local data*.**
   The wipe also deletes `<name>.unreadable-*` for `templates.json`, `providers.json`,
-  `pending-sync-deletes.json` and `policy-cache.json`, each from its own store's directory.
-  Device-local asides survive.
-  *Deps:* G1 for `settings.json` only · *Effort:* XS · *Value:* Med
+  `pending-sync-deletes.json`, `policy-cache.json` and, per G1, `settings.json`, each from its own
+  store's directory. Device-local asides survive.
+  *Deps:* G1 (decided) · *Effort:* XS · *Value:* Med
 - [ ] **5. Scope the E2EE-required marker to the server.**
   `E2EERequiredAccountIds` entries become `<server key>|<account id>`. The property name and type do
   not change, so `ClientPolicyContract.DeniedKeys` stays valid. The WinWright test-round steps that
