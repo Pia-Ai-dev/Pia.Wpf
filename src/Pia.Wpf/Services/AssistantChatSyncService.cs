@@ -59,6 +59,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     private volatile bool _resendAllRequested;
 
+    private volatile bool _requeueHeldRequested;
+
     private readonly TimeSpan _startupDelay;
 
     /// <summary>The server's sync policy refills over a one-minute window, so nudging faster than this only
@@ -96,6 +98,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatsChanged += OnChatsChanged;
         _chatService.ChatAccessed += OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted += OnEncryptedMigrationCompleted;
+        _syncClient.E2EEDowngradeChanged += OnE2EEDowngradeChanged;
         return base.StartAsync(cancellationToken);
     }
 
@@ -104,6 +107,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatsChanged -= OnChatsChanged;
         _chatService.ChatAccessed -= OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted -= OnEncryptedMigrationCompleted;
+        _syncClient.E2EEDowngradeChanged -= OnE2EEDowngradeChanged;
         try
         {
             await base.StopAsync(cancellationToken);
@@ -145,6 +149,14 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _signal.Writer.TryWrite(0);
     }
 
+    // Allowing unencrypted sync releases the chats the missing-key hold dropped; nothing else would retry them.
+    private void OnE2EEDowngradeChanged(object? sender, EventArgs e)
+    {
+        if (_syncClient.IsE2EEDowngradeDetected) return;
+        _requeueHeldRequested = true;
+        _signal.Writer.TryWrite(0);
+    }
+
     private void EnqueueOp(Guid id, OpKind kind)
     {
         lock (_stateLock)
@@ -169,10 +181,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         lock (_stateLock)
         {
             if (_loopExited || !permitted) return false;
-            foreach (var (id, kind) in _failed)
-            {
-                if (id != _inFlight) _desired.TryAdd(id, kind);
-            }
+            RequeueFailedLocked();
             _flushWaiters.Add(waiter);
         }
 
@@ -189,6 +198,15 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         finally
         {
             lock (_stateLock) _flushWaiters.Remove(waiter);
+        }
+    }
+
+    // Caller holds _stateLock.
+    private void RequeueFailedLocked()
+    {
+        foreach (var (id, kind) in _failed)
+        {
+            if (id != _inFlight) _desired.TryAdd(id, kind);
         }
     }
 
@@ -243,6 +261,12 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 // A flush that registers mid-pass may have enqueued ops this pass never saw; its own signal
                 // gives it the next one.
                 covered = TakeFlushWaiters();
+
+                if (_requeueHeldRequested)
+                {
+                    _requeueHeldRequested = false;
+                    lock (_stateLock) RequeueFailedLocked();
+                }
 
                 var drainOk = await DrainAsync(stoppingToken);
 

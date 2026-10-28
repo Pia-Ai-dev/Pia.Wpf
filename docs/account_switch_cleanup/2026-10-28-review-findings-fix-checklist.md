@@ -33,7 +33,7 @@ little standalone value, unblocks a High.
   every sync entry point through an injected reset gate, and *Sync now* / *Full resync* show the
   pending-clear restart prompt instead.
   *Deps:* none · *Effort:* S · *Value:* High
-- [ ] **3. Resume chats held by the E2EE gate once unencrypted sync is allowed.**
+- [x] **3. Resume chats held by the E2EE gate once unencrypted sync is allowed.**
   `AssistantChatSyncService` listens to `E2EEDowngradeChanged`. When the downgrade clears, it requeues
   the held chats on the next loop pass through the same helper `FlushAsync` uses.
   *Deps:* none · *Effort:* XS · *Value:* Med
