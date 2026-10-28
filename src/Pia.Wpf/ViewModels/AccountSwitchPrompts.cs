@@ -8,13 +8,8 @@ internal static class AccountSwitchPrompts
     public static async Task<bool> ConfirmSignInAsync(
         ILocalDataResetService reset, IDialogService dialogs, ILocalizationService loc)
     {
-        if (reset.IsResetPending)
+        if (await OfferRestartIfResetPendingAsync(reset, dialogs, loc))
         {
-            if (await dialogs.ShowConfirmationDialogAsync(
-                    loc["LocalReset_Pending_Title"], loc["LocalReset_Pending_Message"]))
-            {
-                await reset.RestartAsync();
-            }
             return false;
         }
 
@@ -42,6 +37,23 @@ internal static class AccountSwitchPrompts
             default:
                 return false;
         }
+    }
+
+    /// <summary>True when a clear is pending, so the caller must not go ahead.</summary>
+    public static async Task<bool> OfferRestartIfResetPendingAsync(
+        ILocalDataResetService reset, IDialogService dialogs, ILocalizationService loc)
+    {
+        if (!reset.IsResetPending)
+        {
+            return false;
+        }
+
+        if (await dialogs.ShowConfirmationDialogAsync(
+                loc["LocalReset_Pending_Title"], loc["LocalReset_Pending_Message"]))
+        {
+            await reset.RestartAsync();
+        }
+        return true;
     }
 
     public static async Task SignOutAsync(

@@ -28,7 +28,7 @@ little standalone value, unblocks a High.
   present, vault has memories, API keys may be lost. A locked `history.db` or an unreadable vault no
   longer throws out of the sign-in, sign-out or *Device removed* commands.
   *Deps:* none · *Effort:* XS · *Value:* High
-- [ ] **2. Hold the scheduler and manual sync while a local-data clear is pending.**
+- [x] **2. Hold the scheduler and manual sync while a local-data clear is pending.**
   `ScheduledJobBackgroundService` starts only when no clear is pending. `SyncClientService` refuses
   every sync entry point through an injected reset gate, and *Sync now* / *Full resync* show the
   pending-clear restart prompt instead.

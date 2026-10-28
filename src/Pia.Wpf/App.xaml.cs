@@ -240,13 +240,14 @@ public partial class App : Application
         var reminderService = Bootstrapper.ServiceProvider.GetRequiredService<ReminderBackgroundService>();
         await reminderService.StartAsync(CancellationToken.None);
 
-        var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
-        await scheduledJobService.StartAsync(CancellationToken.None);
-
         // A clear that failed may have left the old account signed in; nothing account-bound may run until it lands.
+        // That holds device-local meeting jobs too, while reminders, which the clear keeps, still run.
         var resetPending = LocalDataResetMarker.IsPending;
         if (!resetPending)
         {
+            var scheduledJobService = Bootstrapper.ServiceProvider.GetRequiredService<ScheduledJobBackgroundService>();
+            await scheduledJobService.StartAsync(CancellationToken.None);
+
             var chatSyncService = Bootstrapper.ServiceProvider.GetRequiredService<AssistantChatSyncService>();
             await chatSyncService.StartAsync(CancellationToken.None);
 

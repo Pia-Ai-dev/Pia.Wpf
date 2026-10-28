@@ -151,6 +151,36 @@ public class AccountSettingsLocalDataResetTests
         _reset.DidNotReceive().ScheduleReset();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ManualSync_WhileAClearIsPending_OffersTheRestartInstead(bool restart)
+    {
+        _reset.IsResetPending.Returns(true);
+        _dialogs.ShowConfirmationDialogAsync("LocalReset_Pending_Title", "LocalReset_Pending_Message").Returns(restart);
+        var sut = CreateSut();
+
+        await sut.SyncNowCommand.ExecuteAsync(null);
+        await sut.ForceFullResyncCommand.ExecuteAsync(null);
+
+        await _sync.DidNotReceive().SyncNowAsync(Arg.Any<CancellationToken>());
+        await _sync.DidNotReceive().ForceFullResyncAsync();
+        await _reset.Received(restart ? 2 : 0).RestartAsync();
+    }
+
+    [Fact]
+    public async Task ManualSync_WithNoClearPending_Syncs()
+    {
+        var sut = CreateSut();
+
+        await sut.SyncNowCommand.ExecuteAsync(null);
+        await sut.ForceFullResyncCommand.ExecuteAsync(null);
+
+        await _sync.Received(1).SyncNowAsync(Arg.Any<CancellationToken>());
+        await _sync.Received(1).ForceFullResyncAsync();
+        await _dialogs.DidNotReceive().ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
     private AccountSettingsViewModel CreateSut()
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());

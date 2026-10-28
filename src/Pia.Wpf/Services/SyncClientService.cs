@@ -39,6 +39,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncClientService> _logger;
     private readonly SyncDeleteTrackerService _deleteTracker;
+    private readonly ILocalDataResetGate? _resetGate;
 
     // Single serializer for both push sites (first-sync + delta). camelCase unifies the previous
     // PascalCase(delta)/camelCase(first-sync) split; WhenWritingNull trims "field":null keys
@@ -225,7 +226,8 @@ public class SyncClientService : ISyncClientService, IDisposable
         IDeviceKeyService? deviceKeys = null,
         IPluginService? pluginService = null,
         IPersonaService? personaService = null,
-        IPolicyService? policyService = null)
+        IPolicyService? policyService = null,
+        ILocalDataResetGate? resetGate = null)
     {
         _authService = authService;
         _settingsService = settingsService;
@@ -246,6 +248,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _deleteTracker = deleteTracker;
+        _resetGate = resetGate;
 
         _authService.LoginStateChanged += OnAuthLoginStateChanged;
     }
@@ -263,9 +266,17 @@ public class SyncClientService : ISyncClientService, IDisposable
         PendingDeviceRevocation = null;
     }
 
+    // A clear that failed may have left the old account signed in, so nothing may sync until it lands.
+    private bool ResetPending()
+    {
+        if (_resetGate?.IsResetPending != true) return false;
+        _logger.LogInformation("Sync skipped: a local-data clear is pending");
+        return true;
+    }
+
     public void StartBackgroundSync()
     {
-        if (_syncTimer is not null || PendingDeviceRevocation is not null) return;
+        if (_syncTimer is not null || PendingDeviceRevocation is not null || ResetPending()) return;
 
         _consecutiveIdleCycles = 0;
         _deviceCheckCounter = 0;
@@ -402,7 +413,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task<SyncResult?> SyncNowAsync(CancellationToken ct = default)
     {
-        if (!_authService.IsLoggedIn) return null;
+        if (!_authService.IsLoggedIn || ResetPending()) return null;
 
         if (!await _syncLock.WaitAsync(0)) return null;
 
@@ -516,7 +527,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task PerformFirstSyncMigrationAsync()
     {
-        if (!_authService.IsLoggedIn) return;
+        if (!_authService.IsLoggedIn || ResetPending()) return;
 
         await _syncLock.WaitAsync();
         try
@@ -758,6 +769,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public async Task<SyncResult?> ForceFullResyncAsync()
     {
+        if (ResetPending()) return null;
         _logger.LogInformation("ForceFullResyncAsync: resetting LastSyncTimestamp to trigger full pull");
         await _syncLock.WaitAsync();
         try
