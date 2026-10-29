@@ -354,8 +354,6 @@ public static class DroppedFileReader
         }, ct);
     }
 
-    // Slashes, not hyphens: the PII detector reads a hyphenated date as a phone number, so the model
-    // would receive "Date: [Phone_1]:46 +00:00".
     private const string MailDateFormat = "yyyy/MM/dd HH:mm zzz";
 
     // The rule ends the header block with a character the PII detector's phone pattern cannot cross.
