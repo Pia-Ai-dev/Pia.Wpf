@@ -30,7 +30,13 @@ public partial class StructuredPiiDetector : IPiiDetector
     [GeneratedRegex(@"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", RegexOptions.Compiled)]
     private static partial Regex EmailRegex();
 
-    [GeneratedRegex(@"\+?[\d\s\-().]{7,20}\d", RegexOptions.Compiled)]
+    // Starts at '+', '(' or a leading 0 and stays on one line, so versions, dates, IPs and amounts never qualify.
+    [GeneratedRegex("""
+        (?<![\w+(])(?<!\w[-/.,])
+        (?!\(?\d{1,2}[-/]\d{1,2}[-/]\d{2,4}(?!\d))
+        (?:\+|\(|(?=0))\d[\d\p{Zs}\t()/-]{5,22}\d
+        (?![-/.,]?\w)
+        """, RegexOptions.IgnorePatternWhitespace | RegexOptions.Compiled)]
     private static partial Regex PhoneRegex();
 
     public IReadOnlyList<PiiMatch> DetectPii(string text)
@@ -47,8 +53,7 @@ public partial class StructuredPiiDetector : IPiiDetector
 
         foreach (var match in PhoneRegex().EnumerateMatches(text))
         {
-            var value = text.Substring(match.Index, match.Length).Trim();
-            // Avoid matching short numeric sequences that aren't phone numbers
+            var value = text.Substring(match.Index, match.Length);
             if (value.Count(char.IsDigit) >= 7)
                 matches.Add(new PiiMatch(value, "Phone", match.Index, match.Length));
         }
