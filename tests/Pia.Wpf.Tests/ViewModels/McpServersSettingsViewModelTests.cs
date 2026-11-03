@@ -345,7 +345,45 @@ public class McpServersSettingsViewModelTests
         Assert.Equal(["calendar_list_calendars", "mail_move_to_deleted"], vm.SelectedWithheldTools.Select(t => t.Name));
         Assert.True(vm.HasWithheldTools);
         Assert.False(vm.ShowsNoToolAllowed);
-        Assert.Equal("McpServers_Detail_WithheldSummaryDestructive:2,1", vm.WithheldSummary);
+        Assert.Equal("McpServers_Detail_WithheldSummaryDestructiveOne:2", vm.WithheldSummary);
+    }
+
+    [Fact]
+    public void TheWithheldSummary_CountsSeveralDeleters_InThePlural()
+    {
+        var (vm, _, _) = Create([], Running(Tool("a", destructive: true), Tool("b", destructive: true), Tool("c")));
+
+        Assert.Equal("McpServers_Detail_WithheldSummaryDestructive:3,2", vm.WithheldSummary);
+    }
+
+    [Fact]
+    public void ToolNames_SortWordByWord_SoSnakeCaseFamiliesStayTogether()
+    {
+        var (vm, _, _) = Create(null, Running(
+            Tool("mailbox_settings"), Tool("list_issues"), Tool("mail_get_message"), Tool("list_issue_types")));
+        string[] expected = ["list_issue_types", "list_issues", "mail_get_message", "mailbox_settings"];
+
+        Assert.Equal(expected, vm.SelectedAllowedTools.Select(t => t.Name));
+
+        vm.EditSelectedCommand.Execute(null);
+        Assert.Equal(expected, vm.Tools.Select(t => t.Name));
+    }
+
+    [Fact]
+    public void LosingTheSelectedServer_FoldsTheWithheldGroupForTheNextOne()
+    {
+        var plugins = Substitute.For<IPluginService>();
+        plugins.GetLocalMcpPlugins().Returns([Row(ServerId, "github"), Row(OtherId, "memory")]);
+        plugins.GetLocalMcpDefinition(Arg.Any<Guid>()).Returns(Stored(["a"]));
+        plugins.GetLocalMcpStatus(Arg.Any<Guid>()).Returns(Running(Tool("a"), Tool("b")));
+        var (vm, _, _) = Build(plugins);
+        vm.IsWithheldExpanded = true;
+
+        plugins.GetLocalMcpPlugins().Returns([Row(OtherId, "memory")]);
+        plugins.PluginsChanged += Raise.Event<EventHandler>(plugins, EventArgs.Empty);
+
+        Assert.Equal(OtherId, vm.SelectedServer!.Id);
+        Assert.False(vm.IsWithheldExpanded);
     }
 
     [Fact]

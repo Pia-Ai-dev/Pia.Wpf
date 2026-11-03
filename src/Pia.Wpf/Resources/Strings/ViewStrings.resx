@@ -1814,6 +1814,7 @@
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} tool(s) allowed</value></data>
   <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} tool(s)</value></data>
   <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} tool(s) · {1} of them may delete</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} tool(s) · 1 of them may delete</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>This server is not running. These are the tools it was allowed when it last ran.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Start this server, or use Test connection, to list its tools.</value></data>
   <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Offered</value></data>

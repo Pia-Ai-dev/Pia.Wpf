@@ -1804,6 +1804,7 @@
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} outil(s) autorisé(s)</value></data>
   <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} outil(s)</value></data>
   <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} outil(s) · {1} peuvent supprimer</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} outil(s) · 1 peut supprimer</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Ce serveur est arrêté. Voici les outils qui étaient autorisés lors de sa dernière exécution.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Démarrez ce serveur, ou utilisez « Tester la connexion », pour lister ses outils.</value></data>
   <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Proposés</value></data>

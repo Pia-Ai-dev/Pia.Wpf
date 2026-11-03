@@ -307,7 +307,8 @@
 
               <ItemsControl ItemsSource="{Binding SelectedAllowedTools}"
                             ItemTemplate="{StaticResource McpDetailToolRow}"
-                            AutomationProperties.AutomationId="McpServers_Detail_AllowedTools"/>
+                            AutomationProperties.AutomationId="McpServers_Detail_AllowedTools"
+                            AutomationProperties.Name="{loc:Str McpServers_Detail_AllowedGroup}"/>
 
               <TextBlock Text="{loc:Str McpServers_Detail_NoneAllowed}"
                          Style="{StaticResource PiaMetaTextStyle}"

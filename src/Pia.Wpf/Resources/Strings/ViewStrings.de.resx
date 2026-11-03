@@ -1804,6 +1804,7 @@
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} Tool(s) freigegeben</value></data>
   <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} Tool(s)</value></data>
   <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} Tool(s) · {1} davon können löschen</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} Tool(s) · 1 davon kann löschen</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Dieser Server ist nicht verbunden. Dies sind die Tools, die beim letzten Lauf freigegeben waren.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Starten Sie diesen Server oder verwenden Sie „Verbindung testen“, um seine Tools zu sehen.</value></data>
   <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Freigegeben</value></data>

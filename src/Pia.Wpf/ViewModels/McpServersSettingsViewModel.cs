@@ -42,6 +42,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     /// cannot say on its own — an empty allowlist is a server with every tool withheld.</summary>
     private bool _editingRestrictsTools;
 
+    // Culture order puts '_' before letters, so list_issue_types sorts next to list_issue, not after list_issues.
+    private static readonly StringComparer ToolNameOrder = StringComparer.InvariantCultureIgnoreCase;
+
     public ObservableCollection<McpServerRow> Servers { get; } = [];
 
     /// <summary>Every tool the last probe (or the running server) reported, with its allowlist tick.</summary>
@@ -251,6 +254,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         HasServers = Servers.Count > 0;
 
         var reselected = Servers.FirstOrDefault(s => s.Id == selectedId) ?? Servers.FirstOrDefault();
+        if (reselected?.Id != selectedId)
+            IsWithheldExpanded = false;
+
         if (ReferenceEquals(reselected, SelectedServer))
             RefreshDetail();
         else
@@ -284,7 +290,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
         if (discovered.Count > 0)
         {
-            foreach (var tool in discovered.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var tool in discovered.OrderBy(t => t.Name, ToolNameOrder))
             {
                 var isAllowed = allowed is null || allowed.Contains(tool.Name, StringComparer.Ordinal);
                 (isAllowed ? SelectedAllowedTools : SelectedWithheldTools).Add(
@@ -298,7 +304,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         else if (allowed is { Count: > 0 })
         {
             // A stopped server reports nothing, so its saved allowlist is the only tool list left to show.
-            foreach (var name in allowed.Order(StringComparer.OrdinalIgnoreCase))
+            foreach (var name in allowed.Order(ToolNameOrder))
                 SelectedAllowedTools.Add(new McpServerToolInfo(name, null, false, true));
 
             SelectedToolsSummary = _localizationService.Format("McpServers_Detail_ToolsAllowed", allowed.Count);
@@ -320,11 +326,14 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     {
         if (SelectedWithheldTools.Count == 0) return null;
 
-        var destructive = SelectedWithheldTools.Count(t => t.ServerDeclaredDestructive);
-        return destructive == 0
-            ? _localizationService.Format("McpServers_Detail_WithheldSummary", SelectedWithheldTools.Count)
-            : _localizationService.Format("McpServers_Detail_WithheldSummaryDestructive",
-                SelectedWithheldTools.Count, destructive);
+        var count = SelectedWithheldTools.Count;
+        return SelectedWithheldTools.Count(t => t.ServerDeclaredDestructive) switch
+        {
+            0 => _localizationService.Format("McpServers_Detail_WithheldSummary", count),
+            1 => _localizationService.Format("McpServers_Detail_WithheldSummaryDestructiveOne", count),
+            var destructive => _localizationService.Format("McpServers_Detail_WithheldSummaryDestructive",
+                count, destructive),
+        };
     }
 
     private static string? NullIfBlank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
@@ -517,7 +526,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private void FillTools(IReadOnlyList<McpProbeTool> discovered, IReadOnlyList<string>? allowed)
     {
         Tools.Clear();
-        foreach (var tool in discovered.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
+        foreach (var tool in discovered.OrderBy(t => t.Name, ToolNameOrder))
         {
             Tools.Add(new McpToolRow(tool.Name, tool.Description, tool.ServerDeclaredDestructive,
                 allowed is null || allowed.Contains(tool.Name, StringComparer.Ordinal)));
