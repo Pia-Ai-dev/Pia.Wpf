@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Proposed · **Owner:** man · **Written:** 2026-11-03 · **Size:** S (no checklist file)
+**Status:** Implemented on `feature/mcp-tool-list-grouping`; owner visual check and PR pending · **Owner:** man · **Written:** 2026-11-03 · **Size:** S (no checklist file)
 **Origin:** Owner brainstorm, 2026-11-03. Settings → MCP servers → a server's detail pane. It was "hard to
 understand which tools are enabled and which are disabled". The owner approved the description below,
 including every guess in it.
@@ -59,8 +59,14 @@ Non-goals:
 - Colours come only from `DynamicResource` theme brushes (`PiaSuccessBrush`, `TextMutedBrush`,
   `TextSubtleBrush`, `WarnBrush`, `WarnSoftBrush`, `WarnBorderBrush`). No hex values, because dark theme
   must work.
-- Sort with `OrderBy(name, StringComparer.OrdinalIgnoreCase)`, which is stable. Allowlist membership stays
-  `StringComparer.Ordinal`.
+- Sort with `OrderBy(name, StringComparer.InvariantCultureIgnoreCase)`, which is stable. Allowlist
+  membership stays `StringComparer.Ordinal`.
+  - Not `OrdinalIgnoreCase`: it sorts `_` after letters, so `list_issues` would land before
+    `list_issue_types`. The final review found this, and the fix pass changed it. Steps 2 and 4 of Task 1
+    below still name the original comparer.
+- One withheld tool that may delete reads in the singular, from its own key
+  `McpServers_Detail_WithheldSummaryDestructiveOne`: "1 davon kann löschen", "1 peut supprimer". This
+  was added in the fix pass.
 - Comment discipline (CLAUDE.md):
   - At most one short WHY line.
   - No history and no task IDs.
