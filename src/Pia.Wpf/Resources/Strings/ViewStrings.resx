@@ -1816,7 +1816,9 @@
   <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} tool(s) · {1} of them may delete</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>This server is not running. These are the tools it was allowed when it last ran.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Start this server, or use Test connection, to list its tools.</value></data>
-  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
+  <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Offered</value></data>
+  <data name="McpServers_Detail_WithheldGroup" xml:space="preserve"><value>Withheld</value></data>
+  <data name="McpServers_Detail_NoneAllowed" xml:space="preserve"><value>No tool offered – change this under Edit</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Locked by your organization: this setting is enforced by Pia policy and cannot be changed here.</value></data>
   <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Sign out of Pia Cloud</value></data>
