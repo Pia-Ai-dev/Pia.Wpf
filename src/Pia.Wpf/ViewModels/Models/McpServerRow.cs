@@ -61,8 +61,6 @@ public partial class McpToolRow : ObservableObject
 /// <summary>One tool as the read-only detail pane shows it; the editor's ticks live on <see cref="McpToolRow"/>.</summary>
 public sealed record McpServerToolInfo(string Name, string? Description, bool ServerDeclaredDestructive, bool IsAllowed)
 {
-    public bool IsWithheld => !IsAllowed;
-
     // The item container reports this to UIA; the record default would read out the whole dump.
     public override string ToString() => Name;
 }

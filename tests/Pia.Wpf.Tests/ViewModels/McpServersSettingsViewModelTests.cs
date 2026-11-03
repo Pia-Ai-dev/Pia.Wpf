@@ -164,8 +164,8 @@ public class McpServersSettingsViewModelTests
             ["github__create_issue"],
             null));
 
-        Assert.Equal(["create_issue", "delete_issue"], vm.SelectedTools.Select(t => t.Name));
-        Assert.Equal([false, true], vm.SelectedTools.Select(t => t.IsWithheld));
+        Assert.Equal(["create_issue"], vm.SelectedAllowedTools.Select(t => t.Name));
+        Assert.Equal(["delete_issue"], vm.SelectedWithheldTools.Select(t => t.Name));
         Assert.True(vm.HasSelectedTools);
         Assert.Equal("McpServers_Detail_ToolsSummary:1,2", vm.SelectedToolsSummary);
         Assert.Null(vm.SelectedToolsHint);
@@ -176,7 +176,8 @@ public class McpServersSettingsViewModelTests
     {
         var (vm, _, _) = Create(["create_issue"]);
 
-        Assert.Equal(["create_issue"], vm.SelectedTools.Select(t => t.Name));
+        Assert.Equal(["create_issue"], vm.SelectedAllowedTools.Select(t => t.Name));
+        Assert.Empty(vm.SelectedWithheldTools);
         Assert.Equal("McpServers_Detail_ToolsStopped", vm.SelectedToolsHint);
     }
 
@@ -185,7 +186,8 @@ public class McpServersSettingsViewModelTests
     {
         var (vm, _, _) = Create(null);
 
-        Assert.Empty(vm.SelectedTools);
+        Assert.Empty(vm.SelectedAllowedTools);
+        Assert.Empty(vm.SelectedWithheldTools);
         Assert.False(vm.HasSelectedTools);
         Assert.Equal("McpServers_Detail_ToolsUnknown", vm.SelectedToolsHint);
     }
@@ -223,8 +225,8 @@ public class McpServersSettingsViewModelTests
 
         await vm.TestSelectedCommand.ExecuteAsync(null);
 
-        Assert.Equal(["create_issue", "delete_issue"], vm.SelectedTools.Select(t => t.Name));
-        Assert.Equal([false, true], vm.SelectedTools.Select(t => t.IsWithheld));
+        Assert.Equal(["create_issue"], vm.SelectedAllowedTools.Select(t => t.Name));
+        Assert.Equal(["delete_issue"], vm.SelectedWithheldTools.Select(t => t.Name));
         Assert.Equal("McpServers_TestSucceeded:2", vm.DetailMessage);
         Assert.False(vm.DetailMessageIsError);
         Assert.False(vm.IsTestingSelected);
@@ -239,7 +241,7 @@ public class McpServersSettingsViewModelTests
 
         await vm.TestSelectedCommand.ExecuteAsync(null);
 
-        Assert.Equal(["create_issue"], vm.SelectedTools.Select(t => t.Name));
+        Assert.Equal(["create_issue"], vm.SelectedAllowedTools.Select(t => t.Name));
         Assert.Equal("McpServers_TestFailed:no such file", vm.DetailMessage);
         Assert.True(vm.DetailMessageIsError);
     }
@@ -289,7 +291,7 @@ public class McpServersSettingsViewModelTests
 
         Assert.True(vm.Servers.Single().IsRunning);
         Assert.False(vm.Servers.Single().IsFailed);
-        Assert.Equal(["create_issue"], vm.SelectedTools.Select(t => t.Name));
+        Assert.Equal(["create_issue"], vm.SelectedAllowedTools.Select(t => t.Name));
     }
 
     [Fact]
@@ -324,6 +326,115 @@ public class McpServersSettingsViewModelTests
         vm.SelectedServer = vm.Servers.Single(s => s.Id == OtherId);
 
         Assert.False(vm.IsEditorOpen);
+    }
+
+    private static LocalMcpStatus Running(params McpProbeTool[] tools) => new(true, tools, [], null);
+
+    private static McpProbeTool Tool(string name, bool destructive = false) => new(name, null, destructive);
+
+    [Fact]
+    public void TheDetailPane_PutsOfferedToolsFirst_AndSortsEachGroup()
+    {
+        var (vm, _, _) = Create(["me_get_profile", "mail_get_message"], Running(
+            Tool("mail_move_to_deleted", destructive: true),
+            Tool("me_get_profile"),
+            Tool("calendar_list_calendars"),
+            Tool("mail_get_message")));
+
+        Assert.Equal(["mail_get_message", "me_get_profile"], vm.SelectedAllowedTools.Select(t => t.Name));
+        Assert.Equal(["calendar_list_calendars", "mail_move_to_deleted"], vm.SelectedWithheldTools.Select(t => t.Name));
+        Assert.True(vm.HasWithheldTools);
+        Assert.False(vm.ShowsNoToolAllowed);
+        Assert.Equal("McpServers_Detail_WithheldSummaryDestructive:2,1", vm.WithheldSummary);
+    }
+
+    [Fact]
+    public void TheWithheldSummary_LeavesOutTheDeleteCount_WhenNoneCanDelete()
+    {
+        var (vm, _, _) = Create(["a"], Running(Tool("a"), Tool("b")));
+
+        Assert.Equal("McpServers_Detail_WithheldSummary:1", vm.WithheldSummary);
+    }
+
+    [Fact]
+    public void AnUnrestrictedServer_HasNoWithheldGroup()
+    {
+        var (vm, _, _) = Create(null, Running(Tool("a"), Tool("b")));
+
+        Assert.Equal(["a", "b"], vm.SelectedAllowedTools.Select(t => t.Name));
+        Assert.Empty(vm.SelectedWithheldTools);
+        Assert.False(vm.HasWithheldTools);
+        Assert.Null(vm.WithheldSummary);
+    }
+
+    [Fact]
+    public void AServerWithEveryToolWithheld_SaysNoneIsOffered()
+    {
+        var (vm, _, _) = Create([], Running(Tool("a"), Tool("b")));
+
+        Assert.Empty(vm.SelectedAllowedTools);
+        Assert.True(vm.ShowsNoToolAllowed);
+        Assert.True(vm.HasSelectedTools);
+    }
+
+    [Fact]
+    public void AStoppedServer_ListsItsSavedAllowlist_AToZ()
+    {
+        var (vm, _, _) = Create(["zeta", "alpha"]);
+
+        Assert.Equal(["alpha", "zeta"], vm.SelectedAllowedTools.Select(t => t.Name));
+        Assert.False(vm.HasWithheldTools);
+        Assert.False(vm.ShowsNoToolAllowed);
+    }
+
+    [Fact]
+    public void PickingAnotherServer_FoldsTheWithheldGroupAgain()
+    {
+        var (vm, _, _) = CreateTwo();
+        vm.IsWithheldExpanded = true;
+
+        vm.SelectedServer = vm.Servers.Single(s => s.Id == OtherId);
+
+        Assert.False(vm.IsWithheldExpanded);
+    }
+
+    [Fact]
+    public void AReload_LeavesAnOpenedWithheldGroupOpen()
+    {
+        var (vm, plugins, _) = Create(["a"], Running(Tool("a"), Tool("b")));
+        vm.Servers.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset)
+                vm.SelectedServer = null;
+        };
+        vm.IsWithheldExpanded = true;
+
+        plugins.PluginsChanged += Raise.Event<EventHandler>(plugins, EventArgs.Empty);
+
+        Assert.True(vm.IsWithheldExpanded);
+    }
+
+    [Fact]
+    public async Task TestingFromTheDetailPane_LeavesTheWithheldGroupAsItWas()
+    {
+        var (vm, plugins, _) = Create(["a"], Running(Tool("a"), Tool("b")));
+        plugins.ProbeLocalMcpAsync(Arg.Any<LocalMcpDefinition>(), Arg.Any<CancellationToken>())
+            .Returns(new McpProbeResult(true, [Tool("a"), Tool("b")], null));
+        vm.IsWithheldExpanded = true;
+
+        await vm.TestSelectedCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsWithheldExpanded);
+    }
+
+    [Fact]
+    public void TheEditorListsToolsAToZ()
+    {
+        var (vm, _, _) = Create(null, Running(Tool("zeta"), Tool("alpha")));
+
+        vm.EditSelectedCommand.Execute(null);
+
+        Assert.Equal(["alpha", "zeta"], vm.Tools.Select(t => t.Name));
     }
 
     [Fact]
