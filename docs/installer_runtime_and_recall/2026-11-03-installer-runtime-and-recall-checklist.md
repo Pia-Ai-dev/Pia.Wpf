@@ -1,6 +1,7 @@
 # VC++ runtime in the package, recall without embeddings, MSI persona art — checklist
 
-**Status:** Planned
+**Status:** In progress. Steps 2–6 are done. The step 7 bitmap has landed but its MSI check is open.
+Step 1 is deferred with G1.
 **Owner:** Marco Altmann
 **Written:** 2026-11-03
 **Origin:** [2026-11-03-installer-runtime-and-recall-plan.md](2026-11-03-installer-runtime-and-recall-plan.md),
@@ -18,7 +19,7 @@ little standalone value, unblocks a High.
 
 | Gate | Question | Blocks | Decision |
 |---|---|---|---|
-| G1 | Does the runtime ship app-local next to the exe, or does `vpk pack --framework vcredist145-x64` install it system-wide? Velopack documents the framework install for Setup and updates (with a user prompt), not for the MSI Pia ships. | 1 | Open. The owner chose `--framework` if a spike showed the MSI installs it silently. The spike (plan, G1) says it does not: silent installs skip it, and its version check is below 14.44. App-local staging is reverted pending the owner's call. |
+| G1 | Does the runtime ship app-local next to the exe, or does `vpk pack --framework vcredist145-x64` install it system-wide? Velopack documents the framework install for Setup and updates (with a user prompt), not for the MSI Pia ships. | 1 | Open, and deferred. The `--framework` spike (plan, G1) failed: silent installs skip the runtime install, and its version check is below 14.44. The owner moved runtime delivery to a separate branch. This branch ships 2–7 without it. |
 
 ## Steps
 
@@ -26,6 +27,8 @@ little standalone value, unblocks a High.
   `scripts/Copy-VcRuntime.ps1` copies the four VC++ DLLs ONNX Runtime imports, version 14.44 or newer
   and Microsoft-signed, from Visual Studio's redistributable folder into the publish output. Both
   `build-and-release.yml` and `build-velopack.ps1` call it before packing.
+  Deferred to a separate branch with G1. The app-local version is commit `5aa58e35`, reverted on this
+  branch.
   *Deps:* G1 · *Effort:* S · *Value:* High
 - [x] **2. Turn a runtime load failure into one typed, latched exception.**
   `EmbeddingService` throws `EmbeddingUnavailableException` without retrying ONNX and logs the Win32
@@ -49,6 +52,8 @@ little standalone value, unblocks a High.
   *Deps:* 3 (its recall test runs without vectors) · *Effort:* XS · *Value:* Med
 - [ ] **7. Put the edge persona on the MSI dialog background.**
   `Resources/Installer/banner.bmp` is regenerated from `Pia_Persona_edge.png`, in the old persona's box.
+  The bitmap has landed. The MSI welcome-dialog check (plan Task 7 Step 2) is still open, and now needs
+  no VS component.
   *Deps:* none (its MSI check uses 1's local build) · *Effort:* XS · *Value:* Med
 - [ ] **8. Verify the branch.**
   Zero-warning rebuilds and the test gate. A local package holding the four DLLs. Recall working on a

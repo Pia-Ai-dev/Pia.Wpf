@@ -1,6 +1,7 @@
 # VC++ runtime in the package, recall without embeddings, MSI persona art — plan
 
-**Status:** Planned
+**Status:** In progress. Tasks 2–6 and the Task 7 bitmap are implemented. Task 1 is deferred to a
+separate branch with G1 (see the spike result below).
 **Owner:** Marco Altmann
 **Written:** 2026-11-03
 **Origin:** Support log `pia-2026-11-03.log` from a per-machine MSI install of 1.4.355. Assistant memory
