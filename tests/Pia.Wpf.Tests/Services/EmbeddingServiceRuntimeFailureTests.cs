@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.ML.OnnxRuntime;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
 

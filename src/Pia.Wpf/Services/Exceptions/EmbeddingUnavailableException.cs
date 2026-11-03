@@ -1,4 +1,4 @@
-namespace Pia.Services;
+namespace Pia.Services.Exceptions;
 
 /// <summary>The embedding model cannot run in this process; callers drop the vector tier instead of failing.</summary>
 public sealed class EmbeddingUnavailableException : InvalidOperationException

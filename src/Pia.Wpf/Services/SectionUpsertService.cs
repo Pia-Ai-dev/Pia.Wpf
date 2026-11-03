@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Pia.Models.Vault;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Search;
 using Pia.Services.Similarity;

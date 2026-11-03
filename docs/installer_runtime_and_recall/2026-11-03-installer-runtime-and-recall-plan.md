@@ -148,7 +148,8 @@ runtime.
 ### Task 2: Typed, latched embedding unavailability
 
 **Files:**
-- Create: `src/Pia.Wpf/Services/EmbeddingUnavailableException.cs`
+- Create: `src/Pia.Wpf/Services/Exceptions/EmbeddingUnavailableException.cs` (namespace
+  `Pia.Services.Exceptions`, which `NamingConventionTests` exempts from the service-suffix rule)
 - Create: `src/Pia.Wpf/Services/NativeLoadProbe.cs`
 - Modify: `src/Pia.Wpf/Services/EmbeddingService.cs`
 - Test: `tests/Pia.Wpf.Tests/Services/EmbeddingServiceRuntimeFailureTests.cs`

@@ -1,4 +1,4 @@
-using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 
 namespace Pia.Tests.TestInfrastructure;

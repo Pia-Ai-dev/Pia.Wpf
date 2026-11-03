@@ -6,6 +6,7 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
 using Pia.Paths;
 using Pia.Services.Assets;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
