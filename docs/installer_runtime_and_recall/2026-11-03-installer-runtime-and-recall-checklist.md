@@ -27,7 +27,7 @@ little standalone value, unblocks a High.
   and Microsoft-signed, from Visual Studio's redistributable folder into the publish output. Both
   `build-and-release.yml` and `build-velopack.ps1` call it before packing.
   *Deps:* G1 · *Effort:* S · *Value:* High
-- [ ] **2. Turn a runtime load failure into one typed, latched exception.**
+- [x] **2. Turn a runtime load failure into one typed, latched exception.**
   `EmbeddingService` throws `EmbeddingUnavailableException` without retrying ONNX and logs the Win32
   load error once, so the next support log names the cause.
   *Deps:* none · *Effort:* S · *Value:* Enabler

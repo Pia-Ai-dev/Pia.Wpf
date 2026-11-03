@@ -33,7 +33,10 @@ public class EmbeddingService : IEmbeddingService, IDisposable
     private readonly ILogger<EmbeddingService> _logger;
     private readonly IAssetDownloader _downloader;
     private readonly string _modelDirectory;
+    private readonly Func<string, InferenceSession> _sessionFactory;
     private InferenceSession? _session;
+    // A failed type initializer stays failed for the process, so retrying ONNX cannot succeed.
+    private Exception? _runtimeFailure;
     // The SentencePiece model does the (normalization + Unigram Viterbi) segmentation; _vocabulary maps the
     // resulting piece strings to the ids the ONNX embedding table expects. tokenizer.json is the id oracle:
     // its model.vocab is an ARRAY whose index IS the model id, which sidesteps XLM-R's fairseq +1 offset
@@ -54,11 +57,20 @@ public class EmbeddingService : IEmbeddingService, IDisposable
     private string SentencePiecePath => Path.Combine(_modelDirectory, SentencePieceFileName);
 
     public EmbeddingService(ILogger<EmbeddingService> logger, IAssetDownloader downloader)
+        : this(logger, downloader, Path.Combine(PiaPaths.ModelsDirectory, "Embeddings"))
+    {
+    }
+
+    internal EmbeddingService(
+        ILogger<EmbeddingService> logger,
+        IAssetDownloader downloader,
+        string modelDirectory,
+        Func<string, InferenceSession>? sessionFactory = null)
     {
         _logger = logger;
         _downloader = downloader;
-
-        _modelDirectory = Path.Combine(PiaPaths.ModelsDirectory, "Embeddings");
+        _modelDirectory = modelDirectory;
+        _sessionFactory = sessionFactory ?? CreateSession;
         Directory.CreateDirectory(_modelDirectory);
     }
 
@@ -114,7 +126,7 @@ public class EmbeddingService : IEmbeddingService, IDisposable
         if (!await EnsureAvailableAsync(progress: null, cancellationToken: cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            throw new InvalidOperationException("Embedding model is not available and could not be downloaded.");
+            throw new EmbeddingUnavailableException("Embedding model is not available and could not be downloaded.");
         }
         return await Task.Run(() =>
         {
@@ -175,39 +187,71 @@ public class EmbeddingService : IEmbeddingService, IDisposable
 
     private void EnsureModelLoaded()
     {
-        // The vault watcher fires one timer callback per changed file, so first use is routinely
-        // concurrent. The whole load must be exclusive: an unguarded double-load lets two threads
-        // populate the same _vocabulary Dictionary and permanently corrupt it (and leaks a native
-        // InferenceSession). The lock's acquire fence also publishes the fields to later callers.
+        // Exclusive: vault-watcher callbacks race on first use, and a double load corrupts _vocabulary.
         lock (_loadGate)
         {
             if (_session is not null) return;
+            if (_runtimeFailure is not null) throw RuntimeUnavailable(_runtimeFailure);
 
             if (!IsModelAvailable)
-                throw new InvalidOperationException("Embedding model is not available. Call DownloadModelAsync first.");
+                throw new EmbeddingUnavailableException("Embedding model is not available. Call DownloadModelAsync first.");
 
-            var sessionOptions = new SessionOptions();
-            sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
+            var session = CreateSessionOrLatchFailure();
+            try
+            {
+                LoadVocabulary();
 
-            LoadVocabulary();
+                // We frame <s>/</s> ourselves, so the segmenter's own, differently numbered ones stay off.
+                using var spStream = File.OpenRead(SentencePiecePath);
+                _tokenizer = SentencePieceTokenizer.Create(
+                    spStream,
+                    addBeginningOfSentence: false,
+                    addEndOfSentence: false);
+            }
+            catch
+            {
+                session.Dispose();
+                throw;
+            }
 
-            // Load the SentencePiece model purely as a segmenter. We frame <s>/</s> ourselves (per the
-            // tokenizer's TemplateProcessing) and map pieces to ids via _vocabulary, so the beginning/end
-            // tokens the library would otherwise emit (with the SentencePiece model's own numbering) are
-            // suppressed here.
-            using var spStream = File.OpenRead(SentencePiecePath);
-            _tokenizer = SentencePieceTokenizer.Create(
-                spStream,
-                addBeginningOfSentence: false,
-                addEndOfSentence: false);
-
-            // Assigned last: _session is the loaded-guard, so it must only become non-null once the
-            // tokenizer and vocabulary are fully in place.
-            _session = new InferenceSession(ModelPath, sessionOptions);
+            // Last: _session is the loaded-guard.
+            _session = session;
 
             _logger.LogInformation("Embedding model loaded successfully");
         }
     }
+
+    private InferenceSession CreateSessionOrLatchFailure()
+    {
+        try
+        {
+            return _sessionFactory(ModelPath);
+        }
+        catch (Exception ex) when (ex is TypeInitializationException or DllNotFoundException)
+        {
+            _runtimeFailure = ex;
+            var runtimePath = Path.Combine(AppContext.BaseDirectory, "onnxruntime.dll");
+            _logger.LogError(
+                "ONNX Runtime failed to load ({Failure}; onnxruntime.dll present: {Present}, Win32 error {Win32Error}). " +
+                "Semantic recall and speech stay off until Pia restarts",
+                Describe(ex), File.Exists(runtimePath), NativeLoadProbe.GetLoadError(runtimePath));
+            throw RuntimeUnavailable(ex);
+        }
+    }
+
+    // The options must be built inside the factory: without the runtime, new SessionOptions() is what throws.
+    private static InferenceSession CreateSession(string modelPath)
+    {
+        using var options = new SessionOptions { GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL };
+        return new InferenceSession(modelPath, options);
+    }
+
+    private static EmbeddingUnavailableException RuntimeUnavailable(Exception cause) =>
+        new("ONNX Runtime could not be loaded; embeddings stay off until Pia restarts.", cause);
+
+    // Type names only: exception messages can quote install paths.
+    private static string Describe(Exception ex) =>
+        ex.InnerException is null ? ex.GetType().Name : $"{ex.GetType().Name} -> {ex.InnerException.GetType().Name}";
 
     private void LoadVocabulary()
     {
