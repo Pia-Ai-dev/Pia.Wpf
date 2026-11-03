@@ -460,4 +460,16 @@ public class FilesToolHandlerSearchTests : IDisposable
         Assert.Contains("No matches found", await SearchAsync("TODO", caseSensitive: true));
         Assert.Contains("a.txt:1:todo: buy milk", await SearchAsync("TODO"));
     }
+
+    [Fact]
+    public async Task Search_FindsTextInAUtf16File_AtItsReadFileLine()
+    {
+        File.WriteAllText(Path.Combine(_root, "wide.txt"), "alpha\nbeta needle here\n",
+            FilesToolHandlerReadTests.WideEncoding("utf-16le"));
+
+        var result = await SearchAsync("needle");
+
+        Assert.Contains("wide.txt:2:", result);
+        Assert.Contains("beta needle here", result);
+    }
 }

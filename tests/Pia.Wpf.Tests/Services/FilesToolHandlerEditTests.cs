@@ -241,4 +241,19 @@ public class FilesToolHandlerEditTests : IDisposable
         Assert.Contains("read-only here", Prop<string?>(result!, "error")!, StringComparison.Ordinal);
         Assert.Equal(before, File.ReadAllBytes(full));
     }
+
+    [Fact]
+    public async Task EditFile_OnAUtf16File_IsRefused_AndTheFileKeepsItsEncoding()
+    {
+        var full = Path.Combine(_root, "settings.reg");
+        File.WriteAllText(full, "Windows Registry Editor Version 5.00\r\n", FilesToolHandlerReadTests.WideEncoding("utf-16le"));
+        var before = File.ReadAllBytes(full);
+
+        var (result, pending) = await Edit("settings.reg", "5.00", "5.01");
+
+        Assert.Null(pending);
+        Assert.False(Prop<bool>(result!, "success"));
+        Assert.Contains("UTF-16", Prop<string?>(result!, "error")!, StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllBytes(full));
+    }
 }

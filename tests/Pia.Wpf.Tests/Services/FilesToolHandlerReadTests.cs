@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
@@ -627,6 +628,40 @@ public class FilesToolHandlerReadTests : IDisposable
             DataType = CellValues.String,
             CellValue = new SS.CellValue(value),
         };
+
+    internal static Encoding WideEncoding(string name) => name switch
+    {
+        "utf-16le" => new UnicodeEncoding(bigEndian: false, byteOrderMark: true),
+        "utf-16be" => new UnicodeEncoding(bigEndian: true, byteOrderMark: true),
+        "utf-32le" => new UTF32Encoding(bigEndian: false, byteOrderMark: true),
+        _ => throw new ArgumentOutOfRangeException(nameof(name)),
+    };
+
+    // An attachment cut short names read_file for the rest, so read_file must open what the drop reader did.
+    [Theory]
+    [InlineData("utf-16le")]
+    [InlineData("utf-16be")]
+    [InlineData("utf-32le")]
+    public async Task Read_ATextFileWithAWideBom_IsDecodedNotRefusedAsBinary(string encoding)
+    {
+        File.WriteAllText(Path.Combine(_root, "wide.txt"), "alpha\nbeta über\n", WideEncoding(encoding));
+
+        var result = (string)(await ReadAsync("wide.txt"))!;
+
+        Assert.Contains("1|alpha", result);
+        Assert.Contains("2|beta über", result);
+        Assert.DoesNotContain("binary", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Read_NulBytesWithoutABom_AreStillRefusedAsBinary()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "blob.dat"), [0x41, 0x00, 0x42, 0x00]);
+
+        var result = (string)(await ReadAsync("blob.dat"))!;
+
+        Assert.Contains("binary", result, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

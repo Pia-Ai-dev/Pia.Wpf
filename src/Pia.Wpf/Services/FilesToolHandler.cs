@@ -1156,10 +1156,9 @@ public class FilesToolHandler : IFilesToolHandler
                           "offset/limit cannot help here — the whole file exceeds the raw-byte ceiling.");
 
         var bytes = await File.ReadAllBytesAsync(safePath, cancellationToken);
-        if (LooksBinary(bytes))
+        if (!HasWideTextBom(bytes) && LooksBinary(bytes))
             return (null, $"Error: '{requested}' appears to be a binary file (contains NUL bytes) and cannot be read as text.");
 
-        // Decode honoring a leading BOM (UTF-8/UTF-16); default to UTF-8.
         return (DecodeText(bytes), null);
     }
 
@@ -1403,15 +1402,23 @@ public class FilesToolHandler : IFilesToolHandler
         return false;
     }
 
+    // UTF-16/32 text is full of NUL bytes, so its BOM must exempt it from the binary sniff.
+    private static bool HasWideTextBom(ReadOnlySpan<byte> bytes) =>
+        bytes is [0xFF, 0xFE, ..] or [0xFE, 0xFF, ..] or [0x00, 0x00, 0xFE, 0xFF, ..];
+
+    // The same BOM detection as DroppedFileReader.ReadTextAsync, so read_file sees the text an attachment showed.
     private static string DecodeText(byte[] bytes)
     {
-        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-            return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
-        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
-        return Encoding.UTF8.GetString(bytes);
+        using var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
+    private static async Task<bool> IsWideTextAsync(string path, CancellationToken cancellationToken)
+    {
+        var head = new byte[4];
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var read = await stream.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, cancellationToken);
+        return HasWideTextBom(head.AsSpan(0, read));
     }
 
     /// <summary>
@@ -1452,6 +1459,10 @@ public class FilesToolHandler : IFilesToolHandler
         var editExt = Path.GetExtension(safePath);
         if (IsImageExtension(editExt))
             return WriteFailure(ImageWriteRefusal(editExt));
+
+        // The write pipeline emits UTF-8, which would silently re-encode the file (.reg and PowerShell 5.1 care).
+        if (await IsWideTextAsync(safePath, cancellationToken))
+            return WriteFailure($"Error: '{SafeRelative(root, safePath)}' is UTF-16 or UTF-32 text; edit_file writes only UTF-8, so it cannot edit this file without changing its encoding.");
 
         var (current, readError) = await ReadFileTextAsync(safePath, requested, cancellationToken);
         if (readError is not null) return WriteFailure(readError);
