@@ -74,13 +74,6 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# --- Stage the VC++ runtime ONNX Runtime imports ---
-& (Join-Path $PSScriptRoot "Copy-VcRuntime.ps1") -Destination $PublishDir
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Staging the VC++ runtime failed with exit code $LASTEXITCODE"
-    exit $LASTEXITCODE
-}
-
 # --- Pack with Velopack ---
 Write-Host "`nCreating Velopack release..." -ForegroundColor Cyan
 vpk pack `
