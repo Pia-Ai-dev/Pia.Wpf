@@ -11,6 +11,7 @@ using Pia.Logging;
 using Pia.Infrastructure.Vault;
 using Pia.Models;
 using Pia.Models.Vault;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Search;
 using Pia.Services.Similarity;
@@ -295,7 +296,6 @@ public class MemoryService : IMemoryService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
 
-        // FTS5 search with ranking
         command.CommandText = """
             SELECT m.Id, m.Type, m.Label, m.Data, m.Embedding, m.CreatedAt, m.UpdatedAt, m.LastAccessedAt
             FROM MemoriesFts fts
@@ -305,21 +305,8 @@ public class MemoryService : IMemoryService
             LIMIT 20
             """;
 
-        // Escape FTS5 special characters, use exact + prefix matching
-        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var ftsTerms = new List<string>();
-        foreach (var term in terms)
-        {
-            var escaped = EscapeFtsQuery(term);
-            ftsTerms.Add($"\"{escaped}\"");
-            if (escaped.Length >= 3)
-                ftsTerms.Add($"{escaped}*");
-            // Compound word decomposition: generate sub-token prefixes
-            foreach (var sub in GenerateSubTokenPrefixes(escaped))
-                ftsTerms.Add($"{sub}*");
-        }
-        var ftsQuery = string.Join(" OR ", ftsTerms);
-        command.Parameters.AddWithValue("@Query", ftsQuery);
+        // Sub-token prefixes let a compound word match its parts.
+        command.Parameters.AddWithValue("@Query", BuildFtsQuery(query, includeSubTokenPrefixes: true));
 
         try
         {
@@ -417,13 +404,7 @@ public class MemoryService : IMemoryService
         return merged.AsReadOnly();
     }
 
-    /// <summary>
-    /// Whole-vault hybrid recall over the <c>Chunks</c> index (every <c>## Heading</c> section of every
-    /// vault file, regardless of folder). Mirrors the tier weights of <see cref="HybridSearchAsync"/>
-    /// (LIKE 0.6 / FTS 0.7 / fuzzy / vector 0.8) but scopes to chunks rather than the legacy Memories
-    /// table. Hits are merged per (FilePath, Slug) taking the max tier score, ranked descending, and the
-    /// snippet is the first ~200 chars of the section body read back from the vault.
-    /// </summary>
+    /// <summary>Whole-vault hybrid recall over <c>Chunks</c>, each section keeping its best tier score.</summary>
     public async Task<IReadOnlyList<RecallHit>> RecallAsync(string query, int topK = 10)
     {
         // Keyed by (FilePath, Slug) so the same section matched by multiple tiers keeps its best score.
@@ -479,8 +460,9 @@ public class MemoryService : IMemoryService
             }
             catch (SqliteException ex)
             {
-                // A malformed MATCH query must degrade gracefully (the other tiers still run).
-                _logger.LogWarning(ex, "Vault FTS recall failed; falling back to other tiers");
+                // The message quotes the query fragment FTS choked on, so only the code reaches the release log.
+                _logger.LogWarning("Vault FTS recall failed (SQLite error {Code}); falling back to other tiers", ex.SqliteErrorCode);
+                _logger.SensitiveDebug("Vault FTS recall failed for query {Query}: {Error}", query, ex.Message);
             }
         }
 
@@ -520,16 +502,28 @@ public class MemoryService : IMemoryService
         }
 
         // Tier 3: vector 0.8 — embed the query and cosine-compare against each chunk embedding.
-        var queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query);
-        foreach (var chunk in allChunks)
+        float[]? queryEmbedding = null;
+        try
         {
-            if (chunk.Embedding is null) continue;
-            var chunkVector = _embeddingService.BytesToFloats(chunk.Embedding);
-            if (chunkVector.Length != queryEmbedding.Length) continue;
-            var similarity = VectorSearchHelper.CosineSimilarity(queryEmbedding, chunkVector);
-            if (similarity >= 0.2f)
+            queryEmbedding = await _embeddingService.GenerateEmbeddingAsync(query);
+        }
+        catch (EmbeddingUnavailableException)
+        {
+            _logger.LogWarning("Vault recall ran without the vector tier: embeddings unavailable");
+        }
+
+        if (queryEmbedding is not null)
+        {
+            foreach (var chunk in allChunks)
             {
-                Merge(chunk.FilePath, chunk.Heading, chunk.Slug, 0.8f);
+                if (chunk.Embedding is null) continue;
+                var chunkVector = _embeddingService.BytesToFloats(chunk.Embedding);
+                if (chunkVector.Length != queryEmbedding.Length) continue;
+                var similarity = VectorSearchHelper.CosineSimilarity(queryEmbedding, chunkVector);
+                if (similarity >= 0.2f)
+                {
+                    Merge(chunk.FilePath, chunk.Heading, chunk.Slug, 0.8f);
+                }
             }
         }
 
@@ -1683,21 +1677,23 @@ public class MemoryService : IMemoryService
         return trimmed.Length > 200 ? trimmed[..200] : trimmed;
     }
 
-    /// <summary>
-    /// Build a sanitized FTS5 MATCH query: each token is double-quoted (so special characters are
-    /// treated as literal terms) and OR-joined, mirroring <see cref="FullTextSearchAsync"/>.
-    /// </summary>
-    private static string BuildFtsQuery(string query)
+    // Every term is quoted, prefix forms too: a bare "Marco,*" is an FTS5 syntax error.
+    internal static string BuildFtsQuery(string query, bool includeSubTokenPrefixes = false)
     {
         var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var ftsTerms = new List<string>();
         foreach (var term in terms)
         {
             var escaped = EscapeFtsQuery(term);
-            if (escaped.Length == 0) continue;
             ftsTerms.Add($"\"{escaped}\"");
-            if (escaped.Length >= 3)
-                ftsTerms.Add($"{escaped}*");
+            if (term.Length >= 3)
+                ftsTerms.Add($"\"{escaped}\"*");
+
+            if (!includeSubTokenPrefixes) continue;
+
+            // Cut from the raw term: cutting the escaped one can split a doubled quote.
+            foreach (var sub in GenerateSubTokenPrefixes(term))
+                ftsTerms.Add($"\"{EscapeFtsQuery(sub)}\"*");
         }
 
         return string.Join(" OR ", ftsTerms);
