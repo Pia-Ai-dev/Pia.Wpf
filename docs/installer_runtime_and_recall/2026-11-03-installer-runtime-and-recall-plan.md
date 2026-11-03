@@ -70,6 +70,24 @@ before it applies. It documents nothing for the `--msi` output, which is all Pia
 UAC for per-user installs) on managed machines is the failure mode this would add. Choose it only if a
 spike shows the MSI installs the framework silently.
 
+**Spike result, 2026-11-03.** This was read from vpk 1.2.158's own package: the embedded
+`MsiTemplate.hbs` and `vendor/velopack_wix_x64.dll`. Nothing was installed. The MSI does honour
+`--framework`, but it does not meet the condition above.
+
+- **A silent install gets no runtime.** The template passes the list as `RustRuntimeDependencies` to
+  `RustEarlyBootstrap`, a custom action scheduled in `InstallUISequence` only. Windows Installer skips
+  that sequence at basic or no UI (`/qb`, `/qn`). Intune, SCCM and GPO deployments therefore install Pia
+  without the runtime, which is the support log's case.
+- **A full-UI install runs the redistributable as a second installer.** It downloads
+  `aka.ms/vs/17/release/vc_redist.x64.exe` from the custom action, which runs in the unelevated client
+  process. A per-user install therefore meets a UAC prompt.
+- **The version check is below the floor.** `vcredist143-x64` accepts any runtime from `14.30.30704`,
+  and `vcredist144-x64` from `14.40.33810`. A machine below `14.44` keeps its older runtime. Only
+  `vcredist145-x64` (`14.50.35719`) clears the floor, and that is the VS 2026 runtime that Task 1 avoids
+  for its Windows floor.
+- **Existing installs are not covered.** They never run the MSI again. Velopack documents that an update
+  prompts for a missing framework first.
+
 ## Global constraints
 
 - `0 Warning(s)` and `0 Error(s)` on `dotnet build -t:Rebuild` in Debug and Release.

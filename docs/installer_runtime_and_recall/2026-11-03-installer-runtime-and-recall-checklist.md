@@ -18,7 +18,7 @@ little standalone value, unblocks a High.
 
 | Gate | Question | Blocks | Decision |
 |---|---|---|---|
-| G1 | Does the runtime ship app-local next to the exe, or does `vpk pack --framework vcredist145-x64` install it system-wide? Velopack documents the framework install for Setup and updates (with a user prompt), not for the MSI Pia ships. | 1 | Open. Plan recommends app-local. |
+| G1 | Does the runtime ship app-local next to the exe, or does `vpk pack --framework vcredist145-x64` install it system-wide? Velopack documents the framework install for Setup and updates (with a user prompt), not for the MSI Pia ships. | 1 | Open. The owner chose `--framework` if a spike showed the MSI installs it silently. The spike (plan, G1) says it does not: silent installs skip it, and its version check is below 14.44. App-local staging is reverted pending the owner's call. |
 
 ## Steps
 
