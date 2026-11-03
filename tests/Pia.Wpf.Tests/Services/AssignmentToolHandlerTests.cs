@@ -510,8 +510,7 @@ public class AssignmentToolHandlerTests
                 new Dictionary<string, object?> { ["skill"] = skill, ["prompt"] = prompt }),
             TestContext.Current.CancellationToken);
 
-    /// <summary>A hyphenated date reads as a phone number to the PII detector, which replaced the stamp with a
-    /// [Phone_N] token before the model saw it. Runs the real detector over the real result.</summary>
+    /// <summary>Runs the real PII detector over the real result.</summary>
     [Fact]
     public async Task TimestampsSurviveThePiiDetector()
     {
@@ -524,8 +523,6 @@ public class AssignmentToolHandlerTests
         const string stamp = "2026/08/26 09:00 UTC";
         Assert.Contains(stamp, text);
 
-        // Scoped to the stamps by span, not asserted over the whole payload: the guids in there carry
-        // phone-shaped digit runs of their own about a third of the time, and tokenising one is harmless.
         var stamps = StampSpans(text, stamp);
         var onAStamp = new StructuredPiiDetector().DetectPii(text)
             .Where(m => m.Category == "Phone")

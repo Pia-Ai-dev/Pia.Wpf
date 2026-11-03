@@ -132,6 +132,64 @@ public class StructuredPiiDetectorTests
         Assert.Empty(matches);
     }
 
+    [Theory]
+    [InlineData("Call +49 170 1234567 today", "+49 170 1234567")]
+    [InlineData("Call +1-555-123-4567 today", "+1-555-123-4567")]
+    [InlineData("Tel. +49 (0)30 1234567", "+49 (0)30 1234567")]
+    [InlineData("Tel. +49 (0) 30 1234567", "+49 (0) 30 1234567")]
+    [InlineData("Tel. +49-30-1234-5678", "+49-30-1234-5678")]
+    [InlineData("Tel. 0049 30 1234567", "0049 30 1234567")]
+    [InlineData("Tel.: 030 1234567", "030 1234567")]
+    [InlineData("Tel.: 030/1234567", "030/1234567")]
+    [InlineData("Mobil: 0171/1234567", "0171/1234567")]
+    [InlineData("Zentrale 030 / 123 456-0.", "030 / 123 456-0")]
+    [InlineData("Ruf an: (030) 123 4567", "(030) 123 4567")]
+    [InlineData("Mobil: 0171 1234567, Fax folgt", "0171 1234567")]
+    [InlineData("Mobil: 01711234567", "01711234567")]
+    [InlineData("Hotline 0800-1234567", "0800-1234567")]
+    public void DetectPii_FindsPhoneNumber(string text, string phone)
+    {
+        var match = Assert.Single(_sut.DetectPii(text));
+
+        Assert.Equal("Phone", match.Category);
+        Assert.Equal(phone, match.Value);
+        Assert.Equal(phone, text.Substring(match.Start, match.Length));
+    }
+
+    [Fact]
+    public void DetectPii_FindsPhoneNumberWithNoBreakSpaces()
+    {
+        var phone = "+49 30 12345678".Replace(' ', (char)0xA0);
+
+        var match = Assert.Single(_sut.DetectPii($"Tel. {phone}"));
+
+        Assert.Equal(phone, match.Value);
+    }
+
+    [Theory]
+    [InlineData("Citrix Workspace App x64 in Version 26.3.20.31")]
+    [InlineData("Plugin 26.29.1.4")]
+    [InlineData("Teams 1.7.00.12345")]
+    [InlineData("Windows 10.0.26100.1234")]
+    [InlineData("am 12.03.2026")]
+    [InlineData("am 2026-03-27")]
+    [InlineData("am 01-12-2026")]
+    [InlineData("am 01/12/2026")]
+    [InlineData("2026/08/26 09:00 UTC")]
+    [InlineData("Date: 2026-08-31 11:46 +00:00")]
+    [InlineData("IP 192.168.10.25")]
+    [InlineData("Betrag 1.234.567,89 EUR")]
+    [InlineData("Musterweg 22\n51674 Musterstadt")]
+    [InlineData("Musterweg 22\r\n51674 Musterstadt")]
+    [InlineData("Bestellnummer 1023456789")]
+    [InlineData("Ticket 1234567")]
+    [InlineData("ISBN 978-0-123456-47-2")]
+    [InlineData("ID a1b2c3d4-0123-4567-89ab-cdef01234567")]
+    public void DetectPii_LeavesNumbersThatAreNotPhoneNumbersAlone(string text)
+    {
+        Assert.Empty(_sut.DetectPii(text));
+    }
+
     // --- Edge cases ---
 
     [Fact]
