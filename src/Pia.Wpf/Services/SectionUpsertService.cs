@@ -36,16 +36,14 @@ public sealed class SectionUpsertService : ISectionUpsertService
             return new UpsertResolution(UpsertBand.Create, null, []);
         }
 
-        var subjectEmbedding = await _embeddings.GenerateEmbeddingAsync($"{subject}\n{content}");
-
-        var scored = new List<(string Slug, double Score)>(doc.Sections.Count);
-        foreach (var section in doc.Sections)
+        List<(string Slug, double Score)> scored;
+        try
         {
-            var lexical = JaroWinkler.Similarity(subject, section.Heading);
-            var sectionEmbedding = await _embeddings.GenerateEmbeddingAsync($"{section.Heading}\n{section.Body}");
-            var vector = VectorSearchHelper.CosineSimilarity(subjectEmbedding, sectionEmbedding);
-            var score = Math.Max(lexical, vector);
-            scored.Add((section.Slug, score));
+            scored = await ScoreLexicalAndVectorAsync(doc, subject, content);
+        }
+        catch (EmbeddingUnavailableException)
+        {
+            scored = doc.Sections.Select(s => (s.Slug, JaroWinkler.Similarity(subject, s.Heading))).ToList();
         }
 
         var best = scored.MaxBy(s => s.Score);
@@ -66,6 +64,23 @@ public sealed class SectionUpsertService : ISectionUpsertService
         }
 
         return new UpsertResolution(UpsertBand.Create, null, []);
+    }
+
+    private async Task<List<(string Slug, double Score)>> ScoreLexicalAndVectorAsync(
+        VaultDocument doc, string subject, string content)
+    {
+        var subjectEmbedding = await _embeddings.GenerateEmbeddingAsync($"{subject}\n{content}");
+
+        var scored = new List<(string Slug, double Score)>(doc.Sections.Count);
+        foreach (var section in doc.Sections)
+        {
+            var lexical = JaroWinkler.Similarity(subject, section.Heading);
+            var sectionEmbedding = await _embeddings.GenerateEmbeddingAsync($"{section.Heading}\n{section.Body}");
+            var vector = VectorSearchHelper.CosineSimilarity(subjectEmbedding, sectionEmbedding);
+            scored.Add((section.Slug, Math.Max(lexical, vector)));
+        }
+
+        return scored;
     }
 
     /// <summary>

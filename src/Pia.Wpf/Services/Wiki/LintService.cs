@@ -500,7 +500,14 @@ public sealed class LintService : ILintService
             return null;
         }
 
-        return await _embeddings.GenerateEmbeddingAsync(page.Body, ct);
+        try
+        {
+            return await _embeddings.GenerateEmbeddingAsync(page.Body, ct);
+        }
+        catch (EmbeddingUnavailableException)
+        {
+            return null;
+        }
     }
 
     private float[]? ReadStoredEmbedding(string path)

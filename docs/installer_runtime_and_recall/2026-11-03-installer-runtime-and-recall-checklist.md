@@ -39,7 +39,7 @@ little standalone value, unblocks a High.
   `VaultIndexer` writes the chunk and its FTS row with a null embedding, and embeds it on a later pass
   once embeddings work.
   *Deps:* 2 · *Effort:* XS · *Value:* High
-- [ ] **5. Fall back to lexical scoring in `remember` and wiki lint.**
+- [x] **5. Fall back to lexical scoring in `remember` and wiki lint.**
   `SectionUpsertService` scores sections by heading similarity alone, and `LintService` skips the
   semantic check, when embeddings are unavailable.
   *Deps:* 2 · *Effort:* XS · *Value:* Med
