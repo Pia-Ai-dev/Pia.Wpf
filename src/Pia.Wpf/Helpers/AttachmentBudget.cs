@@ -14,7 +14,8 @@ public static class AttachmentBudget
         var input = AgentContextBudget.From(provider) is { } budget
             ? budget.WindowTokens - budget.MaxOutputTokens
             : ContextWindowDefaults.For(provider?.ModelName);
-        return Math.Clamp((int)(input * WindowShare), MinTokens, MaxTokens);
+        // The floor is capped at half the input: a small local window cannot give 2K tokens to files alone.
+        return Math.Clamp((int)(input * WindowShare), Math.Min(MinTokens, input / 2), MaxTokens);
     }
 
     /// <summary>Smallest first: a file under its fair share gets all it needs, the rest split what is left.</summary>

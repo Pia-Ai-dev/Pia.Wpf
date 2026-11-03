@@ -23,6 +23,12 @@ public sealed class AttachmentBudgetTests
     public void ForChat_IsAQuarterOfTheInputWindow_Clamped(int window, int? maxOutput, int expected) =>
         Assert.Equal(expected, AttachmentBudget.ForChat(Provider(window, maxOutput)));
 
+    [Theory]
+    [InlineData(4_096, 3_072, 512)]
+    [InlineData(4_096, 4_095, 0)]
+    public void ForChat_ASmallInputCapsTheFloorAtHalfOfIt(int window, int maxOutput, int expected) =>
+        Assert.Equal(expected, AttachmentBudget.ForChat(Provider(window, maxOutput)));
+
     [Fact]
     public void ForChat_WithoutAProvider_UsesTheDefaultWindow() =>
         Assert.Equal((int)(ContextWindowDefaults.Fallback * AttachmentBudget.WindowShare), AttachmentBudget.ForChat(null));
