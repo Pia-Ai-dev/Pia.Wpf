@@ -296,7 +296,6 @@ public class MemoryService : IMemoryService
         var connection = _context.GetConnection();
         using var command = connection.CreateCommand();
 
-        // FTS5 search with ranking
         command.CommandText = """
             SELECT m.Id, m.Type, m.Label, m.Data, m.Embedding, m.CreatedAt, m.UpdatedAt, m.LastAccessedAt
             FROM MemoriesFts fts
