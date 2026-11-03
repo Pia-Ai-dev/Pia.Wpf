@@ -99,6 +99,11 @@ jobs:
           -p:IncludeNativeLibrariesForSelfExtract=false
           -o publish
 
+      # onnxruntime.dll imports the VC++ runtime, which a clean Windows lacks, so it ships next to the exe.
+      - name: Stage the VC++ runtime next to Pia.Wpf.exe
+        shell: pwsh
+        run: pwsh scripts/Copy-VcRuntime.ps1 -Destination publish
+
       - name: Sign published Pia.Wpf.exe
         shell: pwsh
         run: |
