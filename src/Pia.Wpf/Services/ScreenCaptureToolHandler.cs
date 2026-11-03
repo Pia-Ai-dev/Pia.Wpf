@@ -266,16 +266,16 @@ public class ScreenCaptureToolHandler : IScreenCaptureToolHandler
 
             if (verdict.Verdict == AllowlistVerdict.NotListed)
             {
-                _logger.LogInformation(
-                    "screen_capture refused an unlisted window of {Process} to an unattended run", target.ProcessName);
+                _logger.LogInformation("screen_capture refused an unlisted window to an unattended run");
+                _logger.SensitiveDebug("screen_capture unlisted window process: {Process}", target.ProcessName);
                 return (string.Format(UnattendedNotListed, target.ProcessName), null);
             }
 
             if (verdict.Verdict == AllowlistVerdict.Ambiguous)
             {
                 _logger.LogInformation(
-                    "screen_capture refused an ambiguous allowlist entry for {Process} ({Count} windows)",
-                    target.ProcessName, verdict.MatchCount);
+                    "screen_capture refused an ambiguous allowlist entry ({Count} windows)", verdict.MatchCount);
+                _logger.SensitiveDebug("screen_capture ambiguous allowlist process: {Process}", target.ProcessName);
                 return (string.Format(UnattendedAmbiguous, target.ProcessName, verdict.MatchCount), null);
             }
         }
@@ -345,9 +345,8 @@ public class ScreenCaptureToolHandler : IScreenCaptureToolHandler
         _indicator.NotifyCapture(evt);
 
         _logger.LogInformation(
-            "screen_capture delivered a {Kind} of {Process} at {Width}x{Height}",
-            kindWord, target.ProcessName, image.Width, image.Height);
-        _logger.SensitiveDebug("screen_capture delivered target title: {Title}", target.Title);
+            "screen_capture delivered a {Kind} at {Width}x{Height}", kindWord, image.Width, image.Height);
+        _logger.SensitiveDebug("screen_capture delivered target: {Process} '{Title}'", target.ProcessName, target.Title);
 
         return $"Captured {kindWord} {subject} at {image.Width}x{image.Height}. The picture is attached as "
             + "the next message; read it from there.";

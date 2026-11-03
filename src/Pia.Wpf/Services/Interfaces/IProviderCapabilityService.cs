@@ -11,7 +11,7 @@ public enum PlanningCapability
     /// <summary>The provider does not support tool calling, or the strengthened probe did not emit a call.</summary>
     Weak,
 
-    /// <summary>The probe failed transiently (network/timeout). Not cached — a later call re-probes.</summary>
+    /// <summary>The probe failed. Cached only briefly, so a failing probe is not paid for on every turn.</summary>
     Unknown,
 }
 

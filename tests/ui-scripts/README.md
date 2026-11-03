@@ -42,8 +42,11 @@ configuration"*.
 ## What the harness does to your machine
 
 By default it runs **hermetically**: it creates a throwaway data directory under `%TEMP%`, copies the
-fixture into it as `settings.json`, and points the app there with `PIA_DATA_DIR` /
-`PIA_LOCAL_DATA_DIR` (see `src/Pia.Wpf/Infrastructure/PiaPaths.cs`). `%APPDATA%\Pia` and
+fixture into it as `settings.json`, seeds `assistantFilesFolder` to `<DataDir>\files` unless the
+fixture already sets it, and points the app there with `PIA_DATA_DIR` /
+`PIA_LOCAL_DATA_DIR` (see `src/Pia.Wpf/Infrastructure/PiaPaths.cs`). `PIA_DATA_DIR` does not
+redirect `assistantFilesFolder`; without the seed, a fresh profile falls back to the real vault.
+A profile copied from a live one also brings its MCP plugins, and they start on launch. `%APPDATA%\Pia` and
 `%LOCALAPPDATA%\Pia` are never seeded, written or restored, so:
 
 - **You do not have to close Pia.** A replay and your own instance share no settings file, no

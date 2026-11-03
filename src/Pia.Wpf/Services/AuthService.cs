@@ -23,6 +23,7 @@ public class AuthService : IAuthService
     private readonly ILocalizationService _localizationService;
     private readonly ILogger<AuthService> _logger;
     private readonly IPolicyService? _policyService;
+    private readonly AccountTransitionCoordinator _accountGate;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly Task _loadStoredTokensTask;
 
@@ -51,15 +52,21 @@ public class AuthService : IAuthService
 
     public event EventHandler<bool>? LoginStateChanged;
 
+    public event EventHandler<AuthSignedOutEventArgs>? SignedOutUnexpectedly;
+
+    internal TimeSpan LogoutTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
     public AuthService(
         ISettingsService settingsService,
         DpapiHelper dpapiHelper,
         IHttpClientFactory httpClientFactory,
         ILocalizationService localizationService,
         ILogger<AuthService> logger,
-        IPolicyService? policyService = null)
+        IPolicyService? policyService = null,
+        AccountTransitionCoordinator? accountGate = null)
     {
         _settingsService = settingsService;
+        _accountGate = accountGate ?? new AccountTransitionCoordinator();
         _dpapiHelper = dpapiHelper;
         _httpClientFactory = httpClientFactory;
         _localizationService = localizationService;
@@ -90,16 +97,17 @@ public class AuthService : IAuthService
             // Keep the refresh token in its already-encrypted form; no plaintext at rest.
             // The persisted access token is intentionally not loaded — it is almost certainly
             // expired by the time the app restarts, so the first GetAccessTokenAsync refreshes it.
-            _encryptedRefreshToken = settings.EncryptedRefreshToken;
-            UserDisplayName = settings.SyncUserDisplayName;
-            UserEmail = settings.SyncUserEmail;
-            Provider = settings.SyncProvider;
-
-            if (!string.IsNullOrEmpty(_encryptedRefreshToken))
+            using (await _accountGate.BeginTransitionAsync())
             {
-                IsLoggedIn = true;
-                LoginStateChanged?.Invoke(this, true);
+                _encryptedRefreshToken = settings.EncryptedRefreshToken;
+                UserDisplayName = settings.SyncUserDisplayName;
+                UserEmail = settings.SyncUserEmail;
+                Provider = settings.SyncProvider;
+                IsLoggedIn = !string.IsNullOrEmpty(_encryptedRefreshToken);
             }
+
+            if (IsLoggedIn)
+                LoginStateChanged?.Invoke(this, true);
         }
         catch (Exception ex)
         {
@@ -169,7 +177,8 @@ public class AuthService : IAuthService
             switch (triage.Kind)
             {
                 case LoginCallbackKind.ProviderError:
-                    _logger.LogWarning("OAuth callback returned error: {Error} - {Message}", error, errorMessage);
+                    _logger.LogWarning("OAuth callback returned error: {Error}", error);
+                    _logger.SensitiveDebug("OAuth callback error message: {Message}", errorMessage);
                     break;
                 case LoginCallbackKind.LegacyTokens:
                     _logger.LogWarning("OAuth callback carried tokens in the URL; the server predates the code exchange");
@@ -353,6 +362,15 @@ public class AuthService : IAuthService
     private async Task ApplyLoginAsync(
         LocalLoginResponse login, string provider, AppSettings settings, bool reportedMetadata)
     {
+        using (await _accountGate.BeginTransitionAsync())
+            await ApplyLoginStateAsync(login, provider, settings, reportedMetadata);
+
+        LoginStateChanged?.Invoke(this, true);
+    }
+
+    private async Task ApplyLoginStateAsync(
+        LocalLoginResponse login, string provider, AppSettings settings, bool reportedMetadata)
+    {
         _encryptedAccessToken = _dpapiHelper.Encrypt(login.AccessToken);
         _encryptedRefreshToken = _dpapiHelper.Encrypt(login.RefreshToken);
         _accessTokenExpiry = AccessTokenExpiryFrom(login.ExpiresIn, DateTime.UtcNow);
@@ -362,6 +380,8 @@ public class AuthService : IAuthService
         RequiresBusinessProfile = login.User.RequiresBusinessProfile;
         IsLoggedIn = true;
 
+        // Before the new identity is written, so a leftover key marks the account it belonged to.
+        settings.ForgetE2EEKey();
         settings.SyncEnabled = true;
         settings.EncryptedAccessToken = _encryptedAccessToken;
         settings.EncryptedRefreshToken = _encryptedRefreshToken;
@@ -372,22 +392,11 @@ public class AuthService : IAuthService
         settings.SyncDeviceId ??= Guid.NewGuid().ToString();
         // A marker surviving from an earlier connection would suppress this account's history upload.
         settings.AssistantChatsBackfilledAt = null;
-        ForgetE2EEKey(settings);
+        if (login.IsE2EEEnabled || AccessTokenClaims.ReadE2EE(login.AccessToken) == true)
+            settings.MarkE2EERequiredForAccount();
         if (reportedMetadata)
             settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
         await _settingsService.SaveSettingsAsync(settings);
-
-        LoginStateChanged?.Invoke(this, true);
-    }
-
-    // The key belongs to one account and records no owner, so it goes on sign-out and on every sign-in; the
-    // server keeps this device's wrapped copy, which the sign-in paths take back.
-    private static void ForgetE2EEKey(AppSettings settings)
-    {
-        settings.IsE2EEEnabled = false;
-        settings.E2EEEncryptedUmk = null;
-        settings.E2EEUmkVersion = 0;
-        settings.E2EERecoveryConfigured = false;
     }
 
     internal const string DeviceIdHeader = "X-Pia-Device-Id";
@@ -546,15 +555,15 @@ public class AuthService : IAuthService
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
 
-            // Revoke refresh token on server
             var refreshToken = DecryptRefreshToken();
             if (!string.IsNullOrEmpty(serverUrl) && !string.IsNullOrEmpty(refreshToken))
             {
                 try
                 {
+                    using var timeout = new CancellationTokenSource(LogoutTimeout);
                     using var client = _httpClientFactory.CreateClient();
                     await client.PostAsJsonAsync($"{serverUrl}/auth/logout",
-                        new { refreshToken });
+                        new { refreshToken }, timeout.Token);
                 }
                 catch (Exception ex)
                 {
@@ -562,34 +571,19 @@ public class AuthService : IAuthService
                 }
             }
 
-            // Clear local state
-            _encryptedAccessToken = null;
-            _encryptedRefreshToken = null;
-            UserDisplayName = null;
-            UserEmail = null;
-            Provider = null;
-            RequiresBusinessProfile = false;
-            IsLoggedIn = false;
+            using (await _accountGate.BeginTransitionAsync())
+            {
+                _encryptedAccessToken = null;
+                _encryptedRefreshToken = null;
+                UserDisplayName = null;
+                UserEmail = null;
+                Provider = null;
+                RequiresBusinessProfile = false;
+                IsLoggedIn = false;
 
-            settings.SyncEnabled = false;
-            settings.EncryptedAccessToken = null;
-            settings.EncryptedRefreshToken = null;
-            settings.SyncUserId = null;
-            settings.SyncUserEmail = null;
-            settings.SyncUserDisplayName = null;
-            settings.SyncProvider = null;
-            settings.LastSyncTimestamp = null;
-            settings.AssistantChatsBackfilledAt = null;
-            // Clear cross-account sync gate/ETag state so a subsequent login (same or different
-            // account) never inherits stale state: a stale LastPushedSettingsHash could suppress
-            // the settings row on the next first sync, and stale ETags rely on the server never
-            // colliding tag values across accounts.
-            settings.LastPushedSettingsHash = null;
-            settings.LastChatPullETag = null;
-            settings.LastPullETag = null;
-            settings.ClientPolicyInitialized = false;
-            ForgetE2EEKey(settings);
-            await _settingsService.SaveSettingsAsync(settings);
+                settings.ClearAccountState();
+                await _settingsService.SaveSettingsAsync(settings);
+            }
 
             // Sync stays off until the next login, so a kept group policy would go on being applied
             // until then. Cleared after the save, which re-applies policy and would rewrite the cache.
@@ -613,6 +607,12 @@ public class AuthService : IAuthService
         }
     }
 
+    public async Task SignOutUnexpectedlyAsync(AuthSignOutReason reason)
+    {
+        await LogoutAsync();
+        SignedOutUnexpectedly?.Invoke(this, new AuthSignedOutEventArgs(reason));
+    }
+
     public async Task<string?> GetAccessTokenAsync(bool forceRefresh = false, string? staleAccessToken = null)
     {
         await _loadStoredTokensTask;
@@ -634,6 +634,9 @@ public class AuthService : IAuthService
         await _refreshLock.WaitAsync();
         try
         {
+            if (!IsLoggedIn || string.IsNullOrEmpty(_encryptedRefreshToken))
+                return null;
+
             var current = DecryptAccessToken();
             if (current is not null)
             {
@@ -650,7 +653,13 @@ public class AuthService : IAuthService
 
             var refreshToken = DecryptRefreshToken();
             if (refreshToken is null)
+            {
+                // A session whose own token cannot be opened here can never be refreshed; signing out
+                // is the only way out of the logged-in-with-no-tokens state.
+                _logger.LogWarning("The stored session cannot be opened; signing out");
+                await SignOutUnexpectedlyAsync(AuthSignOutReason.LocalSessionUnusable);
                 return null;
+            }
 
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
@@ -667,11 +676,14 @@ public class AuthService : IAuthService
 
             if (!response.IsSuccessStatusCode)
             {
+                var status = (int)response.StatusCode;
                 _logger.LogWarning("Token refresh failed with status {Status}", response.StatusCode);
                 if (response.StatusCode == HttpStatusCode.Unauthorized)
-                {
-                    await LogoutAsync();
-                }
+                    await SignOutUnexpectedlyAsync(AuthSignOutReason.SessionExpired);
+                else if (status is not (408 or 429) && status < 500)
+                    // A 4xx that is not a transient limit will not pass on retry: end the session
+                    // instead of letting the app idle "signed in" with nothing to authenticate calls.
+                    await SignOutUnexpectedlyAsync(AuthSignOutReason.ServerRejectedSession);
                 return null;
             }
 
@@ -688,9 +700,11 @@ public class AuthService : IAuthService
             _encryptedRefreshToken = string.IsNullOrEmpty(newRefreshToken)
                 ? null : _dpapiHelper.Encrypt(newRefreshToken);
 
-            // Persist new tokens
             settings.EncryptedAccessToken = _encryptedAccessToken;
             settings.EncryptedRefreshToken = _encryptedRefreshToken;
+            if (json.TryGetProperty("isE2EEEnabled", out var e2ee) && e2ee.ValueKind == JsonValueKind.True
+                || AccessTokenClaims.ReadE2EE(newAccessToken) == true)
+                settings.MarkE2EERequiredForAccount();
             if (reportMetadata)
                 settings.ReportedDeviceMetadata = DeviceMetadataFingerprint();
             await _settingsService.SaveSettingsAsync(settings);

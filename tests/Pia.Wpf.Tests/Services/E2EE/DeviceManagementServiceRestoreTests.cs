@@ -14,6 +14,7 @@ using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using Pia.Tests.TestInfrastructure;
+using Pia.ViewModels;
 using Xunit;
 
 /// <summary>Sign-out forgets the key, and the server still holds this device's wrapped copy, so signing back in
@@ -27,6 +28,7 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
     private readonly AppSettings _stored = new() { ServerUrl = "https://sync.example" };
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly ScriptedServer _server = new();
+    private readonly IAuthService _auth = Substitute.For<IAuthService>();
     private readonly E2EEService _e2ee;
     private readonly byte[] _umk = RandomNumberGenerator.GetBytes(32);
 
@@ -46,6 +48,30 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
 
         Assert.Equal(_umk, _e2ee.LoadUmk());
         Assert.True(_stored.IsE2EEEnabled);
+    }
+
+    [Fact]
+    public async Task LostDeviceKeysAfterSignInClearsTheUmk_ReplaceTheDevice()
+    {
+        _server.Status = DeviceStatus.Active;
+        _server.Wrapped = await SelfWrapAsync();
+        using var replacementKeys = new InMemoryDeviceKeys(ThisDevice);
+        var replacementE2ee = new E2EEService(
+            new CryptoService(), replacementKeys, _dpapi, _settings, NullLogger<E2EEService>.Instance);
+        var management = CreateSut(replacementKeys, replacementE2ee);
+        _stored.E2EEEncryptedUmk = "previous-account-key";
+        _stored.ForgetE2EEKey();
+        var onboarding = new E2EEOnboardingViewModel(
+            management, replacementKeys, replacementE2ee, Substitute.For<ISyncClientService>(),
+            _settings, NullLogger<E2EEOnboardingViewModel>.Instance);
+
+        await onboarding.StartDeviceApprovalCommand.ExecuteAsync(null);
+
+        Assert.False(replacementKeys.KeyLossDetected);
+        Assert.NotEqual(ThisDevice, replacementKeys.GetDeviceId());
+        await _auth.Received(1).SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
+        Assert.Null(_stored.E2EEEncryptedUmk);
+        Assert.False(_stored.IsE2EEEnabled);
     }
 
     [Theory]
@@ -83,12 +109,11 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
         };
     }
 
-    private DeviceManagementService CreateSut()
+    private DeviceManagementService CreateSut(IDeviceKeyService? keys = null, IE2EEService? e2ee = null)
     {
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_server, disposeHandler: false));
-        var auth = Substitute.For<IAuthService>();
-        auth.GetAccessTokenAsync().Returns("token-1");
+        _auth.GetAccessTokenAsync().Returns("token-1");
         _server.Device = new DeviceInfo
         {
             DeviceId = ThisDevice,
@@ -98,8 +123,8 @@ public sealed class DeviceManagementServiceRestoreTests : IDisposable
         };
 
         return new DeviceManagementService(
-            _e2ee, _keys, Substitute.For<IRecoveryCodeService>(), _settings, auth, factory,
-            NullLogger<DeviceManagementService>.Instance);
+            e2ee ?? _e2ee, keys ?? _keys, Substitute.For<IRecoveryCodeService>(), _settings, _auth, factory,
+            Substitute.For<IConfirmedApproverStore>(), Substitute.For<IScheduledJobService>(), new UnsignedRequests(), NullLogger<DeviceManagementService>.Instance);
     }
 
     private sealed class PassthroughDpapi(ILogger<DpapiHelper> logger) : DpapiHelper(logger)

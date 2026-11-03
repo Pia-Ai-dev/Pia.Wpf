@@ -50,6 +50,33 @@ public sealed class SafeFolderPathTests : IDisposable
         Assert.Equal(string.Empty, resolved);
     }
 
+    [Theory]
+    [InlineData(@"\\198.51.100.1\share\file.txt")]
+    [InlineData("//198.51.100.1/share/file.txt")]
+    [InlineData(@"\\?\UNC\198.51.100.1\share\file.txt")]
+    [InlineData(@"\\.\UNC\198.51.100.1\share\file.txt")]
+    public void NetworkPath_Rejected_WithoutProbingIt(string unc)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        var ok = SafeFolderPath.TryResolveInsideAllowingAbsolute(_base, unc, out var resolved);
+
+        Assert.False(ok);
+        Assert.Equal(string.Empty, resolved);
+        // An SMB probe against an unroutable address would block for seconds.
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2));
+    }
+
+    [Theory]
+    [InlineData(@"\\server\share", true)]
+    [InlineData("//server/share", true)]
+    [InlineData(@"\\?\UNC\server\share", true)]
+    [InlineData(@"notes\file.txt", false)]
+    [InlineData("a/b", false)]
+    [InlineData("", false)]
+    public void IsNetworkPath_ClassifiesByForm(string path, bool expected)
+        => Assert.Equal(expected, SafeFolderPath.IsNetworkPath(path));
+
     [Fact]
     public void DotDot_EscapingBase_Rejected()
     {

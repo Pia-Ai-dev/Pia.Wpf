@@ -18,6 +18,8 @@ public class SettingsService : JsonPersistenceService<AppSettings>, ISettingsSer
 
     protected override AppSettings CreateDefault() => new AppSettings();
 
+    protected override ILogger Logger => _logger;
+
     public SettingsService(ILogger<SettingsService> logger, IPolicyService policyService)
     {
         _logger = logger;

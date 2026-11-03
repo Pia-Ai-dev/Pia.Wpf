@@ -160,4 +160,95 @@ public class WebCitationExtractorTests
         var expected = $"First {Marker(1, sources[0].Url)} then middle {Marker(2, sources[1].Url)} and {Marker(3, sources[2].Url)}";
         Assert.Equal(expected, cleaned);
     }
+
+    [Fact]
+    public void Extract_UrlInFencedCodeBlock_LeavesTextUntouched()
+    {
+        const string text =
+            "Korrekt ist:\n\n" +
+            "```powershell\n" +
+            "$BaseUri = 'https://scom-web.contoso.local/OperationsManager'\n" +
+            "```";
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(text);
+
+        Assert.Equal(text, cleaned);
+        Assert.Empty(sources);
+    }
+
+    [Fact]
+    public void Extract_UrlInInlineCode_LeavesTextUntouched()
+    {
+        const string text = "Set `$BaseUri = 'https://scom-web.contoso.local/OperationsManager'` first.";
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(text);
+
+        Assert.Equal(text, cleaned);
+        Assert.Empty(sources);
+    }
+
+    [Fact]
+    public void Extract_UrlInUnclosedFence_LeavesTextUntouched()
+    {
+        // A reply cut off mid-script never emits the closing fence.
+        const string text =
+            "Here is the script:\n\n" +
+            "```powershell\n" +
+            "$BaseUri = 'https://scom-web.contoso.local/OperationsManager'\n" +
+            "Invoke-RestMethod -Uri \"$BaseUri/data\"";
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(text);
+
+        Assert.Equal(text, cleaned);
+        Assert.Empty(sources);
+    }
+
+    [Fact]
+    public void Extract_CitationBesideCodeBlock_ChipsOnlyTheProseUrl()
+    {
+        const string text =
+            "See [SCOM REST API](https://learn.microsoft.com/rest/operationsmanager).\n\n" +
+            "```powershell\n" +
+            "$BaseUri = 'https://scom-web.contoso.local/OperationsManager'\n" +
+            "```";
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(text);
+
+        var source = Assert.Single(sources);
+        Assert.Equal("https://learn.microsoft.com/rest/operationsmanager", source.Url);
+        Assert.StartsWith($"See SCOM REST API {Marker(1, source.Url)}.", cleaned);
+        Assert.Contains("$BaseUri = 'https://scom-web.contoso.local/OperationsManager'", cleaned);
+    }
+
+    [Fact]
+    public void Extract_CitationBesideListNestedCodeBlock_KeepsCodeWhitespace()
+    {
+        const string code =
+            "   ```powershell\n" +
+            "   $BaseUri = 'https://scom-web.contoso.local/OperationsManager'\n" +
+            "   foreach ( $alert in $alerts ) {\n" +
+            "       Invoke-RestMethod -Uri \"$BaseUri/data\"  -Method Get  \n" +
+            "   }\n" +
+            "   ```";
+        var text =
+            "1. Read the [docs](https://learn.microsoft.com/rest/operationsmanager).\n\n" +
+            code + "\n\n" +
+            "Done.";
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(text);
+
+        Assert.Single(sources);
+        Assert.Contains(code, cleaned);
+    }
+
+    [Fact]
+    public void Extract_LinkWithInlineCodeAnchor_StillBecomesChip()
+    {
+        const string text = "Use [`Get-SCOMAlert`](https://learn.microsoft.com/powershell/module/operationsmanager/get-scomalert).";
+
+        var (cleaned, sources) = WebCitationExtractor.Extract(text);
+
+        var source = Assert.Single(sources);
+        Assert.Equal($"Use `Get-SCOMAlert` {Marker(1, source.Url)}.", cleaned);
+    }
 }

@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using Pia.Infrastructure;
 
 namespace Pia.Tests.TestInfrastructure;
 
@@ -9,7 +10,12 @@ internal static class SqlitePool
     /// just rented, surfacing there as <c>ObjectDisposedException</c> on <c>SQLitePCL.sqlite3</c>.</summary>
     public static void ClearFor(string connectionString)
     {
-        using var handle = new SqliteConnection(connectionString);
-        SqliteConnection.ClearPool(handle);
+        // Pools key on the full string, so a file's keyed and plain handles live in different pools.
+        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
+        foreach (var variant in new[] { connectionString, HistoryDatabaseEncryption.ConnectionStringFor(dataSource) })
+        {
+            using var handle = new SqliteConnection(variant);
+            SqliteConnection.ClearPool(handle);
+        }
     }
 }

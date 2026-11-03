@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -221,13 +220,6 @@ public partial class MarkdownMessageControl : UserControl
             return;
         }
 
-        try
-        {
-            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
-        }
-        catch
-        {
-            // Ignore failures to open links
-        }
+        ExternalLinkLauncher.Open(e.Uri);
     }
 }

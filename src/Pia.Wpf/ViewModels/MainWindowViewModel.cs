@@ -63,6 +63,9 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private bool _isE2EEOnboardingRequired;
 
     [ObservableProperty]
+    private bool _isE2EEDowngradeDetected;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSetupOverlay))]
     private bool _isSetupRequired;
 
@@ -125,6 +128,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _tourTargetCollector = tourTargetCollector;
         _clipboardService = clipboardService;
         IsE2EEOnboardingRequired = _syncClientService.IsE2EEOnboardingRequired;
+        IsE2EEDowngradeDetected = _syncClientService.IsE2EEDowngradeDetected;
 
         AppVersion = updateService.CurrentVersion
             ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
@@ -145,6 +149,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _authService.LoginStateChanged += OnLoginStateChanged;
         _syncClientService.E2EEOnboardingRequired += OnE2EEOnboardingRequired;
         _syncClientService.E2EEOnboardingCleared += OnE2EEOnboardingCleared;
+        _syncClientService.E2EEDowngradeChanged += OnE2EEDowngradeChanged;
         _policyService.LocksChanged += OnPolicyLocksChanged;
 
         // Poll for update readiness (background download is fire-and-forget)
@@ -433,6 +438,11 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         Post(() => IsE2EEOnboardingRequired = false);
     }
 
+    private void OnE2EEDowngradeChanged(object? sender, EventArgs e)
+    {
+        Post(() => IsE2EEDowngradeDetected = _syncClientService.IsE2EEDowngradeDetected);
+    }
+
     [RelayCommand]
     private void RestartToUpdate()
     {
@@ -496,6 +506,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         _authService.LoginStateChanged -= OnLoginStateChanged;
         _syncClientService.E2EEOnboardingRequired -= OnE2EEOnboardingRequired;
         _syncClientService.E2EEOnboardingCleared -= OnE2EEOnboardingCleared;
+        _syncClientService.E2EEDowngradeChanged -= OnE2EEDowngradeChanged;
         _policyService.LocksChanged -= OnPolicyLocksChanged;
 
         GC.SuppressFinalize(this);

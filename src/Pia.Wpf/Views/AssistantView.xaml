@@ -379,6 +379,7 @@
       </ScrollViewer.OpacityMask>
       <ScrollViewer.Style>
         <Style TargetType="ScrollViewer">
+          <Setter Property="FocusVisualStyle" Value="{x:Null}" />
           <Setter Property="Visibility" Value="Visible" />
           <Style.Triggers>
             <DataTrigger Binding="{Binding HasMessages}" Value="False">

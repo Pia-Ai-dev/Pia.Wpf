@@ -108,6 +108,27 @@ public class AiClientServiceInStepCompactionTests
         }
     }
 
+    /// <summary>Compaction may drop a pair, never rename one: the server's native-content store matches on the id.</summary>
+    [Fact]
+    public async Task CompactedToolLoop_SendsOnlyIdsTheModelMade_InTheOrderItMadeThem()
+    {
+        var sent = await RunToolLoopAsync(
+            OverBudgetRequest(), new AgentContextBudget(8_000, 2_000), toolRounds: 4, toolResultTokens: 400);
+
+        foreach (var (roundMessages, round) in sent.Select((m, i) => (m, i)))
+        {
+            var made = Enumerable.Range(1, round).Select(n => $"call-{n}").ToList();
+            var callIds = roundMessages
+                .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
+                .Select(c => c.CallId)
+                .ToList();
+
+            Assert.Equal(made.Where(callIds.Contains), callIds);
+            if (round > 0)
+                Assert.Contains($"call-{round}", callIds);
+        }
+    }
+
     [Fact]
     public async Task TheDispatchContextCarriesTheOneBasedRound()
     {

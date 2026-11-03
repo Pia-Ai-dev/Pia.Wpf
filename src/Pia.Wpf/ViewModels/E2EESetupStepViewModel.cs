@@ -100,7 +100,7 @@ public partial class E2EESetupStepViewModel : ObservableObject
         catch (Exception ex)
         {
             _logger.LogError(ex, "E2EE bootstrap failed during wizard");
-            ErrorMessage = ex.Message;
+            ErrorMessage = ex is DeviceRegistrationRejectedException rejection ? rejection.UserMessage : ex.Message;
             State = E2EESetupState.Choice;
         }
         finally
@@ -140,7 +140,7 @@ public partial class E2EESetupStepViewModel : ObservableObject
 
     [RelayCommand]
     private Task CopyRecoveryCodeAsync()
-        => RecoveryCode is null ? Task.CompletedTask : _outputService.CopyToClipboardAsync(RecoveryCode);
+        => RecoveryCode is null ? Task.CompletedTask : _outputService.CopySecretToClipboardAsync(RecoveryCode);
 
     [RelayCommand]
     private void OptOutGoBack()

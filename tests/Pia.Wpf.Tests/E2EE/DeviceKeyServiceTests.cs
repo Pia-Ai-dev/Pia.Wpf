@@ -36,6 +36,30 @@ public class DeviceKeyServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task StartNewDevice_SwitchesToFreshKeysUnderANewIdAndRemembersTheOldOne()
+    {
+        var previous = _settings.SyncDeviceId!;
+        var oldSigningKey = _sut.GetSigningPublicKey();
+        try
+        {
+            Assert.Equal(previous, await _sut.StartNewDeviceAsync("account-1"));
+            _settings.SyncUserId = "account-1";
+
+            Assert.NotEqual(previous, _sut.GetDeviceId());
+            Assert.Equal(_sut.GetDeviceId(), _settings.SyncDeviceId);
+            Assert.Equal(previous, _settings.PreviousInstallationToRemove());
+            Assert.NotEqual(oldSigningKey, _sut.GetSigningPublicKey());
+            Assert.False(_sut.KeyLossDetected);
+            await _settingsMock.Received().SaveSettingsAsync(_settings);
+        }
+        finally
+        {
+            TryDeleteKey($"Pia-Device-ECDSA-{previous}");
+            TryDeleteKey($"Pia-Device-ECDH-{previous}");
+        }
+    }
+
+    [Fact]
     public void GetAgreementPublicKey_ShouldReturn65ByteUncompressedPoint()
     {
         var publicKey = _sut.GetAgreementPublicKey();

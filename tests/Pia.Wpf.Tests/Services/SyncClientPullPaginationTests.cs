@@ -79,7 +79,8 @@ public class SyncClientPullPaginationTests
         var task = (Task)method.Invoke(sut, [client, "http://test", settings])!;
         await task;
         var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
-        return ((int, int, bool, DateTime?))result;
+        var (pulled, errors, pullOk, serverTimestamp, _) = ((int, int, bool, DateTime?, bool))result;
+        return (pulled, errors, pullOk, serverTimestamp);
     }
 
     // --- Sec 6.4: chunked first-sync push ---

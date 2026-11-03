@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Logging;
 using Pia.Native;
 using Pia.Services.Interfaces;
@@ -34,6 +35,17 @@ public class OutputService : IOutputService
         });
 
         _logger.LogDebug("Copied {Length} chars to clipboard", text.Length);
+        return Task.CompletedTask;
+    }
+
+    public Task CopySecretToClipboardAsync(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return Task.CompletedTask;
+
+        Application.Current.Dispatcher.Invoke(() => Clipboard.SetDataObject(ClipboardHistoryExclusion.Wrap(text), copy: true));
+
+        _logger.LogDebug("Copied {Length} chars to clipboard, excluded from history", text.Length);
         return Task.CompletedTask;
     }
 
@@ -96,17 +108,15 @@ public class OutputService : IOutputService
         {
             var title = _windowTracking.GetTrackedWindowTitle();
             var process = _windowTracking.GetTrackedWindowProcessName();
-            _logger.LogInformation("{Operation}: restoring tracked window (process: {Process})",
-                operation, process);
-            _logger.SensitiveDebug("{Operation}: tracked window title was '{Title}'", operation, title);
+            _logger.LogInformation("{Operation}: restoring tracked window", operation);
+            _logger.SensitiveDebug("{Operation}: tracked window was {Process} '{Title}'", operation, process, title);
 
             if (!_windowTracking.RestorePreviousWindow())
             {
-                _logger.LogWarning("{Operation}: RestorePreviousWindow failed (process: {Process})",
-                    operation, process);
-                _logger.SensitiveDebug("{Operation}: failed window title was '{Title}'", operation, title);
-                throw new InvalidOperationException(
-                    $"Failed to restore previous window '{title}' ({process})");
+                _logger.LogWarning("{Operation}: RestorePreviousWindow failed", operation);
+                _logger.SensitiveDebug("{Operation}: failed window was {Process} '{Title}'", operation, process, title);
+                // Callers log this exception at Warning, so it names neither the window nor its process.
+                throw new InvalidOperationException("Failed to restore the previous window");
             }
         }
         else

@@ -69,8 +69,10 @@ public class SyncPullCiphertextRefusalTests
     {
         var method = typeof(SyncClientService)
             .GetMethod("PullPageAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        return await (Task<(bool, bool, int, int, DateTime?, bool)>)method.Invoke(
-            sut, [client, "http://test", settings, DateTime.MinValue, true])!;
+        var (notModified, pullOk, pulled, errors, serverTimestamp, hasMore, _) =
+            await (Task<(bool, bool, int, int, DateTime?, bool, bool)>)method.Invoke(
+                sut, [client, "http://test", settings, DateTime.MinValue, true])!;
+        return (notModified, pullOk, pulled, errors, serverTimestamp, hasMore);
     }
 
     [Fact]

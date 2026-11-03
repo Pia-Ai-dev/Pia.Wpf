@@ -991,6 +991,50 @@
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Updating encryption and syncing data...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Check for device requests</value></data>
+  <data name="Settings_E2EE_OffNotice_Title" xml:space="preserve"><value>Your synced data is not end-to-end encrypted</value></data>
+  <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Content you sync from this account is stored unencrypted on the Pia server. Turn on end-to-end encryption so that only your devices can read it.</value></data>
+  <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Turn on encryption</value></data>
+  <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Not now</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Sync is paused: the server says this account is no longer end-to-end encrypted.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Review</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Encryption turned off on the server</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>This account used end-to-end encryption, but the server now reports it as unencrypted. Sync is paused so your data is not sent in plain text. If nobody reset this account's encryption on purpose, do not continue, and contact your administrator.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Sync without encryption</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Sync without encryption?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Only continue if this account's encryption was reset on purpose. Your data will then be sent to the server without end-to-end encryption, and this device will stop warning you about it.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>New device requesting access</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>A new device wants to join your account. Approve it only if you just signed in on that device yourself and both fingerprints below match.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>The name of this device contained hidden or control characters. They were removed before display. Be cautious: approve only if you are certain this is your device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Requesting device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Device name</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Fingerprint</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Compare this fingerprint character by character with the one shown on the new device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>This device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>After you approve, the new device asks you to confirm this fingerprint.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Approve</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Don't approve</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unnamed device</value></data>
+  <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Reject device?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke this device? If you don't recognize it, revoke it.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Device approved</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>The device has been approved and can now sync.</value></data>
+  <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Device removed</value></data>
+  <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>This device was revoked on the server. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>
+  <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>This device is no longer registered on the server — its record was deleted or expired. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>
+  <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Set up this device again</value></data>
+  <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Sign out</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Device not approved</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} could not be approved. Check your connection and try again from Settings → Account.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>No requests</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>No device is waiting for approval.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Check failed</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia could not check for devices waiting for approval.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Encryption not turned on</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>End-to-end encryption could not be turned on. Check your connection and try again.</value></data>
+  <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Signed out</value></data>
+  <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Your session ended or was revoked on the server. Please sign in again.</value></data>
+  <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>The server refused to renew your session. Please sign in again.</value></data>
+  <data name="Auth_SignedOut_Unreadable" xml:space="preserve"><value>The stored session could not be opened on this device. Please sign in again.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>End-to-End Encryption Setup</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>This account uses end-to-end encryption. Set up this device to access your encrypted data.</value></data>
@@ -1001,7 +1045,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Enter the recovery code you saved when you first enabled encryption. Use this if your other device is unavailable.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Enter recovery code</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Your device fingerprint:</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Cloud Sync &gt; Device Management. Verify this fingerprint matches before approving.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Account and click Check for device requests. Verify this fingerprint matches before approving.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Use recovery code instead</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Enter your recovery code</value></data>
@@ -1012,6 +1056,28 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Your data is being synced. This may take a moment.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Try again</value></data>
+  <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Confirm the approving device</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>The key has arrived, but this device has not accepted it yet. The approving device shows its fingerprint in its approval dialog and under Settings &gt; Account. Accept the key only if it matches the one below.</value></data>
+  <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Approved by: </value></data>
+  <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>It matches</value></data>
+  <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>It doesn't match</value></data>
+  <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>This device did not accept the key. The approving device may not be one of yours: reject any request you don't recognize on your other devices, and set up this device with your recovery code instead.</value></data>
+  <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>The approved key could not be opened on this device. Try again, or use your recovery code instead.</value></data>
+  <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>This computer's encryption keys were lost. Pia signed you out so the computer can join your account again as a new device. Sign in, then confirm it from another device or with your recovery code. Afterwards you can remove the previous installation in the account settings.</value></data>
+  <data name="E2EE_Onboarding_OwnCopyChanged" xml:space="preserve"><value>This device's stored copy of the key was changed on the server, so it was not used. Set the device up again with your recovery code.</value></data>
+  <data name="Settings_E2EE_SignatureRefused_Message" xml:space="preserve"><value>The server accepts this change only from one of your active devices, and this device could not prove that it is one. Restore this device with your recovery code, then try again.</value></data>
+  <data name="Settings_E2EE_PreviousInstallation_Text" xml:space="preserve"><value>This computer joined your account again after its encryption keys were lost. Its previous installation is still listed and can no longer be used.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation" xml:space="preserve"><value>Remove the previous installation of this computer</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Title" xml:space="preserve"><value>Remove previous installation</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Message" xml:space="preserve"><value>The previous installation of this computer will be removed from your account. This computer keeps working.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Title" xml:space="preserve"><value>Could not remove the previous installation</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Message" xml:space="preserve"><value>The previous installation could not be removed. Check your connection and try again.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Title" xml:space="preserve"><value>Previous installation removed</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Message" xml:space="preserve"><value>The previous installation of this computer is no longer part of your account.</value></data>
+  <data name="E2EE_Register_DeviceMismatch" xml:space="preserve"><value>The server knows this session as a different device, so it refused the registration. Sign out, sign in again on this device, and try once more.</value></data>
+  <data name="E2EE_Register_TooManyPending" xml:space="preserve"><value>Too many devices are waiting for approval. Approve or remove one on another device first, then try again.</value></data>
+  <data name="E2EE_Register_DeviceChanged" xml:space="preserve"><value>This device changed on the server while it was registering. Try again.</value></data>
+  <data name="E2EE_Register_Generic" xml:space="preserve"><value>The server refused to register this device.</value></data>
   <!-- Recovery code dialog (shown when enabling E2EE from settings) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Recovery Code</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Save Your Recovery Code</value></data>
@@ -1754,4 +1820,25 @@
   <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Locked by your organization: this setting is enforced by Pia policy and cannot be changed here.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Sign out of Pia Cloud</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Do you also want to remove this account's data from this device? This covers chats, history, todos, templates, personas, your own AI providers and synced preferences. Everything stays in your Pia Cloud account and comes back when you sign in again. Clearing restarts Pia.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Sign out and clear</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Sign out and keep</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Before you sign in</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>There is data on this device. If you keep it, it is uploaded into the account you sign in to. If you clear it first, Pia removes it from this device, including changes made while you were signed out, and restarts. You then need to sign in again.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Keep and sign in</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Clear first</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>Pia's memory on this device is not removed and stays available after you switch accounts.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>API keys for your own AI providers are not stored in Pia Cloud. You will need to enter them again.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API keys for your own AI providers are removed from this device. Unless your account uses end-to-end encryption, you will need to enter them again.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Couldn't upload your latest changes</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Some changes on this device have not reached Pia Cloud. Clear this device anyway? Changes that were not uploaded are lost.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Uploading your latest changes…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Signing out…</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Local data not removed yet</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia couldn't finish removing local data. Restart Pia now to try again?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Account deleted</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Your Pia Cloud account has been deleted. Do you also want to remove its data from this device? Clearing restarts Pia. This cannot be undone.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Clear this device</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Keep on this device</value></data>
 </root>

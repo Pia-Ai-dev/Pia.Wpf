@@ -2,6 +2,7 @@ using System.Net.Http;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Pia.Localization;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -41,6 +42,14 @@ public partial class E2EEOnboardingViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = "";
 
+    [ObservableProperty]
+    private string _approverFingerprint = "";
+
+    [ObservableProperty]
+    private string _approverDeviceName = "";
+
+    private KeyHandover? _pendingHandover;
+
     /// <summary>
     /// Raised when onboarding completes successfully and sync should resume.
     /// </summary>
@@ -64,9 +73,61 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         _logger = logger;
     }
 
+    /// <summary>Offers an already-active device's server copy of the key for confirmation, so it needs no new
+    /// approval round; false when there is none and the normal paths apply.</summary>
+    public async Task<bool> TryResumeKeyHandoverAsync()
+    {
+        if (State != OnboardingState.Initial)
+            return false;
+
+        KeyHandover handover;
+        try
+        {
+            var status = await _deviceMgmt.GetDeviceStatusAsync(_deviceKeys.GetDeviceId());
+            if (status is not { IsApproved: true })
+                return false;
+
+            handover = await _deviceMgmt.FetchKeyHandoverAsync();
+        }
+        catch (DeviceKeyLostException)
+        {
+            return await ReplaceLostDeviceAsync(confirmed: true);
+        }
+        catch (UnverifiedApprovalException)
+        {
+            ShowUnverifiedApproval();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not offer this device's existing copy of the key");
+            return false;
+        }
+
+        try
+        {
+            await OfferHandoverAsync(handover);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Accepting this device's own copy of the key failed");
+            if (!await ReplaceLostDeviceAsync())
+            {
+                ErrorMessage = LocalizationSource.Instance[ex is StoredKeyCopyChangedException
+                    ? "E2EE_Onboarding_OwnCopyChanged"
+                    : "E2EE_Onboarding_Confirm_AcceptFailed"];
+                State = OnboardingState.Error;
+            }
+        }
+        return true;
+    }
+
     [RelayCommand]
     private async Task StartDeviceApprovalAsync()
     {
+        if (await TryResumeKeyHandoverAsync())
+            return;
+
         try
         {
             ErrorMessage = null;
@@ -84,6 +145,12 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             _pollCts = new CancellationTokenSource();
             _consecutivePollErrors = 0;
             _ = PollForApprovalAsync(_pollCts.Token);
+        }
+        catch (DeviceRegistrationRejectedException ex)
+        {
+            _logger.LogWarning(ex, "Device registration refused in onboarding");
+            ErrorMessage = ex.UserMessage;
+            State = OnboardingState.Error;
         }
         catch (Exception ex)
         {
@@ -111,12 +178,16 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             return;
         }
 
+        if (await ReplaceLostDeviceAsync())
+            return;
+
         try
         {
             ErrorMessage = null;
             State = OnboardingState.Activating;
             StatusMessage = "Verifying recovery code...";
 
+            await _deviceMgmt.ThrowIfDeviceKeysLostAsync();
             // Register or re-register if session expired
             await EnsureOnboardingSessionAsync();
 
@@ -139,9 +210,21 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             catch (Exception retryEx)
             {
                 _logger.LogError(retryEx, "Recovery activation retry failed");
-                ErrorMessage = "Activation failed. The session may have been invalidated. Please try again.";
+                ErrorMessage = retryEx is DeviceRegistrationRejectedException rejection
+                    ? rejection.UserMessage
+                    : "Activation failed. The session may have been invalidated. Please try again.";
                 State = OnboardingState.EnteringRecoveryCode;
             }
+        }
+        catch (DeviceKeyLostException)
+        {
+            await ReplaceLostDeviceAsync(confirmed: true);
+        }
+        catch (DeviceRegistrationRejectedException ex)
+        {
+            _logger.LogWarning(ex, "Device registration refused during recovery activation");
+            ErrorMessage = ex.UserMessage;
+            State = OnboardingState.EnteringRecoveryCode;
         }
         catch (Exception ex)
         {
@@ -155,9 +238,114 @@ public partial class E2EEOnboardingViewModel : ObservableObject
     private void GoBack()
     {
         StopPolling();
+        ForgetPendingHandover();
         ErrorMessage = null;
         _onboardingSessionId = null;
         State = OnboardingState.Initial;
+    }
+
+    [RelayCommand]
+    private async Task ConfirmApproverAsync()
+    {
+        if (_pendingHandover is not { } handover)
+            return;
+        ForgetPendingHandover();
+
+        try
+        {
+            ErrorMessage = null;
+            State = OnboardingState.Activating;
+            StatusMessage = "Device approved! Fetching encryption key...";
+
+            await _deviceMgmt.AcceptKeyHandoverAsync(handover);
+            await CompleteOnboardingAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Accepting the approved key failed");
+            StatusMessage = "";
+            if (!await ReplaceLostDeviceAsync())
+            {
+                ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_AcceptFailed"];
+                _onboardingSessionId = null;
+                State = OnboardingState.Error;
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void RejectApprover()
+    {
+        if (_pendingHandover is null)
+            return;
+        ForgetPendingHandover();
+
+        _logger.LogWarning("The approving device's fingerprint did not match; the key was not accepted");
+        StatusMessage = "";
+        ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Confirm_Mismatch"];
+        _onboardingSessionId = null;
+        State = OnboardingState.Error;
+    }
+
+    private async Task OfferHandoverAsync(KeyHandover handover)
+    {
+        if (handover.IsOwnCopy)
+        {
+            await _deviceMgmt.AcceptKeyHandoverAsync(handover);
+            await CompleteOnboardingAsync();
+            return;
+        }
+
+        // The server picks which device counts as the approver, so only a person comparing
+        // fingerprints can tell a device they own from one the server added.
+        StopPolling();
+        _pendingHandover = handover;
+        ApproverFingerprint = handover.ApproverFingerprint ?? "";
+        var approverName = DeviceNameDisplay.Sanitize(handover.ApproverDeviceName).Text;
+        ApproverDeviceName = approverName.Length > 0
+            ? approverName
+            : LocalizationSource.Instance["Settings_E2EE_UnnamedDevice"];
+        StatusMessage = "";
+        State = OnboardingState.ConfirmingApprover;
+    }
+
+    private void ShowUnverifiedApproval()
+    {
+        StatusMessage = "";
+        ErrorMessage = "The approval could not be verified, so this device did not accept the key. Use your recovery code instead.";
+        _onboardingSessionId = null;
+        State = OnboardingState.Error;
+    }
+
+    // Lost keys cannot sign for the old id, so the computer joins again under a new one.
+    private async Task<bool> ReplaceLostDeviceAsync(bool confirmed = false)
+    {
+        if (!confirmed && !_deviceKeys.KeyLossDetected)
+            return false;
+
+        _logger.LogWarning("This device's E2EE keys were lost; replacing it under a new device id");
+        StopPolling();
+        ForgetPendingHandover();
+        _onboardingSessionId = null;
+        StatusMessage = "";
+        ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_KeyLost"];
+        State = OnboardingState.Error;
+        try
+        {
+            await _deviceMgmt.ReplaceLostDeviceAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Replacing this device after its keys were lost failed");
+        }
+        return true;
+    }
+
+    private void ForgetPendingHandover()
+    {
+        _pendingHandover = null;
+        ApproverFingerprint = "";
+        ApproverDeviceName = "";
     }
 
     private async Task EnsureOnboardingSessionAsync()
@@ -178,7 +366,6 @@ public partial class E2EEOnboardingViewModel : ObservableObject
         {
             while (!ct.IsCancellationRequested)
             {
-                // Check session timeout
                 var elapsed = DateTime.UtcNow - startTime;
                 if (elapsed > SessionTimeout)
                 {
@@ -190,7 +377,6 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                     return;
                 }
 
-                // Show remaining time after 5 minutes
                 if (elapsed > TimeSpan.FromMinutes(5))
                 {
                     var remaining = SessionTimeout - elapsed;
@@ -202,11 +388,11 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                 try
                 {
                     var status = await _deviceMgmt.GetDeviceStatusAsync(deviceId);
-                    _consecutivePollErrors = 0; // Reset on success
+                    ct.ThrowIfCancellationRequested();
+                    _consecutivePollErrors = 0;
 
                     if (status is null)
                     {
-                        // Device not found — may have been revoked or re-keyed
                         _logger.LogWarning("Device status returned null, device may have been revoked");
                         ErrorMessage = "This device was not found on the server. It may have been rejected or the encryption was re-keyed. Please try again.";
                         _onboardingSessionId = null;
@@ -228,21 +414,31 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         _logger.LogInformation("Device approved, fetching UMK");
                         StatusMessage = "Device approved! Fetching encryption key...";
 
+                        KeyHandover handover;
                         try
                         {
-                            await _deviceMgmt.FetchAndUnwrapUmkAsync();
+                            handover = await _deviceMgmt.FetchKeyHandoverAsync();
+                            ct.ThrowIfCancellationRequested();
                         }
-                        catch (UnverifiedApprovalException)
+                        catch (UnverifiedApprovalException) when (!ct.IsCancellationRequested)
                         {
-                            StatusMessage = "";
-                            ErrorMessage = "The approval could not be verified, so this device did not accept the key. Use your recovery code instead.";
-                            _onboardingSessionId = null;
-                            State = OnboardingState.Error;
+                            ShowUnverifiedApproval();
                             return;
                         }
-                        await CompleteOnboardingAsync();
+
+                        await OfferHandoverAsync(handover);
                         return;
                     }
+                }
+                // Reset or Cancel already set the screen; a cancelled poll must not overwrite it.
+                catch (Exception) when (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (DeviceKeyLostException)
+                {
+                    await ReplaceLostDeviceAsync(confirmed: true);
+                    return;
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception pollEx)
@@ -258,22 +454,21 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                         return;
                     }
 
-                    // Transient error — continue polling
                     StatusMessage = "Connection issue, retrying...";
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            // Polling was cancelled (user navigated away)
+            // The user navigated away.
         }
     }
 
     private async Task CompleteOnboardingAsync()
     {
-        // Persist E2EE state
         var settings = await _settingsService.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         await _settingsService.SaveSettingsAsync(settings);
 
         DeviceFingerprint = _deviceKeys.GetFingerprint();
@@ -296,5 +491,17 @@ public partial class E2EEOnboardingViewModel : ObservableObject
     public void Cleanup()
     {
         StopPolling();
+    }
+
+    public void Reset()
+    {
+        StopPolling();
+        ForgetPendingHandover();
+        _onboardingSessionId = null;
+        RecoveryCodeInput = "";
+        DeviceFingerprint = "";
+        StatusMessage = "";
+        ErrorMessage = null;
+        State = OnboardingState.Initial;
     }
 }

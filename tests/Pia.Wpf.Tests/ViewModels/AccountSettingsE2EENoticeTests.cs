@@ -1,0 +1,215 @@
+namespace Pia.Tests.ViewModels;
+
+using System.Globalization;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Pia.Models;
+using Pia.Services.Credits;
+using Pia.Services.E2EE;
+using Pia.Services.Interfaces;
+using Pia.Shared.E2EE;
+using Pia.Tests.TestInfrastructure;
+using Pia.ViewModels;
+using Xunit;
+
+public class AccountSettingsE2EENoticeTests
+{
+    private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
+    private readonly IAuthService _auth = Substitute.For<IAuthService>();
+    private readonly ISyncClientService _sync = Substitute.For<ISyncClientService>();
+    private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
+    private readonly IDeviceManagementService _deviceMgmt = Substitute.For<IDeviceManagementService>();
+    private readonly IDeviceKeyService _deviceKeys = Substitute.For<IDeviceKeyService>();
+    private readonly IDialogService _dialogs = Substitute.For<IDialogService>();
+
+    public AccountSettingsE2EENoticeTests()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings());
+        _loc.Culture.Returns(CultureInfo.GetCultureInfo("en"));
+        _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
+        _loc.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci[0]}|{string.Join("|", (object[])ci[1])}");
+    }
+
+    private AccountSettingsViewModel CreateSut(bool signedIn = true)
+    {
+        // AccountSettingsViewModel demands a captured context; inline keeps the assertions synchronous.
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+
+        var sut = new AccountSettingsViewModel(
+            NullLogger<SettingsViewModel>.Instance, _settings, _dialogs,
+            Substitute.For<global::Wpf.Ui.ISnackbarService>(), _auth, _sync, _loc, _deviceMgmt,
+            _deviceKeys, Substitute.For<IMemoryService>(), Substitute.For<IPolicyService>(),
+            new E2EEOnboardingViewModel(
+                _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
+                NullLogger<E2EEOnboardingViewModel>.Instance),
+            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
+        sut.IsSyncLoggedIn = signedIn;
+        return sut;
+    }
+
+    [Fact]
+    public void SignedInWithoutEncryption_ShowsTheNotice()
+        => Assert.True(CreateSut().IsE2EEOffNoticeVisible);
+
+    [Fact]
+    public void SignedOut_ShowsNoNotice()
+        => Assert.False(CreateSut(signedIn: false).IsE2EEOffNoticeVisible);
+
+    [Fact]
+    public void AnAccountThatNeedsOnboarding_ShowsTheOnboardingInstead()
+    {
+        var sut = CreateSut();
+        sut.IsE2EEOnboardingRequired = true;
+
+        Assert.False(sut.IsE2EEOffNoticeVisible);
+    }
+
+    [Fact]
+    public async Task DismissingTheNotice_HidesItAndLeavesEncryptionOff()
+    {
+        var sut = CreateSut();
+
+        sut.DismissE2EEOffNoticeCommand.Execute(null);
+
+        Assert.False(sut.IsE2EEOffNoticeVisible);
+        Assert.False(sut.IsE2EEEnabled);
+        await _deviceMgmt.DidNotReceive().BootstrapFirstDeviceAsync();
+    }
+
+    [Fact]
+    public async Task TheNoticeButton_RunsTheSameEnableFlowAsTheToggle()
+    {
+        var sut = CreateSut();
+        var raised = new List<string?>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        sut.EnableE2EEFromNoticeCommand.Execute(null);
+
+        Assert.True(sut.IsE2EEEnabled);
+        Assert.False(sut.IsE2EEOffNoticeVisible);
+        Assert.Contains(nameof(AccountSettingsViewModel.IsE2EEOffNoticeVisible), raised);
+        await _sync.Received(1).StopBackgroundSyncAndWaitAsync();
+        await _deviceMgmt.Received(1).BootstrapFirstDeviceAsync();
+    }
+
+    [Fact]
+    public void TheNoticeButton_IsDisabledWhileEncryptionIsBeingEnabled()
+    {
+        var sut = CreateSut();
+        sut.CanToggleE2EE = false;
+
+        Assert.False(sut.EnableE2EEFromNoticeCommand.CanExecute(null));
+        Assert.False(sut.IsE2EEOffNoticeVisible);
+    }
+
+    // The approver's own fingerprint is what the joining device asks the person to compare next.
+    [Fact]
+    public async Task TheApprovalDialog_ShowsBothFingerprints()
+    {
+        _deviceKeys.ComputeFingerprint("join-key").Returns("JOIN-FP");
+        _deviceKeys.GetFingerprint().Returns("OWN-FP");
+        GivenPendingDevice("New PC");
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowDeviceApprovalDialogAsync(
+            new DeviceApprovalPrompt("New PC", false, "JOIN-FP", "OWN-FP"));
+        await _deviceMgmt.DidNotReceive().ApproveDeviceAsync(Arg.Any<string>(), Arg.Any<DeviceInfo>());
+    }
+
+    [Fact]
+    public async Task TheApprovalDialog_ShowsAForgedFingerprintLineAsPartOfTheNameAndFlagsIt()
+    {
+        GivenPendingDevice("New PC\r\n\r\nFingerprint: AAAA-AAAA-AAAA-AAAA");
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowDeviceApprovalDialogAsync(Arg.Is<DeviceApprovalPrompt>(p =>
+            p.DeviceName == "New PC Fingerprint: AAAA-AAAA-AAAA-AAAA" && p.NameHadHiddenCharacters));
+        await _dialogs.Received(1).ShowConfirmationDialogAsync(
+            "Settings_E2EE_RejectDevice_Title",
+            "Settings_E2EE_RejectDevice_Message");
+    }
+
+    [Fact]
+    public async Task TheApprovalDialog_NamesADeviceWithoutAVisibleName()
+    {
+        GivenPendingDevice("\u202E\u200B");
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowDeviceApprovalDialogAsync(Arg.Is<DeviceApprovalPrompt>(p =>
+            p.DeviceName == "Settings_E2EE_UnnamedDevice" && p.NameHadHiddenCharacters));
+    }
+
+    [Fact]
+    public async Task ApprovingSignsTheDeviceAsReported_NotTheDisplayName()
+    {
+        const string rawName = "New PC\u202Etxt";
+        GivenPendingDevice(rawName);
+        _dialogs.ShowDeviceApprovalDialogAsync(Arg.Any<DeviceApprovalPrompt>()).Returns(true);
+
+        await CreateSut().CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).ApproveDeviceAsync("session-1", Arg.Is<DeviceInfo>(d => d.DeviceName == rawName));
+    }
+
+    private void GivenPendingDevice(string deviceName) =>
+        _deviceMgmt.GetDevicesAsync().Returns(new DeviceListResponse
+        {
+            Devices =
+            [
+                new DeviceInfo
+                {
+                    DeviceId = "dev-new", DeviceName = deviceName, Status = DeviceStatus.Pending,
+                    AgreementPublicKey = "join-key", SigningPublicKey = "sign-key", OnboardingSessionId = "session-1",
+                },
+            ],
+        });
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AllowUnencryptedSync_HandsTheServiceTheAccountFromBeforeTheDialog(bool stillHolds)
+    {
+        var stored = new AppSettings { SyncUserId = "account-a" };
+        _settings.GetSettingsAsync().Returns(stored);
+        _sync.IsE2EEDowngradeDetected.Returns(true);
+        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(_ =>
+        {
+            stored.SyncUserId = "account-b";
+            return true;
+        });
+        _sync.AllowUnencryptedSyncAsync(Arg.Any<string>()).Returns(stillHolds);
+        var sut = CreateSut();
+
+        await sut.AllowUnencryptedSyncCommand.ExecuteAsync(null);
+
+        await _sync.Received(1).AllowUnencryptedSyncAsync("account-a");
+        if (stillHolds)
+        {
+            await _sync.Received(1).PerformFirstSyncMigrationAsync();
+            _sync.Received(1).StartBackgroundSync();
+        }
+        else
+        {
+            await _sync.DidNotReceive().PerformFirstSyncMigrationAsync();
+            _sync.DidNotReceive().StartBackgroundSync();
+        }
+    }
+
+    [Fact]
+    public async Task AllowUnencryptedSync_WithoutADowngrade_AsksNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings { SyncUserId = "account-a" });
+        var sut = CreateSut();
+
+        await sut.AllowUnencryptedSyncCommand.ExecuteAsync(null);
+
+        await _dialogs.DidNotReceive().ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+        await _sync.DidNotReceive().AllowUnencryptedSyncAsync(Arg.Any<string>());
+    }
+}

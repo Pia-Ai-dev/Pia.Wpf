@@ -366,7 +366,7 @@ public class TokenizingAiClientServiceTests
             new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file", new Dictionary<string, object?> { ["path"] = "notes.md" })]),
             new(ChatRole.Tool, [new FunctionResultContent("c1", "the date is [Phone_9]")]),
         };
-        var sent = new ToolRoundExchange(1, carried);
+        var sent = new ToolRoundExchange(1, carried, carried);
 
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(

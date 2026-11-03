@@ -45,7 +45,8 @@ public class FirstRunWizardWindowParseTests
         var viewModel = new FirstRunWizardViewModel(
             settings, memory, voice, loc, auth, providers, sync,
             deviceMgmt, policy, onboardingVm, e2eeSetupVm,
-            NullLogger<FirstRunWizardViewModel>.Instance);
+            NullLogger<FirstRunWizardViewModel>.Instance,
+            Substitute.For<IDialogService>(), Substitute.For<ILocalDataResetService>());
 
         return new Pia.Views.FirstRunWizardWindow(
             viewModel,

@@ -108,6 +108,85 @@ public sealed class TokenizedToolPipelineTests : IDisposable
         Assert.DoesNotContain("[Phone_", onDisk, StringComparison.Ordinal);
     }
 
+    /// <summary>Tokenizing rewrites text and detokenizes arguments, never an id: the server matches on the toolu_ id.</summary>
+    [Fact]
+    public async Task Tokenizing_KeepsEveryCallIdVerbatim_InTheRequestAndAtTheHandler()
+    {
+        var detector = Substitute.For<IPiiDetector>();
+        detector.DetectPii(Arg.Any<string>()).Returns((IReadOnlyList<PiiMatch>)[]);
+        detector.DetectPiiInStructured(Arg.Any<string>(), Arg.Any<string>()).Returns((IReadOnlyList<PiiMatch>)[]);
+        var memory = Substitute.For<IMemoryService>();
+        memory.GetObjectsByTypeAsync(Arg.Any<string>()).Returns(new List<MemoryObject>());
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var tokenMap = new TokenMapService(detector, memory, settings);
+
+        IList<ChatMessage>? request = null;
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                request = ci.ArgAt<IList<ChatMessage>>(0);
+                return OneCall(ci.ArgAt<ToolCallHandler?>(3), "toolu_02Qrs");
+            });
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        List<ChatMessage> history =
+        [
+            new(ChatRole.User, "summarise"),
+            new(ChatRole.Assistant,
+            [
+                new TextContent("reading it"),
+                new FunctionCallContent("toolu_01AbC-dEf_9", "read_file", new Dictionary<string, object?> { ["path"] = "a.csv" }),
+            ]),
+            new(ChatRole.Tool, [new FunctionResultContent("toolu_01AbC-dEf_9", "a body")]),
+        ];
+        var handled = new List<string>();
+        ToolCallHandler handler = (call, _) =>
+        {
+            handled.Add(call.CallId);
+            return Task.FromResult<object?>("ok");
+        };
+
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            await foreach (var _ in sut.GetChatCompletionWithToolsAsync(
+                history,
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                tools: null, toolHandler: handler, cancellationToken: TestContext.Current.CancellationToken))
+            {
+            }
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+
+        Assert.NotNull(request);
+        Assert.NotSame(history, request);
+        Assert.Equal("toolu_01AbC-dEf_9",
+            Assert.Single(request!.SelectMany(m => m.Contents).OfType<FunctionCallContent>()).CallId);
+        Assert.Equal("toolu_01AbC-dEf_9",
+            Assert.Single(request!.SelectMany(m => m.Contents).OfType<FunctionResultContent>()).CallId);
+        Assert.Equal(["toolu_02Qrs"], handled);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> OneCall(ToolCallHandler? handler, string callId)
+    {
+        await Task.Yield();
+        if (handler is not null)
+            await handler(new FunctionCallContent(callId, "read_file", new Dictionary<string, object?>()), new ToolDispatchContext(1));
+
+        yield return new TextDelta("done");
+        yield return new Finished(null, "test-model");
+    }
+
     /// <summary>Round 1 reads, round 2 writes back what round 1 returned — the two-round shape the tool loop runs.</summary>
     private static async IAsyncEnumerable<ChatStreamItem> EchoRounds(ToolCallHandler? handler, Action<string> observed)
     {

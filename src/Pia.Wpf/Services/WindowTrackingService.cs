@@ -154,9 +154,9 @@ public unsafe partial class WindowTrackingService : IWindowTrackingService
         if (!IsWindow(_previousWindowHandle))
         {
             _logger.LogWarning(
-                "RestorePreviousWindow: tracked window {Handle} (process: {Process}) is no longer valid",
-                _previousWindowHandle, _trackedProcessName);
-            _logger.SensitiveDebug("RestorePreviousWindow: invalid tracked window title: '{Title}'", _trackedWindowTitle);
+                "RestorePreviousWindow: tracked window {Handle} is no longer valid", _previousWindowHandle);
+            _logger.SensitiveDebug("RestorePreviousWindow: invalid tracked window: {Process} '{Title}'",
+                _trackedProcessName, _trackedWindowTitle);
             _previousWindowHandle = IntPtr.Zero;
             _trackedWindowTitle = null;
             _trackedProcessName = null;
@@ -165,9 +165,8 @@ public unsafe partial class WindowTrackingService : IWindowTrackingService
 
         var result = SetForegroundWindow(_previousWindowHandle);
         _logger.LogInformation(
-            "RestorePreviousWindow: SetForegroundWindow({Handle}) (process: {Process}) returned {Result}",
-            _previousWindowHandle, _trackedProcessName, result);
-        _logger.SensitiveDebug("RestorePreviousWindow: title was '{Title}'", _trackedWindowTitle);
+            "RestorePreviousWindow: SetForegroundWindow({Handle}) returned {Result}", _previousWindowHandle, result);
+        _logger.SensitiveDebug("RestorePreviousWindow: window was {Process} '{Title}'", _trackedProcessName, _trackedWindowTitle);
         return result;
     }
 

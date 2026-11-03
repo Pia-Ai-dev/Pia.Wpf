@@ -14,6 +14,7 @@ using Pia.Paths;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.LocalDataReset;
 using Pia.Services.Providers;
 using Pia.Services.Scheduling;
 using Pia.ViewModels;
@@ -91,6 +92,9 @@ public static class Bootstrapper
         // reflect-invoke ConfigureServices against the real, un-redirected profile.
         var logRetention = LogFileRetention.Sweep(PiaPaths.LogsDirectory, LogFileRetention.DefaultRetainedDays);
 
+        // An upgraded install can still hold recordings in %TEMP%.
+        var orphanedRecordings = RecordingFileStore.Sweep([PiaPaths.RecordingsDirectory, System.IO.Path.GetTempPath()]);
+
         // The load-bearing consent sweep: an install that only runs an hour a day never reaches the daily
         // timer in ConsentRetentionBackgroundService, and its data would age out on nobody's clock.
         var consentRetention = Services.Consent.ConsentRetention.Sweep(
@@ -117,9 +121,16 @@ public static class Bootstrapper
             "Data directories: Roaming={Roaming}, Local={Local}, Overridden={Overridden}",
             PiaPaths.RoamingDataDirectory, PiaPaths.LocalDataDirectory, PiaPaths.IsOverridden);
 
+        // Before the policy, settings or any store is read, so nothing caches pre-clear state.
+        await LocalDataResetStartup.RunIfPendingAsync(
+            () => _serviceProvider.GetRequiredService<LocalDataWipeService>().WipeAsync(), bootstrapLogger);
+
         bootstrapLogger.LogInformation(
             "Log retention: kept {Kept}, deleted {Deleted}, skipped {Skipped}, cutoff {Cutoff:yyyy-MM-dd}",
             logRetention.Kept, logRetention.Deleted, logRetention.Skipped, logRetention.Cutoff);
+
+        if (orphanedRecordings > 0)
+            bootstrapLogger.LogInformation("Deleted {Count} orphaned voice recording(s)", orphanedRecordings);
 
         Services.Consent.ConsentRetention.LogOutcome(bootstrapLogger, consentRetention);
 
@@ -144,23 +155,33 @@ public static class Bootstrapper
 
         if (!IsDevMode)
         {
+            var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
+            var settings = await settingsService.GetSettingsAsync();
+            var changed = false;
+
             if (serverUrlEnforced)
             {
                 bootstrapLogger.LogInformation(
                     "ServerUrl is enforced by enterprise policy; skipping production URL write");
             }
-            else
+            else if (settings.ServerUrl != ProductionServerUrl)
             {
                 // ProductionServerUrl honors the PIA_CLOUD_SERVER_URL env var override (for dev/staging).
-                var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
-                var settings = await settingsService.GetSettingsAsync();
-                if (settings.ServerUrl != ProductionServerUrl)
-                {
-                    settings.ServerUrl = ProductionServerUrl;
-                    settings.TrustSelfSignedCertificates = false;
-                    await settingsService.SaveSettingsAsync(settings);
-                }
+                settings.ServerUrl = ProductionServerUrl;
+                settings.TrustSelfSignedCertificates = false;
+                changed = true;
             }
+
+            // Release builds have no UI for the trust toggle, so only a policy may keep it on.
+            if (settings.TrustSelfSignedCertificates
+                && !policyService.IsEnforced(nameof(AppSettings.TrustSelfSignedCertificates)))
+            {
+                settings.TrustSelfSignedCertificates = false;
+                changed = true;
+            }
+
+            if (changed)
+                await settingsService.SaveSettingsAsync(settings);
         }
         else if (!string.IsNullOrWhiteSpace(envServerUrl))
         {
@@ -186,6 +207,21 @@ public static class Bootstrapper
                     await settingsService.SaveSettingsAsync(settings);
                 }
             }
+        }
+
+        var effectiveSettings = await _serviceProvider.GetRequiredService<ISettingsService>().GetSettingsAsync();
+        if (effectiveSettings.TrustSelfSignedCertificates)
+        {
+            bootstrapLogger.LogWarning(
+                "Certificate validation is relaxed for the configured server {Url}; every other host is fully validated",
+                SafeUrl.Format(effectiveSettings.ServerUrl));
+        }
+
+        if (ServerTransportPolicy.IsPlaintextRemote(effectiveSettings.ServerUrl))
+        {
+            bootstrapLogger.LogWarning(
+                "The configured server {Url} is not HTTPS; sign-in and sync travel unencrypted",
+                SafeUrl.Format(effectiveSettings.ServerUrl));
         }
 
         // Derive the vault root from the (relocatable) assistant files folder and run the one-shot
@@ -436,6 +472,9 @@ public static class Bootstrapper
 
         // Infrastructure
         services.AddSingleton<SqliteContext>();
+        services.AddSingleton<LocalDataWipeService>();
+        services.AddSingleton<ILocalDataResetService, LocalDataResetService>();
+        services.AddSingleton<ILocalDataResetIndicator, LocalDataResetIndicator>();
         services.AddSingleton<VaultPathProvider>();
         services.AddSingleton<MarkdownVaultParser>();
         services.AddSingleton<Pia.Infrastructure.Vault.IVaultWriteGate, Pia.Infrastructure.Vault.VaultWriteGate>();
@@ -467,10 +506,10 @@ public static class Bootstrapper
                 {
                     var settings = settingsService.GetSettingsAsync()
                         .ConfigureAwait(false).GetAwaiter().GetResult();
-                    if (settings.TrustSelfSignedCertificates)
+                    if (ServerTransportPolicy.ForServer(settings.TrustSelfSignedCertificates, settings.ServerUrl)
+                        is { } validator)
                     {
-                        handler.ServerCertificateCustomValidationCallback =
-                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                        handler.ServerCertificateCustomValidationCallback = validator;
                     }
                 }
                 return handler;
@@ -903,6 +942,8 @@ public static class Bootstrapper
         services.AddSingleton<IDeviceKeyService, DeviceKeyService>();
         services.AddSingleton<IE2EEService, E2EEService>();
         services.AddSingleton<IRecoveryCodeService, RecoveryCodeService>();
+        services.AddSingleton<IConfirmedApproverStore>(_ => new ConfirmedApproverStore());
+        services.AddSingleton<IDeviceRequestSigner, DeviceRequestSigner>();
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
         services.AddSingleton<IAccountDataService, AccountDataService>();
 
@@ -913,6 +954,7 @@ public static class Bootstrapper
             return new SyncDeleteTrackerService(PiaPaths.RoamingDataDirectory, logger);
         });
         services.AddSingleton<SyncMapper>();
+        services.AddSingleton<AccountTransitionCoordinator>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();
 
@@ -921,6 +963,7 @@ public static class Bootstrapper
         // Provider tool-calling capability probe for the Agent lever/suggestion (R10).
         services.AddSingleton<IProviderCapabilityService, ProviderCapabilityService>();
         services.AddSingleton<AssistantChatSyncService>();
+        services.AddSingleton<IChatSyncFlusher>(sp => sp.GetRequiredService<AssistantChatSyncService>());
 
         // Background services
         services.AddSingleton<ReminderBackgroundService>();

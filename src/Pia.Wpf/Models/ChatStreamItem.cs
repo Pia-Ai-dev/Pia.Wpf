@@ -22,7 +22,12 @@ public sealed record Finished(
 /// built on the tool result, not a continuation of the text streamed before the call.</summary>
 public sealed record ToolRoundCompleted : ChatStreamItem;
 
-/// <summary>The call/result messages one tool round appended, so a caller building a multi-step transcript
-/// can carry them into the next step. Emitted AFTER the dispatch, unlike <see cref="ToolRoundCompleted"/>,
-/// and already in the form the model saw — results are tokenized before they reach this list.</summary>
-public sealed record ToolRoundExchange(int Round, IReadOnlyList<ChatMessage> Messages) : ChatStreamItem;
+/// <summary>One tool round's appended messages, emitted after the dispatch; already tokenized.</summary>
+/// <param name="Messages">Calls and capped results only — the shape that is persisted and resumed.</param>
+/// <param name="Sent">The round exactly as the next request sends it, so a later step can extend that request.</param>
+public sealed record ToolRoundExchange(
+    int Round, IReadOnlyList<ChatMessage> Messages, IReadOnlyList<ChatMessage> Sent) : ChatStreamItem;
+
+/// <summary>The final round's assistant message(s) as received, without reasoning; absent after a re-ask or
+/// wrap-up round, whose nudge the next step would not carry.</summary>
+public sealed record FinalAnswer(IReadOnlyList<ChatMessage> Messages) : ChatStreamItem;

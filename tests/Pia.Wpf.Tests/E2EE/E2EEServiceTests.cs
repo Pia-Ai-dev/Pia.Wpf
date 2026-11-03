@@ -75,8 +75,7 @@ public class E2EEServiceTests
     [Fact]
     public async Task StoreUmkAsync_SurvivesCallerArrayClear()
     {
-        // Reproduces the bug where FetchAndUnwrapUmkAsync / ActivateViaRecoveryAsync
-        // call StoreUmkAsync then Array.Clear on the same byte[], zeroing the cache.
+        // AcceptKeyHandoverAsync and ActivateViaRecoveryAsync call StoreUmkAsync, then Array.Clear on the same byte[].
         var umk = _crypto.GenerateRandomBytes(32);
         var originalUmk = umk.ToArray(); // save a copy for comparison
 
@@ -90,6 +89,18 @@ public class E2EEServiceTests
         Assert.NotNull(loaded);
         Assert.Equal(originalUmk, loaded);
         Assert.NotEqual(new byte[32], loaded); // must not be all zeros
+    }
+
+    [Fact]
+    public async Task StoreUmkAsync_WhenDpapiFails_ThrowsAndKeepsThePreviousUmk()
+    {
+        await _sut.StoreUmkAsync(_crypto.GenerateRandomBytes(32));
+        var persisted = _settings.E2EEEncryptedUmk;
+        _dpapiMock.Encrypt(Arg.Any<string>()).Returns(string.Empty);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.StoreUmkAsync(_crypto.GenerateRandomBytes(32)));
+
+        Assert.Equal(persisted, _settings.E2EEEncryptedUmk);
     }
 
     [Fact]

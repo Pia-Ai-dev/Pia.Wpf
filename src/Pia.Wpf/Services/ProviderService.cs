@@ -30,6 +30,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
 
     protected override List<AiProvider> CreateDefault() => [];
 
+    protected override ILogger Logger => _logger;
+
     private readonly ILogger<ProviderService> _logger;
     private readonly IAiClientService _aiClientService;
     private readonly DpapiHelper _dpapiHelper;

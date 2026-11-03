@@ -4,6 +4,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
+using Pia.Tests.Services;
 using Pia.ViewModels.Models;
 using Xunit;
 
@@ -89,7 +90,7 @@ public sealed class ChatSessionStepTurnTests
     {
         await Task.Yield();
         yield return new ToolRoundCompleted();
-        yield return new ToolRoundExchange(1, roundMessages);
+        yield return new ToolRoundExchange(1, roundMessages, roundMessages);
         yield return new TextDelta(answer);
         yield return new Finished(null, "m");
     }
@@ -132,6 +133,40 @@ public sealed class ChatSessionStepTurnTests
 
         // Model context only — the rendered and persisted transcript keeps one bubble per step.
         Assert.DoesNotContain(session.Messages, m => (m.Content ?? string.Empty).Contains("SKU-1001"));
+    }
+
+    /// <summary>The live twin of the headless prefix test: a step boundary only reads the prompt cache when
+    /// the new request extends the last one.</summary>
+    [Fact]
+    public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest()
+    {
+        var recorder = await RunTwoRecordedStepsAsync("system", "system");
+
+        recorder.AssertStepTwoExtendsStepOne();
+    }
+
+    [Fact]
+    public async Task StepTwosFirstRequest_ExtendsStepOnesLastRequest_UnderAnotherPersona()
+    {
+        var recorder = await RunTwoRecordedStepsAsync("you are Researcher", "you are Writer");
+
+        recorder.AssertStepTwoExtendsStepOne(from: 1);
+    }
+
+    private async Task<StepBoundaryRecorder> RunTwoRecordedStepsAsync(string firstPrompt, string secondPrompt)
+    {
+        var recorder = new StepBoundaryRecorder();
+        StepBoundaryRecorder.RouteReads(_plugins);
+        var session = new ChatSession(_tokenMap, recorder.Ai, _plugins, _cards, _permissions, _loc, _log, _ => true);
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "inventory report"));
+        TaskAmbient.Current = null;
+        TokenMapAmbient.Current = null;
+
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var spec = Spec(tokenizationEnabled: false, supportsTools: true);
+        await session.RunStepTurnAsync(spec with { SystemPrompt = firstPrompt }, ctx, CancellationToken.None);
+        await session.RunStepTurnAsync(spec with { Ordinal = 1, SystemPrompt = secondPrompt }, ctx, CancellationToken.None);
+        return recorder;
     }
 
     /// <summary>Parity with AgentStepInstruction.Compose: both twins say what a cleared result means.</summary>

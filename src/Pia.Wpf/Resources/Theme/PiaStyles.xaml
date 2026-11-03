@@ -433,6 +433,21 @@
     <Setter Property="Foreground"   Value="{DynamicResource TextSubtleBrush}"/>
   </Style>
 
+  <!-- Key fingerprint the user compares across two devices: one font every Windows ships (slashed zero,
+       no ligatures) and no OpenType substitutions, so both screens draw the same glyphs. -->
+  <FontFamily x:Key="PiaFingerprintFont">Consolas</FontFamily>
+  <Style x:Key="PiaFingerprintTextStyle" TargetType="TextBlock">
+    <Setter Property="FontFamily"                        Value="{StaticResource PiaFingerprintFont}"/>
+    <Setter Property="FontSize"                          Value="18"/>
+    <Setter Property="FontWeight"                        Value="SemiBold"/>
+    <Setter Property="Foreground"                        Value="{DynamicResource TextDefaultBrush}"/>
+    <Setter Property="Typography.StandardLigatures"      Value="False"/>
+    <Setter Property="Typography.ContextualLigatures"    Value="False"/>
+    <Setter Property="Typography.DiscretionaryLigatures" Value="False"/>
+    <Setter Property="Typography.ContextualAlternates"   Value="False"/>
+    <Setter Property="Typography.SlashedZero"            Value="True"/>
+  </Style>
+
   <!-- Inline notice strip between a page header and its content. -->
   <Style x:Key="PiaStatusBannerStyle" TargetType="Border">
     <Setter Property="Padding"      Value="12,8"/>

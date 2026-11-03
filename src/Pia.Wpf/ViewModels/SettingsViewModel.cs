@@ -62,7 +62,8 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         IAdvancedCreationLauncher advancedCreation,
         IAccountDataService accountData,
         IFileDialogService fileDialogs,
-        ICreditStatusService creditStatus)
+        ICreditStatusService creditStatus,
+        ILocalDataResetService localDataReset)
     {
         _logger = logger;
 
@@ -83,7 +84,7 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
         var privacyVm = new PrivacySettingsViewModel(logger, settingsService, policyService);
         GeneralVm = new GeneralSettingsViewModel(logger, settingsService, transcriptionService, dialogService, trayIconService, ttsService, snackbarService, localizationService, autostartService, policyService, privacyVm, syncClientService, diagnosticsExportService);
 
-        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, accountData, fileDialogs, creditStatus);
+        AccountVm = new AccountSettingsViewModel(logger, settingsService, dialogService, snackbarService, authService, syncClientService, localizationService, deviceManagement, deviceKeys, memoryService, policyService, onboardingViewModel, accountData, fileDialogs, creditStatus, localDataReset);
 
         PluginsVm = new PluginsSettingsViewModel(this, logger, pluginService, authService, settingsService, dialogService, localizationService, snackbarService, pluginIconLoader);
     }
@@ -109,19 +110,25 @@ public partial class SettingsViewModel : ObservableObject, INavigationAware, IDi
 
     public async Task OnNavigatedToAsync(object? parameter)
     {
+        // Each section on its own: a store file a failed clear left locked must not blank the sections after it.
+        await InitializeSectionAsync(nameof(ProvidersVm), ProvidersVm.InitializeAsync);
+        await InitializeSectionAsync(nameof(OptimizeVm), OptimizeVm.InitializeAsync);
+        await InitializeSectionAsync(nameof(AssistantVm), AssistantVm.InitializeAsync);
+        await InitializeSectionAsync(nameof(GeneralVm), GeneralVm.InitializeAsync);
+        await InitializeSectionAsync(nameof(AccountVm), AccountVm.InitializeAsync);
+        await InitializeSectionAsync(nameof(PluginsVm), PluginsVm.InitializeAsync);
+        await InitializeSectionAsync(nameof(PersonasVm), PersonasVm.InitializeAsync);
+    }
+
+    private async Task InitializeSectionAsync(string section, Func<Task> initialize)
+    {
         try
         {
-            await ProvidersVm.InitializeAsync();
-            await OptimizeVm.InitializeAsync();
-            await AssistantVm.InitializeAsync();
-            await GeneralVm.InitializeAsync();
-            await AccountVm.InitializeAsync();
-            await PluginsVm.InitializeAsync();
-            await PersonasVm.InitializeAsync();
+            await initialize();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize settings");
+            _logger.LogError(ex, "Failed to initialize settings section {Section}", section);
         }
     }
 

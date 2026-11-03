@@ -19,6 +19,9 @@ public interface ICloudCapabilityService
     /// </summary>
     Task<int?> ChatsSchemaVersionAsync(CancellationToken ct = default);
 
+    /// <summary>True only when the server answered the probe and does not advertise chats; a failed probe is not.</summary>
+    Task<bool> ChatsConfirmedOffAsync(CancellationToken ct = default);
+
     /// <summary>
     /// Discard the cached probe result. The next call to <see cref="ChatsSupportedAsync"/>
     /// will re-probe /api/capabilities. Use when a sync operation surfaces a hard signal

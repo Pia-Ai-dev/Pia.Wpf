@@ -70,7 +70,14 @@ function Resolve-Database([string]$Explicit) {
     if (-not (Test-Path -LiteralPath $candidate)) {
         throw "History database not found at $candidate. Pass -DatabasePath, or set PIA_LOCAL_DATA_DIR to the profile you want to read."
     }
-    return (Resolve-Path -LiteralPath $candidate).Path
+    $resolved = (Resolve-Path -LiteralPath $candidate).Path
+    $header = [byte[]]::new(16)
+    $stream = [IO.File]::Open($resolved, 'Open', 'Read', 'ReadWrite, Delete')
+    try { [void]$stream.Read($header, 0, 16) } finally { $stream.Dispose() }
+    if ([Text.Encoding]::ASCII.GetString($header, 0, 15) -ne 'SQLite format 3') {
+        throw "$resolved is encrypted. Run ./scripts/Export-DecryptedHistoryDb.ps1 and pass the copy it prints as -DatabasePath."
+    }
+    return $resolved
 }
 
 function Invoke-Sqlite([string]$Script) {

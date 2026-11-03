@@ -43,7 +43,8 @@ public class AccountSettingsBusinessProfileTests
                 _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
                 NullLogger<E2EEOnboardingViewModel>.Instance),
             Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
-            Substitute.For<ICreditStatusService>());
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
     }
 
     [Fact]

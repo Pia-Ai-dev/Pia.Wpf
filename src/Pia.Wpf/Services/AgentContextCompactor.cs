@@ -360,6 +360,46 @@ internal static class AgentContextCompactor
     private static int ChargeFor(ChatMessage message) =>
         (message.Text?.Length ?? 0) / 4 + ImageCountIn(message) * ImageTokenCharge;
 
+    /// <summary>The client-side input estimate: chars/4 over text, tool calls and results, plus the image charge.</summary>
+    internal static long EstimateInputTokens(IEnumerable<ChatMessage> messages)
+    {
+        long chars = 0;
+        long images = 0;
+        foreach (var message in messages)
+        {
+            images += ImageCountIn(message);
+            foreach (var content in message.Contents)
+            {
+                chars += content switch
+                {
+                    TextContent text => text.Text?.Length ?? 0,
+                    FunctionCallContent call => call.Name.Length + JsonLength(call.Arguments),
+                    FunctionResultContent { Result: string s } => s.Length,
+                    FunctionResultContent result => JsonLength(result.Result),
+                    _ => 0,
+                };
+            }
+        }
+
+        return chars / 4 + images * ImageTokenCharge;
+    }
+
+    // A measurement only, so a value that will not serialize counts as nothing rather than failing the round.
+    private static int JsonLength(object? value)
+    {
+        if (value is null)
+            return 0;
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Serialize(value).Length;
+        }
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            return 0;
+        }
+    }
+
     /// <summary>
     /// How many images the message carries. The media type is matched exactly the way
     /// PiaCloudChatClient's outbound converter matches it, so the pin and the wire agree on what counts

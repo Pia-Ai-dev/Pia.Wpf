@@ -16,6 +16,9 @@ public interface IE2EEService
     /// </summary>
     byte[]? LoadUmk();
 
+    /// <summary>Zeroes and releases the in-memory account key.</summary>
+    void ClearCachedUmk();
+
     /// <summary>
     /// Store UMK in local secure storage (DPAPI-protected).
     /// </summary>

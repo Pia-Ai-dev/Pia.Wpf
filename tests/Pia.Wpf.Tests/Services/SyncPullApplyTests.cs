@@ -69,8 +69,9 @@ public class SyncPullApplyTests : IDisposable
         using var client = new HttpClient(new SingleResponseHandler(status, JsonSerializer.Serialize(response)));
         var method = typeof(SyncClientService)
             .GetMethod("PullChangesAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        return await (Task<(int, int, bool, DateTime?)>)method.Invoke(
+        var (pulled, errors, pullOk, serverTimestamp, _) = await (Task<(int, int, bool, DateTime?, bool)>)method.Invoke(
             sut, [client, "http://test", new AppSettings { SyncEnabled = true, ServerUrl = "http://test" }])!;
+        return (pulled, errors, pullOk, serverTimestamp);
     }
 
     private static SyncPullResponse EmptyResponse() => new() { ServerTimestamp = DateTime.UtcNow };

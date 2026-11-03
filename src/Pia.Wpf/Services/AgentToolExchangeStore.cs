@@ -53,7 +53,7 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
             _connection.Open();
 
             using var pragma = _connection.CreateCommand();
-            pragma.CommandText = "PRAGMA busy_timeout=3000;";
+            pragma.CommandText = SqliteContext.ConnectionPragmas;
             pragma.ExecuteNonQuery();
         }
         else if (_connection.State != System.Data.ConnectionState.Open)
@@ -331,6 +331,41 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Tool-exchange result update failed for row {RowId}", id);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task SetCarriedResultAsync(Guid runId, string callId, string? resultText, CancellationToken ct = default)
+    {
+        if (ct.IsCancellationRequested)
+            return Task.CompletedTask;
+
+        try
+        {
+            lock (_gate)
+            {
+                if (_disposed) return Task.CompletedTask;
+
+                using var cmd = Connection().CreateCommand();
+                cmd.CommandText = """
+                    UPDATE AgentToolExchanges
+                    SET ResultKind = @ResultKind,
+                        ResultText = @ResultText,
+                        Chars = COALESCE(LENGTH(ArgumentsJson), 0) + COALESCE(LENGTH(@ResultText), 0)
+                    WHERE RunId = @RunId AND Kind = 2 AND CallId = @CallId;
+                    """;
+                cmd.Parameters.AddWithValue("@ResultKind",
+                    (int)(resultText is null ? AgentToolExchangeResult.None : AgentToolExchangeResult.Text));
+                cmd.Parameters.AddWithValue("@ResultText", (object?)resultText ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@RunId", runId.ToString());
+                cmd.Parameters.AddWithValue("@CallId", callId);
+                cmd.ExecuteNonQuery();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Carried tool-exchange result update failed for run {RunId}", runId);
         }
 
         return Task.CompletedTask;
