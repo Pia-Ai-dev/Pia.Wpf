@@ -43,7 +43,7 @@ little standalone value, unblocks a High.
   `SectionUpsertService` scores sections by heading similarity alone, and `LintService` skips the
   semantic check, when embeddings are unavailable.
   *Deps:* 2 · *Effort:* XS · *Value:* Med
-- [ ] **6. Quote FTS prefix terms.**
+- [x] **6. Quote FTS prefix terms.**
   One `BuildFtsQuery` serves recall and the legacy full-text search and quotes every prefix term, so a
   query word with punctuation no longer breaks text search.
   *Deps:* 3 (its recall test runs without vectors) · *Effort:* XS · *Value:* Med

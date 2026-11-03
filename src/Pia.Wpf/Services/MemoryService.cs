@@ -305,21 +305,8 @@ public class MemoryService : IMemoryService
             LIMIT 20
             """;
 
-        // Escape FTS5 special characters, use exact + prefix matching
-        var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var ftsTerms = new List<string>();
-        foreach (var term in terms)
-        {
-            var escaped = EscapeFtsQuery(term);
-            ftsTerms.Add($"\"{escaped}\"");
-            if (escaped.Length >= 3)
-                ftsTerms.Add($"{escaped}*");
-            // Compound word decomposition: generate sub-token prefixes
-            foreach (var sub in GenerateSubTokenPrefixes(escaped))
-                ftsTerms.Add($"{sub}*");
-        }
-        var ftsQuery = string.Join(" OR ", ftsTerms);
-        command.Parameters.AddWithValue("@Query", ftsQuery);
+        // Sub-token prefixes let a compound word match its parts.
+        command.Parameters.AddWithValue("@Query", BuildFtsQuery(query, includeSubTokenPrefixes: true));
 
         try
         {
@@ -1690,21 +1677,23 @@ public class MemoryService : IMemoryService
         return trimmed.Length > 200 ? trimmed[..200] : trimmed;
     }
 
-    /// <summary>
-    /// Build a sanitized FTS5 MATCH query: each token is double-quoted (so special characters are
-    /// treated as literal terms) and OR-joined, mirroring <see cref="FullTextSearchAsync"/>.
-    /// </summary>
-    private static string BuildFtsQuery(string query)
+    // Every term is quoted, prefix forms too: a bare "Marco,*" is an FTS5 syntax error.
+    internal static string BuildFtsQuery(string query, bool includeSubTokenPrefixes = false)
     {
         var terms = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var ftsTerms = new List<string>();
         foreach (var term in terms)
         {
             var escaped = EscapeFtsQuery(term);
-            if (escaped.Length == 0) continue;
             ftsTerms.Add($"\"{escaped}\"");
-            if (escaped.Length >= 3)
-                ftsTerms.Add($"{escaped}*");
+            if (term.Length >= 3)
+                ftsTerms.Add($"\"{escaped}\"*");
+
+            if (!includeSubTokenPrefixes) continue;
+
+            // Cut from the raw term: cutting the escaped one can split a doubled quote.
+            foreach (var sub in GenerateSubTokenPrefixes(term))
+                ftsTerms.Add($"\"{EscapeFtsQuery(sub)}\"*");
         }
 
         return string.Join(" OR ", ftsTerms);
