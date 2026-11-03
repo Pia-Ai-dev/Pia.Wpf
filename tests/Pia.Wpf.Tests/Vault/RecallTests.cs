@@ -103,10 +103,12 @@ public class RecallTests : IDisposable
         var indexer = new VaultIndexer(_ctx, _store, _parser, _embeddings, NullLogger<VaultIndexer>.Instance);
         await indexer.RebuildAllAsync();
 
-        return new MemoryService(
-            _ctx, NullLogger<MemoryService>.Instance, _embeddings, _deleteTracker, _store,
-            new SectionUpsertService(_embeddings));
+        return NewService(_embeddings);
     }
+
+    private MemoryService NewService(IEmbeddingService embeddings) =>
+        new(_ctx, NullLogger<MemoryService>.Instance, embeddings, _deleteTracker, _store,
+            new SectionUpsertService(embeddings));
 
     [Fact]
     public async Task Recall_returns_hits_from_both_inside_and_outside_memory_folder()
@@ -120,6 +122,17 @@ public class RecallTests : IDisposable
         // Whole-vault scope: a hit from the /memory/ file AND from the root-level file.
         Assert.Contains(hits, h => h.FilePath.Replace('\\', '/') == "memory/profile.md");
         Assert.Contains(hits, h => h.FilePath.Replace('\\', '/') == "notes.md");
+    }
+
+    [Fact]
+    public async Task Recall_returns_text_hits_when_embeddings_are_unavailable()
+    {
+        await SeedAndBuildAsync();
+        var service = NewService(new UnavailableEmbeddingService());
+
+        var hits = await service.RecallAsync("Coffee");
+
+        Assert.Contains(hits, h => h.Heading == "Coffee Preferences");
     }
 
     [Fact]

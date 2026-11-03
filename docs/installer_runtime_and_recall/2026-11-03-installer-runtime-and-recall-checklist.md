@@ -31,7 +31,7 @@ little standalone value, unblocks a High.
   `EmbeddingService` throws `EmbeddingUnavailableException` without retrying ONNX and logs the Win32
   load error once, so the next support log names the cause.
   *Deps:* none · *Effort:* S · *Value:* Enabler
-- [ ] **3. Let recall answer without the vector tier.**
+- [x] **3. Let recall answer without the vector tier.**
   `MemoryService.RecallAsync` skips the vector tier when embeddings are unavailable instead of failing
   the assistant's reply, and its FTS warning stops logging query text.
   *Deps:* 2 · *Effort:* XS · *Value:* High
