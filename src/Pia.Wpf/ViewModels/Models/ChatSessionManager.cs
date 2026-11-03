@@ -715,7 +715,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
         string? regenerationInstruction = null,
         bool planned = false, string? attachedFileContext = null,
-        IReadOnlyList<AttachedFileRef>? attachedFiles = null)
+        IReadOnlyList<AttachedFileRef>? attachedFiles = null,
+        IReadOnlyList<PendingFileAttachment>? files = null)
     {
         // One read for both guards below, so a send never queries the same row twice. Live-read rather than
         // ChatSession.PlanApprovalParkActive, so a just-landed Reject is seen at once.
@@ -734,7 +735,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Must run before anything below mutates the session: if the attached run is parked asking the user
         // a question, this send is that answer, not a new turn.
         if (await TryAnswerParkedRunAsync(
-                session, userText, attachments, regenerationInstruction, attachedFileContext, parkReason))
+                session, userText, attachments, regenerationInstruction, attachedFileContext,
+                hasFiles: files is { Count: > 0 }, parkReason))
             return true;
 
         // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
@@ -746,7 +748,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         var userMessage = new AssistantMessage(ChatRole.User, userText)
         {
-            AttachedFileContext = attachedFileContext,
+            // Provisional, without the read_file hint: a setup failure below must still leave Regenerate the text.
+            AttachedFileContext = files is { Count: > 0 } ? AssistantPromptComposer.BuildAttachedFileBlock(files) : attachedFileContext,
         };
         if (attachments is not null)
             foreach (var attachment in attachments) userMessage.Attachments.Add(attachment);
@@ -799,10 +802,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
             assistantMessage.Persona = PersonaAttribution.From(persona);
 
-            var provider = persona.PreferredProviderId.HasValue
-                ? await _providerService.GetProviderAsync(persona.PreferredProviderId.Value)
-                : null;
-            provider ??= await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+            var provider = await AssistantTurnProvider.ResolveAsync(persona, _providerService);
             if (provider is null)
             {
                 assistantMessage.Content = _localizationService["Msg_Assistant_NoProviderInline"];
@@ -880,6 +880,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
             if (turnSetup.Tools is { Count: > 0 } toolList)
                 _logger.LogDebug("Tools being sent to AI: [{ToolNames}]", string.Join(", ", toolList.Select(t => t.Name)));
+
+            if (files is { Count: > 0 })
+                userMessage.AttachedFileContext = AssistantPromptComposer.BuildAttachedFileBlock(
+                    files, ReadFilePathResolver(turnSetup, session.WorkingDirectory));
 
             // @Files content injection: read the tagged file(s) and inline them into the user turn,
             // so a model that won't call read_file on its own still sees the file (the root cause of
@@ -1074,23 +1078,21 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return true;
     }
 
-    /// <summary>
-    /// When the attached run is parked waiting on a question it asked the user, treats this send as the answer
-    /// (appended to the transcript, handed to the run's resume) instead of starting a new turn.
-    /// <para>
-    /// A regeneration, an attachment, an attached file, or a blank send are never treated as an answer: a
-    /// regeneration re-runs an existing reply, and a resume carries only a text nudge so anything riding
-    /// beside the text would be silently dropped.
-    /// </para>
-    /// </summary>
+    // read_file is named in a truncation note only on a turn that offers it.
+    private Func<PendingFileAttachment, string?>? ReadFilePathResolver(AssistantTurnSetup turnSetup, string? workingDirectory) =>
+        turnSetup.Tools?.Any(t => t.Name == "read_file") == true
+            ? file => _filesToolHandler.ToReadFilePath(file.SavedRelativePath ?? file.FullPath, workingDirectory)
+            : null;
+
+    /// <summary>Answers a run parked on a question; never a regeneration, image, file or blank send, which a
+    /// resume (a text nudge only) would drop silently.</summary>
     private async Task<bool> TryAnswerParkedRunAsync(
         ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
-        string? regenerationInstruction, string? attachedFileContext, string? parkReason)
+        string? regenerationInstruction, string? attachedFileContext, bool hasFiles, string? parkReason)
     {
-        // A resume carries only a text nudge, so an image riding beside the answer would be dropped silently.
         if (_resumeService is null || session.ActiveRunId is not { } runId
             || regenerationInstruction is not null || attachments is { Count: > 0 }
-            || attachedFileContext is not null
+            || attachedFileContext is not null || hasFiles
             || string.IsNullOrWhiteSpace(userText))
         {
             return false;
@@ -1116,9 +1118,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // answering does.
             if (!await _resumeService.ResumeAsync(runId, userText))
             {
-                // False means this call did not win the CAS (already claimed elsewhere, or no longer parked),
-                // not an error: the answer is already in the transcript and the panel still shows the run's
-                // real state.
+                // Lost the CAS (claimed elsewhere, or no longer parked), not an error: the answer is already in
+                // the transcript and the panel still shows the run's real state.
                 _logger.LogWarning(
                     "Run {RunId}: the answer typed in chat did not start a resume (already claimed, or no longer parked)",
                     runId);

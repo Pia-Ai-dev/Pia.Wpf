@@ -389,10 +389,12 @@ public class FilesToolHandlerSearchTests : IDisposable
     [Theory]
     [InlineData("rezepte.docx")]
     [InlineData("mail.eml")]
+    [InlineData("rezept.pdf")]
     public async Task Search_HitLineNumberIsTheReadFileLineNumber(string name)
     {
         OfficeDocuments.CreateDocx(Path.Combine(_root, "rezepte.docx"), "Vorspeise", "Kekse mit Zimt", "Nachtisch");
         File.WriteAllText(Path.Combine(_root, "mail.eml"), "Subject: Rezept\r\n\r\nKekse mit Zimt\r\n");
+        PdfDocuments.Create(Path.Combine(_root, "rezept.pdf"), "Vorspeise", "Kekse mit Zimt");
 
         var hit = (await SearchAsync("Kekse")).Split('\n')
             .Single(l => l.StartsWith(name + ":", StringComparison.Ordinal));
@@ -457,5 +459,17 @@ public class FilesToolHandlerSearchTests : IDisposable
 
         Assert.Contains("No matches found", await SearchAsync("TODO", caseSensitive: true));
         Assert.Contains("a.txt:1:todo: buy milk", await SearchAsync("TODO"));
+    }
+
+    [Fact]
+    public async Task Search_FindsTextInAUtf16File_AtItsReadFileLine()
+    {
+        File.WriteAllText(Path.Combine(_root, "wide.txt"), "alpha\nbeta needle here\n",
+            FilesToolHandlerReadTests.WideEncoding("utf-16le"));
+
+        var result = await SearchAsync("needle");
+
+        Assert.Contains("wide.txt:2:", result);
+        Assert.Contains("beta needle here", result);
     }
 }

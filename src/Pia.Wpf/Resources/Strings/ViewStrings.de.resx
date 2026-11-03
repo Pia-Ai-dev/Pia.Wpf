@@ -1330,6 +1330,9 @@
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML-Dokument (*.html)|*.html|Alle Dateien (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
   <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis speichern</value></data>
+  <data name="Assistant_SavePendingFile_CutTooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis speichern, damit Pia den Rest nachlesen kann</value></data>
+  <data name="Assistant_PendingFileCut_Badge" xml:space="preserve"><value>gekürzt</value></data>
+  <data name="Assistant_PendingFileCut_Tooltip" xml:space="preserve"><value>Nur ein Teil dieser Datei passt in die Nachricht. Speichere sie im Arbeitsverzeichnis, damit Pia den Rest nachlesen kann.</value></data>
   <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis gespeichert</value></data>
   <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>Diese Datei wurde nicht im Arbeitsverzeichnis gespeichert, daher ist nur ihr Name erhalten geblieben.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>In VS Code öffnen</value></data>

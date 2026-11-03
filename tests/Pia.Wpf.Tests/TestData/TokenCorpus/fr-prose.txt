@@ -1,0 +1,44 @@
+Pia peut lire, chercher et modifier des fichiers texte pour toi — mais seulement dans un dossier que tu choisis. Tout reste limité à ce dossier, donc Pia ne peut pas toucher les fichiers ailleurs sur ton ordinateur.
+D'abord, dis à Pia dans quel dossier il est autorisé à travailler.
+C'est fait — Pia peut maintenant travailler avec des fichiers dans ce dossier. C'est aussi là que se trouve ton coffre de [Mémoire](/fr/wpf/guides/memory/).
+Deux commutateurs se trouvent en dessous :
+Choisis un dossier existant ou tape un nouveau nom, et Pia le crée pour toi. Laisse le champ vide pour démarrer les nouveaux chats à la racine du dossier de fichiers.
+Chaque chat peut travailler dans un sous-dossier de ton dossier principal, ce qui garde les choses ciblées.
+Les deux sélecteurs de dossier signifient des choses différentes, et chacun le précise au survol :
+Tu peux pointer Pia vers un fichier précis, au lieu de décrire où il se trouve.
+Pia obtient le chemin exact et les premières lignes du fichier, et le lit directement, sans chercher.
+Pratique pour poser des questions sur un document ou demander à Pia d'en réécrire une partie.
+Contrairement aux autres domaines `@`, `@Files` ne désactive aucun outil. Le fichier sert de contexte
+à la demande, et Pia garde pour ce tour tout ce qu'elle peut utiliser d'autre —
+liste de contrôle comme `@Files:flows/close.md` et demander à Pia de la dérouler avec ces outils.
+Étiquette `@Files` avec un autre domaine, par exemple `@Todo`, et le tour est restreint comme
+d'habitude aux outils des domaines étiquetés. Voir les [commandes @](/fr/wpf/guides/memory/) pour
+les autres domaines.
+this folder** (**Paramètres → Assistant → Général**) — le domaine suit les outils de fichiers, donc
+une fois ceux-ci désactivés, il n'y a plus rien à tagger.
+Lire, chercher et lister ne nécessitent aucune approbation. Écrire, modifier et supprimer demandent toujours.
+Pia sait dans quel dossier il travaille, donc il arrête de deviner des chemins relatifs, et un nom mal orthographié suggère le fichier le plus proche à côté.
+Quand Pia change un fichier, il n'envoie **que le morceau qui change**, si bien qu'une correction d'un
+seul mot ne peut pas abîmer le reste d'un long document au passage. Tu vois et approuves toujours le
+même diff.
+cellules qui changent sont touchés ; tout le reste du fichier est laissé exactement tel quel, y
+compris une mise en forme que Pia n'a jamais vue.
+Chercher dans le contenu d'un dossier couvre **les documents Word, les classeurs Excel et les e-mails
+Outlook enregistrés**, pas seulement le texte brut. Un fichier que Pia ne peut vraiment pas lire est
+réponse.
+Les e-mails enregistrés sont **en lecture seule** : Pia n'écrira jamais par-dessus un `.msg` ou un
+La recherche **ignore la casse** par défaut, donc chercher "cookie" trouve aussi "Cookies" et
+inversement. Tu peux demander à Pia de respecter la casse exactement, pour les fois où tu veux le
+marqueur `TODO` plutôt que chaque mention du mot.
+donc poser une question sur une capture d'écran par son nom sans la joindre. Pia voit l'image pour une
+seule réponse, donc pose ta question à son sujet dans le même message. Regarder une image nécessite le
+fournisseur Pia Cloud, comme toute autre [pièce jointe d'image](/fr/wpf/guides/attachments/).
+fichier qu'il n'a pas pu lire.
+Quand Pia veut changer un fichier, il ne fait pas juste continuer. Une carte d'action apparaît affichant :
+Tu choisis alors **Refuser**, **Autoriser une fois**, **Autoriser cette session**, ou **Toujours autoriser**. Voir [Permissions des outils](/fr/wpf/guides/tool-permissions/) pour ce à quoi chacune de ces options t'engage.
+Lis le diff avant de l'autoriser. Et garde à l'esprit que **Autoriser cette session** et **Toujours autoriser** couvrent aussi les appels *ultérieurs* dont tu ne verras jamais les arguments.
+Si un fichier change sur le disque après que Pia l'ait prévisualisé mais avant que tu approuves, le changement est bloqué pour rester sûr. Demande simplement à Pia de relire le fichier et essaie à nouveau.
+Si ton dossier est un dépôt git, Pia peut travailler avec directement. Active **Autoriser l'assistant à exécuter des commandes git dans ce dossier** dans **Paramètres → Assistant → Général**.
+La carte d'approbation affiche la commande exacte avant que quoi que ce soit ne s'exécute. Il y a quelques choses que Pia refuse délibérément de faire :
+La lecture, la recherche et l'énumération des fichiers sont sûres, donc elles n'ont pas besoin d'approbation. Pour les permissions permanentes que tu as accordées :
+Le guide complet se trouve dans [Permissions des outils](/fr/wpf/guides/tool-permissions/).

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
@@ -6,6 +7,7 @@ using DocumentFormat.OpenXml.Wordprocessing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Paths;
@@ -152,8 +154,7 @@ public class FilesToolHandlerReadTests : IDisposable
     [Fact]
     public async Task Read_FormattedWindowOverflow_ReturnsGuidance_NotTruncated()
     {
-        // ~200 chars/line x 800 lines ~= 160K formatted: over the ~100K cap but well under the
-        // 1 MB raw-byte ceiling and the 2000-line cap, so it exercises the formatted-window guard.
+        // 800 lines of 200 chars ≈ 42K estimated tokens: over the 25K cap, under the 2000-line cap.
         var line = new string('x', 200);
         WriteFile("wide.txt", string.Join('\n', Enumerable.Repeat(line, 800)));
 
@@ -265,6 +266,29 @@ public class FilesToolHandlerReadTests : IDisposable
         Assert.Contains("a1\tb1", result);
     }
 
+    [Fact]
+    public async Task Read_Pdf_NumbersExtractedText()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "paper.pdf"), "Quarterly figures", "Signed in Hamburg");
+
+        var result = (string)(await ReadAsync("paper.pdf"))!;
+
+        Assert.Contains("1|Quarterly figures", result);
+        Assert.Contains("|Signed in Hamburg", result);
+    }
+
+    [Fact]
+    public async Task Read_ScanPdf_SaysItHasNoTextLayer()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "scan.pdf"), [null]);
+
+        var result = (string)(await ReadAsync("scan.pdf"))!;
+
+        Assert.StartsWith("Error:", result);
+        Assert.Contains("no text layer", result);
+        Assert.DoesNotContain(DroppedFileReader.NoTextLayer, result);
+    }
+
     // ---- @Files prompt-preview injection (ReadPromptPreviewAsync + CapForPrompt) ----
 
     [Fact]
@@ -335,6 +359,28 @@ public class FilesToolHandlerReadTests : IDisposable
     }
 
     [Fact]
+    public async Task Preview_Pdf_ReadsExtractedText()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "paper.pdf"), "Quarterly figures");
+
+        var preview = await _handler.ReadPromptPreviewAsync("paper.pdf", workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
+
+        Assert.True(preview.Found);
+        Assert.Equal("Quarterly figures", preview.Text);
+    }
+
+    [Fact]
+    public async Task Preview_ScanPdf_ReturnsFoundFalse_NamingTheMissingTextLayer()
+    {
+        PdfDocuments.Create(Path.Combine(_root, "scan.pdf"), [null]);
+
+        var preview = await _handler.ReadPromptPreviewAsync("scan.pdf", workingSubpath: null, maxLines: 100, TestContext.Current.CancellationToken);
+
+        Assert.False(preview.Found);
+        Assert.Contains("no text layer", preview.Error!);
+    }
+
+    [Fact]
     public async Task Preview_DoesNotRecordStaleness()
     {
         var rel = WriteFile("notrack.txt", "a\nb\n");
@@ -348,17 +394,16 @@ public class FilesToolHandlerReadTests : IDisposable
     }
 
     [Fact]
-    public void CapForPrompt_CharBudgetBinds_BeforeLineCap()
+    public void CapForPrompt_TokenBudgetBinds_BeforeLineCap()
     {
-        // 100 lines of 100 chars each; a 1000-char budget admits far fewer than the 100-line cap.
         var text = string.Join('\n', Enumerable.Range(1, 100).Select(_ => new string('x', 100)));
 
-        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(text, maxLines: 100, maxChars: 1000);
+        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(text, maxLines: 100, maxTokens: 250);
 
         Assert.Equal(100, total);
         Assert.True(truncated);
         Assert.True(shown < 100);
-        Assert.True(capped.Length <= 1000);
+        Assert.True(TokenEstimator.Estimate(capped) <= 250);
     }
 
     [Fact]
@@ -366,12 +411,36 @@ public class FilesToolHandlerReadTests : IDisposable
     {
         var huge = new string('y', 5000);
 
-        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(huge, maxLines: 100, maxChars: 1000);
+        var (capped, total, shown, truncated) = FilesToolHandler.CapForPrompt(huge, maxLines: 100, maxTokens: 250);
 
         Assert.Equal(1, total);
         Assert.Equal(1, shown);
-        Assert.False(truncated); // the whole single-line file is shown
+        Assert.False(truncated);
         Assert.Equal(huge, capped);
+    }
+
+    [Fact]
+    public void CapForPrompt_ShowsFewerRowsOfNumbersThanOfWords_AtTheSameLength()
+    {
+        const string numbers = "2026-10-14\t13\t238\t111\t127\t0.318";
+        const string words = "the quarterly report is in here";
+        Assert.Equal(numbers.Length, words.Length);
+
+        var numberRows = FilesToolHandler.CapForPrompt(string.Join('\n', Enumerable.Repeat(numbers, 100)), 100, 500).ShownLines;
+        var wordRows = FilesToolHandler.CapForPrompt(string.Join('\n', Enumerable.Repeat(words, 100)), 100, 500).ShownLines;
+
+        Assert.True(numberRows < wordRows, $"numbers {numberRows} rows, words {wordRows} rows");
+    }
+
+    [Fact]
+    public async Task Read_NumericWindow_IsRefusedOnTokens_ThoughUnderTheOldCharCap()
+    {
+        // ≈ 74K formatted chars (under the former 100K-char cap) but ≈ 42K estimated tokens.
+        WriteFile("sheet.txt", string.Join('\n', Enumerable.Repeat("2026-10-14\t13\t238\t111\t127\t0.318", 2000)));
+
+        var result = (string)(await ReadAsync("sheet.txt", offset: 1, limit: 2000))!;
+
+        Assert.Contains("too large to return", result);
     }
 
     [Theory]
@@ -559,6 +628,40 @@ public class FilesToolHandlerReadTests : IDisposable
             DataType = CellValues.String,
             CellValue = new SS.CellValue(value),
         };
+
+    internal static Encoding WideEncoding(string name) => name switch
+    {
+        "utf-16le" => new UnicodeEncoding(bigEndian: false, byteOrderMark: true),
+        "utf-16be" => new UnicodeEncoding(bigEndian: true, byteOrderMark: true),
+        "utf-32le" => new UTF32Encoding(bigEndian: false, byteOrderMark: true),
+        _ => throw new ArgumentOutOfRangeException(nameof(name)),
+    };
+
+    // An attachment cut short names read_file for the rest, so read_file must open what the drop reader did.
+    [Theory]
+    [InlineData("utf-16le")]
+    [InlineData("utf-16be")]
+    [InlineData("utf-32le")]
+    public async Task Read_ATextFileWithAWideBom_IsDecodedNotRefusedAsBinary(string encoding)
+    {
+        File.WriteAllText(Path.Combine(_root, "wide.txt"), "alpha\nbeta über\n", WideEncoding(encoding));
+
+        var result = (string)(await ReadAsync("wide.txt"))!;
+
+        Assert.Contains("1|alpha", result);
+        Assert.Contains("2|beta über", result);
+        Assert.DoesNotContain("binary", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Read_NulBytesWithoutABom_AreStillRefusedAsBinary()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "blob.dat"), [0x41, 0x00, 0x42, 0x00]);
+
+        var result = (string)(await ReadAsync("blob.dat"))!;
+
+        Assert.Contains("binary", result, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 /// <summary>

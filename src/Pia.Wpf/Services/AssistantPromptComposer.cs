@@ -369,10 +369,9 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         return sb.ToString();
     }
 
-    /// <summary>
-    /// No "read the rest" note on a truncated file: a dropped file has no path the model could re-open.
-    /// </summary>
-    public static string BuildAttachedFileBlock(IReadOnlyList<PendingFileAttachment> files)
+    /// <summary>A cut file's note names read_file only when <paramref name="readFilePath"/> can locate it.</summary>
+    public static string BuildAttachedFileBlock(
+        IReadOnlyList<PendingFileAttachment> files, Func<PendingFileAttachment, string?>? readFilePath = null)
     {
         if (files.Count == 0) return string.Empty;
 
@@ -383,9 +382,9 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         {
             sb.Append("\n\n");
             sb.Append($"<attached_file name=\"{EscapeAttr(f.FileName)}\" type=\"{f.Kind.ToString().ToLowerInvariant()}\"");
-            if (f.Truncated)
+            if (f.Cut is { } cut)
             {
-                var note = $"Showing the first {f.Text.Length} of {f.OriginalCharCount} characters.";
+                var note = TruncationNote(cut, readFilePath?.Invoke(f));
                 sb.Append($" truncated=\"true\" note=\"{EscapeAttr(note)}\"");
             }
             sb.Append(">\n");
@@ -394,6 +393,18 @@ public sealed class AssistantPromptComposer : IAssistantPromptComposer
         }
 
         return sb.ToString();
+    }
+
+    internal static string TruncationNote(AttachmentCut cut, string? readFilePath)
+    {
+        var shown = cut.EndsMidLine
+            ? $"Showing lines 1-{cut.ShownLines} of {cut.TotalLines}; line {cut.ShownLines} is cut short."
+            : $"Showing lines 1-{cut.ShownLines} of {cut.TotalLines}.";
+        if (readFilePath is null)
+            return $"{shown} The rest was not sent.";
+
+        var offset = cut.EndsMidLine ? cut.ShownLines : cut.ShownLines + 1;
+        return $"{shown} The rest was not sent; read it with read_file (path: {readFilePath}, offset: {offset}).";
     }
 
     private static string EscapeAttr(string value) =>

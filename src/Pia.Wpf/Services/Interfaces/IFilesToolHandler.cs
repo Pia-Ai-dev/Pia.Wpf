@@ -65,16 +65,7 @@ public interface IFilesToolHandler
         CancellationToken cancellationToken = default);
     Task<object?> ExecutePendingActionAsync(FilesToolCall pendingAction);
 
-    /// <summary>
-    /// Reads a bounded preview — the first <paramref name="maxLines"/> lines, additionally capped
-    /// at an internal character budget — of the sandbox file at <paramref name="relativePath"/>,
-    /// scoped to <paramref name="workingSubpath"/> (the active chat's working directory). Applies
-    /// the same containment, sensitive-path, binary, and size guards as <c>read_file</c>. Used to
-    /// inject file content directly into the prompt for an <c>@Files</c> command. Never throws for
-    /// an unreadable file — returns a <see cref="FilePromptPreview"/> with <c>Found = false</c> and
-    /// a human-readable <c>Error</c> instead. Does not record a staleness read: a preview is partial
-    /// and runs during turn setup (outside the per-turn ambient), so an edit must still re-read.
-    /// </summary>
+    /// <summary>A bounded preview (line cap and token budget) of a sandbox file for @Files injection; never throws for an unreadable file.</summary>
     Task<FilePromptPreview> ReadPromptPreviewAsync(
         string relativePath, string? workingSubpath, int maxLines, CancellationToken cancellationToken = default);
 
@@ -83,4 +74,7 @@ public interface IFilesToolHandler
     /// or null when the tools are switched off or no usable folder is configured.
     /// </summary>
     string? DescribeEffectiveRoot(string? workingSubpath);
+
+    /// <summary>The path read_file accepts for <paramref name="path"/> in a chat scoped to <paramref name="workingSubpath"/>, or null.</summary>
+    string? ToReadFilePath(string path, string? workingSubpath);
 }

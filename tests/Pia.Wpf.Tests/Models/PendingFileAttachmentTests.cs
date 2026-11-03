@@ -19,8 +19,6 @@ public sealed class PendingFileAttachmentTests
             FileName = "notes.txt",
             Kind = kind,
             Text = "hello",
-            Truncated = false,
-            OriginalCharCount = 5,
         };
 
         Assert.True((int)attachment.Icon <= 0xFFFF,
@@ -40,8 +38,6 @@ public sealed class PendingFileAttachmentTests
                 FileName = "notes.txt",
                 Kind = k,
                 Text = "hello",
-                Truncated = false,
-                OriginalCharCount = 5,
             }.Icon)
             .ToList();
 
