@@ -26,6 +26,39 @@ public sealed class TokenEstimatorCorpusTests
     [Fact]
     public void Estimate_StaysInTheBandOnANumericSheet() => AssertInBand("numeric TSV", NumericTsv());
 
+    public static TheoryData<string> WhitespaceShapes() =>
+        ["alternating space and tab", "spaces", "newlines", "tabs", "crlf", "nbsp", "space and newline",
+         "tab and newline", "four-way mix", "ogham space", "next line"];
+
+    // Whitespace-only files once cost a single token, so a 60 KB one passed any budget whole.
+    [Theory]
+    [MemberData(nameof(WhitespaceShapes))]
+    public void Estimate_NeverUndercountsALongWhitespaceRun(string shape)
+    {
+        var text = shape switch
+        {
+            "alternating space and tab" => Repeat(" \t", 30_000),
+            "spaces" => new string(' ', 2_000),
+            "newlines" => new string('\n', 2_000),
+            "tabs" => new string('\t', 2_000),
+            "crlf" => Repeat("\r\n", 1_000),
+            "nbsp" => new string((char)0xA0, 2_000),
+            "space and newline" => Repeat(" \n", 1_000),
+            "tab and newline" => Repeat("\t\n", 1_000),
+            "four-way mix" => Repeat(" \t\n\r", 500),
+            "ogham space" => new string((char)0x1680, 200),
+            "next line" => new string((char)0x85, 200),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+
+        var actual = O200k.CountTokens(text);
+        var estimate = TokenEstimator.Estimate(text);
+
+        Assert.True(estimate >= actual, $"{shape}: estimate {estimate} under o200k {actual}");
+    }
+
+    private static string Repeat(string unit, int count) => string.Concat(Enumerable.Repeat(unit, count));
+
     private static void AssertInBand(string name, string text)
     {
         var actual = O200k.CountTokens(text);

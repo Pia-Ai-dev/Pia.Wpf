@@ -89,8 +89,7 @@ public static class TokenEstimator
             }
             else if (char.IsWhiteSpace(c))
             {
-                while (i < text.Length && char.IsWhiteSpace(text[i])) i++;
-                tokens += 1;
+                tokens += WhitespaceRun(text, ref i);
             }
             else
             {
@@ -101,6 +100,40 @@ public static class TokenEstimator
         }
         return tokens;
     }
+
+    // Tokenizers merge a repeated whitespace character, not a mix: alternating space and tab costs a token per pair.
+    private static double WhitespaceRun(ReadOnlySpan<char> text, ref int i)
+    {
+        double tokens = 0;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+        {
+            var c = text[i];
+            var crlf = IsCrLf(text, i);
+            var units = 0;
+            while (i < text.Length && (crlf ? IsCrLf(text, i) : text[i] == c && !IsCrLf(text, i)))
+            {
+                i += crlf ? 2 : 1;
+                units++;
+            }
+            tokens += Math.Ceiling(units * TokensPerUnit(c, crlf));
+        }
+        return tokens;
+    }
+
+    private static bool IsCrLf(ReadOnlySpan<char> text, int i) =>
+        text[i] == '\r' && i + 1 < text.Length && text[i + 1] == '\n';
+
+    // Measured on o200k over runs of 1-2,000 and rounded up, so no run length is cheaper than the tokenizer makes it.
+    private static double TokensPerUnit(char c, bool crlf) => crlf ? 1 / 4.0 : c switch
+    {
+        ' ' => 1 / 64.0,
+        '\t' => 1 / 16.0,
+        '\n' => 1 / 8.0,
+        '\r' => 1 / 2.0,
+        '\u1680' => 3,
+        '\u0085' or '\u2000' or '\u2001' or '\u2004' or '\u2006' or '\u2007' or '\u2008' or '\u2029' or '\u205F' => 2,
+        _ => 1,
+    };
 
     private static bool IsCjk(char c) =>
         c is (>= '\u3040' and <= '\u30FF') or (>= '\u3400' and <= '\u4DBF') or (>= '\u4E00' and <= '\u9FFF')

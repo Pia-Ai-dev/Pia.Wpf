@@ -23,9 +23,16 @@ public sealed class TokenEstimatorTests
     public void Estimate_FoldsASingleSpaceIntoTheNextWord() =>
         Assert.Equal(2, TokenEstimator.Estimate("word word"));
 
+    [Theory]
+    [InlineData("word\t\t\tword", 3)]
+    [InlineData("word\r\n\r\nword", 3)]
+    [InlineData("word \t \tword", 6)]
+    public void Estimate_ChargesWhitespaceByLengthAndMix(string text, int expected) =>
+        Assert.Equal(expected, TokenEstimator.Estimate(text));
+
     [Fact]
-    public void Estimate_ChargesAWhitespaceRunOnce() =>
-        Assert.Equal(3, TokenEstimator.Estimate("word\t\t\tword"));
+    public void Estimate_ChargesALongNewlineRunByItsLength() =>
+        Assert.Equal(10, TokenEstimator.Estimate("word" + new string('\n', 64) + "word"));
 
     [Fact]
     public void Estimate_ChargesPunctuationRunsInPairs() =>
