@@ -35,7 +35,7 @@ little standalone value, unblocks a High.
   `MemoryService.RecallAsync` skips the vector tier when embeddings are unavailable instead of failing
   the assistant's reply, and its FTS warning stops logging query text.
   *Deps:* 2 · *Effort:* XS · *Value:* High
-- [ ] **4. Index text even when the embedding fails.**
+- [x] **4. Index text even when the embedding fails.**
   `VaultIndexer` writes the chunk and its FTS row with a null embedding, and embeds it on a later pass
   once embeddings work.
   *Deps:* 2 · *Effort:* XS · *Value:* High
