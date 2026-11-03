@@ -1,6 +1,6 @@
 # Attachment token budget: size dropped files by tokens and by the model that answers
 
-**Status:** Implemented in the working tree — not committed; awaiting the owner
+**Status:** Implemented on `feature/files-tool-pdf`; in review as a PR into `develop`
 **Owner:** Marco Altmann
 **Written:** 2026-10-14
 **Origin:** Owner brief 2026-10-14 ("Die Größengrenzen für Datei-Anhänge sollen nach Tokens entscheiden

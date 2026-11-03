@@ -1,13 +1,11 @@
 # Attachment token budget — checklist
 
-**Status:** Implemented in the working tree — not committed; awaiting the owner
+**Status:** Implemented on `feature/files-tool-pdf`; in review as a PR into `develop`
 **Owner:** Marco Altmann
 **Written:** 2026-10-14
 **Origin:** [2026-10-14-attachment-token-budget-plan.md](2026-10-14-attachment-token-budget-plan.md)
 
-Tick a box when its step's tests are green. The owner's rule for this work: **no commit and no push
-until the owner says so** — ticks land in the working tree, and the commit that eventually carries the
-code carries them.
+Tick a box when its step's tests are green.
 
 ## Scales
 
