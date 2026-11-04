@@ -42,14 +42,18 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     /// cannot say on its own — an empty allowlist is a server with every tool withheld.</summary>
     private bool _editingRestrictsTools;
 
+    // Culture order puts '_' before letters, so list_issue_types sorts next to list_issue, not after list_issues.
+    private static readonly StringComparer ToolNameOrder = StringComparer.InvariantCultureIgnoreCase;
+
     public ObservableCollection<McpServerRow> Servers { get; } = [];
 
     /// <summary>Every tool the last probe (or the running server) reported, with its allowlist tick.</summary>
     public ObservableCollection<McpToolRow> Tools { get; } = [];
 
-    /// <summary>What the detail pane lists for the selected server. Separate from <see cref="Tools"/>, which
-    /// carries the editor's two-way ticks and is emptied when the editor closes.</summary>
-    public ObservableCollection<McpServerToolInfo> SelectedTools { get; } = [];
+    /// <summary>The detail pane's offered tools; the editor's ticks live on <see cref="Tools"/>.</summary>
+    public ObservableCollection<McpServerToolInfo> SelectedAllowedTools { get; } = [];
+
+    public ObservableCollection<McpServerToolInfo> SelectedWithheldTools { get; } = [];
 
     [ObservableProperty]
     private bool _hasServers;
@@ -130,6 +134,18 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private bool _hasSelectedTools;
 
     [ObservableProperty]
+    private bool _hasWithheldTools;
+
+    [ObservableProperty]
+    private bool _showsNoToolAllowed;
+
+    [ObservableProperty]
+    private string? _withheldSummary;
+
+    [ObservableProperty]
+    private bool _isWithheldExpanded;
+
+    [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(TestSelectedCommand))]
     private bool _isTestingSelected;
 
@@ -186,10 +202,12 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         OnPropertyChanged(nameof(ShowsPlaceholder));
         RefreshDetail();
 
-        // Only a selection the USER changed may close an open editor. Comparing ids is not enough: a reload
-        // clears the list, and the ListBox writes null back through the two-way binding on the way, which
-        // reads as a different server and would discard whatever is half-typed.
-        if (!_reloading && IsEditorOpen && oldValue?.Id != newValue?.Id)
+        // A reload re-selects via a null write from the ListBox, so only a user pick counts as a new server.
+        if (_reloading || oldValue?.Id == newValue?.Id)
+            return;
+
+        IsWithheldExpanded = false;
+        if (IsEditorOpen)
             CloseEditor();
     }
 
@@ -236,6 +254,9 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
         HasServers = Servers.Count > 0;
 
         var reselected = Servers.FirstOrDefault(s => s.Id == selectedId) ?? Servers.FirstOrDefault();
+        if (reselected?.Id != selectedId)
+            IsWithheldExpanded = false;
+
         if (ReferenceEquals(reselected, SelectedServer))
             RefreshDetail();
         else
@@ -264,25 +285,27 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
 
     private void FillSelectedTools(IReadOnlyList<string>? allowed, IReadOnlyList<McpProbeTool> discovered)
     {
-        SelectedTools.Clear();
+        SelectedAllowedTools.Clear();
+        SelectedWithheldTools.Clear();
 
         if (discovered.Count > 0)
         {
-            foreach (var tool in discovered)
+            foreach (var tool in discovered.OrderBy(t => t.Name, ToolNameOrder))
             {
-                SelectedTools.Add(new McpServerToolInfo(tool.Name, tool.Description, tool.ServerDeclaredDestructive,
-                    allowed is null || allowed.Contains(tool.Name, StringComparer.Ordinal)));
+                var isAllowed = allowed is null || allowed.Contains(tool.Name, StringComparer.Ordinal);
+                (isAllowed ? SelectedAllowedTools : SelectedWithheldTools).Add(
+                    new McpServerToolInfo(tool.Name, tool.Description, tool.ServerDeclaredDestructive, isAllowed));
             }
 
             SelectedToolsSummary = _localizationService.Format("McpServers_Detail_ToolsSummary",
-                SelectedTools.Count(t => t.IsAllowed), SelectedTools.Count);
+                SelectedAllowedTools.Count, discovered.Count);
             SelectedToolsHint = null;
         }
         else if (allowed is { Count: > 0 })
         {
             // A stopped server reports nothing, so its saved allowlist is the only tool list left to show.
-            foreach (var name in allowed)
-                SelectedTools.Add(new McpServerToolInfo(name, null, false, true));
+            foreach (var name in allowed.Order(ToolNameOrder))
+                SelectedAllowedTools.Add(new McpServerToolInfo(name, null, false, true));
 
             SelectedToolsSummary = _localizationService.Format("McpServers_Detail_ToolsAllowed", allowed.Count);
             SelectedToolsHint = _localizationService["McpServers_Detail_ToolsStopped"];
@@ -293,7 +316,24 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
             SelectedToolsHint = _localizationService["McpServers_Detail_ToolsUnknown"];
         }
 
-        HasSelectedTools = SelectedTools.Count > 0;
+        HasSelectedTools = SelectedAllowedTools.Count > 0 || SelectedWithheldTools.Count > 0;
+        HasWithheldTools = SelectedWithheldTools.Count > 0;
+        ShowsNoToolAllowed = HasWithheldTools && SelectedAllowedTools.Count == 0;
+        WithheldSummary = DescribeWithheld();
+    }
+
+    private string? DescribeWithheld()
+    {
+        if (SelectedWithheldTools.Count == 0) return null;
+
+        var count = SelectedWithheldTools.Count;
+        return SelectedWithheldTools.Count(t => t.ServerDeclaredDestructive) switch
+        {
+            0 => _localizationService.Format("McpServers_Detail_WithheldSummary", count),
+            1 => _localizationService.Format("McpServers_Detail_WithheldSummaryDestructiveOne", count),
+            var destructive => _localizationService.Format("McpServers_Detail_WithheldSummaryDestructive",
+                count, destructive),
+        };
     }
 
     private static string? NullIfBlank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;
@@ -486,7 +526,7 @@ public partial class McpServersSettingsViewModel : UiThreadViewModel, IDisposabl
     private void FillTools(IReadOnlyList<McpProbeTool> discovered, IReadOnlyList<string>? allowed)
     {
         Tools.Clear();
-        foreach (var tool in discovered)
+        foreach (var tool in discovered.OrderBy(t => t.Name, ToolNameOrder))
         {
             Tools.Add(new McpToolRow(tool.Name, tool.Description, tool.ServerDeclaredDestructive,
                 allowed is null || allowed.Contains(tool.Name, StringComparer.Ordinal)));

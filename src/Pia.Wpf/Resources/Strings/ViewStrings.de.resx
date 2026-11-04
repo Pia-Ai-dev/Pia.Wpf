@@ -1802,9 +1802,14 @@
   <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Wird beendet…</value></data>
   <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} von {1} Tool(s) freigegeben</value></data>
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} Tool(s) freigegeben</value></data>
+  <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} Tool(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} Tool(s) · {1} davon können löschen</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} Tool(s) · 1 davon kann löschen</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Dieser Server ist nicht verbunden. Dies sind die Tools, die beim letzten Lauf freigegeben waren.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Starten Sie diesen Server oder verwenden Sie „Verbindung testen“, um seine Tools zu sehen.</value></data>
-  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>gesperrt</value></data>
+  <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Freigegeben</value></data>
+  <data name="McpServers_Detail_WithheldGroup" xml:space="preserve"><value>Gesperrt</value></data>
+  <data name="McpServers_Detail_NoneAllowed" xml:space="preserve"><value>Kein Tool freigegeben – über Bearbeiten ändern</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Wird gespeichert… der Server startet neu.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Von Ihrer Organisation gesperrt: Diese Einstellung wird per Pia-Richtlinie vorgegeben und kann hier nicht geändert werden.</value></data>
   <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Von Pia Cloud abmelden</value></data>

@@ -1802,9 +1802,14 @@
   <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Arrêt…</value></data>
   <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} outil(s) sur {1} proposé(s)</value></data>
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} outil(s) autorisé(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} outil(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} outil(s) · {1} peuvent supprimer</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} outil(s) · 1 peut supprimer</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Ce serveur est arrêté. Voici les outils qui étaient autorisés lors de sa dernière exécution.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Démarrez ce serveur, ou utilisez « Tester la connexion », pour lister ses outils.</value></data>
-  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>bloqué</value></data>
+  <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Proposés</value></data>
+  <data name="McpServers_Detail_WithheldGroup" xml:space="preserve"><value>Bloqués</value></data>
+  <data name="McpServers_Detail_NoneAllowed" xml:space="preserve"><value>Aucun outil proposé – modifiable via Modifier</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Enregistrement… le serveur redémarre.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Verrouillé par votre organisation : ce paramètre est imposé par la stratégie Pia et ne peut pas être modifié ici.</value></data>
   <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Se déconnecter de Pia Cloud</value></data>
