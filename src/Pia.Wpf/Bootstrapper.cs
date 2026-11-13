@@ -493,6 +493,7 @@ public static class Bootstrapper
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.ConfigureHttpClient(client => client.DefaultRequestHeaders.UserAgent.TryParseAdd(AppVersionInfo.UserAgent));
             builder.AddHttpMessageHandler<RateLimitRetryHandler>();
             builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>

@@ -30,7 +30,7 @@ public class BootstrapperGraphValidationTests
     }
 
     /// <summary>The production DI registrations, built by invoking <c>Bootstrapper.ConfigureServices</c> directly.</summary>
-    private static ServiceCollection BuildConfiguredServices()
+    internal static ServiceCollection BuildConfiguredServices()
     {
         var configure = typeof(Bootstrapper).GetMethod(
             "ConfigureServices", BindingFlags.NonPublic | BindingFlags.Static);

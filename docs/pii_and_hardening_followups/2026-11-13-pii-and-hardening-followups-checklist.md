@@ -37,7 +37,7 @@ little standalone value, unblocks a High.
   `RunNowAsync` returns the new `ScheduledJobRunNowResult.ResetPending` before it reads the job, and the
   Routines page and the `run_routine` tool each say so.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **4. Send a User-Agent.**
+- [x] **4. Send a User-Agent.**
   Every factory-created `HttpClient` carries `Pia/<version> (Windows NT x.y)`, which the server reads as
   "Pia desktop x.y"; a request that brings its own header keeps it.
   *Deps:* none · *Effort:* XS · *Value:* Med

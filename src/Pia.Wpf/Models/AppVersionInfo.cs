@@ -11,6 +11,14 @@ public static class AppVersionInfo
 
     public static string Generator => $"Pia {Version}";
 
+    public static string UserAgent => UserAgentFor(Version);
+
+    internal static string UserAgentFor(string version)
+    {
+        var os = Environment.OSVersion.Version;
+        return $"Pia/{version} (Windows NT {os.Major}.{os.Minor})";
+    }
+
     private static string Strip(string informational)
     {
         var plus = informational.IndexOf('+');
