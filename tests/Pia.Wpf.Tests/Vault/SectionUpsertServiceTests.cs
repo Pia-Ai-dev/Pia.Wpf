@@ -81,6 +81,20 @@ public class SectionUpsertServiceTests
     }
 
     [Fact]
+    public async Task Resolve_uses_lexical_score_when_embeddings_are_unavailable()
+    {
+        var doc = Doc(
+            Section("Coffee preferences", "- milk: cow\n"),
+            Section("Travel", "- seat: aisle\n"));
+        var svc = new SectionUpsertService(new UnavailableEmbeddingService());
+
+        var result = await svc.ResolveAsync(doc, "Coffee preferences", "oat milk");
+
+        Assert.Equal(UpsertBand.Edit, result.Band);
+        Assert.Equal("coffee-preferences", result.MatchedSlug);
+    }
+
+    [Fact]
     public async Task Resolve_unrelated_subject_is_Create()
     {
         var doc = Doc(Section("John Smith", "- email: a@x\n"));
