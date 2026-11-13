@@ -41,7 +41,7 @@ little standalone value, unblocks a High.
   Every factory-created `HttpClient` carries `Pia/<version> (Windows NT x.y)`, which the server reads as
   "Pia desktop x.y"; a request that brings its own header keeps it.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **5. Record the server bump in the docs.**
+- [x] **5. Record the server bump in the docs.**
   The downgrade-hardening checklist and plan say done, and the account-switch checklist keeps only the
   WinWright B6 re-run.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
