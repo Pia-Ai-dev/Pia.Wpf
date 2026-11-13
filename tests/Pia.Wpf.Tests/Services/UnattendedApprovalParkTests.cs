@@ -395,7 +395,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         const string raw = "+49 170 1234567";
         const string masked = "[Phone_1]";
         var map = Substitute.For<ITokenMapService>();
-        map.TokenizeStructuredResult(Arg.Any<string>())
+        map.TokenizeVerbatim(Arg.Any<string>())
             .Returns(ci => ((string)ci[0]).Replace(raw, masked, StringComparison.Ordinal));
 
         var probe = new ToolProbe("write_file");
@@ -1681,6 +1681,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     {
         var map = Substitute.For<ITokenMapService>();
         map.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        map.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         return map;
     }
 

@@ -45,7 +45,7 @@ little standalone value, unblocks a High.
   The downgrade-hardening checklist and plan say done, and the account-switch checklist keeps only the
   WinWright B6 re-run.
   *Deps:* none · *Effort:* XS · *Value:* Enabler
-- [ ] **6. Tokenize tool results and replayed assistant text verbatim.**
+- [x] **6. Tokenize tool results and replayed assistant text verbatim.**
   `TokenMapService.TokenizeVerbatim` matches stored values in exact case as whole words with no fuzzy
   pass, object results are tokenized leaf by leaf, and the user's own text keeps today's matching.
   *Deps:* G2 · *Effort:* M · *Value:* High

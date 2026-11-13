@@ -1,4 +1,6 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Services.Similarity;
@@ -9,16 +11,33 @@ public partial class TokenMapService : ITokenMapService
 {
     private static readonly string[] Categories = ["Person", "Nickname", "Email", "Phone", "Address", "Date", "Custom"];
 
+    private const string GuidPattern =
+        @"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b";
+
+    private static readonly string TokenPattern = $@"\[(?:{string.Join("|", Categories.Select(Regex.Escape))})_\d+\]";
+
+    private static readonly Regex KeptSpanRegex = new($"{TokenPattern}|{GuidPattern}", RegexOptions.Compiled);
+
+    // A JSON or source escape such as \n ends a word, although its last character is a letter or hex digit.
+    private const string WordStart = @"(?:(?<![\p{L}\p{M}\p{N}])|(?<=\\(?:[nrtbf]|u[0-9A-Fa-f]{4})))";
+    private const string WordEnd = @"(?![\p{L}\p{M}\p{N}])";
+
     private readonly IPiiDetector _piiDetector;
     private readonly IMemoryService _memoryService;
     private readonly ISettingsService _settingsService;
 
     private Dictionary<string, string> _valueToToken = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, string> _tokenToValue = new(StringComparer.OrdinalIgnoreCase);
+    // Every spelling here is exactly the value its token detokenizes to.
+    private Dictionary<string, string> _exactValueToToken = new(StringComparer.Ordinal);
     private Dictionary<string, int> _categoryCounters = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _customKeywords = new(StringComparer.OrdinalIgnoreCase);
 
     private Regex? _detokenizeRegex;
+    private int _exactValuesVersion;
+    private VerbatimMatcher? _verbatimMatcher;
+
+    private sealed record VerbatimMatcher(Regex Regex, int Version);
 
     public TokenMapService(IPiiDetector piiDetector, IMemoryService memoryService, ISettingsService settingsService)
     {
@@ -33,16 +52,117 @@ public partial class TokenMapService : ITokenMapService
         if (_valueToToken.TryGetValue(value, out var existingToken))
             return existingToken;
 
-        if (!_categoryCounters.TryGetValue(category, out var counter))
-            counter = 0;
+        var token = MintToken(value, category);
+        _valueToToken[value] = token;
+        return token;
+    }
 
+    // Unlike Tokenize, a case variant of a known value gets a token of its own.
+    private string TokenizeExact(string value, string category)
+    {
+        if (_exactValueToToken.TryGetValue(value, out var existingToken))
+            return existingToken;
+
+        var token = MintToken(value, category);
+        _valueToToken.TryAdd(value, token);
+        return token;
+    }
+
+    private string MintToken(string value, string category)
+    {
+        _categoryCounters.TryGetValue(category, out var counter);
         counter++;
         _categoryCounters[category] = counter;
 
         var token = $"[{category}_{counter}]";
-        _valueToToken[value] = token;
         _tokenToValue[token] = value;
+        _exactValueToToken[value] = token;
+        _exactValuesVersion++;
         return token;
+    }
+
+    public string TokenizeVerbatim(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        var result = _exactValueToToken.Count == 0 ? text : GetVerbatimRegex().Replace(text, ReplaceKnownValue);
+        return TokenizeDetectedPii(result);
+
+        string ReplaceKnownValue(Match match) =>
+            !match.Groups["kept"].Success && _exactValueToToken.TryGetValue(match.Value, out var token)
+                ? token
+                : match.Value;
+    }
+
+    private Regex GetVerbatimRegex()
+    {
+        var version = _exactValuesVersion;
+        if (_verbatimMatcher is { } cached && cached.Version == version)
+            return cached.Regex;
+
+        var values = _exactValueToToken.Keys
+            .Where(value => value.Length > 0)
+            .OrderByDescending(value => value.Length)
+            .ThenBy(value => value, StringComparer.Ordinal)
+            .ToList();
+        var wordValues = values.Where(value => IsWordChar(value[0])).Select(Literal).ToList();
+        var otherValues = values.Where(value => !IsWordChar(value[0])).Select(Literal).ToList();
+
+        // WordStart is shared, not repeated per value: a group that starts with plain literals is searched
+        // by its first characters, which keeps a large map fast.
+        var alternatives = new List<string> { $"(?<kept>{TokenPattern}|{GuidPattern})" };
+        if (wordValues.Count > 0)
+            alternatives.Add($"{WordStart}(?:{string.Join("|", wordValues)})");
+        if (otherValues.Count > 0)
+            alternatives.Add($"(?:{string.Join("|", otherValues)})");
+
+        var regex = new Regex(string.Join("|", alternatives));
+        _verbatimMatcher = new VerbatimMatcher(regex, version);
+        return regex;
+
+        static string Literal(string value) => Regex.Escape(value) + (IsWordChar(value[^1]) ? WordEnd : "");
+    }
+
+    // The same set as the regex class [\p{L}\p{M}\p{N}].
+    private static bool IsWordChar(char c) => char.GetUnicodeCategory(c) <= UnicodeCategory.OtherNumber;
+
+    // Replaces each detected span in place, so a token stands for exactly the text it covers.
+    private string TokenizeDetectedPii(string text)
+    {
+        var detected = _piiDetector.DetectPii(text);
+        if (detected.Count == 0)
+            return text;
+
+        var kept = KeptSpanRegex.Matches(text);
+        var builder = new StringBuilder(text.Length);
+        var position = 0;
+        foreach (var match in detected.OrderBy(m => m.Start).ThenByDescending(m => m.Length))
+        {
+            if (match.Start < position || !IsDetectedAt(text, match) || BreaksKeptSpan(kept, match))
+                continue;
+
+            builder.Append(text, position, match.Start - position).Append(TokenizeExact(match.Value, match.Category));
+            position = match.Start + match.Length;
+        }
+
+        return position == 0 ? text : builder.Append(text, position, text.Length - position).ToString();
+    }
+
+    private static bool IsDetectedAt(string text, PiiMatch match) =>
+        match.Length > 0
+        && match.Length == match.Value.Length
+        && match.Start >= 0
+        && match.Start + match.Length <= text.Length
+        && string.CompareOrdinal(text, match.Start, match.Value, 0, match.Length) == 0;
+
+    // A detection may swallow a whole GUID, as in a GUID@host address, but never a token or part of either.
+    private static bool BreaksKeptSpan(MatchCollection kept, PiiMatch match)
+    {
+        var end = match.Start + match.Length;
+        return kept.Any(span =>
+            span.Index < end && match.Start < span.Index + span.Length
+            && (span.Value[0] == '[' || span.Index < match.Start || span.Index + span.Length > end));
     }
 
     public string TokenizeStructuredResult(string formattedResult)
@@ -94,7 +214,7 @@ public partial class TokenMapService : ITokenMapService
     [GeneratedRegex(@"\b\w+\b")]
     private static partial Regex WordBoundaryRegex();
 
-    [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")]
+    [GeneratedRegex(GuidPattern)]
     private static partial Regex GuidRegex();
 
     private string FuzzyReplaceCustomKeywords(string text)
@@ -239,6 +359,8 @@ public partial class TokenMapService : ITokenMapService
     {
         _valueToToken = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         _tokenToValue = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        _exactValueToToken = new Dictionary<string, string>(StringComparer.Ordinal);
+        _exactValuesVersion++;
         _categoryCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         _customKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
@@ -254,7 +376,6 @@ public partial class TokenMapService : ITokenMapService
 
     private void BuildDetokenizeRegex()
     {
-        var categoryPattern = string.Join("|", Categories.Select(Regex.Escape));
-        _detokenizeRegex = new Regex($@"\[(?:{categoryPattern})_\d+\]", RegexOptions.Compiled);
+        _detokenizeRegex = new Regex(TokenPattern, RegexOptions.Compiled);
     }
 }

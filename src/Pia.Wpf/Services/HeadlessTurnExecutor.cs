@@ -693,7 +693,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     };
 
     private string Tokenize(string text) =>
-        _tokenizationEnabled && _tokenMap is not null ? _tokenMap.TokenizeStructuredResult(text) : text;
+        _tokenizationEnabled && _tokenMap is not null ? _tokenMap.TokenizeVerbatim(text) : text;
 
     /// <summary>Model-facing and deliberately unlocalized, like <see cref="GraceTurnInstruction"/>.</summary>
     private static string ReplayedCallNote(IEnumerable<string> tools) =>

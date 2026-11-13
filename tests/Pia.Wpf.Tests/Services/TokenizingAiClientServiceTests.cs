@@ -40,6 +40,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026/03/27"));
 
         var settings = Substitute.For<ISettingsService>();
@@ -101,6 +102,8 @@ public class TokenizingAiClientServiceTests
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>())
             .Returns(ci => ((string)ci[0]).Replace("2026/03/27", "[Phone_9]"));
+        tokenMap.TokenizeVerbatim(Arg.Any<string>())
+            .Returns(ci => ((string)ci[0]).Replace("2026/03/27", "[Phone_9]"));
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();
@@ -161,6 +164,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();
@@ -209,6 +213,8 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>())
+            .Returns(ci => ((string)ci[0]).Replace("John Smith", "[Person_1]"));
+        tokenMap.TokenizeVerbatim(Arg.Any<string>())
             .Returns(ci => ((string)ci[0]).Replace("John Smith", "[Person_1]"));
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
@@ -279,6 +285,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();
@@ -328,6 +335,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings());
@@ -377,6 +385,7 @@ public class TokenizingAiClientServiceTests
         var tokenMap = Substitute.For<ITokenMapService>();
         // Detokenize would restore the placeholder; the point of this test is that nothing calls it here.
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026-03-27"));
 
         var settings = Substitute.For<ISettingsService>();
@@ -428,6 +437,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026-03-27"));
 
         var settings = Substitute.For<ISettingsService>();
@@ -486,6 +496,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();

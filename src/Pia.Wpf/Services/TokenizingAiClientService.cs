@@ -1,5 +1,7 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Buffers;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -261,13 +263,7 @@ public class TokenizingAiClientService : IAiClientService
     public Task TestPiaCloudConnectionAsync(CancellationToken cancellationToken = default)
         => _inner.TestPiaCloudConnectionAsync(cancellationToken);
 
-    /// <summary>
-    /// Rewrites TEXT to placeholders on the way in. ASSISTANT text as well as USER text: an earlier turn's
-    /// reply was detokenized on the way OUT by <see cref="BufferedDetokenize"/>, so a User-only pass sent the
-    /// real values straight back to the provider on the next step. Nothing but text is touched — a carried
-    /// tool result is a FunctionResultContent and was already tokenized where it was produced, so it is
-    /// preserved rather than tokenized twice.
-    /// </summary>
+    /// <summary>User text is matched loosely, a replayed reply verbatim; a carried tool result was tokenized where it was produced.</summary>
     private IList<ChatMessage> TokenizeMessages(IList<ChatMessage> messages)
     {
         var result = new List<ChatMessage>(messages.Count);
@@ -279,7 +275,10 @@ public class TokenizingAiClientService : IAiClientService
                 continue;
             }
 
-            var tokenized = TryGetTokenMapService()!.TokenizeStructuredResult(msg.Text);
+            var tokenMap = TryGetTokenMapService()!;
+            var tokenized = msg.Role == ChatRole.User
+                ? tokenMap.TokenizeStructuredResult(msg.Text)
+                : tokenMap.TokenizeVerbatim(msg.Text);
             var nonText = msg.Contents.Where(c => c is not TextContent).ToList();
             if (nonText.Count == 0)
             {
@@ -296,37 +295,59 @@ public class TokenizingAiClientService : IAiClientService
 
     private ToolCallHandler WrapToolHandler(ToolCallHandler handler)
     {
-        // ctx is RELAYED, never re-created and never `default`. This decorator sits between the tool loop and
-        // the real gate for every tokenization-enabled user, so passing `default` here would persist Round = 0
-        // on exactly those installs — and be invisible to any test that leaves tokenization off.
+        // ctx is relayed as is: a re-created one would reset Round for tokenization-enabled installs only.
         return async (toolCall, ctx) =>
         {
-            // EVERY tool, not a named list of write verbs. A placeholder the model copies out of a tool result
-            // and back into an argument reaches the tool verbatim otherwise, and lands on disk — no file tool
-            // was ever on that list, so write_file wrote "[Phone_9]" into a user's report. Detokenize is
-            // idempotent and passes unknown tokens through, so a read tool and the pre-route step tools are
-            // safe to include.
-            //
-            // Onto a COPY: the FunctionCallContent the loop handed us is the one it appended to its own message
-            // list, so an in-place rewrite would send the real values back to the provider on the next round —
-            // and, once a step carries its exchanges forward, for the rest of the run.
+            // Every tool's arguments, onto a copy: the loop keeps the original call and sends it back to the provider.
             _logger.LogDebug("Detokenizing arguments for {ToolName}", toolCall.Name);
             var result = await handler(DetokenizeToolCallArguments(toolCall), ctx);
-            if (result is null)
-                return null;
-
-            // Tokenize the result the model will see so real PII never reaches the provider. A string result
-            // tokenizes directly; a structured OBJECT result (recall hits, a read_topic body, a raw
-            // read_source transcript, a query_* list) is serialized to the SAME wire JSON PiaCloudChatClient
-            // would emit, then tokenized — returning that tokenized JSON string is wire-equivalent, since the
-            // serializer passes strings through. Without this branch, object results bypassed tokenization
-            // entirely (read_source returns never-synthesized primary text — the sharpest PII exposure).
-            if (result is string resultStr)
-                return TryGetTokenMapService()!.TokenizeStructuredResult(resultStr);
-
-            var resultJson = System.Text.Json.JsonSerializer.Serialize(result);
-            return TryGetTokenMapService()!.TokenizeStructuredResult(resultJson);
+            var tokenMap = TryGetTokenMapService()!;
+            return result switch
+            {
+                null => null,
+                string text => tokenMap.TokenizeVerbatim(text),
+                _ => TokenizeObjectResult(result, tokenMap),
+            };
         };
+    }
+
+    /// <summary>The same JSON the serializer writes, tokenized leaf by leaf, since that JSON escapes umlauts and line breaks.</summary>
+    private static string TokenizeObjectResult(object result, ITokenMapService tokenMap)
+    {
+        using var document = JsonSerializer.SerializeToDocument(result);
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+            WriteTokenized(document.RootElement, writer, tokenMap);
+
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
+    }
+
+    private static void WriteTokenized(JsonElement element, Utf8JsonWriter writer, ITokenMapService tokenMap)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(tokenMap.TokenizeVerbatim(property.Name));
+                    WriteTokenized(property.Value, writer, tokenMap);
+                }
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                    WriteTokenized(item, writer, tokenMap);
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(tokenMap.TokenizeVerbatim(element.GetString()!));
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
     }
 
     private FunctionCallContent DetokenizeToolCallArguments(FunctionCallContent toolCall)
