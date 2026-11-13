@@ -33,7 +33,7 @@ little standalone value, unblocks a High.
 - [ ] **2b. Hold the recovery copy to the server's full write rule.**
   The same check also refuses a salt that is not 32 bytes and costs below 19456 / 1 / 1.
   *Deps:* 2, G1 · *Effort:* XS · *Value:* Med
-- [ ] **3. Refuse *Run now* while a local-data clear is pending.**
+- [x] **3. Refuse *Run now* while a local-data clear is pending.**
   `RunNowAsync` returns the new `ScheduledJobRunNowResult.ResetPending` before it reads the job, and the
   Routines page and the `run_routine` tool each say so.
   *Deps:* none · *Effort:* XS · *Value:* Med

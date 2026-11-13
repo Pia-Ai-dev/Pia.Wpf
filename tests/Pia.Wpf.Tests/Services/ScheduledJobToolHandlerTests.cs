@@ -441,6 +441,7 @@ public class ScheduledJobToolHandlerTests
     [InlineData(ScheduledJobRunNowResult.NotOwner, "Tool_Routine_Exec_NotOwner")]
     [InlineData(ScheduledJobRunNowResult.AlreadyRunning, "Tool_Routine_Exec_AlreadyRunning")]
     [InlineData(ScheduledJobRunNowResult.NotFound, "Tool_Routine_Exec_NotFound")]
+    [InlineData(ScheduledJobRunNowResult.ResetPending, "Tool_Routine_Exec_ResetPending")]
     public async Task RunRoutine_MapsEveryOutcomeToItsOwnResult(ScheduledJobRunNowResult outcome, string expected)
     {
         var jobs = new FakeJobService();

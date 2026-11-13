@@ -484,6 +484,7 @@ Changes will be applied.</value></data>
   <data name="Tool_Routine_Exec_NotOwner" xml:space="preserve"><value>Routine {0} is scheduled by another device, and only that device may run it.</value></data>
   <data name="Tool_Routine_Exec_AlreadyRunning" xml:space="preserve"><value>A run of routine {0} is already in progress.</value></data>
   <data name="Tool_Routine_Exec_NotFound" xml:space="preserve"><value>Routine {0} no longer exists.</value></data>
+  <data name="Tool_Routine_Exec_ResetPending" xml:space="preserve"><value>Routine {0} was not started: Pia has not finished removing local data. Tell the user to restart Pia first.</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Search past research findings</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Get a research entry by ID</value></data>

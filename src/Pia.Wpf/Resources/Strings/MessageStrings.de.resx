@@ -476,6 +476,7 @@
   <data name="Tool_Routine_Exec_NotOwner" xml:space="preserve"><value>Routine {0} wird von einem anderen Gerät geplant; nur dieses Gerät darf sie ausführen.</value></data>
   <data name="Tool_Routine_Exec_AlreadyRunning" xml:space="preserve"><value>Ein Lauf der Routine {0} läuft bereits.</value></data>
   <data name="Tool_Routine_Exec_NotFound" xml:space="preserve"><value>Routine {0} existiert nicht mehr.</value></data>
+  <data name="Tool_Routine_Exec_ResetPending" xml:space="preserve"><value>Routine {0} wurde nicht gestartet: Pia hat das Entfernen der lokalen Daten noch nicht abgeschlossen. Bitte den Nutzer, Pia zuerst neu zu starten.</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Frühere Rechercheergebnisse durchsuchen</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Rechercheeintrag per ID abrufen</value></data>
