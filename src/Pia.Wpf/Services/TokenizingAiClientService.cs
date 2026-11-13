@@ -344,6 +344,14 @@ public class TokenizingAiClientService : IAiClientService
             case JsonValueKind.String:
                 writer.WriteStringValue(tokenMap.TokenizeVerbatim(element.GetString()!));
                 break;
+            case JsonValueKind.Number:
+                var number = element.GetRawText();
+                var tokenized = tokenMap.TokenizeVerbatim(number);
+                if (tokenized == number)
+                    element.WriteTo(writer);
+                else
+                    writer.WriteStringValue(tokenized);
+                break;
             default:
                 element.WriteTo(writer);
                 break;

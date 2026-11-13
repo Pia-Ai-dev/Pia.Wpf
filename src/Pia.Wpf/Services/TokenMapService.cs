@@ -19,8 +19,12 @@ public partial class TokenMapService : ITokenMapService
     private static readonly Regex KeptSpanRegex = new($"{TokenPattern}|{GuidPattern}", RegexOptions.Compiled);
 
     // A JSON or source escape such as \n ends a word, although its last character is a letter or hex digit.
-    private const string WordStart = @"(?:(?<![\p{L}\p{M}\p{N}])|(?<=\\(?:[nrtbf]|u[0-9A-Fa-f]{4})))";
+    private const string AfterEscape = @"(?<=\\(?:[nrtbf]|u[0-9A-Fa-f]{4}))";
+    private const string WordStart = @"(?:(?<![\p{L}\p{M}\p{N}])|" + AfterEscape + ")";
     private const string WordEnd = @"(?![\p{L}\p{M}\p{N}])";
+    // A digit at the edge of a value only refuses a digit beside it, so 1990-05-12 matches in 1990-05-12T00:00.
+    private const string DigitStart = @"(?:(?<!\d)|" + AfterEscape + ")";
+    private const string DigitEnd = @"(?!\d)";
 
     private readonly IPiiDetector _piiDetector;
     private readonly IMemoryService _memoryService;
@@ -36,8 +40,14 @@ public partial class TokenMapService : ITokenMapService
     private Regex? _detokenizeRegex;
     private int _exactValuesVersion;
     private VerbatimMatcher? _verbatimMatcher;
+    private List<string> _exactValuesNotInMatcher = [];
+
+    // Bounds the per-call scan for spellings the matcher does not know; past it they are folded in by one rebuild.
+    private const int MaxExactValuesNotInMatcher = 256;
 
     private sealed record VerbatimMatcher(Regex Regex, int Version);
+
+    internal int VerbatimMatcherBuilds { get; private set; }
 
     public TokenMapService(IPiiDetector piiDetector, IMemoryService memoryService, ISettingsService settingsService)
     {
@@ -49,15 +59,18 @@ public partial class TokenMapService : ITokenMapService
 
     public string Tokenize(string value, string category)
     {
-        if (_valueToToken.TryGetValue(value, out var existingToken))
-            return existingToken;
+        // A case variant keeps the known token here but also gets its own, which restores exactly this spelling.
+        if (!_exactValueToToken.ContainsKey(value))
+        {
+            _valueToToken.TryAdd(value, MintToken(value, category));
+            _exactValuesVersion++;
+        }
 
-        var token = MintToken(value, category);
-        _valueToToken[value] = token;
-        return token;
+        return _valueToToken[value];
     }
 
-    // Unlike Tokenize, a case variant of a known value gets a token of its own.
+    // Returns the token of exactly this spelling. The matcher learns it at its next rebuild, forced only once the
+    // spelling turns up unmasked, so an object result does not rebuild it once per leaf.
     private string TokenizeExact(string value, string category)
     {
         if (_exactValueToToken.TryGetValue(value, out var existingToken))
@@ -65,6 +78,7 @@ public partial class TokenMapService : ITokenMapService
 
         var token = MintToken(value, category);
         _valueToToken.TryAdd(value, token);
+        _exactValuesNotInMatcher.Add(value);
         return token;
     }
 
@@ -77,7 +91,6 @@ public partial class TokenMapService : ITokenMapService
         var token = $"[{category}_{counter}]";
         _tokenToValue[token] = value;
         _exactValueToToken[value] = token;
-        _exactValuesVersion++;
         return token;
     }
 
@@ -86,8 +99,18 @@ public partial class TokenMapService : ITokenMapService
         if (string.IsNullOrEmpty(text))
             return text;
 
-        var result = _exactValueToToken.Count == 0 ? text : GetVerbatimRegex().Replace(text, ReplaceKnownValue);
-        return TokenizeDetectedPii(result);
+        var result = TokenizeDetectedPii(ReplaceKnownValues(text));
+        if (!_exactValuesNotInMatcher.Any(value => result.Contains(value, StringComparison.Ordinal)))
+            return result;
+
+        // The detector missed a spelling it found before, as in "Tel.0301234567", so the matcher has to learn it.
+        _exactValuesVersion++;
+        return ReplaceKnownValues(result);
+    }
+
+    private string ReplaceKnownValues(string text)
+    {
+        return _exactValueToToken.Count == 0 ? text : GetVerbatimRegex().Replace(text, ReplaceKnownValue);
 
         string ReplaceKnownValue(Match match) =>
             !match.Groups["kept"].Success && _exactValueToToken.TryGetValue(match.Value, out var token)
@@ -98,7 +121,8 @@ public partial class TokenMapService : ITokenMapService
     private Regex GetVerbatimRegex()
     {
         var version = _exactValuesVersion;
-        if (_verbatimMatcher is { } cached && cached.Version == version)
+        if (_verbatimMatcher is { } cached && cached.Version == version
+            && _exactValuesNotInMatcher.Count < MaxExactValuesNotInMatcher)
             return cached.Regex;
 
         var values = _exactValueToToken.Keys
@@ -106,22 +130,30 @@ public partial class TokenMapService : ITokenMapService
             .OrderByDescending(value => value.Length)
             .ThenBy(value => value, StringComparer.Ordinal)
             .ToList();
-        var wordValues = values.Where(value => IsWordChar(value[0])).Select(Literal).ToList();
-        var otherValues = values.Where(value => !IsWordChar(value[0])).Select(Literal).ToList();
 
-        // WordStart is shared, not repeated per value: a group that starts with plain literals is searched
-        // by its first characters, which keeps a large map fast.
+        // Each start is shared by its group, not repeated per value: a group that starts with plain literals is
+        // searched by its first characters, which keeps a large map fast.
         var alternatives = new List<string> { $"(?<kept>{TokenPattern}|{GuidPattern})" };
-        if (wordValues.Count > 0)
-            alternatives.Add($"{WordStart}(?:{string.Join("|", wordValues)})");
-        if (otherValues.Count > 0)
-            alternatives.Add($"(?:{string.Join("|", otherValues)})");
+        AddGroup(DigitStart, values.Where(value => char.IsDigit(value[0])));
+        AddGroup(WordStart, values.Where(value => IsWordChar(value[0]) && !char.IsDigit(value[0])));
+        AddGroup("", values.Where(value => !IsWordChar(value[0])));
 
         var regex = new Regex(string.Join("|", alternatives));
         _verbatimMatcher = new VerbatimMatcher(regex, version);
+        _exactValuesNotInMatcher.Clear();
+        VerbatimMatcherBuilds++;
         return regex;
 
-        static string Literal(string value) => Regex.Escape(value) + (IsWordChar(value[^1]) ? WordEnd : "");
+        void AddGroup(string start, IEnumerable<string> group)
+        {
+            var literals = group.Select(Literal).ToList();
+            if (literals.Count > 0)
+                alternatives.Add($"{start}(?:{string.Join("|", literals)})");
+        }
+
+        static string Literal(string value) => Regex.Escape(value) + End(value[^1]);
+
+        static string End(char last) => char.IsDigit(last) ? DigitEnd : IsWordChar(last) ? WordEnd : "";
     }
 
     // The same set as the regex class [\p{L}\p{M}\p{N}].
@@ -360,6 +392,7 @@ public partial class TokenMapService : ITokenMapService
         _valueToToken = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         _tokenToValue = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         _exactValueToToken = new Dictionary<string, string>(StringComparer.Ordinal);
+        _exactValuesNotInMatcher = [];
         _exactValuesVersion++;
         _categoryCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         _customKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

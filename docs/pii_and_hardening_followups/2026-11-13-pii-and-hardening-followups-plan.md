@@ -196,9 +196,9 @@ what it read: `max(a, b)` returns as `Max(a, b)`, `Schmitt.pdf` as `Schmidt.pdf`
 
 **Rule.** In tool results and in the assistant's replayed text a stored value matches only when
 - it occurs with exactly its stored characters (ordinal comparison), and
-- the character before it is not a letter, combining mark or digit, or is the end of an escape `\n`,
-  `\r`, `\t`, `\b`, `\f` or `\uXXXX`, and the character after it is not a letter, mark or digit. Each
-  side applies only where the value itself starts or ends with a letter or digit.
+- a side of the value that is a letter has no letter, combining mark or digit next to it, a side that is
+  a digit has no digit next to it, and the end of an escape `\n`, `\r`, `\t`, `\b`, `\f` or `\uXXXX`
+  counts as a boundary before the value.
 
 Underscore, hyphen, dot, slash, brackets and quotes separate words. There is no fuzzy pass. Existing
 tokens and GUIDs are left whole. Emails and phone numbers the detector finds are still tokenized, each
@@ -222,8 +222,9 @@ typo, or glued to letters (`Schmidts`, `SCHMIDT`) reaches the provider unmasked.
 - `TokenizingAiClientService.TokenizeMessages`: assistant text goes to `TokenizeVerbatim`, user text stays
   on `TokenizeStructuredResult`.
 - `TokenizingAiClientService.WrapToolHandler`: a string result goes to `TokenizeVerbatim`. An object
-  result is tokenized leaf by leaf (string values and property names) and then written as JSON, because
-  the serialized text escapes umlauts, `+` and line breaks, which no stored value matches.
+  result is tokenized leaf by leaf (string values, property names, and numbers, which become a string
+  once masked) and then written as JSON, because the serialized text escapes umlauts, `+` and line
+  breaks, which no stored value matches.
 - `HeadlessTurnExecutor.Tokenize` (replayed results and seeded arguments): `TokenizeVerbatim`.
 - `AiFeedbackService`, `SendRequestAsync` and `OptimizeViaPiaCloudAsync` carry user text and stay.
 

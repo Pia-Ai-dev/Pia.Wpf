@@ -547,4 +547,82 @@ public class TokenMapServiceTests
         Assert.Equal("[Email_1]", sut.TokenizeStructuredResult("MARIA@EXAMPLE.COM"));
         Assert.Equal("[Email_1]", sut.Tokenize("Maria@Example.com", "Email"));
     }
+
+    [Fact]
+    public async Task TokenizeVerbatim_MasksEverySpellingOfAValueStoredInSeveralCases()
+    {
+        var settings = new AppSettings();
+        settings.Privacy.PiiKeywords.Add(new PiiKeywordEntry { Keyword = "anna berg" });
+        _settingsService.GetSettingsAsync().Returns(settings);
+        _memoryService.GetObjectsByTypeAsync(MemoryObjectTypes.PersonalProfile).Returns(new List<MemoryObject>
+        {
+            new() { Type = MemoryObjectTypes.PersonalProfile, Label = "Profile", Data = """{"name": "Anna Berg"}""" },
+        });
+        _memoryService.GetObjectsByTypeAsync(MemoryObjectTypes.ContactList).Returns(new List<MemoryObject>
+        {
+            new() { Type = MemoryObjectTypes.ContactList, Label = "Contacts", Data = """{"contacts": [{"name": "ANNA BERG"}]}""" },
+        });
+        var sut = new TokenMapService(new StructuredPiiDetector(), _memoryService, _settingsService);
+        await sut.InitializeAsync();
+        const string mail = "Mail from Anna Berg, ANNA BERG and anna berg";
+
+        var result = sut.TokenizeVerbatim(mail);
+
+        Assert.DoesNotContain("anna berg", result, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(mail, sut.Detokenize(result));
+        Assert.Equal("Mail from [Custom_1], [Custom_1] and [Custom_1]", sut.TokenizeStructuredResult(mail));
+        Assert.Equal("anna berg", sut.Detokenize("[Custom_1]"));
+    }
+
+    [Fact]
+    public void TokenizeVerbatim_MasksACaseVariantStoredAfterTheMatcherWasBuilt()
+    {
+        var sut = CreateVerbatimService();
+        Assert.Equal("MAX", sut.TokenizeVerbatim("MAX"));
+
+        Assert.Equal("[Person_1]", sut.Tokenize("MAX", "Person"));
+        var result = sut.TokenizeVerbatim("MAX and Max");
+
+        Assert.DoesNotContain("MAX", result, StringComparison.Ordinal);
+        Assert.Equal("MAX and Max", sut.Detokenize(result));
+    }
+
+    [Theory]
+    [InlineData("see 0301234567.txt", "see [Phone_1].txt")]
+    [InlineData("Tel.0301234567", "Tel.[Phone_1]")]
+    public void TokenizeVerbatim_MasksADetectedNumberLaterWhereTheDetectorMissesIt(string later, string expected)
+    {
+        var sut = CreateVerbatimService();
+        Assert.Equal("call [Phone_1]", sut.TokenizeVerbatim("call 0301234567"));
+
+        var result = sut.TokenizeVerbatim(later);
+
+        Assert.Equal(expected, result);
+        Assert.Equal(later, sut.Detokenize(result));
+    }
+
+    [Fact]
+    public void TokenizeVerbatim_MasksADetectedNumberInTheSameTextWhereTheDetectorMissesIt()
+    {
+        var sut = CreateVerbatimService();
+
+        Assert.Equal("call [Phone_1], see [Phone_1].txt", sut.TokenizeVerbatim("call 0301234567, see 0301234567.txt"));
+    }
+
+    [Theory]
+    [InlineData("born 1990-05-12T00:00:00", "born [Date_1]T00:00:00")]
+    [InlineData("Kd123456, 123456kg and (123456)", "Kd[Custom_2], [Custom_2]kg and ([Custom_2])")]
+    [InlineData("1234567 and 9123456", "1234567 and 9123456")]
+    [InlineData("MaxLength, Max2 and maximum", "MaxLength, Max2 and maximum")]
+    public void TokenizeVerbatim_LetsALetterButNotADigitTouchADigitAtTheEdgeOfAValue(string input, string expected)
+    {
+        var sut = CreateVerbatimService();
+        sut.Tokenize("123456", "Custom");
+        sut.Tokenize("1990-05-12", "Date");
+
+        var result = sut.TokenizeVerbatim(input);
+
+        Assert.Equal(expected, result);
+        Assert.Equal(input, sut.Detokenize(result));
+    }
 }

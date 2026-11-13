@@ -335,6 +335,53 @@ public sealed class TokenizedToolPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task ANumberInAnObjectResult_ThatIsAStoredValue_IsMaskedAsAString()
+    {
+        _tokenMap.Tokenize("123456", "Custom");
+
+        var (_, results) = await RunAsync(
+            [new(ChatRole.User, "look up the customer")],
+            (_, _) => Task.FromResult<object?>(new { customerNo = 123456, orderNo = 1234567, count = 3 }),
+            _ => Call("query_customers", ("filter", "all")));
+
+        var json = Assert.IsType<string>(results[0]);
+        Assert.Equal("""{"customerNo":"[Custom_1]","orderNo":1234567,"count":3}""", json);
+        using var restored = JsonDocument.Parse(_tokenMap.Detokenize(json));
+        Assert.Equal("123456", restored.RootElement.GetProperty("customerNo").GetString());
+    }
+
+    [Fact]
+    public async Task AnObjectResultWithManyNewContactDetails_DoesNotRebuildTheMatcherPerLeaf()
+    {
+        var hits = Enumerable.Range(0, 200)
+            .Select(i => new Dictionary<string, string>
+            {
+                ["from"] = $"sender{i}@example.org",
+                ["body"] = $"call 030 {1000000 + i}",
+            })
+            .ToArray();
+        var buildsBefore = _tokenMap.VerbatimMatcherBuilds;
+
+        var (_, results) = await RunAsync(
+            [new(ChatRole.User, "what came in?")],
+            (_, _) => Task.FromResult<object?>(new { hits }),
+            _ => Call("recall", ("query", "mail")));
+
+        // One build for the result, one more once the 400 spellings it adds pass the cap on unmatched ones.
+        Assert.InRange(_tokenMap.VerbatimMatcherBuilds - buildsBefore, 0, 2);
+        var json = Assert.IsType<string>(results[0]);
+        Assert.DoesNotContain("@example.org", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("030 1", json, StringComparison.Ordinal);
+        using var restored = JsonDocument.Parse(_tokenMap.Detokenize(json));
+        var restoredHits = restored.RootElement.GetProperty("hits");
+        for (var i = 0; i < hits.Length; i++)
+        {
+            foreach (var (name, value) in hits[i])
+                Assert.Equal(value, restoredHits[i].GetProperty(name).GetString());
+        }
+    }
+
+    [Fact]
     public async Task TheUsersOwnMessage_KeepsCaseInsensitiveAndFuzzyMatching()
     {
         var (sent, _) = await RunAsync(
