@@ -32,9 +32,9 @@ public partial class StructuredPiiDetector : IPiiDetector
 
     // Starts at '+', '(' or a leading 0 and stays on one line, so versions, dates, IPs and amounts never qualify.
     [GeneratedRegex("""
-        (?<![\w+(])(?<!\w[-/.,])
+        (?<![\w+(])(?<!\w[-/,])(?<!\w\.(?!\+))
         (?!\(?\d{1,2}[-/]\d{1,2}[-/]\d{2,4}(?!\d))
-        (?:\+|\(|(?=0))\d[\d\p{Zs}\t()/-]{5,22}\d
+        (?:\(?\+|\(|(?=0))\d[\d\p{Zs}\t()/-]{5,22}\d
         (?![-/.,]?\w)
         """, RegexOptions.IgnorePatternWhitespace | RegexOptions.Compiled)]
     private static partial Regex PhoneRegex();

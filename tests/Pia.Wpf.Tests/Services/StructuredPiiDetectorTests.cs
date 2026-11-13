@@ -147,6 +147,9 @@ public class StructuredPiiDetectorTests
     [InlineData("Mobil: 0171 1234567, Fax folgt", "0171 1234567")]
     [InlineData("Mobil: 01711234567", "01711234567")]
     [InlineData("Hotline 0800-1234567", "0800-1234567")]
+    [InlineData("Ruf an: (+49) 170 1234567.", "(+49) 170 1234567")]
+    [InlineData("Tel.+49 30 1234567", "+49 30 1234567")]
+    [InlineData("Tel.:+49 30 1234567", "+49 30 1234567")]
     public void DetectPii_FindsPhoneNumber(string text, string phone)
     {
         var match = Assert.Single(_sut.DetectPii(text));
@@ -185,6 +188,8 @@ public class StructuredPiiDetectorTests
     [InlineData("Ticket 1234567")]
     [InlineData("ISBN 978-0-123456-47-2")]
     [InlineData("ID a1b2c3d4-0123-4567-89ab-cdef01234567")]
+    [InlineData("Version 1.+49")]
+    [InlineData("Tel.030 1234567")]
     public void DetectPii_LeavesNumbersThatAreNotPhoneNumbersAlone(string text)
     {
         Assert.Empty(_sut.DetectPii(text));

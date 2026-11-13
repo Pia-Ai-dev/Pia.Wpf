@@ -22,7 +22,7 @@ little standalone value, unblocks a High.
 
 ## Steps
 
-- [ ] **1. Mask `(+49) …` and `Tel.+49 …`.**
+- [x] **1. Mask `(+49) …` and `Tel.+49 …`.**
   `StructuredPiiDetector.PhoneRegex` starts a match at `(+` and lets a `+` follow a dotted word, with
   every existing positive and negative case unchanged.
   *Deps:* none · *Effort:* XS · *Value:* High
