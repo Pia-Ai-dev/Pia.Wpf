@@ -9,6 +9,7 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.Models.Vault;
 using Pia.Infrastructure.Vault;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
 using Pia.ViewModels;
@@ -972,4 +973,57 @@ public class VaultViewModelTests
         vm.Dispose();
     }
 
+    [Fact]
+    public async Task RegenerateEmbeddings_StopsAtTheFirstUnavailableError()
+    {
+        var memory = Substitute.For<IMemoryService>();
+        memory.ListMemoriesAsync().Returns(new VaultMemorySnapshot([], 0));
+        memory.GetAllObjectsAsync().Returns([new MemoryObject(), new MemoryObject(), new MemoryObject()]);
+
+        var vaultSources = Substitute.For<IVaultSourcesService>();
+        vaultSources.ListSourcesAsync().Returns([]);
+
+        var localization = Substitute.For<ILocalizationService>();
+        localization.Format(Arg.Any<string>(), Arg.Any<object[]>())
+            .Returns(ci => $"{ci.ArgAt<string>(0)}:{string.Join(",", ci.ArgAt<object[]>(1))}");
+        localization[Arg.Any<string>()].Returns(ci => ci.ArgAt<string>(0));
+
+        var embedding = Substitute.For<IEmbeddingService>();
+        embedding.IsModelAvailable.Returns(true);
+        embedding.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(
+            Task.FromResult(new[] { 0.5f }),
+            Task.FromException<float[]>(new EmbeddingUnavailableException("unavailable")));
+
+        var dialog = Substitute.For<IDialogService>();
+        dialog.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        var snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
+        var vm = new VaultViewModel(
+            NullLogger<VaultViewModel>.Instance,
+            memory,
+            embedding,
+            dialog,
+            snackbar,
+            localization,
+            Substitute.For<IClipboardService>(),
+            vaultSources,
+            Substitute.For<IIngestScheduler>(),
+            Substitute.For<ISettingsService>(),
+            Substitute.For<IObsidianService>(),
+            Substitute.For<ILintService>(),
+            Substitute.For<ICharterDrafter>(),
+            NoCharter());
+
+        await vm.RegenerateEmbeddingsCommand.ExecuteAsync(null);
+
+        await embedding.Received(2).GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await memory.Received(1).UpdateEmbeddingAsync(Arg.Any<Guid>(), Arg.Any<byte[]>());
+        snackbar.Received(1).Show(
+            Arg.Any<string>(), "Msg_Memory_EmbeddingsRegenerated:1,3",
+            Arg.Any<global::Wpf.Ui.Controls.ControlAppearance>(), Arg.Any<global::Wpf.Ui.Controls.IconElement?>(),
+            Arg.Any<TimeSpan>());
+        await dialog.DidNotReceive().ShowMessageDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+
+        vm.Dispose();
+    }
 }

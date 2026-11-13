@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models.Vault;
 using Pia.Navigation;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Wiki;
 using Pia.ViewModels.Models;
@@ -1318,9 +1319,6 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
         }
     }
 
-    // NOTE: the embedding model UI (download / regenerate) is deferred for removal — the vault watcher
-    // owns reindex, so the save path no longer regenerates embeddings. This command still operates on the
-    // legacy table and is kept only until the status-bar embedding affordance is retired (follow-up).
     private async Task ExecuteRegenerateEmbeddings()
     {
         if (!_embeddingService.IsModelAvailable)
@@ -1352,6 +1350,13 @@ public partial class VaultViewModel : UiThreadViewModel, INavigationAware, IDisp
                     var embedding = await _embeddingService.GenerateEmbeddingAsync(textToEmbed);
                     await _memoryService.UpdateEmbeddingAsync(memory.Id, _embeddingService.FloatsToBytes(embedding));
                     processed++;
+                }
+                catch (EmbeddingUnavailableException)
+                {
+                    _logger.LogWarning(
+                        "Regenerating embeddings stopped after {Processed} of {Total}: embeddings are unavailable",
+                        processed, total);
+                    break;
                 }
                 catch (Exception ex)
                 {

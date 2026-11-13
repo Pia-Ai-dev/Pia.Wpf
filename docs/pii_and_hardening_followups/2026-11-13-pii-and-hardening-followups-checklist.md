@@ -49,7 +49,7 @@ little standalone value, unblocks a High.
   `TokenMapService.TokenizeVerbatim` matches stored values in exact case as whole words with no fuzzy
   pass, object results are tokenized leaf by leaf, and the user's own text keeps today's matching.
   *Deps:* G2 · *Effort:* M · *Value:* High
-- [ ] **7. Stop *Regenerate embeddings* at the first unavailable error.**
+- [x] **7. Stop *Regenerate embeddings* at the first unavailable error.**
   The loop in `VaultViewModel` leaves on `EmbeddingUnavailableException` with one log line.
   *Deps:* none · *Effort:* XS · *Value:* Med
 - [ ] **8. Verify the branch.**
