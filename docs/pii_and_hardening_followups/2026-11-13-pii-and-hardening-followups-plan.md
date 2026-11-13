@@ -49,10 +49,13 @@ rejects the nested lookaround, `(?:(?<!\w\.)|(?=\+))` in place of `(?<!\w\.(?!\+
 **Tests** (`StructuredPiiDetectorTests`). `DetectPii_FindsPhoneNumber` gains
 `("Ruf an: (+49) 170 1234567.", "(+49) 170 1234567")`, `("Tel.+49 30 1234567", "+49 30 1234567")` and
 `("Tel.:+49 30 1234567", "+49 30 1234567")`. `DetectPii_LeavesNumbersThatAreNotPhoneNumbersAlone` gains
-`"Version 1.+49"` and `"Tel.030 1234567"`.
+`"Tel.030 1234567"`.
 
 **Known limits, kept on purpose.** `Tel.030 …`, `Fon/030 …`, `Tel.(+49) …`, `555-123-4567` and dotted
-forms stay unmasked; recovering them brings back the version, date and IP false positives.
+forms stay unmasked; recovering them brings back the version, date and IP false positives. A
+parenthesised signed number of seven or more digits (`(+1234567)`) and a `+` number glued to a dotted
+word (`build 1.+4930123456`, `Nr.+1234567890`) are now masked; over-masking is accepted because the
+token round trip restores the text.
 
 ## 2. Bound the Argon2id parameters of the recovery copy
 
@@ -61,8 +64,8 @@ from the server's blob to Argon2id unchecked. A hostile server can make the clie
 limit. The server checks these values on write only and serves stored ones as they are.
 
 **Limits.** The ceilings mirror the server's write rule (`KeyMaterial` in Pia): memory 262144 KiB, time 10,
-parallelism 16. The lower bound is 1, below which Argon2id cannot run. The salt must be present and
-decode as base64. There is no floor at the defaults (65536 / 3 / 4): the server accepts down to
+parallelism 16. The lower bounds are costs of at least 1 and memory of at least 8 × parallelism, the
+RFC 9106 minimum that Argon2id needs. The salt must be present and decode as base64. There is no floor at the defaults (65536 / 3 / 4): the server accepts down to
 19456 / 1 / 1, so another client may store less. Weak parameters also gain a hostile server nothing,
 since the derived key never leaves the device and a forged ciphertext cannot open without the code.
 
@@ -70,8 +73,8 @@ since the derived key never leaves the device and a forged ciphertext cannot ope
 - New `Services/E2EE/RecoveryCopyRejectedException` (`InvalidOperationException`; the message names the
   field and, for the three costs, the value and range).
 - `RecoveryCodeService`: `internal const` ceilings and an `internal static CheckedKdfSalt(blob)` that runs
-  the range checks, then decodes the salt. `UnwrapUmkFromRecovery` calls it first, before any decode or
-  KDF.
+  the range checks and the memory floor of 8 × parallelism, then decodes the salt.
+  `UnwrapUmkFromRecovery` calls it first, before any decode or KDF.
 - `E2EEOnboardingViewModel.ActivateWithRecoveryCodeAsync`: catch the new type before the generic catch
   and in the retry's inner catch, log
   `LogWarning(ex, "The server's recovery copy was refused")`, show `E2EE_Onboarding_Recovery_CopyRejected`
@@ -91,8 +94,10 @@ since the derived key never leaves the device and a forged ciphertext cannot ope
 
 **Tests.**
 - `RecoveryCodeServiceTests`: `UnwrapUmk_RefusesCostsAboveTheCeiling` (262145, `int.MaxValue`, time 11,
-  parallelism 17), `UnwrapUmk_RefusesCostsArgon2idCannotRunWith` (0 and negative),
-  `UnwrapUmk_RefusesASaltThatIsNotBase64`, `CheckedKdfSalt_AcceptsTheCeilingItself`,
+  parallelism 17), `UnwrapUmk_RefusesCostsArgon2idCannotRunWith` (0, negative, and memory below
+  8 × parallelism: 3 / 1 / 1, 63 / 1 / 16, 64 / 1 / 16), `UnwrapUmk_RefusesASaltThatIsNotBase64`,
+  `CheckedKdfSalt_AcceptsTheCeilingItself`, `CheckedKdfSalt_AcceptsEightKibPerLane` (8 / 1 / 1,
+  128 / 1 / 16),
   `UnwrapUmk_OpensACopyWrappedBelowTheDefaults` (8192 / 1 / 1).
 - `DeviceManagementServiceRecoveryTests`:
   `ARecoveryCopyWithAnOversizedCost_IsRefusedBeforeAnythingIsStoredOrSent`.
@@ -258,5 +263,5 @@ checklist's *Not yet planned* list.
 
 | Gate | Question | Blocks |
 |---|---|---|
-| G1 | Did Pia.Mac ever store a recovery copy with a salt other than 32 bytes, or with Argon2id costs below 19456 KiB / 1 pass / 1 lane? | 2b |
+| G1 | Did Pia.Mac ever store a recovery copy with a salt other than 32 bytes, or with Argon2id costs outside 19456–262144 KiB / 1–10 passes / 1–16 lanes? | 2b |
 | G2 | May a known name in another case, with a typo, or glued to letters reach the provider unmasked in tool results and replayed replies, in exchange for byte-exact file round trips? | 6 |

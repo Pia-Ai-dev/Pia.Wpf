@@ -188,7 +188,6 @@ public class StructuredPiiDetectorTests
     [InlineData("Ticket 1234567")]
     [InlineData("ISBN 978-0-123456-47-2")]
     [InlineData("ID a1b2c3d4-0123-4567-89ab-cdef01234567")]
-    [InlineData("Version 1.+49")]
     [InlineData("Tel.030 1234567")]
     public void DetectPii_LeavesNumbersThatAreNotPhoneNumbersAlone(string text)
     {

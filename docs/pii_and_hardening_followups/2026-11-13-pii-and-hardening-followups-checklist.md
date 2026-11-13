@@ -17,7 +17,7 @@ little standalone value, unblocks a High.
 
 | Gate | Question | Blocks | Decision |
 |---|---|---|---|
-| G1 | Did Pia.Mac ever store a recovery copy with a salt other than 32 bytes, or with Argon2id costs below 19456 KiB / 1 pass / 1 lane? | 2b | Open. Pia.Wpf wrote 32 bytes and 65536 / 3 / 4 in every release. |
+| G1 | Did Pia.Mac ever store a recovery copy with a salt other than 32 bytes, or with Argon2id costs outside 19456–262144 KiB / 1–10 passes / 1–16 lanes? | 2b | Open. Pia.Wpf wrote 32 bytes and 65536 / 3 / 4 in every release. The ceilings already shipped in step 2, so a "yes" above the ceiling means step 2 needs revisiting. |
 | G2 | May a known name in another case, with a typo, or glued to letters reach the provider unmasked in tool results and replayed replies, in exchange for byte-exact file round trips? | 6 | Yes, provisionally, as #93 proposes and Pia.Mac does. The owner confirms before release; step 6 is its own commit so it can be reverted alone. |
 
 ## Steps
@@ -28,7 +28,8 @@ little standalone value, unblocks a High.
   *Deps:* none · *Effort:* XS · *Value:* High
 - [x] **2. Bound the recovery copy's Argon2id parameters.**
   `RecoveryCodeService` refuses memory above 262144 KiB, time above 10, parallelism above 16, values
-  below 1 and an undecodable salt before the KDF runs, and onboarding shows its own message for it.
+  below 1, memory below 8 KiB per lane and an undecodable salt before the KDF runs, and onboarding
+  shows its own message for it.
   *Deps:* none · *Effort:* S · *Value:* High
 - [ ] **2b. Hold the recovery copy to the server's full write rule.**
   The same check also refuses a salt that is not 32 bytes and costs below 19456 / 1 / 1.

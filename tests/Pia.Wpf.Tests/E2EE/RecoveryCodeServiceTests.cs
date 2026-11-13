@@ -92,6 +92,9 @@ public class RecoveryCodeServiceTests
     [InlineData(65_536, -3, 4, "KdfTimeCost")]
     [InlineData(65_536, 3, 0, "KdfParallelism")]
     [InlineData(65_536, 3, -4, "KdfParallelism")]
+    [InlineData(3, 1, 1, "KdfMemoryCostKb")]
+    [InlineData(63, 1, 16, "KdfMemoryCostKb")]
+    [InlineData(64, 1, 16, "KdfMemoryCostKb")]
     public void UnwrapUmk_RefusesCostsArgon2idCannotRunWith(int memoryKb, int time, int parallelism, string field)
     {
         var blob = Blob(memoryKb, time, parallelism);
@@ -151,6 +154,17 @@ public class RecoveryCodeServiceTests
             RecoveryCodeService.MaxKdfTimeCost,
             RecoveryCodeService.MaxKdfParallelism,
             Convert.ToBase64String(salt));
+
+        Assert.Equal(salt, RecoveryCodeService.CheckedKdfSalt(blob));
+    }
+
+    [Theory]
+    [InlineData(8, 1, 1)]
+    [InlineData(128, 1, 16)]
+    public void CheckedKdfSalt_AcceptsEightKibPerLane(int memoryKb, int time, int parallelism)
+    {
+        var salt = RandomNumberGenerator.GetBytes(32);
+        var blob = Blob(memoryKb, time, parallelism, Convert.ToBase64String(salt));
 
         Assert.Equal(salt, RecoveryCodeService.CheckedKdfSalt(blob));
     }

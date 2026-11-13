@@ -116,6 +116,11 @@ public class RecoveryCodeService : IRecoveryCodeService
         CheckKdfCost(nameof(blob.KdfTimeCost), blob.KdfTimeCost, MaxKdfTimeCost);
         CheckKdfCost(nameof(blob.KdfParallelism), blob.KdfParallelism, MaxKdfParallelism);
 
+        // RFC 9106 minimum; it also keeps Konscious from throwing a plain exception that reads as a wrong code.
+        if (blob.KdfMemoryCostKb < 8 * blob.KdfParallelism)
+            throw new RecoveryCopyRejectedException(
+                $"{nameof(blob.KdfMemoryCostKb)} is {blob.KdfMemoryCostKb}, below 8 times {nameof(blob.KdfParallelism)} {blob.KdfParallelism}.");
+
         if (string.IsNullOrWhiteSpace(blob.KdfSalt))
             throw new RecoveryCopyRejectedException($"{nameof(blob.KdfSalt)} is missing.");
 
