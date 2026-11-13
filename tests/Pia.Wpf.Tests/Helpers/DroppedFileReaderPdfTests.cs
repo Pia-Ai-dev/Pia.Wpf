@@ -2,8 +2,6 @@ using System.IO;
 using System.Threading;
 using Pia.Helpers;
 using Pia.Tests.TestInfrastructure;
-using UglyToad.PdfPig.Fonts.Standard14Fonts;
-using UglyToad.PdfPig.Writer;
 using Xunit;
 
 namespace Pia.Tests.Helpers;
@@ -59,21 +57,10 @@ public sealed class DroppedFileReaderPdfTests : IDisposable
         Assert.NotEqual(DroppedFileReader.NoTextLayer, result.Error);
     }
 
-    /// <summary>One page per entry; a null entry is a page with no text on it, i.e. a scan.</summary>
     private string WritePdf(string fileName, string?[] pages)
     {
-        var builder = new PdfDocumentBuilder();
-        var font = builder.AddStandard14Font(Standard14Font.Helvetica);
-
-        foreach (var text in pages)
-        {
-            var page = builder.AddPage(595, 842);
-            if (text is not null)
-                page.AddText(text, 12, new UglyToad.PdfPig.Core.PdfPoint(50, 780), font);
-        }
-
         var path = Path.Combine(_dir, fileName);
-        File.WriteAllBytes(path, builder.Build());
+        PdfDocuments.Create(path, pages);
         return path;
     }
 }
