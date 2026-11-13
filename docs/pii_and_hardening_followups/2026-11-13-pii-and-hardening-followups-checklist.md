@@ -26,7 +26,7 @@ little standalone value, unblocks a High.
   `StructuredPiiDetector.PhoneRegex` starts a match at `(+` and lets a `+` follow a dotted word, with
   every existing positive and negative case unchanged.
   *Deps:* none · *Effort:* XS · *Value:* High
-- [ ] **2. Bound the recovery copy's Argon2id parameters.**
+- [x] **2. Bound the recovery copy's Argon2id parameters.**
   `RecoveryCodeService` refuses memory above 262144 KiB, time above 10, parallelism above 16, values
   below 1 and an undecodable salt before the KDF runs, and onboarding shows its own message for it.
   *Deps:* none · *Effort:* S · *Value:* High

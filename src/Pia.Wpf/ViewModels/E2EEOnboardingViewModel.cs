@@ -188,7 +188,6 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             StatusMessage = "Verifying recovery code...";
 
             await _deviceMgmt.ThrowIfDeviceKeysLostAsync();
-            // Register or re-register if session expired
             await EnsureOnboardingSessionAsync();
 
             await _deviceMgmt.ActivateViaRecoveryAsync(
@@ -206,6 +205,10 @@ public partial class E2EEOnboardingViewModel : ObservableObject
                 await _deviceMgmt.ActivateViaRecoveryAsync(
                     RecoveryCodeInput.Trim(), _onboardingSessionId!);
                 await CompleteOnboardingAsync();
+            }
+            catch (RecoveryCopyRejectedException copyEx)
+            {
+                ShowRejectedRecoveryCopy(copyEx);
             }
             catch (Exception retryEx)
             {
@@ -226,12 +229,23 @@ public partial class E2EEOnboardingViewModel : ObservableObject
             ErrorMessage = ex.UserMessage;
             State = OnboardingState.EnteringRecoveryCode;
         }
+        catch (RecoveryCopyRejectedException ex)
+        {
+            ShowRejectedRecoveryCopy(ex);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Recovery code activation failed");
             ErrorMessage = "Invalid recovery code or activation failed. Please try again.";
             State = OnboardingState.EnteringRecoveryCode;
         }
+    }
+
+    private void ShowRejectedRecoveryCopy(RecoveryCopyRejectedException ex)
+    {
+        _logger.LogWarning(ex, "The server's recovery copy was refused");
+        ErrorMessage = LocalizationSource.Instance["E2EE_Onboarding_Recovery_CopyRejected"];
+        State = OnboardingState.EnteringRecoveryCode;
     }
 
     [RelayCommand]

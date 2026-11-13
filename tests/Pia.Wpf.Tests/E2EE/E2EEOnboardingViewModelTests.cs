@@ -4,6 +4,7 @@ using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using Pia.Localization;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -214,6 +215,41 @@ public class E2EEOnboardingViewModelTests
         Assert.Equal(1, callCount);
         Assert.Equal(OnboardingState.EnteringRecoveryCode, sut.State);
         Assert.Contains("Invalid recovery code", sut.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ARefusedRecoveryCopy_IsNotReportedAsAWrongCode(bool afterTheSessionExpired)
+    {
+        var callCount = 0;
+        _deviceMgmt.RegisterPendingDeviceAsync().Returns(_ =>
+        {
+            callCount++;
+            return new DeviceRegistrationResponse
+            {
+                OnboardingSessionId = $"session-{callCount}",
+                ServerChallenge = "challenge",
+                IsFirstDevice = false
+            };
+        });
+        var refused = new RecoveryCopyRejectedException("KdfMemoryCostKb is 262145, outside the range 1 to 262144.");
+        _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), "session-1").ThrowsAsync(afterTheSessionExpired
+            ? new OnboardingSessionExpiredException("spent")
+            : refused);
+        _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), "session-2").ThrowsAsync(refused);
+
+        var sut = CreateSut();
+        sut.ShowRecoveryCodeEntryCommand.Execute(null);
+        sut.RecoveryCodeInput = "ABCD-EFGH-IJKL-MNOP";
+
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        Assert.Equal(afterTheSessionExpired ? 2 : 1, callCount);
+        Assert.Equal(OnboardingState.EnteringRecoveryCode, sut.State);
+        Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_Recovery_CopyRejected"], sut.ErrorMessage);
+        Assert.DoesNotContain("Invalid recovery code", sut.ErrorMessage);
+        Assert.DoesNotContain("Activation failed", sut.ErrorMessage);
     }
 
     [Fact]
