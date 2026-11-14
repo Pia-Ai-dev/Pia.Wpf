@@ -609,6 +609,19 @@ public class TokenMapServiceTests
         Assert.Equal("call [Phone_1], see [Phone_1].txt", sut.TokenizeVerbatim("call 0301234567, see 0301234567.txt"));
     }
 
+    [Fact]
+    public void TokenizeVerbatim_MasksADetectedEmailLaterThatContainsAStoredValue()
+    {
+        var sut = new TokenMapService(new StructuredPiiDetector(), _memoryService, _settingsService);
+        sut.Tokenize("berg", "Custom");
+        Assert.Equal("ä[Email_1]", sut.TokenizeVerbatim("äberg@firma.de"));
+
+        var result = sut.TokenizeVerbatim(" berg@firma.de");
+
+        Assert.Equal(" [Email_1]", result);
+        Assert.Equal(" berg@firma.de", sut.Detokenize(result));
+    }
+
     [Theory]
     [InlineData("born 1990-05-12T00:00:00", "born [Date_1]T00:00:00")]
     [InlineData("Kd123456, 123456kg and (123456)", "Kd[Custom_2], [Custom_2]kg and ([Custom_2])")]

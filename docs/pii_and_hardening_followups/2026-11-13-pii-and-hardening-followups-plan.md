@@ -237,10 +237,21 @@ typo, or glued to letters (`Schmidts`, `SCHMIDT`) reaches the provider unmasked.
   `AnExactWholeWordName_AndNewContactDetails_AreStillMasked`,
   `AnObjectResultWithALineBreakBeforeAName_IsMasked`,
   `TheUsersOwnMessage_KeepsCaseInsensitiveAndFuzzyMatching`,
-  `AReplayedAssistantReply_IsTokenizedVerbatim`.
+  `AReplayedAssistantReply_IsTokenizedVerbatim`,
+  `AnObjectResultWithoutPii_IsTheSerializersOwnJson`,
+  `ANumberInAnObjectResult_ThatIsAStoredValue_IsMaskedAsAString`,
+  `AnObjectResultWithManyNewContactDetails_DoesNotRebuildTheMatcherPerLeaf`.
 - `TokenMapServiceTests`: `TokenizeVerbatim_MatchesWholeWordsInExactCaseOnly`,
+  `TokenizeVerbatim_TreatsAJsonEscapeAsTheEndOfAWord`,
   `TokenizeVerbatim_ThenDetokenize_ReturnsTheInput`, `TokenizeVerbatim_LeavesExistingTokensAndGuidsWhole`,
-  `TokenizeVerbatim_GivesACaseVariantOfAKnownEmailItsOwnToken`.
+  `TokenizeVerbatim_FollowsTheMapAcrossCallsAndClear`,
+  `TokenizeVerbatim_GivesACaseVariantOfAKnownEmailItsOwnToken`,
+  `TokenizeVerbatim_MasksEverySpellingOfAValueStoredInSeveralCases`,
+  `TokenizeVerbatim_MasksACaseVariantStoredAfterTheMatcherWasBuilt`,
+  `TokenizeVerbatim_MasksADetectedNumberLaterWhereTheDetectorMissesIt`,
+  `TokenizeVerbatim_MasksADetectedNumberInTheSameTextWhereTheDetectorMissesIt`,
+  `TokenizeVerbatim_MasksADetectedEmailLaterThatContainsAStoredValue`,
+  `TokenizeVerbatim_LetsALetterButNotADigitTouchADigitAtTheEdgeOfAValue`.
 - Every `Substitute.For<ITokenMapService>()` that stubs `TokenizeStructuredResult` gets the same stub for
   `TokenizeVerbatim`: `TokenizingAiClientServiceTests`, `UnattendedApprovalParkTests`,
   `TokenizationLatchTests`.
@@ -248,6 +259,8 @@ typo, or glued to letters (`Schmidts`, `SCHMIDT`) reaches the provider unmasked.
 **Known limits.** Text the user types stays on the fuzzy path, so a file name typed with a near-miss of a
 keyword is still rewritten; the same holds for user-role messages the app writes itself. A replayed
 object result in a headless run is tokenized as JSON text, where escaped umlauts and `+` do not match.
+The digit-edge rule over-masks a stored number inside hex runs, glued GUIDs, `\uXXXX` escapes and decimal
+parts (e.g. `3f9a123456bc0d`, `0.123456`, `\u0041` with `0041` stored); every case round-trips exactly.
 
 ## 7. Stop *Regenerate embeddings* at the first unavailable error
 

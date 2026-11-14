@@ -69,8 +69,7 @@ public partial class TokenMapService : ITokenMapService
         return _valueToToken[value];
     }
 
-    // Returns the token of exactly this spelling. The matcher learns it at its next rebuild, forced only once the
-    // spelling turns up unmasked, so an object result does not rebuild it once per leaf.
+    // Does not invalidate the matcher, so an object result does not rebuild it once per leaf.
     private string TokenizeExact(string value, string category)
     {
         if (_exactValueToToken.TryGetValue(value, out var existingToken))
@@ -99,14 +98,22 @@ public partial class TokenMapService : ITokenMapService
         if (string.IsNullOrEmpty(text))
             return text;
 
+        // A stale matcher could mask a stored "berg" in a pending "berg@firma.de", hiding the email from the detector.
+        if (ContainsPendingSpelling(text))
+            _exactValuesVersion++;
+
         var result = TokenizeDetectedPii(ReplaceKnownValues(text));
-        if (!_exactValuesNotInMatcher.Any(value => result.Contains(value, StringComparison.Ordinal)))
+        if (!ContainsPendingSpelling(result))
             return result;
 
-        // The detector missed a spelling it found before, as in "Tel.0301234567", so the matcher has to learn it.
+        // A spelling found in this text was missed elsewhere in it, as in "see 0301234567.txt", or the cap was hit.
         _exactValuesVersion++;
         return ReplaceKnownValues(result);
     }
+
+    private bool ContainsPendingSpelling(string text) =>
+        _exactValuesNotInMatcher.Count >= MaxExactValuesNotInMatcher
+        || _exactValuesNotInMatcher.Any(value => text.Contains(value, StringComparison.Ordinal));
 
     private string ReplaceKnownValues(string text)
     {
