@@ -1,6 +1,6 @@
 # PII and hardening follow-ups — checklist
 
-**Status:** Planned
+**Status:** Steps 1–8 done. Step 2b waits on gate G1; gate G2 needs the owner's confirmation before release.
 **Owner:** Marco Altmann
 **Written:** 2026-11-13
 **Origin:** [2026-11-13-pii-and-hardening-followups-plan.md](2026-11-13-pii-and-hardening-followups-plan.md),
@@ -53,7 +53,7 @@ little standalone value, unblocks a High.
 - [x] **7. Stop *Regenerate embeddings* at the first unavailable error.**
   The loop in `VaultViewModel` leaves on `EmbeddingUnavailableException` with one log line.
   *Deps:* none · *Effort:* XS · *Value:* Med
-- [ ] **8. Verify the branch.**
+- [x] **8. Verify the branch.**
   Zero-warning rebuilds in Debug and Release and the test exe with `Failed: 0`.
   *Deps:* 1–7 · *Effort:* XS · *Value:* High
 

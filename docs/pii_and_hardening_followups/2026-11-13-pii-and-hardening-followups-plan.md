@@ -1,6 +1,6 @@
 # PII and hardening follow-ups: plan
 
-**Status:** Planned
+**Status:** Implemented, except step 2b (gate G1). Gate G2 needs the owner's confirmation before release.
 **Owner:** Marco Altmann
 **Written:** 2026-11-13
 **Origin:** GitHub issues #92 (phone pattern), #88 (User-Agent) and #93 (tool-result tokenization);
