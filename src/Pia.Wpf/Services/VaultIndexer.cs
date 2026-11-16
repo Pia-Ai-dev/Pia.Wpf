@@ -7,6 +7,7 @@ using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Logging;
 using Pia.Models.Vault;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 
 namespace Pia.Services;
@@ -117,14 +118,10 @@ public class VaultIndexer : IVaultIndexer
     /// <inheritdoc />
     public async Task IndexFileAsync(string relativePath)
     {
-        // Canonicalize the Chunks key to forward-slash so rebuild-walk paths (native separators,
-        // backslash on Windows from Path.GetRelativePath) and watcher paths (already forward-slash)
-        // key the SAME file identically — otherwise Windows would form duplicate/orphan chunk rows.
+        // Rebuild walks yield backslash paths on Windows, the watcher forward slashes: one key per file.
         relativePath = NormalizeRelativePath(relativePath);
 
-        // Pia's housekeeping documents (AGENTS/index/log) and the recoverable .archive/ snapshots must
-        // never surface in recall. Filter centrally here so the watcher, RebuildAllAsync and
-        // ReconcileAsync all agree, and drop any chunks an earlier (unfiltered) pass left for the path.
+        // Housekeeping files and .archive/ snapshots never surface in recall; drop any chunks they left.
         if (!VaultPaths.IsRecallIndexable(relativePath))
         {
             await RemoveFileAsync(relativePath);
@@ -149,21 +146,13 @@ public class VaultIndexer : IVaultIndexer
 
             if (await IsContentHashUnchangedAsync(connection, relativePath, section.Slug, contentHash))
             {
-                // Content-hash skip: this section's Heading/Body are byte-identical to the indexed
-                // copy, so the existing embedding and FTS row are still valid — do not re-embed.
                 continue;
             }
 
-            var embedding = await _embeddings.GenerateEmbeddingAsync($"{section.Heading}\n{section.Body}");
-            var embeddingBytes = _embeddings.FloatsToBytes(embedding);
-            await UpsertChunkAsync(connection, relativePath, section, contentHash, embeddingBytes);
-            await RefreshFtsAsync(connection, relativePath, section);
+            await IndexChunkAsync(connection, relativePath, section, contentHash);
         }
 
-        // Freeform files (note/project/topic — the format ingest and remember("topic", …) write)
-        // keep their content in the PREAMBLE, not in ## sections, so without this they produce zero
-        // chunks and are invisible to recall. Emit ONE synthetic chunk for a non-empty preamble
-        // under the reserved slug; heading = frontmatter title, else the filename.
+        // Freeform files keep their content in the preamble, so it becomes one synthetic chunk.
         if (!string.IsNullOrWhiteSpace(doc.Preamble))
         {
             var heading = doc.Frontmatter.TryGetValue("title", out var title) && !string.IsNullOrWhiteSpace(title)
@@ -175,11 +164,7 @@ public class VaultIndexer : IVaultIndexer
             var preambleHash = ComputeContentHash(preambleSection);
             if (!await IsContentHashUnchangedAsync(connection, relativePath, VaultSlug.PreambleSlug, preambleHash))
             {
-                var preambleEmbedding = await _embeddings.GenerateEmbeddingAsync(
-                    $"{preambleSection.Heading}\n{preambleSection.Body}");
-                await UpsertChunkAsync(connection, relativePath, preambleSection, preambleHash,
-                    _embeddings.FloatsToBytes(preambleEmbedding));
-                await RefreshFtsAsync(connection, relativePath, preambleSection);
+                await IndexChunkAsync(connection, relativePath, preambleSection, preambleHash);
             }
         }
 
@@ -214,11 +199,31 @@ public class VaultIndexer : IVaultIndexer
         await dropChunks.ExecuteNonQueryAsync();
     }
 
+    private async Task IndexChunkAsync(
+        SqliteConnection connection, string filePath, VaultSection section, string contentHash)
+    {
+        byte[]? embeddingBytes = null;
+        try
+        {
+            var embedding = await _embeddings.GenerateEmbeddingAsync($"{section.Heading}\n{section.Body}");
+            embeddingBytes = _embeddings.FloatsToBytes(embedding);
+        }
+        catch (EmbeddingUnavailableException)
+        {
+            // Still indexed for text search; the null embedding gets it re-embedded on a later pass.
+        }
+
+        await UpsertChunkAsync(connection, filePath, section, contentHash, embeddingBytes);
+        await RefreshFtsAsync(connection, filePath, section);
+    }
+
+    // A chunk stored without an embedding never counts as unchanged, so it gets one once embeddings work.
     private static async Task<bool> IsContentHashUnchangedAsync(
         SqliteConnection connection, string filePath, string slug, string contentHash)
     {
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT ContentHash FROM Chunks WHERE FilePath = $p AND Slug = $s;";
+        cmd.CommandText =
+            "SELECT ContentHash FROM Chunks WHERE FilePath = $p AND Slug = $s AND Embedding IS NOT NULL;";
         cmd.Parameters.AddWithValue("$p", filePath);
         cmd.Parameters.AddWithValue("$s", slug);
         var existing = await cmd.ExecuteScalarAsync() as string;
@@ -230,11 +235,10 @@ public class VaultIndexer : IVaultIndexer
         string filePath,
         VaultSection section,
         string contentHash,
-        byte[] embeddingBytes)
+        byte[]? embeddingBytes)
     {
         using var cmd = connection.CreateCommand();
-        // (FilePath, Slug) is the PRIMARY KEY, so ON CONFLICT updates the existing chunk in place
-        // (keeping its rowid stable, which the FTS row alignment relies on).
+        // Updating in place keeps the rowid stable, which the FTS row alignment relies on.
         cmd.CommandText = """
             INSERT INTO Chunks (FilePath, Heading, Slug, ContentHash, Embedding, IndexedAt)
             VALUES ($p, $h, $s, $hash, $emb, $at)
@@ -248,7 +252,7 @@ public class VaultIndexer : IVaultIndexer
         cmd.Parameters.AddWithValue("$h", section.Heading);
         cmd.Parameters.AddWithValue("$s", section.Slug);
         cmd.Parameters.AddWithValue("$hash", contentHash);
-        cmd.Parameters.AddWithValue("$emb", embeddingBytes);
+        cmd.Parameters.AddWithValue("$emb", (object?)embeddingBytes ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$at", DateTime.UtcNow.ToString("O"));
         await cmd.ExecuteNonQueryAsync();
     }
