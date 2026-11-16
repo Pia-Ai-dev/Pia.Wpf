@@ -149,7 +149,7 @@ public class AssistantViewModelOverlayHostingTests
 
     private void StubStartTurn(Func<NSubstitute.Core.CallInfo, bool> turn) =>
         _manager.StartTurnAsync(Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(),
-                Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>())
+                Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>())
             .Returns(ci => Task.FromResult(turn(ci)));
 
     private static bool IsChatCopy(NSubstitute.Core.ICall call) =>

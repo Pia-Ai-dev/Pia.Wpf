@@ -658,7 +658,7 @@ public class LocalizationTests
     [InlineData("Msg_File_UnsupportedAttachment", 1)]
     [InlineData("Msg_File_DuplicateAttachment", 1)]
     [InlineData("Msg_File_Empty", 1)]
-    [InlineData("Msg_File_Truncated", 1)]
+    [InlineData("Msg_File_Truncated", 2)]
     [InlineData("Msg_File_ImageLimit", 2)]
     [InlineData("Msg_File_ImageBudget", 1)]
     [InlineData("Msg_File_DropFailed", 1)]

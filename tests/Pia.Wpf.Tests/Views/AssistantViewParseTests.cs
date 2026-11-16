@@ -341,8 +341,6 @@ public class AssistantViewParseTests
                     FileName = "notes.txt",
                     Kind = PendingFileKind.Text,
                     Text = "the quarterly numbers",
-                    Truncated = false,
-                    OriginalCharCount = 21,
                 });
                 return 0;
             });

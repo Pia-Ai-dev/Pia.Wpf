@@ -47,31 +47,16 @@ public static class DroppedFileImporter
             var kind = DroppedFileReader.Classify(path);
             var fileName = Path.GetFileName(path);
 
-            DroppedFileReader.ReadResult result;
-            switch (kind)
+            if (DroppedFileReader.ReaderFor(kind) is not { } read)
             {
-                case FileKind.Text:
-                    result = await DroppedFileReader.ReadTextAsync(path, ct);
-                    break;
-                case FileKind.Docx:
-                    result = await DroppedFileReader.ReadDocxAsync(path, ct);
-                    break;
-                case FileKind.Xlsx:
-                    result = await DroppedFileReader.ReadXlsxAsync(path, ct);
-                    break;
-                case FileKind.Pdf:
-                    result = await DroppedFileReader.ReadPdfAsync(path, ct);
-                    break;
-                case FileKind.Email:
-                    result = await DroppedFileReader.ReadEmailAsync(path, ct);
-                    break;
-                default:
-                    // Image / Audio / Unsupported. Images become vision attachments on the
-                    // assistant path only; here nothing is inserted, so say so.
-                    logger.LogInformation("File drop rejected for kind {Kind}", kind);
-                    Report(localizationService.Format("Msg_File_Unsupported", fileName), ControlAppearance.Caution);
-                    continue;
+                // Images become vision attachments on the assistant path only; here nothing is
+                // inserted, so say so.
+                logger.LogInformation("File drop rejected for kind {Kind}", kind);
+                Report(localizationService.Format("Msg_File_Unsupported", fileName), ControlAppearance.Caution);
+                continue;
             }
+
+            var result = await read(path, ct);
 
             switch (result.Status)
             {

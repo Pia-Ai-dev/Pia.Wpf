@@ -2246,6 +2246,98 @@ public class ChatSessionManagerTests
         Assert.Contains(AttachedFileBlock, session.Messages[0].ToChatMessage().Text);
     }
 
+    private static PendingFileAttachment CutChip(string? savedRelativePath = null) => new()
+    {
+        FullPath = @"C:\work\notes.txt",
+        FileName = "notes.txt",
+        Kind = PendingFileKind.Text,
+        Text = "a\nb\nc",
+        Cut = new AttachmentCut(ShownLines: 3, TotalLines: 900, EndsMidLine: false, ShownPercent: 1),
+        SavedRelativePath = savedRelativePath,
+    };
+
+    private void ArrangeTurn(IList<Microsoft.Extensions.AI.AITool>? tools)
+    {
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", tools, tools is { Count: > 0 }, false));
+    }
+
+    private static IList<Microsoft.Extensions.AI.AITool> ReadFileTool() =>
+        [Microsoft.Extensions.AI.AIFunctionFactory.Create(() => "", "read_file")];
+
+    [Fact]
+    public async Task StartTurnAsync_ACutFile_PointsAtReadFile_WhenTheTurnOffersIt()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeTurn(ReadFileTool());
+        _files.ToReadFilePath(@"C:\work\notes.txt", Arg.Any<string?>()).Returns("notes.txt");
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip()]);
+
+        Assert.Contains("read it with read_file (path: notes.txt, offset: 4).", session.Messages[0].AttachedFileContext);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ACutSavedFile_PointsAtTheSavedCopy()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeTurn(ReadFileTool());
+        _files.ToReadFilePath("Playground/notes.txt", Arg.Any<string?>()).Returns("notes.txt");
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip("Playground/notes.txt")]);
+
+        Assert.Contains("(path: notes.txt, offset: 4)", session.Messages[0].AttachedFileContext);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ACutFile_WithoutReadFileOnTheTurn_SaysTheRestWasNotSent()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeTurn(tools: null);
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip()]);
+
+        Assert.Contains("The rest was not sent.", session.Messages[0].AttachedFileContext);
+        Assert.DoesNotContain("read_file", session.Messages[0].AttachedFileContext);
+        _files.DidNotReceive().ToReadFilePath(Arg.Any<string>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_WithFiles_SetupFails_KeepsTheFileTextForRegenerate()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        // No provider configured: setup fails before PrepareTurn.
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip()]);
+
+        Assert.Contains("a\nb\nc", session.Messages[0].AttachedFileContext);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_RunParkedForClarification_WithAStagedFile_StartsAnOrdinaryTurn()
+    {
+        var sut = CreateResumingSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        AttachParkedRun(session, "needs-goal");
+        ArrangeTurn(tools: null);
+
+        await sut.StartTurnAsync(session, "the printed catalogue", null, files: [CutChip()]);
+
+        await _resumeService.DidNotReceive().ResumeAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        Assert.Equal(2, session.Messages.Count);
+    }
+
     private const string AttachedFileBlock =
         "The user attached the following file(s) to this message. Use them as context for the request.\n\n" +
         "<attached_file name=\"notes.txt\" type=\"text\">\nthe quarterly numbers\n</attached_file>";
