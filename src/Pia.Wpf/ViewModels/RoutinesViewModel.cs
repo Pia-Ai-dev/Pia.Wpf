@@ -1487,6 +1487,7 @@ public partial class RoutinesViewModel : UiThreadViewModel, INavigationAware
                 ScheduledJobRunNowResult.Dispatched => _localization["Settings_ScheduledJobs_RunStarted"],
                 ScheduledJobRunNowResult.NotOwner => _localization["Settings_ScheduledJobs_RunNotOwner"],
                 ScheduledJobRunNowResult.AlreadyRunning => _localization["Settings_ScheduledJobs_RunAlreadyRunning"],
+                ScheduledJobRunNowResult.ResetPending => _localization["Settings_ScheduledJobs_RunResetPending"],
                 _ => _localization["Settings_ScheduledJobs_RunNotFound"],
             };
 

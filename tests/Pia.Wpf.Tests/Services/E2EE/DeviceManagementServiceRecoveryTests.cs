@@ -110,6 +110,22 @@ public sealed class DeviceManagementServiceRecoveryTests : IDisposable
         Assert.Empty(_server.Posts);
     }
 
+    [Theory]
+    [InlineData(DeviceStatus.Pending)]
+    [InlineData(DeviceStatus.Active)]
+    public async Task ARecoveryCopyWithAnOversizedCost_IsRefusedBeforeAnythingIsStoredOrSent(DeviceStatus status)
+    {
+        _server.Status = status;
+        _server.Recovery!.KdfMemoryCostKb = int.MaxValue;
+
+        await Assert.ThrowsAsync<RecoveryCopyRejectedException>(
+            () => CreateSut().ActivateViaRecoveryAsync(_code, "session-1"));
+
+        Assert.Null(_e2ee.LoadUmk());
+        Assert.False(_stored.IsE2EEEnabled);
+        Assert.Empty(_server.Posts);
+    }
+
     public void Dispose()
     {
         _keys.Dispose();

@@ -40,6 +40,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026/03/27"));
 
         var settings = Substitute.For<ISettingsService>();
@@ -79,14 +80,12 @@ public class TokenizingAiClientServiceTests
         }
     }
 
-    /// <summary>
-    /// The mirror image, and the reason the run's placeholders were not uniform: an assistant reply is
-    /// DETOKENIZED on the way out, so a User-only tokenize pass sent the restored values straight back to the
-    /// provider on the next step.
-    /// </summary>
+    /// <summary>An assistant reply was detokenized on the way out, so it has to be tokenized again on the way back in.</summary>
     [Fact]
     public async Task AnAssistantReplyGoesBackOut_AsItsToken_NotAsTheRealValue()
     {
+        const string loose = "[Phone_9]";
+        const string verbatim = "[Phone_8]";
         IList<ChatMessage>? seenByInner = null;
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
@@ -100,7 +99,9 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>())
-            .Returns(ci => ((string)ci[0]).Replace("2026/03/27", "[Phone_9]"));
+            .Returns(ci => ((string)ci[0]).Replace("2026/03/27", loose));
+        tokenMap.TokenizeVerbatim(Arg.Any<string>())
+            .Returns(ci => ((string)ci[0]).Replace("2026/03/27", verbatim));
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();
@@ -137,12 +138,11 @@ public class TokenizingAiClientServiceTests
 
         Assert.NotNull(seenByInner);
         Assert.Equal("sys", seenByInner![0].Text);
-        Assert.Equal("the date is [Phone_9]", seenByInner[1].Text);
+        Assert.Equal($"the date is {loose}", seenByInner[1].Text);
         Assert.Equal(ChatRole.Assistant, seenByInner[2].Role);
-        Assert.Equal("I read [Phone_9] out of the file", seenByInner[2].Text);
+        Assert.Equal($"I read {verbatim} out of the file", seenByInner[2].Text);
 
-        // A carried tool result was tokenized where it was produced; a second pass here would be double work
-        // and, on a lossy map, a corruption.
+        // A carried tool result was tokenized where it was produced, so a second pass would tokenize it twice.
         Assert.Same(carriedResult, seenByInner[3].Contents[0]);
     }
 
@@ -161,6 +161,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();
@@ -195,7 +196,6 @@ public class TokenizingAiClientServiceTests
     [Fact]
     public async Task GetChatCompletionWithTools_ObjectToolResult_IsSerializedAndTokenized()
     {
-        // WrapToolHandler once tokenized only STRING results, so an object result went downstream with real PII.
         ToolCallHandler? capturedHandler = null;
         var inner = Substitute.For<IAiClientService>();
         inner.GetChatCompletionWithToolsAsync(
@@ -209,6 +209,8 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>())
+            .Returns(ci => ((string)ci[0]).Replace("John Smith", "[Person_9]"));
+        tokenMap.TokenizeVerbatim(Arg.Any<string>())
             .Returns(ci => ((string)ci[0]).Replace("John Smith", "[Person_1]"));
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
@@ -245,9 +247,9 @@ public class TokenizingAiClientServiceTests
             var toolResult = await capturedHandler!(
                 new FunctionCallContent("id", "recall", new Dictionary<string, object?>()), new ToolDispatchContext(7));
 
-            // The object was serialized to JSON and tokenized — a string, PII masked.
             var str = Assert.IsType<string>(toolResult);
             Assert.Contains("[Person_1]", str);
+            Assert.DoesNotContain("[Person_9]", str);
             Assert.DoesNotContain("John Smith", str);
 
             Assert.NotNull(seenByInnerHandler);
@@ -279,6 +281,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();
@@ -328,6 +331,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings());
@@ -377,6 +381,7 @@ public class TokenizingAiClientServiceTests
         var tokenMap = Substitute.For<ITokenMapService>();
         // Detokenize would restore the placeholder; the point of this test is that nothing calls it here.
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026-03-27"));
 
         var settings = Substitute.For<ISettingsService>();
@@ -428,6 +433,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => ((string)ci[0]).Replace("[Phone_9]", "2026-03-27"));
 
         var settings = Substitute.For<ISettingsService>();
@@ -486,6 +492,7 @@ public class TokenizingAiClientServiceTests
 
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         var settings = Substitute.For<ISettingsService>();

@@ -83,15 +83,12 @@ A second review reproduced four gaps in steps 3, 5 and 6.
 
 ## Not yet planned
 
-- **Refuse *Run now* while a clear is pending.** The scheduler no longer starts then, but
-  `IScheduledJobRunner.RunNowAsync` (the Routines page and the assistant's job tool) still runs a job
-  on the unstarted service. Closing it needs a new `ScheduledJobRunNowResult` and its message.
 - **Cancel the stale cycle's HTTP request.** The epoch guard makes a stale cycle harmless, but a
   request already sent still runs to its end. A cancel entry point would have to be separate from
   `StopBackgroundSync`, since the device-revoked and lost-key paths call that from inside a cycle.
-- **Server bump.** Once Pia ships the `/auth/login/local` fix, tick *Server bump* in
-  [../e2ee_pentest/2026-10-20-e2ee-downgrade-hardening-checklist.md](../e2ee_pentest/2026-10-20-e2ee-downgrade-hardening-checklist.md)
-  and re-run WinWright B6.
+- **WinWright B6, login-body half.** Re-run B6 of
+  [2026-10-27-winwright-test-round-checklist.md](2026-10-27-winwright-test-round-checklist.md) against a
+  Pia build that fills `isE2EEEnabled` on the sign-in body, and record the result there.
 
 ## Suggested order
 

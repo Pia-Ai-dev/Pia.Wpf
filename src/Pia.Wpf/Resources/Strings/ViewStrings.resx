@@ -1065,6 +1065,7 @@
   <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>The approved key could not be opened on this device. Try again, or use your recovery code instead.</value></data>
   <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>This computer's encryption keys were lost. Pia signed you out so the computer can join your account again as a new device. Sign in, then confirm it from another device or with your recovery code. Afterwards you can remove the previous installation in the account settings.</value></data>
   <data name="E2EE_Onboarding_OwnCopyChanged" xml:space="preserve"><value>This device's stored copy of the key was changed on the server, so it was not used. Set the device up again with your recovery code.</value></data>
+  <data name="E2EE_Onboarding_Recovery_CopyRejected" xml:space="preserve"><value>Pia did not use the recovery data stored on the server because it is not valid. Your recovery code was not checked. Confirm this device from another device, or contact your administrator.</value></data>
   <data name="Settings_E2EE_SignatureRefused_Message" xml:space="preserve"><value>The server accepts this change only from one of your active devices, and this device could not prove that it is one. Restore this device with your recovery code, then try again.</value></data>
   <data name="Settings_E2EE_PreviousInstallation_Text" xml:space="preserve"><value>This computer joined your account again after its encryption keys were lost. Its previous installation is still listed and can no longer be used.</value></data>
   <data name="Settings_E2EE_RemovePreviousInstallation" xml:space="preserve"><value>Remove the previous installation of this computer</value></data>
@@ -1540,6 +1541,7 @@
   <data name="Settings_ScheduledJobs_RunAlreadyRunning" xml:space="preserve"><value>Not started: a run of this job is already going.</value></data>
   <data name="Settings_ScheduledJobs_RunNotOwner" xml:space="preserve"><value>Not run: another device owns this job's schedule.</value></data>
   <data name="Settings_ScheduledJobs_RunNotFound" xml:space="preserve"><value>Not run: this job no longer exists.</value></data>
+  <data name="Settings_ScheduledJobs_RunResetPending" xml:space="preserve"><value>Not run: Pia has not finished removing local data. Restart Pia first.</value></data>
   <data name="Settings_ScheduledJobs_RunFailed" xml:space="preserve"><value>The job could not be started.</value></data>
   <data name="Settings_ScheduledJobs_LoadFailed" xml:space="preserve"><value>Scheduled jobs could not be read.</value></data>
   <data name="Settings_ScheduledJobs_SaveFailed" xml:space="preserve"><value>That change could not be saved.</value></data>

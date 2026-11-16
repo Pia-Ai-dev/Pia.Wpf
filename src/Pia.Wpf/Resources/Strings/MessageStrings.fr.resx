@@ -475,6 +475,7 @@ Les modifications seront appliquées.</value></data>
   <data name="Tool_Routine_Exec_NotOwner" xml:space="preserve"><value>La routine « {0} » est planifiée par un autre appareil ; seul cet appareil peut l’exécuter.</value></data>
   <data name="Tool_Routine_Exec_AlreadyRunning" xml:space="preserve"><value>Un lancement de la routine « {0} » est déjà en cours.</value></data>
   <data name="Tool_Routine_Exec_NotFound" xml:space="preserve"><value>La routine « {0} » n’existe plus.</value></data>
+  <data name="Tool_Routine_Exec_ResetPending" xml:space="preserve"><value>La routine « {0} » n’a pas été démarrée : Pia n’a pas encore terminé la suppression des données locales. Demandez à l’utilisateur de redémarrer d’abord Pia.</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Rechercher dans les recherches passées</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Obtenir une entrée de recherche par ID</value></data>

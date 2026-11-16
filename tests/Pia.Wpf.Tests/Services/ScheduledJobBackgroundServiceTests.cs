@@ -130,6 +130,57 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task RunNowAsync_RefusedWhileALocalDataClearIsPending_AndTouchesNothing()
+    {
+        // Found and owned, so only the pending clear stands between this job and a dispatch.
+        var job = NewDueJob();
+        var jobs = Substitute.For<IScheduledJobService>();
+        jobs.GetAsync(job.Id).Returns(job);
+        jobs.IsOwnedByThisDeviceAsync(job.Id).Returns(true);
+        var indicator = Substitute.For<ILocalDataResetIndicator>();
+        indicator.IsResetPending.Returns(true);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance, indicator);
+
+        var result = await bg.RunNowAsync(job.Id, CancellationToken.None);
+        await SettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal(ScheduledJobRunNowResult.ResetPending, result);
+        Assert.Empty(jobs.ReceivedCalls());
+        Assert.Equal(0, runner.RunCount);
+    }
+
+    [Fact]
+    public async Task RunNowAsync_WithNoClearPending_StillDispatches()
+    {
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        jobs.SeedDue(job);
+        var indicator = Substitute.For<ILocalDataResetIndicator>();
+        indicator.IsResetPending.Returns(false);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance, indicator);
+
+        var result = await bg.RunNowAsync(job.Id, CancellationToken.None);
+        await SettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal(ScheduledJobRunNowResult.Dispatched, result);
+        Assert.Equal(1, runner.RunCount);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_Success_MarksCompleteWithChatIdAndNotifies()
     {
         var jobs = new FakeJobService();

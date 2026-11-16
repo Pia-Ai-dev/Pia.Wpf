@@ -937,6 +937,21 @@ public class RoutinesViewModelTests
         Assert.NotEqual(gone, dispatched);
     }
 
+    /// <summary>The job still exists, so the default <c>NotFound</c> arm would tell the user something false.</summary>
+    [Fact]
+    public async Task RunNow_SaysAClearIsPending_NotThatTheJobIsGone()
+    {
+        var job = NewJob();
+        var sut = CreateSut(job);
+        sut.Runner.RunNowAsync(job.Id, Arg.Any<CancellationToken>()).Returns(ScheduledJobRunNowResult.ResetPending);
+        await sut.Vm.RefreshAsync();
+        sut.Vm.SelectedJob = sut.Vm.Jobs[0];
+
+        await sut.Vm.RunNowCommand.ExecuteAsync(null);
+
+        Assert.Equal("Settings_ScheduledJobs_RunResetPending", sut.Vm.StatusMessage);
+    }
+
     [Fact]
     public async Task RunNow_ConfirmsADispatchWithAShortLivedFlowMessage()
     {
@@ -956,6 +971,7 @@ public class RoutinesViewModelTests
     [InlineData(ScheduledJobRunNowResult.NotOwner)]
     [InlineData(ScheduledJobRunNowResult.AlreadyRunning)]
     [InlineData(ScheduledJobRunNowResult.NotFound)]
+    [InlineData(ScheduledJobRunNowResult.ResetPending)]
     public async Task RunNow_ConfirmsNothingThatDidNotStart(ScheduledJobRunNowResult result)
     {
         var job = NewJob();

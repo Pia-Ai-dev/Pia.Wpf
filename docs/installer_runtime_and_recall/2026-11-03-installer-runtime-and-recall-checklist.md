@@ -73,7 +73,5 @@ and can land any time before 8.
   needs its own decision.
 - An in-app notice when ONNX Runtime cannot load (speech settings, memory view). This is moot once step 1
   ships, unless policy or antivirus blocks the DLL.
-- *Regenerate embeddings* in the vault view logs one warning per memory when embeddings are unavailable.
-  It could stop at the first `EmbeddingUnavailableException`.
 - A support probe script under `scripts/` that reports the runtime DLLs and the Win32 load error on a
   customer machine.
