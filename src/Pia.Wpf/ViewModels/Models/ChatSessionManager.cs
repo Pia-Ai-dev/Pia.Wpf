@@ -902,8 +902,6 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
             // Triage runs HERE and not in the orchestrator: by the time the planner is reached a run row
             // already exists, and a goal that turns out not to need one would leave a phantom in run
             // history. Interactive only — a routine triaged to chat would have no chat to land in.
-            if (plannedRun && _jobTools is not null && await _jobTools.FindUnfinishedChatJobAsync(session.Id) is not null) plannedRun = false;
-
             if (plannedRun && settings.AssistantAgentTriageEnabled
                 && await _goalTriage.ClassifyAsync(userText, provider, session.Cts!.Token)
                     == GoalTriageVerdict.AnswerDirectly)

@@ -292,6 +292,21 @@ public class ChatSessionManagerProposePlanTests
     }
 
     [Fact]
+    public async Task SettingOff_ALeverSend_StillStartsItsPlannedRun()
+    {
+        _appSettings.UnifiedAssistantFlowEnabled = false;
+        var jobTools = Substitute.For<IChatJobToolService>();
+        jobTools.FindUnfinishedChatJobAsync(Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new AgentRunLookup(Guid.NewGuid(), AgentRunState.WaitingForInput, false));
+        var sut = CreateSut(jobTools: jobTools);
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        Assert.True(await sut.StartTurnAsync(session, "plan a comparison", null, planned: true));
+
+        await _runService.ReceivedWithAnyArgs(1).CreateAsync(default!, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
     public async Task AnUnfinishedRunWithoutTheJobMarker_AlsoRefusesASecondPlan()
     {
         _runService.GetByChatAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentRun>
