@@ -28,7 +28,7 @@ steps in its Blocks column.
 
 ## Steps
 
-- [ ] **1 — `CreditLimitException` at the three 429 sites.** The credit limit is raised as its own
+- [x] **1 — `CreditLimitException` at the three 429 sites.** The credit limit is raised as its own
   exception type with the unchanged message, so it can be told apart without reading text.
   *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **2 — Interruption contract and classifier.** `StepTurnResult` gains the defaulted `Interruption`

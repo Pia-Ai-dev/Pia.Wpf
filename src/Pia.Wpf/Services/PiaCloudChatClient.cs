@@ -695,7 +695,7 @@ public sealed class PiaCloudChatClient : IChatClient
                 }
             }
             catch { }
-            throw new InvalidOperationException(friendlyMessage);
+            throw new CreditLimitException(friendlyMessage);
         }
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)

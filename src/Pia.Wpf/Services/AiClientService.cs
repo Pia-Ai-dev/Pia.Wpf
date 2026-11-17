@@ -177,7 +177,7 @@ public class AiClientService : IAiClientService
                     }
                 }
                 catch { }
-                throw new InvalidOperationException(friendlyMessage);
+                throw new CreditLimitException(friendlyMessage);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -996,7 +996,7 @@ public class AiClientService : IAiClientService
                     }
                 }
                 catch { }
-                throw new InvalidOperationException(friendlyMessage);
+                throw new CreditLimitException(friendlyMessage);
             }
 
             if (!response.IsSuccessStatusCode)
