@@ -52,7 +52,7 @@ steps in its Blocks column.
 - [x] **7 — The card and the Flow item say why.** Four reasons in three languages on the run card and the
   Flow body.
   *Deps:* 3 · *Effort:* XS · *Value:* High
-- [ ] **8 — A failed resume keeps the interruption token.** A continuation that fails before dispatch
+- [x] **8 — A failed resume keeps the interruption token.** A continuation that fails before dispatch
   re-parks with the same reason instead of `resume-interrupted`.
   *Deps:* 3 · *Effort:* XS · *Value:* Med
 - [ ] **9 — A typed Agent-mode message continues the run.** A send while the run is parked on an
