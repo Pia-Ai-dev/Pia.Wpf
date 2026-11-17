@@ -141,7 +141,6 @@
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
   <data name="Assistant_Working_Tooltip" xml:space="preserve"><value>Working on the last message…</value></data>
-  <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Run in background</value></data>
   <data name="Assistant_RunActive_Hint" xml:space="preserve"><value>A run is writing to this chat. Sending resumes when it finishes.</value></data>
   <data name="Assistant_PlanApprovalActive_Hint" xml:space="preserve"><value>Approve or reject the proposed plan before sending another message.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>This looks too short to run as a goal. Add a few more words so it can be planned.</value></data>
@@ -1910,4 +1909,6 @@
   <data name="RunAsk_SendAnswer" xml:space="preserve">
     <value>Answer</value>
   </data>
+  <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>More send options</value></data>
+  <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Run as a background task in a new chat</value></data>
 </root>

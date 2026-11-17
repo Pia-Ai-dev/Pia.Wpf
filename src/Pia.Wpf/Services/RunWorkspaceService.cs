@@ -323,20 +323,43 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
         if (changed > 0)
         {
             var add = await RunGitAsync(runRoot, ["add", "-A", .. ExcludeScratchPathspec], GitCommandKind.Mutating, ct).ConfigureAwait(false);
-            var commit = add.Succeeded
-                ? await RunGitAsync(runRoot, CommitArgsFor(runId), GitCommandKind.Mutating, ct).ConfigureAwait(false)
-                : add;
-            if (!commit.Succeeded)
+            var failure = add.Succeeded ? null : "add";
+            var staged = false;
+            if (failure is null)
             {
-                // stderr can name paths, so it goes through the highest DEBUG-erased severity (plan R7);
-                // the release-visible line carries the exit code and counts only.
+                // Exit 1 = something staged. Changes that live only inside a nested repository stage nothing,
+                // and a commit of nothing exits 1 just like a real failure.
+                var cached = await RunGitAsync(runRoot, ["diff", "--cached", "--quiet"], GitCommandKind.ReadOnly, ct)
+                    .ConfigureAwait(false);
+                staged = cached.ExitCode == 1;
+                if (cached.ExitCode is not (0 or 1))
+                    failure = "diff";
+            }
+
+            GitProcessResult? commit = null;
+            if (failure is null && staged)
+            {
+                commit = await RunGitAsync(runRoot, CommitArgsFor(runId), GitCommandKind.Mutating, ct).ConfigureAwait(false);
+                if (!commit.Succeeded)
+                    failure = "commit";
+            }
+
+            if (failure is not null)
+            {
+                var result = commit ?? add;
                 _logger.SensitiveWarning(
-                    "Run {RunId} run-branch commit failed: {Err}", runId, commit.StandardError);
+                    "Run {RunId} run-branch commit failed: {Err} {Out}", runId, result.StandardError, result.StandardOutput);
                 _logger.LogWarning(
-                    "Run {RunId} run-branch commit failed ({Exit}); its workspace is retained with {Count} change(s)",
-                    runId, commit.ExitCode, changed);
+                    "Run {RunId} run-branch commit failed ({Exit}, {Step}); its workspace is retained with {Count} change(s)",
+                    runId, result.ExitCode, failure, changed);
                 return new RunPromotionResult(
                     RunWorkspaceMode.Worktree, Promoted: 0, Skipped: changed, Conflicts: 0, branch, RetainWorkspace: true);
+            }
+
+            if (!staged)
+            {
+                _logger.LogInformation("Run {RunId} run-branch commit skipped: nothing stageable", runId);
+                changed = 0;
             }
         }
 
@@ -362,19 +385,6 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     }
 
     /// <summary>
-    /// The commit invocation. Three deliberate <c>-c</c> overrides, each because this runs UNATTENDED:
-    /// <list type="bullet">
-    /// <item><c>user.name</c>/<c>user.email</c> — git refuses to commit without an identity and the runner's
-    /// environment cannot prompt for one, so the app supplies its own rather than depending on whether the
-    /// user configured git. Attributing an agent-authored commit to the app is also the honest record.</item>
-    /// <item><c>commit.gpgsign=false</c> — a user with signing on globally would otherwise hit a passphrase
-    /// prompt that cannot be answered here, and the commit would fail with the deliverable still in the
-    /// worktree.</item>
-    /// </list>
-    /// <c>--no-verify</c> matches <c>GitToolHandler</c>'s locked decision: repo commit hooks are out-of-band
-    /// code execution.
-    /// </summary>
-    /// <summary>
     /// Keeps the run's working notes off the run branch. On all THREE git calls, not just the add: the status
     /// before it counts what is about to be committed, and the <c>--ignored</c> leftover probe after it decides
     /// whether the workspace is retained — without the same pathspec there, every worktree run would leave a
@@ -383,8 +393,13 @@ public sealed class RunWorkspaceService : IRunWorkspaceService
     private static readonly string[] ExcludeScratchPathspec =
         ["--", ".", ":(exclude)" + RunScratchFolder.Name];
 
+    private const string DisabledHooksPath = "NUL";
+
+    // Unattended: own identity, no signing prompt, and no hooks at all; --no-verify alone still runs
+    // prepare-commit-msg, whose non-zero exit fails the commit.
     private static string[] CommitArgsFor(Guid runId) =>
     [
+        "-c", "core.hooksPath=" + DisabledHooksPath,
         "-c", "user.name=Pia",
         "-c", "user.email=pia@pia.invalid",
         "-c", "commit.gpgsign=false",

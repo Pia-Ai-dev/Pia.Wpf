@@ -1018,23 +1018,31 @@
               </Border>
             </StackPanel>
 
-            <!-- Send / Run-in-background buttons -->
+            <!-- Send and its options menu -->
             <Grid Grid.Column="1">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <!-- Run in background: Agent mode only. Deliberately quieter than Send's Primary fill, so the
-                   two sends never read as one control; the tooltip names what the icon detaches. -->
               <ui:Button Grid.Column="0"
-                         Command="{Binding RunInBackgroundCommand}"
                          Appearance="Secondary"
-                         Padding="10,4" Margin="0,0,4,0"
-                         AutomationProperties.Name="{loc:Str Assistant_RunInBackground_Tooltip}"
-                         AutomationProperties.AutomationId="Assistant_RunInBackground"
-                         ToolTip="{loc:Str Assistant_RunInBackground_Tooltip}"
-                         Visibility="{Binding AgentModeEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ui:SymbolIcon Symbol="WindowNew20" FontSize="16" />
+                         Padding="4,4" Margin="0,0,2,0"
+                         Click="SendOptionsButton_Click"
+                         AutomationProperties.Name="{loc:Str Assistant_SendOptions_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_SendOptions"
+                         ToolTip="{loc:Str Assistant_SendOptions_Tooltip}">
+                <ui:SymbolIcon Symbol="ChevronDown20" FontSize="12" />
+                <ui:Button.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="{loc:Str Assistant_RunInBackground_MenuItem}"
+                              Command="{Binding RunInBackgroundCommand}"
+                              AutomationProperties.AutomationId="Assistant_RunInBackground">
+                      <MenuItem.Icon>
+                        <ui:SymbolIcon Symbol="WindowNew20" />
+                      </MenuItem.Icon>
+                    </MenuItem>
+                  </ContextMenu>
+                </ui:Button.ContextMenu>
               </ui:Button>
               <!-- Send. While a turn is in flight the command can't execute, and the greyed-out Primary
                    button read as nothing at all — so a busy pill covers it for the whole turn (covers,
