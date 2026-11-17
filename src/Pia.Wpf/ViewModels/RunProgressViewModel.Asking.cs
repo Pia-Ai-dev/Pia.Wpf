@@ -189,7 +189,8 @@ public sealed partial class RunProgressViewModel
         IsResuming = true;
         try
         {
-            if (await _resumeService.ResumeAsync(_runId, UserInputAnswer))
+            if (await _resumeService.ResumeAsync(_runId, UserInputAnswer,
+                    parkReasonAllowed: r => r == AgentRunOrchestrator.NeedsInputReason))
             {
                 UserInputAnswer = null;
                 _askBroker?.SetUserInputQuestion(_runId, null);

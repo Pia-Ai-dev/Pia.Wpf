@@ -137,7 +137,8 @@ public sealed class RunProgressAskingTests
     {
         Stub(AgentRunState.WaitingForInput, chatJob: true, InputPark);
         _broker.GetUserInputQuestion(_runId).Returns("Which folder?");
-        _resume.ResumeAsync(_runId, "The docs folder", Arg.Any<CancellationToken>(), false).Returns(true);
+        _resume.ResumeAsync(_runId, "The docs folder", Arg.Any<CancellationToken>(), false,
+            Arg.Is<Func<string?, bool>?>(f => f != null && f(AgentRunOrchestrator.NeedsInputReason) && !f(AgentRunOrchestrator.ToolApprovalReason))).Returns(true);
         var vm = CreateVm();
         await vm.RefreshAsync();
 
@@ -151,7 +152,8 @@ public sealed class RunProgressAskingTests
         Assert.True(vm.AnswerUserInputCommand.CanExecute(null));
         await vm.AnswerUserInputCommand.ExecuteAsync(null);
 
-        await _resume.Received(1).ResumeAsync(_runId, "The docs folder", Arg.Any<CancellationToken>(), false);
+        await _resume.Received(1).ResumeAsync(_runId, "The docs folder", Arg.Any<CancellationToken>(), false,
+            Arg.Is<Func<string?, bool>?>(f => f != null && f(AgentRunOrchestrator.NeedsInputReason) && !f(AgentRunOrchestrator.ToolApprovalReason)));
         Assert.Null(vm.UserInputAnswer);
         _broker.Received(1).SetUserInputQuestion(_runId, null);
         vm.Dispose();
