@@ -144,6 +144,43 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
     }
 
     [Fact]
+    public async Task AChatJobResumedFromAToolApproval_QueuesForASlotLikeOtherRuns()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, dispatchScript: [[new("write_file")], []]);
+
+        var job = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await job.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
+            .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(launcher)!;
+        var held = slots.Width;
+        for (var i = 0; i < held; i++)
+            await slots.WaitAsync(ct);
+
+        try
+        {
+            Assert.True(await launcher.ResumeAsync(job.RunId, ct: ct));
+            await Task.Delay(300, ct);
+            Assert.Single(probe.Dispatches);
+            Assert.Equal(AgentRunState.Running, (await GetRunAsync(job.RunId)).State);
+        }
+        finally
+        {
+            for (var i = 0; i < held; i++)
+                slots.Release();
+        }
+
+        await AwaitSettledAsync(job.RunId);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(job.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task AnApprovedChatJob_StartsWithoutAFreeSlot_WhileAnotherRunKeepsQueueing()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -156,6 +193,7 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
         await routine.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
         await _runs.UpdatePolicyJsonAsync(
             job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+        await _runs.PauseAsync(job.RunId, AgentRunOrchestrator.PlanApprovalReason, ct);
 
         var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
             .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!

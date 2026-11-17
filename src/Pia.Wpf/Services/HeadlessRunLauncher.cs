@@ -758,9 +758,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // T1-3, same rule as the launch path (and for the same reason — see LaunchCoreAsync): a resume that
             // did not take a ticket would jump the queue, being the one dispatch whose wait is not ordered
             // against anything. The PARENT pool's chain, matching the pool the wait below uses.
-            // A chat job approved in the chat starts at once. No ticket either: one taken and never waited on
-            // stalls every later ticket of the pool.
-            var ticket = chatJob ? null : _slots.TakeTicket();
+            // A chat job's plan approval starts at once; every other resume queues. No ticket either: one taken
+            // and never waited on stalls every later ticket of the pool.
+            var ticket = chatJob && parkReason == AgentRunOrchestrator.PlanApprovalReason ? null : _slots.TakeTicket();
             // The ternary is load-bearing: claim.ApprovedTool names the QUESTION, so it is non-null on the
             // decline path too, and replaying there would run the very call the person refused.
             var plan = new ResumeDispatchPlan(
