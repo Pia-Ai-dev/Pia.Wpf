@@ -20,6 +20,9 @@ public enum AgentToolExchangeKind
 
     /// <summary>A same-round call withheld behind the park, DETOKENIZED and replayable.</summary>
     WithheldCall = 4,
+
+    /// <summary>A round the per-run cap refused; carries only its step and round.</summary>
+    NotRecorded = 5,
 }
 
 /// <summary>
@@ -77,4 +80,10 @@ public sealed record AgentToolExchangeRow(
 {
     /// <summary>Row shape version, so a future shape change is detectable rather than misread.</summary>
     public int SchemaVersion { get; init; } = 1;
+
+    /// <summary>The arguments with real names, when name protection put placeholders in <see cref="ArgumentsJson"/>.</summary>
+    public string? ReadableArgumentsJson { get; init; }
+
+    /// <summary>The result with real names, when name protection put placeholders in <see cref="ResultText"/>.</summary>
+    public string? ReadableResultText { get; init; }
 }

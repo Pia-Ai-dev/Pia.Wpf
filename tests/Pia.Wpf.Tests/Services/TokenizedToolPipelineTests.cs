@@ -134,6 +134,83 @@ public sealed class TokenizedToolPipelineTests : IDisposable
         Assert.DoesNotContain("[Phone_", onDisk, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ARecordedRound_CarriesAReadableCopyWithTheRealValues()
+    {
+        var detector = Substitute.For<IPiiDetector>();
+        detector.DetectPii(Arg.Any<string>()).Returns(ci =>
+        {
+            var text = (string)ci[0];
+            var at = text.IndexOf(TheDate, StringComparison.Ordinal);
+            return at < 0
+                ? (IReadOnlyList<PiiMatch>)[]
+                : [new PiiMatch(TheDate, "Phone", at, TheDate.Length)];
+        });
+        detector.DetectPiiInStructured(Arg.Any<string>(), Arg.Any<string>()).Returns((IReadOnlyList<PiiMatch>)[]);
+        var memory = Substitute.For<IMemoryService>();
+        memory.GetObjectsByTypeAsync(Arg.Any<string>()).Returns(new List<MemoryObject>());
+        var settings = Substitute.For<ISettingsService>();
+        settings.GetSettingsAsync().Returns(new AppSettings());
+        var tokenMap = new TokenMapService(detector, memory, settings);
+
+        var inner = Substitute.For<IAiClientService>();
+        inner.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci => ReadThenEchoRound(ci.ArgAt<ToolCallHandler?>(3)));
+        var serviceProvider = Substitute.For<IServiceProvider>();
+        serviceProvider.GetService(typeof(IServiceScopeFactory)).Returns(Substitute.For<IServiceScopeFactory>());
+        var sut = new TokenizingAiClientService(
+            inner, serviceProvider, settings, NullLogger<TokenizingAiClientService>.Instance);
+
+        ToolCallHandler handler = (_, _) => Task.FromResult<object?>(FileBody);
+        var rounds = new List<ToolRoundExchange>();
+        TokenMapAmbient.Current = tokenMap;
+        try
+        {
+            await foreach (var item in sut.GetChatCompletionWithToolsAsync(
+                new List<ChatMessage> { new(ChatRole.User, "summarise the expenses") },
+                new AiProvider { Name = "t", Endpoint = "http://localhost", ProviderType = AiProviderType.OpenAI },
+                tools: null, toolHandler: handler, cancellationToken: TestContext.Current.CancellationToken))
+            {
+                if (item is ToolRoundExchange round)
+                    rounds.Add(round);
+            }
+        }
+        finally
+        {
+            TokenMapAmbient.Current = null;
+        }
+
+        var recorded = Assert.Single(rounds);
+        var modelSaw = recorded.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().Single();
+        Assert.Contains("[Phone_", (string)modelSaw.Result!, StringComparison.Ordinal);
+
+        Assert.NotNull(recorded.Readable);
+        var contents = recorded.Readable!.SelectMany(m => m.Contents).ToList();
+        Assert.Equal(FileBody, (string)contents.OfType<FunctionResultContent>().Single().Result!);
+        var call = contents.OfType<FunctionCallContent>().Single();
+        Assert.Equal("c1", call.CallId);
+        Assert.Equal(TheDate, call.Arguments!["date"]);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> ReadThenEchoRound(ToolCallHandler? handler)
+    {
+        await Task.Yield();
+        var seen = handler is null
+            ? null
+            : await handler(new FunctionCallContent("c1", "read_file", new Dictionary<string, object?>()), new ToolDispatchContext(1));
+        var placeholder = System.Text.RegularExpressions.Regex.Match((string)seen!, @"\[Phone_\d+\]").Value;
+        List<ChatMessage> round =
+        [
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file",
+                new Dictionary<string, object?> { ["date"] = placeholder })]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", seen)]),
+        ];
+        yield return new ToolRoundExchange(1, round, round);
+        yield return new Finished(null, "test-model");
+    }
+
     /// <summary>Tokenizing rewrites text and detokenizes arguments, never an id: the server matches on the toolu_ id.</summary>
     [Fact]
     public async Task Tokenizing_KeepsEveryCallIdVerbatim_InTheRequestAndAtTheHandler()
