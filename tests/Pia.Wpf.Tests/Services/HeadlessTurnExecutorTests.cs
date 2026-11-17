@@ -645,10 +645,13 @@ public sealed class HeadlessTurnExecutorTests
         /// A fresh executor, modelling the launcher's per-run DI scope. The persona-side substitutes are the
         /// HARNESS's, because a resume must meet the same persona store and composer the launch did.
         /// </summary>
+        public IChatTitleService? Titles;
+
         public HeadlessTurnExecutor NewExecutor()
         {
-            var titles = Substitute.For<IChatTitleService>();
-            titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
+            var titles = Titles ?? Substitute.For<IChatTitleService>();
+            if (Titles is null)
+                titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((string?)null);
             ITokenMapService TokenMapFactory() => Substitute.For<ITokenMapService>();
 
             var engine = new BackgroundAssistantTurnRunner(
@@ -660,13 +663,13 @@ public sealed class HeadlessTurnExecutorTests
                 ExecutorLog, timelineService: null, StepPersonas, exchangeStore: Exchanges);
         }
 
-        public async Task<AgentRun> NewRunAsync(string goal)
+        public async Task<AgentRun> NewRunAsync(string goal, string? title = "stub")
         {
             var chatId = Guid.NewGuid();
             var now = DateTime.UtcNow;
             await Chats.SaveAsync(new SyncAssistantChat
             {
-                Id = chatId, SchemaVersion = 1, Title = "stub",
+                Id = chatId, SchemaVersion = 1, Title = title,
                 CreatedAt = now, UpdatedAt = now, LastAccessedAt = now,
                 WindowMode = WindowMode.Assistant.ToString(), Messages = [],
             }, TestContext.Current.CancellationToken);
@@ -685,6 +688,97 @@ public sealed class HeadlessTurnExecutorTests
             Ctx.Dispose();
             TempPath.Remove(_dir);
         }
+    }
+
+    [Fact]
+    public async Task EndRun_DoesNotWaitForTheTitle_AndTheTitleLandsAfterwards()
+    {
+        using var h = new DurabilityHarness();
+        var gate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Titles = Substitute.For<IChatTitleService>();
+        h.Titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => gate.Task);
+        var run = await h.NewRunAsync("summarise the quarterly numbers", title: "summarise the quarterly numbers");
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = new RunContext("summarise the quarterly numbers", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+
+        await executor.EndRunAsync(run, ctx, cancelled: false, failed: false, ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.NotNull(executor.PendingTitle);
+        Assert.False(executor.PendingTitle!.IsCompleted);
+        Assert.Equal("summarise the quarterly numbers", (await h.Chats.GetAsync(run.ChatId, ct))!.Title);
+
+        gate.SetResult("Quarterly numbers");
+        await executor.PendingTitle.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        Assert.Equal("Quarterly numbers", (await h.Chats.GetAsync(run.ChatId, ct))!.Title);
+    }
+
+    [Fact]
+    public async Task EndRun_KeepsAChatsOwnTitle_AndGeneratesNone()
+    {
+        using var h = new DurabilityHarness();
+        h.Titles = Substitute.For<IChatTitleService>();
+        var run = await h.NewRunAsync("the goal", title: "My own title");
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+
+        await executor.EndRunAsync(run, ctx, cancelled: false, failed: false, ct);
+
+        Assert.Null(executor.PendingTitle);
+        await h.Titles.DidNotReceive().GenerateAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Assert.Equal("My own title", (await h.Chats.GetAsync(run.ChatId, ct))!.Title);
+    }
+
+    [Fact]
+    public async Task ARenameWhileTheTitleGenerates_Wins()
+    {
+        using var h = new DurabilityHarness();
+        var gate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Titles = Substitute.For<IChatTitleService>();
+        h.Titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => gate.Task);
+        var run = await h.NewRunAsync("the goal", title: null);
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+        await executor.EndRunAsync(run, ctx, cancelled: false, failed: false, ct);
+
+        await h.Chats.SetTitleAsync(run.ChatId, "Renamed by the user", ct);
+        gate.SetResult("Generated");
+        await executor.PendingTitle!.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.Equal("Renamed by the user", (await h.Chats.GetAsync(run.ChatId, ct))!.Title);
+    }
+
+    [Fact]
+    public async Task AFailingTitleCall_IsCaughtAndLogged()
+    {
+        using var h = new DurabilityHarness();
+        h.Titles = Substitute.For<IChatTitleService>();
+        h.Titles.GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<string?>(_ => throw new InvalidOperationException("boom"));
+        var run = await h.NewRunAsync("the goal", title: null);
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+        await executor.EndRunAsync(run, ctx, cancelled: false, failed: false, ct);
+
+        await executor.PendingTitle!.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.Equal("the goal", (await h.Chats.GetAsync(run.ChatId, ct))!.Title);
     }
 
     /// <summary>The granter is captured in BeginRunAsync but published per step, so the two must stay in step:

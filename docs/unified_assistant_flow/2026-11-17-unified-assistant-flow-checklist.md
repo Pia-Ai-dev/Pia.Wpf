@@ -126,7 +126,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## G — the end and the removals
 
-- [ ] **Take the title call out of the path to Completed.**
+- [x] **Take the title call out of the path to Completed.**
       *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **Move "Run in background" into a menu on the Send button.**
       *Deps:* — · *Effort:* XS · *Value:* Med

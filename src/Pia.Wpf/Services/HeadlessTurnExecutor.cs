@@ -1075,25 +1075,50 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     public async Task EndRunAsync(AgentRun run, RunContext ctx, bool cancelled, bool failed, CancellationToken ct)
     {
-        // The terminal write stays the single source of the FINAL chat (title precedence: LLM-generated >
-        // derived-from-goal, unchanged by E2). The interim per-step saves wrote the very same rows with the
-        // very same message Ids, so this full replace neither loses nor duplicates a message — and the
-        // AgentRun/AgentStep First/LastMessageId slices keep pointing at live rows (R3).
-        string? title = null;
-        var firstAssistant = _persisted.FirstOrDefault(m => m.Role == "assistant" && !string.IsNullOrWhiteSpace(m.Content));
-        if (firstAssistant is not null)
-        {
-            try { title = await _titleService.GenerateAsync(ctx.Goal, firstAssistant.Content, ct).ConfigureAwait(false); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Auto-title failed for headless run {RunId}", run.Id); }
-        }
-        if (string.IsNullOrWhiteSpace(title))
-            title = DeriveTitleFromGoal(ctx.Goal);
+        // The interim per-step saves wrote the very same rows with the very same message Ids, so this full
+        // replace neither loses nor duplicates a message, and the run's message slices keep pointing at live rows.
+        var derivedTitle = DeriveTitleFromGoal(ctx.Goal);
+        var hasOwnTitle = !string.IsNullOrWhiteSpace(_existingTitle) && _existingTitle != derivedTitle;
+        string? title = hasOwnTitle ? _existingTitle : derivedTitle;
 
         await PersistChatAsync(title, interim: false, ct).ConfigureAwait(false);
+
+        var firstAssistant = _persisted.FirstOrDefault(m => m.Role == "assistant" && !string.IsNullOrWhiteSpace(m.Content));
+        if (!hasOwnTitle && firstAssistant is not null)
+            PendingTitle = GenerateTitleAfterRunAsync(run.Id, ctx.Goal, firstAssistant.Content, derivedTitle);
 
         // The parked rows hold real file contents and nothing replays them once the run settles.
         if (_exchangeStore is not null)
             await _exchangeStore.PurgeApprovalRecordsAsync(run.Id, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    /// <summary>The title generated after the run settled, for tests; null when none was started.</summary>
+    internal Task? PendingTitle { get; private set; }
+
+    private static readonly TimeSpan TitleTimeout = TimeSpan.FromMinutes(1);
+
+    private async Task GenerateTitleAfterRunAsync(Guid runId, string goal, string firstReply, string placeholder)
+    {
+        try
+        {
+            await Task.Yield();
+            using var cts = new CancellationTokenSource(TitleTimeout);
+            var title = await _titleService.GenerateAsync(goal, firstReply, cts.Token).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(title))
+                return;
+
+            // A rename made while the title was generating wins.
+            var chat = await _chatService.GetAsync(_chatId, cts.Token).ConfigureAwait(false);
+            if (chat is null || (!string.IsNullOrWhiteSpace(chat.Title) && chat.Title != placeholder))
+                return;
+
+            await _chatService.SetTitleAsync(_chatId, title, cts.Token).ConfigureAwait(false);
+            _logger.SensitiveDebug("Headless run {RunId} chat title: {Title}", runId, title);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Auto-title failed for headless run {RunId}", runId);
+        }
     }
 
     /// <summary>
@@ -1192,11 +1217,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     }
 
     /// <summary>
-    /// Budget-pause hook (guardrail 5): no-op for headless. There is no live session to release, and the
-    /// persisted steps/ledger already carry the parked state — and since E2 the parked TRANSCRIPT is durable
-    /// too: every completed step wrote itself out, so nothing is left to flush here. Deliberately still NOT
-    /// a persist-and-finalize: EndRunAsync would generate the run's FINAL (LLM) title and settle a
-    /// non-terminal run. The run resumes out-of-band via ResumeAsync, whose EndRunAsync persists once more.
+    /// Budget-pause hook: no-op for headless. Every completed step already wrote itself out, and EndRunAsync
+    /// would settle a non-terminal run; the resume's own EndRunAsync persists once more.
     /// </summary>
     public Task OnPausedAsync(AgentRun run, RunContext ctx, CancellationToken ct)
     {
