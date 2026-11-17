@@ -76,6 +76,21 @@ public sealed class RunProgressAskingTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWaitInPlace_OffersTheSessionChoice_OnlyWhenTheQuestionDoes(bool offers)
+    {
+        Stub(AgentRunState.Running, chatJob: true);
+        _broker.GetPending(_runId).Returns(Question() with { OffersSessionGrant = offers });
+        var vm = CreateVm();
+        await vm.RefreshAsync();
+
+        Assert.True(vm.IsAskingInPlace);
+        Assert.Equal(offers, vm.OffersSessionAsk);
+        vm.Dispose();
+    }
+
+    [Theory]
     [InlineData(ToolDecision.AllowOnce)]
     [InlineData(ToolDecision.AllowForSession)]
     [InlineData(ToolDecision.AlwaysAllow)]

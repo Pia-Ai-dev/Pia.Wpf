@@ -62,6 +62,9 @@ public sealed partial class RunProgressViewModel
     [NotifyCanExecuteChangedFor(nameof(AnswerUserInputCommand))]
     private string? _userInputAnswer;
 
+    [ObservableProperty]
+    private bool _offersSessionAsk = true;
+
     public bool ShowToolAsk => IsAskingInPlace || IsParkedToolAsk;
 
     partial void OnIsResumingChanged(bool value)
@@ -98,6 +101,7 @@ public sealed partial class RunProgressViewModel
         var wasAsking = IsAskingInPlace;
         _pendingAsk = _askBroker?.GetPending(_runId);
         IsAskingInPlace = _pendingAsk is not null;
+        OffersSessionAsk = _pendingAsk?.OffersSessionGrant ?? true;
         if (wasAsking && !IsAskingInPlace)
             RefreshAsync().SafeFireAndForget(_logger);
         if (_pendingAsk is { } ask)

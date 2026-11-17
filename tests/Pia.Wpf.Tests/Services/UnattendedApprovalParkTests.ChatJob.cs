@@ -113,6 +113,76 @@ public sealed partial class UnattendedApprovalParkTests
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    private sealed class StopThenAllowBroker : IRunAskBroker
+    {
+        public HeadlessRunLauncher? Launcher { get; set; }
+        public ToolDecision Decision { get; init; } = ToolDecision.AllowOnce;
+        public RunToolQuestion? Asked { get; private set; }
+        public event EventHandler<Guid>? Changed { add { } remove { } }
+        public RunToolQuestion? GetPending(Guid runId) => null;
+        public bool Answer(Guid runId, Guid requestId, ToolDecision decision) => false;
+        public void SetUserInputQuestion(Guid runId, string? question) { }
+        public string? GetUserInputQuestion(Guid runId) => null;
+
+        public async Task<ToolDecision?> AskAsync(RunToolQuestion question, Action<bool>? setClockRunning, CancellationToken ct)
+        {
+            Asked = question;
+            if (Launcher is not null)
+                await Launcher.CancelRunAsync(question.RunId, CancellationToken.None);
+            return Decision;
+        }
+    }
+
+    [Fact]
+    public async Task AKnowledgeBaseAsk_OffersNoSessionChoice_AndTreatsOneAsAllowOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var broker = new StopThenAllowBroker { Decision = ToolDecision.AllowForSession };
+        var probe = new ToolProbe("upload_kb_document");
+        var permissions = Substitute.For<IToolPermissionService>();
+        var (launcher, _) = Build(probe, pluginName: "kb-manager", askBroker: broker, permissions: permissions,
+            dispatchScript: [[new("upload_kb_document", "a.md")], [new("upload_kb_document", "b.md")], []]);
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            handle.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        Assert.False(broker.Asked!.OffersSessionGrant);
+        Assert.Contains("b.md", probe.ExecutedPaths);
+        permissions.DidNotReceiveWithAnyArgs().GrantForSession(default, default!);
+        Assert.Contains(_timeline.Rows, r => r.Decision == ToolGateDecision.ApprovedOnce);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AnAllowThatRacesStop_DoesNotRunTheCall()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var broker = new StopThenAllowBroker();
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, askBroker: broker,
+            dispatchScript: [[new("write_file", "a.txt")], [new("write_file", "b.txt")], []]);
+        broker.Launcher = launcher;
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            handle.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        Assert.NotNull(broker.Asked);
+        Assert.True(broker.Asked!.OffersSessionGrant);
+        Assert.Equal(AgentRunState.Cancelled, (await GetRunAsync(handle.RunId)).State);
+        Assert.DoesNotContain("b.txt", probe.ExecutedPaths);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     [Fact]
     public async Task AParkedRoutine_CannotBeAnsweredWithTheBlocksChoices()
     {
