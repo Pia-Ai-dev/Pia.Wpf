@@ -44,6 +44,10 @@ public sealed class ChatTurnRequest
 
     /// <summary>Whether PII tokenization is active for this turn.</summary>
     public required bool TokenizationEnabled { get; init; }
+
+    public ChatJobTurn? JobTurn { get; init; }
+
+    public IChatJobToolService? JobTools { get; init; }
 }
 
 /// <summary>Raised by <see cref="ChatSession"/> when its <see cref="ChatState"/> changes.</summary>

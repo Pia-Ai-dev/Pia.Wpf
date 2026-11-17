@@ -74,6 +74,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     /// <summary>Resume entry point for an answer typed into the composer; null means the send falls back to an ordinary chat turn.</summary>
     private readonly IAgentRunResumeService? _resumeService;
+    private readonly IChatJobToolService? _jobTools;
 
     private readonly SynchronizationContext _syncContext;
 
@@ -167,8 +168,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // "a live run cannot be paused", which is the pre-Batch-08 behaviour, not a broken manager.
         IRunSteeringStore? steering = null,
         // Null means an answer starts an ordinary chat turn instead of resuming a parked run.
-        IAgentRunResumeService? resumeService = null)
+        IAgentRunResumeService? resumeService = null,
+        IChatJobToolService? jobTools = null)
     {
+        _jobTools = jobTools;
         _logger = logger;
         _loggerFactory = loggerFactory;
         _chatService = chatService;
@@ -777,6 +780,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             return false;
         }
 
+        if (parkReason is not null && session.ActiveRunId is { } parkedRunId && _jobTools is not null && await _jobTools.TypedMessageIsTurnAsync(parkedRunId)) parkReason = null;
+
         // Must run before anything below mutates the session: a send to a run parked on a question or an
         // interruption continues that run rather than starting a new turn.
         if (await TryAnswerParkedRunAsync(
@@ -890,6 +895,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // Triage runs HERE and not in the orchestrator: by the time the planner is reached a run row
             // already exists, and a goal that turns out not to need one would leave a phantom in run
             // history. Interactive only — a routine triaged to chat would have no chat to land in.
+            if (plannedRun && _jobTools is not null && await _jobTools.FindUnfinishedChatJobAsync(session.Id) is not null) plannedRun = false;
+
             if (plannedRun && settings.AssistantAgentTriageEnabled
                 && await _goalTriage.ClassifyAsync(userText, provider, session.Cts!.Token)
                     == GoalTriageVerdict.AnswerDirectly)
@@ -917,6 +924,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 // No folder named for a Planned dispatch: its steps run against an isolated workspace
                 // that is not provisioned until below, so naming this one would point them outside it.
                 environmentRoot: plannedRun ? null : _filesToolHandler.DescribeEffectiveRoot(session.WorkingDirectory));
+            var jobTurn = plannedRun || _jobTools is null ? null : await _jobTools.PrepareTurnAsync(session.Id, session.Cts!.Token);
+            if (jobTurn is not null && turnSetup.SupportsTools) turnSetup = turnSetup with { SystemPrompt = turnSetup.SystemPrompt + jobTurn.PromptAddition, Tools = [.. turnSetup.Tools ?? [], .. jobTurn.Tools] };
+
             // Provider name is a user-named item (CLAUDE.md) — keep it out of the
             // release-surviving log; surface IDs/counts at Info, the name only in DEBUG.
             _logger.LogInformation("SendMessage: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
@@ -946,6 +956,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 InjectedFileContext = injectedFileContext,
                 RegenerationInstruction = regenerationInstruction,
                 TokenizationEnabled = tokenizationEnabled,
+                JobTurn = jobTurn,
+                JobTools = _jobTools,
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

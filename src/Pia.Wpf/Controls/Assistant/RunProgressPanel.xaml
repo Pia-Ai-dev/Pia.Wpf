@@ -191,6 +191,11 @@
                        TextTrimming="CharacterEllipsis"
                        Foreground="{Binding State, Converter={StaticResource RunStateToSubLineBrushConverter}}"
                        Visibility="{Binding HasToolActivity, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <TextBlock Text="{Binding QueuedChangesLine}" Margin="0,2,0,0"
+                       FontSize="{StaticResource RunMetaSize}"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSubtleBrush}"
+                       Visibility="{Binding HasQueuedChangesLine, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Sub-line: state, plan position, elapsed. The full token figure hangs off it as a tooltip rather
                  than taking a slot beside the actions — it is the number a reader wants least often. -->
             <TextBlock Text="{Binding SubLine}" Margin="0,2,0,0"
@@ -468,6 +473,10 @@
 
                       <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="9,0,0,0"
                                   VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Str JobTools_ChangedFromChat}" Margin="0,0,6,0"
+                                   FontSize="{StaticResource RunMetaSize}" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                   Visibility="{Binding IsChangedFromChat, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <!-- Read-mode trailing: the "now" marker, the step's token cost, or "skipped". Hidden while
                              the plan is editable, where the five verbs take the slot instead. -->
                         <StackPanel Orientation="Horizontal"

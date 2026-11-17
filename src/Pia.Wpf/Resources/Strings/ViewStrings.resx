@@ -31,6 +31,8 @@
   <resheader name="version"><value>1.3</value></resheader>
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="JobTools_QueuedChanges" xml:space="preserve"><value>{0} change(s) from the chat wait for the next step.</value></data>
+  <data name="JobTools_ChangedFromChat" xml:space="preserve"><value>Changed in chat</value></data>
   <!-- Navigation -->
   <data name="RunReplies_StateStopped" xml:space="preserve"><value>Stopped</value></data>
   <data name="RunReplies_StoppedNote" xml:space="preserve"><value>You stopped this job.</value></data>

@@ -29,6 +29,7 @@ public sealed class AgentRunOrchestrator
     private readonly IAssistantChatService? _chats;
     private readonly IRunMessageRecordStore? _messageRecords;
     private readonly IRunSteeringStore? _steering;
+    private readonly IJobSteeringStore? _jobSteering;
     private readonly ILocalizationService? _localization;
     private readonly IAiClientService? _ai;
 
@@ -141,8 +142,10 @@ public sealed class AgentRunOrchestrator
         IRunSteeringStore? steering = null,
         ILocalizationService? localization = null,
         IAiClientService? ai = null,
-        IRunMessageRecordStore? messageRecords = null)
+        IRunMessageRecordStore? messageRecords = null,
+        IJobSteeringStore? jobSteering = null)
     {
+        _jobSteering = jobSteering;
         _messageRecords = messageRecords;
         _runService = runService;
         _planner = planner;
@@ -352,8 +355,16 @@ public sealed class AgentRunOrchestrator
             {
                 // Re-query the persisted Pending list each iteration — a foreach over a snapshot
                 // would never run replanned steps.
-                while (await _runService.NextPendingStepAsync(run.Id, cts.Token).ConfigureAwait(false) is { } step)
+                while (await NextStepAtLoopTopAsync(run.Id, ctx, nudge, cts.Token).ConfigureAwait(false) is ({ } step, var pauseAfterStep))
                 {
+                    if (pauseAfterStep)
+                    {
+                        await PinRange().ConfigureAwait(false);
+                        await SafePauseUser(run.Id).ConfigureAwait(false);
+                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                        return;
+                    }
+
                     if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
                     {
                         await ParkAtBudgetAsync(executor, run, ctx, runFirst, runLast, cts.Token).ConfigureAwait(false);
@@ -668,6 +679,61 @@ public sealed class AgentRunOrchestrator
     /// terminal path (success, truncation, cancel, fail) so a run that executed steps never keeps a null range —
     /// symmetric with the clean-success path.
     /// </summary>
+    /// <summary>The one place a chat's queued plan changes are written while the job runs: no step is in flight here.</summary>
+    private async Task<(AgentStep? Step, bool PauseAfterStep)> NextStepAtLoopTopAsync(
+        Guid runId, RunContext ctx, string? nudge, CancellationToken ct)
+    {
+        if (_jobSteering is { } jobs)
+        {
+            await ApplyQueuedPlanChangesAsync(jobs, runId, ct).ConfigureAwait(false);
+            ctx.SetNudge(JobPlanChanges.ComposeNote(nudge, jobs.Notes(runId)));
+        }
+
+        var step = await _runService.NextPendingStepAsync(runId, ct).ConfigureAwait(false);
+        if (step is null || _jobSteering is null)
+            return (step, false);
+
+        if (_jobSteering.TryConsumePauseAfterStep(runId))
+            return (step, true);
+
+        _jobSteering.UnmarkChanged(runId, step.Id);
+        return (step, false);
+    }
+
+    private async Task ApplyQueuedPlanChangesAsync(IJobSteeringStore jobs, Guid runId, CancellationToken ct)
+    {
+        var changes = jobs.TakePlanChanges(runId);
+        if (changes.Count == 0)
+            return;
+
+        try
+        {
+            var run = await _runService.GetAsync(runId, ct).ConfigureAwait(false);
+            if (run is null)
+                return;
+
+            var (tail, touched, dropped) = JobPlanChanges.Apply(runId, JobPlanChanges.PendingTail(run), changes);
+            var rows = JobPlanChanges.Compose(run.Plan, tail);
+            if (rows.Count == 0 || rows.Count > RunProfile.MaxStepsCap)
+            {
+                jobs.RecordDropped(runId, changes.Count);
+                _logger.LogInformation("Run {RunId}: queued plan changes refused ({Count} steps)", runId, rows.Count);
+                return;
+            }
+
+            await _runService.ReplaceStepsAsync(runId, rows, ct).ConfigureAwait(false);
+            jobs.MarkChanged(runId, touched);
+            jobs.RecordDropped(runId, dropped);
+            _logger.LogInformation("Run {RunId}: applied {Applied} queued plan change(s), dropped {Dropped}",
+                runId, changes.Count - dropped, dropped);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            jobs.RecordDropped(runId, changes.Count);
+            _logger.LogWarning(ex, "Run {RunId}: applying queued plan changes failed", runId);
+        }
+    }
+
     private async Task PinRangeAsync(Guid runId, Guid? runFirst, Guid runLast, CancellationToken ct)
     {
         if (runFirst is { } first)

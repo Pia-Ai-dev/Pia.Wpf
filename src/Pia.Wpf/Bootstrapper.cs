@@ -716,6 +716,8 @@ public static class Bootstrapper
         // in a per-run scope, so a scoped registration would give the pause command and the loop two different
         // maps. Holds no state that outlives a dispatch.
         services.AddSingleton<IRunSteeringStore, RunSteeringStore>();
+        services.AddSingleton<IJobSteeringStore, JobSteeringStore>();
+        services.AddSingleton<IChatJobToolService, ChatJobToolService>();
         // The command surface over that registry. Never writes a run row: the row moves to Paused from inside
         // the loop, through the CAS, after the aborted step has been given back to the plan.
         services.AddSingleton<IAgentRunSteeringService, AgentRunSteeringService>();

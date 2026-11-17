@@ -112,15 +112,15 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## F — talking to a running job
 
-- [ ] **Unlock the composer during a job.** Remove the Send lock; keep Regenerate blocked.
+- [x] **Unlock the composer during a job.** Remove the Send lock; keep Regenerate blocked.
       *Deps:* group A · *Effort:* S · *Value:* High
-- [ ] **The job block and the read tool.** State, steps and the running step appended to the turn;
+- [x] **The job block and the read tool.** State, steps and the running step appended to the turn;
       `job_step_details`.
       *Deps:* unlocked composer · *Effort:* S · *Value:* High
-- [ ] **Changing the plan while it runs.** `job_update_plan` with queued changes applied at the step
+- [x] **Changing the plan while it runs.** `job_update_plan` with queued changes applied at the step
       boundary and overlaid on the block.
       *Deps:* job block · *Effort:* M · *Value:* High
-- [ ] **Steering.** `job_note` kept for the rest of the job, `job_pause` with the new "after this
+- [x] **Steering.** `job_note` kept for the rest of the job, `job_pause` with the new "after this
       step" flag, `job_restart_step`, `job_continue`, `job_answer`, `job_stop`.
       *Deps:* job block, G4 · *Effort:* M · *Value:* High
 
