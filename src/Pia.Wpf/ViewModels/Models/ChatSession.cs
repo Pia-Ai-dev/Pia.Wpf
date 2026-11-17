@@ -159,6 +159,12 @@ public sealed partial class ChatSession : IDisposable
 
     internal string? StoredHeaderFingerprint { get; set; }
 
+    // Removed here, so a pull must not bring them back, even from a read taken before the delete.
+    internal HashSet<Guid> DroppedMessageIds { get; } = [];
+
+    // Dropped ids whose store delete has not been confirmed; the next persist retries them.
+    internal HashSet<Guid> PendingDeleteIds { get; } = [];
+
     private IChatJobToolService? _jobTools;
 
     public ChatSession(

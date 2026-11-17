@@ -222,6 +222,57 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task AFailedStoreDelete_IsNotPulledBack_AndIsRetriedOnTheNextPersist()
+    {
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _chatService.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        var removed = session.Messages[0];
+        session.Messages.Remove(removed);
+        _chatService.DeleteMessagesAsync(chatId, Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns<Task<int>>(_ => throw new InvalidOperationException("database is locked"));
+
+        await sut.DeleteMessagesAsync(session, [removed.Id]);
+        await sut.PullMissingTranscriptRowsAsync(chatId);
+
+        Assert.DoesNotContain(session.Messages, m => m.Id == removed.Id);
+
+        _chatService.DeleteMessagesAsync(chatId, Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(1);
+        _chatService.ClearReceivedCalls();
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "next"));
+        await sut.PersistAsync(session);
+
+        await _chatService.Received(1).DeleteMessagesAsync(
+            chatId, Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == removed.Id), Arg.Any<CancellationToken>());
+        Assert.Empty(session.PendingDeleteIds);
+    }
+
+    [Fact]
+    public async Task APullThatReadBeforeTheDelete_DoesNotBringTheRowBack()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        var sut = CreateSut();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        var session = (await sut.ActivateAsync(chatId))!;
+        var removed = session.Messages[0];
+        var read = new TaskCompletionSource<SyncAssistantChat?>();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(read.Task);
+
+        var pull = sut.PullMissingTranscriptRowsAsync(chatId);
+        session.Messages.Remove(removed);
+        await sut.DeleteMessagesAsync(session, [removed.Id]);
+        read.SetResult(stored);
+        await pull;
+
+        Assert.DoesNotContain(session.Messages, m => m.Id == removed.Id);
+    }
+
+    [Fact]
     public async Task ALateStoredTitle_ReachesTheOpenSession_AndALaterHeaderWriteKeepsIt()
     {
         var chatId = Guid.NewGuid();

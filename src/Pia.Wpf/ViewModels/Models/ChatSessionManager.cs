@@ -427,19 +427,30 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
     public async Task DeleteMessagesAsync(ChatSession session, IReadOnlyList<Guid> messageIds)
     {
         foreach (var id in messageIds)
+        {
             session.StoredRowFingerprints.Remove(id);
+            session.DroppedMessageIds.Add(id);
+            session.PendingDeleteIds.Add(id);
+        }
 
-        if (session.Id is not { } chatId || messageIds.Count == 0)
+        await DeletePendingRowsAsync(session);
+    }
+
+    private async Task DeletePendingRowsAsync(ChatSession session)
+    {
+        if (session.Id is not { } chatId || session.PendingDeleteIds.Count == 0)
             return;
 
+        var ids = session.PendingDeleteIds.ToList();
         try
         {
-            var deleted = await _chatService.DeleteMessagesAsync(chatId, messageIds);
+            var deleted = await _chatService.DeleteMessagesAsync(chatId, ids);
+            session.PendingDeleteIds.ExceptWith(ids);
             _logger.LogInformation("Chat {ChatId}: deleted {Count} message row(s)", chatId, deleted);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to delete message rows of chat {ChatId}", chatId);
+            _logger.LogWarning(ex, "Failed to delete {Count} message row(s) of chat {ChatId}", ids.Count, chatId);
         }
     }
 
@@ -1255,7 +1266,7 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
         var added = 0;
         foreach (var dto in chat.Messages)
         {
-            if (!known.Add(dto.Id))
+            if (session.DroppedMessageIds.Contains(dto.Id) || !known.Add(dto.Id))
                 continue;
             var pulled = AssistantMessageMapper.FromDto(dto);
             session.Messages.Add(pulled);
@@ -1452,6 +1463,7 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
             foreach (var (dto, print) in changed)
                 session.StoredRowFingerprints[dto.Id] = print;
             session.StoredHeaderFingerprint = header;
+            await DeletePendingRowsAsync(session);
             session.SetTitle(chat.Title);
             RaiseTitleChanged(session, chat.Title);
             _logger.LogInformation("Persisted assistant chat {ChatId} ({Changed} of {MessageCount} messages written)",
