@@ -1900,4 +1900,5 @@
   <data name="RunAsk_SendAnswer" xml:space="preserve">
     <value>Antworten</value>
   </data>
+  <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Hier ist ein Plan dafür:</value></data>
 </root>

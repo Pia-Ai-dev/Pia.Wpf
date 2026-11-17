@@ -24,7 +24,7 @@ namespace Pia.ViewModels.Models;
 /// Services-must-not-depend-on-ViewModels layer rule, while still depending only
 /// on service interfaces.
 /// </summary>
-public sealed class ChatSessionManager : IChatSessionManager, IDisposable
+public sealed partial class ChatSessionManager : IChatSessionManager, IDisposable
 {
     private readonly ILogger<ChatSessionManager> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -769,8 +769,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             ? await ReadParkReasonAsync(activeRunId)
             : null;
 
+        // With the unified flow every send is a conversation turn, whatever the chat's stored lever says.
+        var unifiedFlow = await IsUnifiedFlowOnAsync();
+        planned &= !unifiedFlow;
+
         // A refusal, not an answer: typing over a pending plan must never be read as approving or rejecting it.
-        if (parkReason == AgentRunOrchestrator.PlanApprovalReason)
+        if (parkReason == AgentRunOrchestrator.PlanApprovalReason && !unifiedFlow)
         {
             _logger.LogInformation(
                 "Chat {ChatId}: refusing a new turn while a plan-approval park is active", session.Id);
@@ -917,6 +921,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 // No folder named for a Planned dispatch: its steps run against an isolated workspace
                 // that is not provisioned until below, so naming this one would point them outside it.
                 environmentRoot: plannedRun ? null : _filesToolHandler.DescribeEffectiveRoot(session.WorkingDirectory));
+            turnSetup = await WithProposePlanAsync(turnSetup, unifiedFlow, session.Cts!.Token);
             // Provider name is a user-named item (CLAUDE.md) — keep it out of the
             // release-surviving log; surface IDs/counts at Info, the name only in DEBUG.
             _logger.LogInformation("SendMessage: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
@@ -946,6 +951,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 InjectedFileContext = injectedFileContext,
                 RegenerationInstruction = regenerationInstruction,
                 TokenizationEnabled = tokenizationEnabled,
+                ProposePlan = ProposePlanHandlerFor(session, persona, turnSetup),
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

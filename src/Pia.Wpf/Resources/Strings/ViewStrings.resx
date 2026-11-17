@@ -1910,4 +1910,5 @@
   <data name="RunAsk_SendAnswer" xml:space="preserve">
     <value>Answer</value>
   </data>
+  <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Here is a plan for this:</value></data>
 </root>

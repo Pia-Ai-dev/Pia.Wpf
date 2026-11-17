@@ -380,6 +380,38 @@ public sealed class RunProgressViewModelTests : IDisposable
         vm.Dispose();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PlanApprovalPark_IsEditable_OnlyWhenTheHostAllowsIt(bool allowed)
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        vm.PlanEditableAtApproval = allowed;
+
+        await _runs.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.Equal(allowed, vm.CanMutatePlan);
+        Assert.Equal(allowed, vm.SkipStepCommand.CanExecute(vm.Steps.FirstOrDefault()));
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task WeakProviderNote_ShowsOnlyWhileThePlanWaitsForApproval()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+        vm.WeakProviderNote = "weak";
+        Assert.False(vm.ShowWeakProviderNote);
+
+        await _runs.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason, TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.True(vm.ShowWeakProviderNote);
+        vm.Dispose();
+    }
+
     [Fact]
     public async Task WaitingForInput_ProjectsPlanApprovalPause_ApproveLabelAndNoNudgeBox()
     {

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels.Models;
@@ -44,6 +45,9 @@ public sealed class ChatTurnRequest
 
     /// <summary>Whether PII tokenization is active for this turn.</summary>
     public required bool TokenizationEnabled { get; init; }
+
+    /// <summary>Null when the turn does not offer <c>propose_plan</c>, so an invented call stays an unknown tool.</summary>
+    public Func<AssistantMessage, IDictionary<string, object?>?, Task<ProposePlanOutcome>>? ProposePlan { get; init; }
 }
 
 /// <summary>Raised by <see cref="ChatSession"/> when its <see cref="ChatState"/> changes.</summary>
