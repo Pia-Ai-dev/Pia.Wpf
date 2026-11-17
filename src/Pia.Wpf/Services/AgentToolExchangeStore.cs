@@ -285,6 +285,37 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         }
     }
 
+    public Task<int> SupersedeStepUnreplayedAsync(Guid runId, Guid? stepId, CancellationToken ct = default)
+    {
+        if (ct.IsCancellationRequested)
+            return Task.FromResult(0);
+
+        try
+        {
+            lock (_gate)
+            {
+                if (_disposed) return Task.FromResult(0);
+
+                using var cmd = Connection().CreateCommand();
+                cmd.CommandText = """
+                    UPDATE AgentToolExchanges
+                    SET SupersededAt = @Now
+                    WHERE RunId = @RunId AND StepId IS @StepId
+                      AND Kind IN (3, 4) AND ReplayedAt IS NULL AND SupersededAt IS NULL;
+                    """;
+                cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+                cmd.Parameters.AddWithValue("@RunId", runId.ToString());
+                cmd.Parameters.AddWithValue("@StepId", (object?)stepId?.ToString() ?? DBNull.Value);
+                return Task.FromResult(cmd.ExecuteNonQuery());
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Tool-exchange step supersede failed for run {RunId}", runId);
+            return Task.FromResult(0);
+        }
+    }
+
     public Task<bool> TryMarkReplayedAsync(Guid id, DateTime replayedAt, CancellationToken ct = default)
     {
         if (ct.IsCancellationRequested)

@@ -453,6 +453,40 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task AnApprovedCallParkedInAnotherStep_IsDiscarded_NotReplayedIntoTheStepAboutToRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False(probe.Executed);
+
+        // Stands in for a plan change that removed the parked step: its rows now belong to no step that runs.
+        using (var connection = new SqliteConnection(_ctx.ConnectionString))
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE AgentToolExchanges SET StepId = @StepId WHERE Kind IN (3, 4);";
+            cmd.Parameters.AddWithValue("@StepId", Guid.NewGuid().ToString());
+            cmd.ExecuteNonQuery();
+        }
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var resumed = probe.Dispatches[1];
+        Assert.Equal(0, resumed.ExecutedCount);
+        var row = Assert.Single(resumed.Rows, r => r.Kind == AgentToolExchangeKind.ParkedCall);
+        Assert.Null(row.ReplayedAt);
+        Assert.NotNull(row.SupersededAt);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>The seeded pair bypasses the tokenizing decorator entirely, so both halves have to be tokenized
     /// here — otherwise real user content the gate detokenized reaches the provider raw on the next round.</summary>
     [Fact]

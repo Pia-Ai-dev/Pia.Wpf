@@ -219,6 +219,8 @@ public sealed class ChatJobToolService : IChatJobToolService
         if (parsed is null)
             return error!;
 
+        await DiscardParkedCallsOfChangedStepsAsync(run, parsed, ct);
+
         var reason = AgentRunStates.IsParked(run.State) ? RunPauseEnvelope.ReadReason(run) : null;
         var direct = run.State == AgentRunState.Paused
             || (run.State == AgentRunState.WaitingForInput && reason == AgentRunOrchestrator.PlanApprovalReason);
@@ -229,6 +231,22 @@ public sealed class ChatJobToolService : IChatJobToolService
         _logger.LogInformation("Run {RunId}: queued {Count} plan change(s)", run.Id, parsed.Count);
         return await WithBlockAsync(
             "Queued the change; the job applies it before its next step. The block shows it already.", run, ct);
+    }
+
+    // An approval given for the old wording of a step must not run the call that wording produced.
+    private async Task DiscardParkedCallsOfChangedStepsAsync(AgentRun run, IReadOnlyList<JobPlanChange> changes,
+        CancellationToken ct)
+    {
+        if (_toolCalls is null)
+            return;
+        foreach (var stepId in changes.Where(c => c.Kind is JobPlanChangeKind.Edit or JobPlanChangeKind.Remove)
+                     .Select(c => c.StepId).Distinct())
+        {
+            var discarded = await Task.Run(() => _toolCalls.SupersedeStepUnreplayedAsync(run.Id, stepId, ct), ct);
+            if (discarded > 0)
+                _logger.LogInformation("Run {RunId}: discarded {Count} parked call(s) of changed step {StepId}",
+                    run.Id, discarded, stepId);
+        }
     }
 
     private async Task<bool> TryApplyDirectlyAsync(AgentRun run, IReadOnlyList<JobPlanChange> changes, CancellationToken ct)

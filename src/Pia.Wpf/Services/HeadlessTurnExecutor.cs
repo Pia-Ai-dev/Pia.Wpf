@@ -580,7 +580,15 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         var replayed = new List<string>();
         try
         {
-            var rows = await _exchangeStore.GetReplayableAsync(_runId, approvedTool, ct).ConfigureAwait(false);
+            var all = await _exchangeStore.GetReplayableAsync(_runId, approvedTool, ct).ConfigureAwait(false);
+            foreach (var otherStep in all.Where(r => r.StepId != stepId).Select(r => r.StepId).Distinct())
+            {
+                await _exchangeStore.SupersedeStepUnreplayedAsync(_runId, otherStep, ct).ConfigureAwait(false);
+                _logger.LogInformation("Headless run {RunId} discarded approved call(s) parked in step {ParkedStepId}, "
+                    + "which is not the step about to run", _runId, otherStep);
+            }
+
+            var rows = all.Where(r => r.StepId == stepId).ToList();
             if (rows.Count == 0)
                 return;
 
