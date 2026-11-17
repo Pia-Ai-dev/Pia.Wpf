@@ -43,25 +43,13 @@ public interface IAssistantChatService
     Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default);
 
     /// <summary>
-    /// <see cref="SaveAsync"/> for an APPEND-ONLY writer: reads the stored message rows and merges back
-    /// every row <paramref name="chat"/> does not carry (matched by <c>Id</c>, ordered by <c>Timestamp</c>)
-    /// before the replace — all under ONE hold of the store's write gate.
-    /// <para>
-    /// W2b: the atomicity is the point. Read-then-save from the caller (<see cref="GetAsync"/> →
-    /// <see cref="SaveAsync"/>) releases the gate between the read and the write, so a writer that commits
-    /// in that gap still has its rows DELETEd by the replace — the window is narrowed, not closed. Here the
-    /// read and the write cannot be interleaved by another caller of this service.
-    /// </para>
-    /// <para>
-    /// ONLY for a writer whose transcript grows monotonically (the headless run executor). A writer that
-    /// legitimately REMOVES messages — the live session persist behind Regenerate/Delete, which replays the
-    /// user's truncation — must keep using <see cref="SaveAsync"/>, or a deleted message would be merged
-    /// straight back in.
-    /// </para>
-    /// <returns>How many stored rows were absorbed, for the caller's log. 0 means the caller's payload
-    /// already covered every row (the ordinary case).</returns>
+    /// Inserts or updates <paramref name="chat"/>'s messages by id and leaves every other stored row alone.
+    /// Header fields are written only with <paramref name="writeHeader"/>; without it a missing chat returns <c>false</c>.
     /// </summary>
-    Task<int> SaveMergedAsync(SyncAssistantChat chat, CancellationToken ct = default);
+    Task<bool> UpsertMessagesAsync(SyncAssistantChat chat, bool writeHeader, CancellationToken ct = default);
+
+    /// <summary>Removes the given messages of one chat; returns how many rows were deleted.</summary>
+    Task<int> DeleteMessagesAsync(Guid chatId, IReadOnlyCollection<Guid> messageIds, CancellationToken ct = default);
 
     /// <summary>
     /// Set a chat's title (and <c>UpdatedAt</c>) WITHOUT touching its message rows, refreshing the FTS row so

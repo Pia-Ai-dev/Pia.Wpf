@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -384,6 +385,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         session.TurnCompleted += OnSessionTurnCompleted;
         // E2: and every completed step of an in-flight Planned run (persist-only, no terminal settle).
         session.PersistRequested += OnSessionPersistRequested;
+        session.MessagesDropped += OnSessionMessagesDropped;
         _allSessions.Add(session);
         return session;
     }
@@ -402,7 +404,40 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Persist on every terminal state (matches today's finally-persist, which
         // saved error turns too). Follow-up/TTS gating lives in the active VM.
         if (sender is ChatSession session)
-            PersistAsync(session).SafeFireAndForget(_logger);
+            PersistThenPullAsync(session).SafeFireAndForget(_logger);
+    }
+
+    // Rows a job wrote while this turn streamed were skipped by the pull; fetch them now.
+    private async Task PersistThenPullAsync(ChatSession session)
+    {
+        await PersistAsync(session);
+        if (session.Id is { } chatId)
+            await PullMissingTranscriptRowsAsync(chatId);
+    }
+
+    private void OnSessionMessagesDropped(object? sender, IReadOnlyList<Guid> messageIds)
+    {
+        if (sender is ChatSession session)
+            DeleteMessagesAsync(session, messageIds).SafeFireAndForget(_logger);
+    }
+
+    public async Task DeleteMessagesAsync(ChatSession session, IReadOnlyList<Guid> messageIds)
+    {
+        foreach (var id in messageIds)
+            session.StoredRowFingerprints.Remove(id);
+
+        if (session.Id is not { } chatId || messageIds.Count == 0)
+            return;
+
+        try
+        {
+            var deleted = await _chatService.DeleteMessagesAsync(chatId, messageIds);
+            _logger.LogInformation("Chat {ChatId}: deleted {Count} message row(s)", chatId, deleted);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete message rows of chat {ChatId}", chatId);
+        }
     }
 
     /// <summary>
@@ -532,6 +567,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         session.StateChanged -= OnSessionStateChanged;
         session.TurnCompleted -= OnSessionTurnCompleted;
         session.PersistRequested -= OnSessionPersistRequested;
+        session.MessagesDropped -= OnSessionMessagesDropped;
         _allSessions.Remove(session);
         if (session.Id is { } id
             && _sessions.TryGetValue(id, out var keyed)
@@ -579,7 +615,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         var session = CreateSession();
         foreach (var dto in chat.Messages)
-            session.Messages.Add(AssistantMessageMapper.FromDto(dto));
+        {
+            var loaded = AssistantMessageMapper.FromDto(dto);
+            session.Messages.Add(loaded);
+            // Fingerprinted after the round trip, which is not byte-stable, so an untouched row stays unwritten.
+            session.StoredRowFingerprints[dto.Id] = Fingerprint(AssistantMessageMapper.ToDto(loaded));
+        }
+        session.StoredHeaderFingerprint = HeaderFingerprint(chat);
 
         session.SetIdentity(chat.Id, chat.CreatedAt, chat.ProviderId, chat.Title, autoTitleApplied: true);
         session.SetWorkingDirectory(chat.WorkingDirectory);
@@ -1156,12 +1198,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return run is { State: AgentRunState.WaitingForInput } ? RunPauseEnvelope.ReadReason(run) : null;
     }
 
-    /// <summary>
-    /// Refreshes an open session's transcript with rows a headless dispatch wrote to the store (a parked
-    /// run's question, a background or resumed run's step replies), since a headless dispatch has no live
-    /// session to mirror its writes into directly. Append-only and keyed on message id, so it can never
-    /// resurrect a row the user deleted or double-add one a live turn already holds.
-    /// </summary>
+    /// <summary>Adds rows another writer stored for an open chat; append-only and keyed on message id.</summary>
     internal async Task PullMissingTranscriptRowsAsync(Guid chatId)
     {
         if (_disposed)
@@ -1169,8 +1206,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         // The session this chat is open in, if any; no live session means nothing to render into.
         var session = _allSessions.FirstOrDefault(s => s.Id == chatId);
-        // A streaming session's live executor owns its transcript — never pull into it.
-        if (session is null || session.ActiveRunId is not { } runId || session.IsStreaming)
+        // A streaming session's live executor owns its transcript; its turn end pulls again.
+        if (session is null || session.IsStreaming)
             return;
 
         SyncAssistantChat? chat;
@@ -1197,23 +1234,20 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         {
             if (!known.Add(dto.Id))
                 continue;
-            session.Messages.Add(AssistantMessageMapper.FromDto(dto));
+            var pulled = AssistantMessageMapper.FromDto(dto);
+            session.Messages.Add(pulled);
+            session.StoredRowFingerprints[dto.Id] = Fingerprint(AssistantMessageMapper.ToDto(pulled));
             added++;
         }
 
         if (added > 0)
         {
-            // The row contents are user-derived payload and never go on a log line (Privacy-First Logging).
             _logger.LogInformation(
-                "Chat {ChatId}: pulled {Count} row(s) written to the store by run {RunId} while the chat was open",
-                chatId, added, runId);
+                "Chat {ChatId}: pulled {Count} row(s) written to the store while the chat was open",
+                chatId, added);
         }
     }
 
-    /// <summary>
-    /// Persists one appended message via the append-only merge save rather than a full-replace persist, so it
-    /// can never clobber rows a concurrent headless resume already wrote to the same chat.
-    /// </summary>
     private async Task AppendAnswerDurablyAsync(ChatSession session, AssistantMessage answer)
     {
         try
@@ -1224,30 +1258,15 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 return;
             }
 
-            var chat = await _chatService.GetAsync(chatId);
-            if (chat is null)
-            {
-                await PersistAsync(session);
-                return;
-            }
-
             var now = DateTime.UtcNow;
-            await _chatService.SaveMergedAsync(new SyncAssistantChat
-            {
-                Id = chat.Id,
-                SchemaVersion = chat.SchemaVersion,
-                Title = chat.Title,
-                CreatedAt = chat.CreatedAt,
-                UpdatedAt = now,
-                LastAccessedAt = now,
-                WindowMode = chat.WindowMode,
-                ProviderId = chat.ProviderId,
-                WorkingDirectory = chat.WorkingDirectory,
-                AgentContextMode = chat.AgentContextMode,
-                // Same message instance as session.Messages, so a later full-replace persist updates this row
-                // instead of duplicating it.
-                Messages = [AssistantMessageMapper.ToDto(answer)],
-            });
+            var dto = AssistantMessageMapper.ToDto(answer);
+            var appended = await _chatService.UpsertMessagesAsync(
+                new SyncAssistantChat { Id = chatId, UpdatedAt = now, LastAccessedAt = now, Messages = [dto] },
+                writeHeader: false);
+            if (appended)
+                session.StoredRowFingerprints[dto.Id] = Fingerprint(dto);
+            else
+                await PersistAsync(session);
         }
         catch (Exception ex)
         {
@@ -1375,13 +1394,43 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto)],
         };
 
+        var changed = chat.Messages
+            .Select(dto => (Dto: dto, Print: Fingerprint(dto)))
+            .Where(r => !session.StoredRowFingerprints.TryGetValue(r.Dto.Id, out var stored) || stored != r.Print)
+            .ToList();
+        var header = HeaderFingerprint(chat);
+        var writeHeader = header != session.StoredHeaderFingerprint;
+        var payload = new SyncAssistantChat
+        {
+            Id = chat.Id,
+            SchemaVersion = chat.SchemaVersion,
+            Title = chat.Title,
+            CreatedAt = chat.CreatedAt,
+            UpdatedAt = chat.UpdatedAt,
+            LastAccessedAt = chat.LastAccessedAt,
+            WindowMode = chat.WindowMode,
+            ProviderId = chat.ProviderId,
+            WorkingDirectory = chat.WorkingDirectory,
+            AgentContextMode = chat.AgentContextMode,
+            Messages = [.. changed.Select(r => r.Dto)],
+        };
+
         try
         {
-            await _chatService.SaveAsync(chat);
+            if (!await _chatService.UpsertMessagesAsync(payload, writeHeader))
+            {
+                // The row is gone (deleted or never written): recreate it with the whole transcript.
+                payload.Messages = chat.Messages;
+                changed = [.. chat.Messages.Select(dto => (dto, Fingerprint(dto)))];
+                await _chatService.UpsertMessagesAsync(payload, writeHeader: true);
+            }
+            foreach (var (dto, print) in changed)
+                session.StoredRowFingerprints[dto.Id] = print;
+            session.StoredHeaderFingerprint = header;
             session.SetTitle(chat.Title);
             RaiseTitleChanged(session, chat.Title);
-            _logger.LogInformation("Persisted assistant chat {ChatId} ({MessageCount} messages)",
-                chat.Id, chat.Messages.Count);
+            _logger.LogInformation("Persisted assistant chat {ChatId} ({Changed} of {MessageCount} messages written)",
+                chat.Id, changed.Count, chat.Messages.Count);
             _logger.SensitiveDebug("Chat {ChatId} title: {Title}", chat.Id, chat.Title);
         }
         catch (Exception ex)
@@ -1512,9 +1561,15 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             session.StateChanged -= OnSessionStateChanged;
             session.TurnCompleted -= OnSessionTurnCompleted;
             session.PersistRequested -= OnSessionPersistRequested;
+            session.MessagesDropped -= OnSessionMessagesDropped;
             session.Dispose();
         }
         _allSessions.Clear();
         _sessions.Clear();
     }
+
+    private static string Fingerprint(SyncAssistantChatMessage dto) => JsonSerializer.Serialize(dto);
+
+    private static string HeaderFingerprint(SyncAssistantChat chat) =>
+        string.Join('\u001f', chat.Title, chat.ProviderId, chat.WorkingDirectory, chat.AgentContextMode);
 }

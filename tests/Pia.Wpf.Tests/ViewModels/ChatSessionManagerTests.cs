@@ -44,6 +44,8 @@ public class ChatSessionManagerTests
     public ChatSessionManagerTests()
     {
         _settings.GetSettingsAsync().Returns(new AppSettings());
+        _chatService.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(true);
         _loc[Arg.Any<string>()].Returns(ci => (string)ci[0]);
         _capability.GetPlanningCapabilityAsync(Arg.Any<AiProvider>(), Arg.Any<CancellationToken>())
             .Returns(PlanningCapability.Capable);
@@ -176,6 +178,71 @@ public class ChatSessionManagerTests
         Assert.Equal(2, session.Messages.Count);
         Assert.Same(session, sut.ActiveSession);
         await _chatService.Received(1).TouchLastAccessedAsync(chatId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PersistAfterActivate_WritesOnlyTheNewRow_AndNoHeader()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        stored.Messages.Add(new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(), Role = "assistant", Content = "done", Timestamp = DateTime.UtcNow,
+            Tokens = 12, ThinkingContent = "", ModelName = null,
+            Persona = new SyncMessagePersona { Id = Guid.NewGuid(), Name = "Analyst", Emoji = "A" },
+        });
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        _chatService.ClearReceivedCalls();
+
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "next"));
+        await sut.PersistAsync(session);
+
+        await _chatService.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 1 && c.Messages[0].Content == "next"),
+            false, Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteMessagesAsync_DeletesFromTheStore_AndAPersistDoesNotRewriteThem()
+    {
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        var removed = session.Messages[0];
+        session.Messages.Remove(removed);
+
+        await sut.DeleteMessagesAsync(session, [removed.Id]);
+
+        await _chatService.Received(1).DeleteMessagesAsync(
+            chatId, Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == removed.Id), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TurnCompleted_PullsRowsAJobStored_EvenWithoutAnAttachedRun()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        Assert.Null(session.ActiveRunId);
+
+        var stepReply = new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(), Role = "assistant", Content = "step reply", Timestamp = DateTime.UtcNow,
+        };
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>())
+            .Returns(new SyncAssistantChat { Id = chatId, Messages = [.. stored.Messages, stepReply] });
+
+        session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
+
+        await Eventually.TrueAsync(() => session.Messages.Any(m => m.Id == stepReply.Id),
+            "the turn end to pull the job's row", TestContext.Current.CancellationToken);
+        Assert.Single(session.Messages, m => m.Id == stepReply.Id);
     }
 
     [Fact]
@@ -997,7 +1064,7 @@ public class ChatSessionManagerTests
         await sut.PersistAsync(session);
 
         Assert.NotNull(session.Id);
-        await _chatService.Received(1).SaveAsync(Arg.Is<SyncAssistantChat>(c => c.Id == session.Id), Arg.Any<CancellationToken>());
+        await _chatService.Received(1).UpsertMessagesAsync(Arg.Is<SyncAssistantChat>(c => c.Id == session.Id), true, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1016,8 +1083,8 @@ public class ChatSessionManagerTests
 
         session.RequestPersist();
 
-        await _chatService.Received(1).SaveAsync(
-            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 2), Arg.Any<CancellationToken>());
+        await _chatService.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 2), true, Arg.Any<CancellationToken>());
         await _titleService.DidNotReceive().GenerateAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         Assert.Equal(0, turnCompleted);
@@ -1048,7 +1115,8 @@ public class ChatSessionManagerTests
     {
         _settings.GetSettingsAsync().Returns(new AppSettings { ChatAutoTitleEnabled = false });
         SyncAssistantChat? saved = null;
-        await _chatService.SaveAsync(Arg.Do<SyncAssistantChat>(c => saved = c), Arg.Any<CancellationToken>());
+        _chatService.UpsertMessagesAsync(Arg.Do<SyncAssistantChat>(c => saved = c), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
@@ -1089,11 +1157,9 @@ public class ChatSessionManagerTests
 
         Assert.Equal("Weekly plan", session.Title);
         await _chatService.Received(1).SetTitleAsync(session.Id!.Value, "Weekly plan", Arg.Any<CancellationToken>());
-        // EXACTLY ONE full replace for the whole turn — the terminal persist's. The rename used to add a second,
-        // from a snapshot read before the title LLM call.
-        await _chatService.Received(1).SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
-        // And it no longer READS the chat back: that read existed only to carry the message payload.
-        await _chatService.DidNotReceive().GetAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        // Exactly one message write for the whole turn, the terminal persist's; the rename writes the title alone.
+        await _chatService.Received(1).UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1252,7 +1318,7 @@ public class ChatSessionManagerTests
         Assert.NotNull(background.Id);
         // A backgrounded setup failure is persisted so its Error toast re-hydrates from the store after a reap
         // instead of dead-linking.
-        await _chatService.Received(1).SaveAsync(Arg.Is<SyncAssistantChat>(c => c.Id == background.Id), Arg.Any<CancellationToken>());
+        await _chatService.Received(1).UpsertMessagesAsync(Arg.Is<SyncAssistantChat>(c => c.Id == background.Id), true, Arg.Any<CancellationToken>());
         // LLM auto-title (which needs a provider) is suppressed for the errored chat.
         await _titleService.DidNotReceive().GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -1273,6 +1339,7 @@ public class ChatSessionManagerTests
         Assert.Equal(ChatState.Error, active.State);
         // A FOREGROUND no-provider failure is NOT persisted — no junk history entries for an unconfigured user,
         // and the toast never fires for the active chat.
+        await _chatService.DidNotReceive().UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
         await _chatService.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
     }
 
@@ -1297,8 +1364,9 @@ public class ChatSessionManagerTests
 
         Assert.NotNull(session.Id);
         // The snapshot holds the user message plus the still-streaming assistant placeholder, so 2 messages.
-        await _chatService.Received().SaveAsync(
+        await _chatService.Received().UpsertMessagesAsync(
             Arg.Is<SyncAssistantChat>(c => c.Id == session.Id && c.Messages.Count == 2),
+            true,
             Arg.Any<CancellationToken>());
     }
 
@@ -1363,8 +1431,8 @@ public class ChatSessionManagerTests
         await sut.StartTurnAsync(background, "hi", null); // a rethrow here fails the test
 
         Assert.Equal(ChatState.Error, background.State);
-        // The persist was attempted (SaveAsync) before the auto-title re-read threw and was swallowed.
-        await _chatService.Received(1).SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+        // The persist was attempted before the auto-title re-read threw and was swallowed.
+        await _chatService.Received(1).UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), true, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2049,6 +2117,10 @@ public class ChatSessionManagerTests
             resumeService: _resumeService);
     }
 
+    // The turn-end pull also brings the parked chat's stored rows into the session.
+    private static List<AssistantMessage> TurnRows(ChatSession session) =>
+        [.. session.Messages.Where(m => m.Content is not ("ggg" or "which catalogue?"))];
+
     /// <summary>Writes a real pause envelope rather than stubbing a "parked" bool, since nothing in production reads such a bool.</summary>
     private Guid AttachParkedRun(ChatSession session, string reason, AgentRunState state = AgentRunState.WaitingForInput)
     {
@@ -2117,7 +2189,7 @@ public class ChatSessionManagerTests
         await _personas.DidNotReceiveWithAnyArgs().ResolveActiveAsync(default, default);
     }
 
-    /// <summary>Merges the answer via an append-only save — never a full replace, which would delete rows a headless resume already wrote — before dispatching the resume.</summary>
+    /// <summary>Upserts the answer alone, never a full replace, before dispatching the resume.</summary>
     [Fact]
     public async Task StartTurnAsync_RunParkedForClarification_MergesTheAnswerIn_BeforeDispatchingTheResume()
     {
@@ -2125,15 +2197,18 @@ public class ChatSessionManagerTests
         var session = sut.GetOrCreateActiveForNewChat();
         var runId = AttachParkedRun(session, "needs-goal");
         _resumeService.ResumeAsync(runId, Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(true);
+        _chatService.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         await sut.StartTurnAsync(session, "the printed catalogue", null);
 
         Received.InOrder(() =>
         {
-            _chatService.SaveMergedAsync(
+            _chatService.UpsertMessagesAsync(
                 Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 1
                     && c.Messages[0].Role == "user"
                     && c.Messages[0].Content == "the printed catalogue"),
+                false,
                 Arg.Any<CancellationToken>());
             _resumeService.ResumeAsync(runId, "the printed catalogue", Arg.Any<CancellationToken>());
         });
@@ -2182,8 +2257,8 @@ public class ChatSessionManagerTests
         // Non-vacuity: an ordinary turn really did start (setup resolved, placeholder added).
         await _personas.Received(1).ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
         // Asserted by count, not IsStreaming: the fire-and-forget turn may already have cleared that flag.
-        Assert.Equal(2, session.Messages.Count);
-        Assert.False(session.Messages[1].IsUser);
+        Assert.Equal(2, TurnRows(session).Count);
+        Assert.False(TurnRows(session)[1].IsUser);
     }
 
     /// <summary>Typing over a pending plan is a refusal, not an answer — it must never be read as approving it.</summary>
@@ -2256,8 +2331,8 @@ public class ChatSessionManagerTests
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         // Non-vacuity: an ordinary turn really did start (setup resolved, placeholder added).
         await _personas.Received(1).ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
-        Assert.Equal(2, session.Messages.Count);
-        Assert.False(session.Messages[1].IsUser);
+        Assert.Equal(2, TurnRows(session).Count);
+        Assert.False(TurnRows(session)[1].IsUser);
     }
 
     /// <summary>The minted user message carries the file text, which is the whole feature: without it the send compiles, runs and tells the model nothing.</summary>
@@ -2374,7 +2449,7 @@ public class ChatSessionManagerTests
 
         await _resumeService.DidNotReceive().ResumeAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
-        Assert.Equal(2, session.Messages.Count);
+        Assert.Equal(2, TurnRows(session).Count);
     }
 
     private const string AttachedFileBlock =
@@ -2418,8 +2493,8 @@ public class ChatSessionManagerTests
         await _resumeService.DidNotReceive().ResumeAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         // Asserted by count, not IsStreaming: the fire-and-forget turn may already have cleared that flag.
-        Assert.Equal(2, session.Messages.Count);
-        Assert.False(session.Messages[1].IsUser);
+        Assert.Equal(2, TurnRows(session).Count);
+        Assert.False(TurnRows(session)[1].IsUser);
     }
 
     // ---- a live session learns what a headless resume wrote ----

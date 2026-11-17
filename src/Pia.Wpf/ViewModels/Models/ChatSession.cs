@@ -151,6 +151,14 @@ public sealed class ChatSession : IDisposable
     /// </summary>
     internal event EventHandler? PersistRequested;
 
+    /// <summary>Messages removed from the transcript that the store must delete too.</summary>
+    internal event EventHandler<IReadOnlyList<Guid>>? MessagesDropped;
+
+    // What this session last wrote or read per message, so a persist rewrites only rows it changed.
+    internal Dictionary<Guid, string> StoredRowFingerprints { get; } = new();
+
+    internal string? StoredHeaderFingerprint { get; set; }
+
     public ChatSession(
         ITokenMapService tokenMap,
         IAiClientService aiClientService,
@@ -531,9 +539,9 @@ public sealed class ChatSession : IDisposable
             _logger.LogWarning("Provider rejected image attachment (vision disabled)");
             var localized = _localizationService["Msg_Assistant_ProviderNoVision"];
             assistantMessage.Content = localized;
-            // Session-local: drop the message pair (operates on this session's own list).
             Messages.Remove(assistantMessage);
             Messages.Remove(userMessage);
+            MessagesDropped?.Invoke(this, [userMessage.Id, assistantMessage.Id]);
             SetState(ChatState.Error);
             RunFailed?.Invoke(this, new RunFailedEventArgs
             {

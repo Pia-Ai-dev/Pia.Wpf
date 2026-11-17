@@ -15,9 +15,7 @@ namespace Pia.Tests.Architecture;
 public class AgentRunBracketTests
 {
     /// <summary>
-    /// The execution entry points. BOTH are required, and the second is the one that matters most: it is
-    /// <c>RunShape.SingleTurn</c>, which before A2 was gated NOWHERE and — unlike the Planned path — had no
-    /// <c>SaveMergedAsync</c> to heal a clobbered transcript.
+    /// The execution entry points; both are required, and <c>RunShape.SingleTurn</c> is the one that matters most.
     /// </summary>
     private static readonly Type[] ExecutorContracts =
     [
