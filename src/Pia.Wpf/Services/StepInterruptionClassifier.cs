@@ -45,7 +45,7 @@ internal static class StepInterruptionClassifier
         || ex is OperationCanceledException { InnerException: TimeoutException };
 
     // The outermost status-bearing exception decides: an SDK exception carries its own status and wraps a
-    // status-less HttpRequestException that must not override it.
+    // status-less HttpRequestException that must not override it. A status-0 SDK exception got no response, so it defers.
     private static bool? OutermostStatus(List<Exception> chain)
     {
         foreach (var e in chain)
@@ -56,7 +56,7 @@ internal static class StepInterruptionClassifier
                     return true;
                 case AnthropicApiException api:
                     return api.StatusCode == HttpStatusCode.RequestTimeout;
-                case ClientResultException result:
+                case ClientResultException result when result.Status != 0:
                     return IsTransient(result.Status);
                 case HttpRequestException http:
                     return http.StatusCode is not { } status || IsTransient((int)status);

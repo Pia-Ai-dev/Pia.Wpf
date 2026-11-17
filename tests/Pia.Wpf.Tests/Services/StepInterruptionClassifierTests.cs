@@ -1,3 +1,4 @@
+using System.ClientModel;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -24,6 +25,9 @@ public class StepInterruptionClassifierTests
     [InlineData("http-503", StepInterruption.Provider)]
     [InlineData("http-no-status", StepInterruption.Provider)]
     [InlineData("http-429", StepInterruption.Provider)]
+    [InlineData("client-no-response", StepInterruption.Provider)]
+    [InlineData("client-no-response-400", null)]
+    [InlineData("client-no-response-bare", null)]
     [InlineData("http-400", null)]
     [InlineData("http-401", null)]
     [InlineData("truncated", null)]
@@ -101,6 +105,10 @@ public class StepInterruptionClassifierTests
         "http-503" => new HttpRequestException("m", null, HttpStatusCode.ServiceUnavailable),
         "http-no-status" => new HttpRequestException("m"),
         "http-429" => new HttpRequestException("m", null, HttpStatusCode.TooManyRequests),
+        "client-no-response" => new ClientResultException("m", null, new HttpRequestException("m")),
+        "client-no-response-400" => new ClientResultException("m", null,
+            new HttpRequestException("m", null, HttpStatusCode.BadRequest)),
+        "client-no-response-bare" => new ClientResultException("m"),
         "http-400" => new HttpRequestException("m", null, HttpStatusCode.BadRequest),
         "http-401" => new HttpRequestException("m", null, HttpStatusCode.Unauthorized),
         "truncated" => new LlmTruncatedException("P", 10),
