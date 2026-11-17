@@ -1653,7 +1653,7 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
         bool faultOnExecute = false, string executeResult = ExecuteResult, ITokenMapService? tokenMap = null,
         IReadOnlyList<IReadOnlyList<ScriptedCall>>? dispatchScript = null,
         string? pluginName = null, string description = "desc", string? warning = null,
-        bool recordRounds = false, Exception? faultAfterFirstCallWith = null)
+        bool recordRounds = false, Exception? faultAfterFirstCallWith = null, IRunAskBroker? askBroker = null)
     {
         List<ScriptedCall> everyDispatch = [new(probe.ToolName, firstPath, firstContent)];
         if (secondToolName is not null)
@@ -1751,6 +1751,8 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
         if (sessionGrants is not null)
             services.AddSingleton(sessionGrants);
         services.AddSingleton(permissions ?? Substitute.For<IToolPermissionService>());
+        if (askBroker is not null)
+            services.AddSingleton(askBroker);
         // Real wiring, like the audit sink above: what a park leaves behind for a Continue press to replay is
         // one of the facts, and the executor resolves this off the container.
         _exchanges = new AgentToolExchangeStore(_ctx, NullLogger<AgentToolExchangeStore>.Instance);

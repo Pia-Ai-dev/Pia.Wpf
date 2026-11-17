@@ -725,7 +725,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         return executed;
     }
 
-    /// <summary>Asked = false means nobody answered on the block, and the caller parks the run as before.</summary>
+    /// <summary>Asked = false means nobody answered on the block, and the caller parks the run.</summary>
     private async Task<(bool Asked, object? Result)> AskInPlaceAsync(
         PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, RunAskContext ask,
         ToolClass toolClass, AgentTimelineScope? timeline, int? argsChars)

@@ -624,8 +624,16 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
 
         if (replayed.Count > 0)
-            _messages.Add(new ChatMessage(ChatRole.User, ReplayedCallNote(replayed)));
+        {
+            _messages.Add(new ChatMessage(ChatRole.User,
+                _replayDeclined ? DeclinedCallNote(replayed) : ReplayedCallNote(replayed)));
+        }
     }
+
+    private static string DeclinedCallNote(IEnumerable<string> tools) =>
+        "The person declined the call(s) you had asked about, so they did NOT run: "
+        + string.Join(", ", tools.Distinct(StringComparer.OrdinalIgnoreCase))
+        + ". Their result is above. Do not retry; finish the step without them and say what was left undone.";
 
     /// <summary>
     /// The gate's own answer, or the failure as ordinary result text — the step sees a call that failed, exactly

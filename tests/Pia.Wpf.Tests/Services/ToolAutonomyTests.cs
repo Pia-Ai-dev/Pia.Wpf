@@ -987,6 +987,34 @@ public class ToolAutonomyTests
         Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
     }
 
+    [Fact]
+    public void ChatJob_ChangesTheVerdictOnlyForUnattendedMcpCalls()
+    {
+        foreach (var surface in AllSurfaces)
+        foreach (var toolClass in AllClasses)
+        foreach (var name in new[] { "do_thing", "delete_thing" })
+        foreach (var policy in new RunAutonomyPolicy?[] { null, EveryClassPolicy })
+        foreach (var standing in new[] { false, true })
+        foreach (var named in new[] { false, true })
+        foreach (var canPark in new[] { false, true })
+        foreach (var session in new[] { false, true })
+        foreach (var denial in new[] { false, true })
+        foreach (var topLevel in new[] { false, true })
+        {
+            var off = ToolAutonomy.Resolve(Input(surface, name, toolClass, policy, standingGrant: standing,
+                namedGrant: named, canPark: canPark, sessionGrant: session, namedDenial: denial,
+                topLevelUserRun: topLevel));
+            var on = ToolAutonomy.Resolve(Input(surface, name, toolClass, policy, standingGrant: standing,
+                namedGrant: named, canPark: canPark, sessionGrant: session, namedDenial: denial,
+                topLevelUserRun: topLevel, chatJob: true));
+            if (off != on)
+            {
+                Assert.Equal(ToolGateSurface.Unattended, surface);
+                Assert.Equal(ToolClass.External, toolClass);
+            }
+        }
+    }
+
     [Theory]
     [InlineData(ToolGateSurface.Interactive)]
     [InlineData(ToolGateSurface.Voice)]

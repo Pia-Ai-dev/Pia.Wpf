@@ -370,7 +370,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>See <see cref="ShowDenyButton"/>: visibility is the state gate, enabledness the in-flight one.
     /// <see cref="ShowNudgeBox"/> rides on this too, so a resume in flight does not yank the box out from under a
     /// note the user is still reading (<c>Continue</c> keeps <see cref="NudgeText"/> unless the resume started).</summary>
-    public bool ShowContinueButton => IsResumableState && !IsParkedToolAsk;
+    public bool ShowContinueButton => IsResumableState && !IsParkedToolAsk && !ShowUserInputAsk;
 
     /// <summary><c>Run_Action_ApprovePlan</c> is a separate key from <c>Run_Action_Approve</c>, which is the Flow
     /// surface's tool-approval label ("Allow").</summary>
@@ -617,7 +617,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _toolActivity;
 
-    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity);
+    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity) || IsAskingInPlace;
 
     /// <summary>The band opens itself once, when the run starts executing; re-opening it later would overrule
     /// a user who closed it mid-run.</summary>

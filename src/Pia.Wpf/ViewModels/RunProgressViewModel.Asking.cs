@@ -21,6 +21,7 @@ public sealed partial class RunProgressViewModel
     [NotifyCanExecuteChangedFor(nameof(AllowForSessionAskCommand))]
     [NotifyCanExecuteChangedFor(nameof(AlwaysAllowAskCommand))]
     [NotifyCanExecuteChangedFor(nameof(DenyAskCommand))]
+    [NotifyPropertyChangedFor(nameof(HasToolActivity))]
     private bool _isAskingInPlace;
 
     /// <summary>This chat job is parked on a tool call, answered with the card's four choices.</summary>
@@ -48,6 +49,7 @@ public sealed partial class RunProgressViewModel
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowNudgeBox))]
+    [NotifyPropertyChangedFor(nameof(ShowContinueButton))]
     [NotifyCanExecuteChangedFor(nameof(AnswerUserInputCommand))]
     private bool _showUserInputAsk;
 

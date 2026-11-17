@@ -63,6 +63,7 @@ public sealed class RunProgressAskingTests
         Assert.True(vm.ShowToolAsk);
         Assert.Equal("x=1", vm.AskToolArguments);
         Assert.Equal("RunAsk_Activity_Waiting|mcp_tool", vm.CurrentActivity);
+        Assert.True(vm.HasToolActivity);
         var held = vm.SubLine;
         await Task.Delay(1100, TestContext.Current.CancellationToken);
         vm.AdvanceElapsedClock();
@@ -127,6 +128,7 @@ public sealed class RunProgressAskingTests
 
         Assert.True(vm.ShowUserInputAsk);
         Assert.False(vm.ShowNudgeBox);
+        Assert.False(vm.ShowContinueButton);
         Assert.Equal("Which folder?", vm.UserInputQuestion);
         Assert.False(vm.AnswerUserInputCommand.CanExecute(null));
 
