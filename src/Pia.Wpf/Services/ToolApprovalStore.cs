@@ -43,12 +43,21 @@ public sealed class ToolApprovalStore
     /// from the run row, never from a tool name; relayed into <c>ToolGateInput.IsTopLevelUserRun</c>, which is
     /// what lets the park ask about a delete-like tool rather than refusing outright.
     /// </param>
-    public ToolApprovalStore(bool canPark, ISessionToolGrantStore? sessionGrants = null, bool isTopLevelUserRun = false)
+    public ToolApprovalStore(bool canPark, ISessionToolGrantStore? sessionGrants = null, bool isTopLevelUserRun = false,
+        bool isChatJob = false, RunAskContext? ask = null)
     {
         CanPark = canPark;
         _sessionGrants = sessionGrants;
         IsTopLevelUserRun = isTopLevelUserRun;
+        IsChatJob = canPark && isChatJob;
+        Ask = IsChatJob ? ask : null;
     }
+
+    /// <summary>Armed only with <see cref="CanPark"/>, so a child or a replay is never treated as a chat job.</summary>
+    public bool IsChatJob { get; }
+
+    /// <summary>Where a chat job's step asks in place before it parks; null everywhere else.</summary>
+    public RunAskContext? Ask { get; }
 
     /// <summary>May this run stop and ask a human? Relayed verbatim into <c>ToolGateInput.CanPark</c>.</summary>
     public bool CanPark { get; }

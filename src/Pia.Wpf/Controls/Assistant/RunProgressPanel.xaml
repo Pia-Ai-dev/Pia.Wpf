@@ -4,6 +4,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:local="clr-namespace:Pia.Controls.Assistant"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              x:Name="Root">
   <!-- Run-progress card. The SIGNAL BAND at the top is the single carrier of run state: its tint, its icon and
@@ -353,6 +354,7 @@
           </StackPanel>
         </Border>
 
+        <local:RunAskPanel />
         <!-- ==================== Region D · steering note ==================== -->
         <!-- Batch 08 D4. Offered only while a resume is available, and never on a plan-approval park — see
              ShowNudgeBox. SENSITIVE (user content): bound only, never logged; Continue() carries it to the

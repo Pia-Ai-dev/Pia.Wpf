@@ -1401,13 +1401,13 @@ public sealed class ChatSession : IDisposable
                 // THE MIDDLE TIER. Execute now and remember for the rest of this app session — nothing reaches
                 // AppSettings, so the grant dies with the process.
                 case ToolDecision.AllowForSession:
-                    _permissions.GrantForSession(pluginId, tool);
+                    await ToolDecisionGrants.ApplyAsync(_permissions, card.Decision, pluginId, tool);
                     _logger.LogInformation(
                         "User granted session approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedForSession, card.ShownAt, card.DecidedAt);
 
                 case ToolDecision.AlwaysAllow:
-                    await _permissions.GrantAsync(pluginId, tool);
+                    await ToolDecisionGrants.ApplyAsync(_permissions, card.Decision, pluginId, tool);
                     _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedAlways, card.ShownAt, card.DecidedAt);
 
@@ -1486,7 +1486,7 @@ public sealed class ChatSession : IDisposable
             // Only the park reads it, and this surface never parks. False keeps the input honest about
             // what it is answering rather than about what happens to be reachable from here.
             IsTopLevelUserRun: false,
-            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath), IsChatJob: false));
 
         return new ToolGateResolution(
             pluginId, tool, toolClass, askedAt, verdict, DateTime.UtcNow);

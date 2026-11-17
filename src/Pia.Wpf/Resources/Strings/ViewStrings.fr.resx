@@ -1854,4 +1854,34 @@
   <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Votre compte Pia Cloud a été supprimé. Voulez-vous aussi supprimer ses données de cet appareil ? La suppression redémarre Pia. Cette action est irréversible.</value></data>
   <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Vider cet appareil</value></data>
   <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Conserver sur cet appareil</value></data>
+  <data name="RunAsk_Tool_Question" xml:space="preserve">
+    <value>Autoriser {0} ?</value>
+  </data>
+  <data name="RunAsk_AllowOnce" xml:space="preserve">
+    <value>Autoriser une fois</value>
+  </data>
+  <data name="RunAsk_AllowForSession" xml:space="preserve">
+    <value>Autoriser pour cette session</value>
+  </data>
+  <data name="RunAsk_AlwaysAllow" xml:space="preserve">
+    <value>Toujours autoriser</value>
+  </data>
+  <data name="RunAsk_Deny" xml:space="preserve">
+    <value>Refuser</value>
+  </data>
+  <data name="RunAsk_Activity_Waiting" xml:space="preserve">
+    <value>En attente de votre décision sur {0}</value>
+  </data>
+  <data name="RunAsk_Flow_Body" xml:space="preserve">
+    <value>Une tâche en cours attend votre décision.</value>
+  </data>
+  <data name="RunAsk_Question_Label" xml:space="preserve">
+    <value>La tâche demande</value>
+  </data>
+  <data name="RunAsk_Answer_Placeholder" xml:space="preserve">
+    <value>Votre réponse</value>
+  </data>
+  <data name="RunAsk_SendAnswer" xml:space="preserve">
+    <value>Répondre</value>
+  </data>
 </root>

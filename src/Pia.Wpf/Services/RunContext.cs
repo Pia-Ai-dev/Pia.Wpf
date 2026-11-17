@@ -145,6 +145,13 @@ public sealed class RunContext
 
     public TimeSpan Elapsed => _clock.Elapsed;
 
+    /// <summary>Time a step spends waiting on the user is not spent from the budget.</summary>
+    public void SetClockRunning(bool running)
+    {
+        if (running) _clock.Start();
+        else _clock.Stop();
+    }
+
     public bool StepBudgetExceeded => StepsExecuted >= _profile.MaxSteps;
 
     public bool WallClockExceeded => _clock.Elapsed >= _profile.WallClock;

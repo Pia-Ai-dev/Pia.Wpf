@@ -19,7 +19,7 @@ namespace Pia.Tests.Services;
 
 /// <summary>Parking an ungranted call is for tools a human could legitimately approve, so every guard here is written to red if
 /// the park gets greedier. Only the provider stream, the plugin route and the planner are doubles.</summary>
-public sealed class UnattendedApprovalParkTests : IDisposable
+public sealed partial class UnattendedApprovalParkTests : IDisposable
 {
     private readonly string _dir;
     private readonly string _runsBase;
@@ -123,7 +123,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var probe = new ToolProbe("write_file");
-        var (launcher, _) = Build(probe);
+        var (launcher, _) = Build(probe, dispatchScript: [[new("write_file")], []]);
 
         var handle = await launcher.LaunchAsync(
             new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
@@ -137,7 +137,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
         var run = await GetRunAsync(handle.RunId);
         Assert.True(probe.Executed);
-        Assert.Contains("write_file", HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson)!);
+        Assert.DoesNotContain("write_file", HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson)!);
         Assert.True(run.IsChatJob());
 
         await launcher.StopAsync(CancellationToken.None);
@@ -148,7 +148,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var probe = new ToolProbe("write_file");
-        var (launcher, _) = Build(probe);
+        var (launcher, _) = Build(probe, dispatchScript: [[new("write_file")], [new("write_file")], [], []]);
 
         var job = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
         await job.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);

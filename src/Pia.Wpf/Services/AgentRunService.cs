@@ -488,6 +488,15 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.FromResult(affected > 0);
     }
 
+    public void SetWorkClockRunning(Guid runId, bool running)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            MoveLedgerClock(runId, running ? LedgerClock.OpenSegment : LedgerClock.CloseSegment);
+        }
+    }
+
     public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default)
     {
         int affected;

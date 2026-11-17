@@ -1854,4 +1854,34 @@
   <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Dein Pia-Cloud-Konto wurde gelöscht. Möchtest du auch dessen Daten von diesem Gerät entfernen? Beim Entfernen wird Pia neu gestartet. Das lässt sich nicht rückgängig machen.</value></data>
   <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Dieses Gerät leeren</value></data>
   <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Auf diesem Gerät behalten</value></data>
+  <data name="RunAsk_Tool_Question" xml:space="preserve">
+    <value>{0} erlauben?</value>
+  </data>
+  <data name="RunAsk_AllowOnce" xml:space="preserve">
+    <value>Einmal erlauben</value>
+  </data>
+  <data name="RunAsk_AllowForSession" xml:space="preserve">
+    <value>Für diese Sitzung erlauben</value>
+  </data>
+  <data name="RunAsk_AlwaysAllow" xml:space="preserve">
+    <value>Immer erlauben</value>
+  </data>
+  <data name="RunAsk_Deny" xml:space="preserve">
+    <value>Ablehnen</value>
+  </data>
+  <data name="RunAsk_Activity_Waiting" xml:space="preserve">
+    <value>Wartet auf Ihre Entscheidung zu {0}</value>
+  </data>
+  <data name="RunAsk_Flow_Body" xml:space="preserve">
+    <value>Ein laufender Auftrag wartet auf Ihre Entscheidung.</value>
+  </data>
+  <data name="RunAsk_Question_Label" xml:space="preserve">
+    <value>Der Auftrag fragt</value>
+  </data>
+  <data name="RunAsk_Answer_Placeholder" xml:space="preserve">
+    <value>Ihre Antwort</value>
+  </data>
+  <data name="RunAsk_SendAnswer" xml:space="preserve">
+    <value>Antworten</value>
+  </data>
 </root>

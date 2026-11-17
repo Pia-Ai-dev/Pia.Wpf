@@ -704,9 +704,14 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // floor: a missing denial narrows nothing). The decline branch below appends to it.
             var denied = TryRestoreDeniedWritesEnvelope(run.PolicyJson);
 
-            (grants, denied) = await ApplyToolApprovalDecisionAsync(
-                run, approvedTool, declineToolApproval, grants, denied, policy, envelopeWasReadable, ct)
-                .ConfigureAwait(false);
+            // A chat job's answer means what it means on a chat card: it settles this one call and writes nothing
+            // into the run's envelope. A wider answer was already written as a session or standing grant.
+            if (!chatJob)
+            {
+                (grants, denied) = await ApplyToolApprovalDecisionAsync(
+                    run, approvedTool, declineToolApproval, grants, denied, policy, envelopeWasReadable, ct)
+                    .ConfigureAwait(false);
+            }
 
             // Budget is DELIBERATELY not restored: a FRESH budget envelope IS the "continue" grant
             // that is the whole point of the pause. Only the write grants are restored.
@@ -758,7 +763,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // decline path too, and replaying there would run the very call the person refused.
             var plan = new ResumeDispatchPlan(
                 run, persona, provider, budget, grants, policy, denied, runRoot, nudge, parkReason,
-                declineToolApproval ? null : approvedTool);
+                declineToolApproval && !chatJob ? null : approvedTool,
+                ReplayOnce: chatJob && approvedTool is not null && !declineToolApproval,
+                ReplayDeclined: chatJob && approvedTool is not null && declineToolApproval);
             var completion = Task.Run(
                 () => RunResumedDispatchAsync(plan, runCts, ticket, steerCancel), CancellationToken.None);
 
@@ -792,7 +799,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         string? RunRoot,
         string? Nudge,
         string? ParkReason,
-        string? ApprovedTool = null);
+        string? ApprovedTool = null,
+        bool ReplayOnce = false,
+        bool ReplayDeclined = false);
 
     /// <summary>
     /// Atomic claim FIRST: a panel+Flow race or double-click → only one winner. On the lost path
@@ -1038,7 +1047,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // before, so each has its own regression fact.
             executor.Initialize(workspaceRoot: plan.RunRoot, plan.Grants, plan.Provider, plan.Policy,
                 canPark: CanParkForApproval(run.ParentRunId), deniedWrites: plan.Denied,
-                personaOverride: plan.Persona, approvedTool: plan.ApprovedTool);
+                personaOverride: plan.Persona, approvedTool: plan.ApprovedTool,
+                replayOnce: plan.ReplayOnce, replayDeclined: plan.ReplayDeclined);
             started = true;
             // Same bracket, same reasoning as the launch path — after the slot wait, before the
             // executor can write. TryBeginResumeAsync already raised RunChanged(Running) at the CAS,

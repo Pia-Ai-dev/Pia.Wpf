@@ -594,7 +594,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // Riding on the same store and for the same reason: read ambiently it would tell a CHILD run that
             // somebody is watching it. A null store is false, i.e. delete-like stays a hard denial.
             IsTopLevelUserRun: approvals?.IsTopLevelUserRun == true,
-            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pending.TargetPath)));
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pending.TargetPath),
+            IsChatJob: approvals?.IsChatJob == true));
 
         return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
     }
@@ -615,39 +616,21 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             case ToolGateOutcome.AutoRun:
                 _logger.LogInformation("Background turn executing {ToolName} ({Decision})",
                     pending.ToolName, verdict.Decision);
-                // Only Execute() is bracketed for the timeline; a fault anywhere else is not this tool's
-                // outcome. The rethrow keeps a throwing tool's effect on the turn unchanged.
-                var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
-                object? executed;
-                try
-                {
-                    executed = await pending.Execute();
-                }
-                catch
-                {
-                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.Error,
-                        toolCallId: toolCall.CallId, round: dispatch.Round,
-                        requestedAt: askedAt, decidedAt: resolvedAt,
-                        argsChars, resultChars: null,
-                        durationMs: AgentTimelineScope.ElapsedMs(startedAt));
-                    throw;
-                }
-
-                timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                    verdict.Decision, AgentTimelineOutcome.Ok,
-                    toolCallId: toolCall.CallId, round: dispatch.Round,
-                    requestedAt: askedAt, decidedAt: resolvedAt,
-                    argsChars,
-                    resultChars: (executed as string)?.Length,
-                    durationMs: AgentTimelineScope.ElapsedMs(startedAt));
-                return executed;
+                return await ExecuteGatedAsync(
+                    pending, toolCall, dispatch, toolClass, verdict.Decision, askedAt, resolvedAt, timeline, argsChars);
 
             // The resolver decided a human could legitimately approve this call, so the run stops and asks
             // instead of denying. Nothing is executed or granted here: the store carries the tool NAME out to
             // the executor, which abandons the step, and the orchestrator parks the run naming it. The model is
             // told because it is still mid-exchange — a plain "stop" beats letting it improvise a workaround.
             case ToolGateOutcome.Park:
+                if (approvals?.Ask is { } ask)
+                {
+                    var answered = await AskInPlaceAsync(pending, toolCall, dispatch, ask, toolClass, timeline, argsChars);
+                    if (answered.Asked)
+                        return answered.Result;
+                }
+
                 dispatch.Stop?.RequestStop();
                 // The arguments ride along so the Continue card can name what it is about to allow. NOT logged
                 // anywhere on this path — a path is user content, and the count is what the audit row carries.
@@ -706,6 +689,74 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 return $"Denied: '{pending.ToolName}' needs a person's approval and none was given for this run. "
                        + "Do not retry; finish the step without it and say what was left undone.";
         }
+    }
+
+    private async Task<object?> ExecuteGatedAsync(
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, ToolClass toolClass,
+        ToolGateDecision decision, DateTime requestedAt, DateTime decidedAt, AgentTimelineScope? timeline,
+        int? argsChars)
+    {
+        // Only Execute() is bracketed for the timeline; a fault anywhere else is not this tool's
+        // outcome. The rethrow keeps a throwing tool's effect on the turn unchanged.
+        var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        object? executed;
+        try
+        {
+            executed = await pending.Execute();
+        }
+        catch
+        {
+            timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                decision, AgentTimelineOutcome.Error,
+                toolCallId: toolCall.CallId, round: dispatch.Round,
+                requestedAt: requestedAt, decidedAt: decidedAt,
+                argsChars, resultChars: null,
+                durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+            throw;
+        }
+
+        timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+            decision, AgentTimelineOutcome.Ok,
+            toolCallId: toolCall.CallId, round: dispatch.Round,
+            requestedAt: requestedAt, decidedAt: decidedAt,
+            argsChars,
+            resultChars: (executed as string)?.Length,
+            durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+        return executed;
+    }
+
+    /// <summary>Asked = false means nobody answered on the block, and the caller parks the run as before.</summary>
+    private async Task<(bool Asked, object? Result)> AskInPlaceAsync(
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, RunAskContext ask,
+        ToolClass toolClass, AgentTimelineScope? timeline, int? argsChars)
+    {
+        var question = new RunToolQuestion(Guid.NewGuid(), ask.RunId, ask.ChatId, ask.StepId, pending.ToolName,
+            pending.PluginId, ParkedHeading(pending) ?? ToolApprovalArguments.Describe(toolCall));
+        var shownAt = DateTime.UtcNow;
+        var answer = await ask.Broker.AskAsync(question, ask.SetClockRunning, ask.Ct).ConfigureAwait(false);
+
+        if (answer is not { } decision)
+            return (false, null);
+
+        var decidedAt = DateTime.UtcNow;
+        var gateDecision = await ToolDecisionGrants.ApplyAsync(_permissions, decision, pending.PluginId, pending.ToolName)
+            .ConfigureAwait(false);
+        if (gateDecision == ToolGateDecision.DeclinedByUser)
+        {
+            _logger.LogInformation("User declined {ToolName} on the run block", pending.ToolName);
+            timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                gateDecision, AgentTimelineOutcome.NotExecuted,
+                toolCallId: toolCall.CallId, round: dispatch.Round,
+                requestedAt: shownAt, decidedAt: decidedAt,
+                argsChars);
+            return (true, $"User declined the {pending.ToolName} operation. Do not retry. "
+                          + "Finish the step without it and say what was left undone.");
+        }
+
+        _logger.LogInformation("User answered {ToolName} on the run block ({Decision})", pending.ToolName, gateDecision);
+        return (true, await ExecuteGatedAsync(
+            pending, toolCall, dispatch, toolClass, gateDecision, shownAt, decidedAt, timeline, argsChars)
+            .ConfigureAwait(false));
     }
 
     /// <summary>

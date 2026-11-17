@@ -401,8 +401,13 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
         IElevationService? elevation = null,
         // Trailing and defaulted, same discipline; null ⇒ only the main window probes the knowledge-base surface.
-        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null)
+        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null,
+        // Trailing and defaulted; null => a chat job's block cannot ask, and the job parks as other runs do.
+        IRunAskBroker? runAsk = null,
+        IRunToolAnswerService? runToolAnswers = null)
     {
+        _runAsk = runAsk;
+        _runToolAnswers = runToolAnswers;
         _logger = logger;
         _aiClientService = aiClientService;
         _providerService = providerService;
@@ -709,7 +714,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         var block = new RunProgressViewModel(_agentRunService, runId, _localizationService, _resumeService, _logger,
             _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
-            _navigationService, _toolCalls);
+            _navigationService, _toolCalls, _runAsk, _runToolAnswers);
         block.PropertyChanged += OnRunBlockAnchorChanged;
         return block;
     }
@@ -723,6 +728,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     }
 
     private readonly Dictionary<Guid, RunProgressViewModel> _earlierBlocks = [];
+    private readonly IRunAskBroker? _runAsk;
+    private readonly IRunToolAnswerService? _runToolAnswers;
 
     /// <summary>The transcript as rendered: the message window with each run's block placed among it.</summary>
     public ObservableCollection<object> TranscriptItems { get; } = [];
@@ -2983,7 +2990,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 IsTopLevelUserRun: false,
                 // The honest lookup, like HasSessionGrant above: Resolve's scratch arm excludes voice, and the
                 // reason stays there rather than being hardcoded into a false here.
-                IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
+                IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath), IsChatJob: false));
 
             if (verdict.Outcome != ToolGateOutcome.AutoRun)
             {

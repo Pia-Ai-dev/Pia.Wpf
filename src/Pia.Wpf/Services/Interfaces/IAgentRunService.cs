@@ -440,6 +440,9 @@ public interface IAgentRunService
     Task<PlanMutationResult> ApplyPlanMutationAsync(
         Guid runId, IReadOnlyList<PlanStepEdit> pendingSteps, CancellationToken ct = default);
 
+    /// <summary>Stops or restarts the ledger's worked-time clock while a running step waits on the user.</summary>
+    void SetWorkClockRunning(Guid runId, bool running) { }
+
     /// <summary>For 1.4 UI/Flow; no consumers in 1.1.</summary>
     event EventHandler<AgentRunChangedEventArgs> RunChanged;
 }

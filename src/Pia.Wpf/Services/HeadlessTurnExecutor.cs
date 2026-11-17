@@ -118,6 +118,16 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// set, which also holds tools whose withheld calls the re-run will make itself.</summary>
     private string? _approvedTool;
 
+    private bool _replayOnce;
+
+    private bool _replayDeclined;
+
+    private bool _isChatJob;
+
+    private RunContext? _stepContext;
+
+    private readonly IRunAskBroker? _askBroker;
+
     private bool _replayAttempted;
 
     public HeadlessTurnExecutor(
@@ -141,8 +151,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         ISessionToolGrantStore? sessionGrants = null,
         // Trailing and defaulted for the same reason, and null is again the conservative answer: no rows are
         // written and a resume seeds prose alone, which is the pre-store behaviour.
-        IAgentToolExchangeStore? exchangeStore = null)
+        IAgentToolExchangeStore? exchangeStore = null,
+        IRunAskBroker? askBroker = null)
     {
+        _askBroker = askBroker;
         _engine = engine;
         _chatService = chatService;
         _settingsService = settingsService;
@@ -200,8 +212,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         bool canPark = false,
         IReadOnlyCollection<string>? deniedWrites = null,
         Persona? personaOverride = null,
-        string? approvedTool = null)
+        string? approvedTool = null,
+        bool replayOnce = false,
+        bool replayDeclined = false)
     {
+        _replayOnce = replayOnce;
+        _replayDeclined = replayDeclined;
         _workspaceRoot = workspaceRoot;
         _providerOverride = providerOverride;
         _personaOverride = personaOverride;
@@ -314,6 +330,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // The same kind of structural fact, from the same row and never from a tool name: a scheduled or
         // routine run has nobody watching, and a child never acquires authority its parent narrowed away.
         _isTopLevelUserRun = run.ParentRunId is null && run.TriggerKind == AgentRunTrigger.User;
+        _isChatJob = run.ParentRunId is null && run.IsChatJob();
         _tokenMap = _tokenMapFactory();
         if (_tokenizationEnabled)
         {
@@ -457,6 +474,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Before the step's first provider round-trip, and inside the run's own ambient: a replayed write must
         // land in the workspace this step writes into.
         await ReplayApprovedParkedCallsAsync(step.Id, TimelineScope(step.Id), ct).ConfigureAwait(false);
+        _stepContext = ctx;
 
         // Batch 08 D4: the ONLY place a user steering note may ride — composed here (this method has ctx),
         // never inside RunExchangeStepAsync, which keeps taking a plain string and never sees ctx at all.
@@ -579,7 +597,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                     toolName,
                     AgentToolExchangeSerializer.DeserializeArguments(row.ArgumentsJson));
 
-                var resultText = await ExecuteReplayAsync(call, timeline).ConfigureAwait(false);
+                var resultText = _replayDeclined
+                    ? $"User declined the {toolName} operation. Do not retry. Finish the step without it and say "
+                      + "what was left undone."
+                    : await ExecuteReplayAsync(call, timeline).ConfigureAwait(false);
                 _logger.SensitiveDebug("Replayed {ToolName} result: {Result}", toolName, resultText);
                 await _exchangeStore.SetResultAsync(row.Id, resultText, ct).ConfigureAwait(false);
                 if (row.CallId is { Length: > 0 })
@@ -619,8 +640,12 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             var approvals = new ToolApprovalStore(
                 canPark: false, _sessionGrants, isTopLevelUserRun: _isTopLevelUserRun);
             // Round 1: the replay stands in for the call the model would otherwise make on the step's first round.
+            // An answer that is not a run-wide grant authorises this one replay only.
+            var grants = _replayOnce
+                ? new HashSet<string>(_grantedWrites.Append(call.Name), StringComparer.OrdinalIgnoreCase)
+                : _grantedWrites;
             var result = await _engine
-                .ReplayToolCallAsync(call, _grantedWrites, round: 1, _policy, timeline, approvals, _deniedWrites)
+                .ReplayToolCallAsync(call, grants, round: 1, _policy, timeline, approvals, _deniedWrites)
                 .ConfigureAwait(false);
             var (_, text) = AgentToolExchangeSerializer.SerializeResult(result);
             return text ?? string.Empty;
@@ -700,6 +725,15 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         + "behalf just now: " + string.Join(", ", tools.Distinct(StringComparer.OrdinalIgnoreCase))
         + ". The call and its result are above. Do not issue that call again — carry on from its result.";
 
+    private RunAskContext? AskContext(Guid? stepId, CancellationToken ct)
+    {
+        if (!_isChatJob || _askBroker is null)
+            return null;
+        var stepContext = _stepContext;
+        return new RunAskContext(_askBroker, _runId, _chatId, stepId,
+            running => stepContext?.SetClockRunning(running), ct);
+    }
+
     /// <param name="persona">The step's resolved triple, or null for the run's.</param>
     /// <param name="offerStepResultTool">True only for a real plan step; also gates interruption classification.</param>
     /// <param name="toolFree">Send no tools: the grace turn runs after the budget is spent.</param>
@@ -723,7 +757,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // unattended run exactly where the park does. See ToolApprovalStore.HasSessionGrant for why that
         // symmetry is the safe line — a child run must inherit neither.
         var approvals = new ToolApprovalStore(
-            canPark: _canPark && offerStepResultTool, _sessionGrants, isTopLevelUserRun: _isTopLevelUserRun);
+            canPark: _canPark && offerStepResultTool, _sessionGrants, isTopLevelUserRun: _isTopLevelUserRun,
+            isChatJob: _isChatJob, ask: AskContext(exchanges?.StepId, ct));
 
         // hermes #9, and the placement is the point: AFTER the persona ternary above, so a step carrying an
         // AssignedPersonaId gets the tool on ITS setup. Augmenting _runDefault/_setup instead would silently
@@ -915,6 +950,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // declares emit_step_result{false} in the same breath, and that must not be read as an ordinary failure.
         if (userInput?.Question is not null)
         {
+            if (_isChatJob)
+                _askBroker?.SetUserInputQuestion(_runId, userInput.Question);
             _logger.LogInformation(
                 "Headless run {RunId} step asked the user a question ({AcceptedCalls} ask(s), {RefusedCalls} refused)",
                 _runId, userInput.AcceptedCalls, userInput.RefusedCalls);
