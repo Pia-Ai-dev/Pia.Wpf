@@ -58,6 +58,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IDialogService _dialogService;
     private readonly IFileDialogService? _fileDialogService;
     private readonly IAgentToolExchangeStore? _toolCalls;
+    private readonly IRunLiveTextCarrier? _liveText;
     private readonly IAiFeedbackService? _aiFeedback;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IVolatileWorkStore? _volatileWork;
@@ -401,8 +402,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
         IElevationService? elevation = null,
         // Trailing and defaulted, same discipline; null ⇒ only the main window probes the knowledge-base surface.
-        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null)
+        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null,
+        IRunLiveTextCarrier? liveText = null)
     {
+        _liveText = liveText;
         _logger = logger;
         _aiClientService = aiClientService;
         _providerService = providerService;
@@ -710,6 +713,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var block = new RunProgressViewModel(_agentRunService, runId, _localizationService, _resumeService, _logger,
             _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
             _navigationService, _toolCalls);
+        block.AttachLiveText(_liveText);
         block.PropertyChanged += OnRunBlockAnchorChanged;
         return block;
     }

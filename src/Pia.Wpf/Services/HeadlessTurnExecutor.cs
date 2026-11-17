@@ -118,6 +118,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// set, which also holds tools whose withheld calls the re-run will make itself.</summary>
     private string? _approvedTool;
 
+    private readonly IRunLiveTextCarrier? _liveText;
+
     private bool _replayAttempted;
 
     public HeadlessTurnExecutor(
@@ -141,8 +143,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         ISessionToolGrantStore? sessionGrants = null,
         // Trailing and defaulted for the same reason, and null is again the conservative answer: no rows are
         // written and a resume seeds prose alone, which is the pre-store behaviour.
-        IAgentToolExchangeStore? exchangeStore = null)
+        IAgentToolExchangeStore? exchangeStore = null,
+        IRunLiveTextCarrier? liveText = null)
     {
+        _liveText = liveText;
         _engine = engine;
         _chatService = chatService;
         _settingsService = settingsService;
@@ -807,6 +811,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         TaskAmbient.Current = StepAmbient();
 
         BackgroundAssistantTurnRunner.ExchangeResult exchange;
+        var liveStepId = timeline?.StepId ?? exchanges?.StepId;
+        Action<RunLiveTextKind, string>? onLiveText = _liveText is null
+            ? null
+            : (kind, text) => _liveText.Publish(new RunLiveTextChunk(_runId, liveStepId, kind, text));
         try
         {
             // The same budget goes down into the exchange so the IN-step tool loop is bounded too: the
@@ -815,7 +823,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             exchange = await _engine.RunExchangeAsync(request, p.Provider, turnSetup, _grantedWrites, ct,
                     onUsage: null, contextBudget: contextBudget, policy: _policy, timeline: timeline,
                     outcomeStore: outcomeStore, approvals: approvals, userInput: userInput,
-                    deniedWrites: _deniedWrites, exchanges: exchanges)
+                    deniedWrites: _deniedWrites, exchanges: exchanges, onLiveText: onLiveText)
                 .ConfigureAwait(false);
         }
         // The token guard keeps a transport cancellation (an HTTP timeout escaped conversion) off this
@@ -885,6 +893,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         {
             TokenMapAmbient.Current = previousAmbient;
             TaskAmbient.Current = previousTask;
+            onLiveText?.Invoke(RunLiveTextKind.Ended, string.Empty);
         }
 
         // ---- hermes #16: the step PARKED on a tool that needs a human ----

@@ -2000,6 +2000,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 RenderTimelineRows();
                 ApplyDecisionSummary(VisibleTimelineEvents().ToList());
                 RefreshToolActivity();
+                ApplyStepToolRows();
                 HasNoTimeline = !readFailed && Timeline.Count == 0;
             }
             finally
@@ -2562,6 +2563,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         _runService.RunChanged -= OnRunChanged;
         if (_timelineWatcher is not null)
             _timelineWatcher.TimelineAppended -= OnTimelineAppended;
+        DetachStepDetail();
         // The theme service is a singleton and outlives this VM, so a leaked handler would keep a whole projected
         // run, and every row in it, alive for the process's life.
         if (_themeService is not null)

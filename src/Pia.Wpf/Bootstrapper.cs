@@ -663,6 +663,7 @@ public static class Bootstrapper
         services.AddSingleton<RunTimelineWatcher>();
         services.AddSingleton<ITimelineWatcher>(sp => sp.GetRequiredService<RunTimelineWatcher>());
         services.AddSingleton<IRunObserver>(sp => sp.GetRequiredService<RunTimelineWatcher>());
+        services.AddSingleton<IRunLiveTextCarrier, RunLiveTextCarrier>();
         // Assistant turn collaborators (extracted from AssistantViewModel).
         services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
         services.AddTransient<IChatTitleService, ChatTitleService>();

@@ -353,7 +353,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         HashSet<string>? deniedWrites = null,
         // Non-null ONLY when the caller wants the rounds persisted. Written per ROUND rather than per turn:
         // a park returns above the caller's own transcript append, so a per-turn write records nothing.
-        AgentToolExchangeScope? exchanges = null)
+        AgentToolExchangeScope? exchanges = null,
+        Action<RunLiveTextKind, string>? onLiveText = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -384,9 +385,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                         textBuffer.Append("\n\n");
                     pendingRoundBreak = false;
                     textBuffer.Append(td.Text);
+                    onLiveText?.Invoke(RunLiveTextKind.Text, td.Text);
+                    break;
+                case ReasoningDelta rd:
+                    onLiveText?.Invoke(RunLiveTextKind.Reasoning, rd.Text);
                     break;
                 case ToolRoundCompleted:
                     pendingRoundBreak = true;
+                    onLiveText?.Invoke(RunLiveTextKind.RoundBreak, string.Empty);
                     break;
                 case ToolRoundExchange round:
                     toolExchanges.AddRange(round.Messages);
