@@ -49,6 +49,24 @@ internal static class RunBlockPlacement
             : null;
     }
 
+    /// <summary>An unfinished block whose anchor is not loaded moves to the trailing list so its controls stay reachable.</summary>
+    internal static (List<(object Block, RunBlockSlot? Slot)> Placed, List<object> Trailing) TrailUnloadedLive(
+        IReadOnlyList<(object Block, RunBlockSlot? Slot)> placed, IReadOnlyList<object> trailing,
+        IReadOnlySet<Guid> visibleIds, Func<object, bool> isLive)
+    {
+        var keep = new List<(object Block, RunBlockSlot? Slot)>(placed.Count);
+        var moved = new List<object>();
+        foreach (var entry in placed)
+        {
+            if (entry.Slot is { } slot && !visibleIds.Contains(slot.MessageId) && isLive(entry.Block))
+                moved.Add(entry.Block);
+            else
+                keep.Add(entry);
+        }
+        moved.AddRange(trailing);
+        return (keep, moved);
+    }
+
     /// <summary>A block whose anchor is outside the visible window is left out until that message is loaded.</summary>
     internal static List<object> Interleave(
         IReadOnlyList<AssistantMessage> visible, IReadOnlyList<(object Block, RunBlockSlot? Slot)> blocks,

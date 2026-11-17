@@ -177,4 +177,19 @@ public class AssistantViewModelJobComposerTests
 
         Assert.False(vm.ChatJobComposerOpen);
     }
+
+    [Fact]
+    public async Task SwitchingToAnotherChatWithARunningRoutine_LocksTheComposer()
+    {
+        var vm = await AttachRunAsync(true, true, AgentRunState.Running);
+        Assert.True(vm.ChatJobComposerOpen);
+
+        var other = SessionWithTranscript();
+        other.SetActiveRun(Guid.NewGuid());
+        other.SetForeignRunActive(true);
+        Activate(other);
+
+        Assert.False(vm.ChatJobComposerOpen);
+        Assert.False(vm.SendMessageCommand.CanExecute(null));
+    }
 }

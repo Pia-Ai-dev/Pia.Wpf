@@ -795,7 +795,10 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
             return false;
         }
 
-        if (parkReason is not null && session.ActiveRunId is { } parkedRunId && _jobTools is not null && await _jobTools.TypedMessageIsTurnAsync(parkedRunId)) parkReason = null;
+        // Only a turn that carries tools can offer job_answer; otherwise the typed text answers the park directly.
+        if (parkReason is not null && session.ActiveRunId is { } parkedRunId && _jobTools is not null
+            && await _jobTools.TypedMessageIsTurnAsync(parkedRunId) && await ActiveTurnCarriesToolsAsync())
+            parkReason = null;
 
         // Must run before anything below mutates the session: a send to a run parked on a question or an
         // interruption continues that run rather than starting a new turn.
@@ -910,8 +913,6 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
             // Triage runs HERE and not in the orchestrator: by the time the planner is reached a run row
             // already exists, and a goal that turns out not to need one would leave a phantom in run
             // history. Interactive only — a routine triaged to chat would have no chat to land in.
-            if (plannedRun && _jobTools is not null && await _jobTools.FindUnfinishedChatJobAsync(session.Id) is not null) plannedRun = false;
-
             if (plannedRun && settings.AssistantAgentTriageEnabled
                 && await _goalTriage.ClassifyAsync(userText, provider, session.Cts!.Token)
                     == GoalTriageVerdict.AnswerDirectly)
@@ -1160,6 +1161,24 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
 
     /// <summary>Answers a run parked on a question, or continues an interrupted one from an Agent-mode send; never
     /// a regeneration, image, file or blank send, which a resume (a text nudge only) would drop silently.</summary>
+    private async Task<bool> ActiveTurnCarriesToolsAsync()
+    {
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            var persona = await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+            var provider = await AssistantTurnProvider.ResolveAsync(persona, _providerService);
+            return provider is not null
+                && AssistantPromptComposer.ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Resolving the turn's tool support failed");
+            return false;
+        }
+    }
+
     private async Task<bool> TryAnswerParkedRunAsync(
         ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
         string? regenerationInstruction, string? attachedFileContext, bool hasFiles, string? parkReason,

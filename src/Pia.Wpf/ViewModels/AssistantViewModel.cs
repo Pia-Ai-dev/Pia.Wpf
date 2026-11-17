@@ -637,7 +637,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         SyncEarlierBlocks();
         if (switchedChat || _replyRecordsChatId != session.Id)
             LoadReplyRecordsAsync(session.Id).SafeFireAndForget(_logger);
+        if (switchedChat)
+            ChatJobComposerOpen = false;
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
+        RefreshChatJobComposerAsync().SafeFireAndForget(_logger);
         PlanApprovalParkActive = LocksSendAtPlanApproval(session.PlanApprovalParkActive);
 
         // An attachment was staged for the chat the user was in, so it does not follow them to another one —
@@ -665,7 +668,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // The session raises ActiveRunChanged on the UI thread (its Planned branch runs there), but marshal
     // defensively so a future off-thread caller can't touch the bound RunProgressViewModel cross-thread.
     private void OnActiveRunChanged(object? sender, Guid? runId) =>
-        _uiDispatcher.Post(() => SyncRunProgress(runId));
+        _uiDispatcher.Post(() =>
+        {
+            SyncRunProgress(runId);
+            RefreshChatJobComposerAsync().SafeFireAndForget(_logger);
+        });
 
     // The manager already marshals the flip to the UI thread (G3); marshal defensively anyway, for the same
     // reason OnActiveRunChanged does — this sets a bound property and re-evaluates a command.
@@ -786,9 +793,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     internal void SyncTranscriptItems()
     {
-        var (placed, trailing) = PlaceRunBlocks();
-        // A block whose anchor is outside the loaded window is not drawn, so it cannot take its replies either.
         var visibleIds = VisibleMessages.Select(m => m.Id).ToHashSet();
+        var (allPlaced, allTrailing) = PlaceRunBlocks();
+        var (placed, trailing) = RunBlockPlacement.TrailUnloadedLive(allPlaced, allTrailing, visibleIds,
+            b => b is RunProgressViewModel { HasProjected: true } run && !IsSettled(run.State));
+        // A block whose anchor is outside the loaded window is not drawn, so it cannot take its replies either.
         var hidden = ApplyRunReplies(placed
             .Where(p => p.Slot is { } slot && visibleIds.Contains(slot.MessageId))
             .Select(p => p.Block).Concat(trailing).OfType<RunProgressViewModel>());
@@ -1497,10 +1506,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
-        // Defence in depth on the lever: a no-tools persona can never plan, and neither can an attached
-        // file — the planner sees only the goal string, and an approved plan resumes headless without it.
-        var planned = files.Length == 0
-            && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
+        var planned = LeverPlansSend(hasFiles: files.Length > 0);
 
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten.
@@ -1813,6 +1819,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         request is null ? Task.CompletedTask : RegenerateCore(request.Message, request.Style);
 
     // Starts the turn through the session manager, not the composer, so whatever the user has typed survives.
+    // A no-tools persona can never plan, and neither can an attached file: the planner sees only the goal
+    // string, and an approved plan resumes headless without it.
+    private bool LeverPlansSend(bool hasFiles) =>
+        !hasFiles && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
+
     private async Task RegenerateCore(AssistantMessage? message, RegenerateStyle style)
     {
         // Regenerate truncates the transcript a running job may still be extending.
@@ -1853,6 +1864,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         await _chatSessionManager.StartTurnAsync(
             session, prompt, attachments, RegenerateInstructions.For(style, previousAnswer),
+            planned: LeverPlansSend(hasFiles: !string.IsNullOrEmpty(attachedFileContext)),
             attachedFileContext: attachedFileContext);
     }
 

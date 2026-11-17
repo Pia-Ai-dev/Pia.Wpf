@@ -73,6 +73,23 @@ public class RunBlockPlacementTests
     }
 
     [Fact]
+    public void TrailUnloadedLive_MovesOnlyUnfinishedBlocksWithAnUnloadedAnchorToTheEnd()
+    {
+        var a = Msg(0);
+        var old = Msg(-5);
+        object live = "live", done = "done", loaded = "loaded", tail = "tail";
+
+        var (placed, trailing) = RunBlockPlacement.TrailUnloadedLive(
+            [(live, new RunBlockSlot(old.Id, true)), (done, new RunBlockSlot(old.Id, true)),
+             (loaded, new RunBlockSlot(a.Id, false))],
+            [tail], new HashSet<Guid> { a.Id }, b => b is "live" or "loaded");
+
+        Assert.Equal([done, loaded], placed.Select(p => p.Block));
+        Assert.Equal([live, tail], trailing);
+        Assert.Equal([a, loaded, live, tail], RunBlockPlacement.Interleave([a], placed, trailing));
+    }
+
+    [Fact]
     public void Apply_KeepsUnchangedItems_AndEditsOnlyTheDifference()
     {
         var a = Msg(0);

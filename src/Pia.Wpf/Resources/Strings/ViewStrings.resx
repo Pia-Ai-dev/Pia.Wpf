@@ -1914,4 +1914,5 @@
   <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>More send options</value></data>
   <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Run as a background task in a new chat</value></data>
   <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Here is a plan for this:</value></data>
+  <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>The plan could not be saved.</value></data>
 </root>

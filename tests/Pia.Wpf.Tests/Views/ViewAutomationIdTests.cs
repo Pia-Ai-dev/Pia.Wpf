@@ -89,7 +89,8 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.TodoPanelControl), 6, 1, "")]
     [InlineData(typeof(Pia.Controls.Assistant.PiaChatQuickSwitcher), 1, 0, "")]
     [InlineData(typeof(Pia.Controls.Chat.PiaReasoningView), 1, 1, "")]
-    [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 23, 10, "PiaPersonaAvatar,RunAskPanel,RunEarlierAttempts,RunStepDetailView,RunStepReplies")]
+    // One panel per run sits in the transcript, so every id carries the run id.
+    [InlineData(typeof(Pia.Controls.Assistant.RunProgressPanel), 23, 23, "PiaPersonaAvatar,RunAskPanel,RunEarlierAttempts,RunStepDetailView,RunStepReplies")]
     [InlineData(typeof(Pia.Controls.Assistant.RunStepDetailView), 3, 3, "")]
     [InlineData(typeof(Pia.Controls.Assistant.RunAskPanel), 6, 6, "")]
     [InlineData(typeof(Pia.Controls.Assistant.RunEarlierAttempts), 1, 1, "MarkdownMessageControl")]

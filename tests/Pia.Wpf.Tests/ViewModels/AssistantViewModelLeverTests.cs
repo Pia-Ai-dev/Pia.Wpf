@@ -1000,6 +1000,24 @@ public class AssistantViewModelLeverTests
             session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Regenerate_SendsAPlannedTurn_WhenTheLeverIsOnAgent(bool agent)
+    {
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: false);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+        vm.AgentModeEnabled = agent;
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _manager.Received(1).StartTurnAsync(
+            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), agent,
+            Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>());
+    }
+
     [Fact]
     public async Task SwitchToAgent_IsBlocked_WhileAForeignRunIsExecuting()
     {
