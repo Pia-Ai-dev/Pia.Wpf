@@ -57,6 +57,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.SttBackend),
         nameof(AppSettings.TargetSpeechLanguage),
         nameof(AppSettings.Theme),
+        nameof(AppSettings.UnifiedAssistantFlowEnabled),
         nameof(AppSettings.UserOperatingMode),
         nameof(AppSettings.UseSameProviderForAllModes),
         nameof(AppSettings.WhisperModel),
@@ -190,7 +191,7 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 51 && LiveWithWork.Length == 24
+            LiveAlready.Length == 52 &&LiveWithWork.Length == 24
                 && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 32,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");

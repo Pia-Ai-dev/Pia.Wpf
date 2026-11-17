@@ -98,7 +98,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## E — the front door
 
-- [ ] **A hidden setting for the new flow, off by default.** With it on the lever is hidden; groups E
+- [x] **A hidden setting for the new flow, off by default.** With it on the lever is hidden; groups E
       and F are reachable only through it until group G.
       *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **`propose_plan` and job creation.** The tool, shared plan validation, the run parked for

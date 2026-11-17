@@ -964,6 +964,7 @@
                       CornerRadius="{StaticResource SmallRadius}"
                       Padding="2"
                       VerticalAlignment="Center"
+                      Visibility="{Binding IsChatAgentLeverVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                       ToolTipService.ShowOnDisabled="True"
                       IsEnabled="{Binding ActivePersona.ToolScope, Converter={StaticResource ToolScopeToBoolConverter}, FallbackValue=False}">
                 <Border.Style>

@@ -202,6 +202,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     [ObservableProperty]
     private bool _isMeetingAttendeeAvailable = true;
 
+    [ObservableProperty]
+    private bool _isChatAgentLeverVisible = true;
+
     public DirectTranscriptionViewModel DirectTranscription { get; }
 
     [ObservableProperty]
@@ -525,6 +528,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _providerService.ProvidersChanged += OnProvidersChangedForScreenCapture;
         _settingsService.SettingsChanged += OnSettingsChangedForScreenCapture;
+        _settingsService.SettingsChanged += OnSettingsChangedForUnifiedFlow;
         StartScreenCaptureAvailabilityRefresh();
 
         // Always mirror a live session so send/cancel never null-ref on a fresh
@@ -546,6 +550,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await _uiDispatcher.PostAsync(() =>
         {
             IsMeetingAttendeeAvailable = settings.MeetingAttendeeEnabled;
+            IsChatAgentLeverVisible = !settings.UnifiedAssistantFlowEnabled;
             IsDirectTranscriptionAvailable = settings.DirectTranscriptionEnabled;
         });
     }
@@ -2253,6 +2258,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnProvidersChangedForScreenCapture(object? sender, EventArgs e) =>
         StartScreenCaptureAvailabilityRefresh();
 
+    private void OnSettingsChangedForUnifiedFlow(object? sender, AppSettings settings) =>
+        _uiDispatcher.Post(() => IsChatAgentLeverVisible = !settings.UnifiedAssistantFlowEnabled);
+
     private void OnSettingsChangedForScreenCapture(object? sender, AppSettings settings) =>
         StartScreenCaptureAvailabilityRefresh();
 
@@ -2950,6 +2958,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _personaService.ManagedPersonaWithdrawn -= OnManagedPersonaWithdrawn;
         _providerService.ProvidersChanged -= OnProvidersChangedForScreenCapture;
         _settingsService.SettingsChanged -= OnSettingsChangedForScreenCapture;
+        _settingsService.SettingsChanged -= OnSettingsChangedForUnifiedFlow;
         PropertyChanged -= OnPropertyChanged;
         _goalHintGeneration++;
         _agentHintGeneration++;

@@ -24,13 +24,13 @@ public class AssistantViewModelLeverTests
     private readonly IPersonaService _personas = Substitute.For<IPersonaService>();
     private readonly IWorkingDirectoryService _workingDir = Substitute.For<IWorkingDirectoryService>();
 
-    private AssistantViewModel CreateSut(IAgentRunService? runs = null)
+    private AssistantViewModel CreateSut(IAgentRunService? runs = null, AppSettings? settings = null)
     {
         // ChatTitleChipViewModel (built in the ctor) requires a captured SynchronizationContext.
         if (System.Threading.SynchronizationContext.Current is null)
             System.Threading.SynchronizationContext.SetSynchronizationContext(new System.Threading.SynchronizationContext());
 
-        _settings.GetSettingsAsync().Returns(new AppSettings());
+        _settings.GetSettingsAsync().Returns(settings ?? new AppSettings());
         // The real manager never hands back null here, and a command that writes to the session it gets would
         // null-ref against a bare substitute.
         _manager.GetOrCreateActiveForNewChat().Returns(SessionWithTranscript());
@@ -104,6 +104,33 @@ public class AssistantViewModelLeverTests
     {
         var vm = CreateSut();
         Assert.False(vm.AgentModeEnabled);
+    }
+
+    [Fact]
+    public void TheLeverIsVisible_WhileTheUnifiedFlowIsOff()
+    {
+        var vm = CreateSut();
+        Assert.True(vm.IsChatAgentLeverVisible);
+    }
+
+    [Fact]
+    public void TheLeverIsHidden_WhenTheUnifiedFlowIsOn()
+    {
+        var vm = CreateSut(settings: new AppSettings { UnifiedAssistantFlowEnabled = true });
+        Assert.False(vm.IsChatAgentLeverVisible);
+    }
+
+    [Fact]
+    public void TheLeverFollowsTheSettingWhenItChanges()
+    {
+        var vm = CreateSut();
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(
+            _settings, new AppSettings { UnifiedAssistantFlowEnabled = true });
+        Assert.False(vm.IsChatAgentLeverVisible);
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(_settings, new AppSettings());
+        Assert.True(vm.IsChatAgentLeverVisible);
     }
 
     [Fact]
