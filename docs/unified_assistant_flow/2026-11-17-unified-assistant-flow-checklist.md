@@ -107,7 +107,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 - [ ] **Approval for every plan, editable there.** Plan edits allowed at the approval park; Start and
       Discard on the block; the send lock at that park removed.
       *Deps:* G1 (O2), `propose_plan` · *Effort:* S · *Value:* High
-- [ ] **Start an approved chat job at once.** It does not wait for a background slot.
+- [x] **Start an approved chat job at once.** It does not wait for a background slot.
       *Deps:* G1 (O4) · *Effort:* S · *Value:* Med
 
 ## F — talking to a running job

@@ -142,6 +142,47 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task AnApprovedChatJob_StartsWithoutAFreeSlot_WhileAnotherRunKeepsQueueing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe);
+
+        var job = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await job.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        var routine = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await routine.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
+            .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(launcher)!;
+        var held = slots.Width;
+        for (var i = 0; i < held; i++)
+            await slots.WaitAsync(ct);
+
+        try
+        {
+            Assert.True(await launcher.ResumeAsync(routine.RunId, ct: ct));
+            Assert.True(await launcher.ResumeAsync(job.RunId, ct: ct));
+            await AwaitSettledAsync(job.RunId);
+
+            Assert.Equal(AgentRunState.Completed, (await GetRunAsync(job.RunId)).State);
+            Assert.Equal(AgentRunState.Running, (await GetRunAsync(routine.RunId)).State);
+        }
+        finally
+        {
+            for (var i = 0; i < held; i++)
+                slots.Release();
+        }
+
+        await AwaitSettledAsync(routine.RunId);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(routine.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>A park outlives the process but a deferred action's delegate does not, so what a resume applies is the
     /// capability; the evidence it reached the call is that the same tool then runs.</summary>
     [Fact]
