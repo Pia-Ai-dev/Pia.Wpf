@@ -616,8 +616,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         var session = CreateSession();
         foreach (var dto in chat.Messages)
         {
-            session.Messages.Add(AssistantMessageMapper.FromDto(dto));
-            session.StoredRowFingerprints[dto.Id] = Fingerprint(dto);
+            var loaded = AssistantMessageMapper.FromDto(dto);
+            session.Messages.Add(loaded);
+            // Fingerprinted after the round trip, which is not byte-stable, so an untouched row stays unwritten.
+            session.StoredRowFingerprints[dto.Id] = Fingerprint(AssistantMessageMapper.ToDto(loaded));
         }
         session.StoredHeaderFingerprint = HeaderFingerprint(chat);
 
@@ -1229,8 +1231,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         {
             if (!known.Add(dto.Id))
                 continue;
-            session.Messages.Add(AssistantMessageMapper.FromDto(dto));
-            session.StoredRowFingerprints[dto.Id] = Fingerprint(dto);
+            var pulled = AssistantMessageMapper.FromDto(dto);
+            session.Messages.Add(pulled);
+            session.StoredRowFingerprints[dto.Id] = Fingerprint(AssistantMessageMapper.ToDto(pulled));
             added++;
         }
 

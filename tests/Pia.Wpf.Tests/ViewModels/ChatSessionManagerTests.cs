@@ -181,6 +181,71 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task PersistAfterActivate_WritesOnlyTheNewRow_AndNoHeader()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        stored.Messages.Add(new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(), Role = "assistant", Content = "done", Timestamp = DateTime.UtcNow,
+            Tokens = 12, ThinkingContent = "", ModelName = null,
+            Persona = new SyncMessagePersona { Id = Guid.NewGuid(), Name = "Analyst", Emoji = "A" },
+        });
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        _chatService.ClearReceivedCalls();
+
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "next"));
+        await sut.PersistAsync(session);
+
+        await _chatService.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 1 && c.Messages[0].Content == "next"),
+            false, Arg.Any<CancellationToken>());
+        await _chatService.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteMessagesAsync_DeletesFromTheStore_AndAPersistDoesNotRewriteThem()
+    {
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        var removed = session.Messages[0];
+        session.Messages.Remove(removed);
+
+        await sut.DeleteMessagesAsync(session, [removed.Id]);
+
+        await _chatService.Received(1).DeleteMessagesAsync(
+            chatId, Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.Single() == removed.Id), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task TurnCompleted_PullsRowsAJobStored_EvenWithoutAnAttachedRun()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        Assert.Null(session.ActiveRunId);
+
+        var stepReply = new SyncAssistantChatMessage
+        {
+            Id = Guid.NewGuid(), Role = "assistant", Content = "step reply", Timestamp = DateTime.UtcNow,
+        };
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>())
+            .Returns(new SyncAssistantChat { Id = chatId, Messages = [.. stored.Messages, stepReply] });
+
+        session.RaiseTurnCompleted(new TurnCompletedEventArgs { Succeeded = true });
+
+        await Eventually.TrueAsync(() => session.Messages.Any(m => m.Id == stepReply.Id),
+            "the turn end to pull the job's row", TestContext.Current.CancellationToken);
+        Assert.Single(session.Messages, m => m.Id == stepReply.Id);
+    }
+
+    [Fact]
     public async Task ActivateAsync_MissingChat_ReturnsNull()
     {
         var chatId = Guid.NewGuid();

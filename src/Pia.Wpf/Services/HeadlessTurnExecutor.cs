@@ -772,7 +772,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // HARD GUARDRAIL, satisfied by construction: this cannot reach persistence. _messages is a
         // List<ChatMessage> and _persisted is a List<SyncAssistantChatMessage> — different types,
         // appended in parallel, never cross-read, no object aliasing — and the only route from
-        // executor state to the DB is BuildChatSnapshot's `Messages = [.. _persisted]`, which serves
+        // executor state to the DB is BuildChatSnapshot, built from _persisted, which serves
         // both the interim per-step write and the terminal one. A pass over a ChatMessage list is
         // therefore type-incapable of shrinking the transcript, so a resume still replays it in full.
         //
