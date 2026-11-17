@@ -80,6 +80,23 @@ public sealed class AgentRunOrchestrator
     /// step runs; a later replan never re-triggers it.</summary>
     internal const string PlanApprovalReason = "plan-approval";
 
+    internal const string InterruptedCreditReason = "interrupted-credit";
+    internal const string InterruptedOfflineReason = "interrupted-offline";
+    internal const string InterruptedTimeoutReason = "interrupted-timeout";
+    internal const string InterruptedProviderReason = "interrupted-provider";
+
+    internal static string InterruptionReason(StepInterruption kind) => kind switch
+    {
+        StepInterruption.Credit => InterruptedCreditReason,
+        StepInterruption.Offline => InterruptedOfflineReason,
+        StepInterruption.Timeout => InterruptedTimeoutReason,
+        StepInterruption.Provider => InterruptedProviderReason,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+    };
+
+    internal static bool IsInterruptionReason(string? reason) => reason is
+        InterruptedCreditReason or InterruptedOfflineReason or InterruptedTimeoutReason or InterruptedProviderReason;
+
     /// <summary>Fallback for the proposed-plan chat intro when no localization service was injected (the
     /// positional test constructions).</summary>
     private const string DefaultPlanProposedIntro =
@@ -512,6 +529,14 @@ public sealed class AgentRunOrchestrator
                         return;
                     }
 
+                    if (r.Interruption is { } interruption)
+                    {
+                        await ParkForInterruptionAsync(
+                            executor, run, ctx, step, r.Usage, interruption, runFirst, runLast, cts.Token)
+                            .ConfigureAwait(false);
+                        return;
+                    }
+
                     await SafeRecordStep(step.Id, r, cts.Token).ConfigureAwait(false); // R16 ledger + R3 slice
                     ctx.RecordStep(step, r);
                     // Track only valid (non-empty) message Ids so a step that produced no transcript
@@ -852,6 +877,21 @@ public sealed class AgentRunOrchestrator
         // can't drift apart.
         await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, userInputQuestion)
             .ConfigureAwait(false);
+    }
+
+    private async Task ParkForInterruptionAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, AgentStep step, UsageDetails? usage,
+        StepInterruption kind, Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        await ReturnStepToPendingAsync(run.Id, step.Id, usage, runFirst, runLast, ct).ConfigureAwait(false);
+
+        var reason = InterruptionReason(kind);
+        _logger.LogInformation(
+            "Run {RunId}: step {StepOrdinal} was interrupted → parking {Reason}; the step returns to Pending",
+            run.Id, step.Ordinal, reason);
+
+        await SafePause(run.Id, CancellationToken.None, reason).ConfigureAwait(false);
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
     }
 
     /// <summary>The single terminal settle (SafeEndRun → SafeComplete, exactly once, every path).</summary>

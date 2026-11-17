@@ -73,6 +73,8 @@ public sealed class AgentRunOrchestratorFanOutTests
 
         public string? WorkspaceRoot { get; set; }
 
+        public StepInterruption? Interruption { get; set; }
+
         public Task BeginRunAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         {
             ctx.WorkspaceRoot = WorkspaceRoot;
@@ -82,6 +84,12 @@ public sealed class AgentRunOrchestratorFanOutTests
         public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
         {
             Executed.Add(step.Intent ?? step.Title);
+            if (Interruption is { } kind)
+            {
+                return Task.FromResult(new StepTurnResult(
+                    false, false, "transport", string.Empty, null, Guid.Empty, Guid.Empty, Interruption: kind));
+            }
+
             return Task.FromResult(Ok());
         }
 
@@ -135,6 +143,9 @@ public sealed class AgentRunOrchestratorFanOutTests
 
         public string? ChildAnswer { get; set; }
 
+        // Runs the child for real instead of settling it to a scripted outcome.
+        public Func<AgentRun, Task>? ChildBody { get; set; }
+
         // Counted per CALL, not per successful dispatch, or one configured fault would repeat for every later sibling.
         public int? ThrowForIndex { get; set; }
 
@@ -176,7 +187,7 @@ public sealed class AgentRunOrchestratorFanOutTests
             var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _cancels[child.Id] = cancelled;
 
-            var completion = SettleAsync(child.Id, outcome, cancelled);
+            var completion = ChildBody is { } body ? body(child) : SettleAsync(child.Id, outcome, cancelled);
             Dispatches.Add(new Dispatch(req, parentRunId, parentPolicyJson, parentWorkspaceRoot, personaId, child.Id, chatId, completion));
             return new HeadlessRunHandle(child.Id, chatId, completion);
         }
@@ -450,6 +461,40 @@ public sealed class AgentRunOrchestratorFanOutTests
         // which is what stops a resumed child being billed to its parent twice.
         var ledger = JsonDocument.Parse(final.LedgerJson!).RootElement;
         Assert.Equal(40, ledger.GetProperty("inputTokens").GetInt64());
+    }
+
+    [Fact]
+    public async Task AnInterruptedChild_ParksTheParentBehindIt_AndDoesNotFailIt()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats);
+        launcher.ChildBody = child =>
+        {
+            var childPlanner = new FakePlanner();
+            childPlanner.Plans.Enqueue(new PlanResult(MakeSteps(("child step", null)), false));
+            return h.BuildOrchestrator(childPlanner).RunAsync(
+                child, new RecordingExecutor { Interruption = StepInterruption.Offline }, Persona(), Provider(),
+                RunProfile.Interactive, CancellationToken.None);
+        };
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1)), false));
+
+        await h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, new RecordingExecutor(), Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var children = await h.Runs.GetChildRunsAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.NotEmpty(children);
+        Assert.All(children, c =>
+        {
+            Assert.Equal(AgentRunState.WaitingForInput, c.State);
+            Assert.Equal(AgentRunOrchestrator.InterruptedOfflineReason, RunPauseEnvelope.ReadReason(c));
+        });
+
+        var final = (await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!;
+        Assert.Equal(AgentRunState.WaitingForInput, final.State);
+        Assert.Equal(AgentRunOrchestrator.ChildrenParkedReason, RunPauseEnvelope.ReadReason(final));
+        Assert.Equal(0, planner.ReplanCalls);
     }
 
     [Fact]

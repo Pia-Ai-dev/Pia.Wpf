@@ -36,7 +36,7 @@ steps in its Blocks column.
   all three provider client families, and an exception that leaves a tool handler is marked so it never
   counts.
   *Deps:* 1, Q1, Q2, Q4 · *Effort:* S · *Value:* Enabler
-- [ ] **3 — The orchestrator parks on an interrupted step.** The step returns to Pending and the run waits
+- [x] **3 — The orchestrator parks on an interrupted step.** The step returns to Pending and the run waits
   with one of four reason tokens, with no replan, no grace turn and no terminal settle. A delegated child
   parks the same way and holds its parent at `children-parked`.
   *Deps:* 2, Q3, Q4 · *Effort:* S · *Value:* High
