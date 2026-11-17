@@ -16,7 +16,7 @@ public partial class AssistantViewModel
             JobMessageIds(s.Item1))));
 
         // The session knows of a waiting plan this view has no block for; nothing here can discard it.
-        if (PlanApprovalParkActive && !shown.Any(s => s.Item1.HasProjected && s.Item1.IsPlanApprovalPause))
+        if (_subscribedSession?.PlanApprovalParkActive == true && !shown.Any(s => s.Item1.HasProjected && s.Item1.IsPlanApprovalPause))
             return (false, false);
 
         switch (decision.Verdict)

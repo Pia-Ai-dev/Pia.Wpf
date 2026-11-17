@@ -1071,4 +1071,45 @@ public class AssistantViewModelLeverTests
 
         Assert.Null(vm.ActiveRunProgress);
     }
+
+    [Fact]
+    public void WithTheUnifiedFlowOn_APlanWaitingForApproval_LeavesTheComposerOpen()
+    {
+        var vm = CreateSut(settings: new AppSettings { UnifiedAssistantFlowEnabled = true });
+        vm.InputText = "drop step 3";
+
+        Activate(SessionWithTranscript(planApprovalParkActive: true));
+
+        Assert.False(vm.PlanApprovalParkActive);
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void TurningTheUnifiedFlowOn_ReleasesTheLockOfAWaitingPlan_AndOffRestoresIt()
+    {
+        var vm = CreateSut();
+        Activate(SessionWithTranscript(planApprovalParkActive: true));
+        Assert.True(vm.PlanApprovalParkActive);
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(
+            _settings, new AppSettings { UnifiedAssistantFlowEnabled = true });
+        Assert.False(vm.PlanApprovalParkActive);
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(_settings, new AppSettings());
+        Assert.True(vm.PlanApprovalParkActive);
+    }
+
+    [Fact]
+    public void WithTheUnifiedFlowOn_AChatStoredInAgentMode_SeedsChat_AndKeepsTheStoredLever()
+    {
+        var vm = CreateSut(settings: new AppSettings { UnifiedAssistantFlowEnabled = true });
+        var session = SessionWithTranscript();
+        session.AgentModeEnabled = true;
+
+        vm.SeedAgentMode(session, new AppSettings { UnifiedAssistantFlowEnabled = true, AssistantNewChatAgentMode = true });
+
+        Assert.False(vm.AgentModeEnabled);
+        Assert.False(vm.AgentContextChoicePending);
+        Assert.True(session.AgentModeEnabled);
+    }
 }

@@ -636,7 +636,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (switchedChat || _replyRecordsChatId != session.Id)
             LoadReplyRecordsAsync(session.Id).SafeFireAndForget(_logger);
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
-        PlanApprovalParkActive = session.PlanApprovalParkActive;
+        PlanApprovalParkActive = LocksSendAtPlanApproval(session.PlanApprovalParkActive);
 
         // An attachment was staged for the chat the user was in, so it does not follow them to another one —
         // sending it into the wrong conversation is the worse failure, and it is a file they can re-drop.
@@ -671,7 +671,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _uiDispatcher.Post(() => ForeignRunActive = active);
 
     private void OnPlanApprovalParkActiveChanged(object? sender, bool active) =>
-        _uiDispatcher.Post(() => PlanApprovalParkActive = active);
+        _uiDispatcher.Post(() => PlanApprovalParkActive = LocksSendAtPlanApproval(active));
 
     // Unguarded, like the run-settled fall-back: the write back to the session is a no-op at the same value,
     // and the rest of the handler is what clears the Agent-mode hint and the weak-provider adorner for a
@@ -723,6 +723,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
             _navigationService, _toolCalls, _runAsk, _runToolAnswers);
         block.AttachLiveText(_liveText);
+        ConfigureForUnifiedFlow(block);
         block.PropertyChanged += OnRunBlockAnchorChanged;
         return block;
     }
@@ -1095,7 +1096,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     internal void SeedAgentMode(ChatSession session, AppSettings settings)
     {
         _isLoadingAgentMode = true;
-        try { AgentModeEnabled = session.AgentModeEnabled ?? settings.AssistantNewChatAgentMode; }
+        try { AgentModeEnabled = !settings.UnifiedAssistantFlowEnabled && (session.AgentModeEnabled ?? settings.AssistantNewChatAgentMode); }
         finally { _isLoadingAgentMode = false; }
     }
 

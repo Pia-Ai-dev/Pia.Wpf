@@ -436,7 +436,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// the OTHER, independent half: it greys out a settled row's buttons even while this is true. The
     /// service's own state read is the hard guard; this is the UI-visible affordance.
     /// </summary>
-    public bool CanMutatePlan => State == RunProgressState.Paused;
+    public bool CanMutatePlan => State == RunProgressState.Paused || IsEditableApprovalPark;
 
     /// <summary>
     /// gates the "Pause the run to change its plan." note. It used to be the INVERSE of
@@ -1197,7 +1197,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // in ApplyWorkspaceOutcomeAsync); here the guard is simpler because ONLY a successful mutation clears
         // it otherwise, and a run that has since resumed and moved on has nothing left to say about a plan
         // edit that happened, or didn't, in a state it no longer occupies.
-        if (State != RunProgressState.Paused)
+        if (State != RunProgressState.Paused && !(State == RunProgressState.WaitingForInput && PlanEditableAtApproval))
             PlanMutationNote = null;
 
         TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;

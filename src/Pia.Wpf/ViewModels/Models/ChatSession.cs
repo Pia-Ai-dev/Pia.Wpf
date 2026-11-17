@@ -24,7 +24,7 @@ namespace Pia.ViewModels.Models;
 /// <c>ConfigureAwait(false)</c>, so every continuation (streaming writes,
 /// collection mutations) resumes on the captured UI <c>SynchronizationContext</c>.
 /// </summary>
-public sealed class ChatSession : IDisposable
+public sealed partial class ChatSession : IDisposable
 {
     private readonly IAiClientService _aiClientService;
     private readonly IPluginService _pluginService;
@@ -380,6 +380,7 @@ public sealed class ChatSession : IDisposable
         var injectedFileContext = request.InjectedFileContext;
         var regenerationInstruction = request.RegenerationInstruction;
         var tokenizationEnabled = request.TokenizationEnabled;
+        _proposePlan = request.ProposePlan;
 
         // Reuse the CTS created by BeginTurn() (so a cancel during the manager's
         // setup-await window is honored — open-question C1). Fall back to creating one
@@ -588,6 +589,7 @@ public sealed class ChatSession : IDisposable
             var emptyResponse = emptyResponseMessage is not null;
 
             // Per-run terminal finalize — stays inline in RunTurnAsync only.
+            _proposePlan = null;
             Cts?.Dispose();
             Cts = null;
 
@@ -1227,6 +1229,8 @@ public sealed class ChatSession : IDisposable
             }
             return "Noted — offered Agent mode to the user.";
         }
+
+        if (await TryHandleProposePlanAsync(toolCall, message, tokenizationEnabled, dispatch) is { } proposed) return proposed;
 
         // emit_step_result: the second pre-route special case, for the same structural reason as
         // the one above — no plugin, no GUID, no _toolNameRoutes entry, so routing would miss it, log a

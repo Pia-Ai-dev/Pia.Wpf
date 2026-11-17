@@ -719,6 +719,8 @@
                palette: it is something the user asked for that did not happen. -->
           <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PlanMutationNote}"
                      Visibility="{Binding PlanMutationNote, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding WeakProviderNote}"
+                     Visibility="{Binding ShowWeakProviderNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <!-- Batch 08 F6: a pause the service REFUSED. Separate from PlanMutationNote because that one is wiped by
                every projection that is not Paused, which is every projection a refused pause can be followed by. -->
           <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PauseNote}"

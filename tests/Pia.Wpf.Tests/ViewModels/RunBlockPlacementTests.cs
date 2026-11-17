@@ -118,4 +118,24 @@ public class RunBlockPlacementTests
 
         Assert.Equal([shown.Id], ChatSessionManager.FinishedRunsToShow(runs, [Msg(0), kept]));
     }
+
+    [Fact]
+    public void AProposedPlan_SitsAfterTheMessageThatProposedIt()
+    {
+        var goal = Msg(0, ChatRole.User);
+        var proposing = Msg(1);
+        var later = Msg(5);
+        var slot = RunBlockPlacement.Place(proposing.Id, proposing.Id, T0.AddMinutes(2), true, [goal, proposing, later]);
+
+        Assert.Equal(new RunBlockSlot(proposing.Id, Before: false), slot);
+    }
+
+    [Fact]
+    public void AnOlderUserMessageAsAnchor_KeepsThePlacementBeforeIt()
+    {
+        var goal = Msg(0, ChatRole.User);
+        var slot = RunBlockPlacement.Place(goal.Id, null, T0.AddMinutes(2), true, [goal, Msg(5)]);
+
+        Assert.Equal(new RunBlockSlot(goal.Id, Before: true), slot);
+    }
 }

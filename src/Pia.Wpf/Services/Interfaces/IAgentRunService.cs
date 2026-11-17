@@ -406,9 +406,8 @@ public interface IAgentRunService
     /// omits is DROPPED (there is no delete verb — dropping is what omission means, and D3's UI submits the
     /// whole list).
     /// <para>
-    /// GATED ON <see cref="AgentRunState.Paused"/> — one state, never a set and never a range (D7). That gate
-    /// is the design, not an accident of the UI: it removes D3's mutation-versus-drain race BY CONSTRUCTION,
-    /// because the only writer of a paused run's plan is the user. A mutation landing between the loop's
+    /// GATED ON <see cref="AgentRunState.Paused"/> or a plan-approval park — the two states where nothing
+    /// drains the plan, which removes the mutation-versus-drain race BY CONSTRUCTION. A mutation landing between the loop's
     /// <c>NextPendingStepAsync</c> and its step execution would otherwise run a step that is no longer in the
     /// plan, and one landing during the step's terminal write would delete the in-flight row so the write
     /// silently updates 0 rows — no ledger entry, no event, no log.

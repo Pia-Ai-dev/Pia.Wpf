@@ -1076,6 +1076,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     {
         int applied;
         int inserted = 0, skipped = 0;
+        var mutatedState = AgentRunState.Paused;
         List<AgentStep> rows;
         lock (_gate)
         {
@@ -1090,19 +1091,23 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             // rather than a separate outcome — from the caller's side "there is nothing pausable to mutate"
             // is the same answer.
             AgentRunState state;
+            string? extraJson;
             using (var read = connection.CreateCommand())
             {
-                read.CommandText = "SELECT State FROM AgentRuns WHERE Id=@Id";
+                read.CommandText = "SELECT State, ExtraJson FROM AgentRuns WHERE Id=@Id";
                 read.Parameters.AddWithValue("@Id", runId.ToString());
-                var raw = read.ExecuteScalar();
-                if (raw is null or DBNull)
+                using var reader = read.ExecuteReader();
+                if (!reader.Read())
                     return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.NotPaused, 0));
-                state = (AgentRunState)Convert.ToInt32(raw);
+                state = (AgentRunState)Convert.ToInt32(reader.GetValue(0));
+                extraJson = reader.IsDBNull(1) ? null : reader.GetString(1);
             }
 
             var persisted = LoadSteps(connection, runId);
-            if (state != AgentRunState.Paused)
+            // A plan waiting for approval is not draining either, so it is as safe to rewrite as a paused one.
+            if (!IsPlanMutable(state, extraJson))
                 return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.NotPaused, persisted.Count));
+            mutatedState = state;
 
             // The immutable prefix: everything already settled — Done, Skipped AND Failed. Kept in persisted
             // ordinal order with its ORIGINAL Ids, which is what keeps its per-step ledger entries (keyed by
@@ -1234,9 +1239,14 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
 
         // The panel refreshes from RunChanged and from nothing else (ReplaceStepsAsync raises none, which is
         // why the replan path cannot repaint a row either). Step-less: the change is the plan, not a step.
-        RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Paused));
+        RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, mutatedState));
         return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.Applied, applied));
     }
+
+    private static bool IsPlanMutable(AgentRunState state, string? extraJson) =>
+        state == AgentRunState.Paused
+        || (state == AgentRunState.WaitingForInput
+            && RunPauseEnvelope.ReadReason(new AgentRun { ExtraJson = extraJson }) == AgentRunOrchestrator.PlanApprovalReason);
 
     public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default)
     {

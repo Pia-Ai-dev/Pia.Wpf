@@ -1901,4 +1901,5 @@
   </data>
   <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>Weitere Sendeoptionen</value></data>
   <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Als Hintergrundaufgabe in einem neuen Chat ausführen</value></data>
+  <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Hier ist ein Plan dafür:</value></data>
 </root>

@@ -14,6 +14,9 @@ internal static class RunBlockPlacement
         Guid? firstMessageId, Guid? lastMessageId, DateTime? runCreatedAt, bool allowTimeFallback,
         IReadOnlyList<AssistantMessage> messages)
     {
+        if (ProposingMessage(firstMessageId, runCreatedAt, messages) is { } proposing)
+            return new RunBlockSlot(proposing.Id, Before: false);
+
         foreach (var id in new[] { firstMessageId, lastMessageId })
         {
             if (id is { } wrote && messages.Any(m => m.Id == wrote))
@@ -31,6 +34,19 @@ internal static class RunBlockPlacement
         }
 
         return messages.Count > 0 ? new RunBlockSlot(messages[0].Id, Before: true) : null;
+    }
+
+    // A job only writes messages after its run exists, so an older assistant anchor is the message that proposed it.
+    private static AssistantMessage? ProposingMessage(
+        Guid? firstMessageId, DateTime? runCreatedAt, IReadOnlyList<AssistantMessage> messages)
+    {
+        if (firstMessageId is not { } id || runCreatedAt is not { } createdAt)
+            return null;
+        var anchor = messages.FirstOrDefault(m => m.Id == id);
+        return anchor is { Role: var role } && role == Microsoft.Extensions.AI.ChatRole.Assistant
+            && anchor.Timestamp.ToUniversalTime() < createdAt.ToUniversalTime()
+            ? anchor
+            : null;
     }
 
     /// <summary>A block whose anchor is outside the visible window is left out until that message is loaded.</summary>

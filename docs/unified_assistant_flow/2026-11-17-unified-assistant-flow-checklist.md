@@ -104,9 +104,11 @@ Do not tick a step that depends on an open gate without revisiting it.
 - [ ] **`propose_plan` and job creation.** The tool, shared plan validation, the run parked for
       approval with its anchor, one job per chat, the weak-provider warning on the block.
       *Deps:* G2, setting, block · *Effort:* M · *Value:* High
+      *Note:* Built behind the setting, G2 open.
 - [ ] **Approval for every plan, editable there.** Plan edits allowed at the approval park; Start and
       Discard on the block; the send lock at that park removed.
       *Deps:* G1 (O2), `propose_plan` · *Effort:* S · *Value:* High
+      *Note:* Built behind the setting, G2 open.
 - [x] **Start an approved chat job at once.** It does not wait for a background slot.
       *Deps:* G1 (O4) · *Effort:* S · *Value:* Med
 
