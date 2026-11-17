@@ -118,6 +118,72 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task ApprovingAChatJobsPark_KeepsTheChatJobMark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False((await GetRunAsync(handle.RunId)).IsChatJob());
+        await _runs.UpdatePolicyJsonAsync(
+            handle.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.True(probe.Executed);
+        Assert.Contains("write_file", HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson)!);
+        Assert.True(run.IsChatJob());
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AnApprovedChatJob_StartsWithoutAFreeSlot_WhileAnotherRunKeepsQueueing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe);
+
+        var job = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await job.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        var routine = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await routine.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
+            .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(launcher)!;
+        var held = slots.Width;
+        for (var i = 0; i < held; i++)
+            await slots.WaitAsync(ct);
+
+        try
+        {
+            Assert.True(await launcher.ResumeAsync(routine.RunId, ct: ct));
+            Assert.True(await launcher.ResumeAsync(job.RunId, ct: ct));
+            await AwaitSettledAsync(job.RunId);
+
+            Assert.Equal(AgentRunState.Completed, (await GetRunAsync(job.RunId)).State);
+            Assert.Equal(AgentRunState.Running, (await GetRunAsync(routine.RunId)).State);
+        }
+        finally
+        {
+            for (var i = 0; i < held; i++)
+                slots.Release();
+        }
+
+        await AwaitSettledAsync(routine.RunId);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(routine.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>A park outlives the process but a deferred action's delegate does not, so what a resume applies is the
     /// capability; the evidence it reached the call is that the same tool then runs.</summary>
     [Fact]
@@ -357,7 +423,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
         await AwaitSettledAsync(handle.RunId);
 
-        // The park's dispatch, then the re-run's. Both snapshots predate the terminal purge.
+        // The park's dispatch, then the re-run's. Both snapshots predate the settle's approval-record purge.
         Assert.Equal(2, probe.Dispatches.Count);
         Assert.Equal(0, probe.Dispatches[0].ExecutedCount);
         var resumed = probe.Dispatches[1];
@@ -627,7 +693,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
         await AwaitSettledAsync(handle.RunId);
 
-        // Off the re-run's snapshot: the terminal purge takes the rows before the test could read them.
+        // Off the re-run's snapshot: the settle purges the parked rows before the test could read them.
         var resumed = probe.Dispatches[1];
         Assert.NotNull(Assert.Single(resumed.Rows, r => r.ToolName == "write_file").ReplayedAt);
 
@@ -1604,8 +1670,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                // Snapshotted per dispatch: the terminal EndRunAsync purges the rows, so a settled run has none
-                // left to read, and the request captured HERE is the one the replay had to land ahead of.
+                // Snapshotted per dispatch: the terminal EndRunAsync purges the parked rows, so a settled run has
+                // none left to read, and the request captured HERE is the one the replay had to land ahead of.
                 probe.Dispatches.Add(new DispatchSnapshot(
                     [.. ci.ArgAt<IList<ChatMessage>>(0)], ReadExchangeRows(), probe.ExecutedNames.Count));
                 // Resolved here rather than inside the iterator, so the dispatch number is the one that was

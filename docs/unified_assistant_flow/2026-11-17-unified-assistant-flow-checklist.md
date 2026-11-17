@@ -74,7 +74,7 @@ Do not tick a step that depends on an open gate without revisiting it.
       *Deps:* block · *Effort:* M · *Value:* High
 - [ ] **Tool rows per step.** Name, short argument line, duration and outcome from the timeline.
       *Deps:* block · *Effort:* S · *Value:* High
-- [ ] **Keep call and result rows after the job.** Narrow the settle purge and the prune to parked and
+- [x] **Keep call and result rows after the job.** Narrow the settle purge and the prune to parked and
       withheld rows; update the comments and tests that promise the old rule.
       *Deps:* G1 (O1) · *Effort:* S · *Value:* Enabler
 - [ ] **Open a call: input and result.** A read by step, the "not kept" states, and the readable copy
@@ -83,7 +83,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## D — asking in place
 
-- [ ] **Mark chat jobs.** The policy envelope records that a run was started from a plan in the
+- [x] **Mark chat jobs.** The policy envelope records that a run was started from a plan in the
       user's chat; the lever path sets it now, `propose_plan` later.
       *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **A chat job honours session grants and asks on the block.** The four card choices with their
@@ -98,7 +98,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## E — the front door
 
-- [ ] **A hidden setting for the new flow, off by default.** With it on the lever is hidden; groups E
+- [x] **A hidden setting for the new flow, off by default.** With it on the lever is hidden; groups E
       and F are reachable only through it until group G.
       *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **`propose_plan` and job creation.** The tool, shared plan validation, the run parked for
@@ -107,7 +107,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 - [ ] **Approval for every plan, editable there.** Plan edits allowed at the approval park; Start and
       Discard on the block; the send lock at that park removed.
       *Deps:* G1 (O2), `propose_plan` · *Effort:* S · *Value:* High
-- [ ] **Start an approved chat job at once.** It does not wait for a background slot.
+- [x] **Start an approved chat job at once.** It does not wait for a background slot.
       *Deps:* G1 (O4) · *Effort:* S · *Value:* Med
 
 ## F — talking to a running job
@@ -126,7 +126,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## G — the end and the removals
 
-- [ ] **Take the title call out of the path to Completed.**
+- [x] **Take the title call out of the path to Completed.**
       *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **Move "Run in background" into a menu on the Send button.**
       *Deps:* — · *Effort:* XS · *Value:* Med

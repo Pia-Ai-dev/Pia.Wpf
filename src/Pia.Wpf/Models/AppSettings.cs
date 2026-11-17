@@ -284,6 +284,9 @@ public class AppSettings
     // watching. Global, like every other Agent*/Scheduled* knob, and local-only (absent from SyncSettings).
     public bool AgentRunAutoApproveBuiltInWrites { get; set; } = false;
 
+    // Hidden switch for the one-assistant flow: no settings-page control and local-only (absent from SyncSettings).
+    public bool UnifiedAssistantFlowEnabled { get; set; } = false;
+
     /// <summary>
     /// Batch 07 D1/D7 — the "step specialists" roster: the personas a plan may assign individual steps to,
     /// per <see cref="UserOperatingMode"/>. <b>This dictionary IS the opt-in for per-step personas.</b> Empty

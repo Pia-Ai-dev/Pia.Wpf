@@ -593,7 +593,8 @@ public class SqliteContext : IDisposable
                 Round           INTEGER NULL,
                 Role            TEXT    NOT NULL,
                 -- TWO WRITERS: 1 Call / 2 Result is what the MODEL saw (tokenized when tokenization is on), 3 ParkedCall
-                -- / 4 WithheldCall is what the GATE saw (detokenized, replayable, can hold real PII). Append-only.
+                -- / 4 WithheldCall is what the GATE saw (detokenized, replayable, can hold real PII). 5 NotRecorded
+                -- marks a round the per-run cap refused. Append-only.
                 Kind            INTEGER NOT NULL,
                 -- FunctionCallContent.CallId verbatim, EMPTY STRING when the provider gave none (the same case
                 -- AgentTimelineEvents.ToolCallId records as NULL); the replay synthesizes one when it rebuilds the call.
@@ -601,7 +602,7 @@ public class SqliteContext : IDisposable
                 ToolName        TEXT    NULL,
                 PluginId        TEXT    NULL,
                 -- PAYLOAD-BEARING, the inverse of AgentTimelineEvents' metadata-only contract beside it. Local-only,
-                -- purged with the run, never logged outside SensitiveDebug, never copied into SyncAssistantChatMessage.
+                -- kept until the chat-retention cutoff, never logged outside SensitiveDebug, never copied into SyncAssistantChatMessage.
                 ArgumentsJson   TEXT    NULL,
                 -- The args exceeded MaxRowChars and were dropped: context only, never replayable. Kind 1 only - a
                 -- Kind 3/4 row is refused whole rather than stubbed, because half a payload is unreplayable.
@@ -621,10 +622,14 @@ public class SqliteContext : IDisposable
                 ReplayedAt      TEXT    NULL,
                 -- A later park recording the same tool made this row's arguments stale.
                 SupersededAt    TEXT    NULL,
+                -- Kind 1/2 with name protection on: the same payload with real names, NULL when it equals the
+                -- stored one. Written while the dispatch's name map is alive; that map is never saved.
+                ReadableArgumentsJson TEXT NULL,
+                ReadableResultText    TEXT NULL,
                 FOREIGN KEY (RunId) REFERENCES AgentRuns(Id) ON DELETE CASCADE
             );
 
-            CREATE INDEX IF NOT EXISTS IX_AgentToolExchanges_RunId     ON AgentToolExchanges(RunId, Seq);
+            CREATE INDEX IF NOT EXISTS IX_AgentToolExchanges_RunId    ON AgentToolExchanges(RunId, Seq);
             CREATE INDEX IF NOT EXISTS IX_AgentToolExchanges_CreatedAt ON AgentToolExchanges(CreatedAt);
             """;
         command.ExecuteNonQuery();
@@ -1229,6 +1234,32 @@ public class SqliteContext : IDisposable
             // the semantics want: every pre-existing row genuinely did not record its effort.
             using var addCol = _connection.CreateCommand();
             addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN EffortPinRecorded INTEGER NOT NULL DEFAULT 0";
+            addCol.ExecuteNonQuery();
+        }
+
+        var hasReadableArguments = false;
+        var hasReadableResult = false;
+        using (var p = _connection.CreateCommand())
+        {
+            p.CommandText = "PRAGMA table_info(AgentToolExchanges)";
+            using var r = p.ExecuteReader();
+            while (r.Read())
+            {
+                var col = r.GetString(1);
+                if (col == "ReadableArgumentsJson") hasReadableArguments = true;
+                else if (col == "ReadableResultText") hasReadableResult = true;
+            }
+        }
+        if (!hasReadableArguments)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentToolExchanges ADD COLUMN ReadableArgumentsJson TEXT NULL";
+            addCol.ExecuteNonQuery();
+        }
+        if (!hasReadableResult)
+        {
+            using var addCol = _connection.CreateCommand();
+            addCol.CommandText = "ALTER TABLE AgentToolExchanges ADD COLUMN ReadableResultText TEXT NULL";
             addCol.ExecuteNonQuery();
         }
     }

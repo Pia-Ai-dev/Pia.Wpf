@@ -440,6 +440,14 @@ public class ChatSessionManagerTests
         Assert.Empty(restored!);   // and it grants nothing, which is exactly what the launch granted
     }
 
+    [Fact]
+    public async Task StartPlannedTurn_MarksTheRunAsAChatJob()
+    {
+        var captured = await CapturePlannedRunRequestAsync();
+
+        Assert.True(Pia.Services.HeadlessRunLauncher.TryRestoreChatJob(captured.PolicyJson));
+    }
+
     // ---- a parked run must stay reachable after a restart (ActiveRunId is runtime-only) ----
 
     private static AgentRun Run(Guid chatId, AgentRunState state, DateTime createdAt, RunShape shape = RunShape.Planned) =>

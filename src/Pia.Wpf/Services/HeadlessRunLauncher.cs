@@ -652,6 +652,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
         var parkReason = claim.ParkReason;
         var approvedTool = claim.ApprovedTool;
+        var chatJob = run.IsChatJob();
 
         // The run is now CAS'd WaitingForInput→Running (the claim raised RunChanged(Running), retracting the
         // Flow card and disabling the panel Continue). Any failure between here and the orchestrator loop being
@@ -750,7 +751,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // T1-3, same rule as the launch path (and for the same reason — see LaunchCoreAsync): a resume that
             // did not take a ticket would jump the queue, being the one dispatch whose wait is not ordered
             // against anything. The PARENT pool's chain, matching the pool the wait below uses.
-            var ticket = _slots.TakeTicket();
+            // A chat job approved in the chat starts at once. No ticket either: one taken and never waited on
+            // stalls every later ticket of the pool.
+            var ticket = chatJob ? null : _slots.TakeTicket();
             // The ternary is load-bearing: claim.ApprovedTool names the QUESTION, so it is non-null on the
             // decline path too, and replaying there would run the very call the person refused.
             var plan = new ResumeDispatchPlan(
@@ -890,7 +893,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 try
                 {
                     await _agentRunService.UpdatePolicyJsonAsync(
-                            run.Id, SerializeGrantEnvelope(grants, run.TriggerKind, policy, deniedNow), ct)
+                            run.Id, SerializeGrantEnvelope(
+                                grants, run.TriggerKind, policy, deniedNow, TryRestoreChatJob(run.PolicyJson)), ct)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)
@@ -943,7 +947,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                     await _agentRunService.UpdatePolicyJsonAsync(
                             // The ROW's trigger, not the envelope's. GrantEnvelope.Trigger is provenance that
                             // "never widens a grant", and the row is the authoritative copy of the same fact.
-                            run.Id, SerializeGrantEnvelope(widened, run.TriggerKind, policy), ct)
+                            run.Id, SerializeGrantEnvelope(
+                                widened, run.TriggerKind, policy, chatJob: TryRestoreChatJob(run.PolicyJson)), ct)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)
@@ -1008,7 +1013,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// <summary>The resumed dispatch itself: re-acquire a slot, build the scope, and hand the run to the
     /// orchestrator. Every exit re-parks or settles the row, so a claimed run never dangles Running.</summary>
     private async Task RunResumedDispatchAsync(
-        ResumeDispatchPlan plan, CancellationTokenSource runCts, RunSlotPool.Ticket ticket, Action steerCancel)
+        ResumeDispatchPlan plan, CancellationTokenSource runCts, RunSlotPool.Ticket? ticket, Action steerCancel)
     {
         var run = plan.Run;
         var acquired = false;
@@ -1018,8 +1023,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // Deliberately the PARENT pool even for a resumed child: a resume is a USER
             // act, so nothing is awaiting this dispatch from inside another run's RunAsync, and the
             // nested-acquire deadlock that _childSlots exists to prevent cannot arise here.
-            await _slots.WaitAsync(ticket, runCts.Token).ConfigureAwait(false); // re-acquire a slot (guardrail 6)
-            acquired = true;
+            if (ticket is not null)
+            {
+                await _slots.WaitAsync(ticket, runCts.Token).ConfigureAwait(false);
+                acquired = true;
+            }
 
             using var scope = _scopeFactory.CreateScope();
             var executor = scope.ServiceProvider.GetRequiredService<HeadlessTurnExecutor>();

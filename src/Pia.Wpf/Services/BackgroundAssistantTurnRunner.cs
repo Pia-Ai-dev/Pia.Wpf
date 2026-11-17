@@ -392,7 +392,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     toolExchanges.AddRange(round.Messages);
                     sentRounds.AddRange(round.Sent);
                     if (exchanges is not null)
-                        await exchanges.RecordAsync(round.Round, round.Messages).ConfigureAwait(false);
+                        await exchanges.RecordAsync(round.Round, round.Messages, round.Readable).ConfigureAwait(false);
                     break;
                 case FinalAnswer final:
                     finalAnswer = final.Messages;

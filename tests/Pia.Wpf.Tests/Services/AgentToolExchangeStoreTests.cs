@@ -209,7 +209,7 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task PruneAsync_DropsRowsOfTerminalRuns_AndKeepsAParkedRuns()
+    public async Task PruneAsync_DropsOnlyTheApprovalRecordsOfTerminalRuns_AndKeepsTheirCallsAndResults()
     {
         var ct = TestContext.Current.CancellationToken;
         var states = new[]
@@ -223,17 +223,169 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
             var run = await MakeRunAsync();
             await _runs.SetStateAsync(run.Id, state, ct);
             await _store.RecordAsync(run.Id, null, 1, Round(0), ct);
+            await _store.AppendParkedAsync([ParkedRow(run.Id, "write_file", "{\"path\":\"real.md\"}")], ct);
             runIds.Add(run.Id);
         }
 
         // A cutoff in the past, so only the terminal clause can delete anything.
         var deleted = await _store.PruneAsync(DateTime.UtcNow - TimeSpan.FromDays(365), ct);
 
-        Assert.Equal(6, deleted);
-        Assert.Equal(0, CountRows(runIds[0]));
-        Assert.Equal(0, CountRows(runIds[1]));
-        Assert.Equal(0, CountRows(runIds[2]));
-        Assert.Equal(2, CountRows(runIds[3]));
+        Assert.Equal(3, deleted);
+        Assert.Equal(2, CountRows(runIds[0]));
+        Assert.Equal(2, CountRows(runIds[1]));
+        Assert.Equal(2, CountRows(runIds[2]));
+        Assert.Equal(3, CountRows(runIds[3]));
+    }
+
+    [Fact]
+    public async Task PruneAsync_DropsCallsAndResultsOfTerminalRuns_OnTheCutoff()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        await _runs.SetStateAsync(run.Id, AgentRunState.Completed, ct);
+        await _store.RecordAsync(run.Id, null, 1, Round(0), ct);
+
+        var deleted = await _store.PruneAsync(DateTime.UtcNow + TimeSpan.FromMinutes(1), ct);
+
+        Assert.Equal(2, deleted);
+        Assert.Equal(0, CountRows(run.Id));
+    }
+
+    [Fact]
+    public async Task PurgeApprovalRecordsAsync_KeepsCallsAndResults()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        await _store.RecordAsync(run.Id, null, 1, Round(0), ct);
+        await _store.AppendParkedAsync(
+            [ParkedRow(run.Id, "write_file", "{\"path\":\"a.md\"}"),
+             ParkedRow(run.Id, "write_file", "{\"path\":\"b.md\"}", AgentToolExchangeKind.WithheldCall)],
+            ct);
+
+        Assert.Equal(2, await _store.PurgeApprovalRecordsAsync(run.Id, ct));
+
+        var carried = await _store.ReadCarriedAsync(run.Id, ct);
+        Assert.Equal(2, carried.Count);
+        Assert.Equal(2, CountRows(run.Id));
+    }
+
+    [Fact]
+    public async Task GetStepCallsAsync_ReturnsTheReadableCopy_AndCarriedRowsStayWhatTheModelSaw()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        var stepId = Guid.NewGuid();
+        List<ChatMessage> modelSaw =
+        [
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file",
+                new Dictionary<string, object?> { ["path"] = "[Person_1].md" })]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "notes about [Person_1]")]),
+        ];
+        List<ChatMessage> readable =
+        [
+            new(ChatRole.Assistant, [new FunctionCallContent("c1", "read_file",
+                new Dictionary<string, object?> { ["path"] = "Schmidt.md" })]),
+            new(ChatRole.Tool, [new FunctionResultContent("c1", "notes about Schmidt")]),
+        ];
+
+        await _store.RecordAsync(run.Id, stepId, 1, modelSaw, ct, readable);
+
+        var details = await _store.GetStepCallsAsync(run.Id, stepId, ct);
+        var call = Assert.Single(details.Calls);
+        Assert.Equal("c1", call.CallId);
+        Assert.Equal("read_file", call.ToolName);
+        Assert.Equal(1, call.Round);
+        Assert.Contains("Schmidt.md", call.Arguments!, StringComparison.Ordinal);
+        Assert.Equal(AgentToolDetailState.Kept, call.ArgumentsState);
+        Assert.Equal("notes about Schmidt", call.Result);
+        Assert.Equal(AgentToolDetailState.Kept, call.ResultState);
+        Assert.Empty(details.NotRecordedRounds);
+
+        var carried = await _store.ReadCarriedAsync(run.Id, ct);
+        Assert.Contains("[Person_1]", carried.Single(r => r.Kind == AgentToolExchangeKind.Call).ArgumentsJson!,
+            StringComparison.Ordinal);
+        Assert.Equal("notes about [Person_1]", carried.Single(r => r.Kind == AgentToolExchangeKind.Result).ResultText);
+    }
+
+    [Fact]
+    public async Task GetStepCallsAsync_WithoutNameProtection_StoresNoSecondCopy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+
+        await _store.RecordAsync(run.Id, null, 1, Round(0), ct, readable: Round(0));
+
+        var rows = await _store.ReadCarriedAsync(run.Id, ct);
+        Assert.All(rows, r => Assert.Null(r.ReadableArgumentsJson));
+        Assert.All(rows, r => Assert.Null(r.ReadableResultText));
+        Assert.Equal(new string('b', 40), Assert.Single((await _store.GetStepCallsAsync(run.Id, null, ct)).Calls).Result);
+    }
+
+    [Fact]
+    public async Task GetStepCallsAsync_ReportsTheNotKeptStates()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        var stepId = Guid.NewGuid();
+        var cut = AgentToolCarryover.CapResult(new string('r', AgentToolCarryover.MaxCarriedResultChars + 50));
+
+        await _store.RecordAsync(run.Id, stepId, 1,
+        [
+            new ChatMessage(ChatRole.Assistant,
+            [
+                new FunctionCallContent("big", "write_file",
+                    new Dictionary<string, object?> { ["content"] = new string('c', AgentToolExchangeSerializer.MaxRowChars + 10) }),
+                new FunctionCallContent("long", "read_file", new Dictionary<string, object?> { ["path"] = "a.md" }),
+                new FunctionCallContent("lost", "read_file", new Dictionary<string, object?> { ["path"] = "b.md" }),
+            ]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("big", "written")]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("long", cut)]),
+        ], ct);
+
+        var calls = (await _store.GetStepCallsAsync(run.Id, stepId, ct)).Calls;
+
+        Assert.Equal(["big", "long", "lost"], calls.Select(c => c.CallId));
+        Assert.Equal(AgentToolDetailState.Omitted, calls[0].ArgumentsState);
+        Assert.Null(calls[0].Arguments);
+        Assert.Equal(AgentToolDetailState.Truncated, calls[1].ResultState);
+        Assert.Equal(AgentToolCarryover.MaxCarriedResultChars, calls[1].Result!.Length);
+        Assert.Equal(AgentToolDetailState.Missing, calls[2].ResultState);
+    }
+
+    [Fact]
+    public async Task GetStepCallsAsync_NamesTheRoundsTheCapRefused_PerStep()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        var stepA = Guid.NewGuid();
+        var stepB = Guid.NewGuid();
+        var pairs = Enumerable.Range(0, AgentToolExchangeStore.MaxRowsPerRun / 2).SelectMany(i => Round(i)).ToList();
+        await _store.RecordAsync(run.Id, stepA, 1, pairs, ct);
+
+        await _store.RecordAsync(run.Id, stepB, 4, Round(900), ct);
+        await _store.RecordAsync(run.Id, stepB, 5, Round(901), ct);
+
+        var b = await _store.GetStepCallsAsync(run.Id, stepB, ct);
+        Assert.Empty(b.Calls);
+        Assert.Equal([4, 5], b.NotRecordedRounds);
+        Assert.Empty((await _store.GetStepCallsAsync(run.Id, stepA, ct)).NotRecordedRounds);
+
+        // The marker is not a carried row, and does not count against the cap.
+        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun, (await _store.ReadCarriedAsync(run.Id, ct)).Count);
+    }
+
+    [Fact]
+    public async Task ReplacingACarriedResult_DropsItsStaleReadableCopy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        await _store.RecordAsync(run.Id, null, 1,
+            [new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "Paused: [Person_1]")])], ct,
+            readable: [new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "Paused: Schmidt")])]);
+
+        await _store.SetCarriedResultAsync(run.Id, "c1", "done", ct);
+
+        Assert.Null(Assert.Single(await _store.ReadCarriedAsync(run.Id, ct)).ReadableResultText);
     }
 
     [Fact]
@@ -383,11 +535,12 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
 
         // Non-vacuity: the run really is at the cap, so a Kind 1/2 round would now be refused.
         await _store.RecordAsync(run.Id, null, 2, Round(999), ct);
-        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun, CountRows(run.Id));
+        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun, (await _store.ReadCarriedAsync(run.Id, ct)).Count);
 
         await _store.AppendParkedAsync([ParkedRow(run.Id, "write_file", "{\"path\":\"late.md\"}")], ct);
 
-        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun + 1, CountRows(run.Id));
+        // The cap's own marker row is the + 1 before the parked one.
+        Assert.Equal(AgentToolExchangeStore.MaxRowsPerRun + 2, CountRows(run.Id));
         Assert.Single(await _store.GetReplayableAsync(run.Id, "write_file", ct));
     }
 

@@ -26,7 +26,11 @@ public sealed record ToolRoundCompleted : ChatStreamItem;
 /// <param name="Messages">Calls and capped results only — the shape that is persisted and resumed.</param>
 /// <param name="Sent">The round exactly as the next request sends it, so a later step can extend that request.</param>
 public sealed record ToolRoundExchange(
-    int Round, IReadOnlyList<ChatMessage> Messages, IReadOnlyList<ChatMessage> Sent) : ChatStreamItem;
+    int Round, IReadOnlyList<ChatMessage> Messages, IReadOnlyList<ChatMessage> Sent) : ChatStreamItem
+{
+    /// <summary><see cref="Messages"/> with real names, set while name protection's map is alive; null when off.</summary>
+    public IReadOnlyList<ChatMessage>? Readable { get; init; }
+}
 
 /// <summary>The final round's assistant message(s) as received, without reasoning; absent after a re-ask or
 /// wrap-up round, whose nudge the next step would not carry.</summary>

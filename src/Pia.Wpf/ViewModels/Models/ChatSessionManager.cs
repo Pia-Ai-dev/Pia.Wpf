@@ -1002,11 +1002,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // launch granted (nothing), and this batch makes the document richer, i.e. likelier to fault. The
             // fallback deliberately carries no policy either — narrower on fault is the only safe direction.
             string? policyJson;
-            try { policyJson = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, policy); }
+            try { policyJson = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, policy, chatJob: true); }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to serialize the interactive run's grant envelope");
-                policyJson = HeadlessRunLauncher.InteractiveEmptyEnvelopeJson;
+                policyJson = HeadlessRunLauncher.ChatJobEmptyEnvelopeJson;
             }
 
             // This run's resume runs unattended through the launcher (see above), so the persona has to travel
