@@ -128,7 +128,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 - [x] **Take the title call out of the path to Completed.**
       *Deps:* — · *Effort:* XS · *Value:* Med
-- [ ] **Move "Run in background" into a menu on the Send button.**
+- [x] **Move "Run in background" into a menu on the Send button.**
       *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **Turn the new flow on for everyone and remove the old path.** Lever, its setting, triage on
       this path, the context banner and digest for chat jobs, `suggest_agent_mode` and its chip, the

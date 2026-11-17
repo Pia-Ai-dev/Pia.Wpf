@@ -107,6 +107,15 @@ public partial class AssistantView : UserControl
             DispatcherPriority.ContextIdle);
     }
 
+    private void SendOptionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { ContextMenu: { } menu } button)
+            return;
+        menu.PlacementTarget = button;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.IsOpen = true;
+    }
+
     private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         // ExtentHeight is only right once the new text has been measured.
