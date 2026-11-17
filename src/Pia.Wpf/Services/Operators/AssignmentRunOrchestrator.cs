@@ -234,14 +234,14 @@ public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
             [
                 new SyncAssistantChatMessage
                 {
-                    Id = Guid.NewGuid(),
+                    Id = StableMessageId(run.ChatId, 1),
                     Role = "user",
                     Content = run.Prompt,
                     Timestamp = run.StartedAtUtc,
                 },
                 new SyncAssistantChatMessage
                 {
-                    Id = Guid.NewGuid(),
+                    Id = StableMessageId(run.ChatId, 2),
                     Role = "assistant",
                     Content = answer,
                     Timestamp = now,
@@ -249,10 +249,20 @@ public sealed class AssignmentRunOrchestrator : IAssignmentRunOrchestrator
             ],
         };
 
-        await _chats.SaveAsync(chat, ct);
+        // The chat may be open with the user's own turns in it; only a missing row gets the header.
+        if (!await _chats.UpsertMessagesAsync(chat, writeHeader: false, ct))
+            await _chats.UpsertMessagesAsync(chat, writeHeader: true, ct);
         _logger.LogInformation(
             "Stored the artifact of assignment {AssignmentId} as chat {ChatId}.", run.AssignmentId, run.ChatId);
         _logger.SensitiveDebug("Artifact for {AssignmentId}: {Answer}", run.AssignmentId, answer);
+    }
+
+    // A second drain of the same run rewrites its two rows instead of appending another pair.
+    internal static Guid StableMessageId(Guid chatId, byte slot)
+    {
+        var bytes = chatId.ToByteArray();
+        bytes[15] ^= slot;
+        return new Guid(bytes);
     }
 
     /// <summary>ErrorCode is the CLR exception type name whenever a failure escaped the server untyped, so the

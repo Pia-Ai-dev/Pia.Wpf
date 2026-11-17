@@ -35,8 +35,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
             NullLogger<JsonlAssignmentConsentStore>.Instance);
         _scope = new TraceScopeReader(_trace);
         _api.Trace = _trace;
-        _chats.SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>())
-            .Returns(_ => { _trace.Add("chat-write"); return Task.CompletedTask; });
+        _chats.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { _trace.Add("chat-write"); return Task.FromResult(true); });
     }
 
     public void Dispose()
@@ -205,8 +205,8 @@ public class AssignmentRunOrchestratorTests : IDisposable
     {
         var run = await SeedPendingAsync();
         _api.Assignment = Completed(run.AssignmentId, "the finished answer");
-        _chats.SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new IOException("disk full"));
+        _chats.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new IOException("disk full"));
 
         await Assert.ThrowsAsync<IOException>(() => CreateSut().DrainAsync(Ct));
 
@@ -244,12 +244,32 @@ public class AssignmentRunOrchestratorTests : IDisposable
         await sut.DrainAsync(Ct);
 
         var written = _chats.ReceivedCalls()
-            .Where(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SaveAsync))
+            .Where(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.UpsertMessagesAsync))
             .Select(c => ((SyncAssistantChat)c.GetArguments()[0]!).Id)
             .ToList();
         Assert.Equal(2, written.Count);
         Assert.Single(written.Distinct());
         Assert.Equal(run.ChatId, written[0]);
+
+        var messageIds = _chats.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.UpsertMessagesAsync))
+            .Select(c => string.Join(",", ((SyncAssistantChat)c.GetArguments()[0]!).Messages.Select(m => m.Id)))
+            .ToList();
+        Assert.Single(messageIds.Distinct());
+    }
+
+    [Fact]
+    public async Task DrainAsync_WritesOnlyItsOwnRows_AndNoHeaderOverAnExistingChat()
+    {
+        var run = await SeedPendingAsync();
+        _api.Assignment = Completed(run.AssignmentId, "the finished answer");
+
+        await CreateSut().DrainAsync(Ct);
+
+        await _chats.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 2), false, Arg.Any<CancellationToken>());
+        await _chats.DidNotReceive().UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), true, Arg.Any<CancellationToken>());
+        await _chats.DidNotReceive().SaveAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -357,7 +377,7 @@ public class AssignmentRunOrchestratorTests : IDisposable
     }
 
     private string LastAnswer() => _chats.ReceivedCalls()
-        .Where(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.SaveAsync))
+        .Where(c => c.GetMethodInfo().Name == nameof(IAssistantChatService.UpsertMessagesAsync))
         .Select(c => ((SyncAssistantChat)c.GetArguments()[0]!).Messages.Last(m => m.Role == "assistant").Content)
         .Last();
 
