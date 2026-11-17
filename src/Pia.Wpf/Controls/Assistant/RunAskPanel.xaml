@@ -21,6 +21,7 @@
                      AutomationProperties.AutomationId="{Binding RunId, StringFormat='RunAsk_AllowOnce_{0}'}" />
           <ui:Button Content="{loc:Str RunAsk_AllowForSession}" Appearance="Secondary" Padding="13,6" Margin="0,0,6,4"
                      Command="{Binding AllowForSessionAskCommand}"
+                     Visibility="{Binding OffersSessionAsk, Converter={StaticResource BooleanToVisibilityConverter}}"
                      AutomationProperties.AutomationId="{Binding RunId, StringFormat='RunAsk_AllowForSession_{0}'}" />
           <ui:Button Content="{loc:Str RunAsk_AlwaysAllow}" Appearance="Secondary" Padding="13,6" Margin="0,0,6,4"
                      Command="{Binding AlwaysAllowAskCommand}"

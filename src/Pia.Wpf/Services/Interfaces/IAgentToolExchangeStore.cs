@@ -57,6 +57,9 @@ public interface IAgentToolExchangeStore
     /// </summary>
     Task<int> SupersedeUnreplayedAsync(Guid runId, IReadOnlyCollection<string> toolNames, CancellationToken ct = default);
 
+    /// <summary>Mark one step's unreplayed rows stale, so an approval never replays into a changed or other step.</summary>
+    Task<int> SupersedeStepUnreplayedAsync(Guid runId, Guid? stepId, CancellationToken ct = default);
+
     /// <summary>
     /// Claim a row for replay. The UPDATE is conditional and the rows-affected result is the answer, which is
     /// the structural half of at-most-once execution.

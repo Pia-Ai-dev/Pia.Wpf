@@ -596,6 +596,69 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.FromResult(affected > 0);
     }
 
+    public Task<bool> TryClaimParkAsync(
+        Guid runId, AgentRunState from, string? expectedExtraJson, CancellationToken ct = default)
+    {
+        if (!AgentRunStates.IsParked(from))
+            return Task.FromResult(false);
+
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now, ExtraJson=NULL "
+                + "WHERE Id=@Id AND State=@Expected AND ExtraJson IS @Extra";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Running);
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@Expected", (int)from);
+            cmd.Parameters.AddWithValue("@Extra", ToParam(expectedExtraJson));
+            affected = cmd.ExecuteNonQuery();
+
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.OpenSegment);
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} resume claimed from {State} on an unchanged park → Running", runId, from);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        }
+        return Task.FromResult(affected > 0);
+    }
+
+    public Task<bool> TryCancelParkedAsync(Guid runId, CancellationToken ct = default)
+    {
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            var now = DateTime.UtcNow.ToString("O");
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, CompletedAt=@Now, UpdatedAt=@Now, ExtraJson=NULL, "
+                + "FailureJson=NULL WHERE Id=@Id AND State IN (@S1,@S2)";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Cancelled);
+            cmd.Parameters.AddWithValue("@Now", now);
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@S1", (int)AgentRunState.WaitingForInput);
+            cmd.Parameters.AddWithValue("@S2", (int)AgentRunState.Paused);
+            affected = cmd.ExecuteNonQuery();
+
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.CloseSegment);
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} → Cancelled from a park", runId);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Cancelled));
+        }
+        return Task.FromResult(affected > 0);
+    }
+
     public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default)
     {
         int affected;

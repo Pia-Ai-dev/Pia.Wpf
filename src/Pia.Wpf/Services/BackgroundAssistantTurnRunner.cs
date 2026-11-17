@@ -736,13 +736,20 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, RunAskContext ask,
         ToolClass toolClass, AgentTimelineScope? timeline, int? argsChars)
     {
+        // A job's gate ignores a session grant for these classes, so offering one would only widen other chats.
+        var offersSessionGrant = toolClass is not (ToolClass.Screen or ToolClass.KnowledgeBase);
         var question = new RunToolQuestion(Guid.NewGuid(), ask.RunId, ask.ChatId, ask.StepId, pending.ToolName,
-            pending.PluginId, ParkedHeading(pending) ?? ToolApprovalArguments.Describe(toolCall));
+            pending.PluginId, ParkedHeading(pending) ?? ToolApprovalArguments.Describe(toolCall), offersSessionGrant);
         var shownAt = DateTime.UtcNow;
         var answer = await ask.Broker.AskAsync(question, ask.SetClockRunning, ask.Ct).ConfigureAwait(false);
 
         if (answer is not { } decision)
             return (false, null);
+
+        // An Allow that raced Stop or Pause must not run the call.
+        ask.Ct.ThrowIfCancellationRequested();
+        if (decision == ToolDecision.AllowForSession && !offersSessionGrant)
+            decision = ToolDecision.AllowOnce;
 
         var decidedAt = DateTime.UtcNow;
         var gateDecision = await ToolDecisionGrants.ApplyAsync(_permissions, decision, pending.PluginId, pending.ToolName)

@@ -4,7 +4,8 @@ namespace Pia.Services.Interfaces;
 
 /// <summary>A tool call a running chat job waits on. <c>DisplayArgs</c> is user content: render, never log.</summary>
 public sealed record RunToolQuestion(
-    Guid RequestId, Guid RunId, Guid ChatId, Guid? StepId, string ToolName, Guid? PluginId, string? DisplayArgs);
+    Guid RequestId, Guid RunId, Guid ChatId, Guid? StepId, string ToolName, Guid? PluginId, string? DisplayArgs,
+    bool OffersSessionGrant = true);
 
 /// <summary>Is the chat displayed in a window right now?</summary>
 public interface IChatAttendance

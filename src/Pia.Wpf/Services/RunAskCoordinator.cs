@@ -54,15 +54,15 @@ public sealed class RunAskCoordinator : IRunAskBroker
         if (!_pending.TryAdd(question.RunId, pending))
             return null;
 
-        _logger.LogInformation("Run {RunId}: waiting in place for a decision on {ToolName}",
-            question.RunId, question.ToolName);
-        _runService.SetWorkClockRunning(question.RunId, false);
-        setClockRunning?.Invoke(false);
-        Changed?.Invoke(this, question.RunId);
-        PublishFlowItem(question.RunId);
-
         try
         {
+            _logger.LogInformation("Run {RunId}: waiting in place for a decision on {ToolName}",
+                question.RunId, question.ToolName);
+            _runService.SetWorkClockRunning(question.RunId, false);
+            setClockRunning?.Invoke(false);
+            Changed?.Invoke(this, question.RunId);
+            PublishFlowItem(question.RunId);
+
             using var timeout = new CancellationTokenSource(_timeout);
             using var _ = timeout.Token.Register(() => pending.Answer.TrySetResult(null));
             using var __ = ct.Register(() => pending.Answer.TrySetCanceled(ct));

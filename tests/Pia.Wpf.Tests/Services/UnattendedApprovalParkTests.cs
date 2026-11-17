@@ -144,6 +144,43 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
     }
 
     [Fact]
+    public async Task AChatJobResumedFromAToolApproval_QueuesForASlotLikeOtherRuns()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, dispatchScript: [[new("write_file")], []]);
+
+        var job = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await job.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
+            .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(launcher)!;
+        var held = slots.Width;
+        for (var i = 0; i < held; i++)
+            await slots.WaitAsync(ct);
+
+        try
+        {
+            Assert.True(await launcher.ResumeAsync(job.RunId, ct: ct));
+            await Task.Delay(300, ct);
+            Assert.Single(probe.Dispatches);
+            Assert.Equal(AgentRunState.Running, (await GetRunAsync(job.RunId)).State);
+        }
+        finally
+        {
+            for (var i = 0; i < held; i++)
+                slots.Release();
+        }
+
+        await AwaitSettledAsync(job.RunId);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(job.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task AnApprovedChatJob_StartsWithoutAFreeSlot_WhileAnotherRunKeepsQueueing()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -156,6 +193,7 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
         await routine.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
         await _runs.UpdatePolicyJsonAsync(
             job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+        await _runs.PauseAsync(job.RunId, AgentRunOrchestrator.PlanApprovalReason, ct);
 
         var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
             .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
@@ -450,6 +488,105 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
             "the seeded content must be capped, not the persisted 200 000 chars: " + seededContent.Length);
         Assert.Contains(content, row.ArgumentsJson!, StringComparison.Ordinal);
 
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AnApprovedCallParkedInAnotherStep_IsDiscarded_NotReplayedIntoTheStepAboutToRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False(probe.Executed);
+
+        // Stands in for a plan change that removed the parked step: its rows now belong to no step that runs.
+        using (var connection = new SqliteConnection(_ctx.ConnectionString))
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE AgentToolExchanges SET StepId = @StepId WHERE Kind IN (3, 4);";
+            cmd.Parameters.AddWithValue("@StepId", Guid.NewGuid().ToString());
+            cmd.ExecuteNonQuery();
+        }
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var resumed = probe.Dispatches[1];
+        Assert.Equal(0, resumed.ExecutedCount);
+        var row = Assert.Single(resumed.Rows, r => r.Kind == AgentToolExchangeKind.ParkedCall);
+        Assert.Null(row.ReplayedAt);
+        Assert.NotNull(row.SupersededAt);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AResumeThatMayOnlyAnswerAQuestion_DoesNotClaimAToolApprovalPark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.False(await launcher.ResumeAsync(handle.RunId, "yes", ct,
+            parkReasonAllowed: r => r == AgentRunOrchestrator.NeedsInputReason));
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal(AgentRunOrchestrator.ToolApprovalReason, RunPauseEnvelope.ReadReason(run));
+        Assert.False(probe.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StoppingAParkedRun_SettlesItCancelled_AndPurgesItsParkedCalls()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.Single(await _exchanges!.GetReplayableAsync(handle.RunId, "write_file", ct));
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+
+        Assert.Equal(AgentRunState.Cancelled, (await GetRunAsync(handle.RunId)).State);
+        Assert.Empty(await _exchanges.GetReplayableAsync(handle.RunId, "write_file", ct));
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StoppingARunBetweenAResumeClaimAndItsDispatch_StillStopsIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        // Claimed but not yet registered: Running with no dispatch entry, then re-parked by its failed start.
+        Assert.True(await _runs.TryBeginResumeAsync(handle.RunId, ct));
+        var repark = Task.Run(async () =>
+        {
+            await Task.Delay(200, ct);
+            await _runs.PauseAsync(handle.RunId, "step-cap", ct);
+        }, ct);
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+        await repark;
+        Assert.Equal(AgentRunState.Cancelled, (await GetRunAsync(handle.RunId)).State);
         await launcher.StopAsync(CancellationToken.None);
     }
 

@@ -193,6 +193,29 @@ public sealed class ChatJobToolServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePlan_DiscardsTheParkedCallsOfAnEditedOrRemovedStep_Only()
+    {
+        var store = Substitute.For<IAgentToolExchangeStore>();
+        var service = new ChatJobToolService(SettingsStubs.Returning(_settings), _runs, _jobs, _pause, _steering,
+            _resume, _chats, NullLogger<ChatJobToolService>.Instance, toolCalls: store);
+        var run = await ParkAsync(await JobAsync(), AgentRunOrchestrator.ToolApprovalReason);
+        var s3 = run.Plan.Single(s => s.Title == "s3").Id;
+        var s4 = run.Plan.Single(s => s.Title == "s4").Id;
+
+        await service.HandleAsync(run.ChatId, JobTools.UpdatePlan, Args(new
+        {
+            changes = new object[]
+            {
+                new { action = "edit", step = H(run, "s3"), details = "other" },
+                new { action = "move", step = H(run, "s4"), after = "start" },
+            },
+        }), Ct);
+
+        await store.Received(1).SupersedeStepUnreplayedAsync(run.Id, s3, Arg.Any<CancellationToken>());
+        await store.DidNotReceive().SupersedeStepUnreplayedAsync(run.Id, s4, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task UpdatePlan_RefusesAStartedStep_AndChangesNothing()
     {
         var run = await JobAsync();
@@ -292,7 +315,7 @@ public sealed class ChatJobToolServiceTests : IDisposable
         var result = await CallAsync(run, JobTools.RestartStep, new { note = "try the other folder" });
 
         Assert.Contains("Restarted", result);
-        await _resume.Received(1).ResumeAsync(run.Id, "try the other folder", Arg.Any<CancellationToken>(), false);
+        await _resume.Received(1).ResumeAsync(run.Id, "try the other folder", Arg.Any<CancellationToken>(), false, Arg.Any<Func<string?, bool>?>());
     }
 
     [Fact]
@@ -323,7 +346,7 @@ public sealed class ChatJobToolServiceTests : IDisposable
     {
         var run = await ParkAsync(await JobAsync(), reason);
         Assert.Equal("Continued the job.", await CallAsync(run, JobTools.Continue));
-        await _resume.Received(1).ResumeAsync(run.Id, null, Arg.Any<CancellationToken>(), false);
+        await _resume.Received(1).ResumeAsync(run.Id, null, Arg.Any<CancellationToken>(), false, Arg.Any<Func<string?, bool>?>());
     }
 
     [Theory]
@@ -350,7 +373,7 @@ public sealed class ChatJobToolServiceTests : IDisposable
     {
         var run = await ParkAsync(await JobAsync(), "needs-input");
         Assert.Contains("Passed the answer", await CallAsync(run, JobTools.Answer, new { answer = "the staging one" }));
-        await _resume.Received(1).ResumeAsync(run.Id, "the staging one", Arg.Any<CancellationToken>(), false);
+        await _resume.Received(1).ResumeAsync(run.Id, "the staging one", Arg.Any<CancellationToken>(), false, Arg.Any<Func<string?, bool>?>());
     }
 
     [Theory]

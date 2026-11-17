@@ -50,7 +50,13 @@ public sealed class ChatJobToolService : IChatJobToolService
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
         if (e.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
+        {
+            var unapplied = _jobs.PeekPlanChanges(e.RunId).Count;
+            if (unapplied > 0)
+                _logger.LogInformation("Run {RunId} settled {State} with {Count} plan change(s) not applied",
+                    e.RunId, e.State, unapplied);
             _jobs.Forget(e.RunId);
+        }
         else if (AgentRunStates.IsParked(e.State))
             _jobs.DropPauseAfterStep(e.RunId);
     }
@@ -219,6 +225,8 @@ public sealed class ChatJobToolService : IChatJobToolService
         if (parsed is null)
             return error!;
 
+        await DiscardParkedCallsOfChangedStepsAsync(run, parsed, ct);
+
         var reason = AgentRunStates.IsParked(run.State) ? RunPauseEnvelope.ReadReason(run) : null;
         var direct = run.State == AgentRunState.Paused
             || (run.State == AgentRunState.WaitingForInput && reason == AgentRunOrchestrator.PlanApprovalReason);
@@ -229,6 +237,22 @@ public sealed class ChatJobToolService : IChatJobToolService
         _logger.LogInformation("Run {RunId}: queued {Count} plan change(s)", run.Id, parsed.Count);
         return await WithBlockAsync(
             "Queued the change; the job applies it before its next step. The block shows it already.", run, ct);
+    }
+
+    // An approval given for the old wording of a step must not run the call that wording produced.
+    private async Task DiscardParkedCallsOfChangedStepsAsync(AgentRun run, IReadOnlyList<JobPlanChange> changes,
+        CancellationToken ct)
+    {
+        if (_toolCalls is null)
+            return;
+        foreach (var stepId in changes.Where(c => c.Kind is JobPlanChangeKind.Edit or JobPlanChangeKind.Remove)
+                     .Select(c => c.StepId).Distinct())
+        {
+            var discarded = await Task.Run(() => _toolCalls.SupersedeStepUnreplayedAsync(run.Id, stepId, ct), ct);
+            if (discarded > 0)
+                _logger.LogInformation("Run {RunId}: discarded {Count} parked call(s) of changed step {StepId}",
+                    run.Id, discarded, stepId);
+        }
     }
 
     private async Task<bool> TryApplyDirectlyAsync(AgentRun run, IReadOnlyList<JobPlanChange> changes, CancellationToken ct)
@@ -416,7 +440,8 @@ public sealed class ChatJobToolService : IChatJobToolService
         }
 
         _logger.SensitiveDebug("Run {RunId} restart note: {Note}", run.Id, text);
-        return await _resume.ResumeAsync(run.Id, text.Length == 0 ? null : text, ct)
+        return await _resume.ResumeAsync(run.Id, text.Length == 0 ? null : text, ct,
+                parkReasonAllowed: r => r == AgentRunService.UserPausedReason)
             ? "Restarted the running step" + (text.Length == 0 ? "." : " with the note.")
             : "The step was stopped, but the job could not be continued; it is paused now.";
     }
@@ -442,7 +467,7 @@ public sealed class ChatJobToolService : IChatJobToolService
         if (run.State != AgentRunState.Paused && !IsContinuable(reason))
             return "This job cannot be continued from the chat.";
 
-        return await _resume.ResumeAsync(run.Id, null, ct)
+        return await _resume.ResumeAsync(run.Id, null, ct, parkReasonAllowed: ModelMayContinue)
             ? "Continued the job."
             : "The job could not be continued; it may already be continuing.";
     }
@@ -456,7 +481,8 @@ public sealed class ChatJobToolService : IChatJobToolService
             return "The answer was empty. Nothing was sent.";
 
         _logger.SensitiveDebug("Run {RunId} answer from chat: {Answer}", run.Id, answer);
-        return await _resume.ResumeAsync(run.Id, answer, ct)
+        return await _resume.ResumeAsync(run.Id, answer, ct,
+                parkReasonAllowed: r => r == AgentRunOrchestrator.NeedsInputReason)
             ? "Passed the answer on; the job goes on."
             : "The answer could not be passed on; the job may already have been answered.";
     }
@@ -466,6 +492,10 @@ public sealed class ChatJobToolService : IChatJobToolService
 
     private static bool IsInterruption(string? reason) =>
         AgentRunOrchestrator.IsInterruptionReason(reason) || reason == HeadlessRunLauncher.ResumeInterruptedReason;
+
+    private static bool ModelMayContinue(string? reason) =>
+        reason is not (AgentRunOrchestrator.PlanApprovalReason or AgentRunOrchestrator.ToolApprovalReason
+            or AgentRunOrchestrator.NeedsInputReason or AgentRunOrchestrator.NeedsGoalReason);
 
     private static bool IsContinuable(string? reason) =>
         IsInterruption(reason) || reason is "step-cap" or "wall-clock" or AgentRunService.UserPausedReason

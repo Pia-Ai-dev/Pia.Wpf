@@ -259,6 +259,12 @@ public interface IAgentRunService
     /// </summary>
     Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default);
 
+    /// <summary>Resume claim that also fails when the park envelope is no longer the one the caller read.</summary>
+    Task<bool> TryClaimParkAsync(Guid runId, AgentRunState from, string? expectedExtraJson, CancellationToken ct = default);
+
+    /// <summary>Settle a parked run as Cancelled; loses to any writer that moved it off the park first.</summary>
+    Task<bool> TryCancelParkedAsync(Guid runId, CancellationToken ct = default);
+
     /// <summary>Reject a plan-approval park: CAS straight to <see cref="AgentRunState.Cancelled"/>, gated on the
     /// pause reason as well as the state so a stale click cannot hit a run that re-parked on another question.</summary>
     Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default);

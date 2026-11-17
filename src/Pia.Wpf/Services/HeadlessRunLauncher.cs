@@ -644,9 +644,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     public event EventHandler<ResumedRunSettledEventArgs>? ResumedRunSettled;
 
     public async Task<bool> ResumeAsync(
-        Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false)
+        Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false,
+        Func<string?, bool>? parkReasonAllowed = null)
     {
-        var claim = await TryClaimForResumeAsync(runId, nudge, declineToolApproval, ct).ConfigureAwait(false);
+        var claim = await TryClaimForResumeAsync(runId, nudge, declineToolApproval, parkReasonAllowed, ct)
+            .ConfigureAwait(false);
         if (claim is not { Run: { } run })
             return false;
 
@@ -756,9 +758,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // T1-3, same rule as the launch path (and for the same reason — see LaunchCoreAsync): a resume that
             // did not take a ticket would jump the queue, being the one dispatch whose wait is not ordered
             // against anything. The PARENT pool's chain, matching the pool the wait below uses.
-            // A chat job approved in the chat starts at once. No ticket either: one taken and never waited on
-            // stalls every later ticket of the pool.
-            var ticket = chatJob ? null : _slots.TakeTicket();
+            // A chat job's plan approval starts at once; every other resume queues. No ticket either: one taken
+            // and never waited on stalls every later ticket of the pool.
+            var ticket = chatJob && parkReason == AgentRunOrchestrator.PlanApprovalReason ? null : _slots.TakeTicket();
             // The ternary is load-bearing: claim.ApprovedTool names the QUESTION, so it is non-null on the
             // decline path too, and replaying there would run the very call the person refused.
             var plan = new ResumeDispatchPlan(
@@ -814,7 +816,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// Paused, and its claim also retires the pause envelope it consumed.
     /// </remarks>
     private async Task<ResumeClaim?> TryClaimForResumeAsync(
-        Guid runId, string? nudge, bool declineToolApproval, CancellationToken ct)
+        Guid runId, string? nudge, bool declineToolApproval, Func<string?, bool>? parkReasonAllowed,
+        CancellationToken ct)
     {
         var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
         if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return null; }
@@ -839,12 +842,27 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             return null;
         }
 
-        var claimed = run.State switch
+        bool claimed;
+        if (parkReasonAllowed is not null)
         {
-            AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
-            AgentRunState.Paused => await _agentRunService.TryResumeFromPauseAsync(runId, ct).ConfigureAwait(false),
-            _ => false,
-        };
+            // The claim is conditioned on the very envelope the reason was read from, so a re-park in between
+            // (a different question) loses the claim instead of being answered by a caller it was not meant for.
+            if (!AgentRunStates.IsParked(run.State) || !parkReasonAllowed(RunPauseEnvelope.ReadReason(run)))
+            {
+                _logger.LogInformation("Resume: run {RunId} is not parked on a question this caller may answer", runId);
+                return null;
+            }
+            claimed = await _agentRunService.TryClaimParkAsync(runId, run.State, run.ExtraJson, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            claimed = run.State switch
+            {
+                AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
+                AgentRunState.Paused => await _agentRunService.TryResumeFromPauseAsync(runId, ct).ConfigureAwait(false),
+                _ => false,
+            };
+        }
         if (!claimed)
         {
             _logger.LogInformation("Resume: run {RunId} not claimable (already resumed/not parked)", runId);
@@ -1135,7 +1153,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// envelope's denial list, so the re-run step hears "declined — adapt" instead of re-parking.
     /// </summary>
     public Task<bool> DeclineAsync(Guid runId, CancellationToken ct = default) =>
-        ResumeAsync(runId, nudge: null, ct, declineToolApproval: true);
+        ResumeAsync(runId, nudge: null, ct, declineToolApproval: true,
+            parkReasonAllowed: r => r == AgentRunOrchestrator.ToolApprovalReason);
 
     /// <summary>Reject a plan-approval park. Never re-enters the dispatch machinery: the CAS settles the row
     /// directly, and the chat notice rides a scoped orchestrator like every other out-of-dispatch write.</summary>
@@ -1144,6 +1163,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         var rejected = await _agentRunService.TryRejectParkedPlanAsync(runId, ct).ConfigureAwait(false);
         if (!rejected)
             return false;
+
+        await PurgeApprovalRecordsAsync(runId).ConfigureAwait(false);
 
         try
         {
@@ -1191,27 +1212,56 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // Revoked first: an unconsumed pause request would make the unwinding loop park instead of settling.
         _steering?.RevokePauseRequest(runId);
 
-        if (_inflight.TryGetValue(runId, out var entry))
+        for (var attempt = 0; ; attempt++)
         {
-            try
+            if (_inflight.TryGetValue(runId, out var entry))
             {
-                entry.Cts.Cancel();
-                return true;
+                try
+                {
+                    entry.Cts.Cancel();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to cancel in-flight run {RunId}", runId);
+                    return false;
+                }
             }
-            catch (Exception ex)
+
+            var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
+            if (run is null)
+                return false;
+
+            if (AgentRunStates.IsParked(run.State))
             {
-                _logger.LogWarning(ex, "Failed to cancel in-flight run {RunId}", runId);
+                // A CAS from the park: a Continue that claimed the run first owns it, and the loop retries.
+                if (await _agentRunService.TryCancelParkedAsync(runId, CancellationToken.None).ConfigureAwait(false))
+                {
+                    await PurgeApprovalRecordsAsync(runId).ConfigureAwait(false);
+                    return true;
+                }
+            }
+            else if (run.State != AgentRunState.Running)
+            {
                 return false;
             }
+
+            // Running with no dispatch entry is a resume between its claim and its registration.
+            if (attempt >= StopRetryAttempts)
+                return false;
+            await Task.Delay(StopRetryDelay, ct).ConfigureAwait(false);
         }
+    }
 
-        // Nothing is dispatching a parked run, so its row is the only thing left to settle.
-        var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
-        if (run is null || !AgentRunStates.IsParked(run.State))
-            return false;
+    private const int StopRetryAttempts = 20;
+    private static readonly TimeSpan StopRetryDelay = TimeSpan.FromMilliseconds(50);
 
-        await _agentRunService.FailAsync(runId, null, cancelled: true, CancellationToken.None).ConfigureAwait(false);
-        return true;
+    private async Task PurgeApprovalRecordsAsync(Guid runId)
+    {
+        if (_exchangeStore is null)
+            return;
+        try { await _exchangeStore.PurgeApprovalRecordsAsync(runId, CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to purge the approval records of run {RunId}", runId); }
     }
 
     /// <summary>

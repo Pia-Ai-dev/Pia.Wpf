@@ -596,6 +596,10 @@ public sealed class AgentRunOrchestrator
                 if (cancelled || failed)
                     break;
 
+                // A change queued after the last loop-top read was promised to the user: drain again to apply it.
+                if (_jobSteering?.PeekPlanChanges(run.Id).Count > 0)
+                    continue;
+
                 // Clean drain → the terminal critic pass (both executors; executor-agnostic like the planner).
                 await SafeSetState(run.Id, AgentRunState.Verifying, cts.Token).ConfigureAwait(false);
                 var verdict = await SafeVerify(run.Id, ctx, persona, provider, cts.Token).ConfigureAwait(false);
