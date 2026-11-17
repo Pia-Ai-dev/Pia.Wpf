@@ -1252,6 +1252,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // Here and not on the state change: a step advance leaves State on Running, and the next timeline row
         // only lands once step N+1's first call RETURNS — so the line would carry step N's tally until then.
         RefreshToolActivity();
+        ApplyReplies();
     }
 
     /// <summary>

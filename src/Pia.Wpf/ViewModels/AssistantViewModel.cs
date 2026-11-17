@@ -401,8 +401,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
         IElevationService? elevation = null,
         // Trailing and defaulted, same discipline; null ⇒ only the main window probes the knowledge-base surface.
-        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null)
+        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null,
+        // Trailing and defaulted; null ⇒ a job's replies stay ordinary bubbles.
+        IRunMessageRecordStore? runMessageRecords = null)
     {
+        InitRunReplies(runMessageRecords);
         _logger = logger;
         _aiClientService = aiClientService;
         _providerService = providerService;
@@ -623,6 +626,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
         SyncEarlierBlocks();
+        if (switchedChat || _replyRecordsChatId != session.Id)
+            LoadReplyRecordsAsync(session.Id).SafeFireAndForget(_logger);
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
         PlanApprovalParkActive = session.PlanApprovalParkActive;
 
@@ -754,7 +759,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnRunBlockAnchorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(RunProgressViewModel.FirstMessageId)
-            or nameof(RunProgressViewModel.LastMessageId) or nameof(RunProgressViewModel.RunCreatedAt))
+            or nameof(RunProgressViewModel.LastMessageId) or nameof(RunProgressViewModel.RunCreatedAt)
+            or nameof(RunProgressViewModel.HasProjected) or nameof(RunProgressViewModel.State))
         {
             SyncTranscriptItems();
         }
@@ -764,6 +770,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         SyncTranscriptItems();
 
     internal void SyncTranscriptItems()
+    {
+        var (placed, trailing) = PlaceRunBlocks();
+        var hidden = ApplyRunReplies(
+            placed.Select(p => p.Block).Concat(trailing).OfType<RunProgressViewModel>());
+        RunBlockPlacement.Apply(TranscriptItems, RunBlockPlacement.Interleave(VisibleMessages, placed, trailing, hidden));
+    }
+
+    private (List<(object Block, RunBlockSlot? Slot)> Placed, List<object> Trailing) PlaceRunBlocks()
     {
         var placed = new List<(object Block, RunBlockSlot? Slot)>();
         var trailing = new List<object>();
@@ -775,16 +789,21 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         }
         if (_runProgress is { } active)
         {
+            // A finished job whose messages were all removed (a regenerate) is not shown.
+            var emptied = IsSettled(active.State) && (active.FirstMessageId ?? active.LastMessageId) is not null;
             var slot = RunBlockPlacement.Place(active.FirstMessageId, active.LastMessageId, active.RunCreatedAt,
-                allowTimeFallback: true, Messages);
-            if (slot is null)
-                trailing.Add(active);
-            else
+                allowTimeFallback: !emptied, Messages);
+            if (slot is not null)
                 placed.Add((active, slot));
+            else if (!emptied)
+                trailing.Add(active);
         }
-
-        RunBlockPlacement.Apply(TranscriptItems, RunBlockPlacement.Interleave(VisibleMessages, placed, trailing));
+        return (placed, trailing);
     }
+
+    private static bool IsSettled(RunProgressState state) =>
+        state is RunProgressState.Completed or RunProgressState.TruncatedCompleted or RunProgressState.Failed
+            or RunProgressState.Stopped;
 
     // Not RunSettled: that event arms itself on a non-terminal State CHANGE, and Planning is the field's
     // default — so a run that fails while planning never raises it, and the offer the gate below suppressed
@@ -1774,17 +1793,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private Task ExecuteRegenerateStyled(RegenerateRequest? request) =>
         request is null ? Task.CompletedTask : RegenerateCore(request.Message, request.Style);
 
-    /// <summary>
-    /// Re-runs the user prompt that produced <paramref name="message"/>, optionally appending a style
-    /// instruction (Shorter / More detailed / Export-ready). Removes the prior answer and anything after
-    /// it, then starts a fresh turn directly via the session manager — bypassing the composer round-trip
-    /// so it never clobbers whatever the user has typed. The style instruction is injected AI-side only,
-    /// so the re-sent user bubble stays the original prompt.
-    /// </summary>
+    // Starts the turn through the session manager, not the composer, so whatever the user has typed survives.
     private async Task RegenerateCore(AssistantMessage? message, RegenerateStyle style)
     {
         // Regenerate truncates the transcript a running job may still be extending.
-        if (message is null || IsStreaming || ForeignRunActive || PlanApprovalParkActive) return;
+        if (message is null || IsStreaming || ForeignRunActive) return;
 
         var idx = Messages.IndexOf(message);
         if (idx <= 0) return;
@@ -1794,6 +1807,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachments.Count == 0
             && string.IsNullOrEmpty(prior.AttachedFileContext)) return;
 
+        var (proceed, discarded) = await ClearJobsForRegenerateAsync(idx - 1);
+        if (!proceed) return;
+        var strayIds = discarded && _chatSessionManager.ActiveSession?.Id is { } chatId
+            ? await UnpulledRowsSinceAsync(chatId, prior.Timestamp)
+            : [];
+        idx = Messages.IndexOf(message);
+        if (idx <= 0 || IsStreaming) return;
+
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
@@ -1801,7 +1822,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var attachedFileContext = prior.AttachedFileContext;
         // Captured before the removal below, which takes the answer a styled instruction has to quote.
         var previousAnswer = message.Content;
-        var removedIds = Messages.Skip(idx - 1).Select(m => m.Id).ToList();
+        var removedIds = Messages.Skip(idx - 1).Select(m => m.Id).Concat(strayIds).ToList();
         for (var i = Messages.Count - 1; i >= idx - 1; i--)
             Messages.RemoveAt(i);
 
@@ -3047,6 +3068,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _disposed = true;
         // Before anything else: a report left behind would defer the restart overlay for the whole process.
         _volatileWork?.Forget(this);
+        DisposeRunReplies();
         VoiceMode?.Dispose();
         VoiceMode = null;
         MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;

@@ -1,0 +1,17 @@
+<UserControl x:Class="Pia.Controls.Assistant.RunStepReplies"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Pia.Controls"
+             Visibility="{Binding HasReplies, Converter={StaticResource BooleanToVisibilityConverter}}">
+  <!-- DataContext: a StepRowViewModel. The chat replies this step wrote, shown in its row instead of as bubbles. -->
+  <ItemsControl ItemsSource="{Binding Replies}" Margin="25,2,0,6">
+    <ItemsControl.ItemTemplate>
+      <DataTemplate>
+        <Border Margin="0,2,0,0" Padding="10,6" CornerRadius="6"
+                Background="{DynamicResource SurfaceMutedBrush}">
+          <controls:MarkdownMessageControl MarkdownText="{Binding Content}" AutomationIdSuffix="{Binding Id}" />
+        </Border>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

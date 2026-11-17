@@ -4,6 +4,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:assistant="clr-namespace:Pia.Controls.Assistant"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              x:Name="Root">
   <!-- Run-progress card. The SIGNAL BAND at the top is the single carrier of run state: its tint, its icon and
@@ -596,6 +597,7 @@
                                    CommandParameter="{Binding}" />
                       </Grid>
                     </Border>
+                    <assistant:RunStepReplies />
                   </StackPanel>
                 </Border>
               </DataTemplate>
@@ -621,6 +623,7 @@
           <ItemsControl ItemsSource="{Binding LastStepView}"
                         ItemTemplate="{Binding ItemTemplate, ElementName=StepsList}"
                         Visibility="{Binding HasLastStepRow, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <assistant:RunEarlierAttempts />
 
           <!-- "Check the result": not a Steps entry, so it never counts toward the tally, folds or the edit verbs. -->
           <Grid MinHeight="28" Margin="-2,0,0,1"
