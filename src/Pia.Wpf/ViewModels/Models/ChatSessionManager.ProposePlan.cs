@@ -83,24 +83,30 @@ public sealed partial class ChatSessionManager
                 policyJson = HeadlessRunLauncher.ChatJobEmptyEnvelopeJson;
             }
 
-            run = await _agentRunService.CreateAsync(new AgentRunCreateRequest(
+            run = await Task.Run(() => _agentRunService.CreateAsync(new AgentRunCreateRequest(
                 chatId, RunShape.Planned, AgentRunTrigger.User, Goal: plan.Goal, PolicyJson: policyJson,
-                PersonaId: persona.Id));
-            await _agentRunService.ReplaceStepsAsync(run.Id, steps);
-            await _agentRunService.SetRunMessageRangeAsync(run.Id, proposing.Id, proposing.Id);
+                PersonaId: persona.Id)));
+            var runId = run.Id;
+            await Task.Run(async () =>
+            {
+                await _agentRunService.ReplaceStepsAsync(runId, steps);
+                await _agentRunService.SetRunMessageRangeAsync(runId, proposing.Id, proposing.Id);
+            });
             // Attached before the park so the park event finds the session holding the run.
-            session.SetActiveRun(run.Id);
-            await _agentRunService.PauseAsync(run.Id, AgentRunOrchestrator.PlanApprovalReason);
+            session.SetActiveRun(runId);
+            await Task.Run(() => _agentRunService.PauseAsync(runId, AgentRunOrchestrator.PlanApprovalReason));
             session.SetPlanApprovalParkActive(true);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Chat {ChatId}: creating the proposed job failed", chatId);
-            if (run is not null)
+            if (run is { } created)
             {
+                if (session.ActiveRunId == created.Id)
+                    session.SetActiveRun(null);
                 // An orphan left unfinished would refuse every later plan in this chat.
-                try { await _agentRunService.FailAsync(run.Id, "propose-plan-create-failed"); }
-                catch (Exception failEx) { _logger.LogWarning(failEx, "Run {RunId}: settling the failed proposal failed", run.Id); }
+                try { await Task.Run(() => _agentRunService.FailAsync(created.Id, FailureReasonText.ProposePlanCreateFailure)); }
+                catch (Exception failEx) { _logger.LogWarning(failEx, "Run {RunId}: settling the failed proposal failed", created.Id); }
             }
             return new ProposePlanOutcome(ProposePlanSaveFailedResult, EndsTurn: false);
         }
@@ -113,8 +119,8 @@ public sealed partial class ChatSessionManager
 
     private async Task<bool> HasUnfinishedJobAsync(Guid chatId)
     {
-        var runs = await _agentRunService.GetByChatAsync(chatId);
-        return runs.Any(r => r.ParentRunId is null && r.IsChatJob()
+        var runs = await Task.Run(() => _agentRunService.GetByChatAsync(chatId));
+        return runs.Any(r => r.ParentRunId is null && r.RunShape == RunShape.Planned
             && r.State is not (AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled));
     }
 

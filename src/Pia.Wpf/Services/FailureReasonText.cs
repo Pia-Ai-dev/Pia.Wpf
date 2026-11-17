@@ -8,6 +8,8 @@ namespace Pia.Services;
 /// </summary>
 public static class FailureReasonText
 {
+    public const string ProposePlanCreateFailure = "propose-plan-create-failed";
+
     public static string? Describe(string? reason, ILocalizationService localization) => reason switch
     {
         null or "" => null,
@@ -16,6 +18,7 @@ public static class FailureReasonText
         HeadlessRunLauncher.WorkspaceSetupFailure => localization["Run_Failed_WorkspaceSetup"],
         HeadlessRunLauncher.ShutdownInterruptedFailure => localization["Run_Failed_Interrupted"],
         AgentRunOrchestrator.SupersededFailureReason => localization["Run_Failed_Superseded"],
+        ProposePlanCreateFailure => localization["Run_Failed_ProposePlan"],
         _ => reason,
     };
 }

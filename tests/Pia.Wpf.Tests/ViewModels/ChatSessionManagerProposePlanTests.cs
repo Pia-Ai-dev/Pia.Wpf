@@ -92,7 +92,7 @@ public class ChatSessionManagerProposePlanTests
         await Task.Yield();
     }
 
-    private ChatSessionManager CreateSut()
+    private ChatSessionManager CreateSut(IAgentRunResumeService? resume = null, IChatJobToolService? jobTools = null)
     {
         SynchronizationContext.SetSynchronizationContext(new InlineSynchronizationContext());
         var orchestrator = new AgentRunOrchestrator(
@@ -106,7 +106,8 @@ public class ChatSessionManagerProposePlanTests
             () => _tokenMap, Substitute.For<IBackgroundChatNotifier>(),
             Substitute.For<Pia.Services.Flow.IFlowService>(), Substitute.For<IFilesToolHandler>(), orchestrator, _runService,
             _capability, Substitute.For<IGoalTriageService>(), Substitute.For<IHeadlessRunLauncher>(),
-            Substitute.For<IWindowManagerService>(), new ExecutingRunStore());
+            Substitute.For<IWindowManagerService>(), new ExecutingRunStore(),
+            resumeService: resume, jobTools: jobTools);
     }
 
     private static Dictionary<string, object?> Args(params string[] titles) => new()
@@ -288,5 +289,60 @@ public class ChatSessionManagerProposePlanTests
         session.SetActiveRun(runId);
 
         Assert.Equal(accepted, await sut.StartTurnAsync(session, "drop step 3", null));
+    }
+
+    [Fact]
+    public async Task AnUnfinishedRunWithoutTheJobMarker_AlsoRefusesASecondPlan()
+    {
+        _runService.GetByChatAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new List<AgentRun>
+        {
+            new() { Id = Guid.NewGuid(), RunShape = RunShape.Planned, State = AgentRunState.WaitingForInput },
+        });
+        _proposeArgs = () => Args("Collect", "Compare");
+        await SendAsync(CreateSut());
+
+        Assert.Equal(ChatSessionManager.ProposePlanJobExistsResult, _toolResult);
+        await _runService.DidNotReceiveWithAnyArgs().CreateAsync(default!, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task AFailedPark_DetachesTheRun_AndRecordsALocalizedReason()
+    {
+        _runService.PauseAsync(default, default, TestContext.Current.CancellationToken)
+            .ReturnsForAnyArgs(Task.FromException(new InvalidOperationException()));
+        _proposeArgs = () => Args("Collect", "Compare");
+        var session = await SendAsync(CreateSut());
+
+        Assert.Null(session.ActiveRunId);
+        await _runService.Received(1).FailAsync(Arg.Any<Guid>(), FailureReasonText.ProposePlanCreateFailure,
+            Arg.Any<bool>(), Arg.Any<CancellationToken>(), Arg.Any<PiaFailure?>());
+        Assert.Equal("Run_Failed_ProposePlan", FailureReasonText.Describe(FailureReasonText.ProposePlanCreateFailure, _loc));
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task ATypedAnswerToAJobQuestion_ResumesTheJob_OnlyWhenTheTurnWouldCarryNoTools(bool toolCapable, bool resumed)
+    {
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>())
+            .Returns(new AiProvider { Id = Guid.NewGuid(), Name = "P", Endpoint = "https://x", SupportsToolCalling = toolCapable });
+        var runId = Guid.NewGuid();
+        _runService.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = runId, RunShape = RunShape.Planned, State = AgentRunState.WaitingForInput,
+            ExtraJson = JsonSerializer.Serialize(new { paused = true, reason = AgentRunOrchestrator.NeedsInputReason }),
+        });
+        var jobTools = Substitute.For<IChatJobToolService>();
+        jobTools.TypedMessageIsTurnAsync(runId, Arg.Any<CancellationToken>()).Returns(true);
+        var resume = Substitute.For<IAgentRunResumeService>();
+        resume.ResumeAsync(runId, Arg.Any<string?>(), Arg.Any<CancellationToken>(), Arg.Any<bool>()).Returns(true);
+        var sut = CreateSut(resume, jobTools);
+        var session = sut.GetOrCreateActiveForNewChat();
+        session.SetActiveRun(runId);
+
+        Assert.True(await sut.StartTurnAsync(session, "the blue one", null));
+        await Eventually.TrueAsync(() => !session.IsStreaming, "turn finished", TestContext.Current.CancellationToken);
+
+        await resume.Received(resumed ? 1 : 0).ResumeAsync(runId, "the blue one", Arg.Any<CancellationToken>(), Arg.Any<bool>());
     }
 }
