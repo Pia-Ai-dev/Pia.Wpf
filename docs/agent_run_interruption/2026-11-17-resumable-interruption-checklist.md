@@ -55,7 +55,7 @@ steps in its Blocks column.
 - [x] **8 — A failed resume keeps the interruption token.** A continuation that fails before dispatch
   re-parks with the same reason instead of `resume-interrupted`.
   *Deps:* 3 · *Effort:* XS · *Value:* Med
-- [ ] **9 — A typed Agent-mode message continues the run.** A send while the run is parked on an
+- [x] **9 — A typed Agent-mode message continues the run.** A send while the run is parked on an
   interruption resumes it with the text as the note and creates no new run.
   *Deps:* 3, 8 · *Effort:* S · *Value:* High
 - [ ] **10 — Gate.** Zero-warning rebuild in Debug and Release, the full test exe at `Failed: 0`, the manual
