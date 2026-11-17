@@ -85,6 +85,8 @@ public class AssistantChatRetentionService : BackgroundService
                     _logger.LogInformation(
                         "Assistant chat retention skipped: {Count} chat(s) could not be confirmed against the server",
                         candidates.Count);
+                    // The terminal runs' approval records are local-only and must not wait on the server.
+                    await _exchangeStore.PruneAsync(DateTime.MinValue, ct);
                     return;
                 }
             }

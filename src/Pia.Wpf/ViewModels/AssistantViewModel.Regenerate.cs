@@ -5,7 +5,7 @@ namespace Pia.ViewModels;
 public partial class AssistantViewModel
 {
     // A discarded plan posts a note into the chat, which the caller has to remove with the rest.
-    private async Task<(bool Proceed, bool Discarded)> ClearJobsForRegenerateAsync(int cut)
+    private async Task<(bool Proceed, IReadOnlyList<Guid> DiscardedRuns)> ClearJobsForRegenerateAsync(int cut)
     {
         var (placed, trailing) = PlaceRunBlocks();
         var shown = placed.Select(p => ((RunProgressViewModel)p.Block, p.Slot))
@@ -17,18 +17,18 @@ public partial class AssistantViewModel
 
         // The session knows of a waiting plan this view has no block for; nothing here can discard it.
         if (_subscribedSession?.PlanApprovalParkActive == true && !shown.Any(s => s.Item1.HasProjected && s.Item1.IsPlanApprovalPause))
-            return (false, false);
+            return (false, []);
 
         switch (decision.Verdict)
         {
             case RegenerateVerdict.BlockedRunning:
-                return (false, false);
+                return (false, []);
             case RegenerateVerdict.BlockedUntilStopped:
                 _snackbarService.Show(
                     _localizationService["RunRegenerate_BlockedTitle"],
                     _localizationService["RunRegenerate_BlockedPaused"],
                     Wpf.Ui.Controls.ControlAppearance.Caution, null, TimeSpan.FromSeconds(5));
-                return (false, false);
+                return (false, []);
         }
 
         foreach (var runId in decision.DiscardFirst)
@@ -36,18 +36,18 @@ public partial class AssistantViewModel
             try
             {
                 if (!await _resumeService.RejectPlanAsync(runId))
-                    return (false, false);
+                    return (false, []);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Run {RunId}: discarding the waiting plan before a regenerate failed", runId);
-                return (false, false);
+                return (false, []);
             }
             _regenerateEmptiedRuns.Add(runId);
             _logger.LogInformation("Run {RunId}: waiting plan discarded for a regenerate", runId);
         }
 
-        return (true, decision.DiscardFirst.Count > 0);
+        return (true, [.. decision.DiscardFirst]);
     }
 
     private HashSet<Guid> JobMessageIds(RunProgressViewModel block)
@@ -58,16 +58,24 @@ public partial class AssistantViewModel
         return ids;
     }
 
-    // Rows the transcript has not pulled yet, such as a discard's note; they would land below the new answer.
-    private async Task<IReadOnlyList<Guid>> UnpulledRowsAsync(Guid chatId)
+    // A discard's note the transcript has not pulled yet would land below the new answer; other rows are not ours.
+    private async Task<IReadOnlyList<Guid>> UnpulledDiscardNotesAsync(Guid chatId, IReadOnlyList<Guid> discardedRuns)
     {
+        if (discardedRuns.Count == 0 || _runMessageRecords is null)
+            return [];
         try
         {
+            var runMessages = (await _runMessageRecords.GetByChatAsync(chatId))
+                .Where(r => discardedRuns.Contains(r.RunId))
+                .Select(r => r.MessageId)
+                .ToHashSet();
+            if (runMessages.Count == 0)
+                return [];
             var stored = await _chatService.GetAsync(chatId);
             if (stored is null)
                 return [];
             var known = Messages.Select(m => m.Id).ToHashSet();
-            return [.. stored.Messages.Where(m => !known.Contains(m.Id)).Select(m => m.Id)];
+            return [.. stored.Messages.Select(m => m.Id).Where(id => !known.Contains(id) && runMessages.Contains(id))];
         }
         catch (Exception ex)
         {

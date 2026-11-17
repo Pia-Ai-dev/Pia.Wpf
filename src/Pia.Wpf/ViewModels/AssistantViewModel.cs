@@ -1826,10 +1826,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachments.Count == 0
             && string.IsNullOrEmpty(prior.AttachedFileContext)) return;
 
-        var (proceed, discarded) = await ClearJobsForRegenerateAsync(idx - 1);
+        var (proceed, discardedRuns) = await ClearJobsForRegenerateAsync(idx - 1);
         if (!proceed) return;
-        var strayIds = discarded && _chatSessionManager.ActiveSession?.Id is { } chatId
-            ? await UnpulledRowsAsync(chatId)
+        var strayIds = _chatSessionManager.ActiveSession?.Id is { } chatId
+            ? await UnpulledDiscardNotesAsync(chatId, discardedRuns)
             : [];
         idx = Messages.IndexOf(message);
         if (idx <= 0 || IsStreaming) return;

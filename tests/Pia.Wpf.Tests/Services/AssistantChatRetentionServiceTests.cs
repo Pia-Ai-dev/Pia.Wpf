@@ -113,6 +113,22 @@ public sealed class AssistantChatRetentionServiceTests
         await _timeline.DidNotReceive().PruneOlderThanAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task RetentionCleanup_WhenTheServerCannotBeReached_StillDropsTerminalRunApprovalRecords()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        SyncOn();
+        Candidates(Guid.NewGuid());
+        _handler.FailEverything = true;
+
+        await CreateSut().RunCleanupAsync(ct);
+
+        // A minimum cutoff ages nothing out, so only the terminal-run approval clause can match.
+        await _exchanges.Received(1).PruneAsync(DateTime.MinValue, Arg.Any<CancellationToken>());
+        await _exchanges.DidNotReceive().PruneAsync(
+            Arg.Is<DateTime>(d => d != DateTime.MinValue), Arg.Any<CancellationToken>());
+    }
+
     // The hole this closes: confirming 60 of 100 and evicting the rest deletes them on exactly the
     // unconfirmed dates the check exists to distrust.
     [Fact]

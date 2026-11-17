@@ -71,6 +71,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         var chatId = Guid.NewGuid();
         AgentRun? run = null;
         Persona? persona = null;
+        // These stable Ids delimit the run's transcript slice; a failure write reuses them to overwrite, not append.
+        var userMsgId = Guid.NewGuid();
+        var assistantMsgId = Guid.NewGuid();
         try
         {
             // The AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON, so the
@@ -209,14 +212,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     }
                     catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail/empty) failed for {RunId}", run.Id); }
                 }
-                await PersistFailedTurnAsync(chatId, request, persona, AgentStepTools.EmptyResponseFailure, ct);
+                await PersistFailedTurnAsync(
+                    chatId, userMsgId, assistantMsgId, request, persona, AgentStepTools.EmptyResponseFailure, ct);
                 return new BackgroundTurnResult(chatId, false, "Empty response");
             }
 
             var now = DateTime.UtcNow;
-            // These stable Ids delimit the run's transcript slice (First/LastMessageId).
-            var userMsgId = Guid.NewGuid();
-            var assistantMsgId = Guid.NewGuid();
             var chat = new SyncAssistantChat
             {
                 Id = chatId,
@@ -301,7 +302,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 }
                 catch (Exception bk) { _logger.LogWarning(bk, "Run bookkeeping (fail) failed for {RunId}", run.Id); }
             }
-            await PersistFailedTurnAsync(chatId, request, persona, ex.Message, CancellationToken.None);
+            await PersistFailedTurnAsync(
+                chatId, userMsgId, assistantMsgId, request, persona, ex.Message, CancellationToken.None);
             return new BackgroundTurnResult(chatId, false, ex.Message);
         }
         finally
@@ -808,7 +810,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// <summary>Prompt plus the failed-response message an interactive turn shows, written over the stub chat
     /// so it is not blank. Best-effort, like the run bookkeeping beside it.</summary>
     private async Task PersistFailedTurnAsync(
-        Guid chatId, BackgroundTurnRequest request, Persona? persona, string reason, CancellationToken ct)
+        Guid chatId, Guid userMsgId, Guid assistantMsgId, BackgroundTurnRequest request, Persona? persona,
+        string reason, CancellationToken ct)
     {
         try
         {
@@ -828,14 +831,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 [
                     new SyncAssistantChatMessage
                     {
-                        Id = Guid.NewGuid(),
+                        Id = userMsgId,
                         Role = "user",
                         Content = request.Prompt,
                         Timestamp = now,
                     },
                     new SyncAssistantChatMessage
                     {
-                        Id = Guid.NewGuid(),
+                        Id = assistantMsgId,
                         Role = "assistant",
                         Content = FailedResponseText(reason),
                         Timestamp = now,
@@ -861,8 +864,11 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             await _chatService.UpsertMessagesAsync(chat, writeHeader: true, ct);
             return;
         }
-        if (setTitle && !string.IsNullOrWhiteSpace(chat.Title))
-            await _chatService.SetTitleAsync(chat.Id, chat.Title, ct);
+        if (!setTitle || string.IsNullOrWhiteSpace(chat.Title))
+            return;
+        // The rows are saved; a title fault must not turn the turn into a failure.
+        try { await _chatService.SetTitleAsync(chat.Id, chat.Title, CancellationToken.None); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Could not set the title of background chat {ChatId}", chat.Id); }
     }
 
     // English only when no localizer was supplied, i.e. a hand-built test harness.

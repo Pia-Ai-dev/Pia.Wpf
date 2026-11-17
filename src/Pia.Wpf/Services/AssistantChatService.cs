@@ -191,7 +191,9 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 delete.CommandText = "DELETE FROM AssistantChatMessages WHERE ChatId = @ChatId AND Id = @Id";
                 delete.Parameters.AddWithValue("@ChatId", chatId.ToString());
                 delete.Parameters.AddWithValue("@Id", id.ToString());
-                deleted += await delete.ExecuteNonQueryAsync(ct);
+                if (await delete.ExecuteNonQueryAsync(ct) == 0)
+                    continue;
+                deleted++;
 
                 using var deleteRecord = connection.CreateCommand();
                 deleteRecord.Transaction = transaction;
@@ -232,7 +234,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @AgentContextMode, @IsFavorite, @ExtraJson)
             ON CONFLICT(Id) DO UPDATE SET
                 SchemaVersion = excluded.SchemaVersion,
-                Title = excluded.Title,
+                Title = COALESCE(excluded.Title, AssistantChats.Title),
                 UpdatedAt = excluded.UpdatedAt,
                 LastAccessedAt = excluded.LastAccessedAt,
                 WindowMode = excluded.WindowMode,

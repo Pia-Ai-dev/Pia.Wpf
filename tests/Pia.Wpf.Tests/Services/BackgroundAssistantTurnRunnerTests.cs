@@ -745,6 +745,46 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
+    public async Task ATitleFaultAfterTheRowsAreSaved_DoesNotFailTheTurnOrAppendAFailureRow()
+    {
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var runner = h.Build([]);
+        h.Chats.SetTitleAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new InvalidOperationException("database is locked"));
+
+        var result = await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        await h.Chats.Received(1).SetTitleAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await h.Chats.Received(1).UpsertMessagesAsync(
+            Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AFailureAfterTheRowsAreSaved_OverwritesTheTurnsRows_UnderTheSameIds()
+    {
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var saved = new List<List<Guid>>();
+        var runner = h.Build([]);
+        h.Chats.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                saved.Add(ci.Arg<SyncAssistantChat>().Messages.Select(m => m.Id).ToList());
+                if (saved.Count == 1)
+                    throw new InvalidOperationException("database is locked");
+                return true;
+            });
+
+        var result = await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), Title = "Mine" }, CancellationToken.None);
+
+        Assert.Equal(2, saved.Count);
+        Assert.False(result.Succeeded);
+        Assert.Equal(saved[0], saved[1]);
+    }
+
+    [Fact]
     public async Task AFailedTurnWithoutACallerTitle_StillTitlesItsChat()
     {
         var h = new Harness { Localization = KeyEchoLocalizer() };

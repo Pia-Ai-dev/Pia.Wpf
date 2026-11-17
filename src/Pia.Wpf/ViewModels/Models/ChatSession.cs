@@ -159,6 +159,12 @@ public sealed partial class ChatSession : IDisposable
 
     internal string? StoredHeaderFingerprint { get; set; }
 
+    // Removed here, so a pull must not bring them back, even from a read taken before the delete.
+    internal HashSet<Guid> DroppedMessageIds { get; } = [];
+
+    // Dropped ids whose store delete has not been confirmed; the next persist retries them.
+    internal HashSet<Guid> PendingDeleteIds { get; } = [];
+
     private IChatJobToolService? _jobTools;
 
     public ChatSession(
@@ -1025,6 +1031,7 @@ public sealed partial class ChatSession : IDisposable
             Messages.Remove(assistantMessage);
             _stepToolExchanges.Remove(assistantMessage.Id);
             _answeredSteps.Remove(assistantMessage.Id);
+            MessagesDropped?.Invoke(this, [assistantMessage.Id]);
             return new StepTurnResult(
                 Succeeded: false, Cancelled: false, Error: error, VisibleText: string.Empty,
                 Usage: usage, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
