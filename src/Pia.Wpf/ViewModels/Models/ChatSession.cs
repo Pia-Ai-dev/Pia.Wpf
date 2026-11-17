@@ -847,6 +847,7 @@ public sealed class ChatSession : IDisposable
         var emptyResponseSynthesized = false;
         string? error = null;
         UsageDetails? usage = null;
+        StepInterruption? interruption = null;
         try
         {
             ct.ThrowIfCancellationRequested();
@@ -869,6 +870,7 @@ public sealed class ChatSession : IDisposable
             error = _localizationService.Format("Msg_Assistant_ResponseTimedOut", ex.ProviderName, ex.TimeoutSeconds);
             if (string.IsNullOrEmpty(assistantMessage.Content))
                 assistantMessage.Content = error;
+            interruption = ClassifyStepInterruption(spec, ex, ct);
         }
         catch (Pia.Services.Exceptions.LlmTruncatedException ex)
         {
@@ -899,6 +901,7 @@ public sealed class ChatSession : IDisposable
             error = _localizationService["Msg_Assistant_Offline"];
             if (string.IsNullOrEmpty(assistantMessage.Content))
                 assistantMessage.Content = error;
+            interruption = ClassifyStepInterruption(spec, ex, ct);
         }
         catch (Exception ex)
         {
@@ -907,6 +910,7 @@ public sealed class ChatSession : IDisposable
             if (string.IsNullOrEmpty(assistantMessage.Content))
                 assistantMessage.Content =
                     _localizationService.Format("Msg_Assistant_ResponseFailed", ex.Message);
+            interruption = ClassifyStepInterruption(spec, ex, ct);
         }
         finally
         {
@@ -981,6 +985,21 @@ public sealed class ChatSession : IDisposable
                 spec.RunId, spec.Ordinal, userInputStore.RefusedCalls);
         }
 
+        if (askedQuestion is not null)
+            interruption = null;
+
+        // The run parks and the step re-runs, so its error bubble would only be noise in the chat.
+        if (interruption is not null)
+        {
+            Messages.Remove(assistantMessage);
+            _stepToolExchanges.Remove(assistantMessage.Id);
+            _answeredSteps.Remove(assistantMessage.Id);
+            return new StepTurnResult(
+                Succeeded: false, Cancelled: false, Error: error, VisibleText: string.Empty,
+                Usage: usage, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
+                Interruption: interruption);
+        }
+
         // Stable Guid Id (AssistantMessage ctor self-assigns) → the R3 transcript slice.
         var id = assistantMessage.Id;
         var stepSucceeded = succeeded && error is null;
@@ -1011,6 +1030,9 @@ public sealed class ChatSession : IDisposable
             // Unlike the headless twin, does not blank VisibleText: the reply is already on screen and persisted.
             UserInputQuestion: askedQuestion);
     }
+
+    private static StepInterruption? ClassifyStepInterruption(StepTurnSpec spec, Exception ex, CancellationToken ct)
+        => !spec.UseGoalVerbatim && !ct.IsCancellationRequested ? StepInterruptionClassifier.Classify(ex) : null;
 
     private List<ChatMessage> StepToolExchangeSink(Guid assistantMessageId)
     {

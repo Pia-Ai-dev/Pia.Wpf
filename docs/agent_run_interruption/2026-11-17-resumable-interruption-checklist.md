@@ -46,7 +46,7 @@ steps in its Blocks column.
 - [x] **5 — The headless executor names the interruption.** A background or resumed step sets the member,
   behind the approval and question parks and never while the run is being cancelled.
   *Deps:* 3, Q1 · *Effort:* XS · *Value:* High
-- [ ] **6 — The live step names the interruption and drops its error bubble.** An interactive step sets the
+- [x] **6 — The live step names the interruption and drops its error bubble.** An interactive step sets the
   member and removes the error text the resumed step would otherwise read as its own answer.
   *Deps:* 3 · *Effort:* S · *Value:* High
 - [ ] **7 — The card and the Flow item say why.** Four reasons in three languages on the run card and the
