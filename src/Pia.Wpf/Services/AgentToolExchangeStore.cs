@@ -93,7 +93,8 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
                         runId, stepId, round, totals.MaxSeq, totals.MaxMessageSeq, readable, now));
                 }
 
-                var batchChars = rows.Sum(r => (long)r.Chars);
+                var batchChars = rows.Sum(r => (long)r.Chars
+                    + (r.ReadableArgumentsJson?.Length ?? 0) + (r.ReadableResultText?.Length ?? 0));
                 if (totals.CarriedRows + rows.Count > MaxRowsPerRun ||
                     totals.CarriedChars + batchChars > MaxCharsPerRun)
                 {
@@ -588,7 +589,9 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
             SELECT COALESCE(MAX(Seq), 0),
                    COALESCE(MAX(MessageSeq), 0),
                    COUNT(CASE WHEN Kind IN (1, 2) THEN 1 END),
-                   COALESCE(SUM(CASE WHEN Kind IN (1, 2) THEN Chars END), 0)
+                   COALESCE(SUM(CASE WHEN Kind IN (1, 2) THEN Chars
+                       + COALESCE(LENGTH(ReadableArgumentsJson), 0)
+                       + COALESCE(LENGTH(ReadableResultText), 0) END), 0)
             FROM AgentToolExchanges
             WHERE RunId = @RunId;
             """;

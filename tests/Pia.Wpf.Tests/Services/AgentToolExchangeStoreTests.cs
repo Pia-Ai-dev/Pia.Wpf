@@ -148,6 +148,27 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadableCopies_CountAgainstTheRunCharCap()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+
+        // With its readable copy each round weighs about half the cap, so only two fit.
+        var bodyChars = (AgentToolExchangeStore.MaxCharsPerRun / 4) - 100;
+        for (var i = 0; i < 3; i++)
+        {
+            List<ChatMessage> readable =
+            [
+                Round(i)[0],
+                new(ChatRole.Tool, [new FunctionResultContent("c" + i, new string('r', bodyChars))]),
+            ];
+            await _store.RecordAsync(run.Id, null, i + 1, Round(i, bodyChars), ct, readable: readable);
+        }
+
+        Assert.Equal(4, (await _store.ReadCarriedAsync(run.Id, ct)).Count);
+    }
+
+    [Fact]
     public async Task AnArgumentOverMaxRowChars_KeepsTheCallButOmitsTheArgs()
     {
         var ct = TestContext.Current.CancellationToken;
