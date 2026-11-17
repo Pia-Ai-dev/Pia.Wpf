@@ -637,7 +637,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         SyncEarlierBlocks();
         if (switchedChat || _replyRecordsChatId != session.Id)
             LoadReplyRecordsAsync(session.Id).SafeFireAndForget(_logger);
+        if (switchedChat)
+            ChatJobComposerOpen = false;
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
+        RefreshChatJobComposerAsync().SafeFireAndForget(_logger);
         PlanApprovalParkActive = LocksSendAtPlanApproval(session.PlanApprovalParkActive);
 
         // An attachment was staged for the chat the user was in, so it does not follow them to another one —
@@ -665,7 +668,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // The session raises ActiveRunChanged on the UI thread (its Planned branch runs there), but marshal
     // defensively so a future off-thread caller can't touch the bound RunProgressViewModel cross-thread.
     private void OnActiveRunChanged(object? sender, Guid? runId) =>
-        _uiDispatcher.Post(() => SyncRunProgress(runId));
+        _uiDispatcher.Post(() =>
+        {
+            SyncRunProgress(runId);
+            RefreshChatJobComposerAsync().SafeFireAndForget(_logger);
+        });
 
     // The manager already marshals the flip to the UI thread (G3); marshal defensively anyway, for the same
     // reason OnActiveRunChanged does — this sets a bound property and re-evaluates a command.
