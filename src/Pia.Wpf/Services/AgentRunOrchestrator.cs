@@ -27,6 +27,7 @@ public sealed class AgentRunOrchestrator
     private readonly IRunWorkspaceService? _workspaces;
     private readonly IHeadlessRunLauncher? _childLauncher;
     private readonly IAssistantChatService? _chats;
+    private readonly IRunMessageRecordStore? _messageRecords;
     private readonly IRunSteeringStore? _steering;
     private readonly ILocalizationService? _localization;
     private readonly IAiClientService? _ai;
@@ -139,8 +140,10 @@ public sealed class AgentRunOrchestrator
         IAssistantChatService? chats = null,
         IRunSteeringStore? steering = null,
         ILocalizationService? localization = null,
-        IAiClientService? ai = null)
+        IAiClientService? ai = null,
+        IRunMessageRecordStore? messageRecords = null)
     {
+        _messageRecords = messageRecords;
         _runService = runService;
         _planner = planner;
         _verifier = verifier;
@@ -1830,6 +1833,13 @@ public sealed class AgentRunOrchestrator
         try
         {
             var now = DateTime.UtcNow;
+            if (_messageRecords is not null
+                && run.Plan.FirstOrDefault(s => s.Status == AgentStepStatus.Running) is { } askingStep)
+            {
+                await _messageRecords.RecordAsync(
+                    new RunMessageRecord(messageId, run.Id, askingStep.Id, askingStep.Ordinal, now)).ConfigureAwait(false);
+            }
+
             var appended = await _chats.UpsertMessagesAsync(new SyncAssistantChat
             {
                 Id = run.ChatId,

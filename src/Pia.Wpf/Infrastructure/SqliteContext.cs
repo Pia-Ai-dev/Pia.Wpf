@@ -631,6 +631,19 @@ public class SqliteContext : IDisposable
 
             CREATE INDEX IF NOT EXISTS IX_AgentToolExchanges_RunId    ON AgentToolExchanges(RunId, Seq);
             CREATE INDEX IF NOT EXISTS IX_AgentToolExchanges_CreatedAt ON AgentToolExchanges(CreatedAt);
+
+            -- Which chat messages a job wrote and the step it was on. Device-local, never synced. MessageId is not a
+            -- foreign key: a full chat save deletes and re-inserts every message row.
+            CREATE TABLE IF NOT EXISTS AgentRunMessages (
+                MessageId   TEXT PRIMARY KEY,
+                RunId       TEXT    NOT NULL,
+                StepId      TEXT    NULL,
+                StepOrdinal INTEGER NULL,
+                CreatedAt   TEXT    NOT NULL,
+                FOREIGN KEY (RunId) REFERENCES AgentRuns(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AgentRunMessages_RunId ON AgentRunMessages(RunId);
             """;
         command.ExecuteNonQuery();
 

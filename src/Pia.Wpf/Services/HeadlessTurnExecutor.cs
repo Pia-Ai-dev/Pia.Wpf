@@ -120,6 +120,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     private bool _replayAttempted;
 
+    private readonly IRunMessageRecordStore? _messageRecords;
+    private AgentStep? _replyStep;
+
     public HeadlessTurnExecutor(
         BackgroundAssistantTurnRunner engine,
         IAssistantChatService chatService,
@@ -141,8 +144,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         ISessionToolGrantStore? sessionGrants = null,
         // Trailing and defaulted for the same reason, and null is again the conservative answer: no rows are
         // written and a resume seeds prose alone, which is the pre-store behaviour.
-        IAgentToolExchangeStore? exchangeStore = null)
+        IAgentToolExchangeStore? exchangeStore = null,
+        IRunMessageRecordStore? messageRecords = null)
     {
+        _messageRecords = messageRecords;
         _engine = engine;
         _chatService = chatService;
         _settingsService = settingsService;
@@ -458,19 +463,23 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // land in the workspace this step writes into.
         await ReplayApprovedParkedCallsAsync(step.Id, TimelineScope(step.Id), ct).ConfigureAwait(false);
 
-        // Batch 08 D4: the ONLY place a user steering note may ride — composed here (this method has ctx),
-        // never inside RunExchangeStepAsync, which keeps taking a plain string and never sees ctx at all.
-        return await RunExchangeStepAsync(
-                ctx.AppendNudge(AgentStepInstruction.Compose(step.Ordinal, step.Intent ?? string.Empty,
-                    step.ExpectedArtifact, _workspaceRoot, setup.TurnSetup.Tools, ctx)),
-                persistInterim: true, ct, TimelineScope(step.Id), setup,
-                // hermes #9: this is the ONE entry point whose result reaches RecordStepResultAsync as
-                // Done/Failed, so it is the one that offers emit_step_result. The R10 degrade turn below
-                // deliberately does not (no AgentStep row, no step status to decide) — the live executor
-                // draws the same line at the same place.
-                offerStepResultTool: true,
-                exchanges: ExchangeScope(step.Id))
-            .ConfigureAwait(false);
+        _replyStep = step;
+        try
+        {
+            // The only place a user steering note may ride: RunExchangeStepAsync never sees ctx.
+            return await RunExchangeStepAsync(
+                    ctx.AppendNudge(AgentStepInstruction.Compose(step.Ordinal, step.Intent ?? string.Empty,
+                        step.ExpectedArtifact, _workspaceRoot, setup.TurnSetup.Tools, ctx)),
+                    persistInterim: true, ct, TimelineScope(step.Id), setup,
+                    // The one entry point whose result settles a step, so the one that offers emit_step_result.
+                    offerStepResultTool: true,
+                    exchanges: ExchangeScope(step.Id))
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _replyStep = null;
+        }
     }
 
     // persistInterim: false — the fallback turn is followed IMMEDIATELY by the terminal EndRunAsync on
@@ -1003,6 +1012,13 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // chat write a headless run ever did — so a budget pause (which deliberately skips EndRunAsync and
         // calls the non-terminal OnPausedAsync instead) or a crash mid-run lost every step reply, and the
         // D2 resume seeding then re-seeded an empty chat. Awaited so writes stay serialized within the run.
+        // Before the chat write, so an open chat never draws the reply as a loose bubble first.
+        if (hasVisibleReply && _replyStep is { } replyStep && _messageRecords is not null)
+        {
+            await _messageRecords.RecordAsync(new RunMessageRecord(
+                assistantMsgId, _runId, replyStep.Id, replyStep.Ordinal, DateTime.UtcNow)).ConfigureAwait(false);
+        }
+
         if (persistInterim)
             await PersistChatAsync(InterimTitle(), interim: true, CancellationToken.None).ConfigureAwait(false);
 

@@ -192,6 +192,12 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 delete.Parameters.AddWithValue("@ChatId", chatId.ToString());
                 delete.Parameters.AddWithValue("@Id", id.ToString());
                 deleted += await delete.ExecuteNonQueryAsync(ct);
+
+                using var deleteRecord = connection.CreateCommand();
+                deleteRecord.Transaction = transaction;
+                deleteRecord.CommandText = "DELETE FROM AgentRunMessages WHERE MessageId = @Id";
+                deleteRecord.Parameters.AddWithValue("@Id", id.ToString());
+                await deleteRecord.ExecuteNonQueryAsync(ct);
             }
 
             if (deleted > 0)

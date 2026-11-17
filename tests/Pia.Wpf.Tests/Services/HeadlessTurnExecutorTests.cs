@@ -82,9 +82,10 @@ public sealed class HeadlessTurnExecutorTests
             ai, plugins, Substitute.For<IToolPermissionService>(), composer, personas, chats, titles,
             settings, TokenMapFactory, runs,
             new ExecutingRunStore(), NullLogger<BackgroundAssistantTurnRunner>.Instance);
+        var records = new RunMessageRecordStore(ctx, NullLogger<RunMessageRecordStore>.Instance);
         var executor = new HeadlessTurnExecutor(
             engine, chats, settings, personas, providers, composer, titles, TokenMapFactory,
-            NullLogger<HeadlessTurnExecutor>.Instance);
+            NullLogger<HeadlessTurnExecutor>.Instance, messageRecords: records);
 
         // Bootstrap: the FK parent chat before the Planned run.
         var chatId = Guid.NewGuid();
@@ -136,8 +137,17 @@ public sealed class HeadlessTurnExecutorTests
         Assert.NotNull(finalRun.FirstMessageId);
         Assert.NotNull(finalRun.LastMessageId);
 
+        // Each step reply is recorded against the step that wrote it.
+        var recorded = await records.GetByChatAsync(chatId, TestContext.Current.CancellationToken);
+        Assert.Equal(
+            persisted.Messages.Where(m => m.Role == "assistant").Select(m => m.Id).Order(),
+            recorded.Select(r => r.MessageId).Order());
+        Assert.Equal([0, 1, 2], recorded.Select(r => r.StepOrdinal ?? -1).Order());
+        Assert.All(recorded, r => Assert.Equal(run.Id, r.RunId));
+
         // Explicit, and in this order: the `using var`s above run after this line, so the file would still be
         // open when the directory is deleted.
+        records.Dispose();
         chats.Dispose();
         runs.Dispose();
         ctx.Dispose();
