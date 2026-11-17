@@ -50,7 +50,13 @@ public sealed class ChatJobToolService : IChatJobToolService
     private void OnRunChanged(object? sender, AgentRunChangedEventArgs e)
     {
         if (e.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled)
+        {
+            var unapplied = _jobs.PeekPlanChanges(e.RunId).Count;
+            if (unapplied > 0)
+                _logger.LogInformation("Run {RunId} settled {State} with {Count} plan change(s) not applied",
+                    e.RunId, e.State, unapplied);
             _jobs.Forget(e.RunId);
+        }
         else if (AgentRunStates.IsParked(e.State))
             _jobs.DropPauseAfterStep(e.RunId);
     }

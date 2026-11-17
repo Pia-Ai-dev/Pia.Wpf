@@ -153,6 +153,59 @@ public sealed class JobSteeringLoopTests
         Assert.Empty(h.Jobs.ChangedSteps(run.Id));
     }
 
+    private sealed class LateQueueStore(JobSteeringStore inner) : IJobSteeringStore
+    {
+        public Action? AfterTake { get; set; }
+        public event EventHandler<Guid>? Changed { add => inner.Changed += value; remove => inner.Changed -= value; }
+        public void QueuePlanChanges(Guid runId, IReadOnlyList<JobPlanChange> changes) => inner.QueuePlanChanges(runId, changes);
+        public IReadOnlyList<JobPlanChange> PeekPlanChanges(Guid runId) => inner.PeekPlanChanges(runId);
+
+        public IReadOnlyList<JobPlanChange> TakePlanChanges(Guid runId)
+        {
+            var taken = inner.TakePlanChanges(runId);
+            AfterTake?.Invoke();
+            return taken;
+        }
+
+        public void MarkChanged(Guid runId, IEnumerable<Guid> stepIds) => inner.MarkChanged(runId, stepIds);
+        public IReadOnlySet<Guid> ChangedSteps(Guid runId) => inner.ChangedSteps(runId);
+        public void UnmarkChanged(Guid runId, Guid stepId) => inner.UnmarkChanged(runId, stepId);
+        public void AddNote(Guid runId, string note) => inner.AddNote(runId, note);
+        public IReadOnlyList<string> Notes(Guid runId) => inner.Notes(runId);
+        public void RequestPauseAfterStep(Guid runId) => inner.RequestPauseAfterStep(runId);
+        public bool IsPauseAfterStepRequested(Guid runId) => inner.IsPauseAfterStepRequested(runId);
+        public bool TryConsumePauseAfterStep(Guid runId) => inner.TryConsumePauseAfterStep(runId);
+        public void DropPauseAfterStep(Guid runId) => inner.DropPauseAfterStep(runId);
+        public void RecordDropped(Guid runId, int count) => inner.RecordDropped(runId, count);
+        public int TakeDropped(Guid runId) => inner.TakeDropped(runId);
+        public void Forget(Guid runId) => inner.Forget(runId);
+    }
+
+    [Fact]
+    public async Task AChangeQueuedAfterTheLastLoopTop_IsStillApplied_AndItsStepRuns()
+    {
+        using var h = new Harness();
+        var run = await h.PlannedRunAsync("s1");
+        var store = new LateQueueStore(h.Jobs);
+        var exec = new ScriptedExecutor();
+        var queued = false;
+        store.AfterTake = () =>
+        {
+            if (queued || !exec.Executed.Contains("s1")) return;
+            queued = true;
+            h.Jobs.QueuePlanChanges(run.Id,
+                [new JobPlanChange(JobPlanChangeKind.Insert, Guid.NewGuid(), AtStart: false, Title: "late")]);
+        };
+
+        await new AgentRunOrchestrator(h.Runs, new NoPlanner(), new FakeVerifier(),
+                NullLogger<AgentRunOrchestrator>.Instance, jobSteering: store)
+            .RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, Ct, resume: true);
+
+        Assert.Equal(["s1", "late"], exec.Executed);
+        Assert.Empty(h.Jobs.PeekPlanChanges(run.Id));
+        Assert.Equal(AgentRunState.Completed, (await h.Runs.GetAsync(run.Id, Ct))!.State);
+    }
+
     [Fact]
     public async Task PauseAfterThisStep_KeepsTheFinishedStep()
     {
