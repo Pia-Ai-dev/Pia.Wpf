@@ -32,6 +32,12 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Navigation -->
+  <data name="RunReplies_StateStopped" xml:space="preserve"><value>Gestoppt</value></data>
+  <data name="RunReplies_StoppedNote" xml:space="preserve"><value>Du hast diesen Auftrag gestoppt.</value></data>
+  <data name="RunReplies_EarlierAttempts" xml:space="preserve"><value>Frühere Versuche ({0})</value></data>
+  <data name="RunReplies_ShowJob" xml:space="preserve"><value>Zum Auftrag</value></data>
+  <data name="RunRegenerate_BlockedTitle" xml:space="preserve"><value>Erst den Auftrag stoppen</value></data>
+  <data name="RunRegenerate_BlockedPaused" xml:space="preserve"><value>Unter dieser Antwort steht ein pausierter Auftrag. Stoppe ihn, dann kannst du neu generieren.</value></data>
   <data name="Memory_Charter" xml:space="preserve"><value>Worum es in dieser Wissensbasis geht</value></data>
   <data name="Memory_CharterDraft" xml:space="preserve"><value>Entwurf erstellen</value></data>
   <data name="Memory_CharterDrafting" xml:space="preserve"><value>Quellen werden gelesen…</value></data>

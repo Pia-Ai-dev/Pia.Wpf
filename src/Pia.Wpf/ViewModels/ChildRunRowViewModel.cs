@@ -48,7 +48,7 @@ public sealed partial class ChildRunRowViewModel : ObservableObject
 
     /// <summary>Whether this child will still change. Drives the parent's "N of M finished" count only.</summary>
     public bool IsFinished => State is RunProgressState.Completed or RunProgressState.TruncatedCompleted
-        or RunProgressState.Failed;
+        or RunProgressState.Failed or RunProgressState.Stopped;
 
     [ObservableProperty]
     private bool _isExpanded;

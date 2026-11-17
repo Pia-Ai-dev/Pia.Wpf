@@ -39,6 +39,7 @@ public sealed class RunProgressViewModelSteeringTests
     [InlineData(RunProgressState.WaitingForInput, false)]
     [InlineData(RunProgressState.Paused, false)]
     [InlineData(RunProgressState.WaitingForChildren, true)]
+    [InlineData(RunProgressState.Stopped, false)]
     public void CanPause_IsTrueOnlyForRunningAndWaitingForChildren(RunProgressState state, bool expected)
     {
         var vm = CreateVm(Substitute.For<IAgentRunSteeringService>());
@@ -51,7 +52,7 @@ public sealed class RunProgressViewModelSteeringTests
     // Without this, a newly added state would go unasserted by the theory above rather than red.
     [Fact]
     public void CanPauseTheoryCoversEveryState()
-        => Assert.Equal(8, Enum.GetValues<RunProgressState>().Length);
+        => Assert.Equal(9, Enum.GetValues<RunProgressState>().Length);
 
     [Fact]
     public void CanPause_IsFalseWhenNoSteeringServiceWasInjected()

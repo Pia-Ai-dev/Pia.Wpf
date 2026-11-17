@@ -708,8 +708,9 @@ public sealed class RunProgressViewModelTests : IDisposable
         await _runs.FailAsync(run.Id, null, cancelled: true, TestContext.Current.CancellationToken);
         await vm.RefreshAsync();
 
-        Assert.Equal(RunProgressState.Failed, vm.State);
+        Assert.Equal(RunProgressState.Stopped, vm.State);
         Assert.Null(vm.FailureNote);
+        Assert.Equal("RunReplies_StoppedNote", vm.StoppedNote);
         vm.Dispose();
     }
 

@@ -32,6 +32,9 @@ public enum RunProgressState
     /// with the spinner LIT (children are working) and offers no Continue: the run is not parked for the
     /// user, and <c>TryBeginResumeAsync</c> would not accept it anyway.</summary>
     WaitingForChildren,
+
+    // Cancelled by the user; a cancel that carries a reason (a child failed, shutdown) stays Failed.
+    Stopped,
 }
 
 /// <summary>
@@ -131,7 +134,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     partial void OnStateChanged(RunProgressState value)
     {
         var terminal = value is RunProgressState.Completed or RunProgressState.TruncatedCompleted
-            or RunProgressState.Failed;
+            or RunProgressState.Failed or RunProgressState.Stopped;
         if (terminal && _wasLive)
         {
             RunSettled?.Invoke();
@@ -1163,8 +1166,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         LastMessageId = run.LastMessageId;
         RunCreatedAt = run.CreatedAt;
         ProjectCheckRow(run, truncation);
-        if (State is RunProgressState.Completed or RunProgressState.TruncatedCompleted or RunProgressState.Failed)
+        if (State is RunProgressState.Completed or RunProgressState.TruncatedCompleted or RunProgressState.Failed
+            or RunProgressState.Stopped)
             IsStopping = false;
+        StoppedNote = State == RunProgressState.Stopped ? _localization["RunReplies_StoppedNote"] : null;
 
         // Clear a pending user-pause request only once the run has left the state it was requested FROM —
         // CanPause's own explicit set, not a bare `State != Running`: a WaitingForChildren parent's cascade
@@ -1275,6 +1280,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 break;
 
             case RunProgressState.Failed:
+            case RunProgressState.Stopped:
                 // StoppedStepOrdinal, not CurrentStepOrdinal: a run that failed with every step already settled
                 // (the verify pass rejected the result) has no step to point at, and CurrentStepOrdinal's
                 // all-settled fallback would have the card claim "Stopped at step 4 of 4" over a plan that
@@ -1447,14 +1453,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     // R12 mapping. Verifying intentionally folds into Running here (keeps the spinner lit) while
     // ComputeActivity supplies its own "Checking the work…" line; WaitingForInput/Paused now render
-    // as their own distinct (non-spinning) states with a Continue affordance. Cancelled folds into
-    // the Failed-family visual.
+    // as their own distinct (non-spinning) states with a Continue affordance.
     private static (RunProgressState, bool) MapState(AgentRun run, bool truncated) => run.State switch
     {
         AgentRunState.Planning => (RunProgressState.Planning, false),
         AgentRunState.Running => (RunProgressState.Running, false),
         AgentRunState.Failed => (RunProgressState.Failed, false),
-        AgentRunState.Cancelled => (RunProgressState.Failed, false),
+        AgentRunState.Cancelled => (ReadFailureReason(run) is null ? RunProgressState.Stopped : RunProgressState.Failed, false),
         AgentRunState.WaitingForInput => (RunProgressState.WaitingForInput, false), // budget pause — offer Continue
         AgentRunState.Paused => (RunProgressState.Paused, false),                   // reserved user pause (Phase 4)
         // 07 an EXPLICIT arm, not the default. Falling through would render a delegating parent as the

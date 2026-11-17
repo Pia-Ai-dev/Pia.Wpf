@@ -2705,7 +2705,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // offer return, so the NEXT run in the chat still gets asked.
     private bool RunNotYetSettled =>
         _runProgress is { State: not (RunProgressState.Completed or RunProgressState.TruncatedCompleted
-            or RunProgressState.Failed) };
+            or RunProgressState.Failed or RunProgressState.Stopped) };
 
     /// <summary>Evaluated on the lever toggle AND on chat load: agent mode is frequently already on without
     /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>

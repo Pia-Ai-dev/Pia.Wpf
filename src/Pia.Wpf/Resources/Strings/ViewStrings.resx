@@ -32,6 +32,12 @@
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <!-- Navigation -->
+  <data name="RunReplies_StateStopped" xml:space="preserve"><value>Stopped</value></data>
+  <data name="RunReplies_StoppedNote" xml:space="preserve"><value>You stopped this job.</value></data>
+  <data name="RunReplies_EarlierAttempts" xml:space="preserve"><value>Earlier attempts ({0})</value></data>
+  <data name="RunReplies_ShowJob" xml:space="preserve"><value>Show the job</value></data>
+  <data name="RunRegenerate_BlockedTitle" xml:space="preserve"><value>Stop the job first</value></data>
+  <data name="RunRegenerate_BlockedPaused" xml:space="preserve"><value>A paused job sits below this answer. Stop the job, then regenerate.</value></data>
   <data name="Memory_Charter" xml:space="preserve"><value>What this knowledge base is about</value></data>
   <data name="Memory_CharterDraft" xml:space="preserve"><value>Draft one for me</value></data>
   <data name="Memory_CharterDrafting" xml:space="preserve"><value>Reading your sources…</value></data>

@@ -669,6 +669,7 @@
                May contain the model's own words or an exception message, so it wraps and is never logged. -->
           <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding FailureNote}"
                      Visibility="{Binding FailureNote, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding StoppedNote}" Visibility="{Binding StoppedNote, Converter={StaticResource NullToVisibilityConverter}}" />
 
           <!-- WHICH layer failed, and the one thing to do about it. Both are absent unless the descriptor
                named a layer, so an unclassified failure renders exactly as it did before they existed. The
