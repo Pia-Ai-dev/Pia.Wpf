@@ -159,6 +159,8 @@ public sealed partial class ChatSession : IDisposable
 
     internal string? StoredHeaderFingerprint { get; set; }
 
+    private IChatJobToolService? _jobTools;
+
     public ChatSession(
         ITokenMapService tokenMap,
         IAiClientService aiClientService,
@@ -381,6 +383,7 @@ public sealed partial class ChatSession : IDisposable
         var regenerationInstruction = request.RegenerationInstruction;
         var tokenizationEnabled = request.TokenizationEnabled;
         _proposePlan = request.ProposePlan;
+        _jobTools = request.JobTurn is null ? null : request.JobTools;
 
         // Reuse the CTS created by BeginTurn() (so a cancel during the manager's
         // setup-await window is honored — open-question C1). Fall back to creating one
@@ -461,7 +464,7 @@ public sealed partial class ChatSession : IDisposable
                     // (the persisted/displayed text) is unchanged, so history never bloats and the user's
                     // bubble stays clean.
                     var stripped = atCommands.Count > 0 ? AtCommandParser.SubstituteCommands(msg.Content) : msg.Content;
-                    var parts = new[] { stripped, injectedFileContext, regenerationInstruction }
+                    var parts = new[] { stripped, injectedFileContext, request.JobTurn?.Block, regenerationInstruction }
                         .Where(p => !string.IsNullOrEmpty(p));
                     var visible = AssistantPromptComposer.AppendTimeNote(string.Join("\n\n", parts));
                     // ToChatMessage(overrideText) preserves an image attachment — the prior text-only
@@ -1211,6 +1214,8 @@ public sealed partial class ChatSession : IDisposable
 #if DEBUG
         Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
 #endif
+
+        if (_jobTools is { } jobTools && jobTools.Handles(toolCall.Name) && Id is { } jobChatId) return await jobTools.HandleAsync(jobChatId, toolCall.Name, toolCall.Arguments);
 
         // suggest_agent_mode: pre-route special-case. RouteToolCallAsync would return null for this
         // unknown tool and dead-end at "Unknown tool.", so intercept BEFORE routing. Records a typed chip

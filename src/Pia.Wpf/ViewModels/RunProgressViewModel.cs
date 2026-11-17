@@ -1213,6 +1213,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         FailureLayerName = DescribeFailureLayer(_failureLayer);
         FailureActionLabel = DescribeFailureAction(_failureLayer);
         SyncSteps(run.Plan);
+        ApplyJobOverlay();
         CurrentActivity = ComputeActivity(run);
 
         // The deny beside Continue exists only for a tool-approval park — the one pause whose question a
@@ -2573,6 +2574,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         _disposed = true;
         _elapsedTimer.Dispose();
         DetachAsking();
+        DetachJobSteering();
         _runService.RunChanged -= OnRunChanged;
         if (_timelineWatcher is not null)
             _timelineWatcher.TimelineAppended -= OnTimelineAppended;

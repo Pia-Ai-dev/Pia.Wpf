@@ -406,8 +406,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IRunLiveTextWatcher? liveText = null,
         IRunAskBroker? runAsk = null,
         IRunToolAnswerService? runToolAnswers = null,
-        IRunMessageRecordStore? runMessageRecords = null)
+        IRunMessageRecordStore? runMessageRecords = null,
+        IJobSteeringStore? jobSteering = null)
     {
+        _jobSteering = jobSteering;
         _liveText = liveText;
         _runAsk = runAsk;
         _runToolAnswers = runToolAnswers;
@@ -724,6 +726,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _navigationService, _toolCalls, _runAsk, _runToolAnswers);
         block.AttachLiveText(_liveText);
         ConfigureForUnifiedFlow(block);
+        block.AttachJobSteering(_jobSteering);
         block.PropertyChanged += OnRunBlockAnchorChanged;
         return block;
     }
@@ -739,6 +742,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly Dictionary<Guid, RunProgressViewModel> _earlierBlocks = [];
     private readonly IRunAskBroker? _runAsk;
     private readonly IRunToolAnswerService? _runToolAnswers;
+    private readonly IJobSteeringStore? _jobSteering;
 
     /// <summary>The transcript as rendered: the message window with each run's block placed among it.</summary>
     public ObservableCollection<object> TranscriptItems { get; } = [];
@@ -1405,7 +1409,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // headless executor that is mid-run — the live full replace deletes the run's step rows, and the run's
     // own model context never sees the typed message, so the transcript would be garbled even without loss.
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive && !AgentContextChoicePending
+        !IsStreaming && (!ForeignRunActive || ChatJobComposerOpen) && !PlanApprovalParkActive && !AgentContextChoicePending
         && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachments.Count > 0 || PendingFiles.Count > 0);
 
     /// <summary>Nothing typed, attached or in flight — the hotkey may tuck the window away.</summary>
@@ -1464,7 +1468,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // Never offers more than Send: the same availability gate, plus real text (it ignores the image, unlike
     // Send), a non-refused goal, and no attached file — a detached run has no way to carry one.
     private bool CanExecuteRunInBackground() =>
-        CanExecuteSendMessage() && HasCandidateGoalText() && PendingFiles.Count == 0
+        CanExecuteSendMessage() && !ForeignRunActive && HasCandidateGoalText() && PendingFiles.Count == 0
         && !GoalPreflight.IsRefused(InputText);
 
     private async Task ExecuteSendMessage()
@@ -1626,7 +1630,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// </summary>
     private void RevokeAnyPendingPause()
     {
-        if (_chatSessionManager.ActiveSession?.ActiveRunId is { } runId)
+        if (!ChatJobComposerOpen && _chatSessionManager.ActiveSession?.ActiveRunId is { } runId)
             _runSteering?.RevokePauseRequest(runId);
     }
 
