@@ -40,7 +40,7 @@ steps in its Blocks column.
   with one of four reason tokens, with no replan, no grace turn and no terminal settle. A delegated child
   parks the same way and holds its parent at `children-parked`.
   *Deps:* 2, Q3, Q4 · *Effort:* S · *Value:* High
-- [ ] **4 — An interrupted replan parks.** A replan call cut off after a step failure or a failed verify
+- [x] **4 — An interrupted replan parks.** A replan call cut off after a step failure or a failed verify
   parks the run, and the failed step goes back to Pending.
   *Deps:* 3, Q3 · *Effort:* S · *Value:* High
 - [ ] **5 — The headless executor names the interruption.** A background or resumed step sets the member,

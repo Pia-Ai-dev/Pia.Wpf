@@ -294,11 +294,9 @@ public sealed class AgentRunOrchestrator
             var replans = 0;
             var unverifiedTruncated = false;
 
-            // The step-failure replan branch, extracted so the in-process path and the fan-out path share ONE
-            // copy of the replan budget, the KeepDone re-ordinaling and the two terminal fails. Returns true
-            // when the caller should `continue` the drain loop (revised steps were written), false when the run
-            // is over — `failed` is already set and the terminal Fail already written in that case.
-            async Task<bool> TryReplanAfterFailureAsync(string? error)
+            // Shared by the in-process and fan-out paths so both spend one replan budget. On Failed the terminal
+            // Fail is already written; a null failedStep (fan-out) never parks.
+            async Task<ReplanOutcome> TryReplanAfterFailureAsync(string? error, AgentStep? failedStep)
             {
                 if (replans++ < profile.MaxReplans)
                 {
@@ -309,7 +307,21 @@ public sealed class AgentRunOrchestrator
                     // all of them. Failure-isolated: a faulted read means the replan runs without the block,
                     // exactly as it did before, never a failed run.
                     ctx.SetSkippedTitles(await SafeSkippedTitlesAsync(run.Id, cts.Token).ConfigureAwait(false));
-                    var revised = await _planner.ReplanAsync(ctx, error, persona, provider, cts.Token).ConfigureAwait(false);
+                    PlanResult revised;
+                    try
+                    {
+                        revised = await _planner.ReplanAsync(ctx, error, persona, provider, cts.Token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (failedStep is not null
+                        && !cts.Token.IsCancellationRequested
+                        && StepInterruptionClassifier.Classify(ex) is { } kind)
+                    {
+                        // Not ReturnStepToPendingAsync: the step's tokens were billed when it was recorded.
+                        await SafeSetStepStatus(failedStep.Id, AgentStepStatus.Pending, CancellationToken.None).ConfigureAwait(false);
+                        await ParkForInterruptedReplanAsync(executor, run, ctx, kind, runFirst, runLast, cts.Token)
+                            .ConfigureAwait(false);
+                        return ReplanOutcome.Parked;
+                    }
                     await SafeAddUsage(run.Id, revised.Usage, cts.Token).ConfigureAwait(false); // I1
                     if (!revised.FallBackToSingleTurn)
                     {
@@ -319,7 +331,7 @@ public sealed class AgentRunOrchestrator
                         var offset = doneSteps.Count;
                         var revisedSteps = revised.Steps.Select((s, i) => { s.Ordinal = offset + i; return s; });
                         await SafeReplaceSteps(run.Id, doneSteps.Concat(revisedSteps).ToList(), cts.Token).ConfigureAwait(false);
-                        return true; // re-query picks up the revised steps (R2)
+                        return ReplanOutcome.Revised; // re-query picks up the revised steps (R2)
                     }
                     // Replan itself degraded to Fallback → the same terminal fail as an exhausted budget
                 }
@@ -327,7 +339,7 @@ public sealed class AgentRunOrchestrator
                 failed = true;
                 await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
                 await SafeFail(run.Id, error, cancelled: false).ConfigureAwait(false);
-                return false;
+                return ReplanOutcome.Failed;
             }
 
             // Outer verify → replan → re-drain loop. Verify feeds the SAME `replans`/profile.MaxReplans
@@ -426,7 +438,8 @@ public sealed class AgentRunOrchestrator
 
                         if (children.AnyFailed)
                         {
-                            if (await TryReplanAfterFailureAsync(children.Error).ConfigureAwait(false))
+                            if (await TryReplanAfterFailureAsync(children.Error, failedStep: null).ConfigureAwait(false)
+                                == ReplanOutcome.Revised)
                                 continue;
                             break;
                         }
@@ -555,7 +568,10 @@ public sealed class AgentRunOrchestrator
 
                     if (!r.Succeeded)
                     {
-                        if (await TryReplanAfterFailureAsync(r.Error).ConfigureAwait(false))
+                        var outcome = await TryReplanAfterFailureAsync(r.Error, step).ConfigureAwait(false);
+                        if (outcome == ReplanOutcome.Parked)
+                            return;
+                        if (outcome == ReplanOutcome.Revised)
                             continue;
                         break;
                     }
@@ -577,7 +593,18 @@ public sealed class AgentRunOrchestrator
                 // Verify FAIL → feed the SHARED replan budget.
                 if (replans++ < profile.MaxReplans)
                 {
-                    var revised = await _planner.ReplanAsync(ctx, BuildVerifyFailureReason(verdict), persona, provider, cts.Token).ConfigureAwait(false);
+                    PlanResult revised;
+                    try
+                    {
+                        revised = await _planner.ReplanAsync(ctx, BuildVerifyFailureReason(verdict), persona, provider, cts.Token).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (!cts.Token.IsCancellationRequested
+                        && StepInterruptionClassifier.Classify(ex) is { } kind)
+                    {
+                        await ParkForInterruptedReplanAsync(executor, run, ctx, kind, runFirst, runLast, cts.Token)
+                            .ConfigureAwait(false);
+                        return;
+                    }
                     await SafeAddUsage(run.Id, revised.Usage, cts.Token).ConfigureAwait(false); // I1
                     if (!revised.FallBackToSingleTurn)
                     {
@@ -893,6 +920,21 @@ public sealed class AgentRunOrchestrator
         await SafePause(run.Id, CancellationToken.None, reason).ConfigureAwait(false);
         await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
     }
+
+    private async Task ParkForInterruptedReplanAsync(
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, StepInterruption kind,
+        Guid? runFirst, Guid runLast, CancellationToken ct)
+    {
+        await PinRangeAsync(run.Id, runFirst, runLast, ct).ConfigureAwait(false);
+
+        var reason = InterruptionReason(kind);
+        _logger.LogInformation("Run {RunId}: the replan call was interrupted → parking {Reason}", run.Id, reason);
+
+        await SafePause(run.Id, CancellationToken.None, reason).ConfigureAwait(false);
+        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+    }
+
+    private enum ReplanOutcome { Revised, Failed, Parked }
 
     /// <summary>The single terminal settle (SafeEndRun → SafeComplete, exactly once, every path).</summary>
     private async Task SettleTerminalAsync(

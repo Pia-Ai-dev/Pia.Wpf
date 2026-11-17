@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.Tests.TestInfrastructure;
@@ -54,6 +55,8 @@ public sealed class AgentRunOrchestratorFanOutTests
 
         public List<string?> ReplanFailures { get; } = new();
 
+        public Exception? ReplanThrows { get; set; }
+
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
             => Task.FromResult(Plans.Count > 0 ? Plans.Dequeue() : PlanResult.Fallback);
 
@@ -61,6 +64,9 @@ public sealed class AgentRunOrchestratorFanOutTests
         {
             ReplanCalls++;
             ReplanFailures.Add(failure);
+            if (ReplanThrows is { } thrown)
+                return Task.FromException<PlanResult>(thrown);
+
             return Task.FromResult(Replans.Count > 0 ? Replans.Dequeue() : PlanResult.Fallback);
         }
     }
@@ -495,6 +501,23 @@ public sealed class AgentRunOrchestratorFanOutTests
         Assert.Equal(AgentRunState.WaitingForInput, final.State);
         Assert.Equal(AgentRunOrchestrator.ChildrenParkedReason, RunPauseEnvelope.ReadReason(final));
         Assert.Equal(0, planner.ReplanCalls);
+    }
+
+    [Fact]
+    public async Task AnInterruptedReplanAfterAFailedGroup_FailsTheParentAsBefore()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats);
+        launcher.Outcomes.Enqueue(AgentRunState.Completed);
+        launcher.Outcomes.Enqueue(AgentRunState.Failed);
+        var planner = new FakePlanner { ReplanThrows = new CreditLimitException("x") };
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1)), false));
+
+        await h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, new RecordingExecutor(), Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AgentRunState.Failed, (await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!.State);
     }
 
     [Fact]

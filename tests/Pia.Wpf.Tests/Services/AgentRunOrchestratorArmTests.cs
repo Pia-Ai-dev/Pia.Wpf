@@ -1,9 +1,11 @@
 using System.IO;
+using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.Tests.TestInfrastructure;
@@ -350,6 +352,88 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         => Assert.Equal(expected, AgentRunOrchestrator.IsInterruptionReason(reason));
 
     [Fact]
+    public async Task AnInterruptedReplanAfterAStepFailure_Parks_AndPutsTheFailedStepBackToPending()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var executor = new StubExecutor { FailFirstStep = true };
+
+        await RunAsync(run, new StubPlanner(Plan("A")) { ReplanThrows = new CreditLimitException("x") }, ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, settled.State);
+        Assert.Equal(AgentRunOrchestrator.InterruptedCreditReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal("A", (await _runs.NextPendingStepAsync(run.Id, ct))?.Title);
+        Assert.False(executor.EndedRun);
+    }
+
+    [Fact]
+    public async Task TheStepPutBack_RunsAgainOnResume_AndEndsDone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var planner = new StubPlanner(Plan("A")) { ReplanThrows = new CreditLimitException("x") };
+        await RunAsync(run, planner, ct, new StubExecutor { FailFirstStep = true });
+
+        var resumed = new StubExecutor();
+        await RunAsync(run, planner, ct, resumed,
+            resume: true, parkReason: AgentRunOrchestrator.InterruptedCreditReason);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.Completed, settled.State);
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(settled.Plan).Status);
+        Assert.Equal(1, resumed.StepTurns);
+    }
+
+    [Fact]
+    public async Task AnInterruptedReplanAfterAFailedVerify_Parks_WithEveryStepDone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var planner = new StubPlanner(Plan("A"))
+        {
+            ReplanThrows = new HttpRequestException(HttpRequestError.ConnectionError),
+        };
+
+        await RunAsync(run, planner, ct, verifier: new RejectingVerifier());
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, settled.State);
+        Assert.Equal(AgentRunOrchestrator.InterruptedOfflineReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(settled.Plan).Status);
+        Assert.Null(await _runs.NextPendingStepAsync(run.Id, ct));
+    }
+
+    [Fact]
+    public async Task AnOrdinaryReplanFault_StillFailsTheRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+
+        await RunAsync(run, new StubPlanner(Plan("A")) { ReplanThrows = new InvalidOperationException("boom") }, ct,
+            new StubExecutor { FailFirstStep = true });
+
+        Assert.Equal(AgentRunState.Failed, (await _runs.GetAsync(run.Id, ct))!.State);
+    }
+
+    [Fact]
+    public async Task AnInterruptedReplanDuringACancel_DoesNotPark()
+    {
+        var run = await NewRunAsync(TestContext.Current.CancellationToken);
+        using var cts = new CancellationTokenSource();
+        var planner = new StubPlanner(Plan("A"))
+        {
+            ReplanThrows = new CreditLimitException("x"),
+            CancelBeforeReplanThrows = cts,
+        };
+
+        await RunAsync(run, planner, cts.Token, new StubExecutor { FailFirstStep = true });
+
+        var settled = (await _runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!;
+        Assert.NotEqual(AgentRunState.WaitingForInput, settled.State);
+    }
+
+    [Fact]
     public void SupportsPlanApproval_DefaultsFalseForAnExecutorThatDoesNotOverrideIt()
     {
         IAgentTurnExecutor executor = new StubExecutor();
@@ -374,10 +458,10 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
     private Task RunAsync(
         AgentRun run, IAgentPlanner planner, CancellationToken ct,
         StubExecutor? executor = null, RunProfile? profile = null, IRunSteeringStore? steering = null,
-        bool resume = false, string? parkReason = null)
+        bool resume = false, string? parkReason = null, IAgentVerifier? verifier = null)
     {
         var orchestrator = new AgentRunOrchestrator(
-            _runs, planner, new AcceptingVerifier(), NullLogger<AgentRunOrchestrator>.Instance,
+            _runs, planner, verifier ?? new AcceptingVerifier(), NullLogger<AgentRunOrchestrator>.Instance,
             steering: steering);
 
         return orchestrator.RunAsync(
@@ -399,6 +483,10 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
 
         public int ReplanCalls { get; private set; }
 
+        public Exception? ReplanThrows { get; init; }
+
+        public CancellationTokenSource? CancelBeforeReplanThrows { get; init; }
+
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
         {
             PlanCalls++;
@@ -408,8 +496,20 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
         {
             ReplanCalls++;
+            if (ReplanThrows is { } thrown)
+            {
+                CancelBeforeReplanThrows?.Cancel();
+                return Task.FromException<PlanResult>(thrown);
+            }
+
             return Task.FromResult(replan ?? PlanResult.Fallback);
         }
+    }
+
+    private sealed class RejectingVerifier : IAgentVerifier
+    {
+        public Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(new VerdictResult(false, "nothing was done", new[] { "x" }, null));
     }
 
     private sealed class AcceptingVerifier : IAgentVerifier
