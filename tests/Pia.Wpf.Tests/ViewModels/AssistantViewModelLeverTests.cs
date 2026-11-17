@@ -348,6 +348,62 @@ public class AssistantViewModelLeverTests
         Assert.False(vm.AgentModeEnabled);
     }
 
+    [Fact]
+    public void TheRunBlock_IsATranscriptItem_ButNeverAMessage()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [], CreatedAt = created };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        var goal = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.User, "goal",
+            created.AddSeconds(-5).ToLocalTime());
+        vm.Messages.Add(goal);
+        vm.SyncRunProgress(runId);
+
+        var block = vm.ActiveRunProgress!;
+        Assert.Equal([goal, block], vm.TranscriptItems);
+        Assert.DoesNotContain(vm.Messages, m => (object)m == block);
+
+        // The job's first reply lands below the block, and pinning it as the anchor keeps the block in place.
+        var reply = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "r",
+            created.AddSeconds(5).ToLocalTime());
+        vm.Messages.Add(reply);
+        run.FirstMessageId = reply.Id;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running, null));
+
+        Assert.Equal([goal, block, reply], vm.TranscriptItems);
+    }
+
+    [Fact]
+    public void ASecondRun_KeepsTheFirstRunsBlock()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var runs = Substitute.For<IAgentRunService>();
+        var reply = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "r",
+            created.AddSeconds(5).ToLocalTime());
+        runs.GetAsync(firstId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+            { Id = firstId, State = AgentRunState.Completed, Plan = [], CreatedAt = created, FirstMessageId = reply.Id });
+        runs.GetAsync(secondId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+            { Id = secondId, State = AgentRunState.Running, Plan = [], CreatedAt = created.AddMinutes(1) });
+
+        var vm = CreateSut(runs);
+        vm.Messages.Add(reply);
+        vm.SyncRunProgress(firstId);
+        var firstBlock = vm.ActiveRunProgress!;
+
+        vm.SyncRunProgress(secondId);
+
+        Assert.Contains(firstBlock, vm.TranscriptItems);
+        Assert.Equal(secondId, vm.ActiveRunProgress!.RunId);
+    }
+
     /// <summary>The same settle folds the run card, so the answer is what the eye lands on.</summary>
     [Fact]
     public void ARunSettling_FoldsTheRunCard()

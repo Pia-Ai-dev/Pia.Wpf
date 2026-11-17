@@ -65,24 +65,21 @@ public class ViewHostDataContextTests
             "reflects its root type off, so every binding path in those views is dead at runtime while the " +
             $"walk still resolves against the old type (Batch 14 review, D1): {string.Join("; ", rehosted)}");
 
-        // The run panel's host is the CHAT AssistantView — a different type from the settings one above that
-        // shares a file name. Folding the count into the compared string keeps one message for every failure.
+        // The run panel sits in the chat AssistantView's transcript template for a RunProgressViewModel item,
+        // so it must inherit that item: a DataContext binding of its own would re-root every path the parse test walks.
         var panelPath = WpfStaHost.Run(() =>
         {
-            var panels = BindingPathWalker.FindLogical<RunProgressPanel>(new Pia.Views.AssistantView()).ToArray();
-            return panels.Length == 1
-                ? PathAt(panels[0])
-                : $"<{panels.Length} RunProgressPanel(s) in the logical tree, expected exactly 1>";
+            var view = new Pia.Views.AssistantView();
+            var template = (DataTemplate)view.FindResource("RunBlockTemplate");
+            return template.LoadContent() is Border { Child: RunProgressPanel panel }
+                ? PathAt(panel)
+                : "<RunBlockTemplate does not host a RunProgressPanel>";
         });
 
-        Assert.True(panelPath == nameof(AssistantViewModel.ActiveRunProgress),
-            $"AssistantView.xaml:51 hosts RunProgressPanel with DataContext=\"{{Binding {panelPath}}}\", but " +
-            $"{nameof(RunProgressPanelParseTests)} walks the panel's binding paths against the type of " +
-            $"AssistantViewModel.{nameof(AssistantViewModel.ActiveRunProgress)} — so EVERY ONE of the panel's " +
-            "bound paths would be dead at runtime while that walk stayed green (Batch 14 review, D1). " +
-            "(Batch 08 F21: the count is deliberately not spelled out here — it was written as 28 when this " +
-            "fact landed and the batch has since raised the walk past that, so a literal drifts silently " +
-            "while the claim it decorates stays true.)");
+        Assert.True(panelPath == NoBinding,
+            $"AssistantView.xaml's RunBlockTemplate hosts RunProgressPanel with DataContext=\"{{Binding {panelPath}}}\", " +
+            $"but {nameof(RunProgressPanelParseTests)} walks the panel's binding paths against " +
+            $"{nameof(RunProgressViewModel)}, the transcript item the template is selected for.");
     }
 
     /// <summary>The DataContext path declared at one host site, or <see cref="NoBinding"/>.</summary>

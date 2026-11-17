@@ -624,28 +624,27 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return session;
     }
 
-    /// <summary>
-    /// C2: re-attach the chat's newest NON-terminal <see cref="RunShape.Planned"/> run to a freshly
-    /// hydrated session, so the run-progress panel — and with it the Continue command of a run parked at
-    /// its budget — comes back after an app restart (it also gives Flow's <c>OpenRun</c> a panel to open in
-    /// a later session). Contract:
-    /// <list type="bullet">
-    /// <item>Failure-isolated (guardrail 1): a lookup fault logs a warning and leaves the chat panel-less
-    /// rather than failing the activation.</item>
-    /// <item>Off the hot path: <see cref="IAgentRunService"/> is a synchronous lock-holding store, so the
-    /// read happens on a pool thread — a live headless run holding that lock must never stall the UI.
-    /// At most TWO queries per activation (the lookup, then the parked run's pause reason), and none at all
-    /// once a session carries a run.</item>
-    /// <item>A terminal run (Completed/Failed/Cancelled) is never resurrected, and an already-attached run
-    /// is never replaced (re-checked after the await).</item>
-    /// </list>
-    /// UI-affine on purpose (no <c>ConfigureAwait(false)</c>): the continuation resumes on the
-    /// SynchronizationContext the activation was invoked on, so the <c>ActiveRunChanged</c> that
-    /// <see cref="ChatSession.SetActiveRun"/> raises reaches the view model on the UI thread (G3).
-    /// </summary>
+    // A finished job none of whose messages are left in the chat has nothing to anchor to.
+    internal static IEnumerable<Guid> FinishedRunsToShow(IReadOnlyList<AgentRun>? runs, IReadOnlyList<AssistantMessage> messages)
+    {
+        if (runs is null)
+            return [];
+        var ids = messages.Select(m => m.Id).ToHashSet();
+        return runs
+            .Where(r => r.RunShape == RunShape.Planned && r.ParentRunId is null
+                        && r.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled
+                        && ((r.FirstMessageId is { } first && ids.Contains(first))
+                            || (r.LastMessageId is { } last && ids.Contains(last))))
+            .OrderBy(r => r.CreatedAt)
+            .Select(r => r.Id)
+            .ToList();
+    }
+
+    /// <summary>Restores a hydrated chat's finished blocks and re-attaches its newest unfinished planned run;
+    /// the read runs on a pool thread, the continuation on the caller's UI context.</summary>
     internal async Task RestoreActiveRunAsync(ChatSession session)
     {
-        if (session.Id is not { } chatId || session.ActiveRunId is not null)
+        if (session.Id is not { } chatId)
             return;
 
         IReadOnlyList<AgentRun>? runs;
@@ -658,6 +657,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             _logger.LogWarning(ex, "Failed to look up a resumable run for chat {ChatId}", chatId);
             return;
         }
+
+        if (_disposed)
+            return;
+        session.AddEarlierRuns(FinishedRunsToShow(runs, session.Messages));
 
         var resumable = runs?
             .Where(r => r.RunShape == RunShape.Planned

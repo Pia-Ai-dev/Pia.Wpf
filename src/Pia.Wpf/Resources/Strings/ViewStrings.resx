@@ -1198,6 +1198,14 @@
   <!-- Batch 08 G8: the header Pause button and its in-flight label. -->
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pause</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Pausing…</value></data>
+  <data name="Run_Action_Stop" xml:space="preserve"><value>Stop</value></data>
+  <data name="Run_Stop_Error_Refused" xml:space="preserve"><value>This job could not be stopped from here.</value></data>
+  <data name="Run_Check_Title" xml:space="preserve"><value>Check the result</value></data>
+  <data name="Run_Check_Checking" xml:space="preserve"><value>Checking…</value></data>
+  <data name="Run_Check_Passed" xml:space="preserve"><value>Passed</value></data>
+  <data name="Run_Check_Unverified" xml:space="preserve"><value>Not confirmed</value></data>
+  <data name="Run_Check_NotRun" xml:space="preserve"><value>Not run</value></data>
+  <data name="Assistant_LiveRunActivity_Tooltip" xml:space="preserve"><value>Show the job in the chat</value></data>
   <!-- Batch 06: promotion. A clean run's files are published automatically before it is marked complete; a
        failed or cancelled one keeps them in its workspace and offers them here. In worktree mode nothing is
        copied at all — the run branch IS the deliverable, so the panel says where it is. -->

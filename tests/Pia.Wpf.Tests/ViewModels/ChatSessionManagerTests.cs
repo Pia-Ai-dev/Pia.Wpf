@@ -893,7 +893,7 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
-    public async Task RestoreActiveRunAsync_SessionAlreadyHasARun_DoesNotQueryOrReplaceIt()
+    public async Task RestoreActiveRunAsync_SessionAlreadyHasARun_DoesNotReplaceIt()
     {
         var sut = CreateSut();
         var session = sut.GetOrCreateActiveForNewChat();
@@ -901,12 +901,51 @@ public class ChatSessionManagerTests
         await sut.PersistAsync(session); // assigns the chat id
         var liveRunId = Guid.NewGuid();
         session.SetActiveRun(liveRunId);
-        _runService.ClearReceivedCalls();
+        _runService.GetByChatAsync(session.Id!.Value, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRun> { Run(session.Id.Value, AgentRunState.Paused, DateTime.UtcNow) });
 
         await sut.RestoreActiveRunAsync(session);
 
         Assert.Equal(liveRunId, session.ActiveRunId);
-        await _runService.DidNotReceive().GetByChatAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RestoreActiveRunAsync_RestoresFinishedBlocksThatStillHaveAMessage()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        var finished = Run(chatId, AgentRunState.Completed, DateTime.UtcNow.AddMinutes(-2));
+        finished.FirstMessageId = stored.Messages[0].Id;
+        var orphaned = Run(chatId, AgentRunState.Completed, DateTime.UtcNow.AddMinutes(-3));
+        orphaned.FirstMessageId = Guid.NewGuid();
+        var parked = Run(chatId, AgentRunState.Paused, DateTime.UtcNow.AddMinutes(-1));
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        _runService.GetByChatAsync(chatId, Arg.Any<CancellationToken>())
+            .Returns(new List<AgentRun> { finished, orphaned, parked });
+
+        var sut = CreateSut();
+        var session = await sut.ActivateAsync(chatId);
+        session!.SetActiveRun(null);
+
+        await sut.RestoreActiveRunAsync(session);
+
+        Assert.Equal([finished.Id], session.EarlierRunIds);
+        Assert.Equal(parked.Id, session.ActiveRunId);
+    }
+
+    [Fact]
+    public void ReplacingTheActiveRun_KeepsTheOldOneAsAnEarlierBlock()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+
+        session.SetActiveRun(first);
+        session.SetActiveRun(second);
+
+        Assert.Equal([first], session.EarlierRunIds);
+        Assert.Equal(second, session.ActiveRunId);
     }
 
     [Fact]

@@ -1680,6 +1680,45 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Contains(chat!.Messages, m => m.Content == "Run_PlanRejected_ChatNote");
     }
 
+    [Fact]
+    public async Task CancelRunAsync_SettlesAParkedRunAsCancelled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync("step-cap");
+
+        Assert.True(await launcher.CancelRunAsync(parked.Id, ct));
+
+        var after = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.Cancelled, after!.State);
+        Assert.NotNull(after.CompletedAt);
+    }
+
+    // Not dispatched by this process and not parked: nothing here can stop it, so the caller must be told.
+    [Fact]
+    public async Task CancelRunAsync_RefusesARunThisProcessIsNotDispatching()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync("step-cap");
+        await _runs.SetStateAsync(parked.Id, AgentRunState.Running, ct);
+
+        Assert.False(await launcher.CancelRunAsync(parked.Id, ct));
+        Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(parked.Id, ct))!.State);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_RefusesAFinishedRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync("step-cap");
+        await _runs.CompleteAsync(parked.Id, ct: ct);
+
+        Assert.False(await launcher.CancelRunAsync(parked.Id, ct));
+        Assert.Equal(AgentRunState.Completed, (await _runs.GetAsync(parked.Id, ct))!.State);
+    }
+
     /// <summary>Reject answers a plan-approval park only; on any other park there is no plan to say no to.</summary>
     [Fact]
     public async Task RejectPlanAsync_ReturnsFalse_WhenRunIsNotParkedOnPlanApproval()

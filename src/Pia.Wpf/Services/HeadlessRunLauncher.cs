@@ -1151,6 +1151,55 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         return true;
     }
 
+    public async Task<bool> CancelRunAsync(Guid runId, CancellationToken ct = default)
+    {
+        var stopped = await CancelOneAsync(runId, ct).ConfigureAwait(false);
+
+        try
+        {
+            foreach (var child in await _agentRunService.GetChildRunsAsync(runId, ct).ConfigureAwait(false))
+            {
+                if (child.State is not (AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled))
+                    stopped |= await CancelOneAsync(child.Id, ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to stop the child runs of run {RunId}", runId);
+        }
+
+        _logger.LogInformation("User stop of run {RunId} applied={Applied}", runId, stopped);
+        return stopped;
+    }
+
+    private async Task<bool> CancelOneAsync(Guid runId, CancellationToken ct)
+    {
+        // Revoked first: an unconsumed pause request would make the unwinding loop park instead of settling.
+        _steering?.RevokePauseRequest(runId);
+
+        if (_inflight.TryGetValue(runId, out var entry))
+        {
+            try
+            {
+                entry.Cts.Cancel();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cancel in-flight run {RunId}", runId);
+                return false;
+            }
+        }
+
+        // Nothing is dispatching a parked run, so its row is the only thing left to settle.
+        var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
+        if (run is null || !AgentRunStates.IsParked(run.State))
+            return false;
+
+        await _agentRunService.FailAsync(runId, null, cancelled: true, CancellationToken.None).ConfigureAwait(false);
+        return true;
+    }
+
     /// <summary>
     /// App shutdown: cancel every dispatch and wait, bounded, for them to unwind.
     /// this path deliberately does <b>not</b> revoke a pending pause request, unlike the four
