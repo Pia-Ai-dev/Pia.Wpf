@@ -1427,7 +1427,8 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
         {
             Id = chat.Id,
             SchemaVersion = chat.SchemaVersion,
-            Title = chat.Title,
+            // Null keeps the stored title, which a History rename or a job may have changed meanwhile.
+            Title = TitleChangedSinceStored(session, chat.Title) ? chat.Title : null,
             CreatedAt = chat.CreatedAt,
             UpdatedAt = chat.UpdatedAt,
             LastAccessedAt = chat.LastAccessedAt,
@@ -1444,6 +1445,7 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
             {
                 // The row is gone (deleted or never written): recreate it with the whole transcript.
                 payload.Messages = chat.Messages;
+                payload.Title = chat.Title;
                 changed = [.. chat.Messages.Select(dto => (dto, Fingerprint(dto)))];
                 await _chatService.UpsertMessagesAsync(payload, writeHeader: true);
             }
@@ -1595,6 +1597,9 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
 
     private static string HeaderFingerprint(SyncAssistantChat chat) =>
         string.Join('\u001f', chat.Title, chat.ProviderId, chat.WorkingDirectory, chat.AgentContextMode);
+
+    private static bool TitleChangedSinceStored(ChatSession session, string? title) =>
+        session.StoredHeaderFingerprint is not { } stored || stored.Split('\u001f')[0] != (title ?? string.Empty);
 
     private static string SessionHeaderFingerprint(ChatSession session, string? title) =>
         string.Join('\u001f', title, session.ProviderId, session.WorkingDirectory, session.AgentContextMode?.ToString());

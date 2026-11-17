@@ -241,8 +241,36 @@ public class ChatSessionManagerTests
         session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "next"));
         await sut.PersistAsync(session);
 
+        // A null title leaves the stored one in place.
         await _chatService.Received(1).UpsertMessagesAsync(
-            Arg.Is<SyncAssistantChat>(c => c.Title == "Generated after the job"), true, Arg.Any<CancellationToken>());
+            Arg.Is<SyncAssistantChat>(c => c.Title == null), true, Arg.Any<CancellationToken>());
+        Assert.Equal("Generated after the job", session.Title);
+    }
+
+    [Fact]
+    public async Task AHeaderWriteForAnotherField_DoesNotWriteAStaleTitle_ButARenameIsWritten()
+    {
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        _chatService.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+
+        session.WorkingDirectory = "Reports";
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "next"));
+        await sut.PersistAsync(session);
+
+        await _chatService.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Title == null && c.WorkingDirectory == "Reports"), true,
+            Arg.Any<CancellationToken>());
+
+        _chatService.ClearReceivedCalls();
+        session.SetTitle("Renamed here");
+        await sut.PersistAsync(session);
+
+        await _chatService.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Title == "Renamed here"), true, Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -234,7 +234,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @AgentContextMode, @IsFavorite, @ExtraJson)
             ON CONFLICT(Id) DO UPDATE SET
                 SchemaVersion = excluded.SchemaVersion,
-                Title = excluded.Title,
+                Title = COALESCE(excluded.Title, AssistantChats.Title),
                 UpdatedAt = excluded.UpdatedAt,
                 LastAccessedAt = excluded.LastAccessedAt,
                 WindowMode = excluded.WindowMode,
