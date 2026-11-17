@@ -125,12 +125,13 @@ public class SqliteContextTests : IDisposable
     public void AgentToolExchanges_HasExactlyTheseColumns()
     {
         // This table's contract is the INVERSE of AgentTimelineEvents' metadata-only one: it is
-        // payload-bearing on purpose, device-local, and purged with the run. Do not align the two.
+        // payload-bearing on purpose, device-local, and kept until the chat-retention cutoff. Do not align the two.
         string[] expected =
         [
             "Id", "SchemaVersion", "RunId", "StepId", "MessageSeq", "Seq", "Round", "Role", "Kind", "CallId",
             "ToolName", "PluginId", "ArgumentsJson", "ArgsOmitted", "DisplayArgs", "ResultKind", "ResultText",
-            "Chars", "AnchorMessageId", "CreatedAt", "ReplayedAt", "SupersededAt",
+            "Chars", "AnchorMessageId", "CreatedAt", "ReplayedAt", "SupersededAt", "ReadableArgumentsJson",
+            "ReadableResultText",
         ];
 
         using var cmd = _ctx.GetConnection().CreateCommand();
