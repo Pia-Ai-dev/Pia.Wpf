@@ -1875,4 +1875,34 @@
   <data name="RunStepDetail_NotRecordedRound" xml:space="preserve"><value>Not kept: this round came after the job reached its detail limit.</value></data>
   <data name="RunStepDetail_NoRecord" xml:space="preserve"><value>No details were kept for this call.</value></data>
   <data name="RunStepDetail_ReadFailed" xml:space="preserve"><value>The details could not be read.</value></data>
+  <data name="RunAsk_Tool_Question" xml:space="preserve">
+    <value>Allow {0}?</value>
+  </data>
+  <data name="RunAsk_AllowOnce" xml:space="preserve">
+    <value>Allow once</value>
+  </data>
+  <data name="RunAsk_AllowForSession" xml:space="preserve">
+    <value>Allow for this session</value>
+  </data>
+  <data name="RunAsk_AlwaysAllow" xml:space="preserve">
+    <value>Always allow</value>
+  </data>
+  <data name="RunAsk_Deny" xml:space="preserve">
+    <value>Deny</value>
+  </data>
+  <data name="RunAsk_Activity_Waiting" xml:space="preserve">
+    <value>Waiting for your decision on {0}</value>
+  </data>
+  <data name="RunAsk_Flow_Body" xml:space="preserve">
+    <value>A running job is waiting for your decision.</value>
+  </data>
+  <data name="RunAsk_Question_Label" xml:space="preserve">
+    <value>The job asks</value>
+  </data>
+  <data name="RunAsk_Answer_Placeholder" xml:space="preserve">
+    <value>Your answer</value>
+  </data>
+  <data name="RunAsk_SendAnswer" xml:space="preserve">
+    <value>Answer</value>
+  </data>
 </root>

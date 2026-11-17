@@ -30,6 +30,8 @@ namespace Pia.Services;
 /// <param name="IsScratchTarget"><c>RunScratchFolder.IsGateAutoApprovable(class, TargetPath)</c> — the one
 /// input answered by a PATH rather than a name, and the handler has already resolved and containment-checked
 /// it.</param>
+/// <param name="IsChatJob">A root run started from a plan in the user's chat; it may use session grants for MCP
+/// tools and ask about them.</param>
 public readonly record struct ToolGateInput(
     ToolGateSurface Surface,
     string ToolName,
@@ -45,7 +47,8 @@ public readonly record struct ToolGateInput(
     // inherit a silent false.
     bool CanPark,
     bool IsTopLevelUserRun,
-    bool IsScratchTarget);
+    bool IsScratchTarget,
+    bool IsChatJob);
 
 /// <summary>What the gate must do, and the audit reason persisted beside it.</summary>
 public readonly record struct ToolGateVerdict(ToolGateOutcome Outcome, ToolGateDecision Decision);
@@ -111,14 +114,14 @@ public static class ToolAutonomy
         // collected on a CARD, and voice has neither a card nor a visible transcript to show what it
         // authorized. Voice passes the honest lookup anyway so the input stays a fact.
         //
-        // AND UNATTENDED, NOT FOR ToolClass.External, for the same reason the PARK below refuses to ask about
-        // one: an MCP tool's name and effect are server-defined, and every later call's arguments are unseen.
-        // Nor for ToolClass.Screen or KnowledgeBase: the session store keys a grant by tool alone, so "minted
+        // AND UNATTENDED, NOT FOR ToolClass.External outside a chat job: an MCP tool's effect is server-defined,
+        // and only a chat job asks on its block with each call's arguments. Never for ToolClass.Screen or KnowledgeBase: the session store keys a grant by tool alone, so "minted
         // inside this run" is indistinguishable from "minted an hour ago on another chat, and forgotten".
         if (input.HasSessionGrant
             && input.Surface != ToolGateSurface.Voice
             && (input.Surface != ToolGateSurface.Unattended
-                || input.ToolClass is not (ToolClass.External or ToolClass.Screen or ToolClass.KnowledgeBase)))
+                || input.ToolClass is not (ToolClass.Screen or ToolClass.KnowledgeBase)
+                    && (input.ToolClass != ToolClass.External || input.IsChatJob)))
         {
             return new ToolGateVerdict(ToolGateOutcome.AutoRun, ToolGateDecision.AutoApprovedSessionGrant);
         }
@@ -170,14 +173,14 @@ public static class ToolAutonomy
         // person started themselves and that is nobody's delegate. Both affordances now name the tool AND the
         // paths it asked to act on, so Continue is no longer blind consent — but a delegate must not acquire
         // authority its parent narrowed away, and nobody is watching a scheduled or routine run, so those stay
-        // a hard denial. EXTERNAL stays excluded on every run: an MCP tool's name and effect are server-defined
-        // and its later calls' arguments are unseen, so one approval says nothing about the next call.
+        // a hard denial. EXTERNAL stays excluded outside a chat job: an MCP tool's effect is server-defined, and
+        // only a chat job shows each call's arguments when it asks.
         // Surface is pinned too, even though only this gate passes CanPark: a park would leave a spoken turn
         // hanging on a Flow item the speaker cannot see.
         if (input.Surface == ToolGateSurface.Unattended
             && input.CanPark
             && (!isDeleteLike || input.IsTopLevelUserRun)
-            && input.ToolClass != ToolClass.External)
+            && (input.ToolClass != ToolClass.External || input.IsChatJob))
         {
             return new ToolGateVerdict(ToolGateOutcome.Park, ToolGateDecision.ParkedForApproval);
         }

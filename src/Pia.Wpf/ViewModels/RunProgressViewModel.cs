@@ -351,7 +351,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// collapsed element. The in-flight window is not a flicker: <see cref="IsPausing"/> stays true until
     /// <see cref="Project"/> observes the run actually leaving the pausable state.
     /// </summary>
-    public bool ShowDenyButton => IsToolApprovalPause;
+    public bool ShowDenyButton => IsToolApprovalPause && !IsParkedToolAsk;
 
     /// <summary>Mutually exclusive with <see cref="ShowDenyButton"/> by construction: a run parks on one reason.</summary>
     public bool ShowRejectPlanButton => IsPlanApprovalPause;
@@ -370,7 +370,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>See <see cref="ShowDenyButton"/>: visibility is the state gate, enabledness the in-flight one.
     /// <see cref="ShowNudgeBox"/> rides on this too, so a resume in flight does not yank the box out from under a
     /// note the user is still reading (<c>Continue</c> keeps <see cref="NudgeText"/> unless the resume started).</summary>
-    public bool ShowContinueButton => IsResumableState;
+    public bool ShowContinueButton => IsResumableState && !IsParkedToolAsk && !ShowUserInputAsk;
 
     /// <summary><c>Run_Action_ApprovePlan</c> is a separate key from <c>Run_Action_Approve</c>, which is the Flow
     /// surface's tool-approval label ("Allow").</summary>
@@ -380,7 +380,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     /// <summary>A steering note scoped to "the rest of THIS run" is meaningless before any step ran, and Approve
     /// would otherwise ship whatever sits in the box into <see cref="IAgentRunResumeService.ResumeAsync"/>.</summary>
-    public bool ShowNudgeBox => ShowContinueButton && !IsPlanApprovalPause;
+    public bool ShowNudgeBox => ShowContinueButton && !IsPlanApprovalPause && !ShowUserInputAsk;
 
     /// <summary>True while a user pause request is in flight — gates the Pause button against a double-click
     /// the same way <see cref="IsResuming"/> gates Continue. Cleared only once <see cref="Project"/> observes
@@ -617,7 +617,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _toolActivity;
 
-    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity);
+    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity) || IsAskingInPlace;
 
     /// <summary>The band opens itself once, when the run starts executing; re-opening it later would overrule
     /// a user who closed it mid-run.</summary>
@@ -863,8 +863,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         INavigationService? navigation = null,
         // The parked call's stored payload, for the approval disclosure — LAST again, same discipline.
         // Null ⇒ no detail ever loads, i.e. the panel is byte-identical to one without the store.
-        IAgentToolExchangeStore? toolCalls = null)
+        IAgentToolExchangeStore? toolCalls = null,
+        IRunAskBroker? askBroker = null,
+        IRunToolAnswerService? toolAnswers = null)
     {
+        _askBroker = askBroker;
+        _toolAnswers = toolAnswers;
+        AttachAsking();
         _toolCalls = toolCalls;
         _navigation = navigation;
         _themeService = themeService;
@@ -1220,6 +1225,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             _approvalDetailRead = false;
         }
         RefreshApprovalDerivation();
+        ProjectAsking(run);
 
         IsPlanApprovalPause = run.State == AgentRunState.WaitingForInput
             && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
@@ -2533,7 +2539,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>Only while the RUN is working. A run parked on the user must not tick: that would count
     /// their think time as latency, which is the reading the whole analysis warns against.</summary>
     private bool IsClockRunning => State is RunProgressState.Planning or RunProgressState.Running
-        or RunProgressState.WaitingForChildren;
+        or RunProgressState.WaitingForChildren && !IsAskingInPlace;
 
     // Only the sub-line is recomposed: it is the one surface carrying a number that moves without an event.
     // Internal so the advance can be driven without a Dispatcher to pump the timer.
@@ -2560,6 +2566,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
         _elapsedTimer.Dispose();
+        DetachAsking();
         _runService.RunChanged -= OnRunChanged;
         if (_timelineWatcher is not null)
             _timelineWatcher.TimelineAppended -= OnTimelineAppended;

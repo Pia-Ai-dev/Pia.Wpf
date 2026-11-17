@@ -86,14 +86,14 @@ Do not tick a step that depends on an open gate without revisiting it.
 - [x] **Mark chat jobs.** The policy envelope records that a run was started from a plan in the
       user's chat; the lever path sets it now, `propose_plan` later.
       *Deps:* — · *Effort:* XS · *Value:* Enabler
-- [ ] **A chat job honours session grants and asks on the block.** The four card choices with their
+- [x] **A chat job honours session grants and asks on the block.** The four card choices with their
       card meaning; the step waits in the same round while the chat is on screen.
       *Deps:* G1 (O3), marker, block · *Effort:* L · *Value:* High
-- [ ] **Make the wait visible, and park when nobody is there.** The clock stops, the line above the
+- [x] **Make the wait visible, and park when nobody is there.** The clock stops, the line above the
       composer says so, a Flow item is raised; off screen or after ten minutes the job parks with the
       question open, MCP calls included, and a late answer has the same four choices.
       *Deps:* asking on the block · *Effort:* M · *Value:* High
-- [ ] **Questions from the job on the block.** `request_user_input` with an answer field.
+- [x] **Questions from the job on the block.** `request_user_input` with an answer field.
       *Deps:* block · *Effort:* S · *Value:* Med
 
 ## E — the front door
