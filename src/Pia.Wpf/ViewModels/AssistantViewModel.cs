@@ -1506,10 +1506,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
-        // Defence in depth on the lever: a no-tools persona can never plan, and neither can an attached
-        // file — the planner sees only the goal string, and an approved plan resumes headless without it.
-        var planned = files.Length == 0
-            && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
+        var planned = LeverPlansSend(hasFiles: files.Length > 0);
 
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten.
@@ -1822,6 +1819,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         request is null ? Task.CompletedTask : RegenerateCore(request.Message, request.Style);
 
     // Starts the turn through the session manager, not the composer, so whatever the user has typed survives.
+    // A no-tools persona can never plan, and neither can an attached file: the planner sees only the goal
+    // string, and an approved plan resumes headless without it.
+    private bool LeverPlansSend(bool hasFiles) =>
+        !hasFiles && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
+
     private async Task RegenerateCore(AssistantMessage? message, RegenerateStyle style)
     {
         // Regenerate truncates the transcript a running job may still be extending.
@@ -1862,6 +1864,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         await _chatSessionManager.StartTurnAsync(
             session, prompt, attachments, RegenerateInstructions.For(style, previousAnswer),
+            planned: LeverPlansSend(hasFiles: !string.IsNullOrEmpty(attachedFileContext)),
             attachedFileContext: attachedFileContext);
     }
 
