@@ -527,11 +527,15 @@ public class AssistantViewModelLeverTests
         var chatId = Guid.NewGuid();
         session.SetIdentity(chatId, DateTime.UtcNow, null, "t", false);
         var note = new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "rejected", Timestamp = DateTime.UtcNow };
+        // Another writer's unpulled row: not this regenerate's to delete.
+        var foreign = new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "job", Timestamp = DateTime.UtcNow };
         _chats.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(new SyncAssistantChat
         {
             Id = chatId,
-            Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto), note],
+            Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto), note, foreign],
         });
+        _records.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(
+            [new RunMessageRecord(note.Id, runId, null, null, DateTime.UtcNow)]);
         var removed = session.Messages.Select(m => m.Id).Append(note.Id).ToList();
         var vm = CreateSut(runs);
         _manager.ActiveSession.Returns(session);

@@ -88,6 +88,17 @@ public sealed class RunMessageRecordStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task DeletingTheMessageUnderAnotherChat_KeepsItsRecord()
+    {
+        var (chatId, _, messageId) = await SeedAsync();
+        var (otherChat, _, _) = await SeedAsync();
+
+        Assert.Equal(0, await _chats.DeleteMessagesAsync(otherChat, [messageId], Ct));
+
+        Assert.Single(await _sut.GetByChatAsync(chatId, Ct));
+    }
+
+    [Fact]
     public async Task DeletingTheChat_DeletesItsRecords()
     {
         var (chatId, _, _) = await SeedAsync();
