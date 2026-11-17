@@ -1,4 +1,6 @@
 using System.Text;
+using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -116,6 +118,7 @@ public sealed partial class RunProgressViewModel
                     step.ToolRows.RemoveAt(i);
             }
 
+            var added = false;
             var occurrences = new Dictionary<(string, int?), int>();
             for (var i = 0; i < wanted.Count; i++)
             {
@@ -128,6 +131,7 @@ public sealed partial class RunProgressViewModel
                 {
                     row = new RunStepToolRowViewModel(e.Id, _localization, StepCallsLoader(step.StepId));
                     step.ToolRows.Insert(Math.Min(i, step.ToolRows.Count), row);
+                    added = true;
                 }
 
                 row.ToolName = e.ToolName;
@@ -143,7 +147,42 @@ public sealed partial class RunProgressViewModel
                     _ => _localization[RowLabelKey(e)],
                 };
             }
+
+            if (added || !step.IsRunning)
+                FillArgumentLines(step);
         }
+    }
+
+    private readonly HashSet<(Guid StepId, int Rows, bool Running)> _argumentLineReads = [];
+
+    private void FillArgumentLines(StepRowViewModel step)
+    {
+        if (StepCallsLoader(step.StepId) is not { } load || step.ToolRows.All(r => r.HasArgumentLine)
+            || !_argumentLineReads.Add((step.StepId, step.ToolRows.Count, step.IsRunning)))
+            return;
+
+        var rows = step.ToolRows.ToList();
+        FillArgumentLinesAsync(load, rows).SafeFireAndForget(_logger);
+    }
+
+    private async Task FillArgumentLinesAsync(
+        Func<CancellationToken, Task<AgentStepCallDetails>> load, IReadOnlyList<RunStepToolRowViewModel> rows)
+    {
+        AgentStepCallDetails details;
+        try { details = await load(CancellationToken.None); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId}: reading a step's tool arguments failed", _runId);
+            return;
+        }
+        if (details is null) return;
+
+        _uiContext.Post(_ =>
+        {
+            if (_disposed) return;
+            foreach (var row in rows)
+                row.ApplyArgumentLine(details);
+        }, null);
     }
 
     private Func<CancellationToken, Task<AgentStepCallDetails>>? StepCallsLoader(Guid stepId) =>

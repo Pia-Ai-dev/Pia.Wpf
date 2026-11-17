@@ -183,6 +183,24 @@ public sealed class RunProgressStepDetailTests
     }
 
     [Fact]
+    public async Task ArgumentLines_AreFilledWhenTheRowsAreBuilt_WithoutOpeningARow()
+    {
+        _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(new List<AgentTimelineEvent> { Row(1, "web_fetch", callId: "c1") });
+        _store.GetStepCallsAsync(_runId, _stepId, Arg.Any<CancellationToken>()).Returns(new AgentStepCallDetails(
+            [Call("c1", "web_fetch", "{\"url\":\"https://example.org/a\"}", AgentToolDetailState.Kept, "body",
+                AgentToolDetailState.Kept)], []));
+
+        var vm = await LoadedVm();
+        var row = vm.Steps[0].ToolRows[0];
+
+        await Eventually.TrueAsync(() => row.HasArgumentLine, "argument line filled", TestContext.Current.CancellationToken);
+        Assert.Equal("\"https://example.org/a\"", row.ArgumentLine);
+        Assert.False(row.IsExpanded);
+        Assert.Null(row.InputText);
+    }
+
+    [Fact]
     public async Task AReadFailure_SaysSo()
     {
         _timeline.GetForRunAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())

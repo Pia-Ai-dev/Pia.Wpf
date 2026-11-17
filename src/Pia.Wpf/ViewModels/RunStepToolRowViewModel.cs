@@ -148,6 +148,9 @@ public sealed partial class RunStepToolRowViewModel : ObservableObject
         ResultNote = StateNote(call.ResultState);
     }
 
+    internal void ApplyArgumentLine(AgentStepCallDetails details) =>
+        ArgumentLine ??= ShortArgumentLine(Match(details, ToolCallId, ToolName, Round, Occurrence)?.Arguments);
+
     private string? StateNote(AgentToolDetailState state) => state switch
     {
         AgentToolDetailState.Truncated => _localization["RunStepDetail_State_Truncated"],
