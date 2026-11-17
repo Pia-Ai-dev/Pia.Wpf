@@ -782,8 +782,12 @@ public class AssistantViewModelLeverTests
         _manager.ActiveSession.Returns(session);
         Activate(session);
 
+        var removedIds = session.Messages.Select(m => m.Id).ToList();
+
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
+        await _manager.Received(1).DeleteMessagesAsync(
+            session, Arg.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(removedIds)));
         await _manager.Received(1).StartTurnAsync(
             session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
     }
