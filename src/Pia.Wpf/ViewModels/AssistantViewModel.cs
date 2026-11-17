@@ -786,9 +786,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     internal void SyncTranscriptItems()
     {
-        var (placed, trailing) = PlaceRunBlocks();
-        // A block whose anchor is outside the loaded window is not drawn, so it cannot take its replies either.
         var visibleIds = VisibleMessages.Select(m => m.Id).ToHashSet();
+        var (allPlaced, allTrailing) = PlaceRunBlocks();
+        var (placed, trailing) = RunBlockPlacement.TrailUnloadedLive(allPlaced, allTrailing, visibleIds,
+            b => b is RunProgressViewModel { HasProjected: true } run && !IsSettled(run.State));
+        // A block whose anchor is outside the loaded window is not drawn, so it cannot take its replies either.
         var hidden = ApplyRunReplies(placed
             .Where(p => p.Slot is { } slot && visibleIds.Contains(slot.MessageId))
             .Select(p => p.Block).Concat(trailing).OfType<RunProgressViewModel>());
