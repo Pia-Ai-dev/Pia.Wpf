@@ -325,6 +325,21 @@ public class AiClientServiceToolLoopArmTests
             Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task AThrowingToolHandler_LeavesTheLoopMarkedAsAToolFault()
+    {
+        var toolError = new HttpRequestException(HttpRequestError.ConnectionError);
+        var harness = new Harness { SupportsStreaming = true, ToolError = toolError };
+        harness.ChatClient.GetStreamingResponseAsync(
+                Arg.Any<IEnumerable<ChatMessage>>(), Arg.Any<ChatOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ToolCallRound());
+
+        var thrown = await Assert.ThrowsAsync<HttpRequestException>(() => harness.RunAsync(WithTools()));
+
+        Assert.Same(toolError, thrown);
+        Assert.Null(StepInterruptionClassifier.Classify(thrown));
+    }
+
     private static List<AITool> WithTools() => [AIFunctionFactory.Create(() => "ok", "read_file", "reads a file")];
 
     private static HttpRequestException BadRequest() =>
@@ -405,6 +420,8 @@ public class AiClientServiceToolLoopArmTests
         /// <summary>Runs inside the tool handler, which otherwise discards the dispatch context.</summary>
         public Action<ToolDispatchContext>? OnDispatch { get; init; }
 
+        public Exception? ToolError { get; init; }
+
         public async Task<List<ChatStreamItem>> RunAsync(IList<AITool>? tools)
         {
             var handler = Substitute.For<IAiProviderHandler>();
@@ -452,6 +469,7 @@ public class AiClientServiceToolLoopArmTests
                 {
                     Dispatched.Add(call.Name);
                     OnDispatch?.Invoke(ctx);
+                    if (ToolError is not null) throw ToolError;
                     return Task.FromResult<object?>("tool output");
                 },
                 mode: null,

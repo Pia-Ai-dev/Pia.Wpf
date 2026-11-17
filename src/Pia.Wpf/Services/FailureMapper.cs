@@ -55,7 +55,7 @@ public static class FailureMapper
 
     // Depth-first, outermost first, so the most specific wrapper still wins over the socket error at the
     // bottom. Bounded because an exception graph is caller-supplied.
-    private static IEnumerable<Exception> Unwrap(Exception ex, int depth)
+    internal static IEnumerable<Exception> Unwrap(Exception ex, int depth)
     {
         if (depth > 8) yield break;
         yield return ex;
