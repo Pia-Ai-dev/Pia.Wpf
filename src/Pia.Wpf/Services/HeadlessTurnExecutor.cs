@@ -873,7 +873,17 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                     UserInputQuestion: userInput.Question);
             }
 
-            return new StepTurnResult(false, false, ex.Message, string.Empty, null, Guid.Empty, Guid.Empty);
+            var interruption = offerStepResultTool && !ct.IsCancellationRequested
+                ? StepInterruptionClassifier.Classify(ex)
+                : null;
+            if (interruption is { } kind)
+            {
+                _logger.LogInformation("Headless run {RunId} step interrupted ({Reason})",
+                    _runId, AgentRunOrchestrator.InterruptionReason(kind));
+            }
+
+            return new StepTurnResult(false, false, ex.Message, string.Empty, null, Guid.Empty, Guid.Empty,
+                Interruption: interruption);
         }
         finally
         {

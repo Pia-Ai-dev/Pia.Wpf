@@ -620,6 +620,43 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_ParkedOnAnInterruption_TakesNoStrike()
+    {
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, chatId, Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun
+            {
+                Id = runId, ChatId = chatId, RunShape = RunShape.Planned,
+                State = AgentRunState.WaitingForInput,
+                ExtraJson = """{"paused":true,"reason":"interrupted-credit"}""",
+            });
+
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runService,
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        await runService.Received(1).GetAsync(runId, Arg.Any<CancellationToken>());
+        Assert.Empty(jobs.Failed);
+        Assert.Equal(0, notifications.FailureCount);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_AgentTaskJob_ParkedAtBudget_MovesTheScheduleOnceAtDispatch_AndDoesNotRelaunch()
     {
         // A parked run is NOT a job failure, but the schedule must still have moved on — and exactly once: the

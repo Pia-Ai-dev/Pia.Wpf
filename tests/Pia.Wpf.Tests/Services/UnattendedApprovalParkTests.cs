@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.AI;
@@ -1073,6 +1074,27 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    /// <summary>An approval park outranks an interruption that faults the same exchange.</summary>
+    [Fact]
+    public async Task AParkIsNotDiscardedByAConnectionFaultLaterInTheSameExchange()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe,
+            faultAfterFirstCallWith: new HttpRequestException(HttpRequestError.ConnectionError));
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal("tool-approval", PauseMember(run, "reason"));
+        Assert.False(probe.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>The resume floor is a per-dispatch degrade and is wider than some launches, so persisting it would make a run
     /// that never held <c>write_file</c> hold it forever — and would overwrite a document a newer build wrote.</summary>
     [Fact]
@@ -1565,7 +1587,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         bool faultOnExecute = false, string executeResult = ExecuteResult, ITokenMapService? tokenMap = null,
         IReadOnlyList<IReadOnlyList<ScriptedCall>>? dispatchScript = null,
         string? pluginName = null, string description = "desc", string? warning = null,
-        bool recordRounds = false)
+        bool recordRounds = false, Exception? faultAfterFirstCallWith = null)
     {
         List<ScriptedCall> everyDispatch = [new(probe.ToolName, firstPath, firstContent)];
         if (secondToolName is not null)
@@ -1593,7 +1615,9 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                     : dispatchScript.ElementAtOrDefault(probe.Dispatches.Count - 1) ?? [];
                 // Later dispatches mint their own ids: a carried call must not collide with the re-run's.
                 var idPrefix = probe.Dispatches.Count == 1 ? "call-" : $"call-d{probe.Dispatches.Count}-";
-                return DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe, calls, faultAfterFirstCall,
+                var fault = faultAfterFirstCallWith
+                    ?? (faultAfterFirstCall ? new InvalidOperationException("provider faulted after the park") : null);
+                return DriveWithToolCall(ci.ArgAt<ToolCallHandler?>(3), probe, calls, fault,
                     recordRounds, idPrefix);
             });
 
@@ -1695,7 +1719,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
     private static async IAsyncEnumerable<ChatStreamItem> DriveWithToolCall(
         ToolCallHandler? handler, ToolProbe probe, IReadOnlyList<ScriptedCall> calls,
-        bool faultAfterFirstCall = false, bool recordRounds = false, string idPrefix = "call-")
+        Exception? fault = null, bool recordRounds = false, string idPrefix = "call-")
     {
         await Task.Yield();
         if (handler is not null)
@@ -1723,8 +1747,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
 
                 // The exchange dies after the park. Thrown from inside the stream because that is where a real
                 // transport error, a timeout and a truncation all surface.
-                if (faultAfterFirstCall)
-                    throw new InvalidOperationException("provider faulted after the park");
+                if (fault is not null)
+                    throw fault;
             }
 
             if (recordRounds && callContents.Count > 0)

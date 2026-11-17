@@ -43,7 +43,7 @@ steps in its Blocks column.
 - [x] **4 — An interrupted replan parks.** A replan call cut off after a step failure or a failed verify
   parks the run, and the failed step goes back to Pending.
   *Deps:* 3, Q3 · *Effort:* S · *Value:* High
-- [ ] **5 — The headless executor names the interruption.** A background or resumed step sets the member,
+- [x] **5 — The headless executor names the interruption.** A background or resumed step sets the member,
   behind the approval and question parks and never while the run is being cancelled.
   *Deps:* 3, Q1 · *Effort:* XS · *Value:* High
 - [ ] **6 — The live step names the interruption and drops its error bubble.** An interactive step sets the

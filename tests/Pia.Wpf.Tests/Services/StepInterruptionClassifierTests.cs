@@ -87,7 +87,7 @@ public class StepInterruptionClassifierTests
         return Task.FromResult(port);
     }
 
-    private static Exception Build(string shape) => shape switch
+    internal static Exception Build(string shape) => shape switch
     {
         "credit" => new CreditLimitException("x"),
         "credit-wrapped" => new AggregateException(new CreditLimitException("x")),
