@@ -2281,7 +2281,7 @@ public class ChatSessionManagerTests
         Assert.True(posted.IsUser);
         Received.InOrder(() =>
         {
-            _chatService.SaveMergedAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+            _chatService.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
             _resumeService.ResumeAsync(runId, "continue", Arg.Any<CancellationToken>());
         });
     }
@@ -2305,8 +2305,8 @@ public class ChatSessionManagerTests
         await _resumeService.DidNotReceive().ResumeAsync(
             Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await _personas.Received(1).ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
-        Assert.Equal(2, session.Messages.Count);
-        Assert.False(session.Messages[1].IsUser);
+        Assert.Equal(2, TurnRows(session).Count);
+        Assert.False(TurnRows(session)[1].IsUser);
     }
 
     /// <summary>Typing over a pending plan is a refusal, not an answer — it must never be read as approving it.</summary>
