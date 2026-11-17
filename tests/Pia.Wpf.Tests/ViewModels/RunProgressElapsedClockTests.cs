@@ -58,6 +58,21 @@ public sealed class RunProgressElapsedClockTests
         vm.Dispose();
     }
 
+    [Fact]
+    public async Task AProjectionLandingAfterDispose_IsDropped()
+    {
+        Stub(AgentRunState.Running, 4000);
+        var vm = CreateVm();
+        vm.Dispose();
+
+        var before = vm.State;
+        var ex = await Record.ExceptionAsync(vm.RefreshAsync);
+        vm.FlushLiveText();
+
+        Assert.Null(ex);
+        Assert.Equal(before, vm.State);
+    }
+
     /// <summary>The projection itself must stay exactly where the ledger put it: folding the elapsed delta in
     /// here would move the figure a few milliseconds mid-projection, which is enough to change its rounding.</summary>
     [Fact]

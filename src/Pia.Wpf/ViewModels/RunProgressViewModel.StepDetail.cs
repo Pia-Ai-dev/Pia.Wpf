@@ -66,6 +66,7 @@ public sealed partial class RunProgressViewModel
 
     internal void FlushLiveText()
     {
+        if (_disposed) return;
         Dictionary<Guid, (string Text, string Reasoning)> snapshot;
         lock (_liveGate)
         {

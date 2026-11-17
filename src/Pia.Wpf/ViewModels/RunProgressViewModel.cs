@@ -1165,6 +1165,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private void Project(AgentRun run, IReadOnlyList<AgentRun>? children = null)
     {
+        if (_disposed) return;
         var truncation = ReadTruncation(run);
         (State, IsTruncated) = MapState(run, truncation.Truncated);
         FirstMessageId = run.FirstMessageId;
@@ -1937,6 +1938,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         _uiContext.Post(_ =>
         {
+            if (_disposed) return;
             // A resume that landed mid-read posts Project — which clears — ahead of this, so without the
             // re-check the box would reappear on a run that is no longer asking.
             if (!IsToolApprovalPause || !string.Equals(ApprovalToolName, toolName, StringComparison.Ordinal))
@@ -2561,6 +2563,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private void SyncElapsedTimer()
     {
+        if (_disposed) return;
         _elapsedBaseMs = WallClockMs;
         _elapsedBaseAt = DateTime.UtcNow;
         _displayElapsedMs = WallClockMs;
