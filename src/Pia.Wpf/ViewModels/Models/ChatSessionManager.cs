@@ -777,11 +777,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             return false;
         }
 
-        // Must run before anything below mutates the session: if the attached run is parked asking the user
-        // a question, this send is that answer, not a new turn.
+        // Must run before anything below mutates the session: a send to a run parked on a question or an
+        // interruption continues that run rather than starting a new turn.
         if (await TryAnswerParkedRunAsync(
                 session, userText, attachments, regenerationInstruction, attachedFileContext,
-                hasFiles: files is { Count: > 0 }, parkReason))
+                hasFiles: files is { Count: > 0 }, parkReason, planned))
             return true;
 
         // Captured before the Id-assignment block below: a brand-new chat has no Id yet,
@@ -1129,11 +1129,12 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             ? file => _filesToolHandler.ToReadFilePath(file.SavedRelativePath ?? file.FullPath, workingDirectory)
             : null;
 
-    /// <summary>Answers a run parked on a question; never a regeneration, image, file or blank send, which a
-    /// resume (a text nudge only) would drop silently.</summary>
+    /// <summary>Answers a run parked on a question, or continues an interrupted one from an Agent-mode send; never
+    /// a regeneration, image, file or blank send, which a resume (a text nudge only) would drop silently.</summary>
     private async Task<bool> TryAnswerParkedRunAsync(
         ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
-        string? regenerationInstruction, string? attachedFileContext, bool hasFiles, string? parkReason)
+        string? regenerationInstruction, string? attachedFileContext, bool hasFiles, string? parkReason,
+        bool planned)
     {
         if (_resumeService is null || session.ActiveRunId is not { } runId
             || regenerationInstruction is not null || attachments is { Count: > 0 }
@@ -1143,7 +1144,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             return false;
         }
 
-        if (parkReason is not (AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason))
+        var asked = parkReason is AgentRunOrchestrator.NeedsGoalReason or AgentRunOrchestrator.NeedsInputReason;
+        if (!asked && !(planned && AgentRunOrchestrator.IsInterruptionReason(parkReason)))
             return false;
 
         var answer = new AssistantMessage(ChatRole.User, userText);

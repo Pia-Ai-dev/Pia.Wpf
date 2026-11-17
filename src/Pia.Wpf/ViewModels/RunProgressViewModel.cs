@@ -1536,15 +1536,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// </summary>
     private static string? ReadFailureReason(AgentRun run) => AgentRunService.ReadFailureReason(run.ExtraJson);
 
-    // The pause vocabulary, like the truncation vocabulary above, is a fixed set of APP-OWNED tokens written by
-    // the run loop and the startup reconcile — never user content. An unknown or absent reason keeps the budget
-    // wording, because that is what every pause the loop itself writes actually is ("step-cap"/"wall-clock").
-    // G2's "user" arm is reachable now: ComputeActivity routes Paused here too, because the band's lead
-    // line is the only place a paused run can say who paused it. It is deliberately NOT mapped to the existing
-    // Run_State_Paused label: a mapping arm that borrows a string written for another control reads fine and
-    // breaks on the next copy edit.
-    // takes the RUN, not just the reason: the approval arm has to name the tool, and a resx KEY
-    // cannot carry one. Every other arm ignores the extra argument.
+    // Reasons are app-owned tokens; an unknown one keeps the budget wording. Takes the run so the approval arm
+    // can name the tool.
     private string DescribePause(AgentRun run) => RunPauseEnvelope.ReadReason(run) switch
     {
         // The tool name is app/plugin-defined and never user content (the same property that lets the Flow
@@ -1567,6 +1560,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // this mapping renders for — and it was announcing "Stopped at budget" for a run that had reached no
         // budget at all, including one the user had paused by hand a moment earlier.
         HeadlessRunLauncher.ResumeInterruptedReason => _localization["Run_Activity_ResumeInterrupted"],
+        AgentRunOrchestrator.InterruptedCreditReason => _localization["Run_Activity_InterruptedCredit"],
+        AgentRunOrchestrator.InterruptedOfflineReason => _localization["Run_Activity_InterruptedOffline"],
+        AgentRunOrchestrator.InterruptedTimeoutReason => _localization["Run_Activity_InterruptedTimeout"],
+        AgentRunOrchestrator.InterruptedProviderReason => _localization["Run_Activity_InterruptedProvider"],
         _ => _localization["Run_Activity_WaitingAtBudget"],
     };
 

@@ -33,7 +33,7 @@ public sealed class ChatSessionStepTurnTests
 
     private static StepTurnSpec Spec(
         bool tokenizationEnabled, AiProvider? provider = null, bool supportsTools = false,
-        string? workspaceRoot = null, string? extraToolName = null) => new(
+        string? workspaceRoot = null, string? extraToolName = null, bool useGoalVerbatim = false) => new(
         RunId: Guid.NewGuid(),
         Ordinal: 0,
         Intent: "do the thing",
@@ -46,7 +46,8 @@ public sealed class ChatSessionStepTurnTests
         SupportsTools: supportsTools,
         WebSearchActive: false,
         TokenizationEnabled: tokenizationEnabled,
-        WorkspaceRoot: workspaceRoot);
+        WorkspaceRoot: workspaceRoot,
+        UseGoalVerbatim: useGoalVerbatim);
 
     private static IList<AITool>? StepTools(bool supportsTools, string? extraToolName)
     {
@@ -303,6 +304,108 @@ public sealed class ChatSessionStepTurnTests
         Assert.NotEqual(ChatState.Error, session.State);
         Assert.Equal(0, failed);
         Assert.False(session.Messages.Last(m => !m.IsUser).IsStreaming);
+        Assert.Null(result.Interruption);
+        Assert.Equal(2, session.Messages.Count);
+    }
+
+    [Theory]
+    [InlineData("credit", StepInterruption.Credit)]
+    [InlineData("llm-timeout", StepInterruption.Timeout)]
+    [InlineData("refused", StepInterruption.Offline)]
+    [InlineData("cloud-stream", StepInterruption.Provider)]
+    public async Task RunStepTurn_Interrupted_ReturnsTheKind_AndRemovesTheStepBubble(string shape, StepInterruption kind)
+    {
+        ReturnsStream(() => ThrowingStream(StepInterruptionClassifierTests.Build(shape)));
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+
+        var result = await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.Equal(kind, result.Interruption);
+        Assert.False(result.Succeeded);
+        Assert.Equal(Guid.Empty, result.FirstMessageId);
+        Assert.Equal(Guid.Empty, result.LastMessageId);
+        Assert.Equal(string.Empty, result.VisibleText);
+        Assert.Single(session.Messages);
+        Assert.NotEqual(ChatState.Error, session.State);
+    }
+
+    [Fact]
+    public async Task RunStepTurn_Truncated_IsNotAnInterruption()
+    {
+        ReturnsStream(() => ThrowingStream(new Pia.Services.Exceptions.LlmTruncatedException("P", 10)));
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+
+        var result = await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.Null(result.Interruption);
+        Assert.Equal(2, session.Messages.Count);
+    }
+
+    [Fact]
+    public async Task RunStepTurn_InterruptedFallbackTurn_KeepsItsErrorBubble()
+    {
+        ReturnsStream(() => ThrowingStream(StepInterruptionClassifierTests.Build("refused")));
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+
+        var result = await session.RunStepTurnAsync(
+            Spec(tokenizationEnabled: false, useGoalVerbatim: true), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.Null(result.Interruption);
+        Assert.Equal(2, session.Messages.Count);
+    }
+
+    [Fact]
+    public async Task RunStepTurn_FaultAfterStop_IsNotAnInterruption()
+    {
+        using var cts = new CancellationTokenSource();
+        ReturnsStream(() => ThrowingStream(StepInterruptionClassifierTests.Build("stream-reset"), cts.Cancel));
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+
+        var result = await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), cts.Token);
+
+        Assert.Null(result.Interruption);
+    }
+
+    [Fact]
+    public async Task RunStepTurn_InterruptedAfterAsking_KeepsTheQuestion()
+    {
+        _ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(ci => AskThenThrow(ci.ArgAt<ToolCallHandler?>(3), StepInterruptionClassifierTests.Build("refused")));
+        var session = CreateSession();
+        session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+        var spec = Spec(tokenizationEnabled: false, supportsTools: true) with
+        {
+            Tools =
+            [
+                AIFunctionFactory.Create(() => string.Empty, AgentStepTools.EmitStepResultToolName),
+                AIFunctionFactory.Create(() => string.Empty, AgentStepTools.RequestUserInputToolName),
+            ],
+        };
+
+        var result = await session.RunStepTurnAsync(spec, new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
+
+        Assert.NotNull(result.UserInputQuestion);
+        Assert.Null(result.Interruption);
+        Assert.Equal(2, session.Messages.Count);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> AskThenThrow(ToolCallHandler? handler, Exception ex)
+    {
+        await Task.Yield();
+        await handler!(
+            new FunctionCallContent("call-1", AgentStepTools.RequestUserInputToolName,
+                new Dictionary<string, object?> { ["question"] = "which cluster?" }),
+            new ToolDispatchContext(1));
+        throw ex;
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 
     // ---- Executor parity: the LIVE step path compacts too, and relays the budget into the tool loop ----

@@ -50,6 +50,10 @@ public sealed class AgentRunNotificationSurfaceTests
     [InlineData("wall-clock", "Flow_Run_WaitingAtBudget")]
     [InlineData(null, "Flow_Run_WaitingAtBudget")]
     [InlineData("plan-approval", "Flow_Run_PlanApproval")]
+    [InlineData("interrupted-credit", "Flow_Run_InterruptedCredit")]
+    [InlineData("interrupted-offline", "Flow_Run_InterruptedOffline")]
+    [InlineData("interrupted-timeout", "Flow_Run_InterruptedTimeout")]
+    [InlineData("interrupted-provider", "Flow_Run_InterruptedProvider")]
     public void AParkedRunsFlowBodyNamesWhyItParked(string? reason, string expectedKey)
         => Assert.Equal(expectedKey, AgentRunNotificationSurface.PausedBodyKey(reason));
 

@@ -270,7 +270,8 @@ public sealed class HeadlessRunLauncherTests : IDisposable
 
     /// <summary>Persist a stub chat + a parked (WaitingForInput) Planned run carrying one Pending step.</summary>
     /// <param name="parentRunId">Makes the parked run a child; every child owns a stub chat, so a user can press Continue on one.</param>
-    private async Task<AgentRun> ParkRunWithPendingStepAsync(string? policyJson, Guid? parentRunId = null)
+    private async Task<AgentRun> ParkRunWithPendingStepAsync(
+        string? policyJson, Guid? parentRunId = null, string parkReason = "step-cap")
     {
         var ct = TestContext.Current.CancellationToken;
         var chatId = Guid.NewGuid();
@@ -299,7 +300,7 @@ public sealed class HeadlessRunLauncherTests : IDisposable
             Intent = "do it",
             Status = AgentStepStatus.Pending,
         }], ct);
-        await _runs.PauseAsync(run.Id, "step-cap", ct);
+        await _runs.PauseAsync(run.Id, parkReason, ct);
         return run;
     }
 
@@ -619,6 +620,24 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Single(verifier.SeenWorkspaceRoots);
         Assert.Equal(expected, verifier.SeenWorkspaceRoots[0]);
         // This run parked on `step-cap`, not `needs-goal`, so the resume must not re-plan.
+        Assert.Null(planner.PlanContext);
+
+        TempPath.Remove(expected);
+    }
+
+    [Fact]
+    public async Task Resume_AfterAnInterruption_InitializesTheExecutorWithTheSameRunWorkspaceRoot()
+    {
+        var verifier = new FakeVerifier();
+        var (launcher, planner) = BuildLauncher(verifier: verifier);
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null, parkReason: "interrupted-offline");
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: TestContext.Current.CancellationToken));
+        await AwaitRunSettledAsync(launcher, parked.Id);
+
+        var expected = SafeFolderPath.Canonicalize(Path.Combine(_runsBase, parked.Id.ToString()));
+        Assert.Single(verifier.SeenWorkspaceRoots);
+        Assert.Equal(expected, verifier.SeenWorkspaceRoots[0]);
         Assert.Null(planner.PlanContext);
 
         TempPath.Remove(expected);
@@ -1614,6 +1633,10 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     [InlineData("needs-input", "needs-input")]
     [InlineData("step-cap", "resume-interrupted")]
     [InlineData("plan-approval", "plan-approval")]
+    [InlineData("interrupted-credit", "interrupted-credit")]
+    [InlineData("interrupted-offline", "interrupted-offline")]
+    [InlineData("interrupted-timeout", "interrupted-timeout")]
+    [InlineData("interrupted-provider", "interrupted-provider")]
     public async Task Resume_InterruptedBeforeDispatch_ReParksWithTheTokenTheNextResumeNeeds(
         string parkReason, string expectedAfterRePark)
     {

@@ -1,9 +1,11 @@
 using System.IO;
+using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.Tests.TestInfrastructure;
@@ -250,6 +252,187 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         Assert.Equal(3, executor.StepTurns);
     }
 
+    [Theory]
+    [InlineData(StepInterruption.Credit, "interrupted-credit")]
+    [InlineData(StepInterruption.Offline, "interrupted-offline")]
+    [InlineData(StepInterruption.Timeout, "interrupted-timeout")]
+    [InlineData(StepInterruption.Provider, "interrupted-provider")]
+    public async Task AnInterruptedStep_ParksWithItsToken_AndKeepsTheStepPending(StepInterruption kind, string token)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var planner = new StubPlanner(Plan("A"));
+        var executor = new StubExecutor { Interruption = kind };
+
+        await RunAsync(run, planner, ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, settled.State);
+        Assert.Equal(token, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal("A", (await _runs.NextPendingStepAsync(run.Id, ct))?.Title);
+        Assert.DoesNotContain(settled.Plan, s => s.Status == AgentStepStatus.Failed);
+        Assert.Equal(0, planner.ReplanCalls);
+        Assert.Equal(0, executor.GraceTurns);
+        Assert.False(executor.EndedRun);
+        Assert.Null(settled.CompletedAt);
+    }
+
+    [Fact]
+    public async Task AnInterruptionAtTheThirdStep_KeepsTheFirstTwoDone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var executor = new StubExecutor { Interruption = StepInterruption.Offline, InterruptAtStepTurn = 3 };
+
+        await RunAsync(run, new StubPlanner(Plan("A", "B", "C")), ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentStepStatus.Done, settled.Plan.Single(s => s.Title == "A").Status);
+        Assert.Equal(AgentStepStatus.Done, settled.Plan.Single(s => s.Title == "B").Status);
+        Assert.Equal(AgentStepStatus.Pending, settled.Plan.Single(s => s.Title == "C").Status);
+    }
+
+    [Fact]
+    public async Task AResumeAfterAnInterruption_RunsOnlyThePendingStep_WithoutRePlanning()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var planner = new StubPlanner(Plan("A", "B"));
+        await RunAsync(run, planner, ct,
+            new StubExecutor { Interruption = StepInterruption.Offline, InterruptAtStepTurn = 2 });
+
+        var resumed = new StubExecutor();
+        await RunAsync(run, planner, ct, resumed,
+            resume: true, parkReason: AgentRunOrchestrator.InterruptedOfflineReason);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.Completed, settled.State);
+        Assert.Equal(1, resumed.StepTurns);
+        Assert.Equal(1, planner.PlanCalls);
+        Assert.Equal(0, planner.ReplanCalls);
+        Assert.All(settled.Plan, s => Assert.Equal(AgentStepStatus.Done, s.Status));
+    }
+
+    [Fact]
+    public async Task AUserPauseRequest_OutranksAnInterruption()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var steering = Substitute.For<IRunSteeringStore>();
+        steering.TryConsumePauseRequest(run.Id).Returns(true, false);
+
+        await RunAsync(run, new StubPlanner(Plan("A")), ct,
+            new StubExecutor { Interruption = StepInterruption.Offline }, steering: steering);
+
+        Assert.Equal(AgentRunState.Paused, (await _runs.GetAsync(run.Id, ct))!.State);
+    }
+
+    [Fact]
+    public async Task AnInterruptedFallbackTurn_StillFailsTheRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+
+        await RunAsync(run, new StubPlanner(PlanResult.Fallback), ct,
+            new StubExecutor { FallbackInterruption = StepInterruption.Offline });
+
+        Assert.Equal(AgentRunState.Failed, (await _runs.GetAsync(run.Id, ct))!.State);
+    }
+
+    [Theory]
+    [InlineData("interrupted-credit", true)]
+    [InlineData("interrupted-offline", true)]
+    [InlineData("interrupted-timeout", true)]
+    [InlineData("interrupted-provider", true)]
+    [InlineData("step-cap", false)]
+    [InlineData("needs-input", false)]
+    [InlineData("resume-interrupted", false)]
+    [InlineData(null, false)]
+    public void IsInterruptionReason_KnowsExactlyTheFourTokens(string? reason, bool expected)
+        => Assert.Equal(expected, AgentRunOrchestrator.IsInterruptionReason(reason));
+
+    [Fact]
+    public async Task AnInterruptedReplanAfterAStepFailure_Parks_AndPutsTheFailedStepBackToPending()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var executor = new StubExecutor { FailFirstStep = true };
+
+        await RunAsync(run, new StubPlanner(Plan("A")) { ReplanThrows = new CreditLimitException("x") }, ct, executor);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, settled.State);
+        Assert.Equal(AgentRunOrchestrator.InterruptedCreditReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal("A", (await _runs.NextPendingStepAsync(run.Id, ct))?.Title);
+        Assert.False(executor.EndedRun);
+    }
+
+    [Fact]
+    public async Task TheStepPutBack_RunsAgainOnResume_AndEndsDone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var planner = new StubPlanner(Plan("A")) { ReplanThrows = new CreditLimitException("x") };
+        await RunAsync(run, planner, ct, new StubExecutor { FailFirstStep = true });
+
+        var resumed = new StubExecutor();
+        await RunAsync(run, planner, ct, resumed,
+            resume: true, parkReason: AgentRunOrchestrator.InterruptedCreditReason);
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.Completed, settled.State);
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(settled.Plan).Status);
+        Assert.Equal(1, resumed.StepTurns);
+    }
+
+    [Fact]
+    public async Task AnInterruptedReplanAfterAFailedVerify_Parks_WithEveryStepDone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        var planner = new StubPlanner(Plan("A"))
+        {
+            ReplanThrows = new HttpRequestException(HttpRequestError.ConnectionError),
+        };
+
+        await RunAsync(run, planner, ct, verifier: new RejectingVerifier());
+
+        var settled = (await _runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, settled.State);
+        Assert.Equal(AgentRunOrchestrator.InterruptedOfflineReason, RunPauseEnvelope.ReadReason(settled));
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(settled.Plan).Status);
+        Assert.Null(await _runs.NextPendingStepAsync(run.Id, ct));
+    }
+
+    [Fact]
+    public async Task AnOrdinaryReplanFault_StillFailsTheRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+
+        await RunAsync(run, new StubPlanner(Plan("A")) { ReplanThrows = new InvalidOperationException("boom") }, ct,
+            new StubExecutor { FailFirstStep = true });
+
+        Assert.Equal(AgentRunState.Failed, (await _runs.GetAsync(run.Id, ct))!.State);
+    }
+
+    [Fact]
+    public async Task AnInterruptedReplanDuringACancel_DoesNotPark()
+    {
+        var run = await NewRunAsync(TestContext.Current.CancellationToken);
+        using var cts = new CancellationTokenSource();
+        var planner = new StubPlanner(Plan("A"))
+        {
+            ReplanThrows = new CreditLimitException("x"),
+            CancelBeforeReplanThrows = cts,
+        };
+
+        await RunAsync(run, planner, cts.Token, new StubExecutor { FailFirstStep = true });
+
+        var settled = (await _runs.GetAsync(run.Id, TestContext.Current.CancellationToken))!;
+        Assert.NotEqual(AgentRunState.WaitingForInput, settled.State);
+    }
+
     [Fact]
     public void SupportsPlanApproval_DefaultsFalseForAnExecutorThatDoesNotOverrideIt()
     {
@@ -275,10 +458,10 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
     private Task RunAsync(
         AgentRun run, IAgentPlanner planner, CancellationToken ct,
         StubExecutor? executor = null, RunProfile? profile = null, IRunSteeringStore? steering = null,
-        bool resume = false, string? parkReason = null)
+        bool resume = false, string? parkReason = null, IAgentVerifier? verifier = null)
     {
         var orchestrator = new AgentRunOrchestrator(
-            _runs, planner, new AcceptingVerifier(), NullLogger<AgentRunOrchestrator>.Instance,
+            _runs, planner, verifier ?? new AcceptingVerifier(), NullLogger<AgentRunOrchestrator>.Instance,
             steering: steering);
 
         return orchestrator.RunAsync(
@@ -296,11 +479,37 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
 
     private sealed class StubPlanner(PlanResult plan, PlanResult? replan = null) : IAgentPlanner
     {
+        public int PlanCalls { get; private set; }
+
+        public int ReplanCalls { get; private set; }
+
+        public Exception? ReplanThrows { get; init; }
+
+        public CancellationTokenSource? CancelBeforeReplanThrows { get; init; }
+
         public Task<PlanResult> PlanAsync(string goal, RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
-            => Task.FromResult(plan);
+        {
+            PlanCalls++;
+            return Task.FromResult(plan);
+        }
 
         public Task<PlanResult> ReplanAsync(RunContext ctx, string? failure, Persona persona, AiProvider provider, CancellationToken ct)
-            => Task.FromResult(replan ?? PlanResult.Fallback);
+        {
+            ReplanCalls++;
+            if (ReplanThrows is { } thrown)
+            {
+                CancelBeforeReplanThrows?.Cancel();
+                return Task.FromException<PlanResult>(thrown);
+            }
+
+            return Task.FromResult(replan ?? PlanResult.Fallback);
+        }
+    }
+
+    private sealed class RejectingVerifier : IAgentVerifier
+    {
+        public Task<VerdictResult> VerifyAsync(RunContext ctx, Persona persona, AiProvider provider, CancellationToken ct)
+            => Task.FromResult(new VerdictResult(false, "nothing was done", new[] { "x" }, null));
     }
 
     private sealed class AcceptingVerifier : IAgentVerifier
@@ -319,6 +528,13 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
 
         public bool FailFirstStep { get; init; }
 
+        public StepInterruption? Interruption { get; init; }
+
+        // Null interrupts every turn.
+        public int? InterruptAtStepTurn { get; init; }
+
+        public StepInterruption? FallbackInterruption { get; init; }
+
         public int StepTurns { get; private set; }
 
         public int FallbackTurns { get; private set; }
@@ -332,6 +548,9 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         public Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
         {
             StepTurns++;
+            if (Interruption is { } kind && (InterruptAtStepTurn is null || InterruptAtStepTurn == StepTurns))
+                return Task.FromResult(Interrupted(kind));
+
             var failThisOne = FailFirstStep && StepTurns == 1;
             return Task.FromResult(new StepTurnResult(
                 Succeeded: !failThisOne, Cancelled: false, Error: failThisOne ? "boom" : null, VisibleText: "done", Usage: null,
@@ -342,9 +561,16 @@ public sealed class AgentRunOrchestratorArmTests : IDisposable
         public Task<StepTurnResult> RunSingleTurnFallbackAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         {
             FallbackTurns++;
+            if (FallbackInterruption is { } kind)
+                return Task.FromResult(Interrupted(kind));
+
             return Task.FromResult(new StepTurnResult(
                 true, false, null, "fell back", null, Guid.NewGuid(), Guid.NewGuid()));
         }
+
+        private static StepTurnResult Interrupted(StepInterruption kind) => new(
+            Succeeded: false, Cancelled: false, Error: "transport", VisibleText: string.Empty, Usage: null,
+            FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty, Interruption: kind);
 
         public Task<StepTurnResult?> RunGraceTurnAsync(AgentRun run, RunContext ctx, CancellationToken ct)
         {

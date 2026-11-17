@@ -1177,6 +1177,10 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while sub-agents were working — continue?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>You paused this run</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start — continue again when you are ready</value></data>
+  <data name="Run_Activity_InterruptedCredit" xml:space="preserve"><value>Credit limit reached. Continue once your credit has reset.</value></data>
+  <data name="Run_Activity_InterruptedOffline" xml:space="preserve"><value>Connection lost. Continue when you are back online.</value></data>
+  <data name="Run_Activity_InterruptedTimeout" xml:space="preserve"><value>The model did not answer in time. Continue?</value></data>
+  <data name="Run_Activity_InterruptedProvider" xml:space="preserve"><value>The AI service had a problem. Continue?</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Waiting for your approval to use {0}</value></data>
   <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Affects {0}</value></data>
   <data name="Run_ToolApproval_ShowFullCall" xml:space="preserve"><value>Show the full call</value></data>
@@ -1324,6 +1328,10 @@
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while its sub-agents were working — continue?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>You paused this run. Continue?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start. Continue?</value></data>
+  <data name="Flow_Run_InterruptedCredit" xml:space="preserve"><value>Credit limit reached. Continue once your credit has reset.</value></data>
+  <data name="Flow_Run_InterruptedOffline" xml:space="preserve"><value>Connection lost. Continue when you are back online.</value></data>
+  <data name="Flow_Run_InterruptedTimeout" xml:space="preserve"><value>The model did not answer in time. Continue?</value></data>
+  <data name="Flow_Run_InterruptedProvider" xml:space="preserve"><value>The AI service had a problem. Continue?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>This run needs your approval to use {0}. Continue to allow it.</value></data>
   <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>This run needs your approval to use {0} on {1}. Continue to allow it.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>This run couldn't tell what you wanted — open it to answer.</value></data>
