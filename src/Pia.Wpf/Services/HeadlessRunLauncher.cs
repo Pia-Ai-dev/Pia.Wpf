@@ -894,7 +894,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 try
                 {
                     await _agentRunService.UpdatePolicyJsonAsync(
-                            run.Id, SerializeGrantEnvelope(grants, run.TriggerKind, policy, deniedNow), ct)
+                            run.Id, SerializeGrantEnvelope(
+                                grants, run.TriggerKind, policy, deniedNow, TryRestoreChatJob(run.PolicyJson)), ct)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)
@@ -947,7 +948,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                     await _agentRunService.UpdatePolicyJsonAsync(
                             // The ROW's trigger, not the envelope's. GrantEnvelope.Trigger is provenance that
                             // "never widens a grant", and the row is the authoritative copy of the same fact.
-                            run.Id, SerializeGrantEnvelope(widened, run.TriggerKind, policy), ct)
+                            run.Id, SerializeGrantEnvelope(
+                                widened, run.TriggerKind, policy, chatJob: TryRestoreChatJob(run.PolicyJson)), ct)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)

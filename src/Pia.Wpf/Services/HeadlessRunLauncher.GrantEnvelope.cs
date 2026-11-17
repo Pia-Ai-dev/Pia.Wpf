@@ -18,6 +18,9 @@ public sealed partial class HeadlessRunLauncher
     /// interactive launch granted.</summary>
     internal const string InteractiveEmptyEnvelopeJson = """{"v":1,"grantedWrites":[],"trigger":"User"}""";
 
+    /// <summary>What <c>SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true)</c> produces.</summary>
+    internal const string ChatJobEmptyEnvelopeJson = """{"v":1,"grantedWrites":[],"trigger":"User","chatJob":true}""";
+
     private static readonly JsonSerializerOptions GrantEnvelopeJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -30,7 +33,7 @@ public sealed partial class HeadlessRunLauncher
     /// <param name="deniedWrites">Tools declined for this run on a tool-approval park, or null (omitted).</param>
     internal static string SerializeGrantEnvelope(
         IReadOnlyCollection<string> grants, AgentRunTrigger trigger, RunAutonomyPolicy? policy = null,
-        IReadOnlyCollection<string>? deniedWrites = null)
+        IReadOnlyCollection<string>? deniedWrites = null, bool chatJob = false)
         => JsonSerializer.Serialize(
             new GrantEnvelope
             {
@@ -43,6 +46,7 @@ public sealed partial class HeadlessRunLauncher
                 DeniedWrites = deniedWrites is null or { Count: 0 }
                     ? null
                     : deniedWrites.ToList(),
+                ChatJob = chatJob,
             },
             GrantEnvelopeJsonOptions);
 
@@ -180,6 +184,24 @@ public sealed partial class HeadlessRunLauncher
         }
     }
 
+    /// <summary>Whether the run was started from a plan in the user's chat. False on an unreadable envelope.</summary>
+    internal static bool TryRestoreChatJob(string? policyJson)
+    {
+        if (string.IsNullOrWhiteSpace(policyJson))
+            return false;
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<GrantEnvelope>(policyJson, GrantEnvelopeJsonOptions);
+            return envelope is not null && envelope.V == GrantEnvelopeVersion && envelope.GrantedWrites is not null
+                && envelope.ChatJob;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Read the run-scoped denial list a Decline persisted. Returns EMPTY on an unreadable envelope,
     /// never the grant floor's mirror: a denial is a narrowing, and losing it re-parks the tool (asks again)
     /// rather than running something ungranted. Never throws.</summary>
@@ -227,6 +249,9 @@ public sealed partial class HeadlessRunLauncher
         /// document written before denials existed is unchanged.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<string>? DeniedWrites { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool ChatJob { get; set; }
     }
 
     /// <summary>Class NAMES, not ordinals: a name an older build cannot parse is dropped (restrictive) instead

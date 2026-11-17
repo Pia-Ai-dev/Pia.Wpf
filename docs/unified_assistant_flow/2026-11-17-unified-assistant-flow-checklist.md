@@ -83,7 +83,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## D — asking in place
 
-- [ ] **Mark chat jobs.** The policy envelope records that a run was started from a plan in the
+- [x] **Mark chat jobs.** The policy envelope records that a run was started from a plan in the
       user's chat; the lever path sets it now, `propose_plan` later.
       *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **A chat job honours session grants and asks on the block.** The four card choices with their

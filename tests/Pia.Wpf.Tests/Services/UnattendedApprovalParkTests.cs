@@ -117,6 +117,31 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task ApprovingAChatJobsPark_KeepsTheChatJobMark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False((await GetRunAsync(handle.RunId)).IsChatJob());
+        await _runs.UpdatePolicyJsonAsync(
+            handle.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.True(probe.Executed);
+        Assert.Contains("write_file", HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson)!);
+        Assert.True(run.IsChatJob());
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>A park outlives the process but a deferred action's delegate does not, so what a resume applies is the
     /// capability; the evidence it reached the call is that the same tool then runs.</summary>
     [Fact]
