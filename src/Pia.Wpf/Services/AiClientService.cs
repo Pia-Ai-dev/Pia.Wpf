@@ -177,7 +177,7 @@ public class AiClientService : IAiClientService
                     }
                 }
                 catch { }
-                throw new InvalidOperationException(friendlyMessage);
+                throw new CreditLimitException(friendlyMessage);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -750,7 +750,15 @@ public class AiClientService : IAiClientService
                 _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
                 // Never broken out of on a stop: the round's remaining calls must still be answered, or the
                 // captured slice carries a FunctionCallContent with no matching result.
-                var result = await toolHandler(toolCall, dispatch);
+                object? result;
+                try
+                {
+                    result = await toolHandler(toolCall, dispatch);
+                }
+                catch (Exception ex) when (StepInterruptionClassifier.MarkToolFault(ex))
+                {
+                    throw;
+                }
                 var resultPreview = result?.ToString() ?? "<null>";
                 _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
                     toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
@@ -996,7 +1004,7 @@ public class AiClientService : IAiClientService
                     }
                 }
                 catch { }
-                throw new InvalidOperationException(friendlyMessage);
+                throw new CreditLimitException(friendlyMessage);
             }
 
             if (!response.IsSuccessStatusCode)

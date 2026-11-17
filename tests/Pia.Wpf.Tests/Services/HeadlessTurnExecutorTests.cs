@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Sockets;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1733,6 +1734,81 @@ public sealed class HeadlessTurnExecutorTests
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.NotNull(final);
         Assert.Equal(AgentRunState.Cancelled, final!.State);
+    }
+
+    [Fact]
+    public async Task AFaultAfterTheRunTokenIsCancelled_IsNotAnInterruption()
+    {
+        using var h = new DurabilityHarness();
+        using var cts = new CancellationTokenSource();
+        var reset = new IOException("io", new SocketException((int)SocketError.ConnectionReset));
+        StubThrowing(h, () => CancelThenThrow(cts, reset));
+
+        var result = await ExecuteOneStepAsync(h, cts.Token);
+
+        Assert.Null(result.Interruption);
+    }
+
+    [Fact]
+    public async Task AnEmptyResponse_IsNotAnInterruption()
+    {
+        using var h = new DurabilityHarness();
+        StubThrowing(h, () => DriveText(string.Empty));
+
+        var result = await ExecuteOneStepAsync(h, TestContext.Current.CancellationToken);
+
+        Assert.Null(result.Interruption);
+    }
+
+    [Fact]
+    public async Task ADeclaredStepFailure_IsNotAnInterruption()
+    {
+        using var h = new DurabilityHarness { SupportsTools = true };
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(ci => DeclareFailure(ci.ArgAt<ToolCallHandler?>(3)));
+
+        var result = await ExecuteOneStepAsync(h, TestContext.Current.CancellationToken);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Interruption);
+    }
+
+    private static async Task<StepTurnResult> ExecuteOneStepAsync(DurabilityHarness h, CancellationToken ct)
+    {
+        var run = await h.NewRunAsync("the goal");
+        var ctx = new RunContext("the goal", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, TestContext.Current.CancellationToken);
+        return await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> DeclareFailure(ToolCallHandler? handler)
+    {
+        await Task.Yield();
+        if (handler is not null)
+        {
+            await handler(
+                new FunctionCallContent("call-1", AgentStepTools.EmitStepResultToolName,
+                    new Dictionary<string, object?> { ["succeeded"] = false, ["summary"] = "blocked" }),
+                new ToolDispatchContext(1, new ToolLoopStopSignal()));
+        }
+
+        yield return new TextDelta("could not do it");
+        yield return new Finished(null, "test-model");
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> CancelThenThrow(CancellationTokenSource cts, Exception ex)
+    {
+        await Task.Yield();
+        cts.Cancel();
+        throw ex;
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 
     private static async IAsyncEnumerable<ChatStreamItem> CancelThenThrow(CancellationTokenSource cts)

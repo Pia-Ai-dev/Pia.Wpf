@@ -1214,6 +1214,10 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet – setzen Sie erneut fort, wenn Sie bereit sind</value></data>
+  <data name="Run_Activity_InterruptedCredit" xml:space="preserve"><value>Credit-Limit erreicht. Setzen Sie fort, sobald es zurückgesetzt wurde.</value></data>
+  <data name="Run_Activity_InterruptedOffline" xml:space="preserve"><value>Verbindung unterbrochen. Setzen Sie fort, sobald Sie wieder online sind.</value></data>
+  <data name="Run_Activity_InterruptedTimeout" xml:space="preserve"><value>Das Modell hat nicht rechtzeitig geantwortet. Fortsetzen?</value></data>
+  <data name="Run_Activity_InterruptedProvider" xml:space="preserve"><value>Beim KI-Dienst ist ein Problem aufgetreten. Fortsetzen?</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Wartet auf Ihre Freigabe für {0}</value></data>
   <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Betrifft {0}</value></data>
   <data name="Run_ToolApproval_ShowFullCall" xml:space="preserve"><value>Vollständigen Aufruf anzeigen</value></data>
@@ -1306,6 +1310,10 @@
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während ihre Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert. Fortsetzen?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet. Fortsetzen?</value></data>
+  <data name="Flow_Run_InterruptedCredit" xml:space="preserve"><value>Credit-Limit erreicht. Setzen Sie fort, sobald es zurückgesetzt wurde.</value></data>
+  <data name="Flow_Run_InterruptedOffline" xml:space="preserve"><value>Verbindung unterbrochen. Setzen Sie fort, sobald Sie wieder online sind.</value></data>
+  <data name="Flow_Run_InterruptedTimeout" xml:space="preserve"><value>Das Modell hat nicht rechtzeitig geantwortet. Fortsetzen?</value></data>
+  <data name="Flow_Run_InterruptedProvider" xml:space="preserve"><value>Beim KI-Dienst ist ein Problem aufgetreten. Fortsetzen?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0}. Fortsetzen, um sie zu erteilen.</value></data>
   <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0} auf {1}. Fortsetzen, um sie zu erteilen.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>Dieser Lauf konnte nicht erkennen, was Sie meinten – öffnen Sie ihn, um zu antworten.</value></data>
