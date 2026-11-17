@@ -1025,6 +1025,7 @@ public sealed partial class ChatSession : IDisposable
             Messages.Remove(assistantMessage);
             _stepToolExchanges.Remove(assistantMessage.Id);
             _answeredSteps.Remove(assistantMessage.Id);
+            MessagesDropped?.Invoke(this, [assistantMessage.Id]);
             return new StepTurnResult(
                 Succeeded: false, Cancelled: false, Error: error, VisibleText: string.Empty,
                 Usage: usage, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,

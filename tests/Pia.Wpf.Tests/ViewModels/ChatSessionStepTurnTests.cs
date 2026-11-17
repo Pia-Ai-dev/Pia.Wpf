@@ -318,10 +318,14 @@ public sealed class ChatSessionStepTurnTests
         ReturnsStream(() => ThrowingStream(StepInterruptionClassifierTests.Build(shape)));
         var session = CreateSession();
         session.Messages.Add(new AssistantMessage(ChatRole.User, "goal"));
+        var dropped = new List<Guid>();
+        session.MessagesDropped += (_, ids) => dropped.AddRange(ids);
 
         var result = await session.RunStepTurnAsync(Spec(tokenizationEnabled: false), new RunContext("goal", RunProfile.Interactive), CancellationToken.None);
 
         Assert.Equal(kind, result.Interruption);
+        Assert.Single(dropped);
+        Assert.DoesNotContain(session.Messages, m => m.Id == dropped[0]);
         Assert.False(result.Succeeded);
         Assert.Equal(Guid.Empty, result.FirstMessageId);
         Assert.Equal(Guid.Empty, result.LastMessageId);
