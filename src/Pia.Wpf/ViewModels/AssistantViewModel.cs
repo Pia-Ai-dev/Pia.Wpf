@@ -58,7 +58,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IDialogService _dialogService;
     private readonly IFileDialogService? _fileDialogService;
     private readonly IAgentToolExchangeStore? _toolCalls;
-    private readonly IRunLiveTextCarrier? _liveText;
+    private readonly IRunLiveTextWatcher? _liveText;
     private readonly IAiFeedbackService? _aiFeedback;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IVolatileWorkStore? _volatileWork;
@@ -403,7 +403,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IElevationService? elevation = null,
         // Trailing and defaulted, same discipline; null ⇒ only the main window probes the knowledge-base surface.
         IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null,
-        IRunLiveTextCarrier? liveText = null)
+        IRunLiveTextWatcher? liveText = null)
     {
         _liveText = liveText;
         _logger = logger;

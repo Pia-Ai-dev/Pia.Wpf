@@ -12,22 +12,21 @@ public sealed partial class RunProgressViewModel
     // Bounded so a long step cannot grow the buffer without limit; the row shows the tail only.
     private const int LiveBufferChars = 8000;
 
-    private IRunLiveTextCarrier? _liveTextCarrier;
+    private Action? _detachLiveText;
     private readonly object _liveGate = new();
     private readonly Dictionary<Guid, (StringBuilder Text, StringBuilder Reasoning)> _liveBuffers = [];
     private bool _liveFlushPending;
 
-    internal void AttachLiveText(IRunLiveTextCarrier? carrier)
+    internal void AttachLiveText(IRunLiveTextWatcher? carrier)
     {
-        if (carrier is null || _liveTextCarrier is not null) return;
-        _liveTextCarrier = carrier;
+        if (carrier is null || _detachLiveText is not null) return;
         carrier.TextAppended += OnLiveText;
+        _detachLiveText = () => carrier.TextAppended -= OnLiveText;
     }
 
     private void DetachStepDetail()
     {
-        if (_liveTextCarrier is not null)
-            _liveTextCarrier.TextAppended -= OnLiveText;
+        _detachLiveText?.Invoke();
     }
 
     private void OnLiveText(RunLiveTextChunk chunk)

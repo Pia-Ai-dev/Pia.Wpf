@@ -16,7 +16,7 @@ public enum RunLiveTextKind
 public sealed record RunLiveTextChunk(Guid RunId, Guid? StepId, RunLiveTextKind Kind, string Text);
 
 /// <summary>Relays a headless step's streamed text to whatever panel shows that run; keeps nothing.</summary>
-public interface IRunLiveTextCarrier
+public interface IRunLiveTextWatcher
 {
     event Action<RunLiveTextChunk>? TextAppended;
 

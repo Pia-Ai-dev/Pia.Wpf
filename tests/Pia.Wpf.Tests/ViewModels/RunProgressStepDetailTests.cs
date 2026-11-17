@@ -19,7 +19,7 @@ public sealed class RunProgressStepDetailTests
     private readonly IAgentToolExchangeStore _store = Substitute.For<IAgentToolExchangeStore>();
     private readonly ILocalizationService _loc = Substitute.For<ILocalizationService>();
     private readonly IAgentRunResumeService _resume = Substitute.For<IAgentRunResumeService>();
-    private readonly RunLiveTextCarrier _carrier = new(NullLogger<RunLiveTextCarrier>.Instance);
+    private readonly RunLiveTextWatcher _carrier = new(NullLogger<RunLiveTextWatcher>.Instance);
 
     public RunProgressStepDetailTests()
     {

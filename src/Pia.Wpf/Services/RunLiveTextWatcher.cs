@@ -3,11 +3,11 @@ using Pia.Services.Interfaces;
 
 namespace Pia.Services;
 
-public sealed class RunLiveTextCarrier : IRunLiveTextCarrier
+public sealed class RunLiveTextWatcher : IRunLiveTextWatcher
 {
-    private readonly ILogger<RunLiveTextCarrier> _logger;
+    private readonly ILogger<RunLiveTextWatcher> _logger;
 
-    public RunLiveTextCarrier(ILogger<RunLiveTextCarrier> logger)
+    public RunLiveTextWatcher(ILogger<RunLiveTextWatcher> logger)
     {
         _logger = logger;
     }

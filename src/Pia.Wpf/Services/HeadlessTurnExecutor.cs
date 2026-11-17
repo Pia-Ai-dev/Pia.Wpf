@@ -118,7 +118,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     /// set, which also holds tools whose withheld calls the re-run will make itself.</summary>
     private string? _approvedTool;
 
-    private readonly IRunLiveTextCarrier? _liveText;
+    private readonly IRunLiveTextWatcher? _liveText;
 
     private bool _replayAttempted;
 
@@ -144,7 +144,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Trailing and defaulted for the same reason, and null is again the conservative answer: no rows are
         // written and a resume seeds prose alone, which is the pre-store behaviour.
         IAgentToolExchangeStore? exchangeStore = null,
-        IRunLiveTextCarrier? liveText = null)
+        IRunLiveTextWatcher? liveText = null)
     {
         _liveText = liveText;
         _engine = engine;
