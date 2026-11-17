@@ -497,6 +497,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // The field initializer's collection never goes through OnMessagesChanged, so an un-started chat
         // would mutate outside the window until the first session attach re-points it.
         Messages.CollectionChanged += OnMessagesCollectionChanged;
+        VisibleMessages.CollectionChanged += OnVisibleMessagesChanged;
         PendingFiles.CollectionChanged += OnPendingFilesChanged;
         PendingAttachments.CollectionChanged += OnPendingAttachmentsChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
@@ -597,9 +598,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
             prev.AgentModeChanged -= OnSessionAgentModeChanged;
             prev.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
+            prev.EarlierRunsChanged -= OnEarlierRunsChanged;
+        }
+        if (switchedChat)
+        {
+            SyncRunProgress(null);
+            DisposeEarlierBlocks();
         }
 
         _subscribedSession = session;
+        session.EarlierRunsChanged += OnEarlierRunsChanged;
         session.StateChanged += OnActiveSessionStateChanged;
         session.TurnCompleted += OnActiveSessionTurnCompleted;
         session.ToolSucceeded += OnActiveSessionToolSucceeded;
@@ -609,6 +617,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.AgentModeChanged += OnSessionAgentModeChanged;
         session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
+        SyncEarlierBlocks();
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
         PlanApprovalParkActive = session.PlanApprovalParkActive;
 
@@ -658,24 +667,118 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (_runProgress?.RunId == runId)
             return;
-        if (_runProgress is not null)
+        if (_runProgress is { } previous)
         {
-            _runProgress.RunSettled -= OnRunProgressSettled;
-            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
-            _runProgress.Dispose(); // unsubscribes the prior RunChanged handler
+            previous.RunSettled -= OnRunProgressSettled;
+            previous.PropertyChanged -= OnRunProgressPropertyChanged;
+            previous.LiveStopFallback = null;
+            // A new run in the same chat keeps the replaced one's block; a chat switch clears to null first.
+            if (runId is not null && !_earlierBlocks.ContainsKey(previous.RunId))
+            {
+                _earlierBlocks[previous.RunId] = previous;
+            }
+            else
+            {
+                previous.PropertyChanged -= OnRunBlockAnchorChanged;
+                previous.Dispose(); // unsubscribes the prior RunChanged handler
+            }
         }
-        _runProgress = runId is { } id
-            ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
-                _navigationService, _toolCalls)
-            : null;
+
+        if (runId is { } id && _earlierBlocks.Remove(id, out var demoted))
+            _runProgress = demoted;
+        else
+            _runProgress = runId is { } newId ? CreateRunBlock(newId) : null;
+
         if (_runProgress is not null)
         {
             _runProgress.RunSettled += OnRunProgressSettled;
             _runProgress.PropertyChanged += OnRunProgressPropertyChanged;
+            _runProgress.LiveStopFallback = StopLiveRunTurn;
         }
         ActiveRunProgress = _runProgress;
+        SyncTranscriptItems();
         RefreshAgentContextBanner();
+    }
+
+    private RunProgressViewModel CreateRunBlock(Guid runId)
+    {
+        var block = new RunProgressViewModel(_agentRunService, runId, _localizationService, _resumeService, _logger,
+            _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
+            _navigationService, _toolCalls);
+        block.PropertyChanged += OnRunBlockAnchorChanged;
+        return block;
+    }
+
+    private bool StopLiveRunTurn()
+    {
+        if (!IsStreaming)
+            return false;
+        ExecuteCancelStreaming();
+        return true;
+    }
+
+    private readonly Dictionary<Guid, RunProgressViewModel> _earlierBlocks = [];
+
+    /// <summary>The transcript as rendered: the message window with each run's block placed among it.</summary>
+    public ObservableCollection<object> TranscriptItems { get; } = [];
+
+    private void OnEarlierRunsChanged(object? sender, EventArgs e) => _uiDispatcher.Post(SyncEarlierBlocks);
+
+    internal void SyncEarlierBlocks()
+    {
+        if (_subscribedSession is not { } session)
+            return;
+        foreach (var id in session.EarlierRunIds)
+        {
+            if (id != _runProgress?.RunId && !_earlierBlocks.ContainsKey(id))
+                _earlierBlocks[id] = CreateRunBlock(id);
+        }
+        SyncTranscriptItems();
+    }
+
+    private void DisposeEarlierBlocks()
+    {
+        foreach (var block in _earlierBlocks.Values)
+        {
+            block.PropertyChanged -= OnRunBlockAnchorChanged;
+            block.Dispose();
+        }
+        _earlierBlocks.Clear();
+    }
+
+    private void OnRunBlockAnchorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(RunProgressViewModel.FirstMessageId)
+            or nameof(RunProgressViewModel.LastMessageId) or nameof(RunProgressViewModel.RunCreatedAt))
+        {
+            SyncTranscriptItems();
+        }
+    }
+
+    private void OnVisibleMessagesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) =>
+        SyncTranscriptItems();
+
+    internal void SyncTranscriptItems()
+    {
+        var placed = new List<(object Block, RunBlockSlot? Slot)>();
+        var trailing = new List<object>();
+        foreach (var block in _earlierBlocks.Values.OrderBy(b => b.RunCreatedAt ?? DateTime.MaxValue))
+        {
+            if (RunBlockPlacement.Place(block.FirstMessageId, block.LastMessageId, block.RunCreatedAt,
+                    allowTimeFallback: false, Messages) is { } slot)
+                placed.Add((block, slot));
+        }
+        if (_runProgress is { } active)
+        {
+            var slot = RunBlockPlacement.Place(active.FirstMessageId, active.LastMessageId, active.RunCreatedAt,
+                allowTimeFallback: true, Messages);
+            if (slot is null)
+                trailing.Add(active);
+            else
+                placed.Add((active, slot));
+        }
+
+        RunBlockPlacement.Apply(TranscriptItems, RunBlockPlacement.Interleave(VisibleMessages, placed, trailing));
     }
 
     // Not RunSettled: that event arms itself on a non-terminal State CHANGE, and Planning is the field's
@@ -739,6 +842,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         OlderMessageCount = Messages.Count - VisibleMessages.Count;
         HasOlderMessages = OlderMessageCount > 0;
+        // An anchor can leave the transcript without the window changing.
+        SyncTranscriptItems();
     }
 
     [RelayCommand]
@@ -2971,13 +3076,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.AgentModeChanged -= OnSessionAgentModeChanged;
             session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
+        if (_subscribedSession is { } earlierOwner)
+            earlierOwner.EarlierRunsChanged -= OnEarlierRunsChanged;
         if (_runProgress is not null)
         {
             _runProgress.RunSettled -= OnRunProgressSettled;
             _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
+            _runProgress.PropertyChanged -= OnRunBlockAnchorChanged;
             _runProgress.Dispose(); // unsubscribes the last RunChanged handler off the singleton
         }
+        DisposeEarlierBlocks();
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
+        VisibleMessages.CollectionChanged -= OnVisibleMessagesChanged;
         PendingFiles.CollectionChanged -= OnPendingFilesChanged;
         PendingAttachments.CollectionChanged -= OnPendingAttachmentsChanged;
 

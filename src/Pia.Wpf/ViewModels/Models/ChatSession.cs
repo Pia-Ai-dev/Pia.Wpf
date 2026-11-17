@@ -207,8 +207,34 @@ public sealed class ChatSession : IDisposable
     {
         if (ActiveRunId == runId)
             return;
+        // The replaced run keeps its block in the transcript.
+        if (ActiveRunId is { } previous && runId is not null && !_earlierRunIds.Contains(previous))
+        {
+            _earlierRunIds.Add(previous);
+            EarlierRunsChanged?.Invoke(this, EventArgs.Empty);
+        }
         ActiveRunId = runId;
         ActiveRunChanged?.Invoke(this, runId);
+    }
+
+    private readonly List<Guid> _earlierRunIds = [];
+
+    /// <summary>Runs of this chat other than <see cref="ActiveRunId"/> whose block the transcript shows.</summary>
+    public IReadOnlyList<Guid> EarlierRunIds => _earlierRunIds;
+
+    public event EventHandler? EarlierRunsChanged;
+
+    public void AddEarlierRuns(IEnumerable<Guid> runIds)
+    {
+        var added = false;
+        foreach (var id in runIds)
+        {
+            if (id == ActiveRunId || _earlierRunIds.Contains(id)) continue;
+            _earlierRunIds.Add(id);
+            added = true;
+        }
+        if (added)
+            EarlierRunsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>

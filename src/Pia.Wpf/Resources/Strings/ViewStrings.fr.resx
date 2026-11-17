@@ -1231,6 +1231,14 @@
   <data name="Run_Action_RejectPlan" xml:space="preserve"><value>Rejeter</value></data>
   <data name="Run_Action_Pause" xml:space="preserve"><value>Mettre en pause</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Mise en pause…</value></data>
+  <data name="Run_Action_Stop" xml:space="preserve"><value>Arrêter</value></data>
+  <data name="Run_Stop_Error_Refused" xml:space="preserve"><value>Cette tâche ne peut pas être arrêtée d'ici.</value></data>
+  <data name="Run_Check_Title" xml:space="preserve"><value>Vérifier le résultat</value></data>
+  <data name="Run_Check_Checking" xml:space="preserve"><value>Vérification…</value></data>
+  <data name="Run_Check_Passed" xml:space="preserve"><value>Réussie</value></data>
+  <data name="Run_Check_Unverified" xml:space="preserve"><value>Non confirmé</value></data>
+  <data name="Run_Check_NotRun" xml:space="preserve"><value>Non effectuée</value></data>
+  <data name="Assistant_LiveRunActivity_Tooltip" xml:space="preserve"><value>Afficher la tâche dans le chat</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Publier les fichiers</value></data>
   <data name="Run_Publish_Pending" xml:space="preserve"><value>Les fichiers de cette exécution sont encore dans son espace de travail.</value></data>
   <data name="Run_Publish_Done" xml:space="preserve"><value>{0} fichier(s) publié(s).</value></data>

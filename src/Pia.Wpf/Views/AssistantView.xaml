@@ -101,6 +101,15 @@
       </StackPanel>
     </DataTemplate>
 
+    <!-- A run's block among the messages. Never a message itself: those are saved, sent to the model and
+         windowed. -->
+    <DataTemplate x:Key="RunBlockTemplate">
+      <!-- Wrapped so the panel is a nested view that owns its ids, not the template root. -->
+      <Border Margin="0,0,0,12">
+        <assistant:RunProgressPanel AutomationProperties.AutomationId="{Binding RunId, StringFormat='Assistant_RunBlock_{0}'}" />
+      </Border>
+    </DataTemplate>
+
     <DataTemplate x:Key="AssistantMessageTemplate">
       <!-- Grid rather than a horizontal StackPanel, so the width constraint propagates into the markdown
            body instead of letting long content and code blocks render at their natural width. -->
@@ -211,11 +220,6 @@
       </Border>
       <assistant:PiaChatTitleChip DataContext="{Binding ChatTitleChip}"
                                   Margin="0,12,0,0" />
-      <!-- Read-only run-progress panel (1.4). Embedded when the active chat has a live/selected run.
-           DataContext = ActiveRunProgress; visibility resolves against the VM via the root UserControl. -->
-      <assistant:RunProgressPanel Margin="0,8,0,0"
-                                  DataContext="{Binding ActiveRunProgress}"
-                                  Visibility="{Binding DataContext.ActiveRunProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource NullToVisibilityConverter}}" />
     </StackPanel>
 
     <!-- Empty state -->
@@ -403,23 +407,35 @@
                 AutomationProperties.AutomationId="Assistant_LoadOlderMessages"
                 ToolTip="{loc:Str Assistant_LoadOlderMessages_Tooltip}" />
         <ItemsControl x:Name="MessageItemsControl"
-                      ItemsSource="{Binding VisibleMessages}"
+                      ItemsSource="{Binding TranscriptItems}"
                       behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True"
                       RequestBringIntoView="MessageItemsControl_RequestBringIntoView">
           <ItemsControl.ItemTemplateSelector>
             <local:MessageRoleTemplateSelector UserTemplate="{StaticResource UserMessageTemplate}"
-                                               AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
+                                               AssistantTemplate="{StaticResource AssistantMessageTemplate}"
+                                               RunBlockTemplate="{StaticResource RunBlockTemplate}" />
           </ItemsControl.ItemTemplateSelector>
         </ItemsControl>
         <!-- A headless step writes its reply only when it ENDS, so the transcript would otherwise sit still
              for the whole step. Rendered here rather than as a message: anything inside Messages would be
              persisted, replayed into the model's context and windowed with the transcript. Its text is the
-             run panel's, so the two surfaces cannot drift apart. -->
-        <Grid x:Name="LiveRunActivity"
-              AutomationProperties.AutomationId="Assistant_LiveRunActivity"
-              Margin="0,0,0,12">
-          <Grid.Style>
-            <Style TargetType="Grid">
+             run panel's, so the two surfaces cannot drift apart. Clicking it scrolls to the run's block. -->
+        <Button x:Name="LiveRunActivity"
+                AutomationProperties.AutomationId="Assistant_LiveRunActivity"
+                Margin="0,0,0,12"
+                Cursor="Hand"
+                HorizontalContentAlignment="Stretch"
+                ToolTip="{loc:Str Assistant_LiveRunActivity_Tooltip}"
+                Click="LiveRunActivity_Click">
+          <Button.Template>
+            <ControlTemplate TargetType="Button">
+              <Border Background="Transparent">
+                <ContentPresenter />
+              </Border>
+            </ControlTemplate>
+          </Button.Template>
+          <Button.Style>
+            <Style TargetType="Button">
               <Setter Property="Visibility" Value="Collapsed" />
               <Style.Triggers>
                 <MultiDataTrigger>
@@ -431,7 +447,8 @@
                 </MultiDataTrigger>
               </Style.Triggers>
             </Style>
-          </Grid.Style>
+          </Button.Style>
+          <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
@@ -456,7 +473,8 @@
                        TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource TextMutedBrush}" />
           </StackPanel>
-        </Grid>
+          </Grid>
+        </Button>
       </StackPanel>
     </ScrollViewer>
 

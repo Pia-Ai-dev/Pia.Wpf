@@ -227,6 +227,11 @@
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
                        AutomationProperties.AutomationId="Run_Pause"
                        Visibility="{Binding ShowPauseButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <ui:Button Content="{loc:Str Run_Action_Stop}" Command="{Binding StopCommand}"
+                       Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
+                       FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       AutomationProperties.AutomationId="Run_Stop"
+                       Visibility="{Binding ShowStopButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Budget-pause / user-pause Continue: the one sanctioned mutation on this read-only panel.
                  CanContinue hides it off both states; CanExecute also disables it (IsResuming) so a double-click
                  cannot launch two resumes. CanPause and CanContinue are mutually exclusive by construction, so at
@@ -617,6 +622,45 @@
                         ItemTemplate="{Binding ItemTemplate, ElementName=StepsList}"
                         Visibility="{Binding HasLastStepRow, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
+          <!-- "Check the result": not a Steps entry, so it never counts toward the tally, folds or the edit verbs. -->
+          <Grid MinHeight="28" Margin="-2,0,0,1"
+                AutomationProperties.AutomationId="Run_CheckRow"
+                Visibility="{Binding ShowCheckRow, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid Grid.Column="0" Width="16" Margin="0,0,9,0" VerticalAlignment="Center">
+              <Ellipse Width="7" Height="7" StrokeThickness="1.5"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Stroke="{DynamicResource TextGhostBrush}"
+                       Visibility="{Binding IsCheckPending, Converter={StaticResource BooleanToVisibilityConverter}}" />
+              <Ellipse Width="8" Height="8" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Style="{StaticResource RunPulseStyle}"
+                       Fill="{DynamicResource PiaAccentBrush}"
+                       Visibility="{Binding IsChecking, Converter={StaticResource BooleanToVisibilityConverter}}" />
+              <ui:SymbolIcon FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             Symbol="{Binding CheckStatus, Converter={StaticResource StepStatusToGlyphConverter}}"
+                             Foreground="{Binding CheckStatus, Converter={StaticResource StepStatusToBrushConverter}}"
+                             Visibility="{Binding HasCheckGlyph, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </Grid>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="{loc:Str Run_Check_Title}"
+                         FontSize="{StaticResource RunBodySize}"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{Binding CheckStatus, Converter={StaticResource StepStatusToTitleBrush}}" />
+              <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding CheckPublishNote}"
+                         AutomationProperties.AutomationId="Run_CheckPublishNote"
+                         Visibility="{Binding CheckPublishNote, Converter={StaticResource NullToVisibilityConverter}}" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Margin="9,0,0,0" VerticalAlignment="Center"
+                       Text="{Binding CheckOutcome}"
+                       AutomationProperties.AutomationId="Run_CheckOutcome"
+                       FontSize="{StaticResource RunMicroSize}"
+                       Foreground="{DynamicResource TextSubtleBrush}" />
+          </Grid>
+
           <!-- WHY the run failed, first in this block because on a failed card it outranks every other note.
                The reason has always been persisted and never shown; the panel used to say only "Ended with an
                error". Warn palette, not danger: the card OUTLINE already carries danger for a failed run (see
@@ -652,7 +696,9 @@
                      Text="{loc:Str Run_Publish_Pending}"
                      Visibility="{Binding ShowPublishButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding PublishNote}"
-                     Visibility="{Binding PublishNote, Converter={StaticResource NullToVisibilityConverter}}" />
+                     Visibility="{Binding ShowLoosePublishNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding StopNote}"
+                     Visibility="{Binding StopNote, Converter={StaticResource NullToVisibilityConverter}}" />
           <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding OutputBranchNote}"
                      Visibility="{Binding HasOutputBranch, Converter={StaticResource BooleanToVisibilityConverter}}" />
 

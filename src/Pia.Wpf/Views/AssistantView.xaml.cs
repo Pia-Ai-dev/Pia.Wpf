@@ -340,6 +340,18 @@ public partial class AssistantView : UserControl
         IsAutoScrollEnabled = atBottom;
     }
 
+    // Scrolled by offset: the list's RequestBringIntoView handler swallows requests while auto-scroll is paused.
+    private void LiveRunActivity_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.ActiveRunProgress is not { } block
+            || MessageItemsControl.ItemContainerGenerator.ContainerFromItem(block) is not FrameworkElement container)
+            return;
+
+        IsAutoScrollEnabled = false;
+        var top = container.TransformToAncestor(MessageScrollViewer).Transform(new Point(0, 0)).Y;
+        MessageScrollViewer.ScrollToVerticalOffset(MessageScrollViewer.VerticalOffset + top);
+    }
+
     private void MessageItemsControl_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
     {
         // Streaming markdown bubbles up RequestBringIntoView during layout; the ScrollViewer's

@@ -48,22 +48,22 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## B — the plan block
 
-- [ ] **Show the run panel as a block in the transcript.** Anchored to a message through the run's
+- [x] **Show the run panel as a block in the transcript.** Anchored to a message through the run's
       `FirstMessageId`, not an entry of the message list, with the slim line above the composer.
       *Deps:* — · *Effort:* M · *Value:* High
-- [ ] **Restore finished blocks when a chat is opened.** Look up the chat's runs including finished
+- [x] **Restore finished blocks when a chat is opened.** Look up the chat's runs including finished
       ones.
       *Deps:* block · *Effort:* S · *Value:* High
 - [ ] **Record which messages a job wrote, and show them inside the block.** A local record of run,
       step and message id; replies in their step's row, replies of re-planned attempts under "Earlier
       attempts".
       *Deps:* block · *Effort:* M · *Value:* Med
-- [ ] **Stop a job from the block.** A cancel command for a headless run; Pause moves next to it.
+- [x] **Stop a job from the block.** A cancel command for a headless run; Pause moves next to it.
       *Deps:* block · *Effort:* S · *Value:* High
 - [ ] **Regenerate rules per job state.** Discard a waiting plan first, block on a paused or parked
       job, allow on a finished one.
       *Deps:* block · *Effort:* S · *Value:* Med
-- [ ] **Make the check a row.** "Check the result" as the last row, with its outcome and the publish
+- [x] **Make the check a row.** "Check the result" as the last row, with its outcome and the publish
       result.
       *Deps:* block · *Effort:* XS · *Value:* Med
 

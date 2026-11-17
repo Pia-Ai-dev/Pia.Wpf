@@ -38,4 +38,8 @@ public interface IAgentRunResumeService
     /// <summary>Reject a plan-approval park: settles straight to <c>Cancelled</c> with no re-dispatch, unlike
     /// <see cref="ResumeAsync"/>/<see cref="DeclineAsync"/>, and best-effort posts a notice into the run's chat.</summary>
     Task<bool> RejectPlanAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>User stop: cancels an in-flight headless run or settles a parked one as Cancelled; false when
+    /// this process neither dispatches nor can settle it.</summary>
+    Task<bool> CancelRunAsync(Guid runId, CancellationToken ct = default);
 }
