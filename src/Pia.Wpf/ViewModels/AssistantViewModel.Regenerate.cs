@@ -43,6 +43,7 @@ public partial class AssistantViewModel
                 _logger.LogWarning(ex, "Run {RunId}: discarding the waiting plan before a regenerate failed", runId);
                 return (false, false);
             }
+            _regenerateEmptiedRuns.Add(runId);
             _logger.LogInformation("Run {RunId}: waiting plan discarded for a regenerate", runId);
         }
 
@@ -57,8 +58,8 @@ public partial class AssistantViewModel
         return ids;
     }
 
-    /// <summary>Stored rows below the cut that this transcript has not pulled yet, such as a discard's note.</summary>
-    private async Task<IReadOnlyList<Guid>> UnpulledRowsSinceAsync(Guid chatId, DateTime since)
+    // Rows the transcript has not pulled yet, such as a discard's note; they would land below the new answer.
+    private async Task<IReadOnlyList<Guid>> UnpulledRowsAsync(Guid chatId)
     {
         try
         {
@@ -66,10 +67,7 @@ public partial class AssistantViewModel
             if (stored is null)
                 return [];
             var known = Messages.Select(m => m.Id).ToHashSet();
-            var cutoff = since.ToUniversalTime();
-            return [.. stored.Messages
-                .Where(m => !known.Contains(m.Id) && m.Timestamp.ToUniversalTime() >= cutoff)
-                .Select(m => m.Id)];
+            return [.. stored.Messages.Where(m => !known.Contains(m.Id)).Select(m => m.Id)];
         }
         catch (Exception ex)
         {

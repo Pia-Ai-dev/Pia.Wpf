@@ -28,6 +28,7 @@ public sealed class MidPlanAskTests : IDisposable
     private readonly SqliteContext _ctx;
     private readonly AgentRunService _runs;
     private readonly AssistantChatService _chats;
+    private readonly RunMessageRecordStore _records;
     private readonly ExecutingRunStore _executing = new();
     private readonly RecordingTimelineService _timeline = new();
 
@@ -38,12 +39,14 @@ public sealed class MidPlanAskTests : IDisposable
         _ctx = new SqliteContext(Path.Combine(_dir, "history.db"));
         _runs = new AgentRunService(_ctx, NullLogger<AgentRunService>.Instance);
         _chats = new AssistantChatService(_ctx, _runs);
+        _records = new RunMessageRecordStore(_ctx, NullLogger<RunMessageRecordStore>.Instance);
         _runsBase = Path.Combine(_dir, "runs");
         Directory.CreateDirectory(_runsBase);
     }
 
     public void Dispose()
     {
+        _records.Dispose();
         _runs.Dispose();
         _chats.Dispose();
         _ctx.Dispose();
@@ -79,6 +82,13 @@ public sealed class MidPlanAskTests : IDisposable
         var chat = await _chats.GetAsync(run.ChatId, TestContext.Current.CancellationToken);
         Assert.NotNull(chat);
         Assert.Contains(chat!.Messages, m => m.Content == TheQuestion);
+
+        // Recorded against the step that asked, so the block can show it in that step's row.
+        var question = chat.Messages.Single(m => m.Content == TheQuestion);
+        var record = Assert.Single(
+            await _records.GetByChatAsync(run.ChatId, TestContext.Current.CancellationToken),
+            r => r.MessageId == question.Id);
+        Assert.Equal(pending.Id, record.StepId);
 
         Assert.Equal(UserInputRequestStore.Accepted, probe.AskResults.Single());
         await launcher.StopAsync(CancellationToken.None);
@@ -548,6 +558,7 @@ public sealed class MidPlanAskTests : IDisposable
         services.AddSingleton<IExecutingRunStore>(_executing);
         // Real audit wiring, since "no UnknownTool row for the ask" is one of the facts under test.
         services.AddSingleton<IAgentTimelineService>(_timeline);
+        services.AddSingleton<IRunMessageRecordStore>(_records);
         services.AddTransient<BackgroundAssistantTurnRunner>();
         services.AddTransient<HeadlessTurnExecutor>();
         services.AddTransient<AgentRunOrchestrator>();

@@ -4,15 +4,15 @@ namespace Pia.ViewModels;
 
 public partial class AssistantViewModel
 {
-    private IRunMessageRecordStore? _runMessageRecords;
+    private readonly IRunMessageRecordStore? _runMessageRecords;
     private readonly Dictionary<Guid, RunMessageRecord> _replyRecords = [];
+    private readonly HashSet<Guid> _regenerateEmptiedRuns = [];
     private Guid? _replyRecordsChatId;
 
-    private void InitRunReplies(IRunMessageRecordStore? store)
+    private void InitRunReplies()
     {
-        _runMessageRecords = store;
-        if (store is not null)
-            store.Recorded += OnRunMessageRecorded;
+        if (_runMessageRecords is not null)
+            _runMessageRecords.Recorded += OnRunMessageRecorded;
     }
 
     private void DisposeRunReplies()
@@ -43,7 +43,7 @@ public partial class AssistantViewModel
         SyncTranscriptItems();
     }
 
-    /// <summary>Hands each shown block its step replies and returns the messages that leave the bubble list.</summary>
+    // Returns the messages that leave the bubble list because a block now shows them.
     private HashSet<Guid> ApplyRunReplies(IEnumerable<RunProgressViewModel> shownBlocks)
     {
         var hidden = new HashSet<Guid>();

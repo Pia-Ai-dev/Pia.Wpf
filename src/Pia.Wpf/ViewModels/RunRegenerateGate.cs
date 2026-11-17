@@ -9,15 +9,13 @@ public enum RegenerateVerdict
     BlockedUntilStopped,
 }
 
-/// <param name="Slot">Null means the block trails the transcript.</param>
-/// <param name="MessageIds">Every message the job is known to have written.</param>
+// A null Slot means the block trails the transcript.
 internal readonly record struct RegenerateJob(
     Guid RunId, RunProgressState State, bool IsPlanApprovalPause, bool HasProjected, RunBlockSlot? Slot,
     IReadOnlyCollection<Guid> MessageIds);
 
 internal sealed record RegenerateDecision(RegenerateVerdict Verdict, IReadOnlyList<Guid> DiscardFirst);
 
-/// <summary>Whether removing the transcript from <c>cut</c> on may go ahead, given the jobs shown in it.</summary>
 internal static class RunRegenerateGate
 {
     internal static RegenerateDecision Evaluate(

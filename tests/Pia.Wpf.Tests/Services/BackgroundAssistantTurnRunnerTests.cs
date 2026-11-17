@@ -745,6 +745,19 @@ public class BackgroundAssistantTurnRunnerTests
     }
 
     [Fact]
+    public async Task AFailedTurnWithoutACallerTitle_StillTitlesItsChat()
+    {
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var runner = h.Build([], answer: "");
+
+        await runner.RunAsync(new BackgroundTurnRequest { Prompt = "summarize the logs", Provider = Provider() },
+            CancellationToken.None);
+
+        await h.Chats.Received(1).SetTitleAsync(Arg.Any<Guid>(), Arg.Is<string>(t => t.Contains("summarize")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task RunAsync_StampsTheSubpathOnEveryChatItSaves()
     {
         var h = new Harness();

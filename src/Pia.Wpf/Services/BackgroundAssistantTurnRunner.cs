@@ -788,7 +788,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     },
                 ],
             };
-            await SaveOwnRowsAsync(chat, setTitle: false, ct);
+            await SaveOwnRowsAsync(chat, setTitle: string.IsNullOrWhiteSpace(request.Title), ct);
         }
         catch (Exception ex)
         {

@@ -138,8 +138,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (terminal && _wasLive)
         {
             RunSettled?.Invoke();
-            // Not Failed: the failure note and its fix action sit in the body the chevron folds.
-            if (value != RunProgressState.Failed) IsCardExpanded = false;
+            // Not Failed or Stopped: their note sits in the body the chevron folds.
+            if (value is not (RunProgressState.Failed or RunProgressState.Stopped)) IsCardExpanded = false;
         }
         _wasLive = !terminal;
 

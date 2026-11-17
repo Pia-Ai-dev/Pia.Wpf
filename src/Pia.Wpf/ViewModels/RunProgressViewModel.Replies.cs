@@ -10,7 +10,7 @@ public sealed partial class RunProgressViewModel
     [ObservableProperty]
     private string? _stoppedNote;
 
-    private IReadOnlyList<RunReply> _replies = [];
+    private RunReply[] _replies = [];
 
     /// <summary>Replies whose step a re-plan replaced.</summary>
     public ObservableCollection<AssistantMessage> EarlierAttemptReplies { get; } = [];
@@ -31,7 +31,7 @@ public sealed partial class RunProgressViewModel
 
     internal void SetReplies(IReadOnlyList<RunReply> replies)
     {
-        _replies = replies;
+        _replies = [.. replies];
         ApplyReplies();
     }
 

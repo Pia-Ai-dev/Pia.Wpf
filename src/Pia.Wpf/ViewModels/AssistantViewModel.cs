@@ -405,7 +405,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Trailing and defaulted; null ⇒ a job's replies stay ordinary bubbles.
         IRunMessageRecordStore? runMessageRecords = null)
     {
-        InitRunReplies(runMessageRecords);
+        _runMessageRecords = runMessageRecords;
+        InitRunReplies();
         _logger = logger;
         _aiClientService = aiClientService;
         _providerService = providerService;
@@ -772,8 +773,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     internal void SyncTranscriptItems()
     {
         var (placed, trailing) = PlaceRunBlocks();
-        var hidden = ApplyRunReplies(
-            placed.Select(p => p.Block).Concat(trailing).OfType<RunProgressViewModel>());
+        // A block whose anchor is outside the loaded window is not drawn, so it cannot take its replies either.
+        var visibleIds = VisibleMessages.Select(m => m.Id).ToHashSet();
+        var hidden = ApplyRunReplies(placed
+            .Where(p => p.Slot is { } slot && visibleIds.Contains(slot.MessageId))
+            .Select(p => p.Block).Concat(trailing).OfType<RunProgressViewModel>());
         RunBlockPlacement.Apply(TranscriptItems, RunBlockPlacement.Interleave(VisibleMessages, placed, trailing, hidden));
     }
 
@@ -790,7 +794,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (_runProgress is { } active)
         {
             // A finished job whose messages were all removed (a regenerate) is not shown.
-            var emptied = IsSettled(active.State) && (active.FirstMessageId ?? active.LastMessageId) is not null;
+            var emptied = _regenerateEmptiedRuns.Contains(active.RunId)
+                || (IsSettled(active.State) && (active.FirstMessageId ?? active.LastMessageId) is not null);
             var slot = RunBlockPlacement.Place(active.FirstMessageId, active.LastMessageId, active.RunCreatedAt,
                 allowTimeFallback: !emptied, Messages);
             if (slot is not null)
@@ -1810,7 +1815,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var (proceed, discarded) = await ClearJobsForRegenerateAsync(idx - 1);
         if (!proceed) return;
         var strayIds = discarded && _chatSessionManager.ActiveSession?.Id is { } chatId
-            ? await UnpulledRowsSinceAsync(chatId, prior.Timestamp)
+            ? await UnpulledRowsAsync(chatId)
             : [];
         idx = Messages.IndexOf(message);
         if (idx <= 0 || IsStreaming) return;

@@ -452,8 +452,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
     public async Task<StepTurnResult> ExecuteStepAsync(AgentRun run, AgentStep step, RunContext ctx, CancellationToken ct)
     {
-        // Batch 07 G6: resolve THIS step's persona before the exchange. Never throws — every arm of the ladder
-        // ends at _runDefault, because a per-step persona is an enhancement and must not be able to fail a run.
+        // Never throws: every arm ends at _runDefault, so a per-step persona cannot fail a run.
         var setup = _stepPersonas is null
             ? _runDefault
             : await _stepPersonas.ResolveAsync(step.AssignedPersonaId, _runDefault, _tokenizationEnabled, ct)

@@ -5,10 +5,9 @@ namespace Pia.ViewModels;
 
 public readonly record struct RunReply(Guid? StepId, AssistantMessage Message);
 
-/// <summary>Which recorded job replies move into their run's block, and which one stays below it as the result.</summary>
 internal static class RunReplyProjection
 {
-    /// <summary>A run's latest reply stays a bubble; a reply recorded without a step is never moved.</summary>
+    // A run's latest message stays a bubble as its result; a reply recorded without a step is never moved.
     internal static Dictionary<Guid, List<RunReply>> Project(
         IReadOnlyList<AssistantMessage> messages, IReadOnlyDictionary<Guid, RunMessageRecord> records,
         IReadOnlySet<Guid> shownRuns)

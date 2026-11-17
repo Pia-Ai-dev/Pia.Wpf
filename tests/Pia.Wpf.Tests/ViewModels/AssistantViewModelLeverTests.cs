@@ -5,6 +5,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.MeetingAttendee;
+using Pia.Shared.Models;
 using Pia.Tests.Services;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
@@ -25,6 +26,7 @@ public class AssistantViewModelLeverTests
     private readonly IWorkingDirectoryService _workingDir = Substitute.For<IWorkingDirectoryService>();
 
     private readonly IAgentRunResumeService _resume = Substitute.For<IAgentRunResumeService>();
+    private readonly IAssistantChatService _chats = Substitute.For<IAssistantChatService>();
     private readonly IRunMessageRecordStore _records = Substitute.For<IRunMessageRecordStore>();
     private readonly global::Wpf.Ui.ISnackbarService _snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
 
@@ -82,7 +84,7 @@ public class AssistantViewModelLeverTests
             Substitute.For<IAutocompleteService>(),
             Substitute.For<INavigationService>(),
             Substitute.For<ISuggestionService>(),
-            Substitute.For<IAssistantChatService>(),
+            _chats,
             meeting,
             directTranscription,
             Substitute.For<IAssistantPromptComposer>(),
@@ -522,17 +524,62 @@ public class AssistantViewModelLeverTests
             ExtraJson = $$"""{"paused":true,"reason":"{{AgentRunOrchestrator.PlanApprovalReason}}"}""",
         });
         _resume.RejectPlanAsync(runId, Arg.Any<CancellationToken>()).Returns(true);
+        var chatId = Guid.NewGuid();
+        session.SetIdentity(chatId, DateTime.UtcNow, null, "t", false);
+        var note = new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "rejected", Timestamp = DateTime.UtcNow };
+        _chats.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(new SyncAssistantChat
+        {
+            Id = chatId,
+            Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto), note],
+        });
+        var removed = session.Messages.Select(m => m.Id).Append(note.Id).ToList();
         var vm = CreateSut(runs);
         _manager.ActiveSession.Returns(session);
         Activate(session);
         vm.SyncRunProgress(runId);
-        Assert.True(vm.ActiveRunProgress!.IsPlanApprovalPause);
+        var block = vm.ActiveRunProgress!;
+        Assert.True(block.IsPlanApprovalPause);
 
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _resume.Received(1).RejectPlanAsync(runId, Arg.Any<CancellationToken>());
+        // The discard's note is removed with the rest, or the turn-end pull would put it below the new answer.
+        await _manager.Received(1).DeleteMessagesAsync(
+            session, Arg.Is<IReadOnlyList<Guid>>(ids => ids.Order().SequenceEqual(removed.Order())));
         await _manager.Received(1).StartTurnAsync(
             session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
+        Assert.DoesNotContain(block, vm.TranscriptItems);
+    }
+
+    [Fact]
+    public void StepReplies_StayBubbles_WhileTheirBlockIsOutsideTheLoadedWindow()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var step = Step(runId, 0);
+        var t = created.ToLocalTime();
+        var first = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "first", t.AddSeconds(1));
+        var transcript = new System.Collections.ObjectModel.ObservableCollection<AssistantMessage> { first };
+        for (var i = 0; i < MessageWindow.Size + 5; i++)
+            transcript.Add(new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.User, "u" + i, t.AddSeconds(2 + i)));
+        var middle = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "middle", t.AddMinutes(5));
+        var last = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "last", t.AddMinutes(6));
+        transcript.Add(middle);
+        transcript.Add(last);
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+            { Id = runId, State = AgentRunState.Completed, Plan = [step], CreatedAt = created, FirstMessageId = first.Id });
+
+        var vm = CreateSut(runs);
+        vm.Messages = transcript;
+        vm.SyncRunProgress(runId);
+        Record(first, runId, step.Id);
+        Record(middle, runId, step.Id);
+        Record(last, runId, step.Id);
+
+        Assert.DoesNotContain(vm.ActiveRunProgress!, vm.TranscriptItems);
+        Assert.Contains(middle, vm.TranscriptItems);
     }
 
     [Theory]
