@@ -61,5 +61,29 @@ public sealed class RunAskCoordinatorTests
     }
 
     [Fact]
+    public async Task AThrowingChangedSubscriber_LeavesNoPendingEntry_AndRestartsTheClock()
+    {
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        _attendance.IsAttended(chatId).Returns(true);
+        var broker = Broker(TimeSpan.FromSeconds(30));
+        var thrown = false;
+        broker.Changed += (_, _) =>
+        {
+            if (thrown) return;
+            thrown = true;
+            throw new InvalidOperationException("subscriber");
+        };
+        bool? clock = null;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            broker.AskAsync(Question(runId, chatId), running => clock = running, TestContext.Current.CancellationToken));
+
+        Assert.Null(broker.GetPending(runId));
+        Assert.True(clock);
+        _runs.Received().SetWorkClockRunning(runId, true);
+    }
+
+    [Fact]
     public void TheDefaultWaitIsTenMinutes() => Assert.Equal(TimeSpan.FromMinutes(10), RunAskCoordinator.DefaultTimeout);
 }
