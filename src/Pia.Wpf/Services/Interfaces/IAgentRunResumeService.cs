@@ -25,7 +25,10 @@ public interface IAgentRunResumeService
     /// <param name="declineToolApproval">True when this resume carries a DENY for the tool a tool-approval
     /// park asked about: the tool is recorded in the envelope's denial list instead of being granted, and the
     /// re-run step is refused with "adapt". False (the Continue path) keeps the hermes-#16 widening.</param>
-    Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false);
+    /// <param name="parkReasonAllowed">When set, the claim fails unless the park it consumes, read at claim time,
+    /// has a reason this accepts.</param>
+    Task<bool> ResumeAsync(Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false,
+        Func<string?, bool>? parkReasonAllowed = null);
 
     /// <summary>
     /// The deny beside a tool-approval park's approve: resumes the run with the parked tool recorded in its

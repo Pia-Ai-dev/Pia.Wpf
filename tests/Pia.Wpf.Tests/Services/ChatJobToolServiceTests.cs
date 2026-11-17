@@ -315,7 +315,7 @@ public sealed class ChatJobToolServiceTests : IDisposable
         var result = await CallAsync(run, JobTools.RestartStep, new { note = "try the other folder" });
 
         Assert.Contains("Restarted", result);
-        await _resume.Received(1).ResumeAsync(run.Id, "try the other folder", Arg.Any<CancellationToken>(), false);
+        await _resume.Received(1).ResumeAsync(run.Id, "try the other folder", Arg.Any<CancellationToken>(), false, Arg.Any<Func<string?, bool>?>());
     }
 
     [Fact]
@@ -346,7 +346,7 @@ public sealed class ChatJobToolServiceTests : IDisposable
     {
         var run = await ParkAsync(await JobAsync(), reason);
         Assert.Equal("Continued the job.", await CallAsync(run, JobTools.Continue));
-        await _resume.Received(1).ResumeAsync(run.Id, null, Arg.Any<CancellationToken>(), false);
+        await _resume.Received(1).ResumeAsync(run.Id, null, Arg.Any<CancellationToken>(), false, Arg.Any<Func<string?, bool>?>());
     }
 
     [Theory]
@@ -373,7 +373,7 @@ public sealed class ChatJobToolServiceTests : IDisposable
     {
         var run = await ParkAsync(await JobAsync(), "needs-input");
         Assert.Contains("Passed the answer", await CallAsync(run, JobTools.Answer, new { answer = "the staging one" }));
-        await _resume.Received(1).ResumeAsync(run.Id, "the staging one", Arg.Any<CancellationToken>(), false);
+        await _resume.Received(1).ResumeAsync(run.Id, "the staging one", Arg.Any<CancellationToken>(), false, Arg.Any<Func<string?, bool>?>());
     }
 
     [Theory]

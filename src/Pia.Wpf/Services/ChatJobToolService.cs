@@ -434,7 +434,8 @@ public sealed class ChatJobToolService : IChatJobToolService
         }
 
         _logger.SensitiveDebug("Run {RunId} restart note: {Note}", run.Id, text);
-        return await _resume.ResumeAsync(run.Id, text.Length == 0 ? null : text, ct)
+        return await _resume.ResumeAsync(run.Id, text.Length == 0 ? null : text, ct,
+                parkReasonAllowed: r => r == AgentRunService.UserPausedReason)
             ? "Restarted the running step" + (text.Length == 0 ? "." : " with the note.")
             : "The step was stopped, but the job could not be continued; it is paused now.";
     }
@@ -460,7 +461,7 @@ public sealed class ChatJobToolService : IChatJobToolService
         if (run.State != AgentRunState.Paused && !IsContinuable(reason))
             return "This job cannot be continued from the chat.";
 
-        return await _resume.ResumeAsync(run.Id, null, ct)
+        return await _resume.ResumeAsync(run.Id, null, ct, parkReasonAllowed: ModelMayContinue)
             ? "Continued the job."
             : "The job could not be continued; it may already be continuing.";
     }
@@ -474,7 +475,8 @@ public sealed class ChatJobToolService : IChatJobToolService
             return "The answer was empty. Nothing was sent.";
 
         _logger.SensitiveDebug("Run {RunId} answer from chat: {Answer}", run.Id, answer);
-        return await _resume.ResumeAsync(run.Id, answer, ct)
+        return await _resume.ResumeAsync(run.Id, answer, ct,
+                parkReasonAllowed: r => r == AgentRunOrchestrator.NeedsInputReason)
             ? "Passed the answer on; the job goes on."
             : "The answer could not be passed on; the job may already have been answered.";
     }
@@ -484,6 +486,10 @@ public sealed class ChatJobToolService : IChatJobToolService
 
     private static bool IsInterruption(string? reason) =>
         AgentRunOrchestrator.IsInterruptionReason(reason) || reason == HeadlessRunLauncher.ResumeInterruptedReason;
+
+    private static bool ModelMayContinue(string? reason) =>
+        reason is not (AgentRunOrchestrator.PlanApprovalReason or AgentRunOrchestrator.ToolApprovalReason
+            or AgentRunOrchestrator.NeedsInputReason or AgentRunOrchestrator.NeedsGoalReason);
 
     private static bool IsContinuable(string? reason) =>
         IsInterruption(reason) || reason is "step-cap" or "wall-clock" or AgentRunService.UserPausedReason

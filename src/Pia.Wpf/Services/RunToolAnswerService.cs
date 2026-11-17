@@ -49,6 +49,7 @@ public sealed class RunToolAnswerService : IRunToolAnswerService
         _logger.LogInformation("Run {RunId}: parked {ToolName} answered on the block ({Decision})", runId, tool, decision);
         return decision == ToolDecision.Decline
             ? await _resume.DeclineAsync(runId, ct).ConfigureAwait(false)
-            : await _resume.ResumeAsync(runId, ct: ct).ConfigureAwait(false);
+            : await _resume.ResumeAsync(runId, ct: ct,
+                parkReasonAllowed: r => r == AgentRunOrchestrator.ToolApprovalReason).ConfigureAwait(false);
     }
 }

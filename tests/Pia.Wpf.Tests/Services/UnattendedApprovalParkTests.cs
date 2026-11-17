@@ -487,6 +487,27 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task AResumeThatMayOnlyAnswerAQuestion_DoesNotClaimAToolApprovalPark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.False(await launcher.ResumeAsync(handle.RunId, "yes", ct,
+            parkReasonAllowed: r => r == AgentRunOrchestrator.NeedsInputReason));
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal(AgentRunOrchestrator.ToolApprovalReason, RunPauseEnvelope.ReadReason(run));
+        Assert.False(probe.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>The seeded pair bypasses the tokenizing decorator entirely, so both halves have to be tokenized
     /// here — otherwise real user content the gate detokenized reaches the provider raw on the next round.</summary>
     [Fact]

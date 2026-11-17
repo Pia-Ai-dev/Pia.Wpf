@@ -179,6 +179,8 @@ public sealed class AgentRunOrchestratorTests
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => _inner.TryBeginResumeAsync(runId, ct);
         public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default) => _inner.TryPauseUserAsync(runId, ct);
         public Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default) => _inner.TryResumeFromPauseAsync(runId, ct);
+        public Task<bool> TryClaimParkAsync(Guid runId, AgentRunState from, string? expectedExtraJson, CancellationToken ct = default) => _inner.TryClaimParkAsync(runId, from, expectedExtraJson, ct);
+        public Task<bool> TryCancelParkedAsync(Guid runId, CancellationToken ct = default) => _inner.TryCancelParkedAsync(runId, ct);
         public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default) => _inner.TryRejectParkedPlanAsync(runId, ct);
         public Task BeginChildWaitAsync(Guid runId, int childCount, CancellationToken ct = default) => _inner.BeginChildWaitAsync(runId, childCount, ct);
         public Task<bool> TryEndChildWaitAsync(Guid runId, CancellationToken ct = default) => _inner.TryEndChildWaitAsync(runId, ct);

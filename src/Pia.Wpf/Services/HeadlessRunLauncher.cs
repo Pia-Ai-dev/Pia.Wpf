@@ -644,9 +644,11 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     public event EventHandler<ResumedRunSettledEventArgs>? ResumedRunSettled;
 
     public async Task<bool> ResumeAsync(
-        Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false)
+        Guid runId, string? nudge = null, CancellationToken ct = default, bool declineToolApproval = false,
+        Func<string?, bool>? parkReasonAllowed = null)
     {
-        var claim = await TryClaimForResumeAsync(runId, nudge, declineToolApproval, ct).ConfigureAwait(false);
+        var claim = await TryClaimForResumeAsync(runId, nudge, declineToolApproval, parkReasonAllowed, ct)
+            .ConfigureAwait(false);
         if (claim is not { Run: { } run })
             return false;
 
@@ -814,7 +816,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// Paused, and its claim also retires the pause envelope it consumed.
     /// </remarks>
     private async Task<ResumeClaim?> TryClaimForResumeAsync(
-        Guid runId, string? nudge, bool declineToolApproval, CancellationToken ct)
+        Guid runId, string? nudge, bool declineToolApproval, Func<string?, bool>? parkReasonAllowed,
+        CancellationToken ct)
     {
         var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
         if (run is null) { _logger.LogWarning("Resume: run {RunId} not found", runId); return null; }
@@ -839,12 +842,27 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             return null;
         }
 
-        var claimed = run.State switch
+        bool claimed;
+        if (parkReasonAllowed is not null)
         {
-            AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
-            AgentRunState.Paused => await _agentRunService.TryResumeFromPauseAsync(runId, ct).ConfigureAwait(false),
-            _ => false,
-        };
+            // The claim is conditioned on the very envelope the reason was read from, so a re-park in between
+            // (a different question) loses the claim instead of being answered by a caller it was not meant for.
+            if (!AgentRunStates.IsParked(run.State) || !parkReasonAllowed(RunPauseEnvelope.ReadReason(run)))
+            {
+                _logger.LogInformation("Resume: run {RunId} is not parked on a question this caller may answer", runId);
+                return null;
+            }
+            claimed = await _agentRunService.TryClaimParkAsync(runId, run.State, run.ExtraJson, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            claimed = run.State switch
+            {
+                AgentRunState.WaitingForInput => await _agentRunService.TryBeginResumeAsync(runId, ct).ConfigureAwait(false),
+                AgentRunState.Paused => await _agentRunService.TryResumeFromPauseAsync(runId, ct).ConfigureAwait(false),
+                _ => false,
+            };
+        }
         if (!claimed)
         {
             _logger.LogInformation("Resume: run {RunId} not claimable (already resumed/not parked)", runId);
@@ -1135,7 +1153,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// envelope's denial list, so the re-run step hears "declined — adapt" instead of re-parking.
     /// </summary>
     public Task<bool> DeclineAsync(Guid runId, CancellationToken ct = default) =>
-        ResumeAsync(runId, nudge: null, ct, declineToolApproval: true);
+        ResumeAsync(runId, nudge: null, ct, declineToolApproval: true,
+            parkReasonAllowed: r => r == AgentRunOrchestrator.ToolApprovalReason);
 
     /// <summary>Reject a plan-approval park. Never re-enters the dispatch machinery: the CAS settles the row
     /// directly, and the chat notice rides a scoped orchestrator like every other out-of-dispatch write.</summary>
