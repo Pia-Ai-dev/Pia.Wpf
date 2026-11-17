@@ -27,6 +27,8 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
 
     private int _commitExit;
 
+    private int _stagedExit = 1;
+
     /// <summary>Exit code for <c>git worktree remove --force</c>; non-zero drives the delete-then-prune fallback.</summary>
     private int _removeExit;
 
@@ -48,6 +50,8 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
                 return new GitProcessResult(0, _source.Replace('\\', '/') + "\n", string.Empty, false);
             if (IsStatus(req))
                 return new GitProcessResult(0, req.Arguments.Contains("--ignored") ? _leftover : _pending, string.Empty, false);
+            if (req.Arguments.Contains("--cached"))
+                return new GitProcessResult(_stagedExit, string.Empty, string.Empty, false);
             if (req.Arguments.Contains("commit"))
                 return new GitProcessResult(_commitExit, string.Empty, _commitExit == 0 ? string.Empty : "fatal", false);
             if (IsWorktreeRemove(req))
@@ -124,7 +128,24 @@ public sealed class RunWorkspaceWorktreeDeliverableTests : IDisposable
         Assert.Contains("user.email=pia@pia.invalid", commit.Arguments);
         Assert.Contains("commit.gpgsign=false", commit.Arguments);
         Assert.Contains("--no-verify", commit.Arguments);
+        Assert.Contains("core.hooksPath=NUL", commit.Arguments);
         Assert.Contains("pia run " + runId, commit.Arguments);
+    }
+
+    [Fact]
+    public async Task WorktreePromotion_WhenStatusSeesChangesButNothingStages_SkipsTheCommitAndKeepsTheWorkspace()
+    {
+        _pending = " M nested\n";
+        _leftover = " M nested\n";
+        _stagedExit = 0;
+        var (svc, runId, _) = await ProvisionWorktreeAsync();
+
+        var result = await svc.PromoteAsync(runId, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result!.Promoted);
+        Assert.True(result.RetainWorkspace);
+        Assert.DoesNotContain(_runner.Calls, c => c.Arguments.Contains("commit"));
     }
 
     [Fact]
