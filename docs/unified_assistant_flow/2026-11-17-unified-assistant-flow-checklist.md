@@ -20,7 +20,7 @@ Do not tick a step that depends on an open gate without revisiting it.
 | G1 | Owner decisions O1–O5 (design section 12) | CLOSED 2026-11-17 — all five as proposed |
 | G2 | Does the conversation model propose plans as good as the planner's, and leave small requests alone? Test, pass bar and fallback are in design section 10. | open |
 | G3 | Why does the commit to the run branch fail in a git folder, and is it fixed? Gates group G only. | open |
-| G4 | Is issue #95 merged? | open |
+| G4 | Is issue #95 merged? | CLOSED 2026-11-17 — merged into `develop` as PR #98 |
 
 ## P — prerequisites
 
