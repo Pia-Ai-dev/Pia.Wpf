@@ -54,13 +54,13 @@ Do not tick a step that depends on an open gate without revisiting it.
 - [x] **Restore finished blocks when a chat is opened.** Look up the chat's runs including finished
       ones.
       *Deps:* block · *Effort:* S · *Value:* High
-- [ ] **Record which messages a job wrote, and show them inside the block.** A local record of run,
+- [x] **Record which messages a job wrote, and show them inside the block.** A local record of run,
       step and message id; replies in their step's row, replies of re-planned attempts under "Earlier
       attempts".
       *Deps:* block · *Effort:* M · *Value:* Med
 - [x] **Stop a job from the block.** A cancel command for a headless run; Pause moves next to it.
       *Deps:* block · *Effort:* S · *Value:* High
-- [ ] **Regenerate rules per job state.** Discard a waiting plan first, block on a paused or parked
+- [x] **Regenerate rules per job state.** Discard a waiting plan first, block on a paused or parked
       job, allow on a finished one.
       *Deps:* block · *Effort:* S · *Value:* Med
 - [x] **Make the check a row.** "Check the result" as the last row, with its outcome and the publish
