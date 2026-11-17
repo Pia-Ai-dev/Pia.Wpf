@@ -35,7 +35,6 @@
   <data name="RunReplies_StateStopped" xml:space="preserve"><value>Arrêtée</value></data>
   <data name="RunReplies_StoppedNote" xml:space="preserve"><value>Vous avez arrêté cette tâche.</value></data>
   <data name="RunReplies_EarlierAttempts" xml:space="preserve"><value>Tentatives précédentes ({0})</value></data>
-  <data name="RunReplies_ShowJob" xml:space="preserve"><value>Afficher la tâche</value></data>
   <data name="RunRegenerate_BlockedTitle" xml:space="preserve"><value>Arrêtez d'abord la tâche</value></data>
   <data name="RunRegenerate_BlockedPaused" xml:space="preserve"><value>Une tâche en pause se trouve sous cette réponse. Arrêtez-la, puis régénérez.</value></data>
   <data name="Memory_Charter" xml:space="preserve"><value>Le sujet de cette base de connaissances</value></data>

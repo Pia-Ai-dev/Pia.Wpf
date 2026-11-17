@@ -35,7 +35,6 @@
   <data name="RunReplies_StateStopped" xml:space="preserve"><value>Gestoppt</value></data>
   <data name="RunReplies_StoppedNote" xml:space="preserve"><value>Du hast diesen Auftrag gestoppt.</value></data>
   <data name="RunReplies_EarlierAttempts" xml:space="preserve"><value>Frühere Versuche ({0})</value></data>
-  <data name="RunReplies_ShowJob" xml:space="preserve"><value>Zum Auftrag</value></data>
   <data name="RunRegenerate_BlockedTitle" xml:space="preserve"><value>Erst den Auftrag stoppen</value></data>
   <data name="RunRegenerate_BlockedPaused" xml:space="preserve"><value>Unter dieser Antwort steht ein pausierter Auftrag. Stoppe ihn, dann kannst du neu generieren.</value></data>
   <data name="Memory_Charter" xml:space="preserve"><value>Worum es in dieser Wissensbasis geht</value></data>

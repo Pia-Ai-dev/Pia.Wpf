@@ -416,70 +416,71 @@
                                                RunBlockTemplate="{StaticResource RunBlockTemplate}" />
           </ItemsControl.ItemTemplateSelector>
         </ItemsControl>
-        <!-- A headless step writes its reply only when it ENDS, so the transcript would otherwise sit still
-             for the whole step. Rendered here rather than as a message: anything inside Messages would be
-             persisted, replayed into the model's context and windowed with the transcript. Its text is the
-             run panel's, so the two surfaces cannot drift apart. Clicking it scrolls to the run's block. -->
-        <Button x:Name="LiveRunActivity"
-                AutomationProperties.AutomationId="Assistant_LiveRunActivity"
-                Margin="0,0,0,12"
-                Cursor="Hand"
-                HorizontalContentAlignment="Stretch"
-                ToolTip="{loc:Str Assistant_LiveRunActivity_Tooltip}"
-                Click="LiveRunActivity_Click">
-          <Button.Template>
-            <ControlTemplate TargetType="Button">
-              <Border Background="Transparent">
-                <ContentPresenter />
-              </Border>
-            </ControlTemplate>
-          </Button.Template>
-          <Button.Style>
-            <Style TargetType="Button">
-              <Setter Property="Visibility" Value="Collapsed" />
-              <Style.Triggers>
-                <MultiDataTrigger>
-                  <MultiDataTrigger.Conditions>
-                    <Condition Binding="{Binding ForeignRunActive}" Value="True" />
-                    <Condition Binding="{Binding ActiveRunProgress.HasToolActivity}" Value="True" />
-                  </MultiDataTrigger.Conditions>
-                  <Setter Property="Visibility" Value="Visible" />
-                </MultiDataTrigger>
-              </Style.Triggers>
-            </Style>
-          </Button.Style>
-          <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
-          <ui:ProgressRing Grid.Column="0"
-                           Width="14" Height="14"
-                           IsIndeterminate="True"
-                           Margin="9,3,13,0"
-                           VerticalAlignment="Top" />
-          <!-- The ids live on the TextBlocks, not on the Grid above: a layout panel is outside UIA's control
-               view, so an id there is unreachable to a script even while the line is on screen. -->
-          <StackPanel Grid.Column="1">
-            <TextBlock Text="{Binding ActiveRunProgress.CurrentActivity}"
-                       AutomationProperties.AutomationId="Assistant_LiveRunActivity_Step"
-                       FontSize="12"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource TextSubtleBrush}" />
-            <TextBlock Text="{Binding ActiveRunProgress.ToolActivity}"
-                       AutomationProperties.AutomationId="Assistant_LiveRunActivity_Tools"
-                       FontSize="12"
-                       FontStyle="Italic"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource TextMutedBrush}" />
-          </StackPanel>
-          </Grid>
-        </Button>
       </StackPanel>
     </ScrollViewer>
 
     <!-- Input area -->
-    <Border Grid.Row="2" Padding="20,8,20,16">
+    <DockPanel Grid.Row="2">
+      <!-- Pinned above the composer so it stays in view while the transcript is scrolled; its text is the
+           run panel's, and clicking it scrolls to the run's block. -->
+      <Button x:Name="LiveRunActivity"
+              AutomationProperties.AutomationId="Assistant_LiveRunActivity"
+              DockPanel.Dock="Top"
+              Margin="20,8,20,0"
+              MaxWidth="{StaticResource TranscriptMaxWidth}"
+              Cursor="Hand"
+              HorizontalContentAlignment="Stretch"
+              ToolTip="{loc:Str Assistant_LiveRunActivity_Tooltip}"
+              Click="LiveRunActivity_Click">
+        <Button.Template>
+          <ControlTemplate TargetType="Button">
+            <Border Background="Transparent">
+              <ContentPresenter />
+            </Border>
+          </ControlTemplate>
+        </Button.Template>
+        <Button.Style>
+          <Style TargetType="Button">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding ForeignRunActive}" Value="True" />
+                  <Condition Binding="{Binding ActiveRunProgress.HasToolActivity}" Value="True" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Visibility" Value="Visible" />
+              </MultiDataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
+        <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <ui:ProgressRing Grid.Column="0"
+                         Width="14" Height="14"
+                         IsIndeterminate="True"
+                         Margin="9,3,13,0"
+                         VerticalAlignment="Top" />
+        <!-- The ids live on the TextBlocks, not on the Grid above: a layout panel is outside UIA's control
+             view, so an id there is unreachable to a script even while the line is on screen. -->
+        <StackPanel Grid.Column="1">
+          <TextBlock Text="{Binding ActiveRunProgress.CurrentActivity}"
+                     AutomationProperties.AutomationId="Assistant_LiveRunActivity_Step"
+                     FontSize="12"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource TextSubtleBrush}" />
+          <TextBlock Text="{Binding ActiveRunProgress.ToolActivity}"
+                     AutomationProperties.AutomationId="Assistant_LiveRunActivity_Tools"
+                     FontSize="12"
+                     FontStyle="Italic"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource TextMutedBrush}" />
+        </StackPanel>
+        </Grid>
+      </Button>
+    <Border Padding="20,8,20,16">
       <Border Style="{StaticResource PiaComposerCardStyle}"
               MaxWidth="{StaticResource TranscriptMaxWidth}">
         <StackPanel Margin="8">
@@ -1106,6 +1107,7 @@
         </StackPanel>
       </Border>
     </Border>
+    </DockPanel>
     </Grid>
 
     <!-- Todo panel overlay (right side) -->

@@ -35,7 +35,6 @@
   <data name="RunReplies_StateStopped" xml:space="preserve"><value>Stopped</value></data>
   <data name="RunReplies_StoppedNote" xml:space="preserve"><value>You stopped this job.</value></data>
   <data name="RunReplies_EarlierAttempts" xml:space="preserve"><value>Earlier attempts ({0})</value></data>
-  <data name="RunReplies_ShowJob" xml:space="preserve"><value>Show the job</value></data>
   <data name="RunRegenerate_BlockedTitle" xml:space="preserve"><value>Stop the job first</value></data>
   <data name="RunRegenerate_BlockedPaused" xml:space="preserve"><value>A paused job sits below this answer. Stop the job, then regenerate.</value></data>
   <data name="Memory_Charter" xml:space="preserve"><value>What this knowledge base is about</value></data>
