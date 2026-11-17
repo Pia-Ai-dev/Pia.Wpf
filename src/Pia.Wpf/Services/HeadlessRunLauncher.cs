@@ -1164,6 +1164,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         if (!rejected)
             return false;
 
+        await PurgeApprovalRecordsAsync(runId).ConfigureAwait(false);
+
         try
         {
             var settings = await _settingsService.GetSettingsAsync().ConfigureAwait(false);
@@ -1210,27 +1212,56 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // Revoked first: an unconsumed pause request would make the unwinding loop park instead of settling.
         _steering?.RevokePauseRequest(runId);
 
-        if (_inflight.TryGetValue(runId, out var entry))
+        for (var attempt = 0; ; attempt++)
         {
-            try
+            if (_inflight.TryGetValue(runId, out var entry))
             {
-                entry.Cts.Cancel();
-                return true;
+                try
+                {
+                    entry.Cts.Cancel();
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to cancel in-flight run {RunId}", runId);
+                    return false;
+                }
             }
-            catch (Exception ex)
+
+            var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
+            if (run is null)
+                return false;
+
+            if (AgentRunStates.IsParked(run.State))
             {
-                _logger.LogWarning(ex, "Failed to cancel in-flight run {RunId}", runId);
+                // A CAS from the park: a Continue that claimed the run first owns it, and the loop retries.
+                if (await _agentRunService.TryCancelParkedAsync(runId, CancellationToken.None).ConfigureAwait(false))
+                {
+                    await PurgeApprovalRecordsAsync(runId).ConfigureAwait(false);
+                    return true;
+                }
+            }
+            else if (run.State != AgentRunState.Running)
+            {
                 return false;
             }
+
+            // Running with no dispatch entry is a resume between its claim and its registration.
+            if (attempt >= StopRetryAttempts)
+                return false;
+            await Task.Delay(StopRetryDelay, ct).ConfigureAwait(false);
         }
+    }
 
-        // Nothing is dispatching a parked run, so its row is the only thing left to settle.
-        var run = await _agentRunService.GetAsync(runId, ct).ConfigureAwait(false);
-        if (run is null || !AgentRunStates.IsParked(run.State))
-            return false;
+    private const int StopRetryAttempts = 20;
+    private static readonly TimeSpan StopRetryDelay = TimeSpan.FromMilliseconds(50);
 
-        await _agentRunService.FailAsync(runId, null, cancelled: true, CancellationToken.None).ConfigureAwait(false);
-        return true;
+    private async Task PurgeApprovalRecordsAsync(Guid runId)
+    {
+        if (_exchangeStore is null)
+            return;
+        try { await _exchangeStore.PurgeApprovalRecordsAsync(runId, CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to purge the approval records of run {RunId}", runId); }
     }
 
     /// <summary>

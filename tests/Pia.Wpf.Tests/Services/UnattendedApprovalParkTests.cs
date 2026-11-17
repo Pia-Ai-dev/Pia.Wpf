@@ -508,6 +508,50 @@ public sealed partial class UnattendedApprovalParkTests : IDisposable
         await launcher.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task StoppingAParkedRun_SettlesItCancelled_AndPurgesItsParkedCalls()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.Single(await _exchanges!.GetReplayableAsync(handle.RunId, "write_file", ct));
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+
+        Assert.Equal(AgentRunState.Cancelled, (await GetRunAsync(handle.RunId)).State);
+        Assert.Empty(await _exchanges.GetReplayableAsync(handle.RunId, "write_file", ct));
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StoppingARunBetweenAResumeClaimAndItsDispatch_StillStopsIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        // Claimed but not yet registered: Running with no dispatch entry, then re-parked by its failed start.
+        Assert.True(await _runs.TryBeginResumeAsync(handle.RunId, ct));
+        var repark = Task.Run(async () =>
+        {
+            await Task.Delay(200, ct);
+            await _runs.PauseAsync(handle.RunId, "step-cap", ct);
+        }, ct);
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+        await repark;
+        Assert.Equal(AgentRunState.Cancelled, (await GetRunAsync(handle.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
     /// <summary>The seeded pair bypasses the tokenizing decorator entirely, so both halves have to be tokenized
     /// here — otherwise real user content the gate detokenized reaches the provider raw on the next round.</summary>
     [Fact]
