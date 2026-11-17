@@ -407,7 +407,7 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         }
     }
 
-    public Task<int> PurgeRunAsync(Guid runId, CancellationToken ct = default)
+    public Task<int> PurgeApprovalRecordsAsync(Guid runId, CancellationToken ct = default)
     {
         if (ct.IsCancellationRequested)
             return Task.FromResult(0);
@@ -419,13 +419,13 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
                 if (_disposed) return Task.FromResult(0);
 
                 using var cmd = Connection().CreateCommand();
-                cmd.CommandText = "DELETE FROM AgentToolExchanges WHERE RunId = @RunId;";
+                cmd.CommandText = "DELETE FROM AgentToolExchanges WHERE RunId = @RunId AND Kind IN (3, 4);";
                 cmd.Parameters.AddWithValue("@RunId", runId.ToString());
                 var deleted = cmd.ExecuteNonQuery();
                 _capNoted.Remove(runId);
 
                 if (deleted > 0)
-                    _logger.LogInformation("Purged {Count} tool-exchange rows for run {RunId}", deleted, runId);
+                    _logger.LogInformation("Purged {Count} approval-record rows for run {RunId}", deleted, runId);
 
                 return Task.FromResult(deleted);
             }
@@ -449,13 +449,12 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
                 if (_disposed) return Task.FromResult(0);
 
                 using var cmd = Connection().CreateCommand();
-                // The terminal set is explicit and never a range: WaitingForChildren sits ABOVE the terminal
-                // band. The second clause has no age filter — it is what catches a run whose process died
-                // before its own purge ran.
+                // The terminal set is explicit, not a range: WaitingForChildren sits above it. The second clause
+                // catches the approval records of a run whose process died before its own purge ran.
                 cmd.CommandText = """
                     DELETE FROM AgentToolExchanges
                     WHERE CreatedAt < @Cutoff
-                       OR RunId IN (SELECT Id FROM AgentRuns WHERE State IN (5, 6, 7));
+                       OR (Kind IN (3, 4) AND RunId IN (SELECT Id FROM AgentRuns WHERE State IN (5, 6, 7)));
                     """;
                 cmd.Parameters.AddWithValue("@Cutoff", cutoff.ToString("O"));
                 var deleted = cmd.ExecuteNonQuery();

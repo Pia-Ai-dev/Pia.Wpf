@@ -601,7 +601,7 @@ public class SqliteContext : IDisposable
                 ToolName        TEXT    NULL,
                 PluginId        TEXT    NULL,
                 -- PAYLOAD-BEARING, the inverse of AgentTimelineEvents' metadata-only contract beside it. Local-only,
-                -- purged with the run, never logged outside SensitiveDebug, never copied into SyncAssistantChatMessage.
+                -- kept until the chat-retention cutoff, never logged outside SensitiveDebug, never copied into SyncAssistantChatMessage.
                 ArgumentsJson   TEXT    NULL,
                 -- The args exceeded MaxRowChars and were dropped: context only, never replayable. Kind 1 only - a
                 -- Kind 3/4 row is refused whole rather than stubbed, because half a payload is unreplayable.

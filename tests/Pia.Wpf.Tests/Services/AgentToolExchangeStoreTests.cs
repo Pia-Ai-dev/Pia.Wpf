@@ -209,7 +209,7 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task PruneAsync_DropsRowsOfTerminalRuns_AndKeepsAParkedRuns()
+    public async Task PruneAsync_DropsOnlyTheApprovalRecordsOfTerminalRuns_AndKeepsTheirCallsAndResults()
     {
         var ct = TestContext.Current.CancellationToken;
         var states = new[]
@@ -223,17 +223,50 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
             var run = await MakeRunAsync();
             await _runs.SetStateAsync(run.Id, state, ct);
             await _store.RecordAsync(run.Id, null, 1, Round(0), ct);
+            await _store.AppendParkedAsync([ParkedRow(run.Id, "write_file", "{\"path\":\"real.md\"}")], ct);
             runIds.Add(run.Id);
         }
 
         // A cutoff in the past, so only the terminal clause can delete anything.
         var deleted = await _store.PruneAsync(DateTime.UtcNow - TimeSpan.FromDays(365), ct);
 
-        Assert.Equal(6, deleted);
-        Assert.Equal(0, CountRows(runIds[0]));
-        Assert.Equal(0, CountRows(runIds[1]));
-        Assert.Equal(0, CountRows(runIds[2]));
-        Assert.Equal(2, CountRows(runIds[3]));
+        Assert.Equal(3, deleted);
+        Assert.Equal(2, CountRows(runIds[0]));
+        Assert.Equal(2, CountRows(runIds[1]));
+        Assert.Equal(2, CountRows(runIds[2]));
+        Assert.Equal(3, CountRows(runIds[3]));
+    }
+
+    [Fact]
+    public async Task PruneAsync_DropsCallsAndResultsOfTerminalRuns_OnTheCutoff()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        await _runs.SetStateAsync(run.Id, AgentRunState.Completed, ct);
+        await _store.RecordAsync(run.Id, null, 1, Round(0), ct);
+
+        var deleted = await _store.PruneAsync(DateTime.UtcNow + TimeSpan.FromMinutes(1), ct);
+
+        Assert.Equal(2, deleted);
+        Assert.Equal(0, CountRows(run.Id));
+    }
+
+    [Fact]
+    public async Task PurgeApprovalRecordsAsync_KeepsCallsAndResults()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        await _store.RecordAsync(run.Id, null, 1, Round(0), ct);
+        await _store.AppendParkedAsync(
+            [ParkedRow(run.Id, "write_file", "{\"path\":\"a.md\"}"),
+             ParkedRow(run.Id, "write_file", "{\"path\":\"b.md\"}", AgentToolExchangeKind.WithheldCall)],
+            ct);
+
+        Assert.Equal(2, await _store.PurgeApprovalRecordsAsync(run.Id, ct));
+
+        var carried = await _store.ReadCarriedAsync(run.Id, ct);
+        Assert.Equal(2, carried.Count);
+        Assert.Equal(2, CountRows(run.Id));
     }
 
     [Fact]

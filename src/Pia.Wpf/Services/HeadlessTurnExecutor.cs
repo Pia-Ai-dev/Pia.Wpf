@@ -1091,12 +1091,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
 
         await PersistChatAsync(title, interim: false, ct).ConfigureAwait(false);
 
-        // A settled run has no reader — nothing claims a Completed/Failed/Cancelled run — and the parked rows
-        // hold the user's own file contents detokenized, so they must not outlive it. Never on a park or a pause:
-        // SafeEndRun is only called on a terminal path.
+        // The parked rows hold real file contents and nothing replays them once the run settles.
         if (_exchangeStore is not null)
-            await _exchangeStore.PurgeRunAsync(run.Id, CancellationToken.None).ConfigureAwait(false);
-        // Ambients are set + restored per step (RunExchangeStepAsync); nothing to restore here.
+            await _exchangeStore.PurgeApprovalRecordsAsync(run.Id, CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <summary>

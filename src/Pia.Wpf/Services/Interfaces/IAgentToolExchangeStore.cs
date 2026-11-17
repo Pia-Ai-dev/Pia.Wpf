@@ -24,13 +24,12 @@ public interface IAgentToolExchangeStore
     /// </summary>
     Task<IReadOnlyList<AgentToolExchangeRow>> ReadCarriedAsync(Guid runId, CancellationToken ct = default);
 
-    /// <summary>Drop every row of a run. Called when the run settles, so detokenized rows do not outlive it.</summary>
-    Task<int> PurgeRunAsync(Guid runId, CancellationToken ct = default);
+    /// <summary>Drop a settled run's parked and withheld rows; its call and result rows stay for the step detail.</summary>
+    Task<int> PurgeApprovalRecordsAsync(Guid runId, CancellationToken ct = default);
 
     /// <summary>
-    /// Retention sweep: rows older than <paramref name="cutoff"/> by their own <c>CreatedAt</c>, plus every row
-    /// of an already-terminal run — the second clause is what closes the leak when a process dies before the
-    /// run's own purge.
+    /// Retention sweep: rows older than <paramref name="cutoff"/>, plus the approval records of a terminal run
+    /// whose process died before its own purge.
     /// </summary>
     Task<int> PruneAsync(DateTime cutoff, CancellationToken ct = default);
 

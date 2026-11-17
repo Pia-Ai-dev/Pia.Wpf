@@ -2275,9 +2275,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.True(HasBody(resumed, 16));
     }
 
-    /// <summary>The detokenized rows must not outlive the run — and a park is not terminal, so it keeps them.</summary>
     [Fact]
-    public async Task ATerminalSettle_PurgesTheRunsExchanges_ButAParkDoesNot()
+    public async Task ATerminalSettle_PurgesTheApprovalRecords_AndKeepsCallsAndResults()
     {
         using var h = new DurabilityHarness();
         using var store = ExchangeStore(h);
@@ -2300,11 +2299,18 @@ public sealed class HeadlessTurnExecutorTests
         await executor.BeginRunAsync(run, ctx, ct);
         await executor.ExecuteStepAsync(run, CarryStep(0), ctx, ct);
 
-        // A park never reaches EndRunAsync, which is exactly why the rows have to survive one.
-        Assert.NotEmpty(await store.ReadCarriedAsync(run.Id, ct));
+        var carried = await store.ReadCarriedAsync(run.Id, ct);
+        Assert.NotEmpty(carried);
+        await store.AppendParkedAsync([carried[0] with
+        {
+            Id = Guid.NewGuid(), Kind = AgentToolExchangeKind.ParkedCall, ToolName = "write_file",
+        }], ct);
+        Assert.Single(await store.GetReplayableAsync(run.Id, "write_file", ct));
 
         await executor.EndRunAsync(run, ctx, cancelled: false, failed: false, ct);
-        Assert.Empty(await store.ReadCarriedAsync(run.Id, ct));
+
+        Assert.Equal(carried.Count, (await store.ReadCarriedAsync(run.Id, ct)).Count);
+        Assert.Empty(await store.GetReplayableAsync(run.Id, "write_file", ct));
     }
 
     /// <summary>A stale anchor must not be able to silently drop a group: the split is total, so it lands at

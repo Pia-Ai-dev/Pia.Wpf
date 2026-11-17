@@ -39,7 +39,7 @@ public enum AgentToolExchangeResult
 
 /// <summary>
 /// One persisted tool-exchange row. <b>PAYLOAD-BEARING</b>, the inverse of <see cref="AgentTimelineEvent"/>'s
-/// metadata-only contract: device-local, purged with the run, never logged outside <c>SensitiveDebug</c>.
+/// metadata-only contract: device-local, kept until the chat-retention cutoff, never logged outside <c>SensitiveDebug</c>.
 /// </summary>
 /// <param name="MessageSeq">Rows sharing it rebuild into ONE <c>ChatMessage</c>, so two parallel calls in one
 /// assistant message come back in one message.</param>

@@ -74,7 +74,7 @@ Do not tick a step that depends on an open gate without revisiting it.
       *Deps:* block · *Effort:* M · *Value:* High
 - [ ] **Tool rows per step.** Name, short argument line, duration and outcome from the timeline.
       *Deps:* block · *Effort:* S · *Value:* High
-- [ ] **Keep call and result rows after the job.** Narrow the settle purge and the prune to parked and
+- [x] **Keep call and result rows after the job.** Narrow the settle purge and the prune to parked and
       withheld rows; update the comments and tests that promise the old rule.
       *Deps:* G1 (O1) · *Effort:* S · *Value:* Enabler
 - [ ] **Open a call: input and result.** A read by step, the "not kept" states, and the readable copy
