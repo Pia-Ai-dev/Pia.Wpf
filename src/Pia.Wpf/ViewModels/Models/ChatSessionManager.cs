@@ -1226,6 +1226,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         if (chat is null)
             return;
 
+        if (!_disposed && session.Id == chatId)
+            AdoptStoredTitle(session, chat.Title);
+
         // Re-checked after the await: the session may have changed state while this was off-thread.
         if (_disposed || session.IsStreaming || session.Id != chatId)
             return;
@@ -1574,4 +1577,25 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     private static string HeaderFingerprint(SyncAssistantChat chat) =>
         string.Join('\u001f', chat.Title, chat.ProviderId, chat.WorkingDirectory, chat.AgentContextMode);
+
+    private static string SessionHeaderFingerprint(ChatSession session, string? title) =>
+        string.Join('\u001f', title, session.ProviderId, session.WorkingDirectory, session.AgentContextMode?.ToString());
+
+    // A title another writer stored (a job's late one) becomes the session's, so the next header write keeps it.
+    private void AdoptStoredTitle(ChatSession session, string? storedTitle)
+    {
+        if (string.IsNullOrWhiteSpace(storedTitle) || storedTitle == session.Title)
+            return;
+
+        var persistedTitle = string.IsNullOrWhiteSpace(session.Title) ? DeriveChatTitle(session) : session.Title;
+        // A header change of this session's own that is not stored yet wins.
+        if (session.StoredHeaderFingerprint != SessionHeaderFingerprint(session, persistedTitle))
+            return;
+
+        session.SetTitle(storedTitle);
+        session.AutoTitleApplied = true;
+        session.StoredHeaderFingerprint = SessionHeaderFingerprint(session, storedTitle);
+        RaiseTitleChanged(session, storedTitle);
+        _logger.LogInformation("Chat {ChatId}: adopted the stored title", session.Id);
+    }
 }

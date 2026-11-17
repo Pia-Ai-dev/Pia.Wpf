@@ -129,6 +129,7 @@ public sealed class RunStateToLabelConverter : IValueConverter
         RunProgressState.WaitingForInput => "Run_State_WaitingForInput",
         RunProgressState.Paused => "Run_State_Paused",
         RunProgressState.WaitingForChildren => "Run_State_WaitingForChildren", // 07 G8 — never "Completed"
+        RunProgressState.Stopped => "RunReplies_StateStopped",
         _ => "Run_State_Completed", // Completed + TruncatedCompleted both read "Completed"
     };
 
@@ -155,6 +156,7 @@ public sealed class RunStateToBrushConverter : IValueConverter
         RunProgressState.Completed => "PiaSuccessBrush",
         RunProgressState.TruncatedCompleted => "TextMutedBrush", // muted truncation note, never danger (R5)
         RunProgressState.Failed => "PiaDangerBrush",
+        RunProgressState.Stopped => "TextMutedBrush",
         RunProgressState.WaitingForInput => "PiaAccentBrush", // action-needed accent — invites the Continue
         // Batch 08 G8: a paused run now carries the SAME action-needed affordance WaitingForInput does —
         // both offer the identical Continue command. Do NOT touch Run_State_Paused in any locale and do
@@ -284,6 +286,7 @@ public sealed class RunStateToIconConverter : IValueConverter
         RunProgressState.Paused => SymbolRegular.PauseCircle24,
         RunProgressState.Completed => SymbolRegular.CheckmarkCircle24,
         RunProgressState.Failed => SymbolRegular.ErrorCircle24,
+        RunProgressState.Stopped => SymbolRegular.RecordStop24,
         _ => SymbolRegular.Circle24, // TruncatedCompleted (a hollow ring) + the spinner-covered live states
     };
 

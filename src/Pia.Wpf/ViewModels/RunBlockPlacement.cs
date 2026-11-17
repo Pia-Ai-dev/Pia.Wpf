@@ -36,14 +36,16 @@ internal static class RunBlockPlacement
     /// <summary>A block whose anchor is outside the visible window is left out until that message is loaded.</summary>
     internal static List<object> Interleave(
         IReadOnlyList<AssistantMessage> visible, IReadOnlyList<(object Block, RunBlockSlot? Slot)> blocks,
-        IReadOnlyList<object> trailing)
+        IReadOnlyList<object> trailing, IReadOnlySet<Guid>? hidden = null)
     {
         var items = new List<object>(visible.Count + blocks.Count + trailing.Count);
         foreach (var message in visible)
         {
             foreach (var (block, slot) in blocks)
                 if (slot is { Before: true } s && s.MessageId == message.Id) items.Add(block);
-            items.Add(message);
+            // A hidden message still anchors its blocks.
+            if (hidden is null || !hidden.Contains(message.Id))
+                items.Add(message);
             foreach (var (block, slot) in blocks)
                 if (slot is { Before: false } s && s.MessageId == message.Id) items.Add(block);
         }

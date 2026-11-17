@@ -602,6 +602,7 @@ public class AssistantViewParseTests
         UIElement? line = null;
         bool found;
         var reachableIds = Array.Empty<string>();
+        var pinned = false;
         Visibility? idle, runOnly, both;
         try
         {
@@ -633,6 +634,16 @@ public class AssistantViewParseTests
                 .Select(AutomationProperties.GetAutomationId)
                 .Where(id => !string.IsNullOrEmpty(id))
                 .ToArray());
+            pinned = WpfStaHost.Run(() =>
+            {
+                var scroller = (DependencyObject)view!.FindName("MessageScrollViewer");
+                for (DependencyObject? node = line; node is not null; node = LogicalTreeHelper.GetParent(node))
+                {
+                    if (ReferenceEquals(node, scroller))
+                        return false;
+                }
+                return true;
+            });
         }
         finally
         {
@@ -648,6 +659,8 @@ public class AssistantViewParseTests
         // there resolves 0 elements in a live walkthrough however visible the line is.
         Assert.Contains("Assistant_LiveRunActivity_Step", reachableIds);
         Assert.Contains("Assistant_LiveRunActivity_Tools", reachableIds);
+        // Outside the scrolled transcript, so it stays in view while the user reads further up.
+        Assert.True(pinned, "The live-run line must sit above the composer, not inside the transcript.");
     }
     private static RunProgressViewModel CreateRunProgressViewModel()
     {

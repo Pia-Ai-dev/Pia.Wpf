@@ -660,6 +660,7 @@ public static class Bootstrapper
         services.AddSingleton<IChatAttendance, WindowChatAttendanceService>();
         services.AddSingleton<IRunAskBroker, RunAskCoordinator>();
         services.AddSingleton<IRunToolAnswerService, RunToolAnswerService>();
+        services.AddSingleton<IRunMessageRecordStore, RunMessageRecordStore>();
         // The run panel live-updates its tool-activity section through this broker (T2-G1's first consumer).
         // Further observers (OTel exporter, file trace) still register ADDITIVELY right here; never TryAdd,
         // which would let the first registration silently exclude the second.

@@ -105,9 +105,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 _logger.LogWarning(ex, "Run bookkeeping (create) failed for chat {ChatId}", chatId);
             }
 
-            // Open the composer bracket: the SaveAsync below is a FULL REPLACE with no merge, so a user who
-            // opens this chat from history mid-turn and Sends would otherwise have their message deleted
-            // outright. Registered only once the run row exists — the release keys off RunChanged, which every
+            // Open the composer bracket. Registered only once the run row exists — the release keys off RunChanged, which every
             // `run is not null` guard suppresses for a run-less turn, so a surrogate key could never be cleared
             // and would strand a dead composer. A run-less turn therefore fails OPEN, the recoverable direction.
             if (run is { } registeredRun)
@@ -264,7 +262,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             if (string.IsNullOrWhiteSpace(chat.Title))
                 chat.Title = DeriveTitle(request.Prompt);
 
-            await _chatService.SaveAsync(chat, ct);
+            await SaveOwnRowsAsync(chat, setTitle: string.IsNullOrWhiteSpace(request.Title), ct);
             _logger.LogInformation("Background turn persisted assistant chat {ChatId} ({MessageCount} messages)",
                 chatId, chat.Messages.Count);
             _logger.SensitiveDebug("Background chat {ChatId} title: {Title}", chatId, chat.Title);
@@ -847,12 +845,24 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     },
                 ],
             };
-            await _chatService.SaveAsync(chat, ct);
+            await SaveOwnRowsAsync(chat, setTitle: string.IsNullOrWhiteSpace(request.Title), ct);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to persist the failed background turn for chat {ChatId}", chatId);
         }
+    }
+
+    // Only this turn's rows and, when it chose one, its title: a user may have opened the chat and written to it.
+    private async Task SaveOwnRowsAsync(SyncAssistantChat chat, bool setTitle, CancellationToken ct)
+    {
+        if (!await _chatService.UpsertMessagesAsync(chat, writeHeader: false, ct))
+        {
+            await _chatService.UpsertMessagesAsync(chat, writeHeader: true, ct);
+            return;
+        }
+        if (setTitle && !string.IsNullOrWhiteSpace(chat.Title))
+            await _chatService.SetTitleAsync(chat.Id, chat.Title, ct);
     }
 
     // English only when no localizer was supplied, i.e. a hand-built test harness.

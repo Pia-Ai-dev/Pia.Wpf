@@ -222,6 +222,67 @@ public class ChatSessionManagerTests
     }
 
     [Fact]
+    public async Task ALateStoredTitle_ReachesTheOpenSession_AndALaterHeaderWriteKeepsIt()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        _chatService.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+
+        stored.Title = "Generated after the job";
+        await sut.PullMissingTranscriptRowsAsync(chatId);
+        Assert.Equal("Generated after the job", session.Title);
+
+        _chatService.ClearReceivedCalls();
+        session.WorkingDirectory = "Reports";
+        session.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "next"));
+        await sut.PersistAsync(session);
+
+        await _chatService.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Title == "Generated after the job"), true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ALateStoredTitle_DoesNotOverrideAnUnsavedRename()
+    {
+        var chatId = Guid.NewGuid();
+        var stored = StoredChat(chatId);
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(stored);
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        session.SetTitle("Renamed by the user");
+
+        stored.Title = "Generated after the job";
+        await sut.PullMissingTranscriptRowsAsync(chatId);
+
+        Assert.Equal("Renamed by the user", session.Title);
+    }
+
+    [Fact]
+    public async Task AVisionRejectedPair_IsDeletedFromTheStore()
+    {
+        var chatId = Guid.NewGuid();
+        _chatService.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(StoredChat(chatId));
+        var sut = CreateSut();
+        var session = (await sut.ActivateAsync(chatId))!;
+        var dropped = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        // The session raises this from its vision-rejection catch, which needs a live provider round trip.
+        var handler = (EventHandler<IReadOnlyList<Guid>>?)typeof(ChatSession)
+            .GetField(nameof(ChatSession.MessagesDropped),
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(session);
+        Assert.NotNull(handler);
+        handler(session, dropped);
+
+        await _chatService.Received(1).DeleteMessagesAsync(
+            chatId, Arg.Is<IReadOnlyCollection<Guid>>(ids => ids.SequenceEqual(dropped)), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task TurnCompleted_PullsRowsAJobStored_EvenWithoutAnAttachedRun()
     {
         var chatId = Guid.NewGuid();

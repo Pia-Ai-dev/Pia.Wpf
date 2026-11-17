@@ -161,6 +161,21 @@ public class SqliteContextTests : IDisposable
         Assert.True(IndexExists(upgradedConn, "IX_AgentToolExchanges_CreatedAt"));
     }
 
+    [Fact]
+    public void EnsureSchema_AddsAgentRunMessages_ToAnOlderDatabase()
+    {
+        using (var drop = _ctx.GetConnection().CreateCommand())
+        {
+            drop.CommandText = "DROP TABLE AgentRunMessages";
+            drop.ExecuteNonQuery();
+        }
+
+        using var upgraded = new SqliteContext(_dbPath);
+        var upgradedConn = upgraded.GetConnection();
+        Assert.True(TableExists(upgradedConn, "AgentRunMessages"));
+        Assert.True(IndexExists(upgradedConn, "IX_AgentRunMessages_RunId"));
+    }
+
     /// <summary>Only this covers the ALTER path; the column-list test above covers the fresh CREATE TABLE.</summary>
     [Fact]
     public void EnsureSchema_AddsTheReadableCopyColumns_ToAnExistingExchangeTable()

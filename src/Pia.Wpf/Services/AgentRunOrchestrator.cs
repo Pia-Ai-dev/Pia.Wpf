@@ -27,6 +27,7 @@ public sealed class AgentRunOrchestrator
     private readonly IRunWorkspaceService? _workspaces;
     private readonly IHeadlessRunLauncher? _childLauncher;
     private readonly IAssistantChatService? _chats;
+    private readonly IRunMessageRecordStore? _messageRecords;
     private readonly IRunSteeringStore? _steering;
     private readonly ILocalizationService? _localization;
     private readonly IAiClientService? _ai;
@@ -139,8 +140,10 @@ public sealed class AgentRunOrchestrator
         IAssistantChatService? chats = null,
         IRunSteeringStore? steering = null,
         ILocalizationService? localization = null,
-        IAiClientService? ai = null)
+        IAiClientService? ai = null,
+        IRunMessageRecordStore? messageRecords = null)
     {
+        _messageRecords = messageRecords;
         _runService = runService;
         _planner = planner;
         _verifier = verifier;
@@ -902,7 +905,7 @@ public sealed class AgentRunOrchestrator
 
         // Reuses the same post-and-mirror call the plan-time decline makes, so the two parks
         // can't drift apart.
-        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, userInputQuestion)
+        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, userInputQuestion, step)
             .ConfigureAwait(false);
     }
 
@@ -1812,17 +1815,18 @@ public sealed class AgentRunOrchestrator
     /// order), since a live session's pull keys on the id to decide which stored rows it's missing — two ids for
     /// one question would render it twice.</summary>
     private async Task PostAndMirrorClarificationQuestionAsync(
-        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona, string? question)
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona, string? question,
+        AgentStep? askingStep = null)
     {
         var questionId = Guid.NewGuid();
-        await SafePostClarificationQuestionAsync(run, persona, questionId, question).ConfigureAwait(false);
+        await SafePostClarificationQuestionAsync(run, persona, questionId, question, askingStep).ConfigureAwait(false);
         await SafeMirrorClarificationQuestion(executor, run, ctx, persona, questionId, question).ConfigureAwait(false);
     }
 
     /// <summary>A blank <paramref name="question"/> is a no-op, not a fabricated placeholder.</summary>
     /// <param name="messageId">Must match the id the caller's live mirror uses for the same question.</param>
     private async Task SafePostClarificationQuestionAsync(
-        AgentRun run, Persona persona, Guid messageId, string? question)
+        AgentRun run, Persona persona, Guid messageId, string? question, AgentStep? askingStep = null)
     {
         if (_chats is null || string.IsNullOrWhiteSpace(question))
             return; // no chat service wired, or a decline that worded no question
@@ -1830,6 +1834,13 @@ public sealed class AgentRunOrchestrator
         try
         {
             var now = DateTime.UtcNow;
+            // A question asked before any step ran belongs to no step and stays a bubble.
+            if (_messageRecords is not null)
+            {
+                await _messageRecords.RecordAsync(
+                    new RunMessageRecord(messageId, run.Id, askingStep?.Id, askingStep?.Ordinal, now)).ConfigureAwait(false);
+            }
+
             var appended = await _chats.UpsertMessagesAsync(new SyncAssistantChat
             {
                 Id = run.ChatId,

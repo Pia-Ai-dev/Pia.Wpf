@@ -38,6 +38,7 @@ public sealed class RunProgressConvertersTests
     [InlineData(RunProgressState.Failed, false)]
     [InlineData(RunProgressState.WaitingForInput, false)]
     [InlineData(RunProgressState.Paused, false)]
+    [InlineData(RunProgressState.Stopped, false)]
     public void TheSpinnerIsLitWheneverWorkIsHappening(RunProgressState state, bool visible)
     {
         var converted = new RunStateToSpinnerVisibilityConverter()
@@ -49,7 +50,17 @@ public sealed class RunProgressConvertersTests
     // Every member must have a row above, or an appended state would go unasserted rather than red.
     [Fact]
     public void TheSpinnerTheoryCoversEveryState()
-        => Assert.Equal(8, Enum.GetValues<RunProgressState>().Length);
+        => Assert.Equal(9, Enum.GetValues<RunProgressState>().Length);
+
+    [Fact]
+    public void AStoppedRun_IsNotDrawnLikeAFailedOne()
+    {
+        Assert.Equal("RunReplies_StateStopped", RunStateToLabelConverter.LabelKey(RunProgressState.Stopped));
+        Assert.Equal("TextMutedBrush", RunStateToBrushConverter.BrushKey(RunProgressState.Stopped));
+        Assert.NotEqual(RunStateToIconConverter.Icon(RunProgressState.Failed),
+            RunStateToIconConverter.Icon(RunProgressState.Stopped));
+        Assert.Equal("BorderBrush_", RunStateToCardBorderBrushConverter.BrushKey(RunProgressState.Stopped));
+    }
 
     // The KEY, never the resolved Brush, which would need a live Application. Paused and WaitingForInput must share
     // one key because both offer the identical Continue command.
