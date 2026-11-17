@@ -69,15 +69,15 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## C — seeing into a job
 
-- [ ] **Forward live text and reasoning.** A text callback on the background runner, a carrier keyed
+- [x] **Forward live text and reasoning.** A text callback on the background runner, a carrier keyed
       by run id, the running step's row as the sink.
       *Deps:* block · *Effort:* M · *Value:* High
-- [ ] **Tool rows per step.** Name, short argument line, duration and outcome from the timeline.
+- [x] **Tool rows per step.** Name, short argument line, duration and outcome from the timeline.
       *Deps:* block · *Effort:* S · *Value:* High
 - [x] **Keep call and result rows after the job.** Narrow the settle purge and the prune to parked and
       withheld rows; update the comments and tests that promise the old rule.
       *Deps:* G1 (O1) · *Effort:* S · *Value:* Enabler
-- [ ] **Open a call: input and result.** A read by step, the "not kept" states, and the readable copy
+- [x] **Open a call: input and result.** A read by step, the "not kept" states, and the readable copy
       with real names if O1 is yes.
       *Deps:* kept rows, tool rows · *Effort:* M · *Value:* High
 

@@ -1,0 +1,101 @@
+<UserControl x:Class="Pia.Controls.Assistant.RunStepDetailView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <!-- DataContext: a StepRowViewModel. Live text of the running step, then one row per tool call. -->
+  <UserControl.Resources>
+    <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+  </UserControl.Resources>
+  <StackPanel Margin="25,0,0,2">
+    <TextBlock Text="{Binding LiveReasoning}" FontSize="11" FontStyle="Italic"
+               TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis"
+               Foreground="{DynamicResource TextGhostBrush}"
+               Visibility="{Binding HasLiveReasoning, Converter={StaticResource BoolToVisibility}}" />
+    <TextBlock Text="{Binding LiveText}" FontSize="11.5" Margin="0,1,0,2"
+               TextWrapping="Wrap" MaxHeight="64" TextTrimming="CharacterEllipsis"
+               Foreground="{DynamicResource TextSubtleBrush}"
+               Visibility="{Binding HasLiveText, Converter={StaticResource BoolToVisibility}}" />
+
+    <ItemsControl ItemsSource="{Binding ToolRows}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <StackPanel>
+            <Button Command="{Binding ToggleCommand}" Padding="0,2" Background="Transparent" BorderThickness="0"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Cursor="Hand"
+                    AutomationProperties.AutomationId="{Binding EventId, StringFormat='RunStep_ToolRow_{0}'}"
+                    AutomationProperties.Name="{Binding ToolName}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Width="12" FontSize="10" VerticalAlignment="Center" Text="▸"
+                           Foreground="{DynamicResource TextGhostBrush}" />
+                <TextBlock Grid.Column="1" Margin="0,0,8,0" FontSize="11" VerticalAlignment="Center"
+                           FontFamily="{DynamicResource PiaMonoFont}" Text="{Binding ToolName}"
+                           Foreground="{DynamicResource TextMutedBrush}" />
+                <TextBlock Grid.Column="2" FontSize="11" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Text="{Binding ArgumentLine}"
+                           Foreground="{DynamicResource TextGhostBrush}" />
+                <TextBlock Grid.Column="3" Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center"
+                           FontFamily="{DynamicResource PiaMonoFont}" Text="{Binding DurationLabel}"
+                           Foreground="{DynamicResource TextGhostBrush}" />
+                <TextBlock Grid.Column="4" Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center"
+                           Text="{Binding OutcomeLabel}">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Setter Property="Foreground" Value="{DynamicResource TextSubtleBrush}" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsFailed}" Value="True">
+                          <Setter Property="Foreground" Value="{DynamicResource PiaDangerBrush}" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </Grid>
+            </Button>
+
+            <Border Margin="12,1,0,4" Padding="8,6" CornerRadius="6"
+                    Background="{DynamicResource SurfaceSunkBrush}"
+                    Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+              <StackPanel>
+                <TextBlock Text="{loc:Str RunStepDetail_Loading}" FontSize="11"
+                           Foreground="{DynamicResource TextGhostBrush}"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock Text="{Binding DetailNote}" FontSize="11" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextSubtleBrush}"
+                           Visibility="{Binding HasDetailNote, Converter={StaticResource BoolToVisibility}}" />
+                <StackPanel Visibility="{Binding HasDetail, Converter={StaticResource BoolToVisibility}}">
+                  <TextBlock Text="{loc:Str RunStepDetail_Input}" FontSize="10.5" FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextMutedBrush}" />
+                  <TextBox Text="{Binding InputText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                           MaxHeight="160" VerticalScrollBarVisibility="Auto" FontSize="11"
+                           FontFamily="{DynamicResource PiaMonoFont}" BorderThickness="0" Background="Transparent"
+                           AutomationProperties.AutomationId="{Binding EventId, StringFormat='RunStep_ToolInput_{0}'}"
+                           Visibility="{Binding HasInput, Converter={StaticResource BoolToVisibility}}" />
+                  <TextBlock Text="{Binding InputNote}" FontSize="11" FontStyle="Italic" TextWrapping="Wrap"
+                             Foreground="{DynamicResource TextGhostBrush}"
+                             Visibility="{Binding HasInputNote, Converter={StaticResource BoolToVisibility}}" />
+                  <TextBlock Text="{loc:Str RunStepDetail_Result}" Margin="0,6,0,0" FontSize="10.5"
+                             FontWeight="SemiBold" Foreground="{DynamicResource TextMutedBrush}" />
+                  <TextBox Text="{Binding ResultText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap"
+                           MaxHeight="220" VerticalScrollBarVisibility="Auto" FontSize="11"
+                           FontFamily="{DynamicResource PiaMonoFont}" BorderThickness="0" Background="Transparent"
+                           AutomationProperties.AutomationId="{Binding EventId, StringFormat='RunStep_ToolResult_{0}'}"
+                           Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}" />
+                  <TextBlock Text="{Binding ResultNote}" FontSize="11" FontStyle="Italic" TextWrapping="Wrap"
+                             Foreground="{DynamicResource TextGhostBrush}"
+                             Visibility="{Binding HasResultNote, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

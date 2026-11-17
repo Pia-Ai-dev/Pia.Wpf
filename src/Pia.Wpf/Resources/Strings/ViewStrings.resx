@@ -1864,4 +1864,15 @@
   <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Your Pia Cloud account has been deleted. Do you also want to remove its data from this device? Clearing restarts Pia. This cannot be undone.</value></data>
   <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Clear this device</value></data>
   <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Keep on this device</value></data>
+  <data name="RunStepDetail_Outcome_Ok" xml:space="preserve"><value>ok</value></data>
+  <data name="RunStepDetail_Loading" xml:space="preserve"><value>Loading…</value></data>
+  <data name="RunStepDetail_Input" xml:space="preserve"><value>Input</value></data>
+  <data name="RunStepDetail_Result" xml:space="preserve"><value>Result</value></data>
+  <data name="RunStepDetail_NoInput" xml:space="preserve"><value>No input.</value></data>
+  <data name="RunStepDetail_State_Truncated" xml:space="preserve"><value>Shortened: only the start was kept.</value></data>
+  <data name="RunStepDetail_State_Omitted" xml:space="preserve"><value>Too large: not kept.</value></data>
+  <data name="RunStepDetail_State_Missing" xml:space="preserve"><value>No result was recorded.</value></data>
+  <data name="RunStepDetail_NotRecordedRound" xml:space="preserve"><value>Not kept: this round came after the job reached its detail limit.</value></data>
+  <data name="RunStepDetail_NoRecord" xml:space="preserve"><value>No details were kept for this call.</value></data>
+  <data name="RunStepDetail_ReadFailed" xml:space="preserve"><value>The details could not be read.</value></data>
 </root>

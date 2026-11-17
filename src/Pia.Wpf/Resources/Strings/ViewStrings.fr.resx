@@ -1854,4 +1854,15 @@
   <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Votre compte Pia Cloud a été supprimé. Voulez-vous aussi supprimer ses données de cet appareil ? La suppression redémarre Pia. Cette action est irréversible.</value></data>
   <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Vider cet appareil</value></data>
   <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Conserver sur cet appareil</value></data>
+  <data name="RunStepDetail_Outcome_Ok" xml:space="preserve"><value>ok</value></data>
+  <data name="RunStepDetail_Loading" xml:space="preserve"><value>Chargement…</value></data>
+  <data name="RunStepDetail_Input" xml:space="preserve"><value>Entrée</value></data>
+  <data name="RunStepDetail_Result" xml:space="preserve"><value>Résultat</value></data>
+  <data name="RunStepDetail_NoInput" xml:space="preserve"><value>Aucune entrée.</value></data>
+  <data name="RunStepDetail_State_Truncated" xml:space="preserve"><value>Raccourci : seul le début a été conservé.</value></data>
+  <data name="RunStepDetail_State_Omitted" xml:space="preserve"><value>Trop volumineux : non conservé.</value></data>
+  <data name="RunStepDetail_State_Missing" xml:space="preserve"><value>Aucun résultat n'a été enregistré.</value></data>
+  <data name="RunStepDetail_NotRecordedRound" xml:space="preserve"><value>Non conservé : ce tour est venu après que la tâche a atteint sa limite de détails.</value></data>
+  <data name="RunStepDetail_NoRecord" xml:space="preserve"><value>Aucun détail n'a été conservé pour cet appel.</value></data>
+  <data name="RunStepDetail_ReadFailed" xml:space="preserve"><value>Les détails n'ont pas pu être lus.</value></data>
 </root>
