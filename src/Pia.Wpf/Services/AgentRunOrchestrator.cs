@@ -1737,9 +1737,7 @@ public sealed class AgentRunOrchestrator
         await SafeMirrorClarificationQuestion(executor, run, ctx, persona, questionId, question).ConfigureAwait(false);
     }
 
-    /// <summary>Posts the clarification question into the run's own chat as an assistant message, using
-    /// <see cref="IAssistantChatService.SaveMergedAsync"/> rather than a blind replace so a concurrent writer's
-    /// rows are never dropped. A blank <paramref name="question"/> is a no-op, not a fabricated placeholder.</summary>
+    /// <summary>A blank <paramref name="question"/> is a no-op, not a fabricated placeholder.</summary>
     /// <param name="messageId">Must match the id the caller's live mirror uses for the same question.</param>
     private async Task SafePostClarificationQuestionAsync(
         AgentRun run, Persona persona, Guid messageId, string? question)
@@ -1749,23 +1747,12 @@ public sealed class AgentRunOrchestrator
 
         try
         {
-            var chat = await _chats.GetAsync(run.ChatId, CancellationToken.None).ConfigureAwait(false);
-            if (chat is null)
-                return; // the stub row is gone (e.g. its chat was deleted underneath the run) — nothing to post into
-
             var now = DateTime.UtcNow;
-            var snapshot = new SyncAssistantChat
+            var appended = await _chats.UpsertMessagesAsync(new SyncAssistantChat
             {
-                Id = chat.Id,
-                SchemaVersion = chat.SchemaVersion,
-                Title = chat.Title,
-                CreatedAt = chat.CreatedAt,
+                Id = run.ChatId,
                 UpdatedAt = now,
                 LastAccessedAt = now,
-                WindowMode = chat.WindowMode,
-                ProviderId = chat.ProviderId,
-                WorkingDirectory = chat.WorkingDirectory,
-                AgentContextMode = chat.AgentContextMode,
                 Messages =
                 [
                     new SyncAssistantChatMessage
@@ -1777,8 +1764,9 @@ public sealed class AgentRunOrchestrator
                         Persona = new SyncMessagePersona { Id = persona.Id, Name = persona.Name, Emoji = persona.Emoji },
                     },
                 ],
-            };
-            await _chats.SaveMergedAsync(snapshot, CancellationToken.None).ConfigureAwait(false);
+            }, writeHeader: false, CancellationToken.None).ConfigureAwait(false);
+            if (!appended)
+                return; // the stub row is gone (e.g. its chat was deleted underneath the run) — nothing to post into
             _logger.LogInformation(
                 "Run {RunId}: posted the clarification question into chat {ChatId}", run.Id, run.ChatId);
         }

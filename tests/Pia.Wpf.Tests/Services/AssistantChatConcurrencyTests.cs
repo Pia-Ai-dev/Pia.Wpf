@@ -262,11 +262,85 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
         Assert.Equal(3, final!.Messages.Count);
     }
 
-    [Fact]
-    public async Task TwoAppendOnlyWritersMergingConcurrently_LoseNoRow()
+    private static readonly DateTime T0 = new(2026, 7, 28, 9, 0, 0, DateTimeKind.Utc);
+
+    private static SyncAssistantChatMessage Row(string content, int minute, string role = "assistant") => new()
     {
-        // A merging save that READ through GetAsync and then wrote through SaveAsync would release the gate in
-        // between, so a writer committing in that gap would still lose its rows to the replace.
+        Id = Guid.NewGuid(),
+        Role = role,
+        Content = content,
+        Timestamp = T0.AddMinutes(minute),
+    };
+
+    private static SyncAssistantChat Payload(Guid id, string title, params SyncAssistantChatMessage[] rows)
+    {
+        var chat = Chat(id, title);
+        chat.Messages = [.. rows];
+        return chat;
+    }
+
+    private async Task AssertOrderedAndContiguousAsync(Guid chatId)
+    {
+        var final = await _chats.GetAsync(chatId, TestContext.Current.CancellationToken);
+        var stamps = final!.Messages.Select(m => m.Timestamp).ToList();
+        Assert.Equal(stamps.OrderBy(t => t), stamps);
+
+        using var connection = new SqliteConnection(_ctx.ConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Ordinal FROM AssistantChatMessages WHERE ChatId = @c ORDER BY Ordinal";
+        command.Parameters.AddWithValue("@c", chatId.ToString());
+        var ordinals = new List<int>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            ordinals.Add(reader.GetInt32(0));
+        Assert.Equal(Enumerable.Range(0, ordinals.Count), ordinals);
+    }
+
+    [Theory]
+    [InlineData("LLJJ")]
+    [InlineData("LJLJ")]
+    [InlineData("LJJL")]
+    [InlineData("JLLJ")]
+    [InlineData("JLJL")]
+    [InlineData("JJLL")]
+    public async Task ALiveTurnAndAJobSavingOneChat_InAnyInterleaving_LoseNothingDuplicateNothingKeepOrder(string order)
+    {
+        // Live: insert the question with an empty answer, then fill the answer in. Job: step 1, then steps 1+2,
+        // the way the executor re-sends every row it authored.
+        var id = Guid.NewGuid();
+        var goal = Row("goal", 0, "user");
+        await _chats.SaveAsync(Payload(id, "c", goal), TestContext.Current.CancellationToken);
+
+        var step1 = Row("step 1", 1);
+        var question = Row("typed mid-run", 2, "user");
+        var answer = Row("", 3);
+        var step2 = Row("step 2", 4);
+        var filledAnswer = new SyncAssistantChatMessage
+        {
+            Id = answer.Id, Role = answer.Role, Content = "live answer", Timestamp = answer.Timestamp,
+        };
+
+        var live = new Queue<SyncAssistantChat>([Payload(id, "live", question, answer), Payload(id, "live", filledAnswer)]);
+        var job = new Queue<SyncAssistantChat>([Payload(id, "job", step1), Payload(id, "job", step1, step2)]);
+        foreach (var writer in order)
+        {
+            var next = writer == 'L' ? live.Dequeue() : job.Dequeue();
+            Assert.True(await _chats.UpsertMessagesAsync(next, writeHeader: false, TestContext.Current.CancellationToken));
+        }
+
+        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
+        Assert.Equal(
+            new[] { "goal", "step 1", "typed mid-run", "live answer", "step 2" },
+            final!.Messages.Select(m => m.Content).ToArray());
+        Assert.Equal(5, final.Messages.Select(m => m.Id).Distinct().Count());
+        Assert.Equal("c", final.Title);
+        await AssertOrderedAndContiguousAsync(id);
+    }
+
+    [Fact]
+    public async Task TwoWritersUpsertingConcurrently_LoseNoRow()
+    {
         var id = Guid.NewGuid();
         var seed = Chat(id, "shared", "m0");
         await _chats.SaveAsync(seed, TestContext.Current.CancellationToken);
@@ -276,23 +350,16 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
 
         async Task Writer(string tag)
         {
-            // Each writer owns an append-only view — its seed row plus its own rows, exactly like a headless
-            // run's _persisted list. It never sees the other writer's rows; the store merges them.
-            var mine = new List<SyncAssistantChatMessage>(seed.Messages);
+            var mine = new List<SyncAssistantChatMessage>();
             for (var i = 0; i < 40; i++)
             {
                 var row = new SyncAssistantChatMessage
                 {
-                    Id = Guid.NewGuid(),
-                    Role = "assistant",
-                    Content = $"{tag}-{i}",
-                    Timestamp = DateTime.UtcNow,
+                    Id = Guid.NewGuid(), Role = "assistant", Content = $"{tag}-{i}", Timestamp = DateTime.UtcNow,
                 };
                 mine.Add(row);
                 expected.Add(row.Id);
-                var snapshot = Chat(id, "shared");
-                snapshot.Messages = [.. mine];
-                try { await _chats.SaveMergedAsync(snapshot); }
+                try { await _chats.UpsertMessagesAsync(Payload(id, tag, [.. mine]), writeHeader: false); }
                 catch (Exception ex) { errors.Add(ex); }
             }
         }
@@ -303,83 +370,131 @@ public sealed class AssistantChatConcurrencyTests : IDisposable
 
         Assert.Empty(errors);
         var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
-        var stored = final!.Messages.Select(m => m.Id).ToHashSet();
-        foreach (var rowId in expected)
-            Assert.Contains(rowId, stored);
+        Assert.Equal(expected.ToHashSet(), final!.Messages.Select(m => m.Id).ToHashSet());
         Assert.Equal(81, final.Messages.Count);
+        await AssertOrderedAndContiguousAsync(id);
     }
 
     [Fact]
-    public async Task SaveMergedAsync_OrdersAbsorbedRowsByTimestamp_NotByAppendOrder()
+    public async Task Upsert_LeavesRowsOutsideItsPayloadUntouched()
     {
-        // Ordinal is renumbered from the list index on every replace, so an absorbed row appended at the TAIL
-        // would durably print the agent's reply before the question typed mid-run. The merge sorts by Timestamp.
         var id = Guid.NewGuid();
-        var t0 = new DateTime(2026, 7, 28, 9, 0, 0, DateTimeKind.Utc);
+        var mine = Row("mine", 0, "user");
+        var theirs = Row("theirs", 1);
+        await _chats.SaveAsync(Payload(id, "c", mine, theirs), TestContext.Current.CancellationToken);
 
-        SyncAssistantChatMessage Row(string content, int minute) => new()
-        {
-            Id = Guid.NewGuid(),
-            Role = "user",
-            Content = content,
-            Timestamp = t0.AddMinutes(minute),
-        };
-
-        var goal = Row("goal", 0);
-        var step1 = Row("step 1 reply", 1);
-        var userMid = Row("what about the other folder?", 2);
-        var liveReply = Row("live reply", 3);
-        var step2 = Row("step 2 reply", 4);
-
-        // The DB after a live turn appended two rows behind the run's back.
-        var afterLiveTurn = Chat(id, "c");
-        afterLiveTurn.Messages = [goal, step1, userMid, liveReply];
-        await _chats.SaveAsync(afterLiveTurn, TestContext.Current.CancellationToken);
-
-        // The run's own append-only view knows nothing about the two middle rows.
-        var runView = Chat(id, "c");
-        runView.Messages = [goal, step1, step2];
-        var absorbed = await _chats.SaveMergedAsync(runView, TestContext.Current.CancellationToken);
-
-        Assert.Equal(2, absorbed);
-        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
-        Assert.Equal(
-            new[] { "goal", "step 1 reply", "what about the other folder?", "live reply", "step 2 reply" },
-            final!.Messages.Select(m => m.Content).ToArray());
-    }
-
-    [Fact]
-    public async Task SaveMergedAsync_WithNothingToAbsorb_WritesExactlyTheCallersRows()
-    {
-        // The ordinary case: no other writer touched the chat, so the merge is a plain replace and reports 0.
-        var id = Guid.NewGuid();
-        var chat = Chat(id, "c", "m0", "m1");
-        Assert.Equal(0, await _chats.SaveMergedAsync(chat, TestContext.Current.CancellationToken));
-
-        chat.Messages.Add(new SyncAssistantChatMessage
-        {
-            Id = Guid.NewGuid(), Role = "assistant", Content = "m2", Timestamp = DateTime.UtcNow,
-        });
-        Assert.Equal(0, await _chats.SaveMergedAsync(chat, TestContext.Current.CancellationToken));
+        var edited = Row("mine, edited", 0, "user");
+        edited.Id = mine.Id;
+        await _chats.UpsertMessagesAsync(Payload(id, "c", edited), writeHeader: false, TestContext.Current.CancellationToken);
 
         var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
-        Assert.Equal(["m0", "m1", "m2"], final!.Messages.Select(m => m.Content).ToArray());
+        Assert.Equal(["mine, edited", "theirs"], final!.Messages.Select(m => m.Content).ToArray());
     }
 
     [Fact]
-    public async Task SaveMergedAsync_DoesNotMutateTheCallersSnapshot()
+    public async Task DeleteMessages_RemovesOnlyTheNamedRowsOfThatChat_AndRefreshesSearch()
     {
-        // The executor reuses its own list to build the next snapshot, so absorbing a foreign row into the
-        // caller's list would leak it into the run's next payload.
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var keep = Row("keepword", 0, "user");
+        var drop = Row("dropword", 1);
+        var other = Row("elsewhere", 0, "user");
+        await _chats.SaveAsync(Payload(a, "a", keep, drop), TestContext.Current.CancellationToken);
+        await _chats.SaveAsync(Payload(b, "b", other), TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, await _chats.DeleteMessagesAsync(b, [drop.Id], TestContext.Current.CancellationToken));
+        Assert.Equal(1, await _chats.DeleteMessagesAsync(a, [drop.Id, other.Id], TestContext.Current.CancellationToken));
+
+        var finalA = await _chats.GetAsync(a, TestContext.Current.CancellationToken);
+        Assert.Equal([keep.Id], finalA!.Messages.Select(m => m.Id).ToArray());
+        Assert.Single((await _chats.GetAsync(b, TestContext.Current.CancellationToken))!.Messages);
+        Assert.Empty(await _chats.SearchAsync("dropword", ct: TestContext.Current.CancellationToken));
+        Assert.Single(await _chats.SearchAsync("keepword", ct: TestContext.Current.CancellationToken));
+        await AssertOrderedAndContiguousAsync(a);
+    }
+
+    [Fact]
+    public async Task UpsertWithoutHeader_KeepsTitleProviderAndStar()
+    {
         var id = Guid.NewGuid();
-        var stored = Chat(id, "c", "goal", "typed mid-run");
-        await _chats.SaveAsync(stored, TestContext.Current.CancellationToken);
+        var provider = Guid.NewGuid();
+        var seed = Payload(id, "original", Row("m0", 0, "user"));
+        seed.ProviderId = provider;
+        seed.WorkingDirectory = "sub";
+        await _chats.SaveAsync(seed, TestContext.Current.CancellationToken);
+        await _chats.SetTitleAsync(id, "renamed", TestContext.Current.CancellationToken);
+        await _chats.SetFavoriteAsync(id, true, TestContext.Current.CancellationToken);
 
-        var runView = Chat(id, "c");
-        runView.Messages = [stored.Messages[0]];
-        await _chats.SaveMergedAsync(runView, TestContext.Current.CancellationToken);
+        var stale = Payload(id, "stale title", Row("m1", 1));
+        stale.ProviderId = Guid.NewGuid();
+        await _chats.UpsertMessagesAsync(stale, writeHeader: false, TestContext.Current.CancellationToken);
 
-        Assert.Single(runView.Messages);
+        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
+        Assert.Equal("renamed", final!.Title);
+        Assert.Equal(provider, final.ProviderId);
+        Assert.Equal("sub", final.WorkingDirectory);
+        Assert.True(final.IsFavorite);
+        Assert.Equal(2, final.Messages.Count);
+        Assert.Single(await _chats.SearchAsync("renamed", ct: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task UpsertWithHeader_WritesTheHeaderButNotTheStar()
+    {
+        var id = Guid.NewGuid();
+        await _chats.SaveAsync(Payload(id, "original", Row("m0", 0, "user")), TestContext.Current.CancellationToken);
+        await _chats.SetFavoriteAsync(id, true, TestContext.Current.CancellationToken);
+
+        await _chats.UpsertMessagesAsync(Payload(id, "changed"), writeHeader: true, TestContext.Current.CancellationToken);
+
+        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
+        Assert.Equal("changed", final!.Title);
+        Assert.True(final.IsFavorite);
+        Assert.Single(final.Messages);
+    }
+
+    [Fact]
+    public async Task UpsertWithoutHeader_OnAMissingChat_WritesNothing()
+    {
+        var id = Guid.NewGuid();
+        Assert.False(await _chats.UpsertMessagesAsync(Payload(id, "c", Row("m0", 0)), writeHeader: false,
+            TestContext.Current.CancellationToken));
+        Assert.Null(await _chats.GetAsync(id, TestContext.Current.CancellationToken));
+
+        Assert.True(await _chats.UpsertMessagesAsync(Payload(id, "c", Row("m0", 0)), writeHeader: true,
+            TestContext.Current.CancellationToken));
+        Assert.Single((await _chats.GetAsync(id, TestContext.Current.CancellationToken))!.Messages);
+    }
+
+    [Fact]
+    public async Task Upsert_OrdersByTimestamp_EvenWhenARowArrivesLateOrWithALocalOffset()
+    {
+        var id = Guid.NewGuid();
+        await _chats.SaveAsync(Payload(id, "c", Row("first", 0, "user"), Row("third", 2)), TestContext.Current.CancellationToken);
+
+        var late = Row("second", 1, "user");
+        late.Timestamp = late.Timestamp.ToLocalTime();
+        await _chats.UpsertMessagesAsync(Payload(id, "c", late), writeHeader: false, TestContext.Current.CancellationToken);
+
+        var final = await _chats.GetAsync(id, TestContext.Current.CancellationToken);
+        Assert.Equal(["first", "second", "third"], final!.Messages.Select(m => m.Content).ToArray());
+        await AssertOrderedAndContiguousAsync(id);
+    }
+
+    [Fact]
+    public async Task Upsert_DoesNotRewriteARowOfAnotherChatWithTheSameId()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var row = Row("in a", 0, "user");
+        await _chats.SaveAsync(Payload(a, "a", row), TestContext.Current.CancellationToken);
+        await _chats.SaveAsync(Payload(b, "b", Row("in b", 0, "user")), TestContext.Current.CancellationToken);
+
+        var hijack = Row("hijack", 1);
+        hijack.Id = row.Id;
+        await _chats.UpsertMessagesAsync(Payload(b, "b", hijack), writeHeader: false, TestContext.Current.CancellationToken);
+
+        Assert.Equal("in a", (await _chats.GetAsync(a, TestContext.Current.CancellationToken))!.Messages.Single().Content);
     }
 
     /// <summary>CommandTimeout is one second because the driver retries SQLITE_BUSY for its full 30s default.</summary>

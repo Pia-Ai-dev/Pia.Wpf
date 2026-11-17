@@ -563,7 +563,7 @@ public sealed class ChatHistoryToolHandlerTests : IDisposable
         var writes = _chats.ReceivedCalls()
             .Select(c => c.GetMethodInfo().Name)
             .Where(n => n is "TouchLastAccessedAsync" or "SaveAsync" or "SaveFromRemoteAsync"
-                or "SaveMergedAsync" or "SetTitleAsync" or "DeleteAsync" or "DeleteFromRemoteAsync"
+                or "UpsertMessagesAsync" or "DeleteMessagesAsync" or "SetTitleAsync" or "DeleteAsync" or "DeleteFromRemoteAsync"
                 or "EvictOlderThanAsync" or "DeleteAllAsync")
             .ToList();
 

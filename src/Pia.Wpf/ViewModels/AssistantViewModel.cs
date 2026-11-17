@@ -1673,10 +1673,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// </summary>
     private async Task RegenerateCore(AssistantMessage? message, RegenerateStyle style)
     {
-        // W2c: ForeignRunActive blocks this for the same reason it blocks Send — the turn below writes THIS
-        // chat, and the persist at the end of it is a full replace built from session.Messages, so it would
-        // delete every row the headless run has appended since. Regenerate is worse than Send, in fact: it
-        // also truncates the transcript the run is still extending.
+        // Regenerate truncates the transcript a running job may still be extending.
         if (message is null || IsStreaming || ForeignRunActive || PlanApprovalParkActive) return;
 
         var idx = Messages.IndexOf(message);
@@ -1694,6 +1691,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var attachedFileContext = prior.AttachedFileContext;
         // Captured before the removal below, which takes the answer a styled instruction has to quote.
         var previousAnswer = message.Content;
+        var removedIds = Messages.Skip(idx - 1).Select(m => m.Id).ToList();
         for (var i = Messages.Count - 1; i >= idx - 1; i--)
             Messages.RemoveAt(i);
 
@@ -1701,6 +1699,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
+        await _chatSessionManager.DeleteMessagesAsync(session, removedIds);
 
         await _chatSessionManager.StartTurnAsync(
             session, prompt, attachments, RegenerateInstructions.For(style, previousAnswer),

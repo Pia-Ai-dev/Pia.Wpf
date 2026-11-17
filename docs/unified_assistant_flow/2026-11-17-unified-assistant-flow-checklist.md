@@ -34,15 +34,15 @@ Do not tick a step that depends on an open gate without revisiting it.
 
 ## A — storage that two writers can share
 
-- [ ] **Message-level upsert and explicit delete on the chat store.** Insert or update by id with the
+- [x] **Message-level upsert and explicit delete on the chat store.** Insert or update by id with the
       header untouched, delete by ids, order by timestamp; Regenerate and the vision rejection call
       the delete.
       *Deps:* — · *Effort:* M · *Value:* Enabler
-- [ ] **Move the live session, the job and the one-message appends onto it.** The job stops rewriting
+- [x] **Move the live session, the job and the one-message appends onto it.** The job stops rewriting
       messages it did not author and stops writing the header; the live window repeats a missed pull
       when its turn ends.
       *Deps:* upsert · *Effort:* M · *Value:* Enabler
-- [ ] **Concurrency tests.** A live turn and a job saving one chat in every interleaving lose nothing,
+- [x] **Concurrency tests.** A live turn and a job saving one chat in every interleaving lose nothing,
       duplicate nothing and keep the order.
       *Deps:* upsert · *Effort:* S · *Value:* High
 

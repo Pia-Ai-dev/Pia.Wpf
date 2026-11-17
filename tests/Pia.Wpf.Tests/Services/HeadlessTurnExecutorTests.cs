@@ -443,7 +443,7 @@ public sealed class HeadlessTurnExecutorTests
 
     /// <summary>
     /// Real <see cref="AssistantChatService"/> plus a call counter and fault injection on the WRITE seams
-    /// (<c>SaveAsync</c> and the merging <c>SaveMergedAsync</c> the interim/per-step persist uses).
+    /// (<c>SaveAsync</c> and the <c>UpsertMessagesAsync</c> the per-step persist uses).
     /// </summary>
     private sealed class CountingChatService : IAssistantChatService
     {
@@ -477,8 +477,7 @@ public sealed class HeadlessTurnExecutorTests
             return _inner.SaveAsync(chat, ct);
         }
 
-        /// <summary>The executor's write seam. Counted as a WRITE — the merge must not cost a second one.</summary>
-        public Task<int> SaveMergedAsync(SyncAssistantChat chat, CancellationToken ct = default)
+        public Task<bool> UpsertMessagesAsync(SyncAssistantChat chat, bool writeHeader, CancellationToken ct = default)
         {
             SaveCalls++;
             if (FailNextSaves > 0)
@@ -486,8 +485,11 @@ public sealed class HeadlessTurnExecutorTests
                 FailNextSaves--;
                 throw new InvalidOperationException("save boom");
             }
-            return _inner.SaveMergedAsync(chat, ct);
+            return _inner.UpsertMessagesAsync(chat, writeHeader, ct);
         }
+
+        public Task<int> DeleteMessagesAsync(Guid chatId, IReadOnlyCollection<Guid> messageIds, CancellationToken ct = default) =>
+            _inner.DeleteMessagesAsync(chatId, messageIds, ct);
 
         public Task SaveFromRemoteAsync(SyncAssistantChat chat, CancellationToken ct = default) => _inner.SaveFromRemoteAsync(chat, ct);
 
@@ -1607,9 +1609,8 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Equal(critic.Id, chat.Messages[2].Persona!.Id);
         Assert.Equal(h.Persona.Id, chat.Messages[3].Persona!.Id);
 
-        // The CHAT ROW's provider stays the run's even though two steps ran elsewhere: a chat has one
-        // provider, and it is what a later interactive turn on this chat would resume on.
-        Assert.Equal(h.Provider.Id, chat.ProviderId);
+        // The job never writes the chat header, so no step's provider lands on the chat row.
+        Assert.Null(chat.ProviderId);
     }
 
     [Fact]

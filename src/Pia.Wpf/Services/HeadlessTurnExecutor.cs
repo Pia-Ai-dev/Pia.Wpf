@@ -46,6 +46,8 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
     // Per-run accumulating state.
     private readonly List<ChatMessage> _messages = new();
     private readonly List<SyncAssistantChatMessage> _persisted = new();
+    // Rows this run loaded rather than wrote; it must never re-assert them.
+    private readonly HashSet<Guid> _seededIds = new();
     private readonly HashSet<string> _grantedWrites = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deniedWrites = new(StringComparer.OrdinalIgnoreCase);
     private AssistantTurnSetup _setup = default!;
@@ -319,16 +321,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             catch (Exception ex) { _logger.LogError(ex, "Failed to initialize token map for headless run {RunId}", run.Id); }
         }
 
-        // Seed the accumulating transcript. The terminal EndRunAsync does a full chat replace, so on a
-        // RESUME (or any pre-populated chat) we must load the existing rows first — otherwise EndRunAsync
-        // would erase the prior transcript (D2). A fresh launch's stub chat is empty → seed [system, goal].
-        // W2: this snapshot is no longer taken ONCE and trusted for the rest of the run — every write goes
-        // through SaveMergedAsync, which re-reads the persisted rows under the store's gate and absorbs
-        // anything this executor did not author, so a concurrent writer's rows survive the full replace.
-        // What is seeded HERE is still the only thing that reaches _messages (the model context); the merge
-        // happens inside the store and deliberately never reaches it.
+        // A resume seeds the stored rows so the step context sees them; persistence writes only this run's own rows.
         _messages.Clear();
         _persisted.Clear();
+        _seededIds.Clear();
         _messages.Add(new ChatMessage(ChatRole.System, _setup.SystemPrompt)); // system: never persisted
 
         // The prose transcript alone told a resumed step nothing about the files an abandoned attempt had
@@ -340,6 +336,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 _messages.AddRange(groups);
             _messages.Add(new ChatMessage(ParseRole(m.Role), m.Content));
             _persisted.Add(m);
+            _seededIds.Add(m.Id);
         }
 
         // Checks that the FIRST message is a user row, not just any — a parked run's chat can open with the
@@ -347,8 +344,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         if (chat is { Messages.Count: > 0 }
             && string.Equals(chat.Messages[0].Role, "user", StringComparison.OrdinalIgnoreCase))
         {
-            // Resume: seed from the persisted transcript so the terminal full-replace PRESERVES prior
-            // rows. No synthetic goal (it is already in the transcript).
+            // No synthetic goal: it is already in the transcript.
             foreach (var m in chat.Messages)
                 SeedRow(m);
         }
@@ -363,7 +359,10 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
                 Id = goalMsgId,
                 Role = "user",
                 Content = ctx.Goal,
-                Timestamp = DateTime.UtcNow,
+                // Stored order is by timestamp, and the goal has to read before a carried question.
+                Timestamp = chat is { Messages.Count: > 0 }
+                    ? chat.Messages.Min(m => m.Timestamp).ToUniversalTime().AddTicks(-1)
+                    : DateTime.UtcNow,
             });
 
             if (chat is { Messages.Count: > 0 })
@@ -1099,41 +1098,24 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         // Ambients are set + restored per step (RunExchangeStepAsync); nothing to restore here.
     }
 
-    /// <summary>
-    /// The one chat write both the interim (per-step, E2) and the terminal path use, so an interim save can
-    /// never diverge from the terminal one. Failure-isolated (guardrail 1): a persist fault logs a warning
-    /// and lets the step/run continue — losing durability is bad, failing a run over bookkeeping is worse.
-    /// <para>
-    /// COST: <see cref="IAssistantChatService"/> offers no append — a save is a full-chat replace (upsert +
-    /// DELETE/re-INSERT of the message rows in one transaction). So per-step durability costs one full
-    /// replace per COMPLETED STEP; deliberately not per tool round and not per token.
-    /// </para>
-    /// <para>
-    /// W2b: the write goes through <see cref="IAssistantChatService.SaveMergedAsync"/>, which re-reads the
-    /// stored rows and merges back anything this executor did not author INSIDE its own gate hold, so a full
-    /// replace can never DELETE another writer's row — not even one committed between this executor's read
-    /// and its write, which is precisely what a rebase done out here could not prevent. This run is an
-    /// append-only writer (it never removes a message), which is what makes a merging save correct for it.
-    /// It also means the merge never touches <see cref="_messages"/> (the run's MODEL CONTEXT): the run's
-    /// plan is fixed at <c>BeginRunAsync</c> and feeding it foreign turns would break executor parity, so
-    /// the absorbed rows exist only in the row the store writes.
-    /// </para>
-    /// <paramref name="interim"/> only distinguishes the log/warning text — the caller resolves the title
-    /// (<see cref="InterimTitle"/> mid-run, the LLM/derived one at the end).
-    /// </summary>
+    /// <summary>Failure-isolated: a persist fault logs a warning and lets the step or run continue.</summary>
     private async Task PersistChatAsync(string? title, bool interim, CancellationToken ct)
     {
         try
         {
             var chat = BuildChatSnapshot(title);
-            var absorbed = await _chatService.SaveMergedAsync(chat, ct).ConfigureAwait(false);
-            if (absorbed > 0)
+            if (!await _chatService.UpsertMessagesAsync(chat, writeHeader: false, ct).ConfigureAwait(false))
             {
-                // Ids + counts only — message content is user content (CLAUDE.md privacy logging).
-                _logger.LogInformation(
-                    "Headless run {RunId} absorbed {Count} foreign message row(s) of chat {ChatId} into its write",
-                    _runId, absorbed, _chatId);
+                // The chat row is gone; recreate it rather than lose the step replies.
+                await _chatService.UpsertMessagesAsync(chat, writeHeader: true, ct).ConfigureAwait(false);
+                _existingTitle = title;
             }
+            else if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, _existingTitle, StringComparison.Ordinal))
+            {
+                if (await _chatService.SetTitleAsync(_chatId, title, ct).ConfigureAwait(false))
+                    _existingTitle = title;
+            }
+
             if (interim)
             {
                 _logger.LogInformation("Headless run {RunId} interim-persisted chat {ChatId} ({MessageCount} messages)",
@@ -1156,7 +1138,6 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         }
     }
 
-    /// <summary>The accumulated transcript as one chat row. Metadata comes from the captured run/chat state.</summary>
     private SyncAssistantChat BuildChatSnapshot(string? title)
     {
         var now = DateTime.UtcNow;
@@ -1169,13 +1150,11 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
             UpdatedAt = now,
             LastAccessedAt = now,
             WindowMode = WindowMode.Assistant.ToString(),
-            // The RUN's provider on purpose, never a step's (Batch 07 G6): this is the chat ROW's provider —
-            // what a later interactive turn on this chat would resume on — and a chat has one, whereas a
-            // multi-persona run may have used several.
+            // The run's provider, never a step's: a chat has one, a multi-persona run may have used several.
             ProviderId = _provider.Id,
             WorkingDirectory = _existingWorkingDirectory,
             AgentContextMode = _existingAgentContextMode,
-            Messages = [.. _persisted],
+            Messages = [.. _persisted.Where(m => !_seededIds.Contains(m.Id))],
         };
     }
 
