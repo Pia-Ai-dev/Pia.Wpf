@@ -2187,8 +2187,8 @@ public sealed class HeadlessTurnExecutorTests
         new(h.Ctx, NullLogger<AgentToolExchangeStore>.Instance);
 
     /// <summary>Runs step 0, then RESUMES with a FRESH executor — the launcher's new DI scope, sharing the
-    /// harness's store — and runs step 1. Deliberately not driven through the orchestrator: a terminal settle
-    /// purges the run's rows, which is the very thing a resume fixture needs to survive.</summary>
+    /// harness's store — and runs step 1. Deliberately not driven through the orchestrator: a resume fixture
+    /// needs the run to stay unsettled.</summary>
     private static async Task<List<List<ChatMessage>>> RunThenResumeAsync(
         DurabilityHarness h, AgentRun run, params ChatMessage[][] firstStepRounds)
     {
@@ -2367,6 +2367,44 @@ public sealed class HeadlessTurnExecutorTests
         Assert.Contains("[result cleared; call read_file on f0.csv again if you need it]", ResultBodies(resumed));
         Assert.False(HasBody(resumed, 0));
         Assert.True(HasBody(resumed, 16));
+    }
+
+    [Fact]
+    public async Task ARoundsReadableCopy_ReachesTheStepDetail()
+    {
+        using var h = new DurabilityHarness();
+        using var store = ExchangeStore(h);
+        h.Exchanges = store;
+        var run = await h.NewRunAsync("inventory report");
+        var ct = TestContext.Current.CancellationToken;
+        h.SupportsTools = true;
+        ChatMessage[] modelSaw = [ToolCall("c1", "read_file", "[Person_1].csv"), ToolResult("c1", "rows for [Person_1]")];
+        ChatMessage[] readable = [ToolCall("c1", "read_file", "Schmidt.csv"), ToolResult("c1", "rows for Schmidt")];
+        h.Ai.GetChatCompletionWithToolsAsync(
+                Arg.Any<IList<ChatMessage>>(), Arg.Any<AiProvider>(), Arg.Any<IList<AITool>?>(),
+                Arg.Any<ToolCallHandler?>(), Arg.Any<string?>(), Arg.Any<Guid?>(), cancellationToken: Arg.Any<CancellationToken>(),
+                contextBudget: Arg.Any<AgentContextBudget?>())
+            .Returns(_ => DriveReadableRound(modelSaw, readable));
+
+        var ctx = new RunContext("inventory report", RunProfile.Interactive);
+        var executor = h.NewExecutor();
+        executor.Initialize(workspaceRoot: null, [], h.Provider);
+        await executor.BeginRunAsync(run, ctx, ct);
+        var step = CarryStep(0);
+        await executor.ExecuteStepAsync(run, step, ctx, ct);
+
+        var call = Assert.Single((await store.GetStepCallsAsync(run.Id, step.Id, ct)).Calls);
+        Assert.Contains("Schmidt.csv", call.Arguments!, StringComparison.Ordinal);
+        Assert.Equal("rows for Schmidt", call.Result);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> DriveReadableRound(ChatMessage[] modelSaw, ChatMessage[] readable)
+    {
+        await Task.Yield();
+        yield return new ToolRoundCompleted();
+        yield return new ToolRoundExchange(1, modelSaw, modelSaw) { Readable = readable };
+        yield return new TextDelta("done");
+        yield return new Finished(null, "test-model");
     }
 
     [Fact]

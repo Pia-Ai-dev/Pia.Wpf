@@ -422,7 +422,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
         await AwaitSettledAsync(handle.RunId);
 
-        // The park's dispatch, then the re-run's. Both snapshots predate the terminal purge.
+        // The park's dispatch, then the re-run's. Both snapshots predate the settle's approval-record purge.
         Assert.Equal(2, probe.Dispatches.Count);
         Assert.Equal(0, probe.Dispatches[0].ExecutedCount);
         var resumed = probe.Dispatches[1];
@@ -692,7 +692,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
         await AwaitSettledAsync(handle.RunId);
 
-        // Off the re-run's snapshot: the terminal purge takes the rows before the test could read them.
+        // Off the re-run's snapshot: the settle purges the parked rows before the test could read them.
         var resumed = probe.Dispatches[1];
         Assert.NotNull(Assert.Single(resumed.Rows, r => r.ToolName == "write_file").ReplayedAt);
 
@@ -1648,8 +1648,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                // Snapshotted per dispatch: the terminal EndRunAsync purges the rows, so a settled run has none
-                // left to read, and the request captured HERE is the one the replay had to land ahead of.
+                // Snapshotted per dispatch: the terminal EndRunAsync purges the parked rows, so a settled run has
+                // none left to read, and the request captured HERE is the one the replay had to land ahead of.
                 probe.Dispatches.Add(new DispatchSnapshot(
                     [.. ci.ArgAt<IList<ChatMessage>>(0)], ReadExchangeRows(), probe.ExecutedNames.Count));
                 // Resolved here rather than inside the iterator, so the dispatch number is the one that was

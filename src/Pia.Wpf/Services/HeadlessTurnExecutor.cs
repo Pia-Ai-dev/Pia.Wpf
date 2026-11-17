@@ -1201,12 +1201,7 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         };
     }
 
-    /// <summary>
-    /// Title for a mid-run save: PROVISIONAL by design. Keep whatever the row already carries (the
-    /// launcher's derived title, or an LLM title from an earlier segment of a resumed run) and fall back to
-    /// derived-from-goal only when the row has none — the terminal <see cref="EndRunAsync"/> still owns the
-    /// final precedence (LLM > derived), so an interim save can neither pre-empt nor downgrade it.
-    /// </summary>
+    /// <summary>Keeps the row's own title, so an interim save cannot downgrade one; the generated title comes after the run.</summary>
     private string? InterimTitle() =>
         string.IsNullOrWhiteSpace(_existingTitle) ? DeriveTitleFromGoal(_goal) : _existingTitle;
 

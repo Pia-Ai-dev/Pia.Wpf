@@ -544,8 +544,11 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
 
         var text = result.ReadableResultText ?? result.ResultText;
         var suffix = AgentToolExchangeSerializer.TruncationSuffix;
+        // The stored length as well as the suffix, so a tool whose own output ends that way is not flagged.
+        var cutLength = result.ResultText?.Length - suffix.Length;
         if (result.ResultKind == AgentToolExchangeResult.Text && text is not null
-            && text.EndsWith(suffix, StringComparison.Ordinal))
+            && text.EndsWith(suffix, StringComparison.Ordinal)
+            && cutLength is AgentToolCarryover.MaxCarriedResultChars or AgentToolExchangeSerializer.MaxRowChars)
         {
             return (text[..^suffix.Length], AgentToolDetailState.Truncated);
         }
