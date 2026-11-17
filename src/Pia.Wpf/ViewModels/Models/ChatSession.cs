@@ -773,15 +773,7 @@ public sealed class ChatSession : IDisposable
     }
 
     /// <summary>
-    /// Runs one act step-turn of a <see cref="RunShape.Planned"/> run. Builds
-    /// context from the visible transcript + an EPHEMERAL User-role step instruction (never added
-    /// to <see cref="Messages"/> / persisted), creates a persona-attributed target
-    /// <see cref="AssistantMessage"/>, runs <see cref="RunModelExchangeAsync"/> + the shared
-    /// per-exchange cleanup, and returns the result. Exceptions become
-    /// <c>StepTurnResult(Succeeded=false, …)</c> — no <see cref="ChatState.Error"/>, no RunFailed
-    /// snackbar, and NO per-run finalize (the orchestrator's EndRunAsync owns that). The run stays
-    /// <see cref="ChatState.Running"/> across steps; a mid-step tool-approval WaitingForTool flap
-    /// inside <see cref="HandleToolCall"/> is the one exception, and correctly so.
+    /// One step-turn; a fault becomes a failed result, and an interruption also drops the step's bubble.
     /// </summary>
     internal async Task<StepTurnResult> RunStepTurnAsync(StepTurnSpec spec, RunContext ctx, CancellationToken ct)
     {

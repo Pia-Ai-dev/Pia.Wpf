@@ -701,12 +701,9 @@ public sealed class HeadlessTurnExecutor : IAgentTurnExecutor
         + "behalf just now: " + string.Join(", ", tools.Distinct(StringComparer.OrdinalIgnoreCase))
         + ". The call and its result are above. Do not issue that call again — carry on from its result.";
 
-    /// <param name="persona">The step's resolved triple (Batch 07 G6), or null for the RUN's — which is what
-    /// the R10 degrade turn passes and what an executor built without a resolver always uses.</param>
-    /// <param name="offerStepResultTool">hermes #9: offer <c>emit_step_result</c> on this turn. True only for
-    /// <see cref="ExecuteStepAsync"/>; the R10 degrade turn leaves it false.</param>
-    /// <param name="toolFree">T2-18: send NO tools at all. Only <see cref="RunGraceTurnAsync"/> passes true —
-    /// that turn happens after the budget is spent, so it must not be able to act.</param>
+    /// <param name="persona">The step's resolved triple, or null for the run's.</param>
+    /// <param name="offerStepResultTool">True only for a real plan step; also gates interruption classification.</param>
+    /// <param name="toolFree">Send no tools: the grace turn runs after the budget is spent.</param>
     /// <param name="exchanges">The payload sink. A separate parameter rather than derived from
     /// <paramref name="timeline"/>: the timeline is optional and absent in most suites, and deriving one
     /// optional collaborator from another would make the store silently inert wherever no timeline is injected.</param>
