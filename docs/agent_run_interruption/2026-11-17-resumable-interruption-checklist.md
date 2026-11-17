@@ -49,7 +49,7 @@ steps in its Blocks column.
 - [x] **6 — The live step names the interruption and drops its error bubble.** An interactive step sets the
   member and removes the error text the resumed step would otherwise read as its own answer.
   *Deps:* 3 · *Effort:* S · *Value:* High
-- [ ] **7 — The card and the Flow item say why.** Four reasons in three languages on the run card and the
+- [x] **7 — The card and the Flow item say why.** Four reasons in three languages on the run card and the
   Flow body.
   *Deps:* 3 · *Effort:* XS · *Value:* High
 - [ ] **8 — A failed resume keeps the interruption token.** A continuation that fails before dispatch

@@ -1448,6 +1448,10 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // this mapping renders for — and it was announcing "Stopped at budget" for a run that had reached no
         // budget at all, including one the user had paused by hand a moment earlier.
         HeadlessRunLauncher.ResumeInterruptedReason => _localization["Run_Activity_ResumeInterrupted"],
+        AgentRunOrchestrator.InterruptedCreditReason => _localization["Run_Activity_InterruptedCredit"],
+        AgentRunOrchestrator.InterruptedOfflineReason => _localization["Run_Activity_InterruptedOffline"],
+        AgentRunOrchestrator.InterruptedTimeoutReason => _localization["Run_Activity_InterruptedTimeout"],
+        AgentRunOrchestrator.InterruptedProviderReason => _localization["Run_Activity_InterruptedProvider"],
         _ => _localization["Run_Activity_WaitingAtBudget"],
     };
 

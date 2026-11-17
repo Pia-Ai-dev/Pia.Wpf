@@ -85,12 +85,7 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
             // of its own publishes a "run finished" item for a run that is still working.
             or AgentRunState.Paused;
 
-    /// <summary>
-    /// Which "continue?" body a parked run's Flow card carries. Extracted and internal for the same reason
-    /// <see cref="IsPublishableState"/> is: the publish itself sits inside a dispatcher-marshalled handler, and an
-    /// unknown reason must fall back to the BUDGET wording, which is what every pause the run loop writes for
-    /// itself really is.
-    /// </summary>
+    /// <summary>An unknown reason falls back to the budget wording, which is what the run loop's own pauses are.</summary>
     internal static string PausedBodyKey(string? reason) => reason switch
     {
         // hermes #16: the ONE body that takes an argument (the tool name) — see PausedBody, which is what the
@@ -111,6 +106,10 @@ public sealed class AgentRunNotificationSurface : IAgentRunNotificationSurface
         // the row and then failed to start re-parks it here, and "Stopped at its budget — continue?" sends
         // the user to Settings instead of back to the button they just pressed.
         HeadlessRunLauncher.ResumeInterruptedReason => "Flow_Run_ResumeInterrupted",
+        AgentRunOrchestrator.InterruptedCreditReason => "Flow_Run_InterruptedCredit",
+        AgentRunOrchestrator.InterruptedOfflineReason => "Flow_Run_InterruptedOffline",
+        AgentRunOrchestrator.InterruptedTimeoutReason => "Flow_Run_InterruptedTimeout",
+        AgentRunOrchestrator.InterruptedProviderReason => "Flow_Run_InterruptedProvider",
         _ => "Flow_Run_WaitingAtBudget",
     };
 
