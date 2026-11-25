@@ -44,6 +44,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.MeetingMinSpeechSeconds),
         nameof(AppSettings.MeetingSmartSpeakerDetection),
         nameof(AppSettings.MeetingSuppressSpeakerLabels),
+        nameof(AppSettings.MeetingSpeakerNaming),
         nameof(AppSettings.MeetingTranscriptFolder),
         nameof(AppSettings.MicEchoCancellation),
         nameof(AppSettings.ModePersonaDefaults),
@@ -58,7 +59,10 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.Theme),
         nameof(AppSettings.UserOperatingMode),
         nameof(AppSettings.UseSameProviderForAllModes),
-        nameof(AppSettings.WhisperModel)
+        nameof(AppSettings.WhisperModel),
+        nameof(AppSettings.AllowedProviderTypes),
+        nameof(AppSettings.AllowedProviderEndpoints),
+        nameof(AppSettings.AllowProviderWebSearch)
     ];
 
     private static readonly string[] LiveWithWork =
@@ -66,6 +70,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.AllowedSyncProviders),
         nameof(AppSettings.AllowPersonaManagement),
         nameof(AppSettings.AllowProviderManagement),
+        nameof(AppSettings.AllowLocalMcpServers),
         nameof(AppSettings.AlwaysAllowedTools),
         nameof(AppSettings.AssistantChatHistoryToolsEnabled),
         nameof(AppSettings.AssistantDefaultWorkingDirectory),
@@ -91,6 +96,7 @@ public class PolicyRestartClassificationTests
     private static readonly string[] RestartRequired =
     [
         nameof(AppSettings.AssistantChatsBackfilledAt),
+        nameof(AppSettings.AssistantChatsEncryptedResendAt),
         nameof(AppSettings.AssistantFolderLayoutVersion),
         nameof(AppSettings.EncryptedRefreshToken),
         nameof(AppSettings.HasCompletedFirstRunWizard),
@@ -113,6 +119,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.E2EEDeviceId),
         nameof(AppSettings.E2EEEncryptedUmk),
         nameof(AppSettings.E2EERecoveryConfigured),
+        nameof(AppSettings.E2EERequiredAccountIds),
         nameof(AppSettings.E2EEUmkVersion),
         nameof(AppSettings.EncryptedAccessToken),
         nameof(AppSettings.FlowPinned),
@@ -124,7 +131,10 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.LastPushedSettingsHash),
         nameof(AppSettings.LastSyncTimestamp),
         nameof(AppSettings.ManagedPersonaStoreInitialized),
+        nameof(AppSettings.ReplacedDeviceAccountId),
+        nameof(AppSettings.ReplacedDeviceId),
         nameof(AppSettings.ReportedDeviceMetadata),
+        nameof(AppSettings.SuppressSettingsPushAfterReset),
         nameof(AppSettings.SyncDeviceId),
         nameof(AppSettings.SyncUserDisplayName),
         nameof(AppSettings.SyncUserId),
@@ -180,8 +190,8 @@ public class PolicyRestartClassificationTests
     public void ANewSettingForcesAnExplicitClassification()
     {
         Assert.True(
-            LiveAlready.Length == 47 && LiveWithWork.Length == 23
-                && RestartRequired.Length == 12 && NoRuntimeEffect.Length == 28,
+            LiveAlready.Length == 51 && LiveWithWork.Length == 24
+                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 32,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
 

@@ -157,6 +157,56 @@ public class VaultIndexerTests : IDisposable
         Assert.Equal(2, CountChunksFor("profile.md"));
     }
 
+    private const string DrinksFixture =
+        "---\n" +
+        "pia: managed\n" +
+        "id: 6f9c0b3e-7c1a-4f2e-9a8b-000000000003\n" +
+        "type: profile\n" +
+        "title: Drinks\n" +
+        "schemaVersion: 1\n" +
+        "---\n" +
+        "## Drinks\n" +
+        "- likes espresso\n";
+
+    [Fact]
+    public async Task Indexing_without_embeddings_still_writes_chunk_and_fts_row()
+    {
+        await _store.WriteAtomicAsync("drinks.md", DrinksFixture);
+        var indexer = new VaultIndexer(
+            _ctx, _store, _parser, new UnavailableEmbeddingService(), NullLogger<VaultIndexer>.Instance);
+
+        await indexer.IndexFileAsync("drinks.md");
+
+        var connection = _ctx.GetConnection();
+        using (var chunk = connection.CreateCommand())
+        {
+            chunk.CommandText = "SELECT COUNT(*) FROM Chunks WHERE FilePath = 'drinks.md' AND Embedding IS NULL;";
+            Assert.Equal(1L, Convert.ToInt64(await chunk.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
+        }
+
+        using var fts = connection.CreateCommand();
+        fts.CommandText = "SELECT COUNT(*) FROM ChunksFts WHERE ChunksFts MATCH '\"espresso\"';";
+        Assert.Equal(1L, Convert.ToInt64(await fts.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
+    }
+
+    [Fact]
+    public async Task Chunk_indexed_without_embedding_is_embedded_once_available()
+    {
+        await _store.WriteAtomicAsync("drinks.md", DrinksFixture);
+        await new VaultIndexer(_ctx, _store, _parser, new UnavailableEmbeddingService(), NullLogger<VaultIndexer>.Instance)
+            .IndexFileAsync("drinks.md");
+
+        var embeddings = NewCountingEmbeddings();
+        await new VaultIndexer(_ctx, _store, _parser, embeddings, NullLogger<VaultIndexer>.Instance)
+            .IndexFileAsync("drinks.md");
+
+        await embeddings.Received(1).GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        var connection = _ctx.GetConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM Chunks WHERE FilePath = 'drinks.md' AND Embedding IS NOT NULL;";
+        Assert.Equal(1L, Convert.ToInt64(await cmd.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
+    }
+
     // ---- (c) Editing one section re-embeds ONLY that section ----
 
     [Fact]

@@ -98,7 +98,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             _connection.Open();
 
             using var pragma = _connection.CreateCommand();
-            pragma.CommandText = "PRAGMA busy_timeout=3000;";
+            pragma.CommandText = SqliteContext.ConnectionPragmas;
             pragma.ExecuteNonQuery();
         }
         else if (_connection.State != System.Data.ConnectionState.Open)
@@ -450,6 +450,24 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             command.Parameters.AddWithValue("@Id", id.ToString());
             var raw = await command.ExecuteScalarAsync(ct);
             return raw is string s && Guid.TryParse(s, out var providerId) ? providerId : null;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<bool> ExistsAsync(Guid id, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return false;
+
+            using var command = Connection().CreateCommand();
+            command.CommandText = "SELECT 1 FROM AssistantChats WHERE Id = @Id LIMIT 1";
+            command.Parameters.AddWithValue("@Id", id.ToString());
+            return await command.ExecuteScalarAsync(ct) is not null;
         }
         finally
         {
@@ -1059,6 +1077,24 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             command.CommandText = "UPDATE AssistantChats SET BackfilledAt = $at WHERE Id = $id";
             command.Parameters.AddWithValue("$at", DateTime.UtcNow.ToString("O"));
             command.Parameters.AddWithValue("$id", id.ToString());
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task ClearBackfillMarksAsync(CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return;
+
+            var connection = Connection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE AssistantChats SET BackfilledAt = NULL";
             await command.ExecuteNonQueryAsync(ct);
         }
         finally

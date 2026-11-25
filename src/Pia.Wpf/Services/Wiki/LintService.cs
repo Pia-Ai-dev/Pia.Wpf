@@ -5,6 +5,7 @@ using Pia.Infrastructure;
 using Pia.Infrastructure.Vault;
 using Pia.Logging;
 using Pia.Models.Vault;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Search;
 
@@ -500,7 +501,14 @@ public sealed class LintService : ILintService
             return null;
         }
 
-        return await _embeddings.GenerateEmbeddingAsync(page.Body, ct);
+        try
+        {
+            return await _embeddings.GenerateEmbeddingAsync(page.Body, ct);
+        }
+        catch (EmbeddingUnavailableException)
+        {
+            return null;
+        }
     }
 
     private float[]? ReadStoredEmbedding(string path)

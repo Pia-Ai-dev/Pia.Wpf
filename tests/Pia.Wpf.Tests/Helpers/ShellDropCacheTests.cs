@@ -5,11 +5,9 @@ using Xunit;
 
 namespace Pia.Tests.Helpers;
 
-/// <summary>
-/// Holds the lifetime of the files a virtual-file drop has to write. They are read once, during the drop, and
-/// are dead by the time staging returns — the chip carries the extracted text, not the path — so the startup
-/// clear is the guarantee and the per-drop sweep is the tidying.
-/// </summary>
+/// <summary>A drop's files are dead once staging returns, so the startup clear is the guarantee and the sweep
+/// the tidying. Serial because each fact moves the process-wide local data root.</summary>
+[Collection("PiaPathsStatic")]
 public sealed class ShellDropCacheTests
 {
     [Fact]

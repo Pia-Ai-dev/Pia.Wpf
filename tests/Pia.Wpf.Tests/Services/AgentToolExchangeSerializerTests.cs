@@ -65,10 +65,10 @@ public class AgentToolExchangeSerializerTests
         [
             new ChatMessage(ChatRole.Assistant, [rebuiltCall]),
             new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c0", "body")]),
-            .. Enumerable.Range(0, AgentToolCarryover.KeptResults).SelectMany(i => new[]
+            .. Enumerable.Range(0, 16).SelectMany(i => new[]
             {
                 new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("k" + i, "read_file", null)]),
-                new ChatMessage(ChatRole.Tool, [new FunctionResultContent("k" + i, "later")]),
+                new ChatMessage(ChatRole.Tool, [new FunctionResultContent("k" + i, new string('l', AgentToolCarryover.CarriedResultBudgetChars / 6))]),
             }),
         ]);
 
@@ -166,5 +166,33 @@ public class AgentToolExchangeSerializerTests
         Assert.Equal(AgentToolExchangeSerializer.MaxSeedValueChars + 1, content.Length);
         Assert.Equal("short.md", Assert.IsType<JsonElement>(capped["path"]).GetString());
         Assert.Equal(JsonValueKind.Number, Assert.IsType<JsonElement>(capped["rows"]).ValueKind);
+    }
+
+    // The server's native-content store matches on the toolu_ id alone, so a save and restore must not touch it.
+    [Fact]
+    public void ARoundTrip_KeepsAnthropicIdsVerbatim_IncludingAnOverCapCall()
+    {
+        var round = new List<ChatMessage>
+        {
+            new(ChatRole.Assistant,
+            [
+                new FunctionCallContent("toolu_01AbC-dEf_9", "read_file", new Dictionary<string, object?> { ["path"] = "a.md" }),
+                new FunctionCallContent("toolu_01XyZ", "write_file", new Dictionary<string, object?>
+                {
+                    ["content"] = new string('w', AgentToolExchangeSerializer.MaxRowChars + 1),
+                }),
+            ]),
+            new(ChatRole.Tool, [new FunctionResultContent("toolu_01AbC-dEf_9", "body a")]),
+            new(ChatRole.Tool, [new FunctionResultContent("toolu_01XyZ", "written")]),
+        };
+
+        var rows = AgentToolExchangeSerializer.ToRows(Guid.NewGuid(), null, 1, 0, 0, round, DateTime.UtcNow);
+        Assert.Contains(rows, r => r.ArgsOmitted);
+        var rebuilt = AgentToolExchangeSerializer.ToMessages(rows);
+
+        Assert.Equal(["toolu_01AbC-dEf_9", "toolu_01XyZ"],
+            rebuilt[0].Contents.OfType<FunctionCallContent>().Select(c => c.CallId));
+        Assert.Equal(["toolu_01AbC-dEf_9", "toolu_01XyZ"],
+            rebuilt.Skip(1).SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.CallId));
     }
 }

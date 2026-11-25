@@ -48,7 +48,7 @@ public class SyncClientServiceTests
     {
         _authService.IsLoggedIn.Returns(false);
 
-        var result = await _sut.SyncNowAsync();
+        var result = await _sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -60,7 +60,7 @@ public class SyncClientServiceTests
         var settings = new AppSettings { SyncEnabled = false };
         _settingsService.GetSettingsAsync().Returns(settings);
 
-        var result = await _sut.SyncNowAsync();
+        var result = await _sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -179,6 +179,38 @@ public class SyncClientServiceDeviceRevokedTests
         await InvokeCheckForPendingDevicesAsync(sut);
 
         Assert.False(eventRaised);
+    }
+
+    [Fact]
+    public async Task CheckForPendingDevices_WhenThisDeviceIsPending_AsksForOnboardingInsteadOfOfferingItForApproval()
+    {
+        var sut = CreateSut();
+        _deviceKeys.GetDeviceId().Returns("device-123");
+        _deviceMgmt.GetDevicesAsync().Returns(new DeviceListResponse
+        {
+            Devices = [
+                new DeviceInfo
+                {
+                    DeviceId = "device-123",
+                    DeviceName = "Re-registered",
+                    Status = DeviceStatus.Pending,
+                    OnboardingSessionId = "session-9",
+                    AgreementPublicKey = "other-key1",
+                    SigningPublicKey = "other-key2"
+                }
+            ]
+        });
+
+        var onboarding = false;
+        var offered = false;
+        sut.E2EEOnboardingRequired += (_, _) => onboarding = true;
+        sut.PendingDeviceDetected += (_, _) => offered = true;
+
+        await InvokeCheckForPendingDevicesAsync(sut);
+
+        Assert.True(onboarding);
+        Assert.True(sut.IsE2EEOnboardingRequired);
+        Assert.False(offered);
     }
 }
 

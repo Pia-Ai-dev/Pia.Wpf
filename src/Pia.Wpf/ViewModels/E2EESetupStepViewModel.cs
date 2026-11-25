@@ -53,6 +53,9 @@ public partial class E2EESetupStepViewModel : ObservableObject
     /// </summary>
     public event Action<bool>? AdvanceRequested;
 
+    /// <summary>Raised when the server refuses setup because the account is already encrypted; awaited while still busy.</summary>
+    public event Func<Task>? AccountAlreadyEncrypted;
+
     [RelayCommand]
     private async Task ProceedAsync()
     {
@@ -87,10 +90,17 @@ public partial class E2EESetupStepViewModel : ObservableObject
             State = E2EESetupState.SavingRecoveryCode;
             _logger.LogInformation("E2EE bootstrap completed; awaiting recovery-code confirmation");
         }
+        catch (E2EEAlreadyEnabledException)
+        {
+            _logger.LogInformation("E2EE bootstrap refused in wizard: the account is already encrypted");
+            State = E2EESetupState.Choice;
+            if (AccountAlreadyEncrypted is { } handler)
+                await handler();
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "E2EE bootstrap failed during wizard");
-            ErrorMessage = ex.Message;
+            ErrorMessage = ex is DeviceRegistrationRejectedException rejection ? rejection.UserMessage : ex.Message;
             State = E2EESetupState.Choice;
         }
         finally
@@ -130,7 +140,7 @@ public partial class E2EESetupStepViewModel : ObservableObject
 
     [RelayCommand]
     private Task CopyRecoveryCodeAsync()
-        => RecoveryCode is null ? Task.CompletedTask : _outputService.CopyToClipboardAsync(RecoveryCode);
+        => RecoveryCode is null ? Task.CompletedTask : _outputService.CopySecretToClipboardAsync(RecoveryCode);
 
     [RelayCommand]
     private void OptOutGoBack()

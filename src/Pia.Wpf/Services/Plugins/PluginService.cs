@@ -5,9 +5,11 @@ using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Pia.Helpers;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Shared.Models;
 
@@ -28,7 +30,9 @@ public class PluginService : IPluginService
     private readonly IAssignmentToolHandler _assignmentToolHandler;
     private readonly IScreenCaptureToolHandler _screenCaptureToolHandler;
     private readonly IHelpToolHandler _helpToolHandler;
+    private readonly IKnowledgeManagerToolHandler _kbManagerToolHandler;
     private readonly IAssignmentSurfaceCache _assignmentSurfaceCache;
+    private readonly IKnowledgeManagerSurfaceCache _kbManagerSurfaceCache;
     private readonly ISettingsService _settingsService;
     private readonly ILogger<PluginService> _logger;
     private readonly SqliteContext _sqliteContext;
@@ -42,6 +46,11 @@ public class PluginService : IPluginService
 
     /// <summary>Why a server never got as far as a handler, so the settings row can say so.</summary>
     private readonly ConcurrentDictionary<Guid, string> _startFailures = new();
+
+    private const string LocalMcpBlockedReason = "Your organization's policy does not allow local MCP servers.";
+
+    private const string SseWithoutCommandReason = "This server uses the sse transport but names no command to launch.";
+    private volatile bool _localMcpAllowed = true;
 
     public IReadOnlyList<IPluginToolHandler> ActiveHandlers
     {
@@ -64,7 +73,9 @@ public class PluginService : IPluginService
         IAssignmentToolHandler assignmentToolHandler,
         IScreenCaptureToolHandler screenCaptureToolHandler,
         IHelpToolHandler helpToolHandler,
+        IKnowledgeManagerToolHandler kbManagerToolHandler,
         IAssignmentSurfaceCache assignmentSurfaceCache,
+        IKnowledgeManagerSurfaceCache kbManagerSurfaceCache,
         ISettingsService settingsService,
         ILogger<PluginService> logger,
         SqliteContext sqliteContext,
@@ -82,7 +93,9 @@ public class PluginService : IPluginService
         _assignmentToolHandler = assignmentToolHandler;
         _screenCaptureToolHandler = screenCaptureToolHandler;
         _helpToolHandler = helpToolHandler;
+        _kbManagerToolHandler = kbManagerToolHandler;
         _assignmentSurfaceCache = assignmentSurfaceCache;
+        _kbManagerSurfaceCache = kbManagerSurfaceCache;
         _settingsService = settingsService;
         _logger = logger;
         _sqliteContext = sqliteContext;
@@ -94,11 +107,22 @@ public class PluginService : IPluginService
 
         // Plugins whose tool list depends on settings (files plugin's sandbox folder)
         // need their routes rebuilt whenever those settings change.
-        _settingsService.SettingsChanged += (_, _) => RebuildToolNameRoutes();
+        _settingsService.SettingsChanged += (_, settings) =>
+        {
+            RebuildToolNameRoutes();
+            ApplyLocalMcpPolicyAsync(settings.AllowLocalMcpServers).SafeFireAndForget(_logger);
+        };
 
         // The assignment pack's availability is a server probe, not a setting, so it flips outside every
         // other rebuild trigger. Without this the first probe that turns it on offers tools with no route.
         _assignmentSurfaceCache.Changed += (_, _) => RebuildToolNameRoutes();
+
+        // Same reason, plus the Plugins settings row appears and disappears with the surface.
+        _kbManagerSurfaceCache.Changed += (_, _) =>
+        {
+            RebuildToolNameRoutes();
+            PluginsChanged?.Invoke(this, EventArgs.Empty);
+        };
     }
 
     private void InitializeBuiltInPlugins()
@@ -123,6 +147,7 @@ public class PluginService : IPluginService
                 "assignments" => BuiltInPluginHandler.FromAssignmentHandler(_assignmentToolHandler, config),
                 "screen" => BuiltInPluginHandler.FromScreenCaptureHandler(_screenCaptureToolHandler, config),
                 "help" => BuiltInPluginHandler.FromHelpHandler(_helpToolHandler, config),
+                "kb-manager" => BuiltInPluginHandler.FromKnowledgeManagerHandler(_kbManagerToolHandler, config),
                 _ => throw new InvalidOperationException($"Unknown built-in handler for plugin {config.Name}")
             };
 
@@ -176,13 +201,41 @@ public class PluginService : IPluginService
         }
     }
 
+    public bool AreLocalMcpServersAllowed => _localMcpAllowed;
+
+    // A policy change reaches running servers: disallowed, they stop and say why; allowed again, the enabled ones start.
+    private async Task ApplyLocalMcpPolicyAsync(bool allowed)
+    {
+        if (allowed == _localMcpAllowed) return;
+        _localMcpAllowed = allowed;
+
+        foreach (var plugin in _pluginConfigs.Values.Where(p => LocalMcpConfig.IsLocal(p.ConfigJson)).ToList())
+        {
+            if (!allowed)
+            {
+                await ShutdownHandlerAsync(plugin.Id);
+                _startFailures[plugin.Id] = LocalMcpBlockedReason;
+                continue;
+            }
+
+            _startFailures.TryRemove(plugin.Id, out _);
+            if (IsPluginEnabled(plugin) && !HasHandler(plugin.Id))
+                await ActivateMcpPluginAsync(plugin);
+        }
+
+        RebuildToolNameRoutes();
+        PluginsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public async Task InitializePersistedPluginsAsync()
     {
-        // A disabled local server is skipped rather than started-then-hidden: activation spawns its process,
-        // which the user switched off precisely to avoid.
+        _localMcpAllowed = (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers;
+
+        // A switched-off server, local or distributed, is skipped rather than started-then-hidden: activation
+        // spawns its process, which the user switched off precisely to avoid.
         var serverPlugins = _pluginConfigs.Values
             .Where(p => !p.IsPreloaded && !_handlers.ContainsKey(p.Id))
-            .Where(p => !LocalMcpConfig.IsLocal(p.ConfigJson) || IsPluginEnabled(p))
+            .Where(IsPluginEnabled)
             .ToList();
 
         foreach (var plugin in serverPlugins)
@@ -260,6 +313,12 @@ public class PluginService : IPluginService
         cmd.ExecuteNonQuery();
     }
 
+    private bool HasHandler(Guid pluginId)
+    {
+        lock (_handlers)
+            return _handlers.ContainsKey(pluginId);
+    }
+
     private void RegisterHandler(Guid pluginId, IPluginToolHandler handler)
     {
         lock (_handlers)
@@ -296,8 +355,9 @@ public class PluginService : IPluginService
                 var config = _pluginConfigs.GetValueOrDefault(handler.PluginId);
                 if (config is not null && !IsPluginEnabled(config))
                 {
-                    _logger.LogWarning("GetAllTools: plugin {PluginName} (id={PluginId}) skipped — IsActive={IsActive}, UserEnabled={UserEnabled}, kind={Kind}",
-                        config.Name, config.Id, config.IsActive, config.UserEnabled, config.Kind);
+                    _logger.LogWarning("GetAllTools: plugin {PluginId} skipped — IsActive={IsActive}, UserEnabled={UserEnabled}, kind={Kind}",
+                        config.Id, config.IsActive, config.UserEnabled, config.Kind);
+                    _logger.SensitiveDebug("GetAllTools: skipped plugin {PluginId} is {PluginName}", config.Id, config.Name);
                     continue;
                 }
                 tools.AddRange(handler.GetTools());
@@ -391,6 +451,10 @@ public class PluginService : IPluginService
         return _pluginConfigs.Values.ToList();
     }
 
+    public IReadOnlyList<SyncPlugin> GetVisiblePluginConfigs() =>
+        [.. _pluginConfigs.Values.Where(p =>
+            p.Id != BuiltInPluginDefaults.KbManagerPluginId || _kbManagerSurfaceCache.IsAvailable)];
+
     public IReadOnlyList<SyncPlugin> GetLocalMcpPlugins() =>
         [.. _pluginConfigs.Values.Where(p => LocalMcpConfig.IsLocal(p.ConfigJson)).OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)];
 
@@ -419,11 +483,16 @@ public class PluginService : IPluginService
             _startFailures.TryGetValue(pluginId, out var failure) ? failure : null);
     }
 
-    public Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
-        McpServerProbe.ProbeAsync(definition, timeout: null, ct);
+    public async Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default) =>
+        (await _settingsService.GetSettingsAsync()).AllowLocalMcpServers
+            ? await McpServerProbe.ProbeAsync(definition, timeout: null, ct)
+            : McpProbeResult.Failed(LocalMcpBlockedReason);
 
     public async Task<Guid> SaveLocalMcpAsync(Guid? pluginId, LocalMcpDefinition definition, CancellationToken ct = default)
     {
+        if (!(await _settingsService.GetSettingsAsync()).AllowLocalMcpServers)
+            throw new InvalidOperationException(LocalMcpBlockedReason);
+
         var id = pluginId ?? Guid.NewGuid();
         var existing = _pluginConfigs.TryGetValue(id, out var found) ? found : null;
 
@@ -551,15 +620,18 @@ public class PluginService : IPluginService
             if (!plugin.IsPreloaded)
                 SavePluginToDb(plugin);
 
-            if (_handlers.TryGetValue(plugin.Id, out var existing))
+            if (!plugin.IsPreloaded && !IsPluginEnabled(plugin))
             {
-                // Update existing handler metadata
+                await ShutdownHandlerAsync(plugin.Id);
+            }
+            else if (_handlers.TryGetValue(plugin.Id, out var existing))
+            {
                 existing.ApplyServerMetadata(plugin);
                 _logger.LogDebug("Updated metadata for plugin {PluginName}", plugin.Name);
             }
             else if (!plugin.IsPreloaded)
             {
-                // New server-only plugin — run preflight and cab extraction outside the lock
+                // Preflight and cab extraction run outside the lock.
                 await ActivateMcpPluginAsync(plugin);
             }
         }
@@ -606,30 +678,38 @@ public class PluginService : IPluginService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to parse ConfigJson for plugin {PluginName}", plugin.Name);
+            _logger.LogWarning(ex, "Failed to parse ConfigJson for plugin {PluginId}", plugin.Id);
+            _logger.SensitiveDebug("Plugin {PluginId} with unparseable ConfigJson is {PluginName}", plugin.Id, plugin.Name);
             return;
         }
 
         var localDefinition = ReadLocalDefinition(plugin);
         _startFailures.TryRemove(plugin.Id, out _);
 
+        if (localDefinition is not null && !(await _settingsService.GetSettingsAsync()).AllowLocalMcpServers)
+        {
+            _logger.LogInformation("Local MCP server {PluginId} not started: the policy does not allow local servers", plugin.Id);
+            _startFailures[plugin.Id] = LocalMcpBlockedReason;
+            return;
+        }
+
         if (localDefinition is not null && transport != "stdio")
         {
-            _logger.LogWarning("Local MCP server {PluginName}: transport '{Transport}' is not supported, only stdio",
-                plugin.Name, transport);
+            _logger.LogWarning("Local MCP server {PluginId}: transport '{Transport}' is not supported, only stdio",
+                plugin.Id, transport);
             _startFailures[plugin.Id] = $"Transport '{transport}' is not supported. Only stdio servers can be added here.";
             return;
         }
 
         if (string.IsNullOrEmpty(transport))
         {
-            _logger.LogWarning("Plugin {PluginName} has no transport specified in ConfigJson", plugin.Name);
+            _logger.LogWarning("Plugin {PluginId} has no transport specified in ConfigJson", plugin.Id);
             return;
         }
 
-        _logger.LogInformation("Plugin {PluginName}: transport={Transport}", plugin.Name, transport);
-        _logger.SensitiveDebug("Plugin {PluginName} command='{Command}', args=[{Args}]",
-            plugin.Name, command ?? "<null>", string.Join(", ", args));
+        _logger.LogInformation("Plugin {PluginId}: transport={Transport}", plugin.Id, transport);
+        _logger.SensitiveDebug("Plugin {PluginId} is {PluginName}, command='{Command}', args=[{Args}]",
+            plugin.Id, plugin.Name, command ?? "<null>", string.Join(", ", args));
 
         // Check prerequisites
         try
@@ -665,34 +745,9 @@ public class PluginService : IPluginService
             case "stdio":
                 // A local server skips the PATH guess: the user picked the command, so the launch failure
                 // itself is the answer they need, not `where.exe`'s opinion of it.
-                if (!string.IsNullOrEmpty(command) && localDefinition is null)
-                {
-                    var commandExists = await CheckCommandOnPathAsync(command);
-                    _logger.LogInformation("Plugin {PluginName}: command '{Command}' on PATH = {Exists}",
-                        plugin.Name, command, commandExists);
-                    if (!commandExists)
-                    {
-                        // If the plugin has a cab, try extracting it first
-                        if (!string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
-                        {
-                            var extractedPath = await _cabManager.EnsurePluginExtractedAsync(plugin);
-                            if (extractedPath is null)
-                            {
-                                _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH and cab extraction failed, skipping activation",
-                                    plugin.Name, command);
-                                return;
-                            }
-
-                            _logger.LogInformation("Plugin {PluginName}: cab extracted to {Path}", plugin.Name, extractedPath);
-                        }
-                        else
-                        {
-                            _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH, skipping activation",
-                                plugin.Name, command);
-                            return;
-                        }
-                    }
-                }
+                if (!string.IsNullOrEmpty(command) && localDefinition is null
+                    && !await PreflightServerCommandAsync(plugin, command))
+                    return;
 
                 // Check version prerequisites if specified
                 try
@@ -715,6 +770,15 @@ public class PluginService : IPluginService
                 break;
 
             case "sse":
+                // Only the stdio client exists, so an sse row is launched through its command like a stdio one.
+                if (string.IsNullOrEmpty(command))
+                {
+                    _logger.LogWarning("Plugin {PluginId}: transport 'sse' has no command to launch, skipping activation",
+                        plugin.Id);
+                    _startFailures[plugin.Id] = SseWithoutCommandReason;
+                    return;
+                }
+
                 if (!string.IsNullOrEmpty(url))
                 {
                     var reachable = await PingUrlAsync(url);
@@ -725,6 +789,9 @@ public class PluginService : IPluginService
                         return;
                     }
                 }
+
+                if (!await PreflightServerCommandAsync(plugin, command))
+                    return;
                 break;
 
             default:
@@ -733,8 +800,8 @@ public class PluginService : IPluginService
                 return;
         }
 
-        // If stdio plugin has a cab and we haven't extracted yet, ensure extraction
-        if (transport == "stdio" && !string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
+        // Both transports spawn the command, so a cab is extracted before either starts.
+        if (transport is "stdio" or "sse" && !string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
         {
             var extractedPath = await _cabManager.EnsurePluginExtractedAsync(plugin);
             if (extractedPath is not null)
@@ -757,14 +824,42 @@ public class PluginService : IPluginService
         {
             await handler.InitializeAsync();
             RegisterHandler(plugin.Id, handler);
-            _logger.LogInformation("Plugin {PluginName} ({Transport}) activated with {ToolCount} tools",
-                plugin.Name, transport, handler.GetTools().Count);
+            _logger.LogInformation("Plugin {PluginId} ({Transport}) activated with {ToolCount} tools",
+                plugin.Id, transport, handler.GetTools().Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginName}", plugin.Name);
+            _logger.LogError(ex, "Failed to initialize McpPluginToolHandler for plugin {PluginId}", plugin.Id);
             handler.Dispose();
         }
+    }
+
+    /// <summary>False when the admin's command is neither on PATH nor recoverable from the plugin's cab.</summary>
+    private async Task<bool> PreflightServerCommandAsync(SyncPlugin plugin, string command)
+    {
+        var commandExists = await CheckCommandOnPathAsync(command);
+        _logger.LogInformation("Plugin {PluginName}: command '{Command}' on PATH = {Exists}",
+            plugin.Name, command, commandExists);
+        if (commandExists)
+            return true;
+
+        if (!string.IsNullOrEmpty(plugin.CabHash) && _cabManager is not null)
+        {
+            var extractedPath = await _cabManager.EnsurePluginExtractedAsync(plugin);
+            if (extractedPath is null)
+            {
+                _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH and cab extraction failed, skipping activation",
+                    plugin.Name, command);
+                return false;
+            }
+
+            _logger.LogInformation("Plugin {PluginName}: cab extracted to {Path}", plugin.Name, extractedPath);
+            return true;
+        }
+
+        _logger.LogWarning("Plugin {PluginName}: command '{Command}' not found on PATH, skipping activation",
+            plugin.Name, command);
+        return false;
     }
 
     private async Task<(bool MeetsMinimum, string? ActualVersion)> CheckNodeVersionAsync(string minVersion)
@@ -810,7 +905,7 @@ public class PluginService : IPluginService
             var psi = new ProcessStartInfo
             {
                 FileName = "where.exe",
-                Arguments = command,
+                ArgumentList = { command },
                 CreateNoWindow = true,
                 UseShellExecute = false,
                 RedirectStandardOutput = true
@@ -851,18 +946,18 @@ public class PluginService : IPluginService
             // carries the switch across a restart.
             SavePluginToDb(config);
 
-            if (LocalMcpConfig.IsLocal(config.ConfigJson))
+            // The switch owns the subprocess of every MCP server, local or distributed by the admin.
+            if (!config.IsPreloaded && config.Kind == "mcp_server")
             {
-                // The switch owns the subprocess for a local server — there is no admin push to start or
-                // stop it on the user's behalf.
-                if (enabled)
-                    await ActivateMcpPluginAsync(config);
-                else
+                if (!enabled)
                     await ShutdownHandlerAsync(pluginId);
+                else if (IsPluginEnabled(config) && !HasHandler(pluginId))
+                    await ActivateMcpPluginAsync(config);
 
                 RebuildToolNameRoutes();
             }
-            else
+
+            if (!LocalMcpConfig.IsLocal(config.ConfigJson))
             {
                 lock (_pendingPrefs)
                 {
@@ -906,7 +1001,7 @@ public class PluginService : IPluginService
         foreach (var handler in handlers)
         {
             try { await handler.ShutdownAsync(); }
-            catch (Exception ex) { _logger.LogError(ex, "Error shutting down plugin {PluginName}", handler.PluginName); }
+            catch (Exception ex) { _logger.LogError(ex, "Error shutting down plugin {PluginId}", handler.PluginId); }
         }
     }
 
@@ -923,25 +1018,7 @@ public class PluginService : IPluginService
         }
     }
 
-    private static bool IsPluginEnabled(SyncPlugin config)
-    {
-        if (!config.IsActive)
-            return false;
-
-        if (config.UserEnabled.HasValue)
-            return config.UserEnabled.Value;
-
-        // Fall back to defaultEnabled from ConfigJson
-        try
-        {
-            using var doc = JsonDocument.Parse(config.ConfigJson);
-            if (doc.RootElement.TryGetProperty("defaultEnabled", out var el))
-                return el.GetBoolean();
-        }
-        catch { }
-
-        return true; // Default to enabled
-    }
+    private static bool IsPluginEnabled(SyncPlugin config) => PluginEnablement.IsEnabled(config);
 
     private static string? GetHandlerId(string configJson)
     {

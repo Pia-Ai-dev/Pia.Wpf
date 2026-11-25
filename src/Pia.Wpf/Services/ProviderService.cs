@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Models;
+using Pia.Services.Exceptions;
 using Pia.Services.Interfaces;
 using Pia.Services.Providers;
 
@@ -28,6 +29,8 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     protected override string FileName => "providers.json";
 
     protected override List<AiProvider> CreateDefault() => [];
+
+    protected override ILogger Logger => _logger;
 
     private readonly ILogger<ProviderService> _logger;
     private readonly IAiClientService _aiClientService;
@@ -64,9 +67,13 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     private async Task<List<AiProvider>> LoadProvidersAsync()
     {
         var providers = await LoadAsync();
+        var webSearchBlocked = !(await _settingsService.GetSettingsAsync()).AllowProviderWebSearch;
 
         foreach (var provider in providers)
+        {
             provider.MaxContextWindowTokens ??= ContextWindowDefaults.For(provider.ModelName);
+            provider.WebSearchBlockedByPolicy = webSearchBlocked;
+        }
 
         return providers;
     }
@@ -446,6 +453,11 @@ public class ProviderService : JsonPersistenceService<List<AiProvider>>, IProvid
     {
         if (string.IsNullOrWhiteSpace(endpoint))
             throw new ArgumentException("Endpoint is required to fetch models.");
+
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!ProviderPolicy.IsTypeAllowed(providerType, settings)
+            || !ProviderPolicy.IsEndpointAllowed(providerType, endpoint, settings))
+            throw new ProviderBlockedByPolicyException();
 
         using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 

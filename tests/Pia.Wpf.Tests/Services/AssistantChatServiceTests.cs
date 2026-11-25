@@ -478,6 +478,21 @@ public class AssistantChatServiceTests : IDisposable
         Assert.Null(await _service.GetProviderIdAsync(Guid.NewGuid(), ct));
     }
 
+    [Fact]
+    public async Task ExistsAsync_IsTrueForAStoredChat_AndFalseOnceItIsDeleted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = MakeChat(title: "summary", body: "b");
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+
+        Assert.True(await _service.ExistsAsync(chat.Id, ct));
+        Assert.False(await _service.ExistsAsync(Guid.NewGuid(), ct));
+
+        await _service.DeleteAsync(chat.Id, ct);
+        Assert.False(await _service.ExistsAsync(chat.Id, ct));
+    }
+
     /// <summary>The to-date is a local calendar day, so it must cover exactly
     /// [local midnight, next local midnight) no matter what that is in UTC. Both cases pass at UTC+0
     /// and at least one goes red at every other offset, which is precisely where the bug lived.</summary>
@@ -690,6 +705,21 @@ public class AssistantChatServiceTests : IDisposable
         var hits = await _service.GetFavoritesAsync(
             searchText: "UniqueFavoriteAAA", ct: TestContext.Current.CancellationToken);
         Assert.Equal(matching.Id, Assert.Single(hits).Id);
+    }
+
+    [Fact]
+    public async Task ClearBackfillMarks_OwesEveryChatToTheServerAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = MakeChat(title: "Backfilled once", body: "sent before encryption");
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+        await _service.MarkBackfilledAsync(chat.Id, ct);
+        Assert.DoesNotContain(chat.Id, await _service.GetUnbackfilledIdsAsync(ct));
+
+        await _service.ClearBackfillMarksAsync(ct);
+
+        Assert.Contains(chat.Id, await _service.GetUnbackfilledIdsAsync(ct));
     }
 
     private static SyncAssistantChat MakeChat(string title, string body)

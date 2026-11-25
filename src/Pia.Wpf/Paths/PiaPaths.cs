@@ -37,9 +37,15 @@ public static class PiaPaths
     /// <summary>Where a virtual-file drop (a mail dragged out of Outlook) writes the file it had to materialise.</summary>
     public static string DropCacheDirectory => Path.Combine(LocalDataDirectory, "DropCache");
 
+    /// <summary>Dictation WAVs between recording and transcription; startup sweeps whatever a crash left behind.</summary>
+    public static string RecordingsDirectory => Path.Combine(LocalDataDirectory, "Recordings");
+
     /// <summary>One JSONL line per screen capture. Routed, so a walkthrough against a throwaway profile does not
     /// leave rows in the user's real trail.</summary>
     public static string ScreenCaptureAuditDirectory => Path.Combine(LocalDataDirectory, "ScreenCaptureAudit");
+
+    /// <summary>Marks a local-data clear that has not finished, so the next launch completes it.</summary>
+    public static string LocalDataResetMarkerPath => Path.Combine(RoamingDataDirectory, "pending-local-data-reset");
 
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>

@@ -19,6 +19,6 @@ public static class PiaLinks
     };
 
     /// <summary>Address for AI-related concerns (AI Act Art. 50 complaint channel).</summary>
-    public const string AiFeedbackAddress = "piasupport@pia-ai.de";
+    public const string AiFeedbackAddress = "ki@pia-ai.de";
     public const string AiFeedbackMailto = "mailto:" + AiFeedbackAddress + "?subject=Pia%20AI%20feedback";
 }

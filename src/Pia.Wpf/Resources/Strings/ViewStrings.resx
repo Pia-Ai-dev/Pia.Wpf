@@ -437,6 +437,18 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistant</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Research</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Account</value></data>
+  <data name="Settings_Credits_Title" xml:space="preserve"><value>Credits</value></data>
+  <data name="Settings_Credits_Weekly" xml:space="preserve"><value>This week</value></data>
+  <data name="Settings_Credits_Pool" xml:space="preserve"><value>Free team pool this week</value></data>
+  <data name="Settings_Credits_TopUp" xml:space="preserve"><value>Top-up credits</value></data>
+  <data name="Settings_Credits_Daily" xml:space="preserve"><value>Last 24 hours</value></data>
+  <data name="Settings_Credits_Hourly" xml:space="preserve"><value>Last hour</value></data>
+  <data name="Settings_Credits_GroupWeekly" xml:space="preserve"><value>Whole team, this week</value></data>
+  <data name="Settings_Credits_GroupDaily" xml:space="preserve"><value>Whole team, last 24 hours</value></data>
+  <data name="Settings_Credits_UsedOf" xml:space="preserve"><value>{0} of {1} used</value></data>
+  <data name="Settings_Credits_LeftOf" xml:space="preserve"><value>{0} of {1} left</value></data>
+  <data name="Settings_Credits_Resets" xml:space="preserve"><value>Resets {0}</value></data>
+  <data name="Settings_Credits_Suspended" xml:space="preserve"><value>The free tier is paused right now. Please try again later.</value></data>
   <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Plugins</value></data>
   <data name="Plugins_Subtitle" xml:space="preserve"><value>Extend your assistant's capabilities with plugins.</value></data>
   <data name="Plugins_NotConnected" xml:space="preserve"><value>Connect to Pia Cloud to manage plugins.</value></data>
@@ -505,6 +517,8 @@
   <data name="Settings_Diarization_SmartAuto_Description" xml:space="preserve"><value>Pia re-evaluates all voices as the meeting progresses and automatically corrects earlier speaker assignments. Manual tuning is hidden while this is on.</value></data>
   <data name="Settings_Diarization_SuppressLabels" xml:space="preserve"><value>Hide speaker labels in the transcript</value></data>
   <data name="Settings_Diarization_SuppressLabels_Description" xml:space="preserve"><value>Shows and exports the transcript without any speaker labels. Bubbles stay grouped and coloured by voice; only the labels, which are the part that claims an identity, are removed. Use this when attribution is visibly wrong — an unlabelled transcript serves a summary better than a confidently mislabelled one.</value></data>
+  <data name="Settings_Diarization_NameSpeakers" xml:space="preserve"><value>Name speakers</value></data>
+  <data name="Settings_Diarization_NameSpeakers_Description" xml:space="preserve"><value>Lets the consent sentence and a rename give a speaker a name, and adds the attendee list to summaries and saved notes. Switched off, every speaker keeps a label such as “Speaker 1”, and a name said in the consent sentence stays in the consent record only.</value></data>
   <data name="Settings_Diarization_MicEchoCancellation" xml:space="preserve"><value>Cancel speaker echo on the microphone</value></data>
   <data name="Settings_Diarization_MicEchoCancellation_Description" xml:space="preserve"><value>Routes the microphone through the Windows echo canceller so the other side, coming out of your loudspeakers, is removed before it is transcribed. Without it their words are recorded a second time as yours. Switch it off only if you always wear a headset and dislike the noise suppression and gain control that come with it.</value></data>
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Speaker matching sensitivity</value></data>
@@ -634,6 +648,7 @@
   <data name="Sync_LocalAuth_FieldsRequired" xml:space="preserve"><value>Email and password are required</value></data>
   <data name="Sync_LocalAuth_ServerUrlRequired" xml:space="preserve"><value>Server URL is not configured.</value></data>
   <data name="Sync_LocalAuth_SignInRequired" xml:space="preserve"><value>You are not signed in.</value></data>
+  <data name="Sync_LoginProviderDisabledByPolicy" xml:space="preserve"><value>This sign-in method is disabled by your organization's policy.</value></data>
   <data name="Sync_LocalAuth_InvalidCredentials" xml:space="preserve"><value>Invalid email or password</value></data>
   <data name="Sync_LocalAuth_AccountLocked" xml:space="preserve"><value>Account is temporarily locked. Try again later.</value></data>
   <data name="Sync_LocalAuth_EmailNotVerified" xml:space="preserve"><value>Please verify your email before signing in</value></data>
@@ -643,6 +658,24 @@
   <data name="Sync_SignedInAs" xml:space="preserve"><value>Signed in as </value></data>
   <data name="Sync_Provider" xml:space="preserve"><value>Provider: </value></data>
   <data name="Sync_SignOut" xml:space="preserve"><value>Sign Out</value></data>
+  <data name="Sync_ExportData" xml:space="preserve"><value>Export data</value></data>
+  <data name="Sync_ExportData_Done" xml:space="preserve"><value>Your account data has been saved as a ZIP archive.</value></data>
+  <data name="Sync_ExportData_Failed" xml:space="preserve"><value>The export failed. Nothing was saved.</value></data>
+  <data name="Sync_DeleteAccount" xml:space="preserve"><value>Delete account</value></data>
+  <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Your account has been deleted and you are signed out.</value></data>
+  <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>The password is incorrect. Your account was not deleted.</value></data>
+  <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>The account could not be deleted. Please try again later.</value></data>
+  <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Save account data</value></data>
+  <data name="AccountDeletion_Title" xml:space="preserve"><value>Delete account</value></data>
+  <data name="AccountDeletion_Intro" xml:space="preserve"><value>Deleting your account ends your access to it immediately. Once the server's deletion period has passed, it removes the data stored in the account; after that, the data can neither be exported nor restored.</value></data>
+  <data name="AccountDeletion_ExportHint" xml:space="preserve"><value>Export your data before you delete the account. Afterwards this is no longer possible.</value></data>
+  <data name="AccountDeletion_Export" xml:space="preserve"><value>Export data now</value></data>
+  <data name="AccountDeletion_ExportDone" xml:space="preserve"><value>Export saved.</value></data>
+  <data name="AccountDeletion_ExportFailed" xml:space="preserve"><value>The export failed. Nothing was saved.</value></data>
+  <data name="AccountDeletion_Password_Label" xml:space="preserve"><value>Password</value></data>
+  <data name="AccountDeletion_Understood" xml:space="preserve"><value>I understand that my account and the data stored in it will be deleted.</value></data>
+  <data name="AccountDeletion_Confirm" xml:space="preserve"><value>Delete account</value></data>
+  <data name="AccountDeletion_RequiredHint" xml:space="preserve"><value>The Delete account button appears once you tick the box below and, if you sign in with email and password, enter your password.</value></data>
   <data name="Sync_NeverSynced" xml:space="preserve"><value>Never synced</value></data>
   <data name="Sync_JustNow" xml:space="preserve"><value>Just now</value></data>
   <data name="Sync_MinutesAgo" xml:space="preserve"><value>{0} minute(s) ago</value></data>
@@ -685,6 +718,9 @@
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Provider Type *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Endpoint *</value></data>
+  <data name="Dialog_ProviderEdit_TypeBlocked" xml:space="preserve"><value>Your organization's policy does not allow this provider type.</value></data>
+  <data name="Dialog_ProviderEdit_EndpointBlocked" xml:space="preserve"><value>Your organization's policy does not allow this address.</value></data>
+  <data name="Dialog_ProviderEdit_RecipientNotice" xml:space="preserve"><value>Your requests, attachments and conversation content go to whoever runs this address. Pia does not check that service.</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>API Key</value></data>
   <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud does not store provider API keys unless end-to-end encryption is on. This key stays on this device — enter it again on your other devices, or turn on end-to-end encryption under Account.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Model Name</value></data>
@@ -914,6 +950,9 @@
   <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Screen</value></data>
   <data name="ActionCard_Title_Format" xml:space="preserve"><value>{0} {1}</value></data>
   <data name="ActionCard_Action_Capture" xml:space="preserve"><value>Capture</value></data>
+  <data name="ActionCard_Category_KnowledgeBase" xml:space="preserve"><value>Knowledge base</value></data>
+  <data name="ActionCard_Category_KbDocument" xml:space="preserve"><value>Document</value></data>
+  <data name="ActionCard_Action_Upload" xml:space="preserve"><value>Add to</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>Copy to Clipboard</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Type</value></data>
@@ -950,12 +989,56 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Set up now</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>End-to-End Encryption</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, all synced data is encrypted on your device before being sent to the server. An encryption key and recovery code are generated when encryption is enabled, and a full sync runs. Enabling is permanent for your account.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>When enabled, your device encrypts the content you sync before sending it to the server, which holds your key only in encrypted form. IDs, timestamps and order stay readable. An encryption key and recovery code are generated when encryption is enabled, and a full sync runs. Enabling is permanent for your account.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Enable End-to-End Encryption</value></data>
-  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>End-to-end encryption is permanent for this account. To start over without it, reset your sync data on the server.</value></data>
+  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>End-to-end encryption cannot be turned off for this account. It ends only together with the synced content, when the account is deleted or an administrator resets its sync data.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Updating encryption and syncing data...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Check for device requests</value></data>
+  <data name="Settings_E2EE_OffNotice_Title" xml:space="preserve"><value>Your synced data is not end-to-end encrypted</value></data>
+  <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Content you sync from this account is stored unencrypted on the Pia server. Turn on end-to-end encryption so that only your devices can read it.</value></data>
+  <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Turn on encryption</value></data>
+  <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Not now</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Sync is paused: the server says this account is no longer end-to-end encrypted.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Review</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Encryption turned off on the server</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>This account used end-to-end encryption, but the server now reports it as unencrypted. Sync is paused so your data is not sent in plain text. If nobody reset this account's encryption on purpose, do not continue, and contact your administrator.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Sync without encryption</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Sync without encryption?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Only continue if this account's encryption was reset on purpose. Your data will then be sent to the server without end-to-end encryption, and this device will stop warning you about it.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>New device requesting access</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>A new device wants to join your account. Approve it only if you just signed in on that device yourself and both fingerprints below match.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>The name of this device contained hidden or control characters. They were removed before display. Be cautious: approve only if you are certain this is your device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Requesting device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Device name</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Fingerprint</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Compare this fingerprint character by character with the one shown on the new device.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>This device</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>After you approve, the new device asks you to confirm this fingerprint.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Approve</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Don't approve</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unnamed device</value></data>
+  <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Reject device?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Do you want to reject and revoke this device? If you don't recognize it, revoke it.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Device approved</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>The device has been approved and can now sync.</value></data>
+  <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Device removed</value></data>
+  <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>This device was revoked on the server. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>
+  <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>This device is no longer registered on the server — its record was deleted or expired. Background sync has stopped and this device's copy of the encryption key was forgotten. Set this device up again, or sign out.</value></data>
+  <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Set up this device again</value></data>
+  <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Sign out</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Device not approved</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} could not be approved. Check your connection and try again from Settings → Account.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>No requests</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>No device is waiting for approval.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Check failed</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia could not check for devices waiting for approval.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Encryption not turned on</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>End-to-end encryption could not be turned on. Check your connection and try again.</value></data>
+  <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Signed out</value></data>
+  <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Your session ended or was revoked on the server. Please sign in again.</value></data>
+  <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>The server refused to renew your session. Please sign in again.</value></data>
+  <data name="Auth_SignedOut_Unreadable" xml:space="preserve"><value>The stored session could not be opened on this device. Please sign in again.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>End-to-End Encryption Setup</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>This account uses end-to-end encryption. Set up this device to access your encrypted data.</value></data>
@@ -966,7 +1049,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Enter the recovery code you saved when you first enabled encryption. Use this if your other device is unavailable.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Enter recovery code</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Your device fingerprint:</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Cloud Sync &gt; Device Management. Verify this fingerprint matches before approving.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>On your other device, go to Settings &gt; Account and click Check for device requests. Verify this fingerprint matches before approving.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Use recovery code instead</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Enter your recovery code</value></data>
@@ -977,12 +1060,35 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Your data is being synced. This may take a moment.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Device fingerprint: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Try again</value></data>
+  <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Confirm the approving device</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>The key has arrived, but this device has not accepted it yet. The approving device shows its fingerprint in its approval dialog and under Settings &gt; Account. Accept the key only if it matches the one below.</value></data>
+  <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Approved by: </value></data>
+  <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>It matches</value></data>
+  <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>It doesn't match</value></data>
+  <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>This device did not accept the key. The approving device may not be one of yours: reject any request you don't recognize on your other devices, and set up this device with your recovery code instead.</value></data>
+  <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>The approved key could not be opened on this device. Try again, or use your recovery code instead.</value></data>
+  <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>This computer's encryption keys were lost. Pia signed you out so the computer can join your account again as a new device. Sign in, then confirm it from another device or with your recovery code. Afterwards you can remove the previous installation in the account settings.</value></data>
+  <data name="E2EE_Onboarding_OwnCopyChanged" xml:space="preserve"><value>This device's stored copy of the key was changed on the server, so it was not used. Set the device up again with your recovery code.</value></data>
+  <data name="E2EE_Onboarding_Recovery_CopyRejected" xml:space="preserve"><value>Pia did not use the recovery data stored on the server because it is not valid. Your recovery code was not checked. Confirm this device from another device, or contact your administrator.</value></data>
+  <data name="Settings_E2EE_SignatureRefused_Message" xml:space="preserve"><value>The server accepts this change only from one of your active devices, and this device could not prove that it is one. Restore this device with your recovery code, then try again.</value></data>
+  <data name="Settings_E2EE_PreviousInstallation_Text" xml:space="preserve"><value>This computer joined your account again after its encryption keys were lost. Its previous installation is still listed and can no longer be used.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation" xml:space="preserve"><value>Remove the previous installation of this computer</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Title" xml:space="preserve"><value>Remove previous installation</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Message" xml:space="preserve"><value>The previous installation of this computer will be removed from your account. This computer keeps working.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Title" xml:space="preserve"><value>Could not remove the previous installation</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Message" xml:space="preserve"><value>The previous installation could not be removed. Check your connection and try again.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Title" xml:space="preserve"><value>Previous installation removed</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Message" xml:space="preserve"><value>The previous installation of this computer is no longer part of your account.</value></data>
+  <data name="E2EE_Register_DeviceMismatch" xml:space="preserve"><value>The server knows this session as a different device, so it refused the registration. Sign out, sign in again on this device, and try once more.</value></data>
+  <data name="E2EE_Register_TooManyPending" xml:space="preserve"><value>Too many devices are waiting for approval. Approve or remove one on another device first, then try again.</value></data>
+  <data name="E2EE_Register_DeviceChanged" xml:space="preserve"><value>This device changed on the server while it was registering. Try again.</value></data>
+  <data name="E2EE_Register_Generic" xml:space="preserve"><value>The server refused to register this device.</value></data>
   <!-- Recovery code dialog (shown when enabling E2EE from settings) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Recovery Code</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Save Your Recovery Code</value></data>
   <data name="Dialog_Recovery_Description" xml:space="preserve"><value>This recovery code is the ONLY way to access your encrypted data if you lose all your devices. Write it down and store it somewhere safe.</value></data>
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Important</value></data>
-  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>If you lose this code and all your devices, your encrypted data cannot be recovered. The server cannot decrypt your data.</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>If you lose this code and all your devices, your encrypted data cannot be recovered. The server holds your key only in encrypted form and cannot restore it for you.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>I have saved this recovery code in a safe place</value></data>
   <!-- Missed Scheduled Job Dialog -->
   <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Missed scheduled briefing</value></data>
@@ -992,15 +1098,15 @@
   <data name="MissedRun_Later" xml:space="preserve"><value>Decide later</value></data>
   <!-- First-Run Wizard E2EE Setup Step -->
   <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Encrypt your data end-to-end</value></data>
-  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Your notes, todos, and memories stay readable only on your devices.</value></data>
+  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Your device encrypts the content of your notes, todos and memories before it syncs them.</value></data>
   <data name="Wizard_E2EE_Pros_Title" xml:space="preserve"><value>Why turn this on (recommended)</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia Cloud staff can't read your data.</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>If our servers are ever breached, your data is unreadable to attackers.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia Cloud receives your content encrypted and holds your key only in encrypted form.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>If our servers are ever breached, attackers find your content encrypted. IDs, timestamps and order stay readable.</value></data>
   <data name="Wizard_E2EE_Pros_Bullet3" xml:space="preserve"><value>Only devices you approve can decrypt your data.</value></data>
   <data name="Wizard_E2EE_Cons_Title" xml:space="preserve"><value>What you should know</value></data>
   <data name="Wizard_E2EE_Cons_Bullet1" xml:space="preserve"><value>You'll get a recovery code — save it somewhere safe (a password manager or a printed copy).</value></data>
   <data name="Wizard_E2EE_Cons_Bullet2" xml:space="preserve"><value>If you lose all your devices and the recovery code, your encrypted data is unrecoverable.</value></data>
-  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>You can turn it off later in Settings.</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Once it is on, encryption cannot be turned off in the app.</value></data>
   <data name="Wizard_E2EE_Toggle_Label" xml:space="preserve"><value>Encrypt my data with end-to-end encryption</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Title" xml:space="preserve"><value>Continue without encryption?</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Message" xml:space="preserve"><value>Your synced data will be readable by Pia Cloud staff in case of a server breach. You can turn encryption on later in Settings.</value></data>
@@ -1012,6 +1118,7 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>I've saved my recovery code somewhere safe</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Could not enable encryption</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Setting up encryption…</value></data>
+  <data name="Wizard_E2EE_AlreadyEnabled" xml:space="preserve"><value>Encryption is already set up for this account. Set up this device with your recovery code or an approval from another device.</value></data>
   <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
   <data name="Flow_EmptyState" xml:space="preserve"><value>You're all caught up.</value></data>
   <data name="Flow_ClearAll" xml:space="preserve"><value>Clear all</value></data>
@@ -1074,6 +1181,10 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while sub-agents were working — continue?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>You paused this run</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start — continue again when you are ready</value></data>
+  <data name="Run_Activity_InterruptedCredit" xml:space="preserve"><value>Credit limit reached. Continue once your credit has reset.</value></data>
+  <data name="Run_Activity_InterruptedOffline" xml:space="preserve"><value>Connection lost. Continue when you are back online.</value></data>
+  <data name="Run_Activity_InterruptedTimeout" xml:space="preserve"><value>The model did not answer in time. Continue?</value></data>
+  <data name="Run_Activity_InterruptedProvider" xml:space="preserve"><value>The AI service had a problem. Continue?</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Waiting for your approval to use {0}</value></data>
   <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Affects {0}</value></data>
   <data name="Run_ToolApproval_ShowFullCall" xml:space="preserve"><value>Show the full call</value></data>
@@ -1213,6 +1324,10 @@
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Interrupted while its sub-agents were working — continue?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>You paused this run. Continue?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>The continuation did not start. Continue?</value></data>
+  <data name="Flow_Run_InterruptedCredit" xml:space="preserve"><value>Credit limit reached. Continue once your credit has reset.</value></data>
+  <data name="Flow_Run_InterruptedOffline" xml:space="preserve"><value>Connection lost. Continue when you are back online.</value></data>
+  <data name="Flow_Run_InterruptedTimeout" xml:space="preserve"><value>The model did not answer in time. Continue?</value></data>
+  <data name="Flow_Run_InterruptedProvider" xml:space="preserve"><value>The AI service had a problem. Continue?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>This run needs your approval to use {0}. Continue to allow it.</value></data>
   <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>This run needs your approval to use {0} on {1}. Continue to allow it.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>This run couldn't tell what you wanted — open it to answer.</value></data>
@@ -1238,6 +1353,9 @@
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML document (*.html)|*.html|All files (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Open containing folder</value></data>
   <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Save to the working directory</value></data>
+  <data name="Assistant_SavePendingFile_CutTooltip" xml:space="preserve"><value>Save to the working directory so Pia can read the rest</value></data>
+  <data name="Assistant_PendingFileCut_Badge" xml:space="preserve"><value>shortened</value></data>
+  <data name="Assistant_PendingFileCut_Tooltip" xml:space="preserve"><value>Only part of this file fits in the message. Save it to the working directory so Pia can read the rest.</value></data>
   <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Saved to the working directory</value></data>
   <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>This file was not saved to the working directory, so only its name was kept.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Open in VS Code</value></data>
@@ -1430,9 +1548,12 @@
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>This job has a status this version does not recognise, so it is shown read-only. Update Pia to manage it.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Running the job…</value></data>
   <data name="Settings_ScheduledJobs_RunStarted" xml:space="preserve"><value>The job started. Its result will be in the chat it creates.</value></data>
+  <data name="Routines_RunStarted_Title" xml:space="preserve"><value>Routine started</value></data>
+  <data name="Routines_RunStarted_Body" xml:space="preserve"><value>"{0}" is running. Its result will be in the chat it creates.</value></data>
   <data name="Settings_ScheduledJobs_RunAlreadyRunning" xml:space="preserve"><value>Not started: a run of this job is already going.</value></data>
   <data name="Settings_ScheduledJobs_RunNotOwner" xml:space="preserve"><value>Not run: another device owns this job's schedule.</value></data>
   <data name="Settings_ScheduledJobs_RunNotFound" xml:space="preserve"><value>Not run: this job no longer exists.</value></data>
+  <data name="Settings_ScheduledJobs_RunResetPending" xml:space="preserve"><value>Not run: Pia has not finished removing local data. Restart Pia first.</value></data>
   <data name="Settings_ScheduledJobs_RunFailed" xml:space="preserve"><value>The job could not be started.</value></data>
   <data name="Settings_ScheduledJobs_LoadFailed" xml:space="preserve"><value>Scheduled jobs could not be read.</value></data>
   <data name="Settings_ScheduledJobs_SaveFailed" xml:space="preserve"><value>That change could not be saved.</value></data>
@@ -1448,7 +1569,7 @@
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Teams meeting</value></data>
   <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams link *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Paste the meeting invite link</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed *</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Everyone in this meeting may be recorded and transcribed; the transcript is saved as a vault note and, on request, analysed by your AI provider *</value></data>
   <data name="Routines_Draft_Describe" xml:space="preserve"><value>Describe it in a sentence</value></data>
   <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Say what you want to happen and how often. Pia fills in the name, the instruction and the schedule — you can change all of it before saving.</value></data>
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Draft with AI</value></data>
@@ -1608,6 +1729,7 @@
   <data name="AiFeedback_Comment_Label" xml:space="preserve"><value>What was wrong?</value></data>
   <data name="AiFeedback_Comment_Placeholder" xml:space="preserve"><value>Optional — e.g. wrong facts, inappropriate tone, refused for no reason</value></data>
   <data name="AiFeedback_IncludeAnswer" xml:space="preserve"><value>Include the answer text</value></data>
+  <data name="AiFeedback_PrivacyConcern" xml:space="preserve"><value>This concerns data protection</value></data>
   <data name="AiFeedback_PrivacyNote_Tokenized" xml:space="preserve"><value>Personal data in the text is replaced by placeholders before sending, as in your chats.</value></data>
   <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>The text is sent as shown; PII tokenization is off in your privacy settings.</value></data>
   <data name="About_AiFeedback_Title" xml:space="preserve"><value>AI feedback and complaints</value></data>
@@ -1660,6 +1782,8 @@
   <data name="McpServers_Title" xml:space="preserve"><value>MCP servers</value></data>
   <data name="McpServers_Subtitle" xml:space="preserve"><value>Connect MCP servers that run on this computer. Their tool names are prefixed with the server name, so they never clash with Pia's own tools.</value></data>
   <data name="McpServers_Add" xml:space="preserve"><value>Add server</value></data>
+  <data name="McpServers_BlockedByPolicy" xml:space="preserve"><value>Your organization's policy does not allow local MCP servers on this device.</value></data>
+  <data name="McpServers_Edit_RecipientNotice" xml:space="preserve"><value>This server runs as a program on this device with your permissions. What the assistant passes to its tools goes to this program and to whatever it connects to.</value></data>
   <data name="McpServers_Empty" xml:space="preserve"><value>No MCP servers yet</value></data>
   <data name="McpServers_EmptyHint" xml:space="preserve"><value>Add a server to give the assistant tools from outside Pia.</value></data>
   <data name="McpServers_Name" xml:space="preserve"><value>Name</value></data>
@@ -1705,9 +1829,35 @@
   <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Stopping…</value></data>
   <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} of {1} tool(s) offered</value></data>
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} tool(s) allowed</value></data>
+  <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} tool(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} tool(s) · {1} of them may delete</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} tool(s) · 1 of them may delete</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>This server is not running. These are the tools it was allowed when it last ran.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Start this server, or use Test connection, to list its tools.</value></data>
-  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>withheld</value></data>
+  <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Offered</value></data>
+  <data name="McpServers_Detail_WithheldGroup" xml:space="preserve"><value>Withheld</value></data>
+  <data name="McpServers_Detail_NoneAllowed" xml:space="preserve"><value>No tool offered – change this under Edit</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Saving… restarting the server.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Locked by your organization: this setting is enforced by Pia policy and cannot be changed here.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Sign out of Pia Cloud</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Do you also want to remove this account's data from this device? This covers chats, history, todos, templates, personas, your own AI providers and synced preferences. Everything stays in your Pia Cloud account and comes back when you sign in again. Clearing restarts Pia.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Sign out and clear</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Sign out and keep</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Before you sign in</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>There is data on this device. If you keep it, it is uploaded into the account you sign in to. If you clear it first, Pia removes it from this device, including changes made while you were signed out, and restarts. You then need to sign in again.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Keep and sign in</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Clear first</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>Pia's memory on this device is not removed and stays available after you switch accounts.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>API keys for your own AI providers are not stored in Pia Cloud. You will need to enter them again.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API keys for your own AI providers are removed from this device. Unless your account uses end-to-end encryption, you will need to enter them again.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Couldn't upload your latest changes</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Some changes on this device have not reached Pia Cloud. Clear this device anyway? Changes that were not uploaded are lost.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Uploading your latest changes…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Signing out…</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Local data not removed yet</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia couldn't finish removing local data. Restart Pia now to try again?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Account deleted</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Your Pia Cloud account has been deleted. Do you also want to remove its data from this device? Clearing restarts Pia. This cannot be undone.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Clear this device</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Keep on this device</value></data>
 </root>

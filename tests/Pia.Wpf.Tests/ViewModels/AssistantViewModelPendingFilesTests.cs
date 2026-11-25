@@ -24,6 +24,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
     private readonly IChatSessionManager _manager = Substitute.For<IChatSessionManager>();
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IProviderService _providers = Substitute.For<IProviderService>();
+    private readonly IPersonaService _personas = Substitute.For<IPersonaService>();
     private readonly ILocalizationService _localization = Substitute.For<ILocalizationService>();
     private readonly IAttachedFileStore _attachedFiles = Substitute.For<IAttachedFileStore>();
     private readonly string _dir;
@@ -51,7 +52,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         // the awaited send a null Task.
         _manager.StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
-            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(true);
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>()).Returns(true);
 
         // StartFreshChat calls SetWorkingDirectory on whatever this returns.
         _manager.GetOrCreateActiveForNewChat().Returns(_ => new ChatSession(
@@ -92,7 +93,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
             NullLogger<AssistantViewModel>.Instance,
             Substitute.For<IAiClientService>(),
             _providers,
-            Substitute.For<IPersonaService>(),
+            _personas,
             _settings,
             Substitute.For<IOutputService>(),
             Substitute.For<IPluginService>(),
@@ -130,8 +131,6 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         FileName = fileName,
         Kind = PendingFileKind.Text,
         Text = "the quarterly numbers",
-        Truncated = false,
-        OriginalCharCount = 21,
     };
 
     private string Write(string name, string content)
@@ -325,8 +324,9 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
             Arg.Any<ChatSession>(), "summarize the attached report for the team",
             Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
             planned: false,
-            attachedFileContext: Arg.Is<string?>(s => s != null && s.Contains("notes.txt")),
-            attachedFiles: Arg.Any<IReadOnlyList<AttachedFileRef>?>());
+            attachedFileContext: null,
+            attachedFiles: Arg.Any<IReadOnlyList<AttachedFileRef>?>(),
+            files: Arg.Is<IReadOnlyList<PendingFileAttachment>?>(f => f != null && f.Single().FileName == "notes.txt"));
         // The downgrade is per-turn: the lever stays where the user put it.
         Assert.True(vm.AgentModeEnabled);
     }
@@ -349,7 +349,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         var vm = CreateSut();
         _manager.StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
-            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>()).Returns(false);
         var chip = Chip();
         vm.InputText = "summarize this";
         vm.PendingFiles.Add(chip);
@@ -466,9 +466,57 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         await vm.HandleFilesDroppedCommand.ExecuteAsync(new[] { image, text });
 
         Assert.Equal("notes.txt", Assert.Single(vm.PendingFiles).FileName);
-        // The image never becomes a chip; it goes down the image-attachment path, whose first step is
-        // the vision-provider check.
-        await _providers.Received(1).GetDefaultProviderForModeAsync(WindowMode.Assistant);
+        // Once for the text file's attachment budget, once for the image path's vision check.
+        await _providers.Received(2).GetDefaultProviderForModeAsync(WindowMode.Assistant);
+    }
+
+    private static string Report(int lines) =>
+        string.Join('\n', Enumerable.Range(1, lines).Select(i => $"line {i} of the report"));
+
+    [Fact]
+    public async Task HandleFilesDropped_SharesTheBudgetWithAttachmentsTheChatAlreadySends()
+    {
+        var vm = CreateSut();
+        // ~31,950 of the 32,000 a default 128K window allows are already re-sent every turn.
+        vm.Messages.Add(new AssistantMessage(Microsoft.Extensions.AI.ChatRole.User, "earlier")
+        {
+            AttachedFileContext = new string('x', 127_800),
+        });
+        var path = Write("report.txt", Report(200));
+
+        await vm.HandleFilesDroppedCommand.ExecuteAsync(new[] { path });
+
+        Assert.Empty(vm.PendingFiles);
+    }
+
+    [Fact]
+    public async Task HandleFilesDropped_UsesThePersonasProviderForTheBudget()
+    {
+        var vm = CreateSut();
+        var local = new AiProvider
+        {
+            Name = "Local", Endpoint = "http://localhost:11434",
+            MaxContextWindowTokens = 8_000, MaxOutputTokens = 2_000,
+        };
+        _personas.ResolveActiveAsync(WindowMode.Assistant, Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Local", SystemPrompt = "x", PreferredProviderId = local.Id });
+        _providers.GetProviderAsync(local.Id).Returns(local);
+        var path = Write("report.txt", Report(700));
+
+        await vm.HandleFilesDroppedCommand.ExecuteAsync(new[] { path });
+
+        Assert.True(Assert.Single(vm.PendingFiles).Truncated);
+    }
+
+    [Fact]
+    public async Task HandleFilesDropped_TheSameFileOnTheDefaultWindow_ArrivesWhole()
+    {
+        var vm = CreateSut();
+        var path = Write("report.txt", Report(700));
+
+        await vm.HandleFilesDroppedCommand.ExecuteAsync(new[] { path });
+
+        Assert.False(Assert.Single(vm.PendingFiles).Truncated);
     }
 
     [Fact]
@@ -653,7 +701,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         var vm = CreateSut();
         _manager.StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
-            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>()).Returns(false);
         var chip = Chip();
         chip.SavedRelativePath = "Playground/notes.txt";
         vm.PendingFiles.Add(chip);
@@ -781,7 +829,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
             Arg.Is<IReadOnlyList<ImageAttachment>?>(a => a != null && a.Count == 2
                 && ReferenceEquals(a[0], first) && ReferenceEquals(a[1], second)),
             Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(),
-            Arg.Any<IReadOnlyList<AttachedFileRef>?>());
+            Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>());
         Assert.Empty(vm.PendingAttachments);
     }
 
@@ -792,7 +840,7 @@ public sealed class AssistantViewModelPendingFilesTests : IDisposable
         UseVisionProvider();
         _manager.StartTurnAsync(
             Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(),
-            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>()).Returns(false);
+            Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>()).Returns(false);
         var first = Attachment();
         var second = Attachment();
         vm.PendingAttachments.Add(first);

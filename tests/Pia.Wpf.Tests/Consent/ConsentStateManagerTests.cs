@@ -68,7 +68,7 @@ public sealed class ConsentStateManagerTests
     {
         _sut.Grant("Speaker 1", "Alice", MakeEvidence("Speaker 1", "Alice"));
 
-        _sut.Revoke("Speaker 1");
+        _sut.Revoke("Speaker 1", DateTimeOffset.UtcNow);
 
         Assert.Equal(ConsentState.Revoked, _sut.GetOrCreate("Speaker 1").State);
     }
@@ -79,7 +79,7 @@ public sealed class ConsentStateManagerTests
         var evidence = MakeEvidence("Speaker 1", "Alice");
         _sut.Grant("Speaker 1", "Alice", evidence);
 
-        _sut.Revoke("Speaker 1");
+        _sut.Revoke("Speaker 1", DateTimeOffset.UtcNow);
 
         var entry = _sut.GetOrCreate("Speaker 1");
         Assert.Equal(ConsentState.Revoked, entry.State);
@@ -88,10 +88,34 @@ public sealed class ConsentStateManagerTests
     }
 
     [Fact]
+    public void Revoke_RecordsTheGivenRevocationTime_AndAGrantClearsIt()
+    {
+        var revokedAt = new DateTimeOffset(2026, 9, 29, 10, 15, 0, TimeSpan.FromHours(2));
+        _sut.Grant("Speaker 1", "Alice", MakeEvidence("Speaker 1", "Alice"));
+        Assert.Null(_sut.GetOrCreate("Speaker 1").RevokedAt);
+
+        _sut.Revoke("Speaker 1", revokedAt);
+        Assert.Equal(revokedAt, _sut.GetOrCreate("Speaker 1").RevokedAt);
+
+        _sut.Grant("Speaker 1", "Alice", MakeEvidence("Speaker 1", "Alice"));
+        Assert.Null(_sut.GetOrCreate("Speaker 1").RevokedAt);
+    }
+
+    [Fact]
+    public void Revoke_OnANonGrantedLabel_RecordsNoRevocationTime()
+    {
+        _sut.GetOrCreate("Speaker 1");
+
+        Assert.False(_sut.Revoke("Speaker 1", DateTimeOffset.UtcNow));
+
+        Assert.Null(_sut.GetOrCreate("Speaker 1").RevokedAt);
+    }
+
+    [Fact]
     public void Revoke_ThenGrant_RaisesRevokedToGranted()
     {
         _sut.Grant("Speaker 1", "Alice", MakeEvidence("Speaker 1", "Alice"));
-        _sut.Revoke("Speaker 1");
+        _sut.Revoke("Speaker 1", DateTimeOffset.UtcNow);
 
         ConsentStateChangedEventArgs? observed = null;
         _sut.StateChanged += (_, e) => observed = e;
@@ -178,7 +202,7 @@ public sealed class ConsentStateManagerTests
         Assert.Single(snapshot);
         Assert.Equal(ConsentState.Granted, snapshot[0].State);
 
-        _sut.Revoke("Speaker 1");
+        _sut.Revoke("Speaker 1", DateTimeOffset.UtcNow);
 
         Assert.Equal(ConsentState.Granted, snapshot[0].State);
         Assert.Equal(ConsentState.Revoked, _sut.CurrentState("Speaker 1"));
@@ -191,5 +215,8 @@ public sealed class ConsentStateManagerTests
         Language: "de",
         Confidence: 0.95f,
         GrantedAt: DateTimeOffset.UtcNow,
-        SttModelId: "whisper-base");
+        SttModelId: "whisper-base",
+        NoticeVersion: ConsentNotice.Version,
+        NoticePurposes: ConsentNotice.Purposes,
+        NoticeLanguage: "en");
 }

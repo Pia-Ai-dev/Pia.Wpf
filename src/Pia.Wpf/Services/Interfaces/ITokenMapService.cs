@@ -4,6 +4,9 @@ public interface ITokenMapService
 {
     string Tokenize(string value, string category);
     string TokenizeStructuredResult(string formattedResult);
+
+    /// <summary>Matches stored values in exact case as whole words with no fuzzy pass, so detokenizing restores the input.</summary>
+    string TokenizeVerbatim(string text);
     string Detokenize(string text);
 
     /// <summary>

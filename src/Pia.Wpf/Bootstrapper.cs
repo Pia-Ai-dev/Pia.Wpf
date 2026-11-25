@@ -14,6 +14,7 @@ using Pia.Paths;
 using Pia.Services;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.LocalDataReset;
 using Pia.Services.Providers;
 using Pia.Services.Scheduling;
 using Pia.ViewModels;
@@ -46,6 +47,8 @@ public static class Bootstrapper
     // Separate from the archive path above: the two exports write different formats, and a script that
     // drives both would otherwise have them overwrite each other.
     public const string DebugChatExportMarkdownFileEnvVar = "PIA_DEBUG_CHAT_EXPORT_MARKDOWN_FILE";
+    // The same hook for the account export's picker.
+    public const string DebugAccountExportFileEnvVar = "PIA_DEBUG_ACCOUNT_EXPORT_FILE";
     // Semicolon-separated paths the Attach-file button uses instead of the picker: UIA cannot synthesize a
     // shell drag-drop, so this is the only way a script can stage file attachments. DEBUG builds only.
     public const string DebugDropFilesEnvVar = "PIA_DEBUG_DROP_FILES";
@@ -89,6 +92,9 @@ public static class Bootstrapper
         // reflect-invoke ConfigureServices against the real, un-redirected profile.
         var logRetention = LogFileRetention.Sweep(PiaPaths.LogsDirectory, LogFileRetention.DefaultRetainedDays);
 
+        // An upgraded install can still hold recordings in %TEMP%.
+        var orphanedRecordings = RecordingFileStore.Sweep([PiaPaths.RecordingsDirectory, System.IO.Path.GetTempPath()]);
+
         // The load-bearing consent sweep: an install that only runs an hour a day never reaches the daily
         // timer in ConsentRetentionBackgroundService, and its data would age out on nobody's clock.
         var consentRetention = Services.Consent.ConsentRetention.Sweep(
@@ -115,9 +121,16 @@ public static class Bootstrapper
             "Data directories: Roaming={Roaming}, Local={Local}, Overridden={Overridden}",
             PiaPaths.RoamingDataDirectory, PiaPaths.LocalDataDirectory, PiaPaths.IsOverridden);
 
+        // Before the policy, settings or any store is read, so nothing caches pre-clear state.
+        await LocalDataResetStartup.RunIfPendingAsync(
+            () => _serviceProvider.GetRequiredService<LocalDataWipeService>().WipeAsync(), bootstrapLogger);
+
         bootstrapLogger.LogInformation(
             "Log retention: kept {Kept}, deleted {Deleted}, skipped {Skipped}, cutoff {Cutoff:yyyy-MM-dd}",
             logRetention.Kept, logRetention.Deleted, logRetention.Skipped, logRetention.Cutoff);
+
+        if (orphanedRecordings > 0)
+            bootstrapLogger.LogInformation("Deleted {Count} orphaned voice recording(s)", orphanedRecordings);
 
         Services.Consent.ConsentRetention.LogOutcome(bootstrapLogger, consentRetention);
 
@@ -142,23 +155,33 @@ public static class Bootstrapper
 
         if (!IsDevMode)
         {
+            var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
+            var settings = await settingsService.GetSettingsAsync();
+            var changed = false;
+
             if (serverUrlEnforced)
             {
                 bootstrapLogger.LogInformation(
                     "ServerUrl is enforced by enterprise policy; skipping production URL write");
             }
-            else
+            else if (settings.ServerUrl != ProductionServerUrl)
             {
                 // ProductionServerUrl honors the PIA_CLOUD_SERVER_URL env var override (for dev/staging).
-                var settingsService = _serviceProvider.GetRequiredService<ISettingsService>();
-                var settings = await settingsService.GetSettingsAsync();
-                if (settings.ServerUrl != ProductionServerUrl)
-                {
-                    settings.ServerUrl = ProductionServerUrl;
-                    settings.TrustSelfSignedCertificates = false;
-                    await settingsService.SaveSettingsAsync(settings);
-                }
+                settings.ServerUrl = ProductionServerUrl;
+                settings.TrustSelfSignedCertificates = false;
+                changed = true;
             }
+
+            // Release builds have no UI for the trust toggle, so only a policy may keep it on.
+            if (settings.TrustSelfSignedCertificates
+                && !policyService.IsEnforced(nameof(AppSettings.TrustSelfSignedCertificates)))
+            {
+                settings.TrustSelfSignedCertificates = false;
+                changed = true;
+            }
+
+            if (changed)
+                await settingsService.SaveSettingsAsync(settings);
         }
         else if (!string.IsNullOrWhiteSpace(envServerUrl))
         {
@@ -184,6 +207,21 @@ public static class Bootstrapper
                     await settingsService.SaveSettingsAsync(settings);
                 }
             }
+        }
+
+        var effectiveSettings = await _serviceProvider.GetRequiredService<ISettingsService>().GetSettingsAsync();
+        if (effectiveSettings.TrustSelfSignedCertificates)
+        {
+            bootstrapLogger.LogWarning(
+                "Certificate validation is relaxed for the configured server {Url}; every other host is fully validated",
+                SafeUrl.Format(effectiveSettings.ServerUrl));
+        }
+
+        if (ServerTransportPolicy.IsPlaintextRemote(effectiveSettings.ServerUrl))
+        {
+            bootstrapLogger.LogWarning(
+                "The configured server {Url} is not HTTPS; sign-in and sync travel unencrypted",
+                SafeUrl.Format(effectiveSettings.ServerUrl));
         }
 
         // Derive the vault root from the (relocatable) assistant files folder and run the one-shot
@@ -434,6 +472,9 @@ public static class Bootstrapper
 
         // Infrastructure
         services.AddSingleton<SqliteContext>();
+        services.AddSingleton<LocalDataWipeService>();
+        services.AddSingleton<ILocalDataResetService, LocalDataResetService>();
+        services.AddSingleton<ILocalDataResetIndicator, LocalDataResetIndicator>();
         services.AddSingleton<VaultPathProvider>();
         services.AddSingleton<MarkdownVaultParser>();
         services.AddSingleton<Pia.Infrastructure.Vault.IVaultWriteGate, Pia.Infrastructure.Vault.VaultWriteGate>();
@@ -452,6 +493,7 @@ public static class Bootstrapper
         services.AddHttpClient();
         services.ConfigureHttpClientDefaults(builder =>
         {
+            builder.ConfigureHttpClient(client => client.DefaultRequestHeaders.UserAgent.TryParseAdd(AppVersionInfo.UserAgent));
             builder.AddHttpMessageHandler<RateLimitRetryHandler>();
             builder.AddHttpMessageHandler<HttpLoggingHandler>();
             builder.ConfigurePrimaryHttpMessageHandler(sp =>
@@ -465,10 +507,10 @@ public static class Bootstrapper
                 {
                     var settings = settingsService.GetSettingsAsync()
                         .ConfigureAwait(false).GetAwaiter().GetResult();
-                    if (settings.TrustSelfSignedCertificates)
+                    if (ServerTransportPolicy.ForServer(settings.TrustSelfSignedCertificates, settings.ServerUrl)
+                        is { } validator)
                     {
-                        handler.ServerCertificateCustomValidationCallback =
-                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+                        handler.ServerCertificateCustomValidationCallback = validator;
                     }
                 }
                 return handler;
@@ -587,6 +629,7 @@ public static class Bootstrapper
         services.AddSingleton<IChatHistoryToolHandler, ChatHistoryToolHandler>();
         services.AddSingleton<Pia.Services.Help.HelpSearchService>();
         services.AddSingleton<Pia.Services.Help.HelpSettingsResolver>();
+        services.AddSingleton<Pia.Services.Help.HelpLabelResolver>();
         services.AddSingleton<IHelpToolHandler, HelpToolHandler>();
         services.AddSingleton<IWorkingDirectoryService, WorkingDirectoryService>();
         services.AddSingleton<IAttachedFileStore, AttachedFileStore>();
@@ -785,8 +828,8 @@ public static class Bootstrapper
                 sp.GetRequiredService<ISettingsService>(),
                 sp.GetRequiredService<ILogger<Services.MeetingAttendee.BackgroundMeetingSessions>>()));
 
-        // Direct transcription (in-session voice consent + live capture). Session-scoped consent
-        // only (owner decision D-3/D-4): no persistent voice-profile store, no evidence retention worker.
+        // Direct transcription (in-session voice consent + live capture). Consent is session-scoped: there is
+        // no persistent voice-profile store.
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<Services.Consent.IConsentStateManager, Services.Consent.ConsentStateManager>();
         services.AddSingleton<Services.Consent.INamedConsentClassifier, Services.Consent.NamedConsentClassifier>();
@@ -796,6 +839,7 @@ public static class Bootstrapper
         services.AddSingleton<Services.Consent.IConsentAuditLog>(sp =>
             Services.Consent.JsonlConsentAuditLog.CreateForSession(
                 sp.GetRequiredService<ILogger<Services.Consent.JsonlConsentAuditLog>>()));
+        services.AddSingleton<Services.Consent.IConsentLiveSessions, Services.Consent.ConsentLiveSessions>();
         services.AddSingleton<Services.Consent.IConsentEvidenceStore>(sp => new Services.Consent.ConsentEvidenceStore(
             Services.Consent.ConsentEvidenceStore.DefaultRootDirectory,
             sp.GetRequiredService<DpapiHelper>(),
@@ -812,6 +856,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<Services.Consent.INamedConsentClassifier>(),
                     sp.GetRequiredService<Services.Consent.IConsentAuditLog>(),
                     sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+                    uiLanguage: () => sp.GetRequiredService<ILocalizationService>().CurrentLanguage,
                     createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
                         sp.GetRequiredService<ISettingsService>(),
                         sp.GetRequiredService<IAssetDownloader>(),
@@ -840,6 +885,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<Services.Consent.INamedConsentClassifier>(),
                     sp.GetRequiredService<Services.Consent.IConsentAuditLog>(),
                     sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+                    uiLanguage: () => sp.GetRequiredService<ILocalizationService>().CurrentLanguage,
                     createTranscription: Services.LiveTranscription.DirectTranscriptionService.CreateProductionTranscriptionFactory(
                         sp.GetRequiredService<ISettingsService>(),
                         sp.GetRequiredService<IAssetDownloader>(),
@@ -897,7 +943,10 @@ public static class Bootstrapper
         services.AddSingleton<IDeviceKeyService, DeviceKeyService>();
         services.AddSingleton<IE2EEService, E2EEService>();
         services.AddSingleton<IRecoveryCodeService, RecoveryCodeService>();
+        services.AddSingleton<IConfirmedApproverStore>(_ => new ConfirmedApproverStore());
+        services.AddSingleton<IDeviceRequestSigner, DeviceRequestSigner>();
         services.AddSingleton<IDeviceManagementService, DeviceManagementService>();
+        services.AddSingleton<IAccountDataService, AccountDataService>();
 
         // Sync services
         services.AddSingleton<SyncDeleteTrackerService>(sp =>
@@ -906,6 +955,7 @@ public static class Bootstrapper
             return new SyncDeleteTrackerService(PiaPaths.RoamingDataDirectory, logger);
         });
         services.AddSingleton<SyncMapper>();
+        services.AddSingleton<AccountTransitionCoordinator>();
         services.AddSingleton<IAuthService, AuthService>();
         services.AddSingleton<ISyncClientService, SyncClientService>();
 
@@ -914,6 +964,7 @@ public static class Bootstrapper
         // Provider tool-calling capability probe for the Agent lever/suggestion (R10).
         services.AddSingleton<IProviderCapabilityService, ProviderCapabilityService>();
         services.AddSingleton<AssistantChatSyncService>();
+        services.AddSingleton<IChatSyncFlusher>(sp => sp.GetRequiredService<AssistantChatSyncService>());
 
         // Background services
         services.AddSingleton<ReminderBackgroundService>();
@@ -923,6 +974,21 @@ public static class Bootstrapper
         // separately-constructed service would not share.
         services.AddSingleton<IScheduledJobRunner>(sp => sp.GetRequiredService<ScheduledJobBackgroundService>());
         services.AddSingleton<AssistantChatRetentionService>();
+        // The window manager is read lazily: it is the only thing that knows the app is exiting while windows
+        // still end their transcription sessions.
+        services.AddSingleton(sp => new Services.Consent.ConsentLifetimeService(
+            PiaPaths.ConsentEvidenceDirectory,
+            sp.GetRequiredService<IVaultStore>(),
+            sp.GetRequiredService<Pia.Services.Wiki.IngestStateStore>(),
+            sp.GetRequiredService<IAssistantChatService>(),
+            sp.GetRequiredService<Services.Consent.IConsentEvidenceStore>(),
+            sp.GetRequiredService<IDirectTranscriptionService>(),
+            sp.GetRequiredService<Services.Consent.IConsentLiveSessions>(),
+            sp.GetRequiredService<TimeProvider>(),
+            dataRootsOverridden: PiaPaths.IsOverridden,
+            isShuttingDown: () => sp.GetRequiredService<IWindowManagerService>().IsShuttingDown,
+            sp.GetRequiredService<ILogger<Services.Consent.ConsentLifetimeService>>()));
+        services.AddSingleton<Services.Consent.IConsentCopyService, Services.Consent.ConsentCopyService>();
         services.AddSingleton<Services.Consent.ConsentRetentionBackgroundService>();
         services.AddSingleton<Services.Flow.TodoDeadlineBackgroundService>();
 
@@ -940,6 +1006,9 @@ public static class Bootstrapper
         // awaited HTTP probe would block launch.
         services.AddSingleton<Services.Operators.IAssignmentSurfaceCache, Services.Operators.AssignmentSurfaceCache>();
         services.AddSingleton<IAssignmentToolHandler, AssignmentToolHandler>();
+        services.AddSingleton<Services.KnowledgeManager.IKnowledgeManagerApiClient, Services.KnowledgeManager.KnowledgeManagerApiClient>();
+        services.AddSingleton<Services.KnowledgeManager.IKnowledgeManagerSurfaceCache, Services.KnowledgeManager.KnowledgeManagerSurfaceCache>();
+        services.AddSingleton<IKnowledgeManagerToolHandler, Services.KnowledgeManager.KnowledgeManagerToolHandler>();
         // The concrete type is registered too, so the notification surface can subscribe to the SAME
         // instance's Completed event that the drain worker drives.
         services.AddSingleton<Services.Operators.AssignmentRunOrchestrator>();
@@ -958,6 +1027,8 @@ public static class Bootstrapper
         // Both surfaces are registered; which one a start goes to is decided in one place, by the granter
         // AssignmentToolHandler reads off the turn's ambient context.
         services.AddSingleton<IHeadlessAssignmentLauncher, HeadlessAssignmentLauncher>();
+
+        services.AddSingleton<Services.Credits.ICreditStatusService, Services.Credits.CreditStatusService>();
 
         // Auto-update
         services.AddSingleton<IUpdateService, UpdateService>();
@@ -992,6 +1063,10 @@ public static class Bootstrapper
         services.AddScoped<AssistantViewModel>();
         services.AddScoped<MeetingAttendeeViewModel>();
         services.AddScoped<DirectTranscriptionViewModel>();
+        // Transient behind a scoped factory: each revocation lists its own copies, and deleting the open summary
+        // chat has to reach this window's chat sessions.
+        services.AddTransient<ConsentCopiesViewModel>();
+        services.AddScoped<Func<ConsentCopiesViewModel>>(sp => sp.GetRequiredService<ConsentCopiesViewModel>);
         services.AddScoped<AssistantHistoryViewModel>();
         services.AddScoped<VaultViewModel>();
         services.AddScoped<RoutinesViewModel>();

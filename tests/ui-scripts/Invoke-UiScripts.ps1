@@ -173,7 +173,17 @@ if ($hermetic) {
     $roamingDir = Join-Path $DataDir 'roaming'
     $localDir = Join-Path $DataDir 'local'
     New-Item -ItemType Directory -Force -Path $roamingDir, $localDir | Out-Null
-    Copy-Item $fixturePath (Join-Path $roamingDir 'settings.json') -Force
+    $seededSettings = Join-Path $roamingDir 'settings.json'
+    Copy-Item $fixturePath $seededSettings -Force
+
+    # PIA_DATA_DIR does not redirect the assistant folder; unset, it falls back to the real vault.
+    $seed = Get-Content $seededSettings -Raw | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace($seed.assistantFilesFolder)) {
+        $filesDir = Join-Path $DataDir 'files'
+        New-Item -ItemType Directory -Force -Path $filesDir | Out-Null
+        $seed | Add-Member -NotePropertyName assistantFilesFolder -NotePropertyValue $filesDir -Force
+        $seed | ConvertTo-Json -Depth 20 | Set-Content $seededSettings -Encoding utf8NoBOM
+    }
 
     # Set on this process so the app inherits it: `winwright run` has no --env flag, but the app it launches
     # inherits the harness environment.

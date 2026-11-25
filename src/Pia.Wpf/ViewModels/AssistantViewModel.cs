@@ -15,6 +15,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Imaging;
 using Pia.Services.Interfaces;
+using Pia.Services.KnowledgeManager;
 using Pia.Services.Operators;
 using Pia.Services.Screen;
 using Pia.Shared.Models;
@@ -79,6 +80,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IThemeService? _themeService;
     private readonly ITimelineWatcher? _timelineWatcher;
     private readonly IAssignmentSurfaceCache? _assignmentSurfaceCache;
+    private readonly IKnowledgeManagerSurfaceCache? _kbManagerSurfaceCache;
     private readonly Func<AssignmentConsentViewModel>? _assignmentConsentFactory;
     private readonly IScreenCaptureService? _screenCapture;
     private readonly IScreenCaptureAuditLog? _screenCaptureAudit;
@@ -288,7 +290,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     public IAsyncRelayCommand RunInBackgroundCommand { get; }
     public IAsyncRelayCommand ToggleRecordingCommand { get; }
     public IRelayCommand CancelStreamingCommand { get; }
-    public IRelayCommand NewChatCommand { get; }
+    public IAsyncRelayCommand NewChatCommand { get; }
     public IAsyncRelayCommand DeleteCurrentChatCommand { get; }
     public IAsyncRelayCommand<AssistantMessage> CopyMessageCommand { get; }
     public IRelayCommand ToggleTtsCommand { get; }
@@ -394,7 +396,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         IScreenCaptureAuditLog? screenCaptureAudit = null,
         IScreenCaptureIndicator? screenCaptureIndicator = null,
         // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
-        IElevationService? elevation = null)
+        IElevationService? elevation = null,
+        // Trailing and defaulted, same discipline; null ⇒ only the main window probes the knowledge-base surface.
+        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null)
     {
         _logger = logger;
         _aiClientService = aiClientService;
@@ -438,6 +442,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _themeService = themeService;
         _timelineWatcher = timelineWatcher;
         _assignmentSurfaceCache = assignmentSurfaceCache;
+        _kbManagerSurfaceCache = kbManagerSurfaceCache;
         _assignmentConsentFactory = assignmentConsentFactory;
         _volatileWork = volatileWork;
         _starterSuggestions = starterSuggestions;
@@ -451,7 +456,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         RunInBackgroundCommand = new AsyncRelayCommand(ExecuteRunInBackground, CanExecuteRunInBackground);
         ToggleRecordingCommand = new AsyncRelayCommand(ExecuteToggleRecording);
         CancelStreamingCommand = new RelayCommand(ExecuteCancelStreaming);
-        NewChatCommand = new RelayCommand(ExecuteNewChat);
+        NewChatCommand = new AsyncRelayCommand(ExecuteNewChat);
         DeleteCurrentChatCommand = new AsyncRelayCommand(ExecuteDeleteCurrentChat, CanDeleteCurrentChat);
         CopyMessageCommand = new AsyncRelayCommand<AssistantMessage>(ExecuteCopyMessage);
         ToggleTtsCommand = new RelayCommand(ExecuteToggleTts);
@@ -507,7 +512,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ResumeChatAsync,
             DeleteChatFromChipAsync,
             RenameChatFromChipAsync,
-            NewChat,
+            dir => NewChatAsync(dir).SafeFireAndForget(_logger),
             NavigateToAssistantHistory,
             _chatSessionManager.GetState,
             _workingDirectoryService,
@@ -1171,33 +1176,62 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             ToggleDirectTranscriptionCommand.Execute(null);
     }
 
-    private void OnDirectTranscriptionSummarizeRequested(object? sender, string prompt)
+    private void OnDirectTranscriptionSummarizeRequested(object? sender, TranscriptSummaryRequestedEventArgs e)
     {
-        // "Summarize with assistant" on the post-session transcript: hide the overlay so the chat (where
-        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
-        // the prompt. Mirrors OnMeetingAttendeeSummarizeRequested; do NOT log the prompt — it carries the
-        // (sensitive) transcript.
+        // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
+        // carries the (sensitive) transcript.
         IsDirectTranscriptionVisible = false;
-        StartFreshChat();
-        PendingAttachments.Clear();
-        InputText = prompt;
-        SendMessageCommand.Execute(null);
+        SendTranscriptSummaryAsync(e).SafeFireAndForget(_logger);
     }
 
-    private void OnMeetingAttendeeSummarizeRequested(object? sender, string prompt)
+    private void OnMeetingAttendeeSummarizeRequested(object? sender, TranscriptSummaryRequestedEventArgs e)
     {
-        // "Summarize with assistant" on the post-meeting transcript: hide the overlay so the chat (where
-        // the summary streams) is revealed, open a fresh chat so the summary stands on its own, then send
-        // the prompt. StartFreshChat clears InputText as its last step, so set the prompt afterwards.
-        // Sync fire-and-forget mirrors OnMeetingAttendeeCloseRequested. Do NOT log the prompt — it carries
-        // the (sensitive) meeting transcript.
+        // Hide the overlay so the chat the summary streams into is revealed. Do NOT log the prompt — it
+        // carries the (sensitive) meeting transcript.
         IsMeetingAttendeeVisible = false;
-        StartFreshChat();
-        // Drop any image left pending in the composer behind the overlay so the summary turn carries only
-        // the prompt (StartFreshChat clears InputText but not the staged images).
+        SendTranscriptSummaryAsync(e).SafeFireAndForget(_logger);
+    }
+
+    /// <summary>Sends the prompt as the first turn of a fresh chat and reports that chat's id once it has one.</summary>
+    private async Task SendTranscriptSummaryAsync(TranscriptSummaryRequestedEventArgs request)
+    {
+        var chat = StartFreshChat();
+        // The staged images belong to whatever the user was composing behind the overlay, not to the summary.
         PendingAttachments.Clear();
-        InputText = prompt;
-        SendMessageCommand.Execute(null);
+        // StartFreshChat clears InputText as its last step, so the prompt goes in afterwards.
+        InputText = request.Prompt;
+
+        // Subscribed before the send, which may assign the id synchronously; the id is never pre-assigned.
+        var onAssigned = ReportIdOnceAssigned(chat, request);
+        try
+        {
+            await SendMessageCommand.ExecuteAsync(null);
+        }
+        finally
+        {
+            // A first turn has its id before the send returns, so a chat still without one was refused, and its
+            // next, unrelated first turn must not be reported as the summary.
+            if (onAssigned is not null) chat.IdentityAssigned -= onAssigned;
+        }
+    }
+
+    private static EventHandler? ReportIdOnceAssigned(ChatSession chat, TranscriptSummaryRequestedEventArgs request)
+    {
+        if (chat.Id is { } existing)
+        {
+            request.ReportChatId(existing);
+            return null;
+        }
+
+        void OnAssigned(object? sender, EventArgs e)
+        {
+            if (chat.Id is not { } assigned) return;
+            chat.IdentityAssigned -= OnAssigned;
+            request.ReportChatId(assigned);
+        }
+
+        chat.IdentityAssigned += OnAssigned;
+        return OnAssigned;
     }
 
     private void OnMeetingAttendeeOpenSettingsRequested(object? sender, EventArgs e)
@@ -1305,12 +1339,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         PendingAttachments.Clear();
         // Captured above the Clear, and read again at the planned line below.
         var files = PendingFiles.ToArray();
-        var attachedFileContext = files.Length > 0
-            ? AssistantPromptComposer.BuildAttachedFileBlock(files)
-            : null;
-        // Names (and the sandbox path of the ones that were saved) outlive the send as chips under the
-        // bubble; the extracted text above does not, so a resumed chat shows what was attached but no
-        // longer feeds it to the model.
+        // Names (and saved sandbox paths) outlive the send as chips under the bubble; the extracted text
+        // does not, so a resumed chat shows what was attached but no longer feeds it to the model.
         var attachedFiles = files.Length == 0
             ? null
             : files.Select(f => new AttachedFileRef(f.FileName, f.SavedRelativePath)).ToArray();
@@ -1325,10 +1355,10 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
 
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
-        // returns once the turn is fire-and-forgotten (Step 4-compatible).
+        // returns once the turn is fire-and-forgotten.
         var accepted = await _chatSessionManager.StartTurnAsync(
             session, userText, attachments, planned: planned,
-            attachedFileContext: attachedFileContext, attachedFiles: attachedFiles);
+            attachedFiles: attachedFiles, files: files.Length > 0 ? files : null);
 
         // A refused send consumed nothing, so put the composer back rather than dropping what was typed —
         // reachable in the window between a plan-approval park releasing the session and the flag landing.
@@ -1456,25 +1486,27 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _runSteering?.RevokePauseRequest(runId);
     }
 
-    /// <summary>
-    /// "New chat" (additive): open a fresh chat WITHOUT cancelling the current turn — the
-    /// running turn keeps streaming in the background and notifies on completion (the
-    /// background-chats contract: opening or switching a chat never kills an in-flight
-    /// turn). Cancelling here would abort the in-flight HTTP request — surfacing a
-    /// SocketException in the support log — and discard the background result.
-    /// </summary>
-    private void NewChat(string? workingDirectory) => StartFreshChat(workingDirectory);
+    /// <summary>Additive: a turn in flight keeps streaming in the background — cancelling it would abort the
+    /// request and discard its result.</summary>
+    private async Task NewChatAsync(string? workingDirectory)
+    {
+        // Users read the composer's "+" as "attach", and a new chat throws the draft away.
+        if (HasUnsentDraft && !await ConfirmDiscardDraftAsync()) return;
+        StartFreshChat(workingDirectory);
+    }
 
-    /// <summary>The composer's "+" — same additive contract as <see cref="NewChat"/>, opening in the
-    /// folder this chat works in.</summary>
-    private void ExecuteNewChat() => NewChat(_chatSessionManager.ActiveSession?.WorkingDirectory);
+    private Task ExecuteNewChat() => NewChatAsync(_chatSessionManager.ActiveSession?.WorkingDirectory);
 
-    /// <summary>Opens a new, empty active chat and resets the composer. Shared by the chip's
-    /// "+ New Chat" (its pinned folder), the composer's "+" (this chat's folder) and the delete
-    /// path (the deleted chat's folder).</summary>
-    /// <param name="workingDirectory">Relative working dir to pin (forward slashes;
-    /// null/empty = sandbox root).</param>
-    private void StartFreshChat(string? workingDirectory = null)
+    // A stray keystroke is not worth a prompt.
+    private bool HasUnsentDraft => InputText.Trim().Length > 1;
+
+    private Task<bool> ConfirmDiscardDraftAsync() => _dialogService.ShowConfirmationDialogAsync(
+        _localizationService["Msg_Assistant_ConfirmNewChatTitle"],
+        _localizationService["Msg_Assistant_ConfirmNewChatMessage"]);
+
+    /// <summary>Opens a new, empty active chat and resets the composer.</summary>
+    /// <param name="workingDirectory">Relative working dir to pin (forward slashes; null/empty = sandbox root).</param>
+    private ChatSession StartFreshChat(string? workingDirectory = null)
     {
         _ttsService.Stop();
 
@@ -1493,6 +1525,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         // The empty state is back, and the stores may have moved since it was last on screen.
         RefreshSuggestionsAsync().SafeFireAndForget(_logger);
+        return session;
     }
 
     private async Task ResumeChatAsync(Guid chatId)
@@ -1777,21 +1810,31 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                     return;
 
                 report = await _aiFeedback.BuildRequestAsync(
-                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingDown, edit.Comment, edit.IncludeAnswer);
+                    request.Message, chatId, Shared.Models.AiFeedbackRequest.RatingDown, edit.Comment, edit.IncludeAnswer,
+                    edit.PrivacyConcern);
             }
 
-            var sent = await _aiFeedback.SendAsync(report);
+            var accepted = await _aiFeedback.SendAsync(report);
+            var (title, text, appearance, seconds) = FeedbackOutcome(accepted, request.Positive);
             _snackbarService.Show(
-                _localizationService[sent ? "Msg_Assistant_FeedbackSent_Title" : "Msg_Error"],
-                _localizationService[sent ? "Msg_Assistant_FeedbackSent" : "Msg_Assistant_FeedbackFailed"],
-                sent ? Wpf.Ui.Controls.ControlAppearance.Success : Wpf.Ui.Controls.ControlAppearance.Danger,
-                null, TimeSpan.FromSeconds(3));
+                _localizationService[title], _localizationService[text], appearance, null, TimeSpan.FromSeconds(seconds));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send AI feedback for message {MessageId}", request.Message.Id);
         }
     }
+
+    // A thumbs-up is only counted, so "nobody was notified" would read as a fault there.
+    internal static (string Title, string Text, Wpf.Ui.Controls.ControlAppearance Appearance, int Seconds) FeedbackOutcome(
+        Shared.Models.AiFeedbackResponse? accepted, bool positive) => accepted switch
+    {
+        null => ("Msg_Error", "Msg_Assistant_FeedbackFailed", Wpf.Ui.Controls.ControlAppearance.Danger, 3),
+        { Delivery: Shared.Models.AiFeedbackResponse.DeliveryStoredOnly } when !positive =>
+            ("Msg_Assistant_FeedbackStoredOnly_Title", "Msg_Assistant_FeedbackStoredOnly",
+                Wpf.Ui.Controls.ControlAppearance.Caution, 8),
+        _ => ("Msg_Assistant_FeedbackSent_Title", "Msg_Assistant_FeedbackSent", Wpf.Ui.Controls.ControlAppearance.Success, 3),
+    };
 
     private async Task ExecuteAddPiiKeyword(PiiKeywordRequest? request)
     {
@@ -1880,6 +1923,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         // First, so nothing that throws below can decide whether this action row button appears.
         RefreshAssignmentSurfaceAsync().SafeFireAndForget(_logger);
+        _kbManagerSurfaceCache?.RefreshAsync().SafeFireAndForget(_logger);
 
         if (parameter is Guid chatId && chatId != Guid.Empty)
         {
@@ -2005,13 +2049,33 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (IsStreaming) return;
 
         var result = await DroppedFileAttachmentImporter.TryStageAsync(
-            paths, PendingFiles, _logger, _snackbarService, _localizationService);
+            paths, PendingFiles, AvailableAttachmentTokensAsync,
+            _logger, _snackbarService, _localizationService);
 
         foreach (var file in result.Staged)
             PendingFiles.Add(file);
 
         if (result.ImagePaths.Count > 0)
             await AttachImagesAsync(result.ImagePaths);
+    }
+
+    // What the chat budget leaves after the attachments this live chat already re-sends every turn.
+    private async Task<int> AvailableAttachmentTokensAsync()
+    {
+        AiProvider? provider = null;
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            var persona = await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+            provider = await AssistantTurnProvider.ResolveAsync(persona, _providerService);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve the Assistant provider for the attachment budget; using the default window");
+        }
+
+        return AttachmentBudget.ForChat(provider) - Messages.Sum(m => TokenEstimator.Estimate(m.AttachedFileContext));
     }
 
     /// <summary>Copies a staged file into the chat's working directory so it survives the send and stays
@@ -2229,8 +2293,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
             if (!result.IsSuccess)
             {
-                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Process} {Reason}",
-                    result.Target.Kind, result.Target.ProcessName, result.Reason);
+                _logger.LogWarning("Screen capture from the picker refused: {Kind} {Reason}",
+                    result.Target.Kind, result.Reason);
+                _logger.SensitiveDebug("Refused picker capture process: {Process}", result.Target.ProcessName);
                 _snackbarService.Show(
                     _localizationService["Msg_Warning"],
                     _localizationService[ScreenCaptureFailureText.KeyFor(result.Reason)!],
@@ -2303,9 +2368,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _screenCaptureAudit?.Record(evt);
         _screenCaptureIndicator?.NotifyCapture(evt);
-        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Process} {Width}x{Height}",
-            kind, target.ProcessName, attachment.Width, attachment.Height);
-        _logger.SensitiveDebug("Picker capture window title: {Title}", target.Title);
+        _logger.LogInformation("Screen capture attached from the picker: {Kind} {Width}x{Height}",
+            kind, attachment.Width, attachment.Height);
+        _logger.SensitiveDebug("Picker capture window: {Process} '{Title}'", target.ProcessName, target.Title);
     }
 
     private void ExecuteToggleTts()

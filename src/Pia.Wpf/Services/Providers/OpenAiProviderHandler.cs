@@ -37,7 +37,7 @@ public sealed class OpenAiProviderHandler : IAiProviderHandler
         // Outermost handler retries without reasoning.summary if the org/model 400s on it,
         // so requesting a reasoning summary can never regress a working OpenAI provider.
         HttpMessageHandler tail = new HttpClientHandler();
-        if (provider.EnableWebSearch)
+        if (provider.UsesWebSearch)
             tail = new OpenAiWebSearchHandler { InnerHandler = tail };
         var http = new HttpClient(
             new OpenAiReasoningSummaryFallbackHandler(_logger) { InnerHandler = tail },

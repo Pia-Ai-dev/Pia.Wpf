@@ -3,12 +3,8 @@ using Pia.Shared.Models;
 namespace Pia.Services.Plugins;
 
 /// <summary>
-/// Hardcoded defaults for built-in plugins. Used on first launch or offline when no server data is cached. The
-/// GUIDs are well-known and stable, but they do NOT all match server seed data: only memory/todo/reminder
-/// (...001-...003) are seeded server-side. scheduled-research (...004), files (...006), ingest (...007), git
-/// (...008), chat-history (...009), assignments (...00A), screen (...00B) and help (...00C) are client-only built-ins with no server plugin
-/// row — the server's sync push tolerates a preference referencing such an unknown plugin id by skipping it, so toggling a client-only
-/// built-in cannot wedge preference sync (SyncService.PushAsync in the Pia server repo).
+/// Built-in plugin defaults for first launch and offline. Only memory, todo and reminder exist server-side; the
+/// server skips preferences for the other ids, so toggling them cannot wedge preference sync.
 /// </summary>
 public static class BuiltInPluginDefaults
 {
@@ -27,11 +23,12 @@ public static class BuiltInPluginDefaults
     public static readonly Guid AssignmentsPluginId = new("10000000-0000-0000-0000-00000000000A");
     public static readonly Guid ScreenPluginId = new("10000000-0000-0000-0000-00000000000B");
     public static readonly Guid HelpPluginId = new("10000000-0000-0000-0000-00000000000C");
+    public static readonly Guid KbManagerPluginId = new("10000000-0000-0000-0000-00000000000D");
 
     public static readonly HashSet<Guid> PreloadedPluginIds = [
         MemoryPluginId, TodoPluginId, ReminderPluginId,
         ScheduledResearchPluginId, ResearchHistoryPluginId, FilesPluginId, IngestPluginId, GitPluginId,
-        ChatHistoryPluginId, AssignmentsPluginId, ScreenPluginId, HelpPluginId];
+        ChatHistoryPluginId, AssignmentsPluginId, ScreenPluginId, HelpPluginId, KbManagerPluginId];
 
     public static readonly IReadOnlyDictionary<Guid, SyncPlugin> Defaults = new Dictionary<Guid, SyncPlugin>
     {
@@ -92,7 +89,7 @@ public static class BuiltInPluginDefaults
             IsPreloaded = true,
             IsActive = true,
             Version = "1.0.0",
-            ConfigJson = """{"handlerId":"files","defaultEnabled":true,"systemPromptAddition":"You have access to a sandboxed local folder configured by the user under Settings > Assistant. Tools: list_files, find_files, read_file, search_files, write_file, edit_file, delete_file. read_file returns line-numbered content as LINE|CONTENT and accepts optional offset/limit arguments to window large files (read a slice, then request the next slice if needed). The 'N|' prefix and the 'total_lines=' header are display only, not part of the file — strip them before passing text to write_file. find_files locates files by a name or path glob such as '*.md' or 'docs/**/*.md', while search_files scans file CONTENT for a text or regex pattern and returns matching files and lines — reach for find_files when you know what the file is called and search_files when you know what is written in it. search_files reads .docx/.xlsx/.msg/.eml as extracted text just like read_file does, so a Word document or a saved mail is searchable by its content; a file it cannot read at all is named in a 'Note:' line, so say so rather than concluding the content is absent. Narrow a search to a subset of files with the search_files 'include' glob. To change part of an existing file use edit_file(path, old_string, new_string): it replaces one exact piece of text and leaves everything else untouched. Prefer it over write_file for every edit to an existing file, including .docx/.xlsx — write_file needs the entire file back, and re-typing a long document is how unrelated parts get corrupted. Reserve write_file for creating a file or genuinely replacing all of it. write_file and edit_file show the user a diff preview and require their approval before the change is applied. Paths may be RELATIVE to that folder or absolute, but must stay inside the configured folder — the host rejects '..' traversal that escapes the folder and any absolute path that points outside it. If a tool returns an error about the folder not being configured, tell the user to set it in Settings > Assistant. When the user asks to summarize a file, call read_file first and then summarize the returned content in your reply. This folder is NOT the user's memory vault: nothing you write with write_file is in the vault, and in an unattended run the vault is not part of this folder at all. To put a document in the vault, call the memory tool create_source('sources/<name>', content) for a new source, or update_source(reference, content) to correct an existing one."}""",
+            ConfigJson = """{"handlerId":"files","defaultEnabled":true,"systemPromptAddition":"You have access to a sandboxed local folder configured by the user under Settings > Assistant. Tools: list_files, find_files, read_file, search_files, write_file, edit_file, delete_file. read_file returns line-numbered content as LINE|CONTENT and accepts optional offset/limit arguments to window large files (read a slice, then request the next slice if needed). The 'N|' prefix and the 'total_lines=' header are display only, not part of the file — strip them before passing text to write_file. find_files locates files by a name or path glob such as '*.md' or 'docs/**/*.md', while search_files scans file CONTENT for a text or regex pattern and returns matching files and lines — reach for find_files when you know what the file is called and search_files when you know what is written in it. search_files reads .docx/.xlsx/.xlsm/.pdf/.msg/.eml as extracted text just like read_file does, so a Word document, a PDF or a saved mail is searchable by its content; a file it cannot read at all is named in a 'Note:' line, so say so rather than concluding the content is absent. Narrow a search to a subset of files with the search_files 'include' glob. To change part of an existing file use edit_file(path, old_string, new_string): it replaces one exact piece of text and leaves everything else untouched. Prefer it over write_file for every edit to an existing file, including .docx/.xlsx — write_file needs the entire file back, and re-typing a long document is how unrelated parts get corrupted. Reserve write_file for creating a file or genuinely replacing all of it. write_file and edit_file show the user a diff preview and require their approval before the change is applied. Paths may be RELATIVE to that folder or absolute, but must stay inside the configured folder — the host rejects '..' traversal that escapes the folder and any absolute path that points outside it. If a tool returns an error about the folder not being configured, tell the user to set it in Settings > Assistant. When the user asks to summarize a file, call read_file first and then summarize the returned content in your reply. This folder is NOT the user's memory vault: nothing you write with write_file is in the vault, and in an unattended run the vault is not part of this folder at all. To put a document in the vault, call the memory tool create_source('sources/<name>', content) for a new source, or update_source(reference, content) to correct an existing one."}""",
             UpdatedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc)
         },
         [IngestPluginId] = new SyncPlugin
@@ -166,6 +163,18 @@ public static class BuiltInPluginDefaults
             Version = "1.0.0",
             ConfigJson = """{"handlerId":"help","defaultEnabled":true,"systemPromptAddition":"You run inside Pia, a Windows desktop app. For any question about Pia itself - a feature, a setting, a screen, or what you can and cannot do - call pia_help instead of guessing or searching the web. When the answer depends on this install's configuration, also call pia_settings, and quote the settings path it returns verbatim: it is already in the user's language."}""",
             UpdatedAt = new DateTime(2026, 9, 20, 0, 0, 0, DateTimeKind.Utc)
+        },
+        [KbManagerPluginId] = new SyncPlugin
+        {
+            Id = KbManagerPluginId,
+            Kind = "builtin_tool_pack",
+            Name = "kb-manager",
+            Description = "Keep your group's knowledge bases on the Pia server current: read, upload, replace and remove documents and adjust when the assistant searches them. Only for knowledge-base managers.",
+            IsPreloaded = true,
+            IsActive = true,
+            Version = "1.0.0",
+            ConfigJson = """{"handlerId":"kb-manager","defaultEnabled":false,"systemPromptAddition":"You can maintain the knowledge bases the user manages for their group on the Pia server. Act only when the user asks you to manage a knowledge base; never change one on your own initiative. Reads answer at once: list_knowledge_bases, get_knowledge_base_stats, list_kb_documents, get_kb_prompt, read_kb_document (inline text up to 32 KB) and download_kb_document (saves the whole document as a new file in the assistant files folder and never overwrites one). Writes ask the user to confirm: upload_kb_document(kb_id, path) adds a .txt or .md file from the assistant files folder, update_kb_document(kb_id, document_id, path or content) replaces a document's text, set_kb_prompt(kb_id, prompt) changes the description that tells the assistant when to search that knowledge base, and delete_kb_document removes a document. Before any write, name the knowledge base and the document in your reply. Knowledge-base content is not end-to-end encrypted: everyone whose group uses that knowledge base can find it in their answers, and a shared knowledge base is used by other groups as well."}""",
+            UpdatedAt = new DateTime(2026, 9, 30, 0, 0, 0, DateTimeKind.Utc)
         },
     };
 }

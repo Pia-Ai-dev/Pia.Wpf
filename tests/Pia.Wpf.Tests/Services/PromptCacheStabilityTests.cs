@@ -91,8 +91,7 @@ public class PromptCacheStabilityTests
         Assert.Contains("The current local time is ", stamped, StringComparison.Ordinal);
     }
 
-    // The note lands in a ChatRole.User message, which TokenizingAiClientService runs through the PII
-    // detector — a yyyy-MM-dd in it would reach the model as [Phone_1].
+    // The note lands in a User message, which TokenizingAiClientService runs through the PII detector.
     [Fact]
     public void TimeNote_SurvivesThePiiDetector()
     {

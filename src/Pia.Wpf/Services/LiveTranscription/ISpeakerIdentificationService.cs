@@ -55,6 +55,10 @@ public interface ISpeakerIdentificationService : IDisposable
     /// </summary>
     void SetExpectedSpeakers(int count) { }
 
+    /// <summary>Numbers new voices after <paramref name="lastNumber"/>, so a transcript that outlives its diarizer
+    /// never gives a second person a label the first one still carries.</summary>
+    void ContinueNumberingAfter(int lastNumber) { }
+
     /// <summary>
     /// Raised the first time a new speaker label is registered (Zone C). Fires on the calling
     /// thread, outside the diarization lock. The consent flow subscribes here so it can prompt
@@ -72,7 +76,8 @@ public interface ISpeakerIdentificationService : IDisposable
 }
 
 /// <summary>Identify-or-register result carrying the journal id for the segment's embedding.</summary>
-public readonly record struct SpeakerSegmentResult(long SegmentId, string? Label);
+/// <param name="BelowMatchThreshold">The label is only the nearest one: the segment matched it below the threshold.</param>
+public readonly record struct SpeakerSegmentResult(long SegmentId, string? Label, bool BelowMatchThreshold = false);
 
 /// <summary>One retroactive label correction produced by an adaptive re-cluster pass.</summary>
 public readonly record struct SpeakerReassignment(long SegmentId, string? NewLabel);

@@ -31,9 +31,13 @@ public class SqliteContext : IDisposable
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        _connectionString = $"Data Source={dbPath}";
+        // Before any connection exists: a keyed open of a still-plaintext file would fail every read.
+        _connectionString = HistoryDatabaseEncryption.Prepare(dbPath, logger);
         _logger = logger;
     }
+
+    /// <summary>Every handle on this file runs these first; both pragmas are per-connection.</summary>
+    public const string ConnectionPragmas = "PRAGMA busy_timeout=3000; PRAGMA secure_delete=ON;";
 
     /// <summary>
     /// The connection string for the shared history database. Exposed so components that must write
@@ -167,27 +171,11 @@ public class SqliteContext : IDisposable
         }
     }
 
-    /// <summary>
-    /// Set on the shared connection's FIRST open, before anything touches the FILE.
-    /// <para>
-    /// <c>busy_timeout</c> is PER-CONNECTION and must therefore be set on every handle separately (the
-    /// dedicated stores each set their own). Without it here, moving the chat store onto its own connection
-    /// would merely convert a swallowed intra-connection <see cref="InvalidOperationException"/> into an
-    /// instant SQLITE_BUSY for the ten other services still sharing this connection (TodoService,
-    /// MemoryService, ReminderService, ScheduledJobService, KanbanColumnService, PersonaService,
-    /// PluginService, HistoryService, VaultIndexer, LintService) — none of which handles it.
-    /// </para>
-    /// <para>
-    /// T2-13b: split out of the WAL pragma and hoisted ABOVE the integrity check on purpose. This one sets a
-    /// connection-level timeout and reads nothing off the disk, so it cannot fail on a damaged file — which
-    /// makes it the only statement that may safely precede the check, and it is worth preceding it: without a
-    /// busy timeout the check would fail instantly against any other process holding the write lock.
-    /// </para>
-    /// </summary>
+    /// <summary>Reads nothing off the disk, so it may precede the integrity check, which would otherwise fail on any lock.</summary>
     private static void ApplyBusyTimeout(SqliteConnection connection)
     {
         using var busy = connection.CreateCommand();
-        busy.CommandText = "PRAGMA busy_timeout=3000;";
+        busy.CommandText = ConnectionPragmas;
         busy.ExecuteNonQuery();
     }
 
@@ -642,9 +630,38 @@ public class SqliteContext : IDisposable
         command.ExecuteNonQuery();
 
         MigrateSchema();
+        KeepPreviouslyStartedPluginsOn();
         EnsureMemoriesFts();
         EnsureChunksFts();
         EnsureAssistantChatsFts();
+    }
+
+    internal const string DefaultKanbanColumnId = "00000000-0000-0000-0000-000000000001";
+    internal const string DefaultKanbanColumnName = "To Do";
+    internal const int DefaultKanbanColumnSortOrder = 0;
+    internal const string ClosedKanbanColumnId = "00000000-0000-0000-0000-000000000002";
+    internal const string ClosedKanbanColumnName = "Closed";
+    internal const int ClosedKanbanColumnSortOrder = int.MaxValue;
+
+    internal static void SeedDefaultKanbanColumns(SqliteConnection connection, SqliteTransaction? transaction, DateTime stampUtc)
+    {
+        using var seed = connection.CreateCommand();
+        seed.Transaction = transaction;
+        seed.CommandText = """
+            INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
+            VALUES (@DefaultId, @DefaultName, @DefaultSort, 1, 0, @Stamp, @Stamp);
+
+            INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
+            VALUES (@ClosedId, @ClosedName, @ClosedSort, 0, 1, @Stamp, @Stamp);
+            """;
+        seed.Parameters.AddWithValue("@DefaultId", DefaultKanbanColumnId);
+        seed.Parameters.AddWithValue("@DefaultName", DefaultKanbanColumnName);
+        seed.Parameters.AddWithValue("@DefaultSort", DefaultKanbanColumnSortOrder);
+        seed.Parameters.AddWithValue("@ClosedId", ClosedKanbanColumnId);
+        seed.Parameters.AddWithValue("@ClosedName", ClosedKanbanColumnName);
+        seed.Parameters.AddWithValue("@ClosedSort", ClosedKanbanColumnSortOrder);
+        seed.Parameters.AddWithValue("@Stamp", stampUtc.ToString("O"));
+        seed.ExecuteNonQuery();
     }
 
     private void MigrateSchema()
@@ -706,25 +723,10 @@ public class SqliteContext : IDisposable
             backfill.ExecuteNonQuery();
         }
 
-        // Seed default KanbanColumns if table is empty
         using var countCmd = _connection!.CreateCommand();
         countCmd.CommandText = "SELECT COUNT(*) FROM KanbanColumns";
-        var columnCount = Convert.ToInt64(countCmd.ExecuteScalar());
-
-        if (columnCount == 0)
-        {
-            var now = DateTime.UtcNow.ToString("O");
-
-            using var seedCmd = _connection.CreateCommand();
-            seedCmd.CommandText = $"""
-                INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
-                VALUES ('00000000-0000-0000-0000-000000000001', 'To Do', 0, 1, 0, '{now}', '{now}');
-
-                INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
-                VALUES ('00000000-0000-0000-0000-000000000002', 'Closed', 2147483647, 0, 1, '{now}', '{now}');
-                """;
-            seedCmd.ExecuteNonQuery();
-        }
+        if (Convert.ToInt64(countCmd.ExecuteScalar()) == 0)
+            SeedDefaultKanbanColumns(_connection, null, DateTime.UtcNow);
 
         // Add ColumnId column to Todos if it doesn't exist
         using var columnIdPragma = _connection!.CreateCommand();
@@ -1229,6 +1231,24 @@ public class SqliteContext : IDisposable
             addCol.CommandText = "ALTER TABLE AgentRuns ADD COLUMN EffortPinRecorded INTEGER NOT NULL DEFAULT 0";
             addCol.ExecuteNonQuery();
         }
+    }
+
+    // A distributed MCP server without the admin's default now waits for the user; one that already ran
+    // here before that rule keeps running. user_version makes this a one-off, so a later arrival still waits.
+    private void KeepPreviouslyStartedPluginsOn()
+    {
+        using var read = _connection!.CreateCommand();
+        read.CommandText = "PRAGMA user_version";
+        if (Convert.ToInt64(read.ExecuteScalar()) >= 1) return;
+
+        using var update = _connection.CreateCommand();
+        update.CommandText = """
+            UPDATE Plugins SET UserEnabled = 1
+            WHERE UserEnabled IS NULL AND IsPreloaded = 0 AND Kind = 'mcp_server'
+              AND (CASE WHEN json_valid(ConfigJson) THEN json_extract(ConfigJson, '$.defaultEnabled') END) IS NULL;
+            PRAGMA user_version = 1;
+            """;
+        update.ExecuteNonQuery();
     }
 
     private void EnsureMemoriesFts()

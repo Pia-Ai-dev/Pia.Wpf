@@ -1,0 +1,637 @@
+using System.ComponentModel;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Pia.Services.Interfaces;
+using Pia.Shared.Knowledge;
+
+namespace Pia.Services.KnowledgeManager;
+
+/// <summary>Reads answer inline; every write is a pending action the user confirms, because it changes what the whole group finds.</summary>
+public class KnowledgeManagerToolHandler : IKnowledgeManagerToolHandler
+{
+    private const string NotConnected =
+        "You are not signed in to a Pia server, so the knowledge bases cannot be reached.";
+
+    private const string ServerUnavailable =
+        "Your Pia server could not answer, so nothing was read or changed — try again.";
+
+    private const string NoLongerManager =
+        "The server no longer lets you manage knowledge bases, so nothing was read or changed.";
+
+    private const string FeatureNotLicensedCode = "feature_not_licensed";
+
+    private const string NotLicensed =
+        "Your Pia server's license no longer includes knowledge bases, so nothing was read or changed.";
+
+    private const string KnowledgeSwitchedOff =
+        "Knowledge bases are switched off on your Pia server, so nothing was read or changed. "
+        + "Only a server administrator can switch them on.";
+
+    private const string UnknownKb =
+        "That knowledge base is not one you can manage. Call list_knowledge_bases for the ids.";
+
+    private const string UnknownDocument =
+        "That document is not in this knowledge base. Call list_kb_documents for the ids.";
+
+    private const string NoFilesFolder =
+        "No assistant files folder is configured. Ask the user to set one under Settings → Assistant.";
+
+    private const string FileToolsOff =
+        "File access is switched off for the assistant, so no file was read or written. "
+        + "The user can switch it on under Settings → Assistant.";
+
+    private const string NoKnowledgeBases = "Your group has no knowledge bases you can manage.";
+    private const string BadKbId = "kb_id must be an id from list_knowledge_bases.";
+    private const string BadDocumentId = "document_id must be an id from list_kb_documents.";
+
+    private const string SharedNote =
+        "A shared knowledge base is also used by other groups: say so before changing it.";
+
+    private const string TruncatedNote =
+        "The document is longer than 32 KB, so only its start is shown. Call download_kb_document to save the " +
+        "whole text into the files folder, then read it with read_file.";
+
+    private const string DownloadNote = "Saved as a new file; an existing file is never overwritten. Read it with read_file.";
+    private const string PromptNote = "This text tells the assistant when to search this knowledge base.";
+
+    private const string ExactlyOneSource =
+        "Pass exactly one of path (a .txt or .md file in the files folder) or content (inline text up to 32 KB).";
+
+    private const string InlineTooLong =
+        "Inline content is limited to 32 KB. Save the text to a file in the files folder and pass its path instead.";
+
+    private const string EmptyContent = "content is empty, so nothing was proposed.";
+    private const string PathRequired = "path is required: a .txt or .md file inside the assistant files folder.";
+    private const string PromptRequired = "prompt is required; pass an empty string to clear it.";
+    private const string Unchanged = "The new content is identical to the stored document, so nothing changed.";
+    private const string Deleted = "The document was removed from the knowledge base.";
+    private const string PromptSaved = "The description prompt was saved; the next chat turn uses it.";
+    private const string UploadQueued = "Queued for indexing. It becomes searchable once its status is Ready — check with list_kb_documents.";
+    private const string UploadReused =
+        "The knowledge base already held a document with identical content, so no new document was created and "
+        + "the title was not applied. Its current status is in this result; list_kb_documents shows the document.";
+
+    private const string UpdateQueued = "Replaced. The previous version stays searchable until the new one is indexed.";
+
+    private const int PreviewChars = 200;
+
+    private readonly IKnowledgeManagerApiClient _api;
+    private readonly IKnowledgeManagerSurfaceCache _surface;
+    private readonly IFilesToolHandler _files;
+    private readonly ILocalizationService _localization;
+    private readonly ILogger<KnowledgeManagerToolHandler> _logger;
+
+    public KnowledgeManagerToolHandler(
+        IKnowledgeManagerApiClient api,
+        IKnowledgeManagerSurfaceCache surface,
+        IFilesToolHandler files,
+        ILocalizationService localization,
+        ILogger<KnowledgeManagerToolHandler> logger)
+    {
+        _api = api;
+        _surface = surface;
+        _files = files;
+        _localization = localization;
+        _logger = logger;
+    }
+
+    public bool IsAvailable => _surface.IsAvailable;
+
+    public IList<AITool> GetTools()
+    {
+        if (!IsAvailable) return [];
+
+        return
+        [
+            AIFunctionFactory.Create(ListKnowledgeBasesSchema, "list_knowledge_bases"),
+            AIFunctionFactory.Create(GetKnowledgeBaseStatsSchema, "get_knowledge_base_stats"),
+            AIFunctionFactory.Create(ListKbDocumentsSchema, "list_kb_documents"),
+            AIFunctionFactory.Create(GetKbPromptSchema, "get_kb_prompt"),
+            AIFunctionFactory.Create(ReadKbDocumentSchema, "read_kb_document"),
+            AIFunctionFactory.Create(DownloadKbDocumentSchema, "download_kb_document"),
+            AIFunctionFactory.Create(UploadKbDocumentSchema, "upload_kb_document"),
+            AIFunctionFactory.Create(UpdateKbDocumentSchema, "update_kb_document"),
+            AIFunctionFactory.Create(SetKbPromptSchema, "set_kb_prompt"),
+            AIFunctionFactory.Create(DeleteKbDocumentSchema, "delete_kb_document"),
+        ];
+    }
+
+    public async Task<(object? Result, KbManagerToolCall? PendingAction)> HandleToolCallAsync(
+        FunctionCallContent toolCall,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("KnowledgeManagerToolHandler dispatching: {ToolName}", toolCall.Name);
+        var args = toolCall.Arguments ?? new Dictionary<string, object?>();
+
+        return toolCall.Name switch
+        {
+            "list_knowledge_bases" => (await ListKnowledgeBasesAsync(cancellationToken), null),
+            "get_knowledge_base_stats" => (await GetStatsAsync(args, cancellationToken), null),
+            "list_kb_documents" => (await ListDocumentsAsync(args, cancellationToken), null),
+            "get_kb_prompt" => (await GetPromptAsync(args, cancellationToken), null),
+            "read_kb_document" => (await ReadDocumentAsync(args, cancellationToken), null),
+            "download_kb_document" => (await DownloadDocumentAsync(args, cancellationToken), null),
+            "upload_kb_document" => await PrepareUploadAsync(args, cancellationToken),
+            "update_kb_document" => await PrepareUpdateAsync(args, cancellationToken),
+            "set_kb_prompt" => await PrepareSetPromptAsync(args, cancellationToken),
+            "delete_kb_document" => await PrepareDeleteAsync(args, cancellationToken),
+            _ => ((object?)$"Unknown tool: {toolCall.Name}", (KbManagerToolCall?)null),
+        };
+    }
+
+    private async Task<object> ListKnowledgeBasesAsync(CancellationToken ct)
+    {
+        var result = await _api.ListKnowledgeBasesAsync(ct);
+        if (!result.IsOk) return Refusal(result);
+        if (result.Value!.Count == 0) return NoKnowledgeBases;
+
+        return new
+        {
+            knowledge_bases = result.Value.Select(kb => new
+            {
+                kb_id = kb.Id,
+                name = kb.Name,
+                document_count = kb.DocumentCount,
+                shared = kb.Shared,
+                has_prompt = kb.HasPrompt,
+            }).ToList(),
+            note = SharedNote,
+        };
+    }
+
+    private async Task<object> GetStatsAsync(IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return BadKbId;
+
+        var result = await _api.GetStatsAsync(kbId, ct);
+        if (!result.IsOk) return Refusal(result);
+
+        var s = result.Value!;
+        return new
+        {
+            kb_id = kbId,
+            documents = s.DocumentCount,
+            pending = s.PendingCount,
+            processing = s.ProcessingCount,
+            ready = s.ReadyCount,
+            failed = s.FailedCount,
+            size_bytes = s.SizeBytes,
+            byte_limit = s.ByteLimit,
+            document_limit = s.DocumentLimit,
+            chunks = s.ChunkCount,
+            indexed_tokens = s.IndexedTokens,
+            retrievals = s.RetrievalCount,
+            last_retrieved_at = Stamp(s.LastRetrievedAt),
+            embedding_tokens_this_month = s.EmbeddingTokensThisMonth,
+        };
+    }
+
+    private async Task<object> ListDocumentsAsync(IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return BadKbId;
+
+        var result = await _api.ListDocumentsAsync(kbId, ct);
+        if (!result.IsOk) return Refusal(result);
+        if (result.Value!.Count == 0) return "This knowledge base has no documents.";
+
+        return new
+        {
+            documents = result.Value.Select(d => new
+            {
+                document_id = d.Id,
+                title = d.Title,
+                status = d.Status,
+                content_type = d.ContentType,
+                size_bytes = d.SizeBytes,
+                error = d.Error,
+                chunks = d.ChunkCount,
+                retrievals = d.RetrievalCount,
+                last_retrieved_at = Stamp(d.LastRetrievedAt),
+                updated_at = Stamp(d.UpdatedAt),
+            }).ToList(),
+        };
+    }
+
+    private async Task<object> GetPromptAsync(IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return BadKbId;
+
+        var result = await _api.GetPromptAsync(kbId, ct);
+        if (!result.IsOk) return Refusal(result);
+
+        return new { kb_id = kbId, prompt = result.Value!.Prompt ?? string.Empty, note = PromptNote };
+    }
+
+    private async Task<object> ReadDocumentAsync(IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return BadKbId;
+        if (!TryGetGuid(args, "document_id", out var documentId)) return BadDocumentId;
+
+        var result = await _api.GetContentAsync(kbId, documentId, ct);
+        if (result.Status == KbManagerCallStatus.NotFound) return await NotFoundSentenceAsync(kbId, ct);
+        if (!result.IsOk) return Refusal(result, documentScoped: true);
+
+        var (text, truncated) = TruncateUtf8(result.Value!.Content, KbManagerLimits.MaxInlineContentBytes);
+        return new
+        {
+            kb_id = kbId,
+            document_id = documentId,
+            content_type = result.Value.ContentType,
+            truncated,
+            content = text,
+            note = truncated ? TruncatedNote : null,
+        };
+    }
+
+    private async Task<object> DownloadDocumentAsync(IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return BadKbId;
+        if (!TryGetGuid(args, "document_id", out var documentId)) return BadDocumentId;
+
+        if (!TryGetFilesRoot(out var root, out var filesRefusal)) return filesRefusal;
+
+        var document = await FindDocumentAsync(kbId, documentId, ct);
+        if (document.Refusal is { } refusal) return refusal;
+
+        var content = await _api.GetContentAsync(kbId, documentId, ct);
+        if (!content.IsOk) return Refusal(content, documentScoped: true);
+
+        if (!KbManagerLocalFiles.TrySaveNew(
+                root, GetString(args, "path"), document.Value!.Title, content.Value!.ContentType,
+                content.Value.Content, out var saved, out var error))
+            return error;
+
+        return new { path = saved, size_bytes = Encoding.UTF8.GetByteCount(content.Value.Content), note = DownloadNote };
+    }
+
+    private async Task<(object?, KbManagerToolCall?)> PrepareUploadAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
+
+        var path = GetString(args, "path");
+        if (string.IsNullOrWhiteSpace(path)) return (PathRequired, null);
+
+        if (!TryGetFilesRoot(out var root, out var filesRefusal)) return (filesRefusal, null);
+        if (!KbManagerLocalFiles.TryRead(root, path, out var file, out var readError))
+            return (readError, null);
+
+        var title = GetString(args, "title")?.Trim();
+        if (string.IsNullOrEmpty(title)) title = System.IO.Path.GetFileNameWithoutExtension(file.FullPath);
+        if (title.Length > KbManagerLimits.MaxTitleChars)
+            return ($"title may be at most {KbManagerLimits.MaxTitleChars} characters.", null);
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } refusal) return (refusal, null);
+
+        var request = new KbManagerUploadRequest(title, SourceUri: null, file.ContentType, file.Content);
+        return (null, new KbManagerToolCall(
+            "upload_kb_document",
+            _localization.Format("Msg_KbManager_Summary_Upload", title, kb.Value!.Name),
+            Details(kb.Value.Name, title, file.SizeBytes, file.RelativePath),
+            Warning(kb.Value, carriesContent: true),
+            async () =>
+            {
+                var result = await _api.UploadAsync(kbId, request, CancellationToken.None);
+                if (!result.IsOk) return Refusal(result);
+                var created = result.Value!.Status is { } status
+                    && (status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+                        || status.Equals("Processing", StringComparison.OrdinalIgnoreCase));
+                return new { document_id = result.Value.DocumentId, status = result.Value.Status, note = created ? UploadQueued : UploadReused };
+            }));
+    }
+
+    private async Task<(object?, KbManagerToolCall?)> PrepareUpdateAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
+        if (!TryGetGuid(args, "document_id", out var documentId)) return (BadDocumentId, null);
+
+        var path = GetString(args, "path");
+        var content = GetString(args, "content");
+        if ((path is null) == (content is null)) return (ExactlyOneSource, null);
+
+        string text;
+        string? contentType = null;
+        string? localFile = null;
+        long size;
+        if (path is not null)
+        {
+            if (!TryGetFilesRoot(out var root, out var filesRefusal)) return (filesRefusal, null);
+            if (!KbManagerLocalFiles.TryRead(root, path, out var file, out var readError)) return (readError, null);
+
+            text = file.Content;
+            contentType = file.ContentType;
+            localFile = file.RelativePath;
+            size = file.SizeBytes;
+        }
+        else
+        {
+            size = Encoding.UTF8.GetByteCount(content!);
+            if (size > KbManagerLimits.MaxInlineContentBytes) return (InlineTooLong, null);
+            if (string.IsNullOrWhiteSpace(content)) return (EmptyContent, null);
+            text = content!;
+        }
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } kbRefusal) return (kbRefusal, null);
+        var document = await FindDocumentAsync(kbId, documentId, ct);
+        if (document.Refusal is { } documentRefusal) return (documentRefusal, null);
+
+        var request = new KbManagerUpdateContentRequest(text, contentType, Title: null);
+        return (null, new KbManagerToolCall(
+            "update_kb_document",
+            _localization.Format("Msg_KbManager_Summary_Update", document.Value!.Title, kb.Value!.Name),
+            Details(kb.Value.Name, document.Value.Title, size, localFile),
+            Warning(kb.Value, carriesContent: true),
+            async () =>
+            {
+                var result = await _api.UpdateContentAsync(kbId, documentId, request, CancellationToken.None);
+                if (!result.IsOk) return Refusal(result, documentScoped: true);
+                if (result.Status == KbManagerCallStatus.Unchanged) return Unchanged;
+                return new { document_id = documentId, status = result.Value!.Status, note = UpdateQueued };
+            }));
+    }
+
+    private async Task<(object?, KbManagerToolCall?)> PrepareSetPromptAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
+
+        var prompt = GetString(args, "prompt");
+        if (prompt is null) return (PromptRequired, null);
+        if (prompt.Length > KbManagerLimits.MaxPromptChars)
+            return ($"The prompt may be at most {KbManagerLimits.MaxPromptChars.ToString("N0", CultureInfo.InvariantCulture)} characters.", null);
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } refusal) return (refusal, null);
+
+        var clearing = prompt.Length == 0;
+        var shown = clearing ? _localization["Msg_KbManager_Detail_PromptRemoved"] : OneLine(Preview(prompt));
+        var details = $"{_localization["Msg_KbManager_Detail_KnowledgeBase"]}: {OneLine(kb.Value!.Name)}\n"
+            + $"{_localization["Msg_KbManager_Detail_Prompt"]}: {shown}";
+        return (null, new KbManagerToolCall(
+            "set_kb_prompt",
+            _localization.Format(clearing ? "Msg_KbManager_Summary_PromptClear" : "Msg_KbManager_Summary_Prompt", kb.Value.Name),
+            details,
+            Warning(kb.Value, carriesContent: false),
+            async () =>
+            {
+                var result = await _api.SetPromptAsync(kbId, prompt, CancellationToken.None);
+                return result.IsOk ? PromptSaved : Refusal(result);
+            }));
+    }
+
+    private async Task<(object?, KbManagerToolCall?)> PrepareDeleteAsync(
+        IDictionary<string, object?> args, CancellationToken ct)
+    {
+        if (!TryGetGuid(args, "kb_id", out var kbId)) return (BadKbId, null);
+        if (!TryGetGuid(args, "document_id", out var documentId)) return (BadDocumentId, null);
+
+        var kb = await FindKnowledgeBaseAsync(kbId, ct);
+        if (kb.Refusal is { } kbRefusal) return (kbRefusal, null);
+        var document = await FindDocumentAsync(kbId, documentId, ct);
+        if (document.Refusal is { } documentRefusal) return (documentRefusal, null);
+
+        return (null, new KbManagerToolCall(
+            "delete_kb_document",
+            _localization.Format("Msg_KbManager_Summary_Delete", document.Value!.Title, kb.Value!.Name),
+            Details(kb.Value.Name, document.Value.Title, document.Value.SizeBytes),
+            Warning(kb.Value, carriesContent: false),
+            async () =>
+            {
+                var result = await _api.DeleteAsync(kbId, documentId, CancellationToken.None);
+                return result.IsOk ? Deleted : Refusal(result, documentScoped: true);
+            }));
+    }
+
+    private bool TryGetFilesRoot(out string root, out string refusal)
+    {
+        root = string.Empty;
+        refusal = string.Empty;
+        if (!_files.IsAvailable)
+        {
+            refusal = FileToolsOff;
+            return false;
+        }
+
+        if (_files.ResolveToolRoot() is not { } resolved)
+        {
+            refusal = NoFilesFolder;
+            return false;
+        }
+
+        root = resolved;
+        return true;
+    }
+
+    private string Details(string kbName, string title, long sizeBytes, string? localFile = null) =>
+        $"{_localization["Msg_KbManager_Detail_KnowledgeBase"]}: {OneLine(kbName)}\n"
+        + $"{_localization["Msg_KbManager_Detail_Document"]}: {OneLine(title)}\n"
+        + (localFile is null ? string.Empty : $"{_localization["Msg_KbManager_Detail_File"]}: {OneLine(localFile)}\n")
+        + $"{_localization["Msg_KbManager_Detail_Size"]}: {FormatSize(sizeBytes)}";
+
+    private string? Warning(KbManagerKnowledgeBase kb, bool carriesContent)
+    {
+        var parts = new List<string>(2);
+        if (carriesContent) parts.Add(_localization["Msg_KbManager_UnencryptedWarning"]);
+        if (kb.Shared) parts.Add(_localization["Msg_KbManager_SharedWarning"]);
+        return parts.Count == 0 ? null : string.Join("\n", parts);
+    }
+
+    // The card parses one "Label: value" pair per line, so a value may not carry a line break.
+    private static string OneLine(string value) => value.Replace('\r', ' ').Replace('\n', ' ');
+
+    private static string Preview(string prompt)
+    {
+        if (prompt.Length <= PreviewChars) return prompt;
+
+        var cut = char.IsHighSurrogate(prompt[PreviewChars - 1]) ? PreviewChars - 1 : PreviewChars;
+        return prompt[..cut] + "…";
+    }
+
+    private static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => (bytes / 1024.0).ToString("0.#", CultureInfo.CurrentCulture) + " KB",
+        _ => (bytes / (1024.0 * 1024)).ToString("0.#", CultureInfo.CurrentCulture) + " MB",
+    };
+
+    private async Task<(KbManagerKnowledgeBase? Value, string? Refusal)> FindKnowledgeBaseAsync(
+        Guid kbId, CancellationToken ct)
+    {
+        var result = await _api.ListKnowledgeBasesAsync(ct);
+        if (!result.IsOk) return (null, Refusal(result));
+
+        var kb = result.Value!.FirstOrDefault(k => k.Id == kbId);
+        return kb is null ? (null, UnknownKb) : (kb, null);
+    }
+
+    // The server answers a missing KB and a missing document alike with not_found, so only the KB list can tell them apart.
+    private async Task<string> NotFoundSentenceAsync(Guid kbId, CancellationToken ct) =>
+        (await FindKnowledgeBaseAsync(kbId, ct)).Refusal ?? UnknownDocument;
+
+    private async Task<(KbManagerDocument? Value, string? Refusal)> FindDocumentAsync(
+        Guid kbId, Guid documentId, CancellationToken ct)
+    {
+        var result = await _api.ListDocumentsAsync(kbId, ct);
+        if (!result.IsOk) return (null, Refusal(result));
+
+        var document = result.Value!.FirstOrDefault(d => d.Id == documentId);
+        return document is null ? (null, UnknownDocument) : (document, null);
+    }
+
+    private string Refusal<T>(KbManagerResult<T> result, bool documentScoped = false)
+    {
+        switch (result.Status)
+        {
+            case KbManagerCallStatus.NotConnected:
+                return NotConnected;
+            case KbManagerCallStatus.Forbidden:
+                _surface.Hide();
+                return result.Error?.Code == FeatureNotLicensedCode ? NotLicensed : NoLongerManager;
+            case KbManagerCallStatus.NotFound:
+                return documentScoped ? UnknownDocument : UnknownKb;
+            case KbManagerCallStatus.TooLarge:
+                return "The server refused that content as too large (one document may hold at most 10 MB), so nothing was sent.";
+            case KbManagerCallStatus.Conflict:
+                return ConflictSentence(result.Error);
+            case KbManagerCallStatus.Invalid:
+                return EndSentence($"The server refused the request: {result.Error?.Message ?? result.Error?.Code ?? "invalid input"}");
+            default:
+                return result.Error?.Code == KbManagerErrorCodes.KnowledgeDisabled ? KnowledgeSwitchedOff : ServerUnavailable;
+        }
+    }
+
+    private static string ConflictSentence(KbManagerError? error)
+    {
+        if (error?.Code == KbManagerErrorCodes.QuotaExceeded)
+        {
+            if (error.Limit is not { } limit || error.Current is not { } current)
+            {
+                return $"Quota exceeded: {QuotaLabel(error.Resource)} limit was reached. Nothing was changed.";
+            }
+
+            return $"Quota exceeded: {QuotaLabel(error.Resource)} limit is {limit.ToString("N0", CultureInfo.InvariantCulture)}, "
+                + $"and this would make {current.ToString("N0", CultureInfo.InvariantCulture)}. Nothing was changed.";
+        }
+
+        if (error?.Code == KbManagerErrorCodes.DuplicateContent)
+        {
+            return error.DocumentId is Guid id
+                ? $"That content is already in this knowledge base as document {id}. Nothing was changed."
+                : "That content is already in this knowledge base. Nothing was changed.";
+        }
+
+        return EndSentence($"The server refused the change: {error?.Message ?? error?.Code ?? "conflict"}");
+    }
+
+    private static string EndSentence(string text) => text.EndsWith('.') ? text : text + ".";
+
+    private static string QuotaLabel(string? resource) => resource switch
+    {
+        "KnowledgeDocuments" => "the document",
+        "KnowledgeStorageBytes" => "the storage (bytes)",
+        "MonthlyEmbeddingTokens" => "this month's indexing-token",
+        _ => "a",
+    };
+
+    internal static (string Text, bool Truncated) TruncateUtf8(string text, int maxBytes)
+    {
+        if (Encoding.UTF8.GetByteCount(text) <= maxBytes) return (text, false);
+
+        var bytes = 0;
+        var i = 0;
+        while (i < text.Length)
+        {
+            var width = char.IsHighSurrogate(text[i]) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]) ? 2 : 1;
+            var size = Encoding.UTF8.GetByteCount(text.AsSpan(i, width));
+            if (bytes + size > maxBytes) break;
+            bytes += size;
+            i += width;
+        }
+
+        return (text[..i], true);
+    }
+
+    private static string? Stamp(DateTime? value) =>
+        value?.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+
+    private static bool TryGetGuid(IDictionary<string, object?> args, string key, out Guid value)
+    {
+        value = Guid.Empty;
+        return GetString(args, key) is { } text && Guid.TryParse(text.Trim(), out value);
+    }
+
+    /// <summary>Keeps an empty string: <c>set_kb_prompt</c> clears the prompt with one.</summary>
+    private static string? GetString(IDictionary<string, object?> args, string key)
+    {
+        if (!args.TryGetValue(key, out var value) || value is null) return null;
+
+        if (value is JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.Null or JsonValueKind.Undefined => null,
+                JsonValueKind.String => element.GetString(),
+                _ => element.GetRawText(),
+            };
+        }
+
+        return value.ToString();
+    }
+
+    // Schema methods: the parameter signature and [Description] attributes ARE the tool metadata for
+    // AIFunctionFactory. The bodies are never invoked — dispatch is by name in HandleToolCallAsync.
+    [Description("List the knowledge bases the user manages for their group on the Pia server, with document counts. 'shared' means other groups use it too.")]
+    private static string ListKnowledgeBasesSchema() => "";
+
+    [Description("Show one knowledge base's statistics: documents per status, storage and document limits, indexed chunks and tokens, how often it was searched, and this month's indexing tokens.")]
+    private static string GetKnowledgeBaseStatsSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id) => "";
+
+    [Description("List the documents in one knowledge base with their status, size, chunk count and how often they were retrieved.")]
+    private static string ListKbDocumentsSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id) => "";
+
+    [Description("Read the description prompt that tells the assistant when to search this knowledge base.")]
+    private static string GetKbPromptSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id) => "";
+
+    [Description("Read one document's stored text inline. Up to 32 KB is returned; a longer document is marked truncated — use download_kb_document for the whole text.")]
+    private static string ReadKbDocumentSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id,
+        [Description("document_id from list_kb_documents")] string document_id) => "";
+
+    [Description("Save one document's whole text as a new file in the assistant files folder. Never overwrites: a taken name gets ' (1)'. Returns the saved path.")]
+    private static string DownloadKbDocumentSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id,
+        [Description("document_id from list_kb_documents")] string document_id,
+        [Description("Optional folder or .txt/.md file path inside the files folder; defaults to its root with the document title as the name")] string? path = null) => "";
+
+    [Description("Add a .txt or .md file from the assistant files folder to a knowledge base as a new document. The user confirms first. The content is stored unencrypted and becomes searchable for everyone whose group uses the knowledge base.")]
+    private static string UploadKbDocumentSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id,
+        [Description("Path of a .txt, .md or .markdown file inside the files folder, at most 10 MB")] string path,
+        [Description("Optional document title; defaults to the file name")] string? title = null) => "";
+
+    [Description("Replace the text of an existing document, keeping its id and usage history. Pass exactly one of path (a file in the files folder, up to 10 MB) or content (inline text, up to 32 KB). The user confirms first.")]
+    private static string UpdateKbDocumentSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id,
+        [Description("document_id from list_kb_documents")] string document_id,
+        [Description("Path of a .txt, .md or .markdown file inside the files folder")] string? path = null,
+        [Description("Inline replacement text, up to 32 KB")] string? content = null) => "";
+
+    [Description("Change the description prompt that tells the assistant when to search this knowledge base, up to 8,000 characters; an empty string clears it. The user confirms first.")]
+    private static string SetKbPromptSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id,
+        [Description("The new description prompt")] string prompt) => "";
+
+    [Description("Remove a document from a knowledge base for everyone who searches it. The user confirms first.")]
+    private static string DeleteKbDocumentSchema(
+        [Description("kb_id from list_knowledge_bases")] string kb_id,
+        [Description("document_id from list_kb_documents")] string document_id) => "";
+}

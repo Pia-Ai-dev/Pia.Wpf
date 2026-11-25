@@ -11,7 +11,7 @@ namespace Pia.Models;
 public class Persona
 {
     /// <summary>The model type every persona falls back to when its <see cref="ModelType"/> is blank.</summary>
-    public const string DefaultModelType = "general";
+    public const string DefaultModelType = Pia.Shared.PersonaTypes.Default;
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public required string Name { get; set; }

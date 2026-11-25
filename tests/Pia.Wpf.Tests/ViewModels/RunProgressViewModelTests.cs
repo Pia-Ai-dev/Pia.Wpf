@@ -316,6 +316,10 @@ public sealed class RunProgressViewModelTests : IDisposable
     [InlineData("wall-clock", "Run_Activity_WaitingAtBudget")]
     [InlineData("something-a-later-build-invented", "Run_Activity_WaitingAtBudget")]
     [InlineData("plan-approval", "Run_Activity_PlanApproval")]
+    [InlineData("interrupted-credit", "Run_Activity_InterruptedCredit")]
+    [InlineData("interrupted-offline", "Run_Activity_InterruptedOffline")]
+    [InlineData("interrupted-timeout", "Run_Activity_InterruptedTimeout")]
+    [InlineData("interrupted-provider", "Run_Activity_InterruptedProvider")]
     public async Task AParkedRunsActivityLineNamesWhyItParked(string reason, string expectedKey)
     {
         var run = await NewPlannedRunAsync();
@@ -326,6 +330,19 @@ public sealed class RunProgressViewModelTests : IDisposable
 
         Assert.Equal(RunProgressState.WaitingForInput, vm.State);
         Assert.Equal(expectedKey, vm.CurrentActivity);
+        vm.Dispose();
+    }
+
+    [Fact]
+    public async Task AnInterruptionPark_OffersContinue()
+    {
+        var run = await NewPlannedRunAsync();
+        var vm = CreateVm(run.Id);
+
+        await _runs.PauseAsync(run.Id, "interrupted-offline", TestContext.Current.CancellationToken);
+        await vm.RefreshAsync();
+
+        Assert.True(vm.CanContinue);
         vm.Dispose();
     }
 

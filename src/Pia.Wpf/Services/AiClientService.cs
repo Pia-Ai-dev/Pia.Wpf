@@ -68,7 +68,25 @@ public class AiClientService : IAiClientService
         _throttle = throttle;
     }
 
-    /// <summary>The per-method timeoutCts owns the request bound; HttpClient's 100s default would fire first and surface as a bare cancellation.</summary>
+    // One gate ahead of every handler, so a provider the organization does not allow never sees a request.
+    private async Task<AiProvider> EnforcePolicyAsync(AiProvider provider)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!ProviderPolicy.IsAllowed(provider, settings))
+        {
+            _logger.LogWarning("Refused a request to a {ProviderType} provider the policy does not allow", provider.ProviderType);
+            throw new ProviderBlockedByPolicyException();
+        }
+
+        if (settings.AllowProviderWebSearch || provider.WebSearchBlockedByPolicy)
+            return provider;
+
+        var withoutSearch = provider.Clone();
+        withoutSearch.WebSearchBlockedByPolicy = true;
+        return withoutSearch;
+    }
+
+    /// <summary>The caller's timeoutCts owns the request bound; HttpClient's 100s default would fire first and surface as a bare cancellation.</summary>
     private HttpClient CreateAiHttpClient()
     {
         var client = _httpClientFactory.CreateClient();
@@ -159,7 +177,7 @@ public class AiClientService : IAiClientService
                     }
                 }
                 catch { }
-                throw new InvalidOperationException(friendlyMessage);
+                throw new CreditLimitException(friendlyMessage);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -209,14 +227,11 @@ public class AiClientService : IAiClientService
         var apiKey = _dpapiHelper.Decrypt(provider.EncryptedApiKey ?? string.Empty);
         var timeout = TimeSpan.FromSeconds(provider.TimeoutSeconds is > 0 ? provider.TimeoutSeconds : 300);
 
-        using var timeoutCts = new CancellationTokenSource(timeout);
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, timeoutCts.Token);
-
+        provider = await EnforcePolicyAsync(provider);
         var providerHandler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await providerHandler.CreateChatClientAsync(
-            provider, apiKey, httpClient, mode, managedPersonaId, personaModelType, linkedCts.Token);
+            provider, apiKey, httpClient, mode, managedPersonaId, personaModelType, cancellationToken);
 
         var useTools = provider.SupportsToolCalling && tools is { Count: > 0 };
         var options = providerHandler.CreateChatOptions(provider, hasTools: useTools);
@@ -241,6 +256,12 @@ public class AiClientService : IAiClientService
 
         for (var round = 0; round < maxToolRounds; round++)
         {
+            // Per ROUND, not per call: the timeout bounds one provider round-trip. A step's wall clock also
+            // carries every tool dispatch between rounds, and a step budget cancels a provider that answered.
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, timeoutCts.Token);
+
             _logger.LogDebug("Tool round {Round}/{MaxRounds} starting, path={Path}",
                 round + 1, maxToolRounds, provider.SupportsStreaming ? "streaming" : "non-streaming");
 
@@ -270,6 +291,9 @@ public class AiClientService : IAiClientService
 
             _logger.LogDebug("Round {Round}: request carries {ImageCount} image message(s)",
                 round + 1, ToolLoopImageMessages.CountImageMessages(workingMessages));
+            long? estimatedInput = _logger.IsEnabled(LogLevel.Information)
+                ? AgentContextCompactor.EstimateInputTokens(workingMessages)
+                : null;
 
             ChatResponse response;
 
@@ -403,6 +427,9 @@ public class AiClientService : IAiClientService
                 if (roundUsage.OutputTokenCount is long output) { aggregatedOutput += output; hasUsage = true; }
                 _logger.LogDebug("Round {Round} token usage: input={Input}, output={Output}, cached={Cached}",
                     round + 1, roundUsage.InputTokenCount, roundUsage.OutputTokenCount, roundUsage.CachedInputTokenCount);
+                // Server-side replay adds input the client never sees; this is how that gap gets measured.
+                _logger.LogInformation("Round {Round} input tokens: estimated={EstimatedInput}, reported={ReportedInput}",
+                    round + 1, estimatedInput, roundUsage.InputTokenCount);
             }
 
             // Detect truncation by output token cap. Surfaced to the UI as a friendly hint
@@ -441,11 +468,10 @@ public class AiClientService : IAiClientService
                 var appendedFrom = workingMessages.Count;
                 var stopRequested = await DispatchToolCallsAsync(
                     toolCalls, response, workingMessages, toolHandler, round, provider.ProviderType);
-                // Materialized, not deferred: the next iteration's compaction REASSIGNS workingMessages, so
-                // a lazy Skip() would enumerate a list this round never appended to. Capped here because a
-                // step executor carries this slice into the NEXT step and pays for it for the rest of the run.
+                // Materialized: the next iteration's compaction reassigns workingMessages.
+                var appended = workingMessages.Skip(appendedFrom).ToList();
                 yield return new ToolRoundExchange(
-                    round + 1, AgentToolCarryover.Capture(workingMessages.Skip(appendedFrom)));
+                    round + 1, AgentToolCarryover.Capture(appended), AgentToolCarryover.AsSent(appended));
                 if (stopRequested)
                 {
                     // No wrap-up round: that one is for round exhaustion, and spending a provider round-trip
@@ -490,6 +516,9 @@ public class AiClientService : IAiClientService
             }
 
             _logger.LogDebug("Round {Round}: no tool calls, completing", round + 1);
+            var answer = AgentToolCarryover.AsSent(response.Messages);
+            if (answer.Any(m => !string.IsNullOrEmpty(m.Text)))
+                yield return new FinalAnswer(answer);
             yield return BuildFinishedItem(provider, hasUsage, aggregatedInput, aggregatedOutput,
                 protectedRoute || protectedContributedText, lastModelId);
             yield break;
@@ -721,7 +750,15 @@ public class AiClientService : IAiClientService
                 _logger.LogDebug("Invoking tool handler for {ToolName}", toolCall.Name);
                 // Never broken out of on a stop: the round's remaining calls must still be answered, or the
                 // captured slice carries a FunctionCallContent with no matching result.
-                var result = await toolHandler(toolCall, dispatch);
+                object? result;
+                try
+                {
+                    result = await toolHandler(toolCall, dispatch);
+                }
+                catch (Exception ex) when (StepInterruptionClassifier.MarkToolFault(ex))
+                {
+                    throw;
+                }
                 var resultPreview = result?.ToString() ?? "<null>";
                 _logger.SensitiveDebug("Tool {ToolName} handler result ({Length} chars): {Preview}",
                     toolCall.Name, resultPreview.Length, Truncate(resultPreview, 500));
@@ -863,6 +900,7 @@ public class AiClientService : IAiClientService
 
         try
         {
+            provider = await EnforcePolicyAsync(provider);
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(
@@ -966,7 +1004,7 @@ public class AiClientService : IAiClientService
                     }
                 }
                 catch { }
-                throw new InvalidOperationException(friendlyMessage);
+                throw new CreditLimitException(friendlyMessage);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -1054,6 +1092,7 @@ public class AiClientService : IAiClientService
             _logger.LogInformation("SendRequestAsync: type={Type}", provider.ProviderType);
             _logger.SensitiveDebug("SendRequestAsync: provider name={Name}", provider.Name);
 
+            provider = await EnforcePolicyAsync(provider);
             var handler = _handlers.Get(provider.ProviderType);
             var httpClient = CreateAiHttpClient();
             var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: mode, managedPersonaId: null, personaModelType: null, linkedCts.Token);
@@ -1101,7 +1140,8 @@ public class AiClientService : IAiClientService
             _logger.LogWarning("SendRequestAsync: provider {ProviderType} timed out after {Seconds}s", provider.ProviderType, timeout.TotalSeconds);
             throw new LlmTimeoutException(provider.Name, timeout.TotalSeconds);
         }
-        catch (Exception ex)
+        // The policy gate already logged its refusal as a warning.
+        catch (Exception ex) when (ex is not ProviderBlockedByPolicyException)
         {
             _logger.LogError(ex, "SendRequestAsync: provider {ProviderType} threw an exception", provider.ProviderType);
             throw;
@@ -1121,6 +1161,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         // No persona here on purpose: this tool-free stream serves SuggestionService, not an assistant
@@ -1239,6 +1280,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
@@ -1278,6 +1320,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);
@@ -1321,6 +1364,7 @@ public class AiClientService : IAiClientService
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, timeoutCts.Token);
 
+        provider = await EnforcePolicyAsync(provider);
         var handler = _handlers.Get(provider.ProviderType);
         var httpClient = CreateAiHttpClient();
         var chatClient = await handler.CreateChatClientAsync(provider, apiKey, httpClient, mode: null, managedPersonaId: null, personaModelType: null, linkedCts.Token);

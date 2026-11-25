@@ -1,0 +1,48 @@
+Pia can read, search, and edit text files for you — but only inside a folder you pick. Everything stays limited to that folder, so Pia can't touch files anywhere else on your computer.
+First, tell Pia which folder it's allowed to work in.
+That's it — Pia can now work with files in that folder. It's also where your [memory vault](/wpf/guides/memory/) lives.
+Two switches sit underneath:
+Pick an existing folder or type a new name and Pia creates it for you. Leave it empty to start new chats at the files folder root.
+Each chat can work in a subfolder of your main folder, which keeps things focused.
+The two folder pickers mean different things, and each says which on hover:
+  next chat starts in, never the one you are in.
+  Click the folder shown there to change it before you send. Once the first message is sent, a chat
+  keeps the folder it has.
+You can point Pia at one particular file instead of describing where it is.
+Pia gets the file's exact path and its opening lines, so it reads it directly with no searching
+around. Handy for asking questions about a document or having Pia rewrite part of it.
+Unlike the other `@` domains, `@Files` switches no tools off. The file is context for the request,
+and Pia keeps everything else it can use on that turn — [MCP servers](/wpf/guides/mcp-servers/),
+Git, memory and the rest. So you can tag a checklist such as `@Files:flows/close.md` and ask Pia to
+work through it with those tools. Tag `@Files` together with another domain, say `@Todo`, and the
+turn is narrowed to the tools of the tagged domains as usual. See [@ commands](/wpf/guides/memory/)
+for the other domains.
+this folder** (**Settings → Assistant → General**) — the domain follows the file tools, so with them
+switched off there is nothing to tag.
+Reading, searching and listing need no approval. Writing, editing and deleting always ask.
+Pia is told which folder it is working in, so it stops guessing at relative paths, and a mistyped
+name suggests the near-matching file next to it.
+When Pia changes a file, it sends **just the piece that changes**, so a one-word correction cannot
+garble the rest of a long document on the way through. You still see and approve the same diff.
+are touched; everything else in the file is left exactly as it was, including formatting Pia never
+saw.
+Searching a folder's contents covers **Word documents, Excel workbooks and saved Outlook mail**, not
+just plain text. A file Pia genuinely cannot read is **named in the result**, so an unsearchable
+document doesn't look like an absent answer.
+Saved mail is **read-only**: Pia will not write over a `.msg` or `.eml`. Writing text into an image
+file is refused rather than corrupting it.
+Search **ignores capitalisation** by default, so a search for "cookie" finds "Cookies" and the other
+way round. Pia can be asked to match capitals exactly, for the times you want the marker `TODO`
+rather than every mention of the word.
+ask about a screenshot by name without attaching it. Pia sees the image for one reply, so ask what
+you need from it in the same message. Looking at an image needs the Pia Cloud provider, like any
+other [image attachment](/wpf/guides/attachments/).
+to read.
+When Pia wants to change a file, it doesn't just go ahead. An action card appears showing:
+You then choose **Decline**, **Allow once**, **Allow this session**, or **Always allow**. See [Tool Permissions](/wpf/guides/tool-permissions/) for what each one commits you to.
+Read the diff before you allow it. And keep in mind that **Allow this session** and **Always allow** cover *later* calls whose arguments you never see.
+If a file changes on disk after Pia previewed it but before you approve, the change is blocked to keep things safe. Just ask Pia to read the file again and try once more.
+If your folder is a git repository, Pia can work with it directly. Turn on **Allow the assistant to run git commands in this folder** in **Settings → Assistant → General**.
+The approval card shows the exact command before anything runs. A few things Pia deliberately won't do:
+Reading, searching, and listing files are safe, so they don't need approval. For any standing permissions you've granted:
+The full guide is at [Tool Permissions](/wpf/guides/tool-permissions/).

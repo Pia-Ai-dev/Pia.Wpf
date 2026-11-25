@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Consent;
 using Pia.Services.Interfaces;
 using Pia.Services.LiveTranscription;
 using Pia.Services.MeetingAttendee;
@@ -85,6 +86,50 @@ public sealed class TranscriptOverlaySaveTargetTests : IDisposable
         _workingDir.DidNotReceiveWithAnyArgs().ResolveAbsolutePath(default);
     }
 
+    [Fact]
+    public async Task Save_Direct_WritesTheConsentRecord_AndLogsTheExportForEverySession()
+    {
+        var path = Path.Combine(_workdir, "direct.md");
+        _fileDialog.PromptSaveFile(default!, default!, default!, default).ReturnsForAnyArgs(path);
+        var service = Substitute.For<IDirectTranscriptionService>();
+        service.TranscriptSessionIds.Returns(["session-a", "session-b"]);
+        service.TranscriptNoticeLanguage.Returns("en");
+        service.TranscriptConsents.Returns([
+            new SessionSpeakerConsent("session-a", new SpeakerConsentEntry(
+                "Speaker 1", DateTimeOffset.Now, ConsentState.Granted, null,
+                new ConsentEvidence("Speaker 1", null, "I accept this recording by Pia.", "en", 0.95f,
+                    DateTimeOffset.Now, "fake-stt", ConsentNotice.Version, ConsentNotice.Purposes, "en"),
+                "Speaker 1", null)),
+        ]);
+        var store = Substitute.For<IConsentEvidenceStore>();
+
+        await SaveAsync(CreateDirect(service, store));
+
+        var written = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+        Assert.Contains("consentSessions: [session-a, session-b]", written, StringComparison.Ordinal);
+        Assert.Contains("  - {session: session-a, label: Speaker 1, shownAs: Speaker 1, grantedAt: ", written, StringComparison.Ordinal);
+        foreach (var sessionId in new[] { "session-a", "session-b" })
+        {
+            await store.Received(1).AppendCopyAsync(
+                sessionId,
+                Arg.Is<ConsentCopy>(c => c.Kind == ConsentCopy.ExportKind && c.Path == path),
+                Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task Save_Meeting_WritesNoConsentRecord()
+    {
+        var path = Path.Combine(_workdir, "meeting.md");
+        _fileDialog.PromptSaveFile(default!, default!, default!, default).ReturnsForAnyArgs(path);
+
+        await SaveAsync(CreateMeeting());
+
+        var written = await File.ReadAllTextAsync(path, TestContext.Current.CancellationToken);
+        Assert.Contains("hello", written, StringComparison.Ordinal);
+        Assert.DoesNotContain("consent", written, StringComparison.Ordinal);
+    }
+
     // The name is matched by shape: _sessionStart is only assigned in the start path, so an overlay
     // driven through AddUtterance alone renders the default DateTimeOffset.
     private void AssertSaveDialog(string prefix, string expectedFolder) =>
@@ -101,12 +146,13 @@ public sealed class TranscriptOverlaySaveTargetTests : IDisposable
         await ((IAsyncRelayCommand)vm.SaveTranscriptCommand).ExecuteAsync(null);
     }
 
-    private TranscriptOverlayViewModel CreateDirect() => new DirectTranscriptionViewModel(
-        Substitute.For<IDirectTranscriptionService>(), _settingsService, _loc, _fileDialog,
+    private TranscriptOverlayViewModel CreateDirect(
+        IDirectTranscriptionService? service = null, IConsentEvidenceStore? store = null) => new DirectTranscriptionViewModel(
+        service ?? Substitute.For<IDirectTranscriptionService>(), _settingsService, _loc, _fileDialog,
         Substitute.For<IDialogService>(), Substitute.For<IMemoryService>(),
         Substitute.For<IIngestScheduler>(), Substitute.For<Wpf.Ui.ISnackbarService>(),
         NullLogger<DirectTranscriptionViewModel>.Instance, new InlineUiDispatcher(),
-        chatSessionManager: _sessions, workingDirectoryService: _workingDir);
+        chatSessionManager: _sessions, workingDirectoryService: _workingDir, consentEvidenceStore: store);
 
     private TranscriptOverlayViewModel CreateMeeting()
     {

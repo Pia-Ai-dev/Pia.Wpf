@@ -218,6 +218,35 @@ public class LocalizationTests
             $"every run-state label key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
     }
 
+    [Fact]
+    public void EveryInterruptionPauseKeyResolvesInAllThreeLocales()
+    {
+        var tokens = new[]
+        {
+            (AgentRunOrchestrator.InterruptedCreditReason, "Run_Activity_InterruptedCredit"),
+            (AgentRunOrchestrator.InterruptedOfflineReason, "Run_Activity_InterruptedOffline"),
+            (AgentRunOrchestrator.InterruptedTimeoutReason, "Run_Activity_InterruptedTimeout"),
+            (AgentRunOrchestrator.InterruptedProviderReason, "Run_Activity_InterruptedProvider"),
+        };
+        var keys = tokens
+            .SelectMany(t => new[] { AgentRunNotificationSurface.PausedBodyKey(t.Item1), t.Item2 })
+            .Distinct()
+            .ToList();
+
+        Assert.Equal(8, keys.Count);
+
+        var missing = new List<string>();
+        foreach (var culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("de"), new CultureInfo("fr") })
+        {
+            var available = GetResourceKeysForCulture(ViewStrings.ResourceManager, culture);
+            foreach (var key in keys.Where(k => !available.Contains(k)))
+                missing.Add($"{culture.Name}: {key}");
+        }
+
+        Assert.True(missing.Count == 0,
+            $"every interruption pause key must exist in all three locales, but these are missing: {string.Join(", ", missing)}");
+    }
+
     /// <summary><c>MutationErrorKey</c> is a helper, so this file's literal-key regexes cannot see the keys it returns.</summary>
     [Fact]
     public void EveryPlanMutationErrorKeyResolvesInAllThreeLocales()
@@ -658,7 +687,7 @@ public class LocalizationTests
     [InlineData("Msg_File_UnsupportedAttachment", 1)]
     [InlineData("Msg_File_DuplicateAttachment", 1)]
     [InlineData("Msg_File_Empty", 1)]
-    [InlineData("Msg_File_Truncated", 1)]
+    [InlineData("Msg_File_Truncated", 2)]
     [InlineData("Msg_File_ImageLimit", 2)]
     [InlineData("Msg_File_ImageBudget", 1)]
     [InlineData("Msg_File_DropFailed", 1)]

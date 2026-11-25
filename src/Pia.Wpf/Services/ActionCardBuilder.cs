@@ -44,6 +44,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ToolClass.Scheduling => ActionCardCategory.Scheduled,
             ToolClass.Assignment => ActionCardCategory.Assignment,
             ToolClass.Screen => ActionCardCategory.Screen,
+            ToolClass.KnowledgeBase => ActionCardCategory.KnowledgeBase,
             // External, Unknown (a plugin name this build does not recognise, e.g. a renamed built-in) and
             // Ingest (which returns no pending action, so it never reaches a card) all render as the generic
             // external-tool card — today's shape for anything the builder cannot name.
@@ -58,7 +59,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         var isGitDestructive = ToolPermissionService.IsWorkDiscarding(pendingAction.ToolName);
         var isDestructive = isDelete || isGitDestructive;
 
-        var warningText = pendingAction.ToolName switch
+        var derivedWarning = pendingAction.ToolName switch
         {
             "git_switch" => _localizationService["Msg_Assistant_GitSwitchWarning"],
             "git_restore" => _localizationService["Msg_Assistant_GitRestoreWarning"],
@@ -69,11 +70,16 @@ public sealed class ActionCardBuilder : IActionCardBuilder
                 "todo" => _localizationService["Msg_Assistant_PermanentDeleteTodo"],
                 "reminder" => _localizationService["Msg_Assistant_PermanentDeleteReminder"],
                 "files" => _localizationService["Msg_Assistant_PermanentDeleteFile"],
+                "kb-manager" => _localizationService["Msg_Assistant_PermanentDeleteKbDocument"],
                 // A destructive external (MCP) tool: generic warning (we can't know its exact effect).
                 _ => _localizationService["Msg_Assistant_PermanentDeleteExternal"]
             },
             _ => null
         };
+
+        var warningText = derivedWarning is null ? pendingAction.Warning
+            : pendingAction.Warning is null ? derivedWarning
+            : derivedWarning + "\n" + pendingAction.Warning;
 
         // write_file and update_source carry a true line-level diff preview that bypasses the
         // Label/Value ParseKeyValueText path used for every other plugin. The card renders DiffLines
@@ -140,6 +146,11 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             card.State = ActionCardState.Accepted;
             card.IsDiffExpanded = false;
         }
+        else if (card.HasWarning)
+        {
+            // The warning sits in the expandable details; collapsed, "Allow once" could be clicked unread.
+            card.IsExpanded = true;
+        }
 
         return card;
     }
@@ -176,6 +187,10 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "run_routine" => _localizationService["Msg_Assistant_StatusStartingRoutine"],
         "screen_capture" => _localizationService["Msg_Assistant_StatusCapturingScreen"],
         "screen_list_targets" => _localizationService["Msg_Assistant_StatusListingScreenTargets"],
+        "list_knowledge_bases" or "get_knowledge_base_stats" or "list_kb_documents" or "get_kb_prompt"
+            or "read_kb_document" or "download_kb_document" => _localizationService["Msg_Assistant_StatusReadingKnowledgeBase"],
+        "upload_kb_document" or "update_kb_document" or "set_kb_prompt" or "delete_kb_document"
+            => _localizationService["Msg_Assistant_StatusUpdatingKnowledgeBase"],
         var t when t.StartsWith("git_", StringComparison.Ordinal) => _localizationService["Msg_Assistant_StatusRunningGit"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
@@ -187,6 +202,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         "reminder" => _localizationService["Msg_Assistant_ReminderUpdated"],
         "git" => _localizationService["Msg_Assistant_GitUpdated"],
         "screen" => _localizationService["Msg_Assistant_ScreenCaptured"],
+        "kb-manager" => _localizationService["Msg_Assistant_KnowledgeBaseUpdated"],
         _ => _localizationService["Msg_Assistant_StatusProcessing"]
     };
 
@@ -197,7 +213,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         if (category == ActionCardCategory.Mcp)
             return _localizationService["ActionCard_Category_Mcp"];
 
-        var categoryKey = category switch
+        var categoryKey = toolName == "delete_kb_document" ? "ActionCard_Category_KbDocument" : category switch
         {
             ActionCardCategory.Memory => "ActionCard_Category_Memory",
             ActionCardCategory.Todo => "ActionCard_Category_Todo",
@@ -207,6 +223,7 @@ public sealed class ActionCardBuilder : IActionCardBuilder
             ActionCardCategory.Scheduled => "ActionCard_Category_Scheduled",
             ActionCardCategory.Assignment => "ActionCard_Category_Assignment",
             ActionCardCategory.Screen => "ActionCard_Category_Screen",
+            ActionCardCategory.KnowledgeBase => "ActionCard_Category_KnowledgeBase",
             _ => "ActionCard_Category_Memory"
         };
 
@@ -214,10 +231,11 @@ public sealed class ActionCardBuilder : IActionCardBuilder
         {
             "create_todo" or "create_reminder" or "create_source"
                 or "create_routine_from_blueprint" => "ActionCard_Action_Create",
+            "upload_kb_document" => "ActionCard_Action_Upload",
             "remember" or "update_source" or "update_todo" or "update_reminder"
-                or "update_scheduled_research" => "ActionCard_Action_Update",
+                or "update_scheduled_research" or "update_kb_document" or "set_kb_prompt" => "ActionCard_Action_Update",
             "forget" or "delete_todo" or "delete_reminder" or "delete_file"
-                or "delete_scheduled_research" => "ActionCard_Action_Delete",
+                or "delete_scheduled_research" or "delete_kb_document" => "ActionCard_Action_Delete",
             "complete_todo" => "ActionCard_Action_Complete",
             "run_routine" => "ActionCard_Action_Start",
             "write_file" or "edit_file" => "ActionCard_Action_Write",

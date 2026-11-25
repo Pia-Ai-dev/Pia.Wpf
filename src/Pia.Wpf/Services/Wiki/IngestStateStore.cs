@@ -31,6 +31,12 @@ public sealed class IngestStateStore
     {
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
+        using (var pragmas = connection.CreateCommand())
+        {
+            pragmas.CommandText = Pia.Infrastructure.SqliteContext.ConnectionPragmas;
+            pragmas.ExecuteNonQuery();
+        }
+
         if (!_schemaEnsured)
         {
             using var command = connection.CreateCommand();

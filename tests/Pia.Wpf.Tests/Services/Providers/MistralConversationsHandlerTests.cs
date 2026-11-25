@@ -1,7 +1,12 @@
+using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.AI;
+using OpenAI;
+using OpenAI.Chat;
 using Pia.Services.Providers.Http;
 using Pia.Tests.TestInfrastructure;
 using Xunit;
@@ -251,6 +256,35 @@ public class MistralConversationsHandlerTests
         Assert.EndsWith("data: [DONE]\n\n", sse);
         Assert.Contains("\"content\":\"hello\"", sse);
         Assert.Contains("\"finish_reason\":\"stop\"", sse);
+    }
+
+    [Fact]
+    public async Task StreamingThroughTheOpenAiSdk_EndsWithTheAgentReply()
+    {
+        var conversationsResponse = """
+        {
+          "conversation_id":"conv_1",
+          "outputs":[{"type":"message.output","role":"assistant","model":"m","content":[{"type":"text","text":"ready"}]}]
+        }
+        """;
+        var handler = new MistralConversationsHandler("ag:1") { InnerHandler = new CapturingRequestHandler(conversationsResponse) };
+        var chatClient = new ChatClient(
+            model: "mistral-medium-latest",
+            credential: new ApiKeyCredential("unused"),
+            options: new OpenAIClientOptions
+            {
+                Endpoint = new Uri("https://api.mistral.ai/v1"),
+                Transport = new HttpClientPipelineTransport(new HttpClient(handler)),
+                NetworkTimeout = Timeout.InfiniteTimeSpan,
+            }).AsIChatClient();
+
+        var text = new StringBuilder();
+        await foreach (var update in chatClient.GetStreamingResponseAsync(
+                           [new Microsoft.Extensions.AI.ChatMessage(ChatRole.User, "hi")],
+                           cancellationToken: TestContext.Current.CancellationToken))
+            text.Append(update.Text);
+
+        Assert.Equal("ready", text.ToString());
     }
 
     [Fact]

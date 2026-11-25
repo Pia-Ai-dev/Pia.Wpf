@@ -488,6 +488,8 @@ public class ScheduledJobToolHandler : IScheduledJobToolHandler
                         _localizationService.Format("Tool_Routine_Exec_NotOwner", job.Name),
                     ScheduledJobRunNowResult.AlreadyRunning =>
                         _localizationService.Format("Tool_Routine_Exec_AlreadyRunning", job.Name),
+                    ScheduledJobRunNowResult.ResetPending =>
+                        _localizationService.Format("Tool_Routine_Exec_ResetPending", job.Name),
                     _ => _localizationService.Format("Tool_Routine_Exec_NotFound", job.Name),
                 };
             });

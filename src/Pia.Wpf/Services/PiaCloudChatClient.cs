@@ -452,7 +452,7 @@ public sealed class PiaCloudChatClient : IChatClient
         return null;
     }
 
-    private static JsonArray SerializeMessages(IEnumerable<ChatMessage> messages)
+    internal static JsonArray SerializeMessages(IEnumerable<ChatMessage> messages)
     {
         var array = new JsonArray();
 
@@ -695,7 +695,7 @@ public sealed class PiaCloudChatClient : IChatClient
                 }
             }
             catch { }
-            throw new InvalidOperationException(friendlyMessage);
+            throw new CreditLimitException(friendlyMessage);
         }
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)

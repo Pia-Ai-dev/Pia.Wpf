@@ -130,6 +130,57 @@ public class ScheduledJobBackgroundServiceTests
     }
 
     [Fact]
+    public async Task RunNowAsync_RefusedWhileALocalDataClearIsPending_AndTouchesNothing()
+    {
+        // Found and owned, so only the pending clear stands between this job and a dispatch.
+        var job = NewDueJob();
+        var jobs = Substitute.For<IScheduledJobService>();
+        jobs.GetAsync(job.Id).Returns(job);
+        jobs.IsOwnedByThisDeviceAsync(job.Id).Returns(true);
+        var indicator = Substitute.For<ILocalDataResetIndicator>();
+        indicator.IsResetPending.Returns(true);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance, indicator);
+
+        var result = await bg.RunNowAsync(job.Id, CancellationToken.None);
+        await SettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal(ScheduledJobRunNowResult.ResetPending, result);
+        Assert.Empty(jobs.ReceivedCalls());
+        Assert.Equal(0, runner.RunCount);
+    }
+
+    [Fact]
+    public async Task RunNowAsync_WithNoClearPending_StillDispatches()
+    {
+        var jobs = new FakeJobService();
+        var job = NewDueJob();
+        jobs.SeedDue(job);
+        var indicator = Substitute.For<ILocalDataResetIndicator>();
+        indicator.IsResetPending.Returns(false);
+
+        var runner = new FakeRunner { Result = new BackgroundTurnResult(Guid.NewGuid(), true, null) };
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider().Add<IBackgroundAssistantTurnRunner>(runner)),
+            new FakeProviderResolver(NewProvider()), new FakeNotificationSurface(),
+            Substitute.For<IHeadlessRunLauncher>(), NewSettings(), Substitute.For<IAgentRunService>(),
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance, indicator);
+
+        var result = await bg.RunNowAsync(job.Id, CancellationToken.None);
+        await SettleAsync(bg, CancellationToken.None);
+
+        Assert.Equal(ScheduledJobRunNowResult.Dispatched, result);
+        Assert.Equal(1, runner.RunCount);
+    }
+
+    [Fact]
     public async Task ExecuteOnceAsync_Success_MarksCompleteWithChatIdAndNotifies()
     {
         var jobs = new FakeJobService();
@@ -566,6 +617,43 @@ public class ScheduledJobBackgroundServiceTests
         Assert.NotNull(captured);
         Assert.Null(captured!.GrantedWrites);
         Assert.Equal(due.Id, captured.TriggerRef);
+    }
+
+    [Fact]
+    public async Task ExecuteOnceAsync_AgentTaskJob_ParkedOnAnInterruption_TakesNoStrike()
+    {
+        var jobs = new FakeJobService();
+        var due = NewDueJob();
+        due.Kind = ScheduledJobKind.AgentTask;
+        jobs.SeedDue(due);
+
+        var runId = Guid.NewGuid();
+        var chatId = Guid.NewGuid();
+        var launcher = Substitute.For<IHeadlessRunLauncher>();
+        launcher.LaunchAsync(Arg.Any<HeadlessRunRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new HeadlessRunHandle(runId, chatId, Task.CompletedTask));
+
+        var runService = Substitute.For<IAgentRunService>();
+        runService.GetAsync(runId, Arg.Any<CancellationToken>())
+            .Returns(new AgentRun
+            {
+                Id = runId, ChatId = chatId, RunShape = RunShape.Planned,
+                State = AgentRunState.WaitingForInput,
+                ExtraJson = """{"paused":true,"reason":"interrupted-credit"}""",
+            });
+
+        var notifications = new FakeNotificationSurface();
+        var bg = new ScheduledJobBackgroundService(
+            jobs, new FakeScopeFactory(new FakeServiceProvider()), new FakeProviderResolver(NewProvider()),
+            notifications, launcher, NewSettings(), runService,
+            Substitute.For<IScheduledMeetingRecorder>(), Substitute.For<IBackgroundMeetingSessions>(),
+            NullLogger<ScheduledJobBackgroundService>.Instance);
+
+        await TickAndSettleAsync(bg, CancellationToken.None);
+
+        await runService.Received(1).GetAsync(runId, Arg.Any<CancellationToken>());
+        Assert.Empty(jobs.Failed);
+        Assert.Equal(0, notifications.FailureCount);
     }
 
     [Fact]
@@ -1504,7 +1592,7 @@ public class ScheduledJobBackgroundServiceTests
     {
         var recorder = Substitute.For<IScheduledMeetingRecorder>();
         recorder.RecordAsync(Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<CancellationToken>()).Returns(result);
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns(result);
         return recorder;
     }
 
@@ -1525,8 +1613,10 @@ public class ScheduledJobBackgroundServiceTests
         await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder, sessions), CancellationToken.None);
 
         // The meeting runs on the pool's attendee, never on the overlay's shared one.
+        // The host's acknowledgement becomes the recording's consent evidence.
         await recorder.Received(1).RecordAsync(
-            sessions.Attendees[0], job.MeetingUrl!, job.Name, Arg.Any<CancellationToken>());
+            sessions.Attendees[0], job.MeetingUrl!, job.Name, new DateTimeOffset(job.MeetingConsentAckAt!.Value),
+            Arg.Any<CancellationToken>());
         Assert.Equal(1, notifications.MeetingSavedCount);
         Assert.Single(jobs.Completed);
         Assert.Null(jobs.Completed[0].EntryId);
@@ -1557,7 +1647,7 @@ public class ScheduledJobBackgroundServiceTests
 
         var recorder = Substitute.For<IScheduledMeetingRecorder>();
         recorder.RecordAsync(Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(),
-            Arg.Any<CancellationToken>()).Returns<MeetingRecordingResult>(_ => throw new InvalidOperationException("boom"));
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns<MeetingRecordingResult>(_ => throw new InvalidOperationException("boom"));
 
         await TickAndSettleAsync(
             NewMeetingService(jobs, new FakeNotificationSurface(), recorder, sessions), CancellationToken.None);
@@ -1598,7 +1688,7 @@ public class ScheduledJobBackgroundServiceTests
         await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder, sessions), CancellationToken.None);
 
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         // Still due, no strike, nothing announced: the next tick retries, and the lateness gate is what
         // eventually gives up. Retiring a standup because another meeting overran would be worse.
         Assert.Empty(jobs.Dispatched);
@@ -1619,7 +1709,7 @@ public class ScheduledJobBackgroundServiceTests
         await TickAndSettleAsync(NewMeetingService(jobs, notifications, recorder), CancellationToken.None);
 
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         // The missed-run dialog is the wrong answer for a meeting: whoever would click it is in the meeting.
         Assert.Equal(0, notifications.AskCount);
         Assert.Equal(1, notifications.FailureCount);
@@ -1638,7 +1728,7 @@ public class ScheduledJobBackgroundServiceTests
             NewMeetingService(jobs, new FakeNotificationSurface(), recorder), CancellationToken.None);
 
         await recorder.Received(1).RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -1703,7 +1793,7 @@ public class ScheduledJobBackgroundServiceTests
             NewMeetingService(jobs, notifications, recorder, sessions, settings), CancellationToken.None);
 
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         Assert.Single(jobs.Failed);
         Assert.Equal(1, notifications.FailureCount);
         // Refused before a slot is taken, so a misconfigured job cannot starve the pool.
@@ -1726,7 +1816,7 @@ public class ScheduledJobBackgroundServiceTests
         // A meeting creates no AgentRuns row, so the TriggerRef guard cannot see it: if this write faults
         // and we dispatched anyway, every later tick would re-dispatch.
         await recorder.DidNotReceive().RecordAsync(
-            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<IMeetingAttendeeService>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         // And the slot goes back rather than being held by a meeting that never started.
         Assert.Equal(1, sessions.Released);
     }
@@ -1847,6 +1937,7 @@ public class ScheduledJobBackgroundServiceTests
         public Task EnableAsync(Guid id) => throw new NotImplementedException();
         public Task<IReadOnlyList<ScheduledJob>> GetModifiedSinceAsync(DateTime since) => throw new NotImplementedException();
         public Task<int> BackfillRecurrenceDaysAsync() => throw new NotImplementedException();
+        public Task<int> ReassignOwnerAsync(Guid from, Guid to) => throw new NotImplementedException();
         public Task UpsertFromSyncAsync(ScheduledJob job) => throw new NotImplementedException();
     }
 

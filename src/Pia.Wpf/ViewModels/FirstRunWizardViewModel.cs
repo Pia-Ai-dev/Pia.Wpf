@@ -7,6 +7,7 @@ using Pia.Helpers;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Services.Providers;
 
 namespace Pia.ViewModels;
 
@@ -22,6 +23,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
     private readonly IDeviceManagementService _deviceManagement;
     private readonly IPolicyService _policyService;
     private readonly ILogger<FirstRunWizardViewModel> _logger;
+    private readonly IDialogService _dialogService;
+    private readonly ILocalDataResetService _localDataReset;
 
     public const int TotalSteps = 7;
 
@@ -96,9 +99,15 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     private async Task LoadProviderPolicyAsync()
     {
-        _allowProviderManagement = (await _settingsService.GetSettingsAsync()).AllowProviderManagement;
+        var settings = await _settingsService.GetSettingsAsync();
+        _allowProviderManagement = settings.AllowProviderManagement;
+        _providerPolicy = settings;
         OnPropertyChanged(nameof(IsProviderStepVisible));
         OnPropertyChanged(nameof(VisibleStepCount));
+        OnPropertyChanged(nameof(WizardProviderTypes));
+        OnPropertyChanged(nameof(IsProviderEndpointBlocked));
+        if (!ProviderPolicy.IsTypeAllowed(SelectedProviderType, settings) && WizardProviderTypes.Count > 0)
+            SelectedProviderType = WizardProviderTypes[0];
     }
 
     private async Task PersistLanguageAsync(TargetLanguage language)
@@ -137,6 +146,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsE2EESetupVisible))]
     private bool _isE2EEOnboardingRequired;
 
+    [ObservableProperty]
+    private bool _showE2EEAlreadyEnabledNotice;
+
     public E2EEOnboardingViewModel OnboardingViewModel { get; }
 
     public E2EESetupStepViewModel E2EESetupViewModel { get; }
@@ -165,10 +177,18 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ProviderSummary))]
+    [NotifyPropertyChangedFor(nameof(IsProviderEndpointBlocked))]
     private AiProviderType _selectedProviderType = AiProviderType.OpenAI;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProviderEndpointBlocked))]
     private string _providerEndpoint = string.Empty;
+
+    private AppSettings? _providerPolicy;
+
+    public bool IsProviderEndpointBlocked =>
+        !string.IsNullOrWhiteSpace(ProviderEndpoint)
+        && !ProviderPolicy.IsEndpointAllowed(SelectedProviderType, ProviderEndpoint, _providerPolicy);
 
     [ObservableProperty]
     private string _providerApiKey = string.Empty;
@@ -198,9 +218,12 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     public ObservableCollection<string> AvailableModels { get; } = [];
 
-    /// <summary>Provider types available in wizard (excludes PiaCloud).</summary>
-    public IReadOnlyList<AiProviderType> WizardProviderTypes { get; } =
+    private static readonly AiProviderType[] AllWizardProviderTypes =
         [AiProviderType.OpenAI, AiProviderType.AzureOpenAI, AiProviderType.Ollama, AiProviderType.OpenRouter, AiProviderType.OpenAICompatible, AiProviderType.Mistral, AiProviderType.Anthropic];
+
+    /// <summary>Provider types available in wizard (excludes PiaCloud), limited by the organization's policy.</summary>
+    public IReadOnlyList<AiProviderType> WizardProviderTypes =>
+        AllWizardProviderTypes.Where(t => ProviderPolicy.IsTypeAllowed(t, _providerPolicy)).ToList();
 
     partial void OnSelectedProviderTypeChanged(AiProviderType value)
     {
@@ -223,6 +246,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
         NextOrFinishCommand.NotifyCanExecuteChanged();
     }
+
+    // Next also keys off the address, so an edit after a passed test must re-check it.
+    partial void OnProviderEndpointChanged(string value) => NextOrFinishCommand.NotifyCanExecuteChanged();
 
     // --- Ready step summary ---
 
@@ -275,7 +301,9 @@ public partial class FirstRunWizardViewModel : ObservableObject
         IPolicyService policyService,
         E2EEOnboardingViewModel onboardingViewModel,
         E2EESetupStepViewModel e2eeSetupViewModel,
-        ILogger<FirstRunWizardViewModel> logger)
+        ILogger<FirstRunWizardViewModel> logger,
+        IDialogService dialogService,
+        ILocalDataResetService localDataReset)
     {
         _settingsService = settingsService;
         _memoryService = memoryService;
@@ -289,6 +317,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
         OnboardingViewModel = onboardingViewModel;
         E2EESetupViewModel = e2eeSetupViewModel;
         _logger = logger;
+        _dialogService = dialogService;
+        _localDataReset = localDataReset;
         _uiLanguage = _localizationService.CurrentLanguage;
         _localizationService.LanguageChanged += (_, _) => OnPropertyChanged(nameof(NextButtonText));
 
@@ -298,6 +328,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             try
             {
                 IsE2EEOnboardingRequired = false;
+                ShowE2EEAlreadyEnabledNotice = false;
                 _syncClientService.NotifyE2EEOnboardingCompleted();
                 await _syncClientService.PerformFirstSyncMigrationAsync();
             }
@@ -313,6 +344,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
         // E2EE setup step controls when the wizard advances past step 2
         E2EESetupViewModel.AdvanceRequested += AdvanceFromE2EEStep;
+        E2EESetupViewModel.AccountAlreadyEncrypted += HandleAccountAlreadyEncryptedAsync;
         E2EESetupViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(E2EESetupStepViewModel.State)
@@ -387,7 +419,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
         }
 
         // Provider step (step 3): block Next unless connection test passed (only when shown)
-        if (CurrentStep == 3 && IsProviderStepVisible && !ConnectionTestPassed) return false;
+        if (CurrentStep == 3 && IsProviderStepVisible && (!ConnectionTestPassed || IsProviderEndpointBlocked)) return false;
 
         return true;
     }
@@ -438,6 +470,33 @@ public partial class FirstRunWizardViewModel : ObservableObject
         NotifyNavigationChanged();
     }
 
+    private async Task HandleAccountAlreadyEncryptedAsync()
+    {
+        try
+        {
+            await HandlePostLoginSyncAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Re-reading the E2EE state after a refused setup failed in wizard");
+        }
+
+        if (IsE2EEOnboardingRequired)
+        {
+            ShowE2EEAlreadyEnabledNotice = true;
+            CurrentStep = 1;
+            NotifyNavigationChanged();
+        }
+        else if (_cloudAccountHasE2EE)
+        {
+            AdvanceFromE2EEStep(true);
+        }
+        else
+        {
+            E2EESetupViewModel.ErrorMessage = _localizationService["Wizard_E2EE_AlreadyEnabled"];
+        }
+    }
+
     private void NotifyNavigationChanged()
     {
         NextOrFinishCommand.NotifyCanExecuteChanged();
@@ -467,6 +526,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
     private async Task LoginAsync(string provider)
     {
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
+
         IsLoggingIn = true;
         LoginError = null;
 
@@ -514,6 +575,8 @@ public partial class FirstRunWizardViewModel : ObservableObject
             LoginError = _localizationService["Sync_LocalAuth_FieldsRequired"];
             return;
         }
+
+        if (!await AccountSwitchPrompts.ConfirmSignInAsync(_localDataReset, _dialogService, _localizationService)) return;
 
         IsLoggingIn = true;
         LoginError = null;
@@ -600,7 +663,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
 
         var e2eeStatus = await _deviceManagement.CheckE2EEStatusAsync();
 
-        if (e2eeStatus is { IsEnabled: true } && !_deviceManagement.IsInitialized())
+        if (e2eeStatus is { IsEnabled: true } && !await _deviceManagement.TryRestoreKeyAsync())
         {
             _logger.LogInformation("E2EE enabled on account but UMK not available; showing onboarding in wizard");
             _cloudAccountHasE2EE = true;
@@ -608,6 +671,7 @@ public partial class FirstRunWizardViewModel : ObservableObject
             _syncClientService.NotifyE2EEOnboardingRequired();
             OnPropertyChanged(nameof(IsE2EESetupVisible));
             OnPropertyChanged(nameof(VisibleStepCount));
+            await OnboardingViewModel.TryResumeKeyHandoverAsync();
             return;
         }
 

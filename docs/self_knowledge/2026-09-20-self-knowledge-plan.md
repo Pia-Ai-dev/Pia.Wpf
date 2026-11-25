@@ -101,10 +101,21 @@ new user most likely to ask these questions.
 The corpus is English, and the tool description says so: the model passes English keywords, and the
 `## Language` section pushes the answer back into German or French.
 
+Translating the answer is safe; translating a **UI label** is not — a model that renders *Plugins*
+as "Plugins" or *Tool access* as "Werkzeugzugriff" sends the user hunting for a tab called
+*Erweiterungen* or *Tool-Zugriff*. So on a non-English screen `HelpLabelResolver` appends
+`English = localized` pairs to every `pia_help` result: the bolded labels and headings of the
+sections returned (for a search, of the sections the hits point at), looked up in a curated key
+list — every `pia_settings` path key plus a few section names the guide quotes. Curated, not a
+reverse lookup of the whole resx: 21 of the guide's bold phrases map to more than one translation
+there (*Meeting* is both "Meeting" and "Besprechung"), and `HelpLabelResolverTests` holds the
+curated list to one translation per label.
+
 ### 2.3 Settings
 
-`HelpSettingsResolver` reports nine areas — `language`, `speech`, `assistant`, `agent`, `providers`,
-`personas`, `meetings`, `sync`, `tools` — each row carrying a value **and** a path rooted at
+`HelpSettingsResolver` reports fourteen areas — `language`, `application`, `hotkeys`, `speech`,
+`privacy`, `providers`, `optimize`, `assistant`, `personas`, `tools`, `meetings`, `agent`, `sync`,
+`about` — each row carrying a value **and** a path rooted at
 `Nav_Settings` and resolved through `ILocalizationService`, so it reads as the user's own labels.
 
 Row **labels** are English on purpose: the model reads them and answers in the user's language, so
@@ -112,7 +123,8 @@ localizing them would have bought nothing and cost ~20 resx keys in three files.
 needs translating, and every key it uses already existed.
 
 Never returned, because these values go to the AI provider: API keys, auth/refresh tokens, account
-email, device id, E2EE key material and recovery state, private keywords. The server **host** is
+email, device id, E2EE key material and recovery state, private keywords (`privacy` reports only
+how many there are). The server **host** is
 returned (it answers "am I on my company server?"); the path and port are not. The sandbox folder
 path already rides `## Environment` on every turn, so it is not new exposure.
 
@@ -190,7 +202,8 @@ dependency was dropped and the row now names only the path, which is the part a 
 | `src/Pia.Wpf/Resources/Help/help-corpus.json.gz` | The corpus (generated) |
 | `src/Pia.Wpf/Services/Help/HelpSearchService.cs` | Load, index, search, read |
 | `src/Pia.Wpf/Services/Help/HelpSectionParser.cs` | Heading split, fence-aware, unique refs |
-| `src/Pia.Wpf/Services/Help/HelpSettingsResolver.cs` | The nine areas and their localized paths |
+| `src/Pia.Wpf/Services/Help/HelpSettingsResolver.cs` | The fourteen areas and their localized paths |
+| `src/Pia.Wpf/Services/Help/HelpLabelResolver.cs` | English guide label → the user's on-screen label |
 | `src/Pia.Wpf/Services/Help/HelpCorpusModels.cs` | `HelpPage` / `HelpSection` / `HelpHit` / `HelpSettingRow` |
 | `src/Pia.Wpf/Services/HelpToolHandler.cs` | The two tools and their result formatting |
 | `src/Pia.Wpf/Services/Interfaces/IHelpToolHandler.cs` | |

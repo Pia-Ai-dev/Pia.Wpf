@@ -3,6 +3,7 @@ namespace Pia.Tests.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
+using Pia.Services.Credits;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Tests.TestInfrastructure;
@@ -40,7 +41,10 @@ public class AccountSettingsBusinessProfileTests
             _deviceKeys, _memory, _policy,
             new E2EEOnboardingViewModel(
                 _deviceMgmt, _deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
-                NullLogger<E2EEOnboardingViewModel>.Instance));
+                NullLogger<E2EEOnboardingViewModel>.Instance),
+            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
     }
 
     [Fact]

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services.E2EE;
+using Pia.Tests.TestInfrastructure;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
 using Xunit;
@@ -17,7 +18,6 @@ public class DeviceManagementServiceTests
     private readonly IE2EEService _e2eeMock;
     private readonly IDeviceKeyService _deviceKeysMock;
     private readonly IRecoveryCodeService _recoveryMock;
-    private readonly ICryptoService _cryptoMock;
     private readonly ISettingsService _settingsMock;
     private readonly IAuthService _authMock;
     private readonly AppSettings _settings;
@@ -27,7 +27,6 @@ public class DeviceManagementServiceTests
         _e2eeMock = Substitute.For<IE2EEService>();
         _deviceKeysMock = Substitute.For<IDeviceKeyService>();
         _recoveryMock = Substitute.For<IRecoveryCodeService>();
-        _cryptoMock = Substitute.For<ICryptoService>();
         _settingsMock = Substitute.For<ISettingsService>();
         _authMock = Substitute.For<IAuthService>();
 
@@ -154,8 +153,8 @@ public class DeviceManagementServiceTests
             .Returns(_ => new HttpClient(handler, disposeHandler: false));
 
         return new DeviceManagementService(
-            _e2eeMock, _deviceKeysMock, _recoveryMock, _cryptoMock,
-            _settingsMock, _authMock, factory,
+            _e2eeMock, _deviceKeysMock, _recoveryMock,
+            _settingsMock, _authMock, factory, Substitute.For<IConfirmedApproverStore>(), Substitute.For<IScheduledJobService>(), new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
     }
 

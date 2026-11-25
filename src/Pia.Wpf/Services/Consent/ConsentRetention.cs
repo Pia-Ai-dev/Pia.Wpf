@@ -4,8 +4,8 @@ using Microsoft.Extensions.Logging;
 namespace Pia.Services.Consent;
 
 /// <summary>
-/// Deletes consent evidence and audit trails outside a window of DAYS, taking both roots as parameters so a
-/// test never points it at the real profile.
+/// Deletes v1 consent evidence and audit trails outside a window of DAYS, taking both roots as parameters so a
+/// test never points it at the real profile. A v2 folder is <see cref="ConsentLifetimeService"/>'s to delete.
 /// </summary>
 public static class ConsentRetention
 {
@@ -46,6 +46,9 @@ public static class ConsentRetention
         int kept = 0, deleted = 0, skipped = 0;
         foreach (var sessionDirectory in sessionDirectories)
         {
+            if (File.Exists(Path.Combine(sessionDirectory, ConsentEvidenceStore.SessionMarkerFileName)))
+                continue;
+
             DateTime lastWrite;
             try
             {

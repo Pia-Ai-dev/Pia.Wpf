@@ -177,7 +177,12 @@ public sealed record StepTurnResult(
     /// and treating that as an ordinary failure would burn a replan on a step that is merely waiting.
     /// Model-generated content — <c>SensitiveDebug</c> only.
     /// </summary>
-    string? UserInputQuestion = null);
+    string? UserInputQuestion = null,
+
+    /// <summary>Why the step was cut off before it finished, or null when it ran to an answer or failed on its own.</summary>
+    StepInterruption? Interruption = null);
+
+public enum StepInterruption { Credit, Offline, Timeout, Provider }
 
 /// <summary>Summary of a completed step, carried forward as context for later steps + replanning.</summary>
 /// <param name="ExpectedArtifact">

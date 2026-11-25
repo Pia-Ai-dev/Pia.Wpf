@@ -42,9 +42,12 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
-    <!-- Holds native SQLite on the 3.x line; Microsoft.Data.Sqlite only asks for 2.1.12 -->
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.11" />
+    <!-- SQLite3 Multiple Ciphers encrypts history.db; it rides SQLitePCLRaw 3.x (2.1.11 carries GHSA-2m69-gcr7-jv3q).
+         A second bundle such as bundle_e_sqlite3 must not come back: both would register a provider. -->
+    <PackageReference Include="SQLite3MC.PCLRaw.bundle" Version="2.4.0" />
+    <!-- The bundle only asks for 3.0.2. -->
+    <PackageReference Include="SQLitePCLRaw.core" Version="3.0.5" />
     <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.13.5" />
     <PackageReference Include="SharpCompress" Version="0.50.4" />
     <PackageReference Include="NAudio" Version="2.3.0" />

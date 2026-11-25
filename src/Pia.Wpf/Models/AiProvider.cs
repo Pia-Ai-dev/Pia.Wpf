@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Pia.Models;
 
 public enum AiProviderType
@@ -59,6 +61,13 @@ public class AiProvider
 
     public ReasoningEffort? ReasoningEffort { get; set; }
     public bool EnableWebSearch { get; set; } = false;
+
+    /// <summary>Set from policy at load, never stored, so the user's own choice survives the policy.</summary>
+    [JsonIgnore]
+    public bool WebSearchBlockedByPolicy { get; set; }
+
+    [JsonIgnore]
+    public bool UsesWebSearch => EnableWebSearch && !WebSearchBlockedByPolicy;
 
     /// <summary>Anthropic only. Off by default: a cache write costs more than the input it replaces, and a
     /// prompt under the model's minimum prefix is never stored at all.</summary>

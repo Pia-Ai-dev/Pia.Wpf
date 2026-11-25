@@ -295,7 +295,7 @@ public partial class AssistantView : UserControl
         _prependExtent = null;
 
         MessageScrollViewer.UpdateLayout();
-        MessageScrollViewer.ScrollToVerticalOffset(
+        MessageScrollViewer.ScrollToVerticalOffsetOnPixelGrid(
             MessageScrollViewer.VerticalOffset + (MessageScrollViewer.ExtentHeight - before));
     }
 
@@ -310,8 +310,13 @@ public partial class AssistantView : UserControl
     private void ScrollToBottom()
     {
         if (!IsAutoScrollEnabled) return;
-        MessageScrollViewer.ScrollToEnd();
+        ScrollToEndOnPixelGrid();
     }
+
+    // ScrollToEnd rests on the fractional ScrollableHeight, and that sub-pixel shift blurs whichever
+    // text lines then land on a half pixel.
+    private void ScrollToEndOnPixelGrid() =>
+        MessageScrollViewer.ScrollToVerticalOffsetOnPixelGrid(MessageScrollViewer.ScrollableHeight);
 
     private void MessageScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
@@ -325,7 +330,7 @@ public partial class AssistantView : UserControl
         // the extent for several passes — one ScrollToEnd would land short of the newest turn.
         if (e.ExtentHeightChange != 0)
         {
-            if (IsAutoScrollEnabled) MessageScrollViewer.ScrollToEnd();
+            if (IsAutoScrollEnabled) ScrollToEndOnPixelGrid();
             return;
         }
 

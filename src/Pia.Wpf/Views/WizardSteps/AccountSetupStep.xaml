@@ -302,6 +302,12 @@
         </Grid>
       </Border>
 
+      <TextBlock Text="{loc:Str Wizard_E2EE_AlreadyEnabled}"
+                 FontSize="12" Opacity="0.8" TextWrapping="Wrap"
+                 MaxWidth="400" HorizontalAlignment="Center" TextAlignment="Center"
+                 Margin="0,0,0,12"
+                 Visibility="{Binding ShowE2EEAlreadyEnabledNotice, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
       <!-- E2EE Onboarding (shown when account has E2EE enabled) -->
       <localSettings:E2EEOnboardingView
           Margin="0,0,0,16"

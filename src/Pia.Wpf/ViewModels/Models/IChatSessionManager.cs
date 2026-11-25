@@ -41,28 +41,15 @@ public interface IChatSessionManager
     /// <summary>Designate <paramref name="session"/> as active (clears Completed → Idle).</summary>
     void SetActive(ChatSession session);
 
-    /// <summary>
-    /// Prepare and start a turn for <paramref name="session"/> with the given user input.
-    /// Resolves persona/provider/prompt, adds the user + assistant messages, and runs the loop.
-    /// <paramref name="regenerationInstruction"/> (optional) is injected AI-side for a styled
-    /// regeneration (e.g. "make it shorter") without changing the displayed user bubble, and
-    /// <paramref name="attachedFileContext"/> (optional) the same way for attached file text.
-    /// <paramref name="attachedFiles"/> (optional) is the displayable counterpart of that text — the
-    /// names shown as chips under the user bubble, and the only part of an attachment that persists.
-    /// <para>
-    /// If <paramref name="session"/>'s attached run is parked asking the user a question (<c>needs-goal</c> /
-    /// <c>needs-input</c>), this posts <paramref name="userText"/> as the answer and resumes that run instead
-    /// of starting a turn.
-    /// </para>
-    /// </summary>
-    /// <returns>False only when the send was REFUSED without consuming anything (a plan-approval park is
-    /// pending), so the caller owns restoring its composer. Every other outcome, a failed setup included,
-    /// is true.</returns>
+    /// <summary>Starts a turn, or answers the attached run's parked question with <paramref name="userText"/>. Attachment
+    /// text and a regeneration instruction ride AI-side only; of an attachment, only <paramref name="attachedFiles"/> persists.</summary>
+    /// <returns>False only when a pending plan approval refused the send, so the caller restores its composer.</returns>
     Task<bool> StartTurnAsync(
         ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
         string? regenerationInstruction = null,
         bool planned = false, string? attachedFileContext = null,
-        IReadOnlyList<AttachedFileRef>? attachedFiles = null);
+        IReadOnlyList<AttachedFileRef>? attachedFiles = null,
+        IReadOnlyList<PendingFileAttachment>? files = null);
 
     /// <summary>
     /// Detach the goal as an unattended headless Planned run (no live session). Additive to

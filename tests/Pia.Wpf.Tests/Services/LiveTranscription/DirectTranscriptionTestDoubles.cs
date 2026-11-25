@@ -140,6 +140,10 @@ internal sealed class FakeSpeakerIdentificationService : ISpeakerIdentificationS
 
     public void Reset() { }
 
+    public List<int> ContinuedAfter { get; } = new();
+
+    public void ContinueNumberingAfter(int lastNumber) => ContinuedAfter.Add(lastNumber);
+
     /// <summary>Test hook: fire <see cref="SpeakerRegistered"/> as the real diarizer would.</summary>
     public void RaiseSpeakerRegistered(string label) => SpeakerRegistered?.Invoke(this, label);
 

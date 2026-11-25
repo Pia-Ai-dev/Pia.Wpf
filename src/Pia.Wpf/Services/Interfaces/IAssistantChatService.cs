@@ -108,6 +108,9 @@ public interface IAssistantChatService
     /// that only needs this field must not pay for.</summary>
     Task<Guid?> GetProviderIdAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>Whether the chat is still stored, without reading any of it; <c>false</c> once the store is disposed.</summary>
+    Task<bool> ExistsAsync(Guid id, CancellationToken ct = default);
+
     Task<IReadOnlyList<SyncAssistantChat>> SearchAsync(
         string? searchText = null,
         DateTime? fromDate = null,
@@ -179,4 +182,7 @@ public interface IAssistantChatService
     Task<IReadOnlyList<Guid>> GetUnbackfilledIdsAsync(CancellationToken ct = default);
 
     Task MarkBackfilledAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>Owes every chat to the server again, e.g. so copies pushed before encryption are replaced.</summary>
+    Task ClearBackfillMarksAsync(CancellationToken ct = default);
 }

@@ -277,6 +277,40 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         Assert.Null(RunPauseEnvelope.ReadReason(final));                            // the claim retired the marker
     }
 
+    [Fact]
+    public async Task ALiveStepInterrupted_ParksTheRun_AndLeavesNoErrorBubble()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps("s1"), false));
+
+        var session = CreateSession();
+        SeedSessionForPlannedRun(session, "goal");
+        ReturnsStream(_ => ThrowCreditLimit());
+
+        await h.BuildOrchestrator(planner, steering: h.Store)
+            .RunAsync(run, BuildLiveExecutor(session), Persona(), Provider(), RunProfile.Interactive, session.Cts!.Token);
+
+        var parked = (await h.Runs.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, parked.State);
+        Assert.Equal(AgentRunOrchestrator.InterruptedCreditReason, RunPauseEnvelope.ReadReason(parked));
+        Assert.Equal(AgentStepStatus.Pending, Assert.Single(parked.Plan).Status);
+        Assert.Equal(ChatState.Idle, session.State);
+        Assert.DoesNotContain(session.Messages, m => m.Content.Contains("limit text", StringComparison.Ordinal));
+        Assert.DoesNotContain(session.Messages, m => !m.IsUser);
+    }
+
+    private static async IAsyncEnumerable<ChatStreamItem> ThrowCreditLimit()
+    {
+        await Task.Yield();
+        throw new Pia.Services.Exceptions.CreditLimitException("limit text");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
+    }
+
     /// <summary>The step-persona resolve is awaited outside <c>PostAsync</c> and any exchange try/catch, and the
     /// roster ladder rethrows a cancelled OCE — so the abort throws out with the step row already Running(1).</summary>
     [Fact]

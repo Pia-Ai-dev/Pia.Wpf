@@ -214,6 +214,9 @@ public interface IMemoryService
     /// </summary>
     Task ForgetAsync(string reference);
 
+    /// <summary>Null when <paramref name="reference"/> may be passed to <see cref="ForgetAsync"/>, else the error to show.</summary>
+    string? ValidateForgetReference(string reference);
+
     /// <summary>
     /// Enumerate the on-disk vault as view items (one per <c>##</c> section of a structured document and
     /// one per freeform/preamble file) together with the total record-file byte size — both from a single

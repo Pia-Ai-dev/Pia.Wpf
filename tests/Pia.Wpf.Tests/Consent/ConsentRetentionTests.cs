@@ -97,6 +97,22 @@ public sealed class ConsentRetentionTests : IDisposable
         Assert.Equal(1, outcome.EvidenceSessionsKept);
     }
 
+    /// <summary>A v2 folder lives as long as its copies, which a window of days knows nothing about.</summary>
+    [Fact]
+    public void AV2SessionIsLeftAlone_HoweverOld_WhileAV1SessionBesideItAgesOut()
+    {
+        var v2 = Session("eee", 40, ConsentEvidenceStore.SessionMarkerFileName, "Speaker 1.json");
+        var v1 = Session("fff", 40, "Speaker 1.json");
+
+        var outcome = Sweep();
+
+        Assert.True(Directory.Exists(v2));
+        Assert.False(Directory.Exists(v1));
+        Assert.Equal(1, outcome.EvidenceSessionsDeleted);
+        Assert.Equal(0, outcome.EvidenceSessionsKept);
+        Assert.Equal(0, outcome.Skipped);
+    }
+
     [Fact]
     public void AnEmptySessionDirectoryStillAgesOut()
     {
