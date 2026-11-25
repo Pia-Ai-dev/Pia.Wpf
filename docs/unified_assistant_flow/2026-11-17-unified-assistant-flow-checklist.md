@@ -1,6 +1,7 @@
 # One assistant flow — checklist
 
-**Status:** proposed · **Owner:** Marco Altmann · **Written:** 2026-11-17
+**Status:** in progress — groups A–D and F landed, E and G in part; gates G2 and G3 open ·
+**Owner:** Marco Altmann · **Written:** 2026-11-17
 **Origin:** [2026-11-17-unified-assistant-flow-design.md](2026-11-17-unified-assistant-flow-design.md)
 
 Tick a box in the commit that lands the step.
