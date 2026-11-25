@@ -2432,6 +2432,48 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
+    [Fact]
+    public async Task Shutdown_MidStep_SettlesTheRunAsInterrupted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher(stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.Steps = 2;
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        await launcher.StopAsync(CancellationToken.None);
+
+        var final = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(HeadlessRunLauncher.ShutdownInterruptedFailure, AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
+    }
+
+    [Fact]
+    public async Task UserStop_MidStep_SettlesTheRunWithNoFailureReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher(stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.Steps = 2;
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var final = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Null(AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        await launcher.StopAsync(CancellationToken.None);
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
+    }
+
     /// <summary>Holds a dispatch in the resume ramp-up: <c>Register</c> is the last statement before
     /// <c>RunAsync</c>, so the row reads <c>Running</c> with the new dispatch's sink installed and unused.</summary>
     private sealed class RampUpGate : IExecutingRunStore

@@ -176,7 +176,8 @@ public sealed class AgentRunOrchestrator
         CancellationToken externalToken,
         bool resume = false,
         string? nudge = null,
-        string? parkReason = null)
+        string? parkReason = null,
+        CancellationToken hostShutdown = default)
     {
         // EVERY line this dispatch writes — from this loop, from the planner and verifier it awaits, and
         // from the tool handlers inside a step turn — carries the run id. That is what makes a log readable at
@@ -278,7 +279,7 @@ public sealed class AgentRunOrchestrator
 
                 if (plan.FallBackToSingleTurn) // R10
                 {
-                    await RunDegradedSingleTurnAsync(executor, run, ctx, cts.Token).ConfigureAwait(false);
+                    await RunDegradedSingleTurnAsync(executor, run, ctx, cts.Token, hostShutdown).ConfigureAwait(false);
                     return;
                 }
 
@@ -399,7 +400,7 @@ public sealed class AgentRunOrchestrator
                         {
                             cancelled = true;
                             await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                            await SafeFail(run.Id, children.Error, cancelled: true).ConfigureAwait(false);
+                            await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
                             break;
                         }
 
@@ -576,7 +577,7 @@ public sealed class AgentRunOrchestrator
                     {
                         cancelled = true;
                         await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                        await SafeFail(run.Id, r.Error, cancelled: true).ConfigureAwait(false);
+                        await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
                         break;
                     }
 
@@ -667,7 +668,7 @@ public sealed class AgentRunOrchestrator
             // the executed-so-far slice first so a transcript-producing run never settles Cancelled with a
             // null range (mirrors the step-cancel path above; SetRunMessageRange ignores the cancelled ct).
             await PinRange().ConfigureAwait(false);
-            await SafeFail(run.Id, null, cancelled: true).ConfigureAwait(false);
+            await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
             await SafeEndRun(executor, run, ctx, cancelled: true, failed: false).ConfigureAwait(false);
         }
         catch (Exception ex) // planner-cannot-plan (threw) / executor crash — critical path, fail the run
@@ -828,7 +829,7 @@ public sealed class AgentRunOrchestrator
     /// <summary>the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —
     /// this arm never reaches the terminal-settle block.</summary>
     private async Task RunDegradedSingleTurnAsync(
-        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct)
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct, CancellationToken hostShutdown)
     {
         var cancelled = false;
         var failed = false;
@@ -841,7 +842,7 @@ public sealed class AgentRunOrchestrator
         if (fr.Cancelled)
         {
             cancelled = true;
-            await SafeFail(run.Id, fr.Error, cancelled: true).ConfigureAwait(false);
+            await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
         }
         else if (!fr.Succeeded)
         {
@@ -1849,7 +1850,7 @@ public sealed class AgentRunOrchestrator
         try
         {
             await _runService.RecordStepResultAsync(stepId,
-                r.Succeeded ? AgentStepStatus.Done : AgentStepStatus.Failed,
+                r.Succeeded ? AgentStepStatus.Done : r.Cancelled ? AgentStepStatus.Pending : AgentStepStatus.Failed,
                 r.FirstMessageId, r.LastMessageId, r.Usage, ct, r.Outcome?.ArtifactRef).ConfigureAwait(false);
         }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (record step) failed for {StepId}", stepId); }
@@ -2122,6 +2123,11 @@ public sealed class AgentRunOrchestrator
             return true;
         }
     }
+
+    // A step reports its cancel as the error "cancelled", which is no reason: a user's stop stores none.
+    private Task SafeFailCancelled(Guid runId, CancellationToken hostShutdown) =>
+        SafeFail(runId, hostShutdown.IsCancellationRequested ? HeadlessRunLauncher.ShutdownInterruptedFailure : null,
+            cancelled: true);
 
     private async Task SafeFail(Guid runId, string? error, bool cancelled, PiaFailure? failure = null)
     {

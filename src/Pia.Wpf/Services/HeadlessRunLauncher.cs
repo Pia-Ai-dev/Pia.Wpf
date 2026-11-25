@@ -583,7 +583,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 // AND by ChatSessionManager's RunChanged handler, whichever gets there first.
                 _executingRuns.Register(chatId, run.Id);
 
-                await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token).ConfigureAwait(false);
+                await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token,
+                    hostShutdown: _shutdownCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1076,7 +1077,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // ParkReason carries the pre-claim token down to the orchestrator's planning guard — the
             // only way it can get there, since the claim already NULLed the envelope it came from.
             await orchestrator.RunAsync(run, executor, plan.Persona, plan.Provider, plan.Budget, runCts.Token,
-                    resume: true, nudge: plan.Nudge, parkReason: plan.ParkReason)
+                    resume: true, nudge: plan.Nudge, parkReason: plan.ParkReason, hostShutdown: _shutdownCts.Token)
                 .ConfigureAwait(false); // resume:true → drains the Pending remainder; re-plans only for
                                         // A needs-goal park with no step rows
         }
