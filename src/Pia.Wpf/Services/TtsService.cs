@@ -123,7 +123,7 @@ public class TtsService : ITtsService, IDisposable
     private readonly PlaybackSlot _playback = new();
     private string? _currentVoiceKey;
     private bool _isReady;
-    private int _lastRaisedPlaying;
+    private readonly PlayingIndicator _playingIndicator;
     private bool _disposed;
 
     // Filler support
@@ -138,13 +138,8 @@ public class TtsService : ITtsService, IDisposable
 
     public bool IsPlaying => _playback.IsPlaying;
 
-    // Raised outside the slot's lock, with the state current at raise time.
-    private void RaiseIsPlayingChanged()
-    {
-        var now = _playback.IsPlaying;
-        if (Interlocked.Exchange(ref _lastRaisedPlaying, now ? 1 : 0) != (now ? 1 : 0))
-            IsPlayingChanged?.Invoke(this, now);
-    }
+    // Delivered under the indicator's lock; the only subscriber just assigns a property.
+    private void RaiseIsPlayingChanged() => _playingIndicator.Notify();
 
     public event EventHandler<bool>? IsPlayingChanged;
 
@@ -153,6 +148,8 @@ public class TtsService : ITtsService, IDisposable
         _logger = logger;
         _settingsService = settingsService;
         _downloader = downloader;
+        _playingIndicator = new PlayingIndicator(
+            () => _playback.IsPlaying, playing => IsPlayingChanged?.Invoke(this, playing));
 
         Directory.CreateDirectory(TtsVoiceCatalog.VoicesDirectory);
     }
