@@ -123,7 +123,7 @@ public class TtsService : ITtsService, IDisposable
     private readonly PlaybackSlot _playback = new();
     private string? _currentVoiceKey;
     private bool _isReady;
-    private bool _isPlaying;
+    private int _lastRaisedPlaying;
     private bool _disposed;
 
     // Filler support
@@ -136,17 +136,14 @@ public class TtsService : ITtsService, IDisposable
     public bool HasFillers => _currentVoiceKey is not null && _fillerCache.ContainsKey(_currentVoiceKey)
                               && _fillerCache[_currentVoiceKey].Count > 0;
 
-    public bool IsPlaying
+    public bool IsPlaying => _playback.IsPlaying;
+
+    // Raised outside the slot's lock, with the state current at raise time.
+    private void RaiseIsPlayingChanged()
     {
-        get => _isPlaying;
-        private set
-        {
-            if (_isPlaying != value)
-            {
-                _isPlaying = value;
-                IsPlayingChanged?.Invoke(this, value);
-            }
-        }
+        var now = _playback.IsPlaying;
+        if (Interlocked.Exchange(ref _lastRaisedPlaying, now ? 1 : 0) != (now ? 1 : 0))
+            IsPlayingChanged?.Invoke(this, now);
     }
 
     public event EventHandler<bool>? IsPlayingChanged;
@@ -275,7 +272,8 @@ public class TtsService : ITtsService, IDisposable
 
         try
         {
-            IsPlaying = true;
+            _playback.Start(mine);
+            RaiseIsPlayingChanged();
 
             var producerTask = Task.Run(async () =>
             {
@@ -326,8 +324,8 @@ public class TtsService : ITtsService, IDisposable
         }
         finally
         {
-            if (_playback.End(mine))
-                IsPlaying = false;
+            _playback.End(mine);
+            RaiseIsPlayingChanged();
         }
     }
 
@@ -523,7 +521,7 @@ public class TtsService : ITtsService, IDisposable
     {
         _playback.Cancel();
         _fillerCts?.Cancel();
-        IsPlaying = false;
+        RaiseIsPlayingChanged();
     }
 
     public Task<IReadOnlyList<TtsVoice>> GetAvailableVoicesAsync(CancellationToken cancellationToken = default)
