@@ -1505,6 +1505,59 @@ public class ChatSessionManagerTests
         await _titleService.DidNotReceive().GenerateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    private static ImageAttachment OneImage()
+    {
+        var thumb = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgra32, null, new byte[4], 4);
+        thumb.Freeze();
+        return new ImageAttachment { JpegBytes = [1, 2, 3, 4], MimeType = "image/jpeg", Width = 1, Height = 1, Thumbnail = thumb };
+    }
+
+    private void ArrangeImageTurn(AiProviderType pinnedType)
+    {
+        var pinned = new AiProvider { Id = Guid.NewGuid(), Name = "Pinned", Endpoint = "https://x", ProviderType = pinnedType };
+        var persona = new Persona { Name = "Tester", SystemPrompt = "be helpful", PreferredProviderId = pinned.Id };
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>()).Returns(persona);
+        _providers.GetProviderAsync(pinned.Id).Returns(pinned);
+        _providers.GetDefaultProviderForModeAsync(Arg.Any<WindowMode>())
+            .Returns(new AiProvider { Id = Guid.NewGuid(), Name = "Cloud", Endpoint = "https://x", ProviderType = AiProviderType.PiaCloud });
+        _composer.PrepareTurn(Arg.Any<Persona>(), Arg.Any<AiProvider>(), Arg.Any<IReadOnlyList<AtCommand>>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<string?>(), unattended: Arg.Any<bool>())
+            .Returns(new AssistantTurnSetup("system", null, SupportsTools: false, WebSearchActive: false));
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ImagesOnPinnedByokProvider_RefusesBeforeDispatch()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeImageTurn(AiProviderType.OpenAI);
+        RunFailedEventArgs? failed = null;
+        session.RunFailed += (_, e) => failed = e;
+
+        await sut.StartTurnAsync(session, "what is this", [OneImage()]);
+
+        Assert.Equal(ChatState.Error, session.State);
+        Assert.Equal("Msg_File_ImageProviderUnsupported", failed?.Message);
+        Assert.Equal("Msg_File_ImageProviderUnsupported", session.Messages[^1].Content);
+        _composer.DidNotReceiveWithAnyArgs().PrepareTurn(default!, default!, default!, default, default, default, unattended: default);
+        Assert.Empty(_ai.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ImagesOnPiaCloudProvider_AreNotRefused()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeImageTurn(AiProviderType.PiaCloud);
+        RunFailedEventArgs? failed = null;
+        session.RunFailed += (_, e) => failed = e;
+
+        await sut.StartTurnAsync(session, "what is this", [OneImage()]);
+
+        Assert.NotEqual("Msg_File_ImageProviderUnsupported", failed?.Message);
+        Assert.NotEqual("Msg_File_ImageProviderUnsupported", session.Messages[^1].Content);
+        _composer.ReceivedWithAnyArgs().PrepareTurn(default!, default!, default!, default, default, default, unattended: default);
+    }
+
     [Fact]
     public async Task StartTurnAsync_NoProvider_ActiveSession_DoesNotPersist()
     {
