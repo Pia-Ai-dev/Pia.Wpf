@@ -16,7 +16,6 @@ public sealed class PlayingIndicatorTests
         var delivered = new List<bool>();
         using var aParked = new ManualResetEventSlim();
         using var releaseA = new ManualResetEventSlim();
-        using var bEntered = new ManualResetEventSlim();
 
         var indicator = new PlayingIndicator(
             () =>
@@ -43,16 +42,25 @@ public sealed class PlayingIndicatorTests
         Assert.True(aParked.Wait(Timeout, ct));
 
         Volatile.Write(ref state, true);
-        var b = Task.Run(() =>
+        var bDone = 0;
+        var b = new Thread(() =>
         {
-            bEntered.Set();
             indicator.Notify();
-        }, ct);
-        Assert.True(bEntered.Wait(Timeout, ct));
-        await Task.Delay(100, ct);
+            Volatile.Write(ref bDone, 1);
+        }) { IsBackground = true };
+        b.Start();
+
+        // B must be blocked on the indicator (or, if unserialized, already finished) before A resumes.
+        var deadline = DateTime.UtcNow + Timeout;
+        while (Volatile.Read(ref bDone) == 0 && !b.ThreadState.HasFlag(ThreadState.WaitSleepJoin))
+        {
+            Assert.True(DateTime.UtcNow < deadline, "B neither blocked nor finished");
+            Thread.Sleep(1);
+        }
 
         releaseA.Set();
-        await Task.WhenAll(a, b).WaitAsync(Timeout, ct);
+        await a.WaitAsync(Timeout, ct);
+        Assert.True(b.Join(Timeout));
 
         lock (delivered)
         {
