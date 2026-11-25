@@ -793,9 +793,15 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             // would otherwise re-publish stale items at startup).
             using (var cmd = connection.CreateCommand())
             {
-                cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now WHERE State < @Terminal";
+                // Pia closed under these runs; with no reason they would read as stopped by the user.
+                cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now, ExtraJson=@Extra, " +
+                    "FailureJson=@Failure WHERE State < @Terminal";
                 cmd.Parameters.AddWithValue("@State", (int)AgentRunState.Cancelled);
                 cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
+                cmd.Parameters.AddWithValue("@Extra",
+                    JsonSerializer.Serialize(new { error = HeadlessRunLauncher.ShutdownInterruptedFailure }, JsonOptions));
+                cmd.Parameters.AddWithValue("@Failure",
+                    ToParam(FailureMapper.ForReason(HeadlessRunLauncher.ShutdownInterruptedFailure)?.ToJson()));
                 cmd.Parameters.AddWithValue("@Terminal", (int)AgentRunState.WaitingForInput);
                 cancelled = cmd.ExecuteNonQuery();
             }
