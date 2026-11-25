@@ -20,6 +20,7 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
 
     private bool? _chatsSupported;
     private int? _chatsSchemaVersion;
+    private bool _serverAnswered;
 
     public CloudCapabilityService(
         ISettingsService settingsService,
@@ -45,6 +46,12 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         return _chatsSchemaVersion;
     }
 
+    public async Task<bool> ChatsConfirmedOffAsync(CancellationToken ct = default)
+    {
+        await EnsureProbedAsync(ct);
+        return _serverAnswered && _chatsSupported == false;
+    }
+
     public void Invalidate()
     {
         _gate.Wait();
@@ -52,6 +59,7 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         {
             _chatsSupported = null;
             _chatsSchemaVersion = null;
+            _serverAnswered = false;
         }
         finally
         {
@@ -68,9 +76,10 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         {
             if (_chatsSupported.HasValue) return;
 
-            var (supported, schemaVersion) = await ProbeAsync(ct);
+            var (supported, schemaVersion, answered) = await ProbeAsync(ct);
             _chatsSupported = supported;
             _chatsSchemaVersion = schemaVersion;
+            _serverAnswered = answered;
 
             _logger.LogInformation(
                 "Cloud capability probe: chats supported = {Supported}, schemaVersion = {SchemaVersion}",
@@ -90,13 +99,13 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         }
     }
 
-    private async Task<(bool Supported, int? SchemaVersion)> ProbeAsync(CancellationToken ct)
+    private async Task<(bool Supported, int? SchemaVersion, bool Answered)> ProbeAsync(CancellationToken ct)
     {
         try
         {
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl?.TrimEnd('/');
-            if (string.IsNullOrEmpty(serverUrl)) return (false, null);
+            if (string.IsNullOrEmpty(serverUrl)) return (false, null, false);
 
             var url = $"{serverUrl}/api/capabilities";
             var client = _httpClientFactory.CreateClient();
@@ -113,14 +122,15 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
             {
                 _logger.LogInformation(
                     "Capability probe non-success status {Status}", (int)response.StatusCode);
-                return (false, null);
+                return (false, null, false);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
 
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (false, null);
-            if (!doc.RootElement.TryGetProperty("chats", out var chatsProp)) return (false, null);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (false, null, false);
+            // A server that predates chat sync answers without the flag, which is a real "off".
+            if (!doc.RootElement.TryGetProperty("chats", out var chatsProp)) return (false, null, true);
             var supported = chatsProp.ValueKind == JsonValueKind.True;
 
             int? schemaVersion = null;
@@ -131,7 +141,7 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
                 schemaVersion = v;
             }
 
-            return (supported, schemaVersion);
+            return (supported, schemaVersion, true);
         }
         catch (OperationCanceledException)
         {
@@ -140,7 +150,7 @@ public sealed class CloudCapabilityService : ICloudCapabilityService
         catch (Exception ex)
         {
             _logger.LogInformation("Capability probe failed: {Type}", ex.GetType().Name);
-            return (false, null);
+            return (false, null, false);
         }
     }
 }

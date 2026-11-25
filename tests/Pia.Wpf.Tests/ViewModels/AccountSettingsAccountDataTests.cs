@@ -199,6 +199,7 @@ public class AccountSettingsAccountDataTests
             new E2EEOnboardingViewModel(
                 deviceMgmt, deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,
                 NullLogger<E2EEOnboardingViewModel>.Instance),
-            _accountData, _fileDialogs, Substitute.For<ICreditStatusService>());
+            _accountData, _fileDialogs, Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
     }
 }

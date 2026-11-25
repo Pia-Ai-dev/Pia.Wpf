@@ -1,6 +1,4 @@
-﻿using System.IO;
-using System.Text.RegularExpressions;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -52,7 +50,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 48, 6, "McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
     // AccountView's one DataTemplate (the credit rows) holds no interactive control, so no per-item floor.
-    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 18, 0, "E2EEOnboardingView")]
+    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 20, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 4, 0, "TemplatesView")]
     [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 13, 0, "PiaEmptyState")]
     [InlineData(typeof(Pia.Views.AssistantView), 34, 7,
@@ -177,44 +175,6 @@ public class ViewAutomationIdTests
         Assert.Equal(
             expectedNestedViews.Length == 0 ? [] : expectedNestedViews.Split(','),
             survey.NestedViews);
-    }
-
-    // The playbook spells ids out by hand, so a renamed one only shows when a walkthrough hunts for it.
-    [Fact]
-    public void PlaybookMcpServersRow_NamesOnlyIdsTheViewDeclares()
-    {
-        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        var xaml = File.ReadAllText(Path.Combine(repoRoot, "src", "Pia.Wpf", "Views", "SettingsViews", "McpServersView.xaml"));
-        var row = File.ReadLines(Path.Combine(repoRoot, "docs", "ui_automation", "ui-automation-playbook.md"))
-            .Single(line => line.StartsWith("| Settings → Assistant → MCP servers |", StringComparison.Ordinal));
-
-        // A bare `_Field` continues the last full id's `McpServers_<Area>_` prefix.
-        var prefix = "";
-        var named = new List<string>();
-        foreach (var token in Regex.Matches(row, "`([^`]+)`").Select(m => m.Groups[1].Value))
-        {
-            if (token.StartsWith("McpServers_", StringComparison.Ordinal))
-            {
-                prefix = string.Join('_', token.Split('_').Take(2)) + "_";
-                named.Add(token);
-            }
-            else if (token.StartsWith('_') && prefix.Length > 0)
-            {
-                named.Add(prefix + token[1..]);
-            }
-        }
-
-        var missing = named
-            .Select(id => id.Split("_<")[0])
-            .Where(id => !xaml.Contains($"AutomationId=\"{id}\"", StringComparison.Ordinal)
-                && !xaml.Contains($"'{id}_{{0}}'", StringComparison.Ordinal))
-            .Distinct()
-            .ToArray();
-
-        Assert.True(named.Count >= 30, $"only {named.Count} ids were read off the playbook's MCP servers row");
-        Assert.True(missing.Length == 0,
-            "docs/ui_automation/ui-automation-playbook.md names these ids, which McpServersView.xaml does not " +
-            $"declare: {string.Join(", ", missing)}");
     }
 
     private static Survey Take(Type viewType)

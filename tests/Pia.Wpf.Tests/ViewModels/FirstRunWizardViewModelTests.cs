@@ -55,7 +55,8 @@ public class FirstRunWizardViewModelTests
     private FirstRunWizardViewModel CreateSut() => new(
         _settings, _memory, _voice, _loc, _auth, _providers, _sync,
         _deviceMgmt, _policy, _onboardingVm, _e2eeSetupVm,
-        NullLogger<FirstRunWizardViewModel>.Instance);
+        NullLogger<FirstRunWizardViewModel>.Instance,
+        Substitute.For<IDialogService>(), Substitute.For<ILocalDataResetService>());
 
     [Fact]
     public void NotLoggedIn_ShouldNotShowE2EEStep()

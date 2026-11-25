@@ -18,6 +18,8 @@ public class TemplateService : JsonPersistenceService<List<OptimizationTemplate>
 
     protected override List<OptimizationTemplate> CreateDefault() => [];
 
+    protected override ILogger Logger => _logger;
+
     public TemplateService(ILogger<TemplateService> logger, SyncDeleteTrackerService deleteTracker)
     {
         _logger = logger;

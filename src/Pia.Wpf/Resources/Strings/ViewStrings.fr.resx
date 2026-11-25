@@ -1032,12 +1032,46 @@
   <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Le contenu que vous synchronisez avec ce compte est stocké sans chiffrement sur le serveur Pia. Activez le chiffrement de bout en bout pour que seuls vos appareils puissent le lire.</value></data>
   <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Activer le chiffrement</value></data>
   <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Plus tard</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Synchronisation suspendue : selon le serveur, ce compte n'est plus chiffré de bout en bout.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Vérifier</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Chiffrement désactivé sur le serveur</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>Ce compte utilisait le chiffrement de bout en bout, mais le serveur le signale désormais comme non chiffré. La synchronisation est suspendue pour que vos données ne soient pas envoyées en clair. Si personne n'a réinitialisé volontairement le chiffrement de ce compte, n'allez pas plus loin et contactez votre administrateur.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Synchroniser sans chiffrement</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Synchroniser sans chiffrement ?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Ne continuez que si le chiffrement de ce compte a été réinitialisé volontairement. Vos données seront alors envoyées au serveur sans chiffrement de bout en bout, et cet appareil ne vous avertira plus.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Un nouvel appareil demande l'accès</value></data>
-  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>Un nouvel appareil souhaite rejoindre votre compte.&#xA;&#xA;Appareil : {0}&#xA;Empreinte : {1}&#xA;&#xA;Comparez cette empreinte avec celle affichée sur le nouvel appareil et n'approuvez que si elles correspondent. Le nouvel appareil vous demande ensuite de comparer l'empreinte de cet appareil : {2}&#xA;&#xA;Voulez-vous approuver cet appareil ?</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>Un nouvel appareil souhaite rejoindre votre compte. Ne l'approuvez que si vous venez de vous connecter vous-même sur cet appareil et que les deux empreintes ci-dessous correspondent.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>Le nom de cet appareil contenait des caractères masqués ou de contrôle. Ils ont été supprimés avant l'affichage. Soyez prudent : n'approuvez que si vous êtes certain qu'il s'agit de votre appareil.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Appareil demandeur</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Nom de l'appareil</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Empreinte</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Comparez cette empreinte caractère par caractère avec celle affichée sur le nouvel appareil.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>Cet appareil</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>Après votre approbation, le nouvel appareil vous demande de confirmer cette empreinte.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Approuver</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Ne pas approuver</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Appareil sans nom</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Refuser l'appareil ?</value></data>
-  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Voulez-vous refuser et révoquer {0} ? Si vous ne reconnaissez pas cet appareil, révoquez-le.</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Voulez-vous refuser et révoquer cet appareil ? Si vous ne le reconnaissez pas, révoquez-le.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Appareil approuvé</value></data>
-  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} a été approuvé et peut maintenant synchroniser.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>L'appareil a été approuvé et peut maintenant synchroniser.</value></data>
+  <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Appareil supprimé</value></data>
+  <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>Cet appareil a été révoqué sur le serveur. La synchronisation en arrière-plan est arrêtée et la copie de la clé de chiffrement de cet appareil a été oubliée. Configurez à nouveau cet appareil, ou déconnectez-vous.</value></data>
+  <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Cet appareil n'est plus enregistré sur le serveur — son enregistrement a été supprimé ou a expiré. La synchronisation en arrière-plan est arrêtée et la copie de la clé de chiffrement de cet appareil a été oubliée. Configurez à nouveau cet appareil, ou déconnectez-vous.</value></data>
+  <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Configurer à nouveau cet appareil</value></data>
+  <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Se déconnecter</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Appareil non approuvé</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} n'a pas pu être approuvé. Vérifiez votre connexion et réessayez depuis Paramètres → Compte.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>Aucune demande</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>Aucun appareil n'attend d'approbation.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Vérification impossible</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia n'a pas pu vérifier si des appareils attendent une approbation.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Chiffrement non activé</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>Le chiffrement de bout en bout n'a pas pu être activé. Vérifiez votre connexion et réessayez.</value></data>
+  <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Déconnecté</value></data>
+  <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Votre session a pris fin ou a été révoquée sur le serveur. Veuillez vous reconnecter.</value></data>
+  <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>Le serveur a refusé de renouveler votre session. Veuillez vous reconnecter.</value></data>
+  <data name="Auth_SignedOut_Unreadable" xml:space="preserve"><value>La session enregistrée n'a pas pu être ouverte sur cet appareil. Veuillez vous reconnecter.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Configuration du chiffrement de bout en bout</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Ce compte utilise le chiffrement de bout en bout. Configurez cet appareil pour accéder à vos données chiffrées.</value></data>
@@ -1066,6 +1100,22 @@
   <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Elle ne correspond pas</value></data>
   <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>Cet appareil n'a pas accepté la clé. L'appareil approbateur n'est peut-être pas le vôtre : refusez sur vos autres appareils toute demande que vous ne reconnaissez pas, et configurez plutôt cet appareil avec votre code de récupération.</value></data>
   <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>La clé approuvée n'a pas pu être ouverte sur cet appareil. Réessayez ou utilisez votre code de récupération.</value></data>
+  <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>Les clés de chiffrement de cet ordinateur ont été perdues. Pia vous a déconnecté afin que l'ordinateur puisse rejoindre votre compte en tant que nouvel appareil. Connectez-vous, puis confirmez-le depuis un autre appareil ou avec votre code de récupération. Vous pourrez ensuite supprimer l'installation précédente dans les paramètres du compte.</value></data>
+  <data name="E2EE_Onboarding_OwnCopyChanged" xml:space="preserve"><value>La copie de la clé enregistrée pour cet appareil a été modifiée sur le serveur ; elle n'a donc pas été utilisée. Configurez à nouveau l'appareil avec votre code de récupération.</value></data>
+  <data name="E2EE_Onboarding_Recovery_CopyRejected" xml:space="preserve"><value>Pia n'a pas utilisé les données de récupération enregistrées sur le serveur, car elles ne sont pas valides. Votre code de récupération n'a pas été vérifié. Confirmez cet appareil depuis un autre appareil ou contactez votre administrateur.</value></data>
+  <data name="Settings_E2EE_SignatureRefused_Message" xml:space="preserve"><value>Le serveur n'accepte cette modification que depuis l'un de vos appareils actifs, et cet appareil n'a pas pu le prouver. Restaurez cet appareil avec votre code de récupération, puis réessayez.</value></data>
+  <data name="Settings_E2EE_PreviousInstallation_Text" xml:space="preserve"><value>Cet ordinateur a rejoint votre compte à nouveau après la perte de ses clés de chiffrement. Son installation précédente figure encore dans la liste et ne peut plus être utilisée.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation" xml:space="preserve"><value>Supprimer l'installation précédente de cet ordinateur</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Title" xml:space="preserve"><value>Supprimer l'installation précédente</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Message" xml:space="preserve"><value>L'installation précédente de cet ordinateur sera supprimée de votre compte. Cet ordinateur continue de fonctionner.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Title" xml:space="preserve"><value>Impossible de supprimer l'installation précédente</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Message" xml:space="preserve"><value>L'installation précédente n'a pas pu être supprimée. Vérifiez votre connexion et réessayez.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Title" xml:space="preserve"><value>Installation précédente supprimée</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Message" xml:space="preserve"><value>L'installation précédente de cet ordinateur ne fait plus partie de votre compte.</value></data>
+  <data name="E2EE_Register_DeviceMismatch" xml:space="preserve"><value>Le serveur connaît cette session comme appartenant à un autre appareil et a refusé l'enregistrement. Déconnectez-vous, reconnectez-vous sur cet appareil, puis réessayez.</value></data>
+  <data name="E2EE_Register_TooManyPending" xml:space="preserve"><value>Trop d'appareils attendent une approbation. Approuvez-en ou supprimez-en un d'abord sur un autre appareil, puis réessayez.</value></data>
+  <data name="E2EE_Register_DeviceChanged" xml:space="preserve"><value>Cet appareil a changé sur le serveur pendant son enregistrement. Réessayez.</value></data>
+  <data name="E2EE_Register_Generic" xml:space="preserve"><value>Le serveur a refusé d'enregistrer cet appareil.</value></data>
   <!-- Boîte de dialogue du code de récupération (affichée lors de l'activation du E2EE depuis les paramètres) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Code de récupération</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Enregistrez votre code de récupération</value></data>
@@ -1164,6 +1214,10 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Interrompue pendant le travail des sous-agents — continuer ?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Vous avez mis cette exécution en pause</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>La reprise n'a pas démarré — relancez-la quand vous le souhaitez</value></data>
+  <data name="Run_Activity_InterruptedCredit" xml:space="preserve"><value>Limite de crédits atteinte. Reprenez une fois qu'elle aura été réinitialisée.</value></data>
+  <data name="Run_Activity_InterruptedOffline" xml:space="preserve"><value>Connexion perdue. Reprenez lorsque vous serez de nouveau en ligne.</value></data>
+  <data name="Run_Activity_InterruptedTimeout" xml:space="preserve"><value>Le modèle n'a pas répondu à temps. Reprendre ?</value></data>
+  <data name="Run_Activity_InterruptedProvider" xml:space="preserve"><value>Le service d'IA a rencontré un problème. Reprendre ?</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>En attente de votre autorisation pour utiliser {0}</value></data>
   <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Concerne {0}</value></data>
   <data name="Run_ToolApproval_ShowFullCall" xml:space="preserve"><value>Afficher l'appel complet</value></data>
@@ -1256,6 +1310,10 @@
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Interrompue pendant le travail de ses sous-agents — continuer ?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Vous avez mis cette exécution en pause. Reprendre ?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>La reprise n'a pas démarré. Reprendre ?</value></data>
+  <data name="Flow_Run_InterruptedCredit" xml:space="preserve"><value>Limite de crédits atteinte. Reprenez une fois qu'elle aura été réinitialisée.</value></data>
+  <data name="Flow_Run_InterruptedOffline" xml:space="preserve"><value>Connexion perdue. Reprenez lorsque vous serez de nouveau en ligne.</value></data>
+  <data name="Flow_Run_InterruptedTimeout" xml:space="preserve"><value>Le modèle n'a pas répondu à temps. Reprendre ?</value></data>
+  <data name="Flow_Run_InterruptedProvider" xml:space="preserve"><value>Le service d'IA a rencontré un problème. Reprendre ?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>Cette exécution a besoin de votre autorisation pour utiliser {0}. Reprenez pour l'accorder.</value></data>
   <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>Cette exécution a besoin de votre autorisation pour utiliser {0} sur {1}. Reprenez pour l'accorder.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>Cette exécution n'a pas compris ce que vous vouliez — ouvrez-la pour répondre.</value></data>
@@ -1281,6 +1339,9 @@
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>Document HTML (*.html)|*.html|Tous les fichiers (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Ouvrir le dossier contenant</value></data>
   <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Enregistrer dans le répertoire de travail</value></data>
+  <data name="Assistant_SavePendingFile_CutTooltip" xml:space="preserve"><value>Enregistrer dans le répertoire de travail pour que Pia puisse lire la suite</value></data>
+  <data name="Assistant_PendingFileCut_Badge" xml:space="preserve"><value>raccourci</value></data>
+  <data name="Assistant_PendingFileCut_Tooltip" xml:space="preserve"><value>Seule une partie de ce fichier tient dans le message. Enregistre-le dans le répertoire de travail pour que Pia puisse lire la suite.</value></data>
   <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Enregistré dans le répertoire de travail</value></data>
   <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>Ce fichier n'a pas été enregistré dans le répertoire de travail : seul son nom a été conservé.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>Ouvrir dans VS Code</value></data>
@@ -1478,6 +1539,7 @@
   <data name="Settings_ScheduledJobs_RunAlreadyRunning" xml:space="preserve"><value>Non démarrée : une exécution de cette tâche est déjà en cours.</value></data>
   <data name="Settings_ScheduledJobs_RunNotOwner" xml:space="preserve"><value>Non exécutée : un autre appareil possède le calendrier de cette tâche.</value></data>
   <data name="Settings_ScheduledJobs_RunNotFound" xml:space="preserve"><value>Non exécutée : cette tâche n'existe plus.</value></data>
+  <data name="Settings_ScheduledJobs_RunResetPending" xml:space="preserve"><value>Non exécutée : Pia n'a pas encore terminé la suppression des données locales. Redémarrez d'abord Pia.</value></data>
   <data name="Settings_ScheduledJobs_RunFailed" xml:space="preserve"><value>Impossible de démarrer la tâche.</value></data>
   <data name="Settings_ScheduledJobs_LoadFailed" xml:space="preserve"><value>Impossible de lire les tâches planifiées.</value></data>
   <data name="Settings_ScheduledJobs_SaveFailed" xml:space="preserve"><value>Impossible d'enregistrer cette modification.</value></data>
@@ -1868,9 +1930,35 @@
   <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Arrêt…</value></data>
   <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} outil(s) sur {1} proposé(s)</value></data>
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} outil(s) autorisé(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} outil(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} outil(s) · {1} peuvent supprimer</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} outil(s) · 1 peut supprimer</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Ce serveur est arrêté. Voici les outils qui étaient autorisés lors de sa dernière exécution.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Démarrez ce serveur, ou utilisez « Tester la connexion », pour lister ses outils.</value></data>
-  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>bloqué</value></data>
+  <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Proposés</value></data>
+  <data name="McpServers_Detail_WithheldGroup" xml:space="preserve"><value>Bloqués</value></data>
+  <data name="McpServers_Detail_NoneAllowed" xml:space="preserve"><value>Aucun outil proposé – modifiable via Modifier</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Enregistrement… le serveur redémarre.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Verrouillé par votre organisation : ce paramètre est imposé par la stratégie Pia et ne peut pas être modifié ici.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Se déconnecter de Pia Cloud</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Voulez-vous aussi supprimer les données de ce compte de cet appareil ? Cela concerne les chats, l'historique, les todos, les modèles, les personas, vos propres fournisseurs d'IA et les préférences synchronisées. Tout reste dans votre compte Pia Cloud et revient lors de votre prochaine connexion. La suppression redémarre Pia.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Se déconnecter et supprimer</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Se déconnecter et conserver</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Avant de vous connecter</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>Cet appareil contient des données. Si vous les conservez, elles sont envoyées vers le compte auquel vous vous connectez. Si vous les supprimez d'abord, Pia les retire de cet appareil, y compris les modifications effectuées pendant que vous étiez déconnecté, puis redémarre. Vous devrez ensuite vous reconnecter.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Conserver et se connecter</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Supprimer d'abord</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>La mémoire de Pia sur cet appareil n'est pas supprimée et reste disponible après un changement de compte.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>Les clés API de vos propres fournisseurs d'IA ne sont pas stockées dans Pia Cloud. Vous devrez les saisir à nouveau.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>Les clés API de vos propres fournisseurs d'IA sont supprimées de cet appareil. Si votre compte n'utilise pas le chiffrement de bout en bout, vous devrez les saisir à nouveau.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Impossible d'envoyer vos dernières modifications</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Certaines modifications effectuées sur cet appareil n'ont pas atteint Pia Cloud. Vider quand même cet appareil ? Les modifications non envoyées seront perdues.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Envoi de vos dernières modifications…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Déconnexion…</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Données locales pas encore supprimées</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia n'a pas pu terminer la suppression des données locales. Redémarrer Pia maintenant pour réessayer ?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Compte supprimé</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Votre compte Pia Cloud a été supprimé. Voulez-vous aussi supprimer ses données de cet appareil ? La suppression redémarre Pia. Cette action est irréversible.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Vider cet appareil</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Conserver sur cet appareil</value></data>
 </root>

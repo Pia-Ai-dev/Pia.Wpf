@@ -424,6 +424,24 @@ public class MemoryToolIntegrationTests : IDisposable
         Assert.DoesNotContain(doc!.Sections, s => s.Heading == "John Smith");
     }
 
+    [Theory]
+    [InlineData("../outside.md")]
+    [InlineData("memory/../../outside.md")]
+    [InlineData("sources/raw.md")]
+    public async Task Forget_EscapingReference_IsRefusedAndNeverStaged(string reference)
+    {
+        var handler = BuildHandler(BuildMemoryService());
+        var forgetCall = new FunctionCallContent(
+            callId: Guid.NewGuid().ToString(),
+            name: "forget",
+            arguments: new Dictionary<string, object?> { ["reference"] = reference });
+
+        var (result, pending) = await handler.HandleToolCallAsync(forgetCall, TestContext.Current.CancellationToken);
+
+        Assert.Null(pending);
+        Assert.StartsWith("Error:", Assert.IsType<string>(result));
+    }
+
     // Ref-normalization regression: the files tools address a source as 'Vault/sources/<name>'
     // (relative to the assistant files folder); read_source must tolerate that spelling too, not just
     // the memory-tools' own 'sources/<name>' (relative to the vault root).

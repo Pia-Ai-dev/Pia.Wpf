@@ -168,4 +168,9 @@
     <Setter Property="TextBlock.TextAlignment" Value="Left" />
   </Style>
 
+  <!-- A focused ScrollViewer would otherwise take WPF-UI's default focus ring around the whole pane. -->
+  <Style TargetType="ScrollViewer" BasedOn="{StaticResource {x:Type ScrollViewer}}">
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+  </Style>
+
 </ResourceDictionary>

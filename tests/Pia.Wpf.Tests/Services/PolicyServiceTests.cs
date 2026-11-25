@@ -1147,6 +1147,7 @@ public class PolicyServiceTests : IDisposable
             .Where(p => p.CanRead && p.CanWrite)
             .Where(p => !p.PropertyType.IsValueType && p.PropertyType != typeof(string))
             .Select(p => p.Name)
+            .Where(n => !Pia.Shared.Policy.ClientPolicyContract.IsDenied(n))
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToArray();
 

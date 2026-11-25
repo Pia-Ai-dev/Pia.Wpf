@@ -15,8 +15,7 @@ public sealed class AssistantPromptComposerAttachedFileTests
         string fileName = "notes.txt",
         PendingFileKind kind = PendingFileKind.Text,
         string text = "hello",
-        bool truncated = false,
-        int originalCharCount = 5,
+        AttachmentCut? cut = null,
         string? fullPath = null) =>
         new()
         {
@@ -24,9 +23,10 @@ public sealed class AssistantPromptComposerAttachedFileTests
             FileName = fileName,
             Kind = kind,
             Text = text,
-            Truncated = truncated,
-            OriginalCharCount = originalCharCount,
+            Cut = cut,
         };
+
+    private static readonly AttachmentCut ThreeOf900 = new(ShownLines: 3, TotalLines: 900, EndsMidLine: false, ShownPercent: 1);
 
     [Fact]
     public void BuildAttachedFileBlock_ReturnsEmptyForNoFiles()
@@ -83,18 +83,49 @@ public sealed class AssistantPromptComposerAttachedFileTests
     }
 
     [Fact]
-    public void BuildAttachedFileBlock_AddsTruncatedAttributesOnlyWhenTruncated()
+    public void BuildAttachedFileBlock_AddsTruncatedAttributesOnlyWhenCut()
     {
-        var whole = AssistantPromptComposer.BuildAttachedFileBlock(
-            [File(text: "12345", truncated: false, originalCharCount: 5)]);
+        var whole = AssistantPromptComposer.BuildAttachedFileBlock([File(text: "12345")]);
         Assert.DoesNotContain("truncated=", whole);
         Assert.DoesNotContain("note=", whole);
 
-        var cut = AssistantPromptComposer.BuildAttachedFileBlock(
-            [File(text: "12345", truncated: true, originalCharCount: 900)]);
+        var cut = AssistantPromptComposer.BuildAttachedFileBlock([File(text: "a\nb\nc", cut: ThreeOf900)]);
         Assert.Contains("truncated=\"true\"", cut);
-        Assert.Contains("note=\"Showing the first 5 of 900 characters.\"", cut);
+        Assert.Contains("note=\"Showing lines 1-3 of 900. The rest was not sent.\"", cut);
     }
+
+    [Fact]
+    public void BuildAttachedFileBlock_PointsAtReadFile_WhenThePathIsKnown()
+    {
+        var block = AssistantPromptComposer.BuildAttachedFileBlock(
+            [File(cut: new AttachmentCut(40, 900, EndsMidLine: false, ShownPercent: 4))], _ => "Playground/notes.txt");
+
+        Assert.Contains("The rest was not sent; read it with read_file (path: Playground/notes.txt, offset: 41).", block);
+    }
+
+    [Fact]
+    public void BuildAttachedFileBlock_ReReadsALineThatWasCutShort()
+    {
+        var block = AssistantPromptComposer.BuildAttachedFileBlock(
+            [File(cut: new AttachmentCut(1, 1, EndsMidLine: true, ShownPercent: 7))], _ => "data.json");
+
+        Assert.Contains("Showing lines 1-1 of 1; line 1 is cut short.", block);
+        Assert.Contains("offset: 1)", block);
+    }
+
+    [Fact]
+    public void BuildAttachedFileBlock_AFileWithoutAPath_SaysTheRestWasNotSent()
+    {
+        var block = AssistantPromptComposer.BuildAttachedFileBlock([File(cut: ThreeOf900)], _ => null);
+
+        Assert.Contains("The rest was not sent.", block);
+        Assert.DoesNotContain("read_file", block);
+    }
+
+    [Fact]
+    public void BuildAttachedFileBlock_AWholeFile_NeverNamesReadFile() =>
+        Assert.DoesNotContain("read_file",
+            AssistantPromptComposer.BuildAttachedFileBlock([File()], _ => "notes.txt"));
 
     [Fact]
     public void BuildAttachedFileBlock_LeavesTheBodyUnescaped()

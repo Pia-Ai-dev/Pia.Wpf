@@ -1032,12 +1032,46 @@
   <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Was du mit diesem Konto synchronisierst, liegt unverschlüsselt auf dem Pia-Server. Aktiviere die Ende-zu-Ende-Verschlüsselung, damit nur deine Geräte die Inhalte lesen können.</value></data>
   <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Verschlüsselung aktivieren</value></data>
   <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Nicht jetzt</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Synchronisierung angehalten: Laut Server ist dieses Konto nicht mehr Ende-zu-Ende-verschlüsselt.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Prüfen</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Verschlüsselung auf dem Server ausgeschaltet</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>Dieses Konto war Ende-zu-Ende-verschlüsselt, der Server meldet es jetzt aber als unverschlüsselt. Die Synchronisierung ist angehalten, damit deine Daten nicht im Klartext gesendet werden. Wenn niemand die Verschlüsselung dieses Kontos absichtlich zurückgesetzt hat, mach nicht weiter und wende dich an deine Administration.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Ohne Verschlüsselung synchronisieren</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Ohne Verschlüsselung synchronisieren?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Fahre nur fort, wenn die Verschlüsselung dieses Kontos absichtlich zurückgesetzt wurde. Deine Daten gehen dann ohne Ende-zu-Ende-Verschlüsselung an den Server, und dieses Gerät warnt dich nicht mehr davor.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Neues Gerät möchte Zugriff</value></data>
-  <data name="Settings_E2EE_ApproveDevice_Message" xml:space="preserve"><value>Ein neues Gerät möchte deinem Konto beitreten.&#xA;&#xA;Gerät: {0}&#xA;Fingerabdruck: {1}&#xA;&#xA;Vergleiche diesen Fingerabdruck mit dem auf dem neuen Gerät und bestätige nur, wenn beide übereinstimmen. Das neue Gerät bittet dich danach, den Fingerabdruck dieses Geräts zu vergleichen: {2}&#xA;&#xA;Möchtest du dieses Gerät bestätigen?</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>Ein neues Gerät möchte deinem Konto beitreten. Bestätige es nur, wenn du dich gerade selbst auf diesem Gerät angemeldet hast und beide Fingerabdrücke unten übereinstimmen.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>Der Name dieses Geräts enthielt versteckte oder Steuerzeichen. Sie wurden vor der Anzeige entfernt. Sei vorsichtig: Bestätige nur, wenn du sicher bist, dass es dein Gerät ist.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Anfragendes Gerät</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Gerätename</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Fingerabdruck</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Vergleiche diesen Fingerabdruck Zeichen für Zeichen mit dem auf dem neuen Gerät.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>Dieses Gerät</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>Nach deiner Bestätigung bittet dich das neue Gerät, diesen Fingerabdruck zu prüfen.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Bestätigen</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Nicht bestätigen</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unbenanntes Gerät</value></data>
   <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Gerät ablehnen?</value></data>
-  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du {0} ablehnen und entfernen? Wenn du dieses Gerät nicht kennst, entferne es.</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du dieses Gerät ablehnen und entfernen? Wenn du es nicht kennst, entferne es.</value></data>
   <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Gerät bestätigt</value></data>
-  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>{0} wurde bestätigt und kann jetzt synchronisieren.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>Das Gerät wurde bestätigt und kann jetzt synchronisieren.</value></data>
+  <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Gerät entfernt</value></data>
+  <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>Dieses Gerät wurde auf dem Server widerrufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
+  <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Dieses Gerät ist auf dem Server nicht mehr registriert – sein Eintrag wurde gelöscht oder ist abgelaufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
+  <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Dieses Gerät erneut einrichten</value></data>
+  <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Gerät nicht freigegeben</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} konnte nicht freigegeben werden. Prüfe deine Verbindung und versuche es unter Einstellungen → Konto erneut.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>Keine Anfragen</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>Kein Gerät wartet auf Freigabe.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Prüfung fehlgeschlagen</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia konnte nicht prüfen, ob Geräte auf Freigabe warten.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Verschlüsselung nicht aktiviert</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung konnte nicht aktiviert werden. Prüfe deine Verbindung und versuche es erneut.</value></data>
+  <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Abgemeldet</value></data>
+  <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Deine Sitzung wurde beendet oder auf dem Server widerrufen. Bitte melde dich erneut an.</value></data>
+  <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>Der Server hat die Verlängerung deiner Sitzung abgelehnt. Bitte melde dich erneut an.</value></data>
+  <data name="Auth_SignedOut_Unreadable" xml:space="preserve"><value>Die gespeicherte Sitzung ließ sich auf diesem Gerät nicht öffnen. Bitte melde dich erneut an.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung einrichten</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Dieses Konto verwendet Ende-zu-Ende-Verschlüsselung. Richte dieses Gerät ein, um auf deine verschlüsselten Daten zugreifen zu können.</value></data>
@@ -1066,6 +1100,22 @@
   <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Stimmt nicht überein</value></data>
   <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>Dieses Gerät hat den Schlüssel nicht übernommen. Das bestätigende Gerät gehört möglicherweise nicht dir: Lehne auf deinen anderen Geräten jede Anfrage ab, die du nicht kennst, und richte dieses Gerät stattdessen mit deinem Wiederherstellungscode ein.</value></data>
   <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>Der bestätigte Schlüssel ließ sich auf diesem Gerät nicht öffnen. Versuche es erneut oder verwende deinen Wiederherstellungscode.</value></data>
+  <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>Die Schlüssel dieses Computers sind verloren gegangen. Pia hat dich abgemeldet, damit der Computer deinem Konto als neues Gerät wieder beitreten kann. Melde dich an und bestätige ihn dann von einem anderen Gerät oder mit deinem Wiederherstellungscode. Danach kannst du die vorherige Installation in den Kontoeinstellungen entfernen.</value></data>
+  <data name="E2EE_Onboarding_OwnCopyChanged" xml:space="preserve"><value>Die gespeicherte Kopie des Schlüssels für dieses Gerät wurde auf dem Server verändert und deshalb nicht verwendet. Richte das Gerät mit deinem Wiederherstellungscode erneut ein.</value></data>
+  <data name="E2EE_Onboarding_Recovery_CopyRejected" xml:space="preserve"><value>Pia hat die auf dem Server gespeicherten Wiederherstellungsdaten nicht verwendet, weil sie ungültig sind. Dein Wiederherstellungscode wurde nicht geprüft. Bestätige dieses Gerät von einem anderen Gerät aus oder wende dich an deinen Administrator.</value></data>
+  <data name="Settings_E2EE_SignatureRefused_Message" xml:space="preserve"><value>Der Server nimmt diese Änderung nur von einem deiner aktiven Geräte an, und dieses Gerät konnte das nicht nachweisen. Stelle dieses Gerät mit deinem Wiederherstellungscode wieder her und versuche es dann erneut.</value></data>
+  <data name="Settings_E2EE_PreviousInstallation_Text" xml:space="preserve"><value>Dieser Computer ist deinem Konto nach dem Verlust seiner Schlüssel erneut beigetreten. Seine vorherige Installation ist noch eingetragen und kann nicht mehr verwendet werden.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation" xml:space="preserve"><value>Vorherige Installation dieses Computers entfernen</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Title" xml:space="preserve"><value>Vorherige Installation entfernen</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Message" xml:space="preserve"><value>Die vorherige Installation dieses Computers wird aus deinem Konto entfernt. Dieser Computer funktioniert weiter.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Title" xml:space="preserve"><value>Vorherige Installation nicht entfernt</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Message" xml:space="preserve"><value>Die vorherige Installation konnte nicht entfernt werden. Prüfe deine Verbindung und versuche es erneut.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Title" xml:space="preserve"><value>Vorherige Installation entfernt</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Message" xml:space="preserve"><value>Die vorherige Installation dieses Computers gehört nicht mehr zu deinem Konto.</value></data>
+  <data name="E2EE_Register_DeviceMismatch" xml:space="preserve"><value>Der Server kennt diese Sitzung als ein anderes Gerät und hat die Registrierung abgelehnt. Melde dich ab, melde dich auf diesem Gerät erneut an und versuche es noch einmal.</value></data>
+  <data name="E2EE_Register_TooManyPending" xml:space="preserve"><value>Es warten zu viele Geräte auf Genehmigung. Genehmige oder entferne zuerst auf einem anderen Gerät eines davon und versuche es erneut.</value></data>
+  <data name="E2EE_Register_DeviceChanged" xml:space="preserve"><value>Dieses Gerät hat sich auf dem Server während der Registrierung geändert. Versuche es erneut.</value></data>
+  <data name="E2EE_Register_Generic" xml:space="preserve"><value>Der Server hat die Registrierung dieses Geräts abgelehnt.</value></data>
   <!-- Wiederherstellungscode-Dialog (beim Aktivieren der E2EE in den Einstellungen) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Wiederherstellungscode speichern</value></data>
@@ -1164,6 +1214,10 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet – setzen Sie erneut fort, wenn Sie bereit sind</value></data>
+  <data name="Run_Activity_InterruptedCredit" xml:space="preserve"><value>Credit-Limit erreicht. Setzen Sie fort, sobald es zurückgesetzt wurde.</value></data>
+  <data name="Run_Activity_InterruptedOffline" xml:space="preserve"><value>Verbindung unterbrochen. Setzen Sie fort, sobald Sie wieder online sind.</value></data>
+  <data name="Run_Activity_InterruptedTimeout" xml:space="preserve"><value>Das Modell hat nicht rechtzeitig geantwortet. Fortsetzen?</value></data>
+  <data name="Run_Activity_InterruptedProvider" xml:space="preserve"><value>Beim KI-Dienst ist ein Problem aufgetreten. Fortsetzen?</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Wartet auf Ihre Freigabe für {0}</value></data>
   <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Betrifft {0}</value></data>
   <data name="Run_ToolApproval_ShowFullCall" xml:space="preserve"><value>Vollständigen Aufruf anzeigen</value></data>
@@ -1256,6 +1310,10 @@
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während ihre Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert. Fortsetzen?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet. Fortsetzen?</value></data>
+  <data name="Flow_Run_InterruptedCredit" xml:space="preserve"><value>Credit-Limit erreicht. Setzen Sie fort, sobald es zurückgesetzt wurde.</value></data>
+  <data name="Flow_Run_InterruptedOffline" xml:space="preserve"><value>Verbindung unterbrochen. Setzen Sie fort, sobald Sie wieder online sind.</value></data>
+  <data name="Flow_Run_InterruptedTimeout" xml:space="preserve"><value>Das Modell hat nicht rechtzeitig geantwortet. Fortsetzen?</value></data>
+  <data name="Flow_Run_InterruptedProvider" xml:space="preserve"><value>Beim KI-Dienst ist ein Problem aufgetreten. Fortsetzen?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0}. Fortsetzen, um sie zu erteilen.</value></data>
   <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0} auf {1}. Fortsetzen, um sie zu erteilen.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>Dieser Lauf konnte nicht erkennen, was Sie meinten – öffnen Sie ihn, um zu antworten.</value></data>
@@ -1281,6 +1339,9 @@
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML-Dokument (*.html)|*.html|Alle Dateien (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
   <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis speichern</value></data>
+  <data name="Assistant_SavePendingFile_CutTooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis speichern, damit Pia den Rest nachlesen kann</value></data>
+  <data name="Assistant_PendingFileCut_Badge" xml:space="preserve"><value>gekürzt</value></data>
+  <data name="Assistant_PendingFileCut_Tooltip" xml:space="preserve"><value>Nur ein Teil dieser Datei passt in die Nachricht. Speichere sie im Arbeitsverzeichnis, damit Pia den Rest nachlesen kann.</value></data>
   <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis gespeichert</value></data>
   <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>Diese Datei wurde nicht im Arbeitsverzeichnis gespeichert, daher ist nur ihr Name erhalten geblieben.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>In VS Code öffnen</value></data>
@@ -1478,6 +1539,7 @@
   <data name="Settings_ScheduledJobs_RunAlreadyRunning" xml:space="preserve"><value>Nicht gestartet: Ein Durchlauf dieses Auftrags läuft bereits.</value></data>
   <data name="Settings_ScheduledJobs_RunNotOwner" xml:space="preserve"><value>Nicht ausgeführt: Ein anderes Gerät besitzt den Zeitplan dieses Auftrags.</value></data>
   <data name="Settings_ScheduledJobs_RunNotFound" xml:space="preserve"><value>Nicht ausgeführt: Diesen Auftrag gibt es nicht mehr.</value></data>
+  <data name="Settings_ScheduledJobs_RunResetPending" xml:space="preserve"><value>Nicht ausgeführt: Pia hat das Entfernen der lokalen Daten noch nicht abgeschlossen. Starte Pia zuerst neu.</value></data>
   <data name="Settings_ScheduledJobs_RunFailed" xml:space="preserve"><value>Der Auftrag konnte nicht gestartet werden.</value></data>
   <data name="Settings_ScheduledJobs_LoadFailed" xml:space="preserve"><value>Geplante Aufträge konnten nicht gelesen werden.</value></data>
   <data name="Settings_ScheduledJobs_SaveFailed" xml:space="preserve"><value>Diese Änderung konnte nicht gespeichert werden.</value></data>
@@ -1868,9 +1930,35 @@
   <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Wird beendet…</value></data>
   <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} von {1} Tool(s) freigegeben</value></data>
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} Tool(s) freigegeben</value></data>
+  <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} Tool(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} Tool(s) · {1} davon können löschen</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} Tool(s) · 1 davon kann löschen</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Dieser Server ist nicht verbunden. Dies sind die Tools, die beim letzten Lauf freigegeben waren.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Starten Sie diesen Server oder verwenden Sie „Verbindung testen“, um seine Tools zu sehen.</value></data>
-  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>gesperrt</value></data>
+  <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Freigegeben</value></data>
+  <data name="McpServers_Detail_WithheldGroup" xml:space="preserve"><value>Gesperrt</value></data>
+  <data name="McpServers_Detail_NoneAllowed" xml:space="preserve"><value>Kein Tool freigegeben – über Bearbeiten ändern</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Wird gespeichert… der Server startet neu.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Von Ihrer Organisation gesperrt: Diese Einstellung wird per Pia-Richtlinie vorgegeben und kann hier nicht geändert werden.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Von Pia Cloud abmelden</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Möchtest du auch die Daten dieses Kontos von diesem Gerät entfernen? Das betrifft Chats, Verlauf, Todos, Vorlagen, Personas, deine eigenen KI-Anbieter und synchronisierte Einstellungen. Alles bleibt in deinem Pia-Cloud-Konto und ist nach der nächsten Anmeldung wieder da. Beim Entfernen wird Pia neu gestartet.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Abmelden und entfernen</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Abmelden und behalten</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Vor der Anmeldung</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>Auf diesem Gerät sind Daten vorhanden. Wenn du sie behältst, werden sie in das Konto hochgeladen, bei dem du dich anmeldest. Wenn du sie zuerst entfernst, löscht Pia sie von diesem Gerät, auch Änderungen, die du im abgemeldeten Zustand gemacht hast, und startet neu. Danach musst du dich erneut anmelden.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Behalten und anmelden</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Zuerst entfernen</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>Das Gedächtnis von Pia auf diesem Gerät wird nicht entfernt und bleibt auch nach einem Kontowechsel verfügbar.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>API-Schlüssel für deine eigenen KI-Anbieter werden nicht in Pia Cloud gespeichert. Du musst sie erneut eingeben.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API-Schlüssel für deine eigenen KI-Anbieter werden von diesem Gerät entfernt. Wenn dein Konto keine Ende-zu-Ende-Verschlüsselung verwendet, musst du sie erneut eingeben.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Letzte Änderungen konnten nicht hochgeladen werden</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Einige Änderungen auf diesem Gerät haben Pia Cloud nicht erreicht. Dieses Gerät trotzdem leeren? Nicht hochgeladene Änderungen gehen verloren.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Letzte Änderungen werden hochgeladen…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Abmeldung läuft…</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Lokale Daten noch nicht entfernt</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia konnte das Entfernen der lokalen Daten nicht abschließen. Pia jetzt neu starten und es erneut versuchen?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Konto gelöscht</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Dein Pia-Cloud-Konto wurde gelöscht. Möchtest du auch dessen Daten von diesem Gerät entfernen? Beim Entfernen wird Pia neu gestartet. Das lässt sich nicht rückgängig machen.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Dieses Gerät leeren</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Auf diesem Gerät behalten</value></data>
 </root>

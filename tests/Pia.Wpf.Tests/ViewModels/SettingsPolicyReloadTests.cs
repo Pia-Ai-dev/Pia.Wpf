@@ -157,7 +157,8 @@ public class SettingsPolicyReloadTests : IDisposable
                 Substitute.For<ISyncClientService>(), settings,
                 NullLogger<E2EEOnboardingViewModel>.Instance),
             Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
-            Substitute.For<ICreditStatusService>());
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
 
         return new Suite(settings, policy, localization, account, assistant, general, meeting, optimize,
             persona, privacy, providers, templates);
@@ -443,7 +444,8 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<IAccountDataService>(),
             Substitute.For<IFileDialogService>(),
             Substitute.For<ICreditStatusService>(),
-            SettingsSubViewModels.Mxc());
+            SettingsSubViewModels.Mxc(),
+            Substitute.For<ILocalDataResetService>());
 
         return new Page(root, settings, policy);
     }

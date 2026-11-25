@@ -55,6 +55,7 @@ public static class ClientPolicyContract
             "e2eeDeviceId",
             "e2eeUmkVersion",
             "e2eeRecoveryConfigured",
+            "e2eeRequiredAccountIds",
             "vaultVersion",
             "ingestSchemaVersion",
             "assistantFolderLayoutVersion",

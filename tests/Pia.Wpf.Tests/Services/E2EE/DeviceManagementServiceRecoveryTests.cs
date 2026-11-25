@@ -77,6 +77,24 @@ public sealed class DeviceManagementServiceRecoveryTests : IDisposable
         Assert.DoesNotContain(_server.Posts, p => p.EndsWith($"/devices/{ThisDevice}/wrapped-umk"));
     }
 
+    // Recreated keys cannot sign for this id, so only a replacement under a new id helps.
+    [Fact]
+    public async Task AnActiveDeviceWhoseKeysWereLost_UploadsNoCopyForTheOldId()
+    {
+        using var keysTheServerKnows = new InMemoryDeviceKeys(ThisDevice);
+        var server = new ScriptedServer(keysTheServerKnows, _otherKeys)
+        {
+            Status = DeviceStatus.Active,
+            Recovery = _server.Recovery,
+        };
+
+        await Assert.ThrowsAsync<DeviceKeyLostException>(
+            () => CreateSut(server).ActivateViaRecoveryAsync(_code, "session-1"));
+
+        Assert.Empty(server.Posts);
+        Assert.Null(_e2ee.LoadUmk());
+    }
+
     [Fact]
     public async Task AWrongCode_LeavesTheServerCopyAlone()
     {
@@ -89,6 +107,22 @@ public sealed class DeviceManagementServiceRecoveryTests : IDisposable
 
         Assert.Null(_e2ee.LoadUmk());
         Assert.Same(handOver, _server.Wrapped);
+        Assert.Empty(_server.Posts);
+    }
+
+    [Theory]
+    [InlineData(DeviceStatus.Pending)]
+    [InlineData(DeviceStatus.Active)]
+    public async Task ARecoveryCopyWithAnOversizedCost_IsRefusedBeforeAnythingIsStoredOrSent(DeviceStatus status)
+    {
+        _server.Status = status;
+        _server.Recovery!.KdfMemoryCostKb = int.MaxValue;
+
+        await Assert.ThrowsAsync<RecoveryCopyRejectedException>(
+            () => CreateSut().ActivateViaRecoveryAsync(_code, "session-1"));
+
+        Assert.Null(_e2ee.LoadUmk());
+        Assert.False(_stored.IsE2EEEnabled);
         Assert.Empty(_server.Posts);
     }
 
@@ -115,15 +149,15 @@ public sealed class DeviceManagementServiceRecoveryTests : IDisposable
         };
     }
 
-    private DeviceManagementService CreateSut()
+    private DeviceManagementService CreateSut(ScriptedServer? server = null)
     {
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_server, disposeHandler: false));
+        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(server ?? _server, disposeHandler: false));
         var auth = Substitute.For<IAuthService>();
         auth.GetAccessTokenAsync().Returns("token-1");
 
         return new DeviceManagementService(
-            _e2ee, _keys, _recovery, _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(),
+            _e2ee, _keys, _recovery, _settings, auth, factory, Substitute.For<IConfirmedApproverStore>(), Substitute.For<IScheduledJobService>(), new UnsignedRequests(),
             NullLogger<DeviceManagementService>.Instance);
     }
 

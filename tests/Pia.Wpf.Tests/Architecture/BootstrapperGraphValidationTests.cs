@@ -1,8 +1,13 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 using Pia;
+using Pia.Infrastructure;
 using Pia.Services;
+using Pia.Services.Interfaces;
+using Pia.Services.LocalDataReset;
 using Xunit;
 
 namespace Pia.Tests.Architecture;
@@ -25,7 +30,7 @@ public class BootstrapperGraphValidationTests
     }
 
     /// <summary>The production DI registrations, built by invoking <c>Bootstrapper.ConfigureServices</c> directly.</summary>
-    private static ServiceCollection BuildConfiguredServices()
+    internal static ServiceCollection BuildConfiguredServices()
     {
         var configure = typeof(Bootstrapper).GetMethod(
             "ConfigureServices", BindingFlags.NonPublic | BindingFlags.Static);
@@ -34,6 +39,74 @@ public class BootstrapperGraphValidationTests
         var services = new ServiceCollection();
         configure!.Invoke(null, [services]);
         return services;
+    }
+
+    [Fact]
+    public void TheLocalDataWipeService_DoesNotPullInAuthService()
+    {
+        var services = BuildConfiguredServices();
+        var visited = new HashSet<Type>();
+
+        Walk(typeof(LocalDataWipeService));
+
+        Assert.Contains(typeof(SqliteContext), visited);
+        Assert.Contains(typeof(ISettingsService), visited);
+        Assert.DoesNotContain(typeof(IAuthService), visited);
+
+        void Walk(Type serviceType)
+        {
+            if (!visited.Add(serviceType))
+                return;
+
+            var descriptor = services.LastOrDefault(d => d.ServiceType == serviceType);
+            Assert.True(descriptor is not null, $"{serviceType} is not registered");
+            Assert.True(descriptor!.ImplementationFactory is null, $"{serviceType} is a factory descriptor; the walk cannot see through it");
+            if (descriptor.ImplementationType is not { } implementation)
+                return;
+
+            var constructor = implementation.GetConstructors()
+                .Where(c => c.GetParameters().All(p => IsLogger(p.ParameterType) || services.Any(d => d.ServiceType == p.ParameterType)))
+                .OrderByDescending(c => c.GetParameters().Length)
+                .FirstOrDefault();
+            Assert.True(constructor is not null, $"{implementation} has no constructor the container can satisfy");
+
+            foreach (var parameter in constructor!.GetParameters().Where(p => !IsLogger(p.ParameterType)))
+                Walk(parameter.ParameterType);
+        }
+
+        static bool IsLogger(Type t) => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(ILogger<>);
+    }
+
+    /// <summary>The indicator is an optional parameter: a graph that stopped supplying it would build a scheduler
+    /// that runs jobs during a pending clear, and no constructor-level test would notice.</summary>
+    [Fact]
+    public async Task TheProductionScheduler_RefusesRunNow_WhileAClearIsPending()
+    {
+        var services = BuildConfiguredServices();
+        // Checked before stubbing, since replacing the indicator below would register it either way.
+        var registered = Assert.Single(services, d => d.ServiceType == typeof(ILocalDataResetIndicator));
+        Assert.Equal(typeof(LocalDataResetIndicator), registered.ImplementationType);
+
+        var indicator = Substitute.For<ILocalDataResetIndicator>();
+        indicator.IsResetPending.Returns(true);
+        var jobs = Substitute.For<IScheduledJobService>();
+        var parameters = typeof(ScheduledJobBackgroundService).GetConstructors().Single().GetParameters();
+        Assert.Contains(parameters, p => p.ParameterType == typeof(ILocalDataResetIndicator));
+        // Every other dependency is stubbed too, so resolving builds no real job store, launcher or logger.
+        foreach (var type in parameters.Select(p => p.ParameterType).Where(t => t != typeof(IServiceScopeFactory)))
+        {
+            var stub = type == typeof(ILocalDataResetIndicator) ? indicator
+                : type == typeof(IScheduledJobService) ? jobs
+                : Substitute.For([type], []);
+            services.Replace(ServiceDescriptor.Singleton(type, stub));
+        }
+
+        using var provider = services.BuildServiceProvider();
+        var runner = provider.GetRequiredService<IScheduledJobRunner>();
+
+        Assert.Equal(ScheduledJobRunNowResult.ResetPending,
+            await runner.RunNowAsync(Guid.NewGuid(), TestContext.Current.CancellationToken));
+        Assert.Empty(jobs.ReceivedCalls());
     }
 
     /// <summary>What <c>ValidateOnBuild</c> cannot see is a factory descriptor's LAMBDA BODY: this singleton

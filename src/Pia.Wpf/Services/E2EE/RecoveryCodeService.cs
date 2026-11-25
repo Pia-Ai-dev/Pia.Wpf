@@ -13,6 +13,11 @@ public class RecoveryCodeService : IRecoveryCodeService
     private const int DefaultTimeCost = 3;
     private const int DefaultParallelism = 4;
 
+    // Mirror the server's write rule, so a forged copy cannot make Argon2id run unbounded.
+    internal const int MaxKdfMemoryCostKb = 262_144;
+    internal const int MaxKdfTimeCost = 10;
+    internal const int MaxKdfParallelism = 16;
+
     // Base32 alphabet (RFC 4648)
     private static readonly char[] Base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".ToCharArray();
 
@@ -83,7 +88,7 @@ public class RecoveryCodeService : IRecoveryCodeService
 
     public byte[] UnwrapUmkFromRecovery(RecoveryWrappedUmkBlob blob, string recoveryCode)
     {
-        var kdfSalt = Convert.FromBase64String(blob.KdfSalt);
+        var kdfSalt = CheckedKdfSalt(blob);
 
         // Use stored Argon2id parameters (allows parameter upgrades)
         var normalized = recoveryCode.Replace("-", "").ToUpperInvariant();
@@ -103,6 +108,36 @@ public class RecoveryCodeService : IRecoveryCodeService
         Array.Clear(recoveryKek);
 
         return umk;
+    }
+
+    internal static byte[] CheckedKdfSalt(RecoveryWrappedUmkBlob blob)
+    {
+        CheckKdfCost(nameof(blob.KdfMemoryCostKb), blob.KdfMemoryCostKb, MaxKdfMemoryCostKb);
+        CheckKdfCost(nameof(blob.KdfTimeCost), blob.KdfTimeCost, MaxKdfTimeCost);
+        CheckKdfCost(nameof(blob.KdfParallelism), blob.KdfParallelism, MaxKdfParallelism);
+
+        // RFC 9106 minimum; it also keeps Konscious from throwing a plain exception that reads as a wrong code.
+        if (blob.KdfMemoryCostKb < 8 * blob.KdfParallelism)
+            throw new RecoveryCopyRejectedException(
+                $"{nameof(blob.KdfMemoryCostKb)} is {blob.KdfMemoryCostKb}, below 8 times {nameof(blob.KdfParallelism)} {blob.KdfParallelism}.");
+
+        if (string.IsNullOrWhiteSpace(blob.KdfSalt))
+            throw new RecoveryCopyRejectedException($"{nameof(blob.KdfSalt)} is missing.");
+
+        try
+        {
+            return Convert.FromBase64String(blob.KdfSalt);
+        }
+        catch (FormatException)
+        {
+            throw new RecoveryCopyRejectedException($"{nameof(blob.KdfSalt)} is not base64.");
+        }
+    }
+
+    private static void CheckKdfCost(string field, int value, int max)
+    {
+        if (value < 1 || value > max)
+            throw new RecoveryCopyRejectedException($"{field} is {value}, outside the range 1 to {max}.");
     }
 
     private static string ToBase32(byte[] data)

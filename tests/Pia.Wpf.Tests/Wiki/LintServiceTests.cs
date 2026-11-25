@@ -54,8 +54,10 @@ public class LintServiceTests : IDisposable
     // A REAL IngestService (only the two LLM-bound collaborators are fakes), so the duplicate check
     // exercises the actual merge — provenance union, archive, index removal, link retarget — rather
     // than a stub that only mimics its file moves.
-    private LintService BuildLint()
-        => new(_store, _ctx, _embeddings, _log, BuildIngest(), NullLogger<LintService>.Instance);
+    private LintService BuildLint() => BuildLint(_embeddings);
+
+    private LintService BuildLint(IEmbeddingService embeddings)
+        => new(_store, _ctx, embeddings, _log, BuildIngest(), NullLogger<LintService>.Instance);
 
     private IIngestService BuildIngest()
     {
@@ -125,6 +127,18 @@ public class LintServiceTests : IDisposable
         var full = Path.Combine(_vaultRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllText(full, frontmatter + body);
+    }
+
+    [Fact]
+    public async Task Lint_completes_when_embeddings_are_unavailable()
+    {
+        // No Chunks row, so the duplicate check has to compute the page's embedding itself.
+        SeedPage("memory/topics/acme-corp.md", "Acme Corp", "- tier: enterprise\n");
+
+        var report = await BuildLint(new UnavailableEmbeddingService())
+            .RunAsync(_date, true, TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(report.Findings, f => f.Kind == LintKind.Duplicate);
     }
 
     [Fact]

@@ -48,7 +48,7 @@ public class SyncClientServiceTests
     {
         _authService.IsLoggedIn.Returns(false);
 
-        var result = await _sut.SyncNowAsync();
+        var result = await _sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -60,7 +60,7 @@ public class SyncClientServiceTests
         var settings = new AppSettings { SyncEnabled = false };
         _settingsService.GetSettingsAsync().Returns(settings);
 
-        var result = await _sut.SyncNowAsync();
+        var result = await _sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }

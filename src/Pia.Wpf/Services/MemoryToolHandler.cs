@@ -110,7 +110,7 @@ public class MemoryToolHandler : IMemoryToolHandler
             "update_source" => await HandleUpdateSource(args),
             "create_source" => await HandleCreateSource(args),
             "remember" => await HandleRemember(args),
-            "forget" => ((object?)null, HandleForget(args)),
+            "forget" => HandleForget(args),
             _ => ((object?)$"Unknown tool: {toolCall.Name}", (MemoryToolCall?)null)
         };
 
@@ -398,11 +398,16 @@ public class MemoryToolHandler : IMemoryToolHandler
         return (null, pending);
     }
 
-    private MemoryToolCall HandleForget(IDictionary<string, object?> args)
+    private (object? Result, MemoryToolCall? PendingAction) HandleForget(IDictionary<string, object?> args)
     {
         var reference = GetStringArg(args, "reference");
+        if (string.IsNullOrWhiteSpace(reference))
+            return ("Error: reference parameter is required", null);
 
-        return new MemoryToolCall(
+        if (_memoryService.ValidateForgetReference(reference) is { } error)
+            return (error, null);
+
+        var pending = new MemoryToolCall(
             ToolName: "forget",
             Description: _localizationService.Format("Tool_Memory_Desc_Forget", reference),
             OldValue: reference,
@@ -413,6 +418,8 @@ public class MemoryToolHandler : IMemoryToolHandler
                 await _memoryService.ForgetAsync(reference);
                 return _localizationService.Format("Tool_Memory_Exec_Forgotten", reference);
             });
+
+        return (null, pending);
     }
 
     [Description("Search the user's memory vault using a natural language query")]

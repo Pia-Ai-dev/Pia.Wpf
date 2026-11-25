@@ -126,6 +126,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
         Assert.Equal("the target folder is read-only", result.Error);
         Assert.NotNull(result.Outcome);
         Assert.False(result.Outcome!.Succeeded);
+        Assert.Null(result.Interruption);
     }
 
     /// <summary>The empty-response placeholder is UI text: carried on as <c>VisibleText</c> it would reach the
@@ -184,6 +185,7 @@ public sealed class ChatSessionStepOutcomeSignalTests
         Assert.False(result.Succeeded);
         Assert.Equal("Msg_Assistant_EmptyResponse", result.Error);
         Assert.Null(result.Outcome);
+        Assert.Null(result.Interruption);
     }
 
     /// <summary>The model gets a vote on its own work, not on the transport.</summary>

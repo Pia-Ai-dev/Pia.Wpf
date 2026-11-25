@@ -50,4 +50,13 @@ public interface IDeviceKeyService
     /// Check if device keys exist (have been initialized).
     /// </summary>
     bool HasDeviceKeys();
+
+    /// <summary>True when this device held the account key but its CNG keys were gone and had to be recreated.</summary>
+    bool KeyLossDetected { get; }
+
+    /// <summary>Switches to a new device id with fresh keys and remembers the old id for removal; returns the old id.</summary>
+    Task<string> StartNewDeviceAsync(string? accountId);
+
+    /// <summary>True when a signing key exists locally; never creates one.</summary>
+    bool CanSign();
 }

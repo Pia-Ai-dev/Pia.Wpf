@@ -1,8 +1,11 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Pia.Localization;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
@@ -18,6 +21,8 @@ public class DeviceManagementService : IDeviceManagementService
     private readonly IAuthService _auth;
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfirmedApproverStore _confirmedApprovers;
+    private readonly IScheduledJobService _scheduledJobs;
+    private readonly IDeviceRequestSigner _signer;
     private readonly ILogger<DeviceManagementService> _logger;
 
     // Server URL and account the proof key is settled for, so a sign-in to another account checks again.
@@ -31,6 +36,8 @@ public class DeviceManagementService : IDeviceManagementService
         IAuthService auth,
         IHttpClientFactory httpFactory,
         IConfirmedApproverStore confirmedApprovers,
+        IScheduledJobService scheduledJobs,
+        IDeviceRequestSigner signer,
         ILogger<DeviceManagementService> logger)
     {
         _e2ee = e2ee;
@@ -40,6 +47,8 @@ public class DeviceManagementService : IDeviceManagementService
         _auth = auth;
         _httpFactory = httpFactory;
         _confirmedApprovers = confirmedApprovers;
+        _scheduledJobs = scheduledJobs;
+        _signer = signer;
         _logger = logger;
     }
 
@@ -55,25 +64,20 @@ public class DeviceManagementService : IDeviceManagementService
             throw new E2EEAlreadyEnabledException("End-to-end encryption is already set up for this account.");
         }
 
-        // 1. Generate device keys (happens lazily in DeviceKeyService)
         var deviceId = _deviceKeys.GetDeviceId();
         var agreementPubKey = _deviceKeys.GetAgreementPublicKey();
         var signingPubKey = _deviceKeys.GetSigningPublicKey();
 
-        // 2. Register device on server
         var registration = await RegisterDeviceOnServerAsync(deviceId, agreementPubKey, signingPubKey);
 
         if (!registration.IsFirstDevice)
             throw new InvalidOperationException("Cannot bootstrap: other devices already exist for this user");
 
-        // 3. Generate UMK
         var umk = await _e2ee.GenerateAndStoreUmkAsync();
 
-        // 4. Self-wrap UMK and upload to server
         var (selfWrapped, hkdfSalt) = _e2ee.WrapUmkForSelf();
         await UploadWrappedUmkAsync(deviceId, selfWrapped, hkdfSalt, deviceId);
 
-        // 5. Generate recovery code and upload recovery-wrapped UMK
         var recoveryCode = _recovery.GenerateRecoveryCode();
         var recoveryBlob = _recovery.WrapUmkForRecovery(umk, recoveryCode);
         await UploadRecoveryWrappedUmkAsync(recoveryBlob);
@@ -83,9 +87,9 @@ public class DeviceManagementService : IDeviceManagementService
         await TryPutRecoveryProofKeyAsync(umk);
         Array.Clear(umk);
 
-        // 6. Update local settings
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         settings.E2EEUmkVersion = 1;
         settings.E2EERecoveryConfigured = true;
         await _settings.SaveSettingsAsync(settings);
@@ -93,6 +97,29 @@ public class DeviceManagementService : IDeviceManagementService
         _logger.LogInformation("E2EE bootstrap complete for device {DeviceId}", deviceId);
 
         return recoveryCode;
+    }
+
+    public async Task ReplaceLostDeviceAsync()
+    {
+        // Sign out first: the session stays tied to the old id on the server, and a crash after this point
+        // costs only another sign-in, never a session tied to the wrong id.
+        var account = (await _settings.GetSettingsAsync()).SyncUserId;
+        await _auth.SignOutUnexpectedlyAsync(AuthSignOutReason.DeviceKeysLost);
+
+        var previous = await _deviceKeys.StartNewDeviceAsync(account);
+        var current = _deviceKeys.GetDeviceId();
+        if (Guid.TryParse(previous, out var from) && Guid.TryParse(current, out var to))
+        {
+            try
+            {
+                var moved = await _scheduledJobs.ReassignOwnerAsync(from, to);
+                _logger.LogInformation("Moved {Count} scheduled job(s) to the new device id", moved);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not move this computer's scheduled jobs to the new device id");
+            }
+        }
     }
 
     public async Task<DeviceRegistrationResponse> RegisterPendingDeviceAsync()
@@ -160,6 +187,9 @@ public class DeviceManagementService : IDeviceManagementService
     public async Task ActivateViaRecoveryAsync(string recoveryCode, string onboardingSessionId)
     {
         var deviceId = _deviceKeys.GetDeviceId();
+        var status = await GetDeviceStatusAsync(deviceId);
+        if (status is { Status: DeviceStatus.Active })
+            await ThrowIfDeviceKeysLostAsync();
 
         using var client = await CreateAuthorizedClientAsync();
         var recoveryBlob = await client.GetFromJsonAsync<RecoveryWrappedUmkBlob>(
@@ -173,7 +203,6 @@ public class DeviceManagementService : IDeviceManagementService
         var (selfWrapped, hkdfSalt) = _e2ee.WrapUmkForSelf();
 
         // The server activates only a pending device; an active one replaces its unopenable copy with its own wrap.
-        var status = await GetDeviceStatusAsync(deviceId);
         if (status is { Status: DeviceStatus.Active })
         {
             await UploadWrappedUmkAsync(deviceId, selfWrapped, hkdfSalt, deviceId);
@@ -187,6 +216,7 @@ public class DeviceManagementService : IDeviceManagementService
 
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         settings.E2EEUmkVersion = recoveryBlob.UmkVersion;
         await _settings.SaveSettingsAsync(settings);
 
@@ -230,7 +260,7 @@ public class DeviceManagementService : IDeviceManagementService
             {
                 JsonValueKind.String => MentionsOnboardingSession(doc.RootElement.GetString()),
                 JsonValueKind.Object => doc.RootElement.TryGetProperty("error", out var error)
-                    && error.ValueKind == JsonValueKind.String && error.GetString() == "invalid_onboarding_session",
+                    && error.ValueKind == JsonValueKind.String && error.GetString() == E2EEErrorCodes.InvalidOnboardingSession,
                 _ => false,
             };
         }
@@ -243,18 +273,47 @@ public class DeviceManagementService : IDeviceManagementService
     private static bool MentionsOnboardingSession(string? text) =>
         text?.Contains("onboarding session", StringComparison.OrdinalIgnoreCase) == true;
 
+    public async Task ThrowIfDeviceKeysLostAsync()
+    {
+        var deviceId = _deviceKeys.GetDeviceId();
+        DeviceInfo? registered;
+        try
+        {
+            registered = (await GetDevicesAsync()).Devices.FirstOrDefault(d => d.DeviceId == deviceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not compare this device's keys with the server's");
+            return;
+        }
+        if (registered is { Status: DeviceStatus.Active } && HoldsOtherKeysThan(registered))
+            throw new DeviceKeyLostException();
+    }
+
+    public bool HoldsOtherKeysThan(DeviceInfo? registered) =>
+        registered is not null
+        && (!_deviceKeys.HasDeviceKeys()
+            || registered.AgreementPublicKey != _deviceKeys.GetAgreementPublicKey()
+            || registered.SigningPublicKey != _deviceKeys.GetSigningPublicKey());
+
     public async Task<KeyHandover> FetchKeyHandoverAsync()
     {
         var deviceId = _deviceKeys.GetDeviceId();
         using var client = await CreateAuthorizedClientAsync();
 
-        var wrappedBlob = await client.GetFromJsonAsync<WrappedUmkBlob>(
-            $"api/e2ee/devices/{deviceId}/wrapped-umk");
+        using var response = await client.GetAsync($"api/e2ee/devices/{deviceId}/wrapped-umk");
+        if (!response.IsSuccessStatusCode)
+            await SignOutIfSessionEndedAsync(response.StatusCode, await ReadErrorCodeAsync(response));
+        response.EnsureSuccessStatusCode();
 
+        var wrappedBlob = await response.Content.ReadFromJsonAsync<WrappedUmkBlob>();
         if (wrappedBlob is null)
             throw new InvalidOperationException("No wrapped UMK found for this device");
 
         var devices = await GetDevicesAsync();
+        if (HoldsOtherKeysThan(devices.Devices.FirstOrDefault(d => d.DeviceId == deviceId)))
+            throw new DeviceKeyLostException();
+
         if (wrappedBlob.CreatedByDeviceId == deviceId)
             return new KeyHandover(wrappedBlob, _deviceKeys.GetAgreementPublicKey(), devices.UmkVersion, null, null);
 
@@ -275,17 +334,30 @@ public class DeviceManagementService : IDeviceManagementService
     private async Task StoreHandoverAsync(KeyHandover handover)
     {
         var deviceId = _deviceKeys.GetDeviceId();
-        var umk = _e2ee.UnwrapUmkForDevice(
-            handover.Blob.Ciphertext,
-            handover.Blob.HkdfSalt,
-            handover.SenderAgreementPublicKey,
-            deviceId);
+        byte[] umk;
+        try
+        {
+            umk = _e2ee.UnwrapUmkForDevice(
+                handover.Blob.Ciphertext,
+                handover.Blob.HkdfSalt,
+                handover.SenderAgreementPublicKey,
+                deviceId);
+        }
+        // Only this device's key opens its own copy, so with the keys intact a failure means the copy was altered.
+        catch (Exception ex) when (
+            ex is CryptographicException or FormatException
+            && handover.IsOwnCopy && !_deviceKeys.KeyLossDetected)
+        {
+            _logger.LogWarning("This device's own copy of the key does not open: it was changed on the server");
+            throw new StoredKeyCopyChangedException();
+        }
 
         await _e2ee.StoreUmkAsync(umk);
         Array.Clear(umk);
 
         var settings = await _settings.GetSettingsAsync();
         settings.IsE2EEEnabled = true;
+        settings.MarkE2EERequiredForAccount();
         settings.E2EEUmkVersion = handover.UmkVersion;
         await _settings.SaveSettingsAsync(settings);
 
@@ -304,6 +376,7 @@ public class DeviceManagementService : IDeviceManagementService
                 blob.Ciphertext, blob.HkdfSalt);
 
         if (approver is null || payload is null || string.IsNullOrEmpty(blob.ApproverSignature)
+            || blob.SignatureVersion < DeviceApprovalSignature.Current
             || !_deviceKeys.Verify(payload, blob.ApproverSignature, approver.SigningPublicKey))
         {
             _logger.LogWarning(
@@ -434,28 +507,30 @@ public class DeviceManagementService : IDeviceManagementService
         return string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(email) ? null : $"{serverUrl}|{email}";
     }
 
-    private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            return doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
-                ? error.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    private static Task<string?> ReadErrorCodeAsync(HttpResponseMessage response) =>
+        E2EEErrorBody.ReadCodeAsync(response);
 
     public async Task RevokeDeviceAsync(string deviceId)
     {
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsync($"api/e2ee/devices/{deviceId}/revoke", null);
+        using var response = await _signer.SendAsync(
+            client, HttpMethod.Post, $"api/e2ee/devices/{deviceId}/revoke", null);
+        await ThrowIfSignatureRefusedAsync(response);
         response.EnsureSuccessStatusCode();
         _logger.LogInformation("Revoked device {DeviceId}", deviceId);
+    }
+
+    private async Task ThrowIfSignatureRefusedAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode != HttpStatusCode.Forbidden)
+            return;
+
+        var code = await ReadErrorCodeAsync(response);
+        if (code is E2EEErrorCodes.SignatureRequired or E2EEErrorCodes.InvalidSignature or E2EEErrorCodes.DeviceNotActive)
+        {
+            _logger.LogWarning("The server refused this device's signature ({Code})", code);
+            throw new DeviceSignatureRefusedException(code);
+        }
     }
 
     public async Task<DeviceListResponse> GetDevicesAsync()
@@ -482,10 +557,61 @@ public class DeviceManagementService : IDeviceManagementService
 
         using var client = await CreateAuthorizedClientAsync();
         var response = await client.PostAsJsonAsync("api/e2ee/devices/register", request);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var rejection = await ReadRegistrationRejectionAsync(response);
+            await SignOutIfSessionEndedAsync(response.StatusCode, rejection.Code);
+            throw rejection;
+        }
 
         return await response.Content.ReadFromJsonAsync<DeviceRegistrationResponse>()
             ?? throw new InvalidOperationException("Invalid registration response");
+    }
+
+    // No refresh first: the refresh token died with the session, so only a new sign-in helps.
+    private async Task SignOutIfSessionEndedAsync(HttpStatusCode status, string? code)
+    {
+        if (status != HttpStatusCode.Conflict || code != E2EEErrorCodes.SessionEnded)
+            return;
+
+        _logger.LogWarning("The server ended this session; signing out");
+        await _auth.SignOutUnexpectedlyAsync(AuthSignOutReason.ServerRejectedSession);
+    }
+
+    private async Task<DeviceRegistrationRejectedException> ReadRegistrationRejectionAsync(
+        HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        _logger.SensitiveDebug("Device registration rejection body: {Body}", body);
+        var code = E2EEErrorBody.ReadCode(body);
+        if (code is not null)
+            return new DeviceRegistrationRejectedException(code, LocalizationSource.Instance[MessageKeyFor(code)], (int)response.StatusCode);
+
+        return new DeviceRegistrationRejectedException(
+            (int)response.StatusCode == 400 ? E2EEErrorCodes.InvalidField : $"http_{(int)response.StatusCode}",
+            ReadBareString(body) ?? body, (int)response.StatusCode);
+    }
+
+    private static string MessageKeyFor(string code) => code switch
+    {
+        E2EEErrorCodes.DeviceMismatch => "E2EE_Register_DeviceMismatch",
+        E2EEErrorCodes.TooManyPendingDevices => "E2EE_Register_TooManyPending",
+        E2EEErrorCodes.DeviceChanged => "E2EE_Register_DeviceChanged",
+        E2EEErrorCodes.SessionEnded => "Auth_SignedOut_Rejected",
+        _ => "E2EE_Register_Generic",
+    };
+
+    private static string? ReadBareString(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind == JsonValueKind.String ? doc.RootElement.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task UploadWrappedUmkAsync(
@@ -501,7 +627,10 @@ public class DeviceManagementService : IDeviceManagementService
         };
 
         using var client = await CreateAuthorizedClientAsync();
-        var response = await client.PostAsJsonAsync($"api/e2ee/devices/{deviceId}/wrapped-umk", blob);
+        using var response = await _signer.SendAsync(
+            client, HttpMethod.Post, $"api/e2ee/devices/{deviceId}/wrapped-umk",
+            JsonSerializer.SerializeToUtf8Bytes(blob, JsonSerializerOptions.Web));
+        await ThrowIfSignatureRefusedAsync(response);
         response.EnsureSuccessStatusCode();
     }
 
@@ -525,7 +654,14 @@ public class DeviceManagementService : IDeviceManagementService
             using var client = await CreateAuthorizedClientAsync();
             var response = await client.GetAsync("api/e2ee/status");
             if (!response.IsSuccessStatusCode) return null;
-            return await response.Content.ReadFromJsonAsync<E2EEStatusResponse>();
+            var status = await response.Content.ReadFromJsonAsync<E2EEStatusResponse>();
+            if (status is { IsEnabled: true })
+            {
+                var settings = await _settings.GetSettingsAsync();
+                if (settings.MarkE2EERequiredForAccount())
+                    await _settings.SaveSettingsAsync(settings);
+            }
+            return status;
         }
         catch (Exception ex)
         {

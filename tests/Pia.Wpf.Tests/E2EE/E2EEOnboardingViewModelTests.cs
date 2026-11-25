@@ -4,6 +4,7 @@ using System.Net.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using Pia.Localization;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -216,6 +217,41 @@ public class E2EEOnboardingViewModelTests
         Assert.Contains("Invalid recovery code", sut.ErrorMessage);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ARefusedRecoveryCopy_IsNotReportedAsAWrongCode(bool afterTheSessionExpired)
+    {
+        var callCount = 0;
+        _deviceMgmt.RegisterPendingDeviceAsync().Returns(_ =>
+        {
+            callCount++;
+            return new DeviceRegistrationResponse
+            {
+                OnboardingSessionId = $"session-{callCount}",
+                ServerChallenge = "challenge",
+                IsFirstDevice = false
+            };
+        });
+        var refused = new RecoveryCopyRejectedException("KdfMemoryCostKb is 262145, outside the range 1 to 262144.");
+        _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), "session-1").ThrowsAsync(afterTheSessionExpired
+            ? new OnboardingSessionExpiredException("spent")
+            : refused);
+        _deviceMgmt.ActivateViaRecoveryAsync(Arg.Any<string>(), "session-2").ThrowsAsync(refused);
+
+        var sut = CreateSut();
+        sut.ShowRecoveryCodeEntryCommand.Execute(null);
+        sut.RecoveryCodeInput = "ABCD-EFGH-IJKL-MNOP";
+
+        await sut.ActivateWithRecoveryCodeCommand.ExecuteAsync(null);
+
+        Assert.Equal(afterTheSessionExpired ? 2 : 1, callCount);
+        Assert.Equal(OnboardingState.EnteringRecoveryCode, sut.State);
+        Assert.Equal(LocalizationSource.Instance["E2EE_Onboarding_Recovery_CopyRejected"], sut.ErrorMessage);
+        Assert.DoesNotContain("Invalid recovery code", sut.ErrorMessage);
+        Assert.DoesNotContain("Activation failed", sut.ErrorMessage);
+    }
+
     [Fact]
     public void GoBack_ShouldResetToInitial()
     {
@@ -317,6 +353,21 @@ public class E2EEOnboardingViewModelTests
     private E2EEOnboardingViewModel FastSut() => new(
         _deviceMgmt, _deviceKeys, _e2ee, _syncService, _settingsService,
         NullLogger<E2EEOnboardingViewModel>.Instance, pollIntervalOverride: TimeSpan.FromMilliseconds(10));
+
+    // The approver's name comes from the server, so a forged fingerprint line must not survive as its own line.
+    [Fact]
+    public async Task TheApproverName_IsShownWithoutLineBreaksOrInvisibleCharacters()
+    {
+        var sut = await ApprovedAsync(Handover("AAAA-BBBB-CCCC-DDDD") with
+        {
+            ApproverDeviceName = "Laptop\r\n‮Fingerprint: 1111-2222-3333-4444",
+        });
+
+        await WaitForState(sut, OnboardingState.ConfirmingApprover, timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal("Laptop Fingerprint: 1111-2222-3333-4444", sut.ApproverDeviceName);
+        sut.Cleanup();
+    }
 
     // The server decides which device counts as the approver, so the key waits for a person to compare.
     [Fact]

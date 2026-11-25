@@ -636,6 +636,34 @@ public class SqliteContext : IDisposable
         EnsureAssistantChatsFts();
     }
 
+    internal const string DefaultKanbanColumnId = "00000000-0000-0000-0000-000000000001";
+    internal const string DefaultKanbanColumnName = "To Do";
+    internal const int DefaultKanbanColumnSortOrder = 0;
+    internal const string ClosedKanbanColumnId = "00000000-0000-0000-0000-000000000002";
+    internal const string ClosedKanbanColumnName = "Closed";
+    internal const int ClosedKanbanColumnSortOrder = int.MaxValue;
+
+    internal static void SeedDefaultKanbanColumns(SqliteConnection connection, SqliteTransaction? transaction, DateTime stampUtc)
+    {
+        using var seed = connection.CreateCommand();
+        seed.Transaction = transaction;
+        seed.CommandText = """
+            INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
+            VALUES (@DefaultId, @DefaultName, @DefaultSort, 1, 0, @Stamp, @Stamp);
+
+            INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
+            VALUES (@ClosedId, @ClosedName, @ClosedSort, 0, 1, @Stamp, @Stamp);
+            """;
+        seed.Parameters.AddWithValue("@DefaultId", DefaultKanbanColumnId);
+        seed.Parameters.AddWithValue("@DefaultName", DefaultKanbanColumnName);
+        seed.Parameters.AddWithValue("@DefaultSort", DefaultKanbanColumnSortOrder);
+        seed.Parameters.AddWithValue("@ClosedId", ClosedKanbanColumnId);
+        seed.Parameters.AddWithValue("@ClosedName", ClosedKanbanColumnName);
+        seed.Parameters.AddWithValue("@ClosedSort", ClosedKanbanColumnSortOrder);
+        seed.Parameters.AddWithValue("@Stamp", stampUtc.ToString("O"));
+        seed.ExecuteNonQuery();
+    }
+
     private void MigrateSchema()
     {
         // Add ProcessingTimeMs column if it doesn't exist (for existing databases)
@@ -695,25 +723,10 @@ public class SqliteContext : IDisposable
             backfill.ExecuteNonQuery();
         }
 
-        // Seed default KanbanColumns if table is empty
         using var countCmd = _connection!.CreateCommand();
         countCmd.CommandText = "SELECT COUNT(*) FROM KanbanColumns";
-        var columnCount = Convert.ToInt64(countCmd.ExecuteScalar());
-
-        if (columnCount == 0)
-        {
-            var now = DateTime.UtcNow.ToString("O");
-
-            using var seedCmd = _connection.CreateCommand();
-            seedCmd.CommandText = $"""
-                INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
-                VALUES ('00000000-0000-0000-0000-000000000001', 'To Do', 0, 1, 0, '{now}', '{now}');
-
-                INSERT INTO KanbanColumns (Id, Name, SortOrder, IsDefaultView, IsClosedColumn, CreatedAt, UpdatedAt)
-                VALUES ('00000000-0000-0000-0000-000000000002', 'Closed', 2147483647, 0, 1, '{now}', '{now}');
-                """;
-            seedCmd.ExecuteNonQuery();
-        }
+        if (Convert.ToInt64(countCmd.ExecuteScalar()) == 0)
+            SeedDefaultKanbanColumns(_connection, null, DateTime.UtcNow);
 
         // Add ColumnId column to Todos if it doesn't exist
         using var columnIdPragma = _connection!.CreateCommand();

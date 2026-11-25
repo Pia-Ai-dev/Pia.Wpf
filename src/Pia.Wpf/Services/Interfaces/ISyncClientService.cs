@@ -15,6 +15,9 @@ public interface ISyncClientService
     /// </summary>
     bool IsE2EEOnboardingRequired { get; }
 
+    /// <summary>The device-removal notice retained until sign-out or successful onboarding.</summary>
+    CurrentDeviceRevokedEventArgs? PendingDeviceRevocation { get; }
+
     /// <summary>
     /// Raised when sync detects E2EE is enabled but UMK is not available.
     /// The new device needs to complete the onboarding flow before sync can proceed.
@@ -25,6 +28,15 @@ public interface ISyncClientService
     /// Raised when E2EE onboarding has completed and normal sync can resume.
     /// </summary>
     event EventHandler? E2EEOnboardingCleared;
+
+    /// <summary>Raised when <see cref="IsE2EEDowngradeDetected"/> changes.</summary>
+    event EventHandler? E2EEDowngradeChanged;
+
+    /// <summary>The server reports E2EE off for an account this device knows required it; sync is held.</summary>
+    bool IsE2EEDowngradeDetected { get; }
+
+    /// <summary>Forgets that this account required E2EE, on the user's confirmation; false when the downgrade has since cleared.</summary>
+    Task<bool> AllowUnencryptedSyncAsync(string accountId);
 
     /// <summary>
     /// Called by onboarding UI once the device has successfully onboarded so
@@ -46,11 +58,8 @@ public interface ISyncClientService
     /// </summary>
     event EventHandler<PendingDeviceEventArgs>? PendingDeviceDetected;
 
-    /// <summary>
-    /// Raised when the current device is no longer in the server's device list
-    /// (or has been revoked). Subscribers should disable E2EE locally.
-    /// </summary>
-    event EventHandler? CurrentDeviceRevoked;
+    /// <summary>Raised after sync stops and this device's account key is forgotten.</summary>
+    event EventHandler<CurrentDeviceRevokedEventArgs>? CurrentDeviceRevoked;
 
     /// <summary>
     /// Raised once after a successful pull cycle, regardless of whether anything
@@ -64,7 +73,7 @@ public interface ISyncClientService
     event EventHandler? EncryptedMigrationCompleted;
 
     /// <summary>Triggers a full sync cycle (push then pull). Returns counts, or null if sync was skipped.</summary>
-    Task<SyncResult?> SyncNowAsync();
+    Task<SyncResult?> SyncNowAsync(CancellationToken ct = default);
 
     /// <summary>Starts the background sync timer.</summary>
     void StartBackgroundSync();

@@ -18,6 +18,11 @@ public interface IDialogService
     /// <summary>True when the user confirmed the deletion; the caller then sends it with the dialog's password.</summary>
     Task<bool> ShowAccountDeletionDialogAsync(AccountDeletionViewModel viewModel);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
+    Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt);
+
+    /// <summary>Offers two named actions; <see cref="DialogChoice.Dismissed"/> when closed without choosing. A null <paramref name="closeText"/> labels the close button "Close"; an empty one hides it.</summary>
+    Task<DialogChoice> ShowChoiceDialogAsync(
+        string title, string message, string primaryText, string secondaryText, string? closeText = null);
 
     /// <summary>A confirmation that also carries back a "don't ask again" tick — where the suppression is
     /// stored is the caller's business. Declining is the answer for a dialog that could not be shown.</summary>
@@ -64,3 +69,11 @@ public record ModelDownloadResult(bool Completed, bool Cancelled);
 
 /// <summary>A struct, not a record class, so an unstubbed test double answers "declined" instead of null.</summary>
 public readonly record struct OptOutConfirmation(bool Confirmed, bool DontAskAgain);
+
+/// <summary>Which button the user pressed; Dismissed is the answer for a dialog closed without a choice.</summary>
+public enum DialogChoice
+{
+    Dismissed,
+    Primary,
+    Secondary,
+}

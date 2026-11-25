@@ -58,6 +58,9 @@ public static class PiaPaths
     /// <summary>Granted read-only to every Node start; no container can write it.</summary>
     public static string McpSandboxSupportDirectory => Path.Combine(LocalDataDirectory, "McpSandboxSupport");
 
+    /// <summary>Marks a local-data clear that has not finished, so the next launch completes it.</summary>
+    public static string LocalDataResetMarkerPath => Path.Combine(RoamingDataDirectory, "pending-local-data-reset");
+
     /// <summary>True when either data root came from the environment rather than the real user profile.</summary>
     public static bool IsOverridden =>
         HasOverride(RoamingDataDirectoryEnvVar) || HasOverride(LocalDataDirectoryEnvVar);

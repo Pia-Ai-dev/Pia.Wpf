@@ -194,6 +194,8 @@ parameter.
   at a scratch folder **and** pin `ingestSchemaVersion: 2`; missing the second makes the
   Bootstrapper's ingest migration delete every `memory/topics/*.md` in the vault on first launch.
   Check the value on disk once the app is up — a seeded value has been seen reverting.
+- **A copied live profile brings its MCP plugins**, and they start on launch. Seed from the
+  fixture, or strip the plugin entries before the first boot.
 - **Downloaded artifacts are shared, not isolated.** Models, TTS voices, Playwright browsers and
   plugins stay under the real `%LOCALAPPDATA%\Pia`. A Remove/Delete button on one of those deletes
   the real files. Verify such a control with `ww_query` / `ww_count`; never actuate it.

@@ -535,6 +535,21 @@ public class AppSettings
     public string? LastChatPullETag { get; set; }
     public string? SyncDeviceId { get; set; }
 
+    // The id this computer had before its keys were lost; outlives sign-out so the new device can revoke it, and
+    // outlives the revoke so a synced job still filed under it comes back to this computer.
+    public string? ReplacedDeviceId { get; set; }
+    // Cleared once the old id is revoked, which ends the offer.
+    public string? ReplacedDeviceAccountId { get; set; }
+
+    /// <summary>The replaced id of this computer, when it belongs to the signed-in account.</summary>
+    public string? PreviousInstallationToRemove() =>
+        ReplacedDeviceId is { Length: > 0 } id && SyncUserId is { Length: > 0 } user
+            && string.Equals(user, ReplacedDeviceAccountId, StringComparison.OrdinalIgnoreCase)
+            ? id
+            : null;
+
+    public void ForgetPreviousInstallation() => ReplacedDeviceAccountId = null;
+
     // App+OS version last accepted by the server, so the token requests that carry them stay bare
     // once the pair is current. Cleared value = report on the next token request.
     public string? ReportedDeviceMetadata { get; set; }
@@ -554,6 +569,101 @@ public class AppSettings
     public string? E2EEDeviceId { get; set; }
     public int E2EEUmkVersion { get; set; }
     public bool E2EERecoveryConfigured { get; set; }
+
+    /// <summary>Drops this device's copy of the account key and the state that says it can be used.</summary>
+    public void ForgetE2EEKey()
+    {
+        // An active key may be the only local record that the account requires E2EE.
+        if (IsE2EEEnabled)
+            MarkE2EERequiredForAccount();
+        IsE2EEEnabled = false;
+        E2EEEncryptedUmk = null;
+        E2EEUmkVersion = 0;
+        E2EERecoveryConfigured = false;
+    }
+
+    // Outlives sign-out and the local-data wipe: a later "E2EE off" from the server is a downgrade to refuse.
+    // Entries are E2EERequiredKey values, since one account id can exist on two servers; a bare account id is an
+    // entry written before that and still counts on any server until the account is marked again.
+    public List<string> E2EERequiredAccountIds { get; set; } = [];
+
+    internal static string E2EERequiredKey(string? serverUrl, string accountId) =>
+        $"{serverUrl?.Trim().TrimEnd('/')}|{accountId}";
+
+    private string? CurrentE2EERequiredKey =>
+        SyncUserId is { Length: > 0 } id ? E2EERequiredKey(ServerUrl, id) : null;
+
+    private bool IsCurrentAccountEntry(string entry) =>
+        string.Equals(entry, CurrentE2EERequiredKey, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(entry, SyncUserId, StringComparison.OrdinalIgnoreCase);
+
+    public bool IsE2EERequiredForAccount() =>
+        CurrentE2EERequiredKey is not null && E2EERequiredAccountIds.Any(IsCurrentAccountEntry);
+
+    /// <summary>True when the stored entries changed, so the caller knows to save.</summary>
+    public bool MarkE2EERequiredForAccount()
+    {
+        if (CurrentE2EERequiredKey is not { } key
+            || E2EERequiredAccountIds.Contains(key, StringComparer.OrdinalIgnoreCase))
+            return false;
+        E2EERequiredAccountIds.RemoveAll(IsCurrentAccountEntry);
+        E2EERequiredAccountIds.Add(key);
+        return true;
+    }
+
+    public void UnmarkE2EERequiredForAccount()
+    {
+        if (CurrentE2EERequiredKey is not null)
+            E2EERequiredAccountIds.RemoveAll(IsCurrentAccountEntry);
+    }
+
+    /// <summary>Set by a local-data clear; the next pushes omit Settings until a pull has applied the account's.</summary>
+    public bool SuppressSettingsPushAfterReset { get; set; }
+
+    internal static readonly IReadOnlyList<string> SyncedPreferenceNames =
+    [
+        nameof(DefaultOutputAction), nameof(DefaultTemplateId), nameof(WhisperModel), nameof(AutoTypeDelayMs),
+        nameof(Theme), nameof(StartMinimized), nameof(TargetLanguage), nameof(TargetSpeechLanguage),
+        nameof(DefaultWindowMode), nameof(ModeProviderDefaults), nameof(ModePersonaDefaults),
+        nameof(UseSameProviderForAllModes), nameof(AssistantDefaultWorkingDirectory),
+    ];
+
+    public void ClearAccountState()
+    {
+        // First, while the account id still names the key's owner; the server keeps this device's wrapped copy.
+        ForgetE2EEKey();
+        SyncEnabled = false;
+        EncryptedAccessToken = null;
+        EncryptedRefreshToken = null;
+        SyncUserId = null;
+        SyncUserEmail = null;
+        SyncUserDisplayName = null;
+        SyncProvider = null;
+        LastSyncTimestamp = null;
+        AssistantChatsBackfilledAt = null;
+        // Stale hash or ETags would let a later login, same or different account, skip rows or pull nothing.
+        LastPushedSettingsHash = null;
+        LastChatPullETag = null;
+        LastPullETag = null;
+        ClientPolicyInitialized = false;
+    }
+
+    public void ResetSyncedData()
+    {
+        var defaults = new AppSettings();
+        var type = typeof(AppSettings);
+        foreach (var name in SyncedPreferenceNames)
+        {
+            var property = type.GetProperty(name)!;
+            property.SetValue(this, property.GetValue(defaults));
+        }
+
+        ManagedPersonaStoreInitialized = false;
+        LastCatalogVersion = null;
+        AssistantChatsEncryptedResendAt = null;
+        BlankedSyncRowRepairAt = null;
+        SuppressSettingsPushAfterReset = true;
+    }
 
     // One-shot marker for the blanked-row repair. A build before the E2EE pull guard could write
     // empty rows over real ones and then advance the cursor past them; the repair resets the cursor
