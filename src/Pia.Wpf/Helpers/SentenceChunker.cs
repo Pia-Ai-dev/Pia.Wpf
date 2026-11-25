@@ -2,7 +2,6 @@ using System.Text;
 
 namespace Pia.Helpers;
 
-/// <summary>Accumulates streamed tokens and yields speakable sentences.</summary>
 public class SentenceChunker
 {
     public const int MaxChunkLength = 300;

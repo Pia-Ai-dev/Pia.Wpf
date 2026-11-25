@@ -254,8 +254,16 @@ public class TtsService : ITtsService, IDisposable
         await PlaySentencesAsync(sentences, cancellationToken, onFirstChunk: null);
     }
 
-    private async Task PlaySentencesAsync(
-        IAsyncEnumerable<string> sentences, CancellationToken cancellationToken, Action? onFirstChunk)
+    private Task PlaySentencesAsync(
+        IAsyncEnumerable<string> sentences, CancellationToken cancellationToken, Action? onFirstChunk) =>
+        PlaySentencesAsync(sentences, cancellationToken, onFirstChunk, SynthesizeAsync, PlayWavBytesAsync);
+
+    internal async Task PlaySentencesAsync(
+        IAsyncEnumerable<string> sentences,
+        CancellationToken cancellationToken,
+        Action? onFirstChunk,
+        Func<string, CancellationToken, Task<byte[]>> synthesize,
+        Func<byte[], CancellationToken, Task> play)
     {
         var mine = _playback.Begin(cancellationToken);
         var token = mine.Token;
@@ -267,12 +275,13 @@ public class TtsService : ITtsService, IDisposable
             SingleWriter = true
         });
 
+        Task? producerTask = null;
         try
         {
             _playback.Start(mine);
             RaiseIsPlayingChanged();
 
-            var producerTask = Task.Run(async () =>
+            producerTask = Task.Run(async () =>
             {
                 try
                 {
@@ -282,7 +291,7 @@ public class TtsService : ITtsService, IDisposable
                             continue;
 
                         _logger.SensitiveDebug("TTS synthesizing sentence: {Sentence}", sentence);
-                        var audioBytes = await SynthesizeAsync(sentence, token);
+                        var audioBytes = await synthesize(sentence, token);
                         await channel.Writer.WriteAsync(audioBytes, token);
                     }
                 }
@@ -307,7 +316,7 @@ public class TtsService : ITtsService, IDisposable
                     isFirstChunk = false;
                 }
 
-                await PlayWavBytesAsync(audioBytes, token);
+                await play(audioBytes, token);
             }
 
             await producerTask;
@@ -321,8 +330,24 @@ public class TtsService : ITtsService, IDisposable
         }
         finally
         {
+            // A failed playback leaves the producer blocked on the full channel unless it is cancelled here.
+            mine.Cancel();
+            await ObserveProducerAsync(producerTask);
             _playback.End(mine);
             RaiseIsPlayingChanged();
+        }
+    }
+
+    private static async Task ObserveProducerAsync(Task? producerTask)
+    {
+        if (producerTask is null)
+            return;
+        try
+        {
+            await producerTask;
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
