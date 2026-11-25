@@ -120,6 +120,40 @@ public class ChatSessionManagerTests
         Assert.Equal(ChatState.Idle, session.State);
     }
 
+    /// <summary>Activation published a null id for the new chat, so a job it starts must see the id its first send
+    /// assigns, or the chat never counts as on screen.</summary>
+    [Fact]
+    public async Task FirstSend_OfTheActiveNewChat_PublishesItsId()
+    {
+        ArrangePlannedSend();
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+
+        await sut.StartTurnAsync(session, "hello", null);
+
+        Assert.NotNull(session.Id);
+        _windowManager.Received(1).SetActiveAssistantChatId(session.Id);
+    }
+
+    [Fact]
+    public async Task FirstSend_OfAChatThatIsNotActive_DoesNotPublishItsId()
+    {
+        ArrangePlannedSend();
+        var storedId = Guid.NewGuid();
+        _chatService.GetAsync(storedId, Arg.Any<CancellationToken>()).Returns(StoredChat(storedId));
+        var sut = CreateSut();
+        var background = sut.GetOrCreateActiveForNewChat();
+        await sut.ActivateAsync(storedId);
+
+        await sut.StartTurnAsync(background, "hello", null);
+
+        Assert.NotNull(background.Id);
+        _windowManager.DidNotReceive().SetActiveAssistantChatId(background.Id);
+        Assert.Equal(storedId, _windowManager.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == nameof(IWindowManagerService.SetActiveAssistantChatId))
+            .Select(c => (Guid?)c.GetArguments()[0]).Last());
+    }
+
     /// <summary>The policy-restart overlay defers on this, so the aggregate has to cover a tool call awaiting
     /// approval as well as a running turn, and a first-turn session that has no id to be keyed under yet.</summary>
     [Theory]

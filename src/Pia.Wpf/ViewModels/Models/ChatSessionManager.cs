@@ -389,6 +389,7 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
         // E2: and every completed step of an in-flight Planned run (persist-only, no terminal settle).
         session.PersistRequested += OnSessionPersistRequested;
         session.MessagesDropped += OnSessionMessagesDropped;
+        session.IdentityAssigned += OnSessionIdentityAssigned;
         _allSessions.Add(session);
         return session;
     }
@@ -416,6 +417,13 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
         await PersistAsync(session);
         if (session.Id is { } chatId)
             await PullMissingTranscriptRowsAsync(chatId);
+    }
+
+    // Activation published a null id for a chat that had none yet; this is when it gets one.
+    private void OnSessionIdentityAssigned(object? sender, EventArgs e)
+    {
+        if (sender is ChatSession session && ReferenceEquals(session, ActiveSession))
+            _windowManager.SetActiveAssistantChatId(session.Id);
     }
 
     private void OnSessionMessagesDropped(object? sender, IReadOnlyList<Guid> messageIds)
@@ -582,6 +590,7 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
         session.TurnCompleted -= OnSessionTurnCompleted;
         session.PersistRequested -= OnSessionPersistRequested;
         session.MessagesDropped -= OnSessionMessagesDropped;
+        session.IdentityAssigned -= OnSessionIdentityAssigned;
         _allSessions.Remove(session);
         if (session.Id is { } id
             && _sessions.TryGetValue(id, out var keyed)
@@ -1618,6 +1627,7 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
             session.TurnCompleted -= OnSessionTurnCompleted;
             session.PersistRequested -= OnSessionPersistRequested;
             session.MessagesDropped -= OnSessionMessagesDropped;
+            session.IdentityAssigned -= OnSessionIdentityAssigned;
             session.Dispose();
         }
         _allSessions.Clear();
