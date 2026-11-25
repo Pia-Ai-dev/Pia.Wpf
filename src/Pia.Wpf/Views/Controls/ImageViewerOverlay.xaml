@@ -9,6 +9,9 @@
   mc:Ignorable="d"
   Visibility="Collapsed"
   Focusable="True"
+  KeyboardNavigation.TabNavigation="Cycle"
+  KeyboardNavigation.ControlTabNavigation="Cycle"
+  KeyboardNavigation.DirectionalNavigation="Contained"
   FocusVisualStyle="{x:Null}">
 
   <UserControl.Resources>

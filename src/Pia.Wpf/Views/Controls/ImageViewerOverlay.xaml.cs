@@ -23,6 +23,9 @@ public partial class ImageViewerOverlay : UserControl
 
     public async Task ShowAsync(ImageViewerViewModel viewModel)
     {
+        if (_viewModel != null)
+            return;
+
         var previousFocus = Keyboard.FocusedElement;
         var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnCloseRequested(object? sender, EventArgs e) => closed.TrySetResult();
