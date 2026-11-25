@@ -1903,6 +1903,14 @@
   </data>
   <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>Autres options d'envoi</value></data>
   <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Exécuter comme tâche d'arrière-plan dans un nouveau chat</value></data>
+  <data name="ImageViewer_Close_Tooltip" xml:space="preserve"><value>Fermer (Échap)</value></data>
+  <data name="ImageViewer_Previous_Tooltip" xml:space="preserve"><value>Image précédente</value></data>
+  <data name="ImageViewer_Next_Tooltip" xml:space="preserve"><value>Image suivante</value></data>
+  <data name="ImageViewer_ZoomIn_Tooltip" xml:space="preserve"><value>Zoom avant</value></data>
+  <data name="ImageViewer_ZoomOut_Tooltip" xml:space="preserve"><value>Zoom arrière</value></data>
+  <data name="ImageViewer_ActualSize_Tooltip" xml:space="preserve"><value>Taille réelle (100 %)</value></data>
+  <data name="ImageViewer_Fit_Tooltip" xml:space="preserve"><value>Ajuster à la fenêtre</value></data>
+  <data name="ImageViewer_Copy_Tooltip" xml:space="preserve"><value>Copier l'image</value></data>
   <data name="ImageViewer_Save_Tooltip" xml:space="preserve"><value>Enregistrer l'image sous…</value></data>
   <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Voici un plan pour cela :</value></data>
   <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>Le plan n’a pas pu être enregistré.</value></data>

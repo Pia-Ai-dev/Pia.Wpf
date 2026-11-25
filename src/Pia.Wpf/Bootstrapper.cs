@@ -523,6 +523,7 @@ public static class Bootstrapper
         // implements the WPF-UI ISnackbarService so all ~85 producer call sites are captured untouched.
         services.AddScoped<ISnackbarService, Services.Flow.FlowSnackbarService>();
         services.AddScoped<IDialogOverlayService, DialogOverlayService>();
+        services.AddScoped<IImageViewerHost, ImageViewerHostService>();
 
         // UI abstractions that keep System.Windows out of ViewModels
         services.AddSingleton<IClipboardService, ClipboardService>();

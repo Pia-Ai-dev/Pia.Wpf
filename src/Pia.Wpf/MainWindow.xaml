@@ -227,6 +227,7 @@
 
     <controls:DialogOverlayHost x:Name="RootDialogOverlayHost"
                                 Panel.ZIndex="20" />
+    <controls:ImageViewerOverlay x:Name="RootImageViewer" Visibility="Collapsed" />
     <ui:ContentDialogHost x:Name="RootContentDialogPresenter" />
     <ui:SnackbarPresenter x:Name="RootSnackbarPresenter"
                           HorizontalAlignment="Left"

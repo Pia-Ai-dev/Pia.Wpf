@@ -28,6 +28,7 @@ public partial class MainWindow : FluentWindow
         IContentDialogService contentDialogService,
         ISnackbarService snackbarService,
         IDialogOverlayService dialogOverlayService,
+        IImageViewerHost imageViewerHost,
         IServiceProvider serviceProvider)
     {
         _navigationService = navigationService;
@@ -47,6 +48,7 @@ public partial class MainWindow : FluentWindow
         contentDialogService.SetDialogHost(RootContentDialogPresenter);
         snackbarService.SetSnackbarPresenter(RootSnackbarPresenter);
         dialogOverlayService.SetOverlayHost(RootDialogOverlayHost);
+        imageViewerHost.SetHost(RootImageViewer);
 
         // Flow rail: per-window VM resolved from this window's scope (mirrors the singleton store).
         RootFlowView.DataContext = serviceProvider.GetRequiredService<ViewModels.Flow.FlowViewModel>();

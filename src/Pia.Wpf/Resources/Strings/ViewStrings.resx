@@ -1913,6 +1913,14 @@
   </data>
   <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>More send options</value></data>
   <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Run as a background task in a new chat</value></data>
+  <data name="ImageViewer_Close_Tooltip" xml:space="preserve"><value>Close (Esc)</value></data>
+  <data name="ImageViewer_Previous_Tooltip" xml:space="preserve"><value>Previous image</value></data>
+  <data name="ImageViewer_Next_Tooltip" xml:space="preserve"><value>Next image</value></data>
+  <data name="ImageViewer_ZoomIn_Tooltip" xml:space="preserve"><value>Zoom in</value></data>
+  <data name="ImageViewer_ZoomOut_Tooltip" xml:space="preserve"><value>Zoom out</value></data>
+  <data name="ImageViewer_ActualSize_Tooltip" xml:space="preserve"><value>Actual size (100 %)</value></data>
+  <data name="ImageViewer_Fit_Tooltip" xml:space="preserve"><value>Fit to window</value></data>
+  <data name="ImageViewer_Copy_Tooltip" xml:space="preserve"><value>Copy image</value></data>
   <data name="ImageViewer_Save_Tooltip" xml:space="preserve"><value>Save image as…</value></data>
   <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Here is a plan for this:</value></data>
   <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>The plan could not be saved.</value></data>

@@ -25,7 +25,7 @@ little standalone value, unblocks a High.
   (`AssistantMessage.BuildChatMessage`), so a switch to a non-Pia-Cloud provider mid-chat still
   carries them. The turn must refuse or strip them. Not planned yet; see gate G1.
   *Deps:* 0 · *Effort:* S · *Value:* High
-- [ ] **A1 · Image viewer overlay** — a full-window `ImageViewerOverlay` with fit, 100 %, wheel and
+- [x] **A1 · Image viewer overlay** — a full-window `ImageViewerOverlay` with fit, 100 %, wheel and
   keyboard zoom, drag to pan, previous/next, copy, save as, Esc, `ImageViewer_*` ids and en/de/fr
   strings. Plan Tasks 2 and 3.
   *Deps:* none · *Effort:* M · *Value:* Enabler
