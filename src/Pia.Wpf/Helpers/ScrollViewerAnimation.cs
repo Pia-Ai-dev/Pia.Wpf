@@ -7,9 +7,9 @@ using System.Windows.Media.Animation;
 namespace Pia.Helpers;
 
 /// <summary>
-/// Smoothly scrolls a <see cref="ScrollViewer"/> so a descendant element is brought into view, with a short
-/// eased tween. <see cref="ScrollViewer.VerticalOffset"/> is read-only and not directly animatable, so an
-/// attached proxy DP is animated and its change-callback drives <see cref="ScrollViewer.ScrollToVerticalOffset"/>.
+/// Scroll helpers: an eased scroll-into-view tween, and vertical offsets snapped to the device-pixel grid.
+/// <see cref="ScrollViewer.VerticalOffset"/> is read-only and not directly animatable, so the tween animates an
+/// attached proxy DP whose change-callback drives the scroll.
 /// </summary>
 public static class ScrollViewerAnimation
 {
@@ -22,7 +22,7 @@ public static class ScrollViewerAnimation
     {
         if (d is ScrollViewer sv)
         {
-            sv.ScrollToVerticalOffset((double)e.NewValue);
+            sv.ScrollToVerticalOffsetOnPixelGrid((double)e.NewValue);
         }
     }
 
@@ -64,6 +64,14 @@ public static class ScrollViewerAnimation
         {
             element.BringIntoView();
         }
+    }
+
+    /// <summary>Scrolls to <paramref name="offset"/>, snapped down to a whole device pixel.</summary>
+    // A fractional resting offset shifts every text line onto a half pixel, where it renders blurred.
+    public static void ScrollToVerticalOffsetOnPixelGrid(this ScrollViewer scrollViewer, double offset)
+    {
+        var scale = VisualTreeHelper.GetDpi(scrollViewer).DpiScaleY;
+        scrollViewer.ScrollToVerticalOffset(Math.Floor(offset * scale) / scale);
     }
 
     private static void Animate(ScrollViewer sv, double to)

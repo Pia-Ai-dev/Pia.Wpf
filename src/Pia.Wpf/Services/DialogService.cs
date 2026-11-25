@@ -102,6 +102,23 @@ public class DialogService : IDialogService
         return result == ContentDialogResult.Primary;
     }
 
+    public async Task ShowConsentCopiesDialogAsync(ViewModels.ConsentCopiesViewModel viewModel)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new ConsentCopiesContentDialog(dialogHost, viewModel);
+        await dialog.ShowAsync();
+    }
+
+    public async Task<bool> ShowAccountDeletionDialogAsync(ViewModels.AccountDeletionViewModel viewModel)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new AccountDeletionContentDialog(dialogHost, viewModel);
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
+    }
+
     public async Task<bool> ShowScreenCapturePickerDialogAsync(ViewModels.ScreenCapturePickerViewModel viewModel)
     {
         var dialogHost = _contentDialogService.GetDialogHostEx()
@@ -145,6 +162,42 @@ public class DialogService : IDialogService
             });
 
         return result == ContentDialogResult.Primary;
+    }
+
+    public async Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt)
+    {
+        var dialogHost = _contentDialogService.GetDialogHostEx()
+            ?? throw new InvalidOperationException("No dialog host available");
+        var dialog = new DeviceApprovalContentDialog(dialogHost, prompt);
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    public async Task<DialogChoice> ShowChoiceDialogAsync(
+        string title, string message, string primaryText, string secondaryText, string? closeText = null)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primaryText,
+            SecondaryButtonText = secondaryText,
+            CloseButtonText = closeText ?? _localizationService["Common_Close"],
+        };
+        if (closeText == "")
+        {
+            // A hidden default button would still answer Enter, so Enter picks the secondary action instead.
+            dialog.DefaultButton = ContentDialogButton.Secondary;
+            ContentDialogCloseButton.HideOnLoad(dialog);
+        }
+
+        var result = await _contentDialogService.ShowAsync(dialog, CancellationToken.None);
+
+        return result switch
+        {
+            ContentDialogResult.Primary => DialogChoice.Primary,
+            ContentDialogResult.Secondary => DialogChoice.Secondary,
+            _ => DialogChoice.Dismissed,
+        };
     }
 
     public async Task<OptOutConfirmation> ShowOptOutConfirmationDialogAsync(

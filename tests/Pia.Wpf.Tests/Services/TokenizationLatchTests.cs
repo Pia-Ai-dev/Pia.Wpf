@@ -47,6 +47,7 @@ public class TokenizationLatchTests : IDisposable
     {
         var tokenMap = Substitute.For<ITokenMapService>();
         tokenMap.TokenizeStructuredResult(Arg.Any<string>()).Returns(ci => (string)ci[0]);
+        tokenMap.TokenizeVerbatim(Arg.Any<string>()).Returns(ci => (string)ci[0]);
         tokenMap.Detokenize(Arg.Any<string>()).Returns(ci => (string)ci[0]);
 
         TokenMapAmbient.Current = tokenMap;

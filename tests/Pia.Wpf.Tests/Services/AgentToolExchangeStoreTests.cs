@@ -75,7 +75,7 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         var run = await MakeRunAsync();
 
-        var rounds = AgentToolCarryover.KeptResults + 4;
+        var rounds = 20;
         for (var i = 0; i < rounds; i++)
             await _store.RecordAsync(run.Id, null, i + 1, Round(i), ct);
 
@@ -419,6 +419,33 @@ public sealed class AgentToolExchangeStoreTests : IDisposable
 
         // A claimed row leaves the set the replay iterates, so it is never offered again.
         Assert.Empty(await _store.GetReplayableAsync(run.Id, "write_file", ct));
+    }
+
+    // The server's native-content store matches on the toolu_ id alone; a carried round must come back with it.
+    [Fact]
+    public async Task ACarriedParallelRound_KeepsItsAnthropicIdsVerbatim_AndItsGrouping()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await MakeRunAsync();
+        List<ChatMessage> round =
+        [
+            new(ChatRole.Assistant,
+            [
+                new FunctionCallContent("toolu_01AbC-dEf_9", "read_file", new Dictionary<string, object?> { ["path"] = "a.md" }),
+                new FunctionCallContent("toolu_01XyZ", "read_file", new Dictionary<string, object?> { ["path"] = "b.md" }),
+            ]),
+            new(ChatRole.Tool, [new FunctionResultContent("toolu_01AbC-dEf_9", "body a")]),
+            new(ChatRole.Tool, [new FunctionResultContent("toolu_01XyZ", "body b")]),
+        ];
+
+        await _store.RecordAsync(run.Id, null, 1, round, ct);
+        var rebuilt = AgentToolExchangeSerializer.ToMessages(await _store.ReadCarriedAsync(run.Id, ct));
+
+        Assert.Equal(3, rebuilt.Count);
+        Assert.Equal(["toolu_01AbC-dEf_9", "toolu_01XyZ"],
+            rebuilt[0].Contents.OfType<FunctionCallContent>().Select(c => c.CallId));
+        Assert.Equal(["toolu_01AbC-dEf_9", "toolu_01XyZ"],
+            rebuilt.Skip(1).SelectMany(m => m.Contents).OfType<FunctionResultContent>().Select(r => r.CallId));
     }
 
     [Fact]

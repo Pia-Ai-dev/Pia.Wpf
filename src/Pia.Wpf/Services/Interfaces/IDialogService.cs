@@ -15,7 +15,14 @@ public interface IDialogService
 
     /// <summary>Asks for a filename and a destination; the edit model carries the name and the open-after flag back.</summary>
     Task<AnswerExportDestination> ShowAnswerExportDialogAsync(AnswerExportEditModel export);
+    /// <summary>True when the user confirmed the deletion; the caller then sends it with the dialog's password.</summary>
+    Task<bool> ShowAccountDeletionDialogAsync(AccountDeletionViewModel viewModel);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
+    Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt);
+
+    /// <summary>Offers two named actions; <see cref="DialogChoice.Dismissed"/> when closed without choosing. A null <paramref name="closeText"/> labels the close button "Close"; an empty one hides it.</summary>
+    Task<DialogChoice> ShowChoiceDialogAsync(
+        string title, string message, string primaryText, string secondaryText, string? closeText = null);
 
     /// <summary>A confirmation that also carries back a "don't ask again" tick — where the suppression is
     /// stored is the caller's business. Declining is the answer for a dialog that could not be shown.</summary>
@@ -36,6 +43,9 @@ public interface IDialogService
     /// <summary>True once the user affirmed the selection; the caller then awaits
     /// <see cref="AssignmentConsentViewModel.SendAsync"/> and surfaces its <c>ResultMessage</c>.</summary>
     Task<bool> ShowAssignmentConsentDialogAsync(AssignmentConsentViewModel viewModel);
+
+    /// <summary>Lists a revoked session's copies until the user closes it; deleting happens inside, through the view model.</summary>
+    Task ShowConsentCopiesDialogAsync(ConsentCopiesViewModel viewModel);
 
     /// <summary>True when the user pressed Capture; the caller then awaits
     /// <see cref="ScreenCapturePickerViewModel.CaptureSelectedAsync"/> for the frame.</summary>
@@ -62,3 +72,11 @@ public record ModelDownloadResult(bool Completed, bool Cancelled);
 
 /// <summary>A struct, not a record class, so an unstubbed test double answers "declined" instead of null.</summary>
 public readonly record struct OptOutConfirmation(bool Confirmed, bool DontAskAgain);
+
+/// <summary>Which button the user pressed; Dismissed is the answer for a dialog closed without a choice.</summary>
+public enum DialogChoice
+{
+    Dismissed,
+    Primary,
+    Secondary,
+}

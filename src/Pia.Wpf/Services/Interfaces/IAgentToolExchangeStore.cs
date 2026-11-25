@@ -58,6 +58,9 @@ public interface IAgentToolExchangeStore
     /// <summary>Attach the replay's own result to the row it was replayed from.</summary>
     Task SetResultAsync(Guid id, string? resultText, CancellationToken ct = default);
 
+    /// <summary>Replace the carried <c>Paused:</c> result of a replayed call, so a later resume sees what ran.</summary>
+    Task SetCarriedResultAsync(Guid runId, string callId, string? resultText, CancellationToken ct = default);
+
     /// <summary>
     /// Drop the declined tool's replayable rows. Scoped to that tool alone — a run-wide delete would destroy
     /// another tool's surviving withheld call and the context seed the resume needs.

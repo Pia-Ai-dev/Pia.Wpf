@@ -474,6 +474,18 @@
   <data name="Settings_Tab_Assistant" xml:space="preserve"><value>Assistent</value></data>
   <data name="Settings_Tab_Research" xml:space="preserve"><value>Recherche</value></data>
   <data name="Settings_Tab_Account" xml:space="preserve"><value>Konto</value></data>
+  <data name="Settings_Credits_Title" xml:space="preserve"><value>Credits</value></data>
+  <data name="Settings_Credits_Weekly" xml:space="preserve"><value>Diese Woche</value></data>
+  <data name="Settings_Credits_Pool" xml:space="preserve"><value>Freier Team-Pool diese Woche</value></data>
+  <data name="Settings_Credits_TopUp" xml:space="preserve"><value>Zusätzlich gekaufte Credits</value></data>
+  <data name="Settings_Credits_Daily" xml:space="preserve"><value>Letzte 24 Stunden</value></data>
+  <data name="Settings_Credits_Hourly" xml:space="preserve"><value>Letzte Stunde</value></data>
+  <data name="Settings_Credits_GroupWeekly" xml:space="preserve"><value>Ganzes Team, diese Woche</value></data>
+  <data name="Settings_Credits_GroupDaily" xml:space="preserve"><value>Ganzes Team, letzte 24 Stunden</value></data>
+  <data name="Settings_Credits_UsedOf" xml:space="preserve"><value>{0} von {1} verbraucht</value></data>
+  <data name="Settings_Credits_LeftOf" xml:space="preserve"><value>{0} von {1} übrig</value></data>
+  <data name="Settings_Credits_Resets" xml:space="preserve"><value>Wird am {0} zurückgesetzt</value></data>
+  <data name="Settings_Credits_Suspended" xml:space="preserve"><value>Die kostenlose Stufe ist gerade pausiert. Bitte versuche es später erneut.</value></data>
   <data name="Settings_Tab_Plugins" xml:space="preserve"><value>Erweiterungen</value></data>
   <data name="Plugins_Subtitle" xml:space="preserve"><value>Erweitere die F&#228;higkeiten deines Assistenten mit Plugins.</value></data>
   <data name="Plugins_NotConnected" xml:space="preserve"><value>Verbinde dich mit Pia Cloud, um Plugins zu verwalten.</value></data>
@@ -539,6 +551,8 @@
   <data name="Settings_Diarization_SmartAuto_Description" xml:space="preserve"><value>Pia bewertet alle Stimmen im Verlauf des Meetings laufend neu und korrigiert frühere Sprecherzuordnungen automatisch. Die manuelle Feinabstimmung ist ausgeblendet, solange diese Option aktiv ist.</value></data>
   <data name="Settings_Diarization_SuppressLabels" xml:space="preserve"><value>Sprecherbezeichnungen im Transkript ausblenden</value></data>
   <data name="Settings_Diarization_SuppressLabels_Description" xml:space="preserve"><value>Zeigt und exportiert das Transkript ohne jede Sprecherbezeichnung. Die Sprechblasen bleiben nach Stimme gruppiert und eingefärbt; nur die Bezeichnungen entfallen — der Teil, der eine Identität behauptet. Sinnvoll, wenn die Zuordnung sichtbar falsch ist: ein Transkript ohne Bezeichnungen nützt einer Zusammenfassung mehr als ein selbstbewusst falsch beschriftetes.</value></data>
+  <data name="Settings_Diarization_NameSpeakers" xml:space="preserve"><value>Sprecher benennen</value></data>
+  <data name="Settings_Diarization_NameSpeakers_Description" xml:space="preserve"><value>Der Zustimmungssatz und das Umbenennen geben einem Sprecher einen Namen, und die Teilnehmerliste kommt in Zusammenfassungen und gespeicherte Notizen. Ausgeschaltet behält jeder Sprecher eine Bezeichnung wie „Speaker 1“, und ein im Zustimmungssatz genannter Name steht nur im Zustimmungsnachweis.</value></data>
   <data name="Settings_Diarization_MicEchoCancellation" xml:space="preserve"><value>Lautsprecher-Echo im Mikrofon entfernen</value></data>
   <data name="Settings_Diarization_MicEchoCancellation_Description" xml:space="preserve"><value>Führt das Mikrofon über die Windows-Echounterdrückung, damit die Gegenseite, die aus Ihren Lautsprechern kommt, entfernt wird, bevor sie transkribiert wird. Ohne das werden deren Worte ein zweites Mal als Ihre aufgezeichnet. Nur abschalten, wenn Sie ohnehin immer ein Headset tragen und die mitgelieferte Rauschunterdrückung und Pegelregelung stört.</value></data>
   <data name="Settings_Diarization_Threshold_Label" xml:space="preserve"><value>Empfindlichkeit der Sprecherzuordnung</value></data>
@@ -668,6 +682,7 @@
   <data name="Sync_LocalAuth_FieldsRequired" xml:space="preserve"><value>E-Mail und Passwort sind erforderlich</value></data>
   <data name="Sync_LocalAuth_ServerUrlRequired" xml:space="preserve"><value>Server-URL ist nicht konfiguriert.</value></data>
   <data name="Sync_LocalAuth_SignInRequired" xml:space="preserve"><value>Du bist nicht angemeldet.</value></data>
+  <data name="Sync_LoginProviderDisabledByPolicy" xml:space="preserve"><value>Diese Anmeldemethode ist durch die Richtlinie deiner Organisation deaktiviert.</value></data>
   <data name="Sync_LocalAuth_InvalidCredentials" xml:space="preserve"><value>Ungültige E-Mail oder Passwort</value></data>
   <data name="Sync_LocalAuth_AccountLocked" xml:space="preserve"><value>Konto ist vorübergehend gesperrt. Versuche es später erneut.</value></data>
   <data name="Sync_LocalAuth_EmailNotVerified" xml:space="preserve"><value>Bitte bestätige deine E-Mail vor der Anmeldung</value></data>
@@ -677,6 +692,24 @@
   <data name="Sync_SignedInAs" xml:space="preserve"><value>Angemeldet als </value></data>
   <data name="Sync_Provider" xml:space="preserve"><value>Anbieter: </value></data>
   <data name="Sync_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <data name="Sync_ExportData" xml:space="preserve"><value>Daten exportieren</value></data>
+  <data name="Sync_ExportData_Done" xml:space="preserve"><value>Deine Kontodaten wurden als ZIP-Archiv gespeichert.</value></data>
+  <data name="Sync_ExportData_Failed" xml:space="preserve"><value>Der Export ist fehlgeschlagen. Es wurde nichts gespeichert.</value></data>
+  <data name="Sync_DeleteAccount" xml:space="preserve"><value>Konto löschen</value></data>
+  <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Dein Konto wurde gelöscht, und du bist abgemeldet.</value></data>
+  <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>Das Passwort ist falsch. Dein Konto wurde nicht gelöscht.</value></data>
+  <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>Das Konto konnte nicht gelöscht werden. Bitte versuche es später erneut.</value></data>
+  <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Kontodaten speichern</value></data>
+  <data name="AccountDeletion_Title" xml:space="preserve"><value>Konto löschen</value></data>
+  <data name="AccountDeletion_Intro" xml:space="preserve"><value>Mit der Löschung endet dein Zugriff auf das Konto sofort. Nach Ablauf der Löschfrist des Servers werden die im Konto gespeicherten Daten entfernt; danach lassen sie sich weder exportieren noch wiederherstellen.</value></data>
+  <data name="AccountDeletion_ExportHint" xml:space="preserve"><value>Exportiere deine Daten, bevor du das Konto löschst. Danach ist das nicht mehr möglich.</value></data>
+  <data name="AccountDeletion_Export" xml:space="preserve"><value>Daten jetzt exportieren</value></data>
+  <data name="AccountDeletion_ExportDone" xml:space="preserve"><value>Export gespeichert.</value></data>
+  <data name="AccountDeletion_ExportFailed" xml:space="preserve"><value>Der Export ist fehlgeschlagen. Es wurde nichts gespeichert.</value></data>
+  <data name="AccountDeletion_Password_Label" xml:space="preserve"><value>Passwort</value></data>
+  <data name="AccountDeletion_Understood" xml:space="preserve"><value>Mir ist klar, dass mein Konto und die darin gespeicherten Daten gelöscht werden.</value></data>
+  <data name="AccountDeletion_Confirm" xml:space="preserve"><value>Konto löschen</value></data>
+  <data name="AccountDeletion_RequiredHint" xml:space="preserve"><value>Die Schaltfläche „Konto löschen“ erscheint, sobald du unten den Haken setzt und – bei Anmeldung mit E-Mail und Passwort – dein Passwort eingibst.</value></data>
   <data name="Sync_NeverSynced" xml:space="preserve"><value>Noch nie synchronisiert</value></data>
   <data name="Sync_JustNow" xml:space="preserve"><value>Gerade eben</value></data>
   <data name="Sync_MinutesAgo" xml:space="preserve"><value>Vor {0} Minute(n)</value></data>
@@ -719,6 +752,9 @@
   <data name="Dialog_ProviderEdit_Name" xml:space="preserve"><value>Name *</value></data>
   <data name="Dialog_ProviderEdit_ProviderType" xml:space="preserve"><value>Anbietertyp *</value></data>
   <data name="Dialog_ProviderEdit_Endpoint" xml:space="preserve"><value>Endpunkt *</value></data>
+  <data name="Dialog_ProviderEdit_TypeBlocked" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt diesen Anbietertyp nicht.</value></data>
+  <data name="Dialog_ProviderEdit_EndpointBlocked" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt diese Adresse nicht.</value></data>
+  <data name="Dialog_ProviderEdit_RecipientNotice" xml:space="preserve"><value>Deine Anfragen, Anhänge und Gesprächsinhalte gehen an den Betreiber dieser Adresse. Pia prüft diesen Dienst nicht.</value></data>
   <data name="Dialog_ProviderEdit_ApiKey" xml:space="preserve"><value>API-Schlüssel</value></data>
   <data name="Dialog_ProviderEdit_ApiKeyDeviceLocalHint" xml:space="preserve"><value>Pia Cloud speichert API-Schlüssel von Anbietern nur bei aktivierter Ende-zu-Ende-Verschlüsselung. Dieser Schlüssel bleibt auf diesem Gerät – gib ihn auf deinen anderen Geräten erneut ein oder aktiviere die Ende-zu-Ende-Verschlüsselung unter „Konto“.</value></data>
   <data name="Dialog_ProviderEdit_ModelName" xml:space="preserve"><value>Modellname</value></data>
@@ -948,6 +984,9 @@
   <data name="ActionCard_Category_Screen" xml:space="preserve"><value>Bildschirm</value></data>
   <data name="ActionCard_Title_Format" xml:space="preserve"><value>{1} {0}</value></data>
   <data name="ActionCard_Action_Capture" xml:space="preserve"><value>aufnehmen</value></data>
+  <data name="ActionCard_Category_KnowledgeBase" xml:space="preserve"><value>Wissensdatenbank</value></data>
+  <data name="ActionCard_Category_KbDocument" xml:space="preserve"><value>Dokument</value></data>
+  <data name="ActionCard_Action_Upload" xml:space="preserve"><value>ergänzen</value></data>
   <!-- Enum Display Names -->
   <data name="Enum_CopyToClipboard" xml:space="preserve"><value>In Zwischenablage kopieren</value></data>
   <data name="Enum_AutoType" xml:space="preserve"><value>Auto-Tippen</value></data>
@@ -983,12 +1022,56 @@
   <data name="E2EE_Onboarding_Bar_Action" xml:space="preserve"><value>Jetzt einrichten</value></data>
   <!-- Settings: E2EE section -->
   <data name="Settings_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung</value></data>
-  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, werden alle synchronisierten Daten auf deinem Gerät verschlüsselt, bevor sie an den Server gesendet werden. Beim Aktivieren werden ein Schlüssel und ein Wiederherstellungscode erzeugt und eine vollständige Synchronisation ausgelöst. Die Aktivierung ist für dieses Konto dauerhaft.</value></data>
+  <data name="Settings_E2EE_Description" xml:space="preserve"><value>Wenn aktiviert, verschlüsselt dein Gerät die Inhalte, die du synchronisierst, bevor sie an den Server gehen; der Server hat deinen Schlüssel nur in verschlüsselter Form. Kennungen, Zeitpunkte und Reihenfolge bleiben lesbar. Beim Aktivieren werden ein Schlüssel und ein Wiederherstellungscode erzeugt und eine vollständige Synchronisation ausgelöst. Die Aktivierung ist für dieses Konto dauerhaft.</value></data>
   <data name="Settings_E2EE_Toggle" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
-  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung ist für dieses Konto dauerhaft. Um ohne Verschlüsselung neu zu beginnen, setze die Synchronisationsdaten auf dem Server zurück.</value></data>
+  <data name="Settings_E2EE_Permanent" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung lässt sich für dieses Konto nicht abschalten. Sie endet nur zusammen mit den synchronisierten Inhalten, wenn das Konto gelöscht wird oder eine Administration seine Synchronisationsdaten zurücksetzt.</value></data>
   <data name="Settings_E2EE_Updating" xml:space="preserve"><value>Verschlüsselung wird aktualisiert und Daten werden synchronisiert...</value></data>
   <data name="Settings_E2EE_FingerprintLabel" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
   <data name="Settings_E2EE_CheckDeviceRequests" xml:space="preserve"><value>Nach Geräteanfragen suchen</value></data>
+  <data name="Settings_E2EE_OffNotice_Title" xml:space="preserve"><value>Deine synchronisierten Daten sind nicht Ende-zu-Ende-verschlüsselt</value></data>
+  <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Was du mit diesem Konto synchronisierst, liegt unverschlüsselt auf dem Pia-Server. Aktiviere die Ende-zu-Ende-Verschlüsselung, damit nur deine Geräte die Inhalte lesen können.</value></data>
+  <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Verschlüsselung aktivieren</value></data>
+  <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Nicht jetzt</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Synchronisierung angehalten: Laut Server ist dieses Konto nicht mehr Ende-zu-Ende-verschlüsselt.</value></data>
+  <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Prüfen</value></data>
+  <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Verschlüsselung auf dem Server ausgeschaltet</value></data>
+  <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>Dieses Konto war Ende-zu-Ende-verschlüsselt, der Server meldet es jetzt aber als unverschlüsselt. Die Synchronisierung ist angehalten, damit deine Daten nicht im Klartext gesendet werden. Wenn niemand die Verschlüsselung dieses Kontos absichtlich zurückgesetzt hat, mach nicht weiter und wende dich an deine Administration.</value></data>
+  <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Ohne Verschlüsselung synchronisieren</value></data>
+  <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Ohne Verschlüsselung synchronisieren?</value></data>
+  <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Fahre nur fort, wenn die Verschlüsselung dieses Kontos absichtlich zurückgesetzt wurde. Deine Daten gehen dann ohne Ende-zu-Ende-Verschlüsselung an den Server, und dieses Gerät warnt dich nicht mehr davor.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Neues Gerät möchte Zugriff</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Intro" xml:space="preserve"><value>Ein neues Gerät möchte deinem Konto beitreten. Bestätige es nur, wenn du dich gerade selbst auf diesem Gerät angemeldet hast und beide Fingerabdrücke unten übereinstimmen.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameSanitized" xml:space="preserve"><value>Der Name dieses Geräts enthielt versteckte oder Steuerzeichen. Sie wurden vor der Anzeige entfernt. Sei vorsichtig: Bestätige nur, wenn du sicher bist, dass es dein Gerät ist.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_RequestingSection" xml:space="preserve"><value>Anfragendes Gerät</value></data>
+  <data name="Settings_E2EE_ApproveDevice_NameLabel" xml:space="preserve"><value>Gerätename</value></data>
+  <data name="Settings_E2EE_ApproveDevice_FingerprintLabel" xml:space="preserve"><value>Fingerabdruck</value></data>
+  <data name="Settings_E2EE_ApproveDevice_CompareHint" xml:space="preserve"><value>Vergleiche diesen Fingerabdruck Zeichen für Zeichen mit dem auf dem neuen Gerät.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceSection" xml:space="preserve"><value>Dieses Gerät</value></data>
+  <data name="Settings_E2EE_ApproveDevice_ThisDeviceHint" xml:space="preserve"><value>Nach deiner Bestätigung bittet dich das neue Gerät, diesen Fingerabdruck zu prüfen.</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Approve" xml:space="preserve"><value>Bestätigen</value></data>
+  <data name="Settings_E2EE_ApproveDevice_Decline" xml:space="preserve"><value>Nicht bestätigen</value></data>
+  <data name="Settings_E2EE_UnnamedDevice" xml:space="preserve"><value>Unbenanntes Gerät</value></data>
+  <data name="Settings_E2EE_RejectDevice_Title" xml:space="preserve"><value>Gerät ablehnen?</value></data>
+  <data name="Settings_E2EE_RejectDevice_Message" xml:space="preserve"><value>Möchtest du dieses Gerät ablehnen und entfernen? Wenn du es nicht kennst, entferne es.</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Title" xml:space="preserve"><value>Gerät bestätigt</value></data>
+  <data name="Settings_E2EE_DeviceApproved_Message" xml:space="preserve"><value>Das Gerät wurde bestätigt und kann jetzt synchronisieren.</value></data>
+  <data name="Settings_E2EE_Gone_Title" xml:space="preserve"><value>Gerät entfernt</value></data>
+  <data name="Settings_E2EE_Gone_Revoked" xml:space="preserve"><value>Dieses Gerät wurde auf dem Server widerrufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
+  <data name="Settings_E2EE_Gone_Missing" xml:space="preserve"><value>Dieses Gerät ist auf dem Server nicht mehr registriert – sein Eintrag wurde gelöscht oder ist abgelaufen. Die Hintergrundsynchronisierung wurde gestoppt und die Kopie des Verschlüsselungsschlüssels dieses Geräts wurde vergessen. Richte dieses Gerät erneut ein oder melde dich ab.</value></data>
+  <data name="Settings_E2EE_Gone_SetUpAgain" xml:space="preserve"><value>Dieses Gerät erneut einrichten</value></data>
+  <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Abmelden</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Gerät nicht freigegeben</value></data>
+  <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} konnte nicht freigegeben werden. Prüfe deine Verbindung und versuche es unter Einstellungen → Konto erneut.</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>Keine Anfragen</value></data>
+  <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>Kein Gerät wartet auf Freigabe.</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Prüfung fehlgeschlagen</value></data>
+  <data name="Settings_E2EE_PendingDevices_CheckFailed_Message" xml:space="preserve"><value>Pia konnte nicht prüfen, ob Geräte auf Freigabe warten.</value></data>
+  <data name="Settings_E2EE_EnableFailed_Title" xml:space="preserve"><value>Verschlüsselung nicht aktiviert</value></data>
+  <data name="Settings_E2EE_EnableFailed_Message" xml:space="preserve"><value>Die Ende-zu-Ende-Verschlüsselung konnte nicht aktiviert werden. Prüfe deine Verbindung und versuche es erneut.</value></data>
+  <data name="Auth_SignedOut_Title" xml:space="preserve"><value>Abgemeldet</value></data>
+  <data name="Auth_SignedOut_Expired" xml:space="preserve"><value>Deine Sitzung wurde beendet oder auf dem Server widerrufen. Bitte melde dich erneut an.</value></data>
+  <data name="Auth_SignedOut_Rejected" xml:space="preserve"><value>Der Server hat die Verlängerung deiner Sitzung abgelehnt. Bitte melde dich erneut an.</value></data>
+  <data name="Auth_SignedOut_Unreadable" xml:space="preserve"><value>Die gespeicherte Sitzung ließ sich auf diesem Gerät nicht öffnen. Bitte melde dich erneut an.</value></data>
   <!-- E2EE onboarding view -->
   <data name="E2EE_Onboarding_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung einrichten</value></data>
   <data name="E2EE_Onboarding_Subtitle" xml:space="preserve"><value>Dieses Konto verwendet Ende-zu-Ende-Verschlüsselung. Richte dieses Gerät ein, um auf deine verschlüsselten Daten zugreifen zu können.</value></data>
@@ -999,7 +1082,7 @@
   <data name="E2EE_Onboarding_Recovery_Description" xml:space="preserve"><value>Gib den Wiederherstellungscode ein, den du beim ersten Aktivieren der Verschlüsselung gespeichert hast. Verwende diesen, wenn dein anderes Gerät nicht verfügbar ist.</value></data>
   <data name="E2EE_Onboarding_Recovery_Button" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
   <data name="E2EE_Onboarding_Waiting_FingerprintLabel" xml:space="preserve"><value>Dein Geräte-Fingerabdruck:</value></data>
-  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Cloud-Sync &gt; Geräteverwaltung. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
+  <data name="E2EE_Onboarding_Waiting_VerifyInstruction" xml:space="preserve"><value>Gehe auf deinem anderen Gerät zu Einstellungen &gt; Konto und klicke auf Nach Geräteanfragen suchen. Prüfe, ob dieser Fingerabdruck übereinstimmt, bevor du bestätigst.</value></data>
   <data name="E2EE_Onboarding_Cancel" xml:space="preserve"><value>Abbrechen</value></data>
   <data name="E2EE_Onboarding_UseRecoveryInstead" xml:space="preserve"><value>Stattdessen Wiederherstellungscode verwenden</value></data>
   <data name="E2EE_Onboarding_Recovery_EnterTitle" xml:space="preserve"><value>Wiederherstellungscode eingeben</value></data>
@@ -1010,12 +1093,35 @@
   <data name="E2EE_Onboarding_Success_Description" xml:space="preserve"><value>Deine Daten werden synchronisiert. Das kann einen Moment dauern.</value></data>
   <data name="E2EE_Onboarding_FingerprintPrefix" xml:space="preserve"><value>Geräte-Fingerabdruck: </value></data>
   <data name="E2EE_Onboarding_TryAgain" xml:space="preserve"><value>Erneut versuchen</value></data>
+  <data name="E2EE_Onboarding_Confirm_Title" xml:space="preserve"><value>Bestätigendes Gerät prüfen</value></data>
+  <data name="E2EE_Onboarding_Confirm_Description" xml:space="preserve"><value>Der Schlüssel ist angekommen, aber dieses Gerät hat ihn noch nicht übernommen. Das bestätigende Gerät zeigt seinen Fingerabdruck im Bestätigungsdialog und unter Einstellungen &gt; Konto. Übernimm den Schlüssel nur, wenn er mit dem unten angezeigten übereinstimmt.</value></data>
+  <data name="E2EE_Onboarding_Confirm_ApproverLabel" xml:space="preserve"><value>Bestätigt von: </value></data>
+  <data name="E2EE_Onboarding_Confirm_Matches" xml:space="preserve"><value>Stimmt überein</value></data>
+  <data name="E2EE_Onboarding_Confirm_DoesNotMatch" xml:space="preserve"><value>Stimmt nicht überein</value></data>
+  <data name="E2EE_Onboarding_Confirm_Mismatch" xml:space="preserve"><value>Dieses Gerät hat den Schlüssel nicht übernommen. Das bestätigende Gerät gehört möglicherweise nicht dir: Lehne auf deinen anderen Geräten jede Anfrage ab, die du nicht kennst, und richte dieses Gerät stattdessen mit deinem Wiederherstellungscode ein.</value></data>
+  <data name="E2EE_Onboarding_Confirm_AcceptFailed" xml:space="preserve"><value>Der bestätigte Schlüssel ließ sich auf diesem Gerät nicht öffnen. Versuche es erneut oder verwende deinen Wiederherstellungscode.</value></data>
+  <data name="E2EE_Onboarding_KeyLost" xml:space="preserve"><value>Die Schlüssel dieses Computers sind verloren gegangen. Pia hat dich abgemeldet, damit der Computer deinem Konto als neues Gerät wieder beitreten kann. Melde dich an und bestätige ihn dann von einem anderen Gerät oder mit deinem Wiederherstellungscode. Danach kannst du die vorherige Installation in den Kontoeinstellungen entfernen.</value></data>
+  <data name="E2EE_Onboarding_OwnCopyChanged" xml:space="preserve"><value>Die gespeicherte Kopie des Schlüssels für dieses Gerät wurde auf dem Server verändert und deshalb nicht verwendet. Richte das Gerät mit deinem Wiederherstellungscode erneut ein.</value></data>
+  <data name="E2EE_Onboarding_Recovery_CopyRejected" xml:space="preserve"><value>Pia hat die auf dem Server gespeicherten Wiederherstellungsdaten nicht verwendet, weil sie ungültig sind. Dein Wiederherstellungscode wurde nicht geprüft. Bestätige dieses Gerät von einem anderen Gerät aus oder wende dich an deinen Administrator.</value></data>
+  <data name="Settings_E2EE_SignatureRefused_Message" xml:space="preserve"><value>Der Server nimmt diese Änderung nur von einem deiner aktiven Geräte an, und dieses Gerät konnte das nicht nachweisen. Stelle dieses Gerät mit deinem Wiederherstellungscode wieder her und versuche es dann erneut.</value></data>
+  <data name="Settings_E2EE_PreviousInstallation_Text" xml:space="preserve"><value>Dieser Computer ist deinem Konto nach dem Verlust seiner Schlüssel erneut beigetreten. Seine vorherige Installation ist noch eingetragen und kann nicht mehr verwendet werden.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation" xml:space="preserve"><value>Vorherige Installation dieses Computers entfernen</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Title" xml:space="preserve"><value>Vorherige Installation entfernen</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Confirm_Message" xml:space="preserve"><value>Die vorherige Installation dieses Computers wird aus deinem Konto entfernt. Dieser Computer funktioniert weiter.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Title" xml:space="preserve"><value>Vorherige Installation nicht entfernt</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Failed_Message" xml:space="preserve"><value>Die vorherige Installation konnte nicht entfernt werden. Prüfe deine Verbindung und versuche es erneut.</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Title" xml:space="preserve"><value>Vorherige Installation entfernt</value></data>
+  <data name="Settings_E2EE_RemovePreviousInstallation_Done_Message" xml:space="preserve"><value>Die vorherige Installation dieses Computers gehört nicht mehr zu deinem Konto.</value></data>
+  <data name="E2EE_Register_DeviceMismatch" xml:space="preserve"><value>Der Server kennt diese Sitzung als ein anderes Gerät und hat die Registrierung abgelehnt. Melde dich ab, melde dich auf diesem Gerät erneut an und versuche es noch einmal.</value></data>
+  <data name="E2EE_Register_TooManyPending" xml:space="preserve"><value>Es warten zu viele Geräte auf Genehmigung. Genehmige oder entferne zuerst auf einem anderen Gerät eines davon und versuche es erneut.</value></data>
+  <data name="E2EE_Register_DeviceChanged" xml:space="preserve"><value>Dieses Gerät hat sich auf dem Server während der Registrierung geändert. Versuche es erneut.</value></data>
+  <data name="E2EE_Register_Generic" xml:space="preserve"><value>Der Server hat die Registrierung dieses Geräts abgelehnt.</value></data>
   <!-- Wiederherstellungscode-Dialog (beim Aktivieren der E2EE in den Einstellungen) -->
   <data name="Dialog_Recovery_Title" xml:space="preserve"><value>Wiederherstellungscode</value></data>
   <data name="Dialog_Recovery_Heading" xml:space="preserve"><value>Wiederherstellungscode speichern</value></data>
   <data name="Dialog_Recovery_Description" xml:space="preserve"><value>Dieser Wiederherstellungscode ist die EINZIGE Möglichkeit, auf deine verschlüsselten Daten zuzugreifen, wenn du alle Geräte verlierst. Notiere ihn und bewahre ihn an einem sicheren Ort auf.</value></data>
   <data name="Dialog_Recovery_Warning_Title" xml:space="preserve"><value>Wichtig</value></data>
-  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Wenn du diesen Code und alle Geräte verlierst, können deine verschlüsselten Daten nicht wiederhergestellt werden. Der Server kann deine Daten nicht entschlüsseln.</value></data>
+  <data name="Dialog_Recovery_Warning_Message" xml:space="preserve"><value>Wenn du diesen Code und alle Geräte verlierst, können deine verschlüsselten Daten nicht wiederhergestellt werden. Der Server hat deinen Schlüssel nur verschlüsselt und kann ihn nicht für dich wiederherstellen.</value></data>
   <data name="Dialog_Recovery_Confirm" xml:space="preserve"><value>Ich habe diesen Wiederherstellungscode an einem sicheren Ort gespeichert</value></data>
   <!-- Missed Scheduled Job Dialog -->
   <data name="MissedRun_Dialog_Title" xml:space="preserve"><value>Verpasste geplante Recherche</value></data>
@@ -1025,15 +1131,15 @@
   <data name="MissedRun_Later" xml:space="preserve"><value>Später entscheiden</value></data>
   <!-- First-Run Wizard E2EE Setup Step -->
   <data name="Wizard_E2EE_Title" xml:space="preserve"><value>Ende-zu-Ende-Verschlüsselung aktivieren</value></data>
-  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Notizen, Aufgaben und Erinnerungen bleiben nur auf deinen Geräten lesbar.</value></data>
+  <data name="Wizard_E2EE_Subtitle" xml:space="preserve"><value>Dein Gerät verschlüsselt die Inhalte deiner Notizen, Aufgaben und Erinnerungen, bevor es sie synchronisiert.</value></data>
   <data name="Wizard_E2EE_Pros_Title" xml:space="preserve"><value>Warum aktivieren (empfohlen)</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia-Cloud-Mitarbeitende können deine Daten nicht lesen.</value></data>
-  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>Bei einem Server-Einbruch bleiben deine Daten für Angreifer unlesbar.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet1" xml:space="preserve"><value>Pia Cloud erhält deine Inhalte verschlüsselt und hat deinen Schlüssel nur in verschlüsselter Form.</value></data>
+  <data name="Wizard_E2EE_Pros_Bullet2" xml:space="preserve"><value>Bei einem Server-Einbruch finden Angreifer deine Inhalte verschlüsselt vor. Kennungen, Zeitpunkte und Reihenfolge bleiben lesbar.</value></data>
   <data name="Wizard_E2EE_Pros_Bullet3" xml:space="preserve"><value>Nur Geräte, die du freigibst, können deine Daten entschlüsseln.</value></data>
   <data name="Wizard_E2EE_Cons_Title" xml:space="preserve"><value>Das solltest du wissen</value></data>
   <data name="Wizard_E2EE_Cons_Bullet1" xml:space="preserve"><value>Du erhältst einen Wiederherstellungscode — bewahre ihn sicher auf (Passwort-Manager oder ausgedruckt).</value></data>
   <data name="Wizard_E2EE_Cons_Bullet2" xml:space="preserve"><value>Verlierst du alle Geräte und den Wiederherstellungscode, sind deine verschlüsselten Daten unwiederbringlich verloren.</value></data>
-  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Du kannst die Verschlüsselung später in den Einstellungen abschalten.</value></data>
+  <data name="Wizard_E2EE_Cons_Bullet3" xml:space="preserve"><value>Einmal aktiviert, lässt sich die Verschlüsselung in der Anwendung nicht wieder abschalten.</value></data>
   <data name="Wizard_E2EE_Toggle_Label" xml:space="preserve"><value>Meine Daten Ende-zu-Ende verschlüsseln</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Title" xml:space="preserve"><value>Ohne Verschlüsselung fortfahren?</value></data>
   <data name="Wizard_E2EE_OptOut_Warning_Message" xml:space="preserve"><value>Deine synchronisierten Daten könnten bei einem Server-Einbruch von Pia-Cloud-Mitarbeitenden gelesen werden. Du kannst die Verschlüsselung später in den Einstellungen aktivieren.</value></data>
@@ -1045,6 +1151,7 @@
   <data name="Wizard_E2EE_Recovery_Confirm" xml:space="preserve"><value>Ich habe meinen Wiederherstellungscode sicher gespeichert</value></data>
   <data name="Wizard_E2EE_Error_Bootstrap" xml:space="preserve"><value>Verschlüsselung konnte nicht aktiviert werden</value></data>
   <data name="Wizard_E2EE_Bootstrapping" xml:space="preserve"><value>Verschlüsselung wird eingerichtet…</value></data>
+  <data name="Wizard_E2EE_AlreadyEnabled" xml:space="preserve"><value>Die Verschlüsselung ist für dieses Konto schon eingerichtet. Richte dieses Gerät mit deinem Wiederherstellungscode oder einer Freigabe von einem anderen Gerät ein.</value></data>
   <data name="Flow_Header" xml:space="preserve"><value>Flow</value></data>
   <data name="Flow_EmptyState" xml:space="preserve"><value>Alles erledigt.</value></data>
   <data name="Flow_ClearAll" xml:space="preserve"><value>Alle löschen</value></data>
@@ -1107,6 +1214,10 @@
   <data name="Run_Activity_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Run_Activity_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert</value></data>
   <data name="Run_Activity_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet – setzen Sie erneut fort, wenn Sie bereit sind</value></data>
+  <data name="Run_Activity_InterruptedCredit" xml:space="preserve"><value>Credit-Limit erreicht. Setzen Sie fort, sobald es zurückgesetzt wurde.</value></data>
+  <data name="Run_Activity_InterruptedOffline" xml:space="preserve"><value>Verbindung unterbrochen. Setzen Sie fort, sobald Sie wieder online sind.</value></data>
+  <data name="Run_Activity_InterruptedTimeout" xml:space="preserve"><value>Das Modell hat nicht rechtzeitig geantwortet. Fortsetzen?</value></data>
+  <data name="Run_Activity_InterruptedProvider" xml:space="preserve"><value>Beim KI-Dienst ist ein Problem aufgetreten. Fortsetzen?</value></data>
   <data name="Run_Activity_WaitingForToolApproval" xml:space="preserve"><value>Wartet auf Ihre Freigabe für {0}</value></data>
   <data name="Run_ToolApprovalTarget" xml:space="preserve"><value>Betrifft {0}</value></data>
   <data name="Run_ToolApproval_ShowFullCall" xml:space="preserve"><value>Vollständigen Aufruf anzeigen</value></data>
@@ -1199,6 +1310,10 @@
   <data name="Flow_Run_ChildrenInterrupted" xml:space="preserve"><value>Unterbrochen, während ihre Unteragenten arbeiteten – fortsetzen?</value></data>
   <data name="Flow_Run_UserPaused" xml:space="preserve"><value>Sie haben diese Ausführung pausiert. Fortsetzen?</value></data>
   <data name="Flow_Run_ResumeInterrupted" xml:space="preserve"><value>Die Fortsetzung wurde nicht gestartet. Fortsetzen?</value></data>
+  <data name="Flow_Run_InterruptedCredit" xml:space="preserve"><value>Credit-Limit erreicht. Setzen Sie fort, sobald es zurückgesetzt wurde.</value></data>
+  <data name="Flow_Run_InterruptedOffline" xml:space="preserve"><value>Verbindung unterbrochen. Setzen Sie fort, sobald Sie wieder online sind.</value></data>
+  <data name="Flow_Run_InterruptedTimeout" xml:space="preserve"><value>Das Modell hat nicht rechtzeitig geantwortet. Fortsetzen?</value></data>
+  <data name="Flow_Run_InterruptedProvider" xml:space="preserve"><value>Beim KI-Dienst ist ein Problem aufgetreten. Fortsetzen?</value></data>
   <data name="Flow_Run_ToolApproval" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0}. Fortsetzen, um sie zu erteilen.</value></data>
   <data name="Flow_Run_ToolApprovalOn" xml:space="preserve"><value>Dieser Lauf benötigt Ihre Freigabe für {0} auf {1}. Fortsetzen, um sie zu erteilen.</value></data>
   <data name="Flow_Run_NeedsGoal" xml:space="preserve"><value>Dieser Lauf konnte nicht erkennen, was Sie meinten – öffnen Sie ihn, um zu antworten.</value></data>
@@ -1224,6 +1339,9 @@
   <data name="AnswerExport_SaveDialogFilter" xml:space="preserve"><value>HTML-Dokument (*.html)|*.html|Alle Dateien (*.*)|*.*</value></data>
   <data name="Assistant_OpenFolder_Tooltip" xml:space="preserve"><value>Enthaltenden Ordner öffnen</value></data>
   <data name="Assistant_SavePendingFile_Tooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis speichern</value></data>
+  <data name="Assistant_SavePendingFile_CutTooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis speichern, damit Pia den Rest nachlesen kann</value></data>
+  <data name="Assistant_PendingFileCut_Badge" xml:space="preserve"><value>gekürzt</value></data>
+  <data name="Assistant_PendingFileCut_Tooltip" xml:space="preserve"><value>Nur ein Teil dieser Datei passt in die Nachricht. Speichere sie im Arbeitsverzeichnis, damit Pia den Rest nachlesen kann.</value></data>
   <data name="Assistant_PendingFileSaved_Tooltip" xml:space="preserve"><value>Im Arbeitsverzeichnis gespeichert</value></data>
   <data name="Assistant_AttachedFile_NotSaved_Tooltip" xml:space="preserve"><value>Diese Datei wurde nicht im Arbeitsverzeichnis gespeichert, daher ist nur ihr Name erhalten geblieben.</value></data>
   <data name="Assistant_OpenInCode_Tooltip" xml:space="preserve"><value>In VS Code öffnen</value></data>
@@ -1416,9 +1534,12 @@
   <data name="Settings_ScheduledJobs_UnknownStatusInert" xml:space="preserve"><value>Dieser Auftrag hat einen Status, den diese Version nicht kennt, und wird nur lesend angezeigt. Aktualisiere Pia, um ihn zu verwalten.</value></data>
   <data name="Settings_ScheduledJobs_Running" xml:space="preserve"><value>Auftrag läuft …</value></data>
   <data name="Settings_ScheduledJobs_RunStarted" xml:space="preserve"><value>Der Auftrag läuft. Das Ergebnis steht anschließend im erzeugten Chat.</value></data>
+  <data name="Routines_RunStarted_Title" xml:space="preserve"><value>Routine gestartet</value></data>
+  <data name="Routines_RunStarted_Body" xml:space="preserve"><value>„{0}“ läuft. Das Ergebnis steht anschließend im erzeugten Chat.</value></data>
   <data name="Settings_ScheduledJobs_RunAlreadyRunning" xml:space="preserve"><value>Nicht gestartet: Ein Durchlauf dieses Auftrags läuft bereits.</value></data>
   <data name="Settings_ScheduledJobs_RunNotOwner" xml:space="preserve"><value>Nicht ausgeführt: Ein anderes Gerät besitzt den Zeitplan dieses Auftrags.</value></data>
   <data name="Settings_ScheduledJobs_RunNotFound" xml:space="preserve"><value>Nicht ausgeführt: Diesen Auftrag gibt es nicht mehr.</value></data>
+  <data name="Settings_ScheduledJobs_RunResetPending" xml:space="preserve"><value>Nicht ausgeführt: Pia hat das Entfernen der lokalen Daten noch nicht abgeschlossen. Starte Pia zuerst neu.</value></data>
   <data name="Settings_ScheduledJobs_RunFailed" xml:space="preserve"><value>Der Auftrag konnte nicht gestartet werden.</value></data>
   <data name="Settings_ScheduledJobs_LoadFailed" xml:space="preserve"><value>Geplante Aufträge konnten nicht gelesen werden.</value></data>
   <data name="Settings_ScheduledJobs_SaveFailed" xml:space="preserve"><value>Diese Änderung konnte nicht gespeichert werden.</value></data>
@@ -1434,7 +1555,7 @@
   <data name="Settings_ScheduledJobs_Kind_MeetingAttendance" xml:space="preserve"><value>Teams-Besprechung</value></data>
   <data name="Routines_Field_MeetingUrl" xml:space="preserve"><value>Teams-Link *</value></data>
   <data name="Routines_Field_MeetingUrl_Hint" xml:space="preserve"><value>Link aus der Besprechungseinladung einfügen</value></data>
-  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Alle Teilnehmenden dürfen aufgezeichnet und transkribiert werden *</value></data>
+  <data name="Routines_Field_MeetingConsent" xml:space="preserve"><value>Alle Teilnehmenden dürfen aufgezeichnet und transkribiert werden; das Transkript wird als Notiz im Vault gespeichert und auf Wunsch von Ihrem KI-Anbieter ausgewertet *</value></data>
   <data name="Routines_Draft_Describe" xml:space="preserve"><value>In einem Satz beschreiben</value></data>
   <data name="Routines_Draft_DescribeHint" xml:space="preserve"><value>Sag, was passieren soll und wie oft. Pia füllt Name, Anweisung und Zeitplan aus — alles davon kannst du vor dem Speichern noch ändern.</value></data>
   <data name="Routines_Draft_Button" xml:space="preserve"><value>Mit KI entwerfen</value></data>
@@ -1594,6 +1715,7 @@
   <data name="AiFeedback_Comment_Label" xml:space="preserve"><value>Was war falsch?</value></data>
   <data name="AiFeedback_Comment_Placeholder" xml:space="preserve"><value>Optional – z. B. falsche Fakten, unangemessener Ton, grundlose Verweigerung</value></data>
   <data name="AiFeedback_IncludeAnswer" xml:space="preserve"><value>Antworttext mitsenden</value></data>
+  <data name="AiFeedback_PrivacyConcern" xml:space="preserve"><value>Betrifft den Datenschutz</value></data>
   <data name="AiFeedback_PrivacyNote_Tokenized" xml:space="preserve"><value>Personenbezogene Daten im Text werden vor dem Senden durch Platzhalter ersetzt – wie in Ihren Chats.</value></data>
   <data name="AiFeedback_PrivacyNote_Plain" xml:space="preserve"><value>Der Text wird so gesendet, wie er angezeigt wird; die PII-Tokenisierung ist in Ihren Datenschutzeinstellungen aus.</value></data>
   <data name="About_AiFeedback_Title" xml:space="preserve"><value>KI-Feedback und Beschwerden</value></data>
@@ -1646,6 +1768,8 @@
   <data name="McpServers_Title" xml:space="preserve"><value>MCP-Server</value></data>
   <data name="McpServers_Subtitle" xml:space="preserve"><value>Binde MCP-Server ein, die auf diesem Computer laufen. Ihren Tool-Namen wird der Servername vorangestellt, damit sie nie mit Pias eigenen Tools kollidieren.</value></data>
   <data name="McpServers_Add" xml:space="preserve"><value>Server hinzufügen</value></data>
+  <data name="McpServers_BlockedByPolicy" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt auf diesem Gerät keine lokalen MCP-Server.</value></data>
+  <data name="McpServers_Edit_RecipientNotice" xml:space="preserve"><value>Dieser Server läuft als Programm auf diesem Gerät, mit deinen Rechten. Was der Assistent an seine Werkzeuge gibt, geht an dieses Programm und dorthin, womit es sich verbindet.</value></data>
   <data name="McpServers_Empty" xml:space="preserve"><value>Noch keine MCP-Server</value></data>
   <data name="McpServers_EmptyHint" xml:space="preserve"><value>Füge einen Server hinzu, um dem Assistenten Tools außerhalb von Pia zu geben.</value></data>
   <data name="McpServers_Name" xml:space="preserve"><value>Name</value></data>
@@ -1691,9 +1815,35 @@
   <data name="McpServers_Status_Stopping" xml:space="preserve"><value>Wird beendet…</value></data>
   <data name="McpServers_Detail_ToolsSummary" xml:space="preserve"><value>{0} von {1} Tool(s) freigegeben</value></data>
   <data name="McpServers_Detail_ToolsAllowed" xml:space="preserve"><value>{0} Tool(s) freigegeben</value></data>
+  <data name="McpServers_Detail_WithheldSummary" xml:space="preserve"><value>{0} Tool(s)</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructive" xml:space="preserve"><value>{0} Tool(s) · {1} davon können löschen</value></data>
+  <data name="McpServers_Detail_WithheldSummaryDestructiveOne" xml:space="preserve"><value>{0} Tool(s) · 1 davon kann löschen</value></data>
   <data name="McpServers_Detail_ToolsStopped" xml:space="preserve"><value>Dieser Server ist nicht verbunden. Dies sind die Tools, die beim letzten Lauf freigegeben waren.</value></data>
   <data name="McpServers_Detail_ToolsUnknown" xml:space="preserve"><value>Starten Sie diesen Server oder verwenden Sie „Verbindung testen“, um seine Tools zu sehen.</value></data>
-  <data name="McpServers_Detail_Withheld" xml:space="preserve"><value>gesperrt</value></data>
+  <data name="McpServers_Detail_AllowedGroup" xml:space="preserve"><value>Freigegeben</value></data>
+  <data name="McpServers_Detail_WithheldGroup" xml:space="preserve"><value>Gesperrt</value></data>
+  <data name="McpServers_Detail_NoneAllowed" xml:space="preserve"><value>Kein Tool freigegeben – über Bearbeiten ändern</value></data>
   <data name="McpServers_Saving" xml:space="preserve"><value>Wird gespeichert… der Server startet neu.</value></data>
   <data name="Policy_ManagedTooltip" xml:space="preserve"><value>Von Ihrer Organisation gesperrt: Diese Einstellung wird per Pia-Richtlinie vorgegeben und kann hier nicht geändert werden.</value></data>
+  <data name="LocalReset_SignOut_Title" xml:space="preserve"><value>Von Pia Cloud abmelden</value></data>
+  <data name="LocalReset_SignOut_Message" xml:space="preserve"><value>Möchtest du auch die Daten dieses Kontos von diesem Gerät entfernen? Das betrifft Chats, Verlauf, Todos, Vorlagen, Personas, deine eigenen KI-Anbieter und synchronisierte Einstellungen. Alles bleibt in deinem Pia-Cloud-Konto und ist nach der nächsten Anmeldung wieder da. Beim Entfernen wird Pia neu gestartet.</value></data>
+  <data name="LocalReset_SignOut_Clear" xml:space="preserve"><value>Abmelden und entfernen</value></data>
+  <data name="LocalReset_SignOut_Keep" xml:space="preserve"><value>Abmelden und behalten</value></data>
+  <data name="LocalReset_SignIn_Title" xml:space="preserve"><value>Vor der Anmeldung</value></data>
+  <data name="LocalReset_SignIn_Message" xml:space="preserve"><value>Auf diesem Gerät sind Daten vorhanden. Wenn du sie behältst, werden sie in das Konto hochgeladen, bei dem du dich anmeldest. Wenn du sie zuerst entfernst, löscht Pia sie von diesem Gerät, auch Änderungen, die du im abgemeldeten Zustand gemacht hast, und startet neu. Danach musst du dich erneut anmelden.</value></data>
+  <data name="LocalReset_SignIn_Keep" xml:space="preserve"><value>Behalten und anmelden</value></data>
+  <data name="LocalReset_SignIn_Clear" xml:space="preserve"><value>Zuerst entfernen</value></data>
+  <data name="LocalReset_Notice_Vault" xml:space="preserve"><value>Das Gedächtnis von Pia auf diesem Gerät wird nicht entfernt und bleibt auch nach einem Kontowechsel verfügbar.</value></data>
+  <data name="LocalReset_Notice_KeysLost" xml:space="preserve"><value>API-Schlüssel für deine eigenen KI-Anbieter werden nicht in Pia Cloud gespeichert. Du musst sie erneut eingeben.</value></data>
+  <data name="LocalReset_Notice_KeysMaybeLost" xml:space="preserve"><value>API-Schlüssel für deine eigenen KI-Anbieter werden von diesem Gerät entfernt. Wenn dein Konto keine Ende-zu-Ende-Verschlüsselung verwendet, musst du sie erneut eingeben.</value></data>
+  <data name="LocalReset_UploadFailed_Title" xml:space="preserve"><value>Letzte Änderungen konnten nicht hochgeladen werden</value></data>
+  <data name="LocalReset_UploadFailed_Message" xml:space="preserve"><value>Einige Änderungen auf diesem Gerät haben Pia Cloud nicht erreicht. Dieses Gerät trotzdem leeren? Nicht hochgeladene Änderungen gehen verloren.</value></data>
+  <data name="LocalReset_Progress_Uploading" xml:space="preserve"><value>Letzte Änderungen werden hochgeladen…</value></data>
+  <data name="LocalReset_Progress_SigningOut" xml:space="preserve"><value>Abmeldung läuft…</value></data>
+  <data name="LocalReset_Pending_Title" xml:space="preserve"><value>Lokale Daten noch nicht entfernt</value></data>
+  <data name="LocalReset_Pending_Message" xml:space="preserve"><value>Pia konnte das Entfernen der lokalen Daten nicht abschließen. Pia jetzt neu starten und es erneut versuchen?</value></data>
+  <data name="LocalReset_Deleted_Title" xml:space="preserve"><value>Konto gelöscht</value></data>
+  <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Dein Pia-Cloud-Konto wurde gelöscht. Möchtest du auch dessen Daten von diesem Gerät entfernen? Beim Entfernen wird Pia neu gestartet. Das lässt sich nicht rückgängig machen.</value></data>
+  <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Dieses Gerät leeren</value></data>
+  <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Auf diesem Gerät behalten</value></data>
 </root>

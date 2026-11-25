@@ -380,8 +380,6 @@ public class AssignmentToolHandler : IAssignmentToolHandler
             _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
         };
 
-        // Slashes, not hyphens: the PII detector reads a hyphenated date as a phone number and the model
-        // would receive "[Phone_1]:46 UTC". Its character class has no '/', so this breaks the digit run.
         return utc.ToString("yyyy/MM/dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
     }
 

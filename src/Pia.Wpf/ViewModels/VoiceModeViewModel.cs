@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
 using Pia.Models;
+using Pia.Services;
 using Pia.Services.Interfaces;
 
 namespace Pia.ViewModels;
@@ -184,7 +185,7 @@ public partial class VoiceModeViewModel : ObservableObject, IDisposable
     {
         try
         {
-            await _audioRecordingService.StopRecordingAsync();
+            RecordingFileStore.TryDelete(await _audioRecordingService.StopRecordingAsync());
         }
         catch (Exception ex)
         {

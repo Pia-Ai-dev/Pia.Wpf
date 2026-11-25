@@ -1,0 +1,48 @@
+Pia kann Textdateien für dich lesen, durchsuchen und bearbeiten — aber nur in einem Ordner, den du auswählst. Alles bleibt auf diesen Ordner beschränkt, sodass Pia keine Dateien anderswo auf deinem Computer anfassen kann.
+Sag Pia zuerst, in welchem Ordner es arbeiten darf.
+Das war's — Pia kann nun mit den Dateien in diesem Ordner arbeiten. Dort liegt auch dein [Speicher-Tresor](/de/wpf/guides/memory/).
+Darunter liegen zwei Schalter:
+Wähle einen vorhandenen Ordner oder gib einen neuen Namen ein, und Pia legt ihn für dich an. Lass das Feld leer, um neue Chats im obersten Ordner des Dateiordners zu starten.
+Jeder Chat kann auf einen Unterordner deines Hauptordners beschränkt werden — das hält die Dinge übersichtlich.
+Die beiden Ordnerauswahlen bedeuten unterschiedliche Dinge, und beim Draufzeigen sagt jede, welches:
+  nächste Chat startet, nie den, in dem du gerade bist.
+  Klicke auf den dort angezeigten Ordner, um ihn vor dem Senden zu ändern. Ist die erste Nachricht
+  einmal gesendet, behält ein Chat den Ordner, den er hat.
+Du kannst Pia direkt auf eine Datei verweisen, statt zu beschreiben, wo sie liegt.
+Pia bekommt den exakten Pfad und die ersten Zeilen der Datei und liest sie direkt, ohne zu suchen.
+Praktisch, um Fragen zu einem Dokument zu stellen oder Pia zu bitten, einen Teil davon umzuschreiben.
+Anders als die übrigen `@`-Bereiche schaltet `@Files` keine Tools ab. Die Datei ist Kontext für die
+Anfrage, und Pia behält in dieser Runde alles andere, was es nutzen kann —
+Checkliste wie `@Files:flows/close.md` markieren und Pia bitten, sie mit diesen Tools abzuarbeiten.
+Markierst du `@Files` zusammen mit einem anderen Bereich, etwa `@Todo`, wird die Runde wie gewohnt
+auf die Tools der markierten Bereiche eingegrenzt. Weitere Bereiche findest du unter
+lesen und zu schreiben** (**Einstellungen → Assistent → Allgemein**) ausschaltest — der Befehl ist an
+die Datei-Tools gebunden.
+Lesen, Durchsuchen und Auflisten brauchen keine Zustimmung. Schreiben, Ändern und Löschen fragen immer nach.
+Pia bekommt gesagt, in welchem Ordner es arbeitet, sodass es nicht mehr bei relativen Pfaden rät, und
+ein falsch geschriebener Name schlägt die naheliegende, ähnlich benannte Datei vor.
+Wenn Pia eine Datei ändert, sendet es **nur das Stück, das sich ändert**, sodass eine Korrektur um ein
+einziges Wort nicht den Rest eines langen Dokuments auf dem Weg verstümmeln kann. Du siehst und
+genehmigst weiterhin denselben Diff.
+Absätze oder Zellen, die sich ändern, werden angefasst; alles andere in der Datei bleibt genau, wie
+es war — einschließlich Formatierung, die Pia nie gesehen hat.
+Die Inhaltssuche eines Ordners deckt **Word-Dokumente, Excel-Arbeitsmappen und gespeicherte
+Outlook-Mail** ab, nicht nur reinen Text. Eine Datei, die Pia wirklich nicht lesen kann, wird **im
+Ergebnis namentlich genannt**, sodass ein nicht durchsuchbares Dokument nicht wie eine fehlende
+Antwort aussieht.
+Gespeicherte Mail ist **nur lesbar**: Pia schreibt keine `.msg`- oder `.eml`-Datei. Text in eine
+Bilddatei zu schreiben wird verweigert, statt sie zu beschädigen.
+Die Suche **ignoriert standardmäßig Groß-/Kleinschreibung**, sodass eine Suche nach „cookie“ auch
+für die Fälle, in denen du die Markierung `TODO` suchst und nicht jede Erwähnung des Wortes.
+nach einem Screenshot beim Namen fragen, ohne ihn anzuhängen. Pia sieht das Bild für eine Antwort
+lang, also frag im selben Zug, was du dazu wissen willst. Ein Bild anzusehen braucht den Anbieter Pia
+Cloud, wie jeder andere [Bildanhang](/de/wpf/guides/attachments/).
+lesen konnte.
+Wenn Pia eine Datei ändern will, legt es nicht einfach los. Stattdessen erscheint eine Aktionskarte mit:
+Du wählst dann **Ablehnen**, **Einmal zulassen**, **Diese Sitzung zulassen** oder **Immer zulassen**. Wozu dich jede dieser Optionen verpflichtet, steht unter [Tool-Berechtigungen](/de/wpf/guides/tool-permissions/).
+Lies den Diff, bevor du zustimmst. Und denk daran: **Diese Sitzung zulassen** und **Immer zulassen** gelten auch für *spätere* Aufrufe, deren Argumente du nie zu sehen bekommst.
+Ändert sich eine Datei auf der Festplatte, nachdem Pia die Vorschau erstellt hat, aber bevor du zustimmst, wird die Änderung sicherheitshalber blockiert. Bitte Pia dann, die Datei erneut zu lesen, und versuche es noch einmal.
+Wenn dein Ordner ein Git-Repository ist, kann Pia direkt damit arbeiten. Schalte dazu **Dem Assistenten erlauben, Git-Befehle in diesem Ordner auszuführen** in **Einstellungen → Assistent → Allgemein** ein.
+Die Aktionskarte zeigt den genauen Befehl, bevor irgendetwas ausgeführt wird. Ein paar Dinge tut Pia bewusst nicht:
+Lesen, Durchsuchen und Auflisten von Dateien sind ungefährlich und brauchen daher keine Zustimmung. Dauerhafte Freigaben, die du erteilt hast, verwaltest du so:
+Die vollständige Anleitung steht unter [Tool-Berechtigungen](/de/wpf/guides/tool-permissions/).

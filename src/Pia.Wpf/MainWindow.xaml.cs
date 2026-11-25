@@ -5,6 +5,9 @@ using Pia.Services.Interfaces;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
 using System.Windows;
+using System.Windows.Interop;
+using Pia.Helpers;
+using Pia.Native;
 #if DEBUG
 using System.Windows.Input;
 #endif
@@ -86,16 +89,40 @@ public partial class MainWindow : FluentWindow
                 Height = settings.WindowHeight;
             }
 
-            if (settings.WindowLeft > 0 && settings.WindowTop > 0)
+            // 0,0 is the unsaved default; negative values are legitimate on a monitor left of or above primary.
+            if (settings.WindowLeft != 0 || settings.WindowTop != 0)
             {
                 Left = settings.WindowLeft;
                 Top = settings.WindowTop;
             }
+
+            EnsureReachable();
         }
         catch
         {
             // Ignore errors restoring window state
         }
+    }
+
+    /// <summary>A saved position on a since-disconnected monitor would otherwise leave the window unreachable.</summary>
+    private void EnsureReachable()
+    {
+        // An iconic window reports its -32000 parking rect, which would discard a valid saved position.
+        if (WindowState == WindowState.Minimized)
+            return;
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == 0 || !ScreenCaptureInterop.GetWindowRect(hwnd, out var bounds))
+            return;
+
+        if (WindowPlacement.IsReachable(WindowPlacement.ToRect(bounds), WindowPlacement.MonitorWorkAreas()))
+            return;
+
+        var placed = WindowPlacement.CenterIn(SystemParameters.WorkArea, new Size(Width, Height));
+        Width = placed.Width;
+        Height = placed.Height;
+        Left = placed.Left;
+        Top = placed.Top;
     }
 
     public void PrepareForExit()
@@ -105,10 +132,14 @@ public partial class MainWindow : FluentWindow
 
     private void SaveWindowStateAsync()
     {
-        var width = Width;
-        var height = Height;
-        var left = Left;
-        var top = Top;
+        // Left/Top read -32000 while minimized; RestoreBounds holds the normal-state rect.
+        var bounds = WindowState != WindowState.Normal && !RestoreBounds.IsEmpty
+            ? RestoreBounds
+            : new Rect(Left, Top, Width, Height);
+        var width = bounds.Width;
+        var height = bounds.Height;
+        var left = bounds.Left;
+        var top = bounds.Top;
         var lastActiveView = (DataContext as MainWindowViewModel)?.CurrentView?.GetType().AssemblyQualifiedName;
 
         _ = Task.Run(async () =>

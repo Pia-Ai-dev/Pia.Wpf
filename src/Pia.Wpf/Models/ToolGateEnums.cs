@@ -38,6 +38,10 @@ public enum ToolClass
     /// <summary>The built-in screen tools (plugin <c>screen</c>). No preset covers it, and with nobody watching
     /// it runs only on a standing or named grant — never on a policy or a session grant.</summary>
     Screen = 10,
+
+    /// <summary>The built-in knowledge-base manager tools (plugin <c>kb-manager</c>). No preset covers it: a write
+    /// changes what everyone in the group finds.</summary>
+    KnowledgeBase = 11,
 }
 
 /// <summary>Which gate asked. PERSISTED, so the ordinals are APPEND-ONLY.</summary>

@@ -98,10 +98,10 @@ the local `settings.json` (that is the anti-circumvention path), they just never
 |---|---|---|
 | `serverUrl` | string, `null` | 🔒 Enforcing it also suppresses the hardcoded production URL written at startup, and beats the `PIA_CLOUD_SERVER_URL` dev override |
 | `syncEnabled` | bool, `false` | ✓ |
-| `trustSelfSignedCertificates` | bool, `false` | ✓ |
-| `allowedSyncProviders` | string[], `null` | ✓ `"local"`, `"google"`, `"microsoft"`, `"entraid"` (case-insensitive). `null` or `[]` = all allowed. Disallowed providers are hidden in the first-run wizard *and* account settings. Read from `enforce` first, then `defaults`. Works in both blocks |
+| `trustSelfSignedCertificates` | bool, `false` | ✓ Relaxes certificate checks for the `serverUrl` host and port only; every other host stays fully validated. A release build turns it off at startup unless a policy enforces it |
+| `allowedSyncProviders` | string[], `null` | ✓ `"local"`, `"google"`, `"microsoft"`, `"entraid"` (case-insensitive). `null` or `[]` = all allowed. Disallowed providers are hidden in the first-run wizard *and* account settings, a login through one is refused, and a stored session from one is signed out on the next launch. Read from `enforce` first, then `defaults`. Works in both blocks |
 | `isE2EEEnabled` · `e2eeUmkVersion` · `e2eeRecoveryConfigured` | bool / int | ✗ device state |
-| `encryptedAccessToken` · `encryptedRefreshToken` · `syncUserId` · `syncUserEmail` · `syncUserDisplayName` · `syncProvider` · `syncDeviceId` · `lastSyncTimestamp` · `lastPullETag` · `lastChatPullETag` · `lastPushedSettingsHash` · `lastCatalogVersion` · `e2eeEncryptedUmk` · `e2eeDeviceId` · `assistantChatsBackfilledAt` · `managedPersonaStoreInitialized` | — | ✗ runtime state; presetting these corrupts the sync cursor |
+| `encryptedAccessToken` · `encryptedRefreshToken` · `syncUserId` · `syncUserEmail` · `syncUserDisplayName` · `syncProvider` · `syncDeviceId` · `lastSyncTimestamp` · `lastPullETag` · `lastChatPullETag` · `lastPushedSettingsHash` · `lastCatalogVersion` · `e2eeEncryptedUmk` · `e2eeDeviceId` · `assistantChatsBackfilledAt` · `assistantChatsEncryptedResendAt` · `managedPersonaStoreInitialized` | — | ✗ runtime state; presetting these corrupts the sync cursor |
 
 ### Appearance, startup, language
 
@@ -146,6 +146,10 @@ the local `settings.json` (that is the anti-circumvention path), they just never
 | Key | Type / default | |
 |---|---|---|
 | `allowProviderManagement` | bool, `true` | 🔒 **Put this in `enforce`.** `false` hides Add provider and refuses add/edit/delete; the configured providers stay usable. The tab shows "Managed by your organization" instead of the Add button. Also removes the first-run wizard's provider step, which is the only other place a provider gets created — so a managed machine is never asked to configure one |
+| `allowedProviderTypes` | string[], `null` | 🔒 **Put this in `enforce`.** Provider types this device may use, by name: `OpenAI`, `AzureOpenAI`, `Ollama`, `OpenRouter`, `OpenAICompatible`, `Mistral`, `VLlm`, `Anthropic` (case-insensitive). `null` or `[]` allows all. Pia Cloud is always allowed. The provider dialog and the first-run wizard offer only these types, an existing provider of another type cannot be saved, and a request to it is refused before anything is sent |
+| `allowedProviderEndpoints` | string[], `null` | 🔒 **Put this in `enforce`.** Hosts a provider's address may point at: an exact host (`llm.corp.example`) or `*.example.com` for its subdomains; a pattern written as a URL counts by its host. `null` or `[]` allows all. Pia Cloud is exempt. Another address cannot be saved, models are not fetched from it, and a request to it is refused |
+| `allowProviderWebSearch` | bool, `true` | 🔒 **Put this in `enforce`.** `false` keeps every provider's own web search off (OpenAI, OpenRouter, Anthropic, Mistral agents) without clearing the user's choice; the checkbox is locked. Pia Cloud's search runs on the server and is not affected |
+| `allowLocalMcpServers` | bool, `true` | 🔒 **Put this in `enforce`.** `false` locks Add server under Settings → Assistant → MCP servers, refuses saving and testing one, and stops local servers that are running; each says why. Servers the administrator distributes are not affected |
 | `allowPersonaManagement` | bool, `true` | 🔒 **`enforce` only.** `false` hides Add persona and refuses add/edit/duplicate/delete. Built-in and managed personas stay available |
 | `blockedBuiltInPersonas` | string[], `null` | ✓ Hides built-ins from the picker. Keys: `PiaPersonal`, `PiaBusiness`, `ExperiencedCoder`, `MarketingWriter`, `FinancialExpert`, `WorldwideCompanyCeo`, `ExplainItSimply` (case-insensitive; a Guid also works). Unknown entries are ignored. Hidden ids stay reserved, so a hidden built-in cannot be re-created as a user persona, and one already in an agent-persona roster is kept rather than pruned — unblocking restores it. If you block the persona a mode falls back to, resolution degrades to another built-in rather than failing |
 | `useSameProviderForAllModes` | bool, `true` | 🔒 ✓ |
@@ -197,6 +201,7 @@ sync/managed personas.
 | `meetingAttendeeShowBrowserWindow` | bool, `false` | ✓ |
 | `enableMeetingDiarization` | bool, `true` | ✓ |
 | `meetingSmartSpeakerDetection` | bool, `true` | ✓ |
+| `meetingSpeakerNaming` | bool, `true` | ✓ `false` never names a speaker: the consent sentence's name stays in the consent record, rename is off, and summaries and saved notes carry no attendee list. Put it under `enforce` to hold it |
 | `speakerEmbeddingThreshold` | float, `0.50` | ✓ |
 | `meetingMaxSpeakers` | int, `0` (auto) | ✓ |
 | `meetingMinSpeechSeconds` | float, `1.5` | ✓ |
@@ -233,6 +238,7 @@ sync/managed personas.
 | `Update:GitHubRepoUrl` | the public repo | Point at a private/internal release feed |
 | `Update:AccessToken` | `null` | PAT for a private feed — plain text on disk |
 | `Update:Prerelease` | `false` | Opt a ring into pre-releases. GitHub only — a static feed separates rings by channel |
+| `Update:TrustedPublishers` | `neo42 GmbH`, `Microsoft Corporation`, `OpenJS Foundation` | Signer organizations (the certificate's O=) that every `.exe`/`.dll` in a downloaded update must carry; an update that fails is not installed. Matching on the organization means a certificate from another CA keeps working. A build that is not itself signed skips the check. A feed that also serves `Pia.Wpf-<version>.cat` has each package checked against it, logged only for now |
 | `Plugins:SigningRequired` | `true` | `false` disables plugin CAB signature verification |
 
 PascalCase here (standard `IConfiguration` binding), unlike `policy.json`. `appsettings.Development.json`

@@ -12,4 +12,14 @@ public class AutoUpdateOptions
 
     /// <summary>GitHub only — a static feed separates pre-releases by channel instead.</summary>
     public bool Prerelease { get; set; }
+
+    /// <summary>Signer organizations (O=) an update's binaries may carry; empty means <see cref="DefaultTrustedPublishers"/>.</summary>
+    public string[] TrustedPublishers { get; set; } = [];
+
+    // neo42 signs everything it builds; the rest arrive pre-signed with the .NET runtime, ONNX Runtime and Playwright.
+    // build-and-release.yml holds the same list and refuses to ship a package outside it.
+    public static readonly string[] DefaultTrustedPublishers = ["neo42 GmbH", "Microsoft Corporation", "OpenJS Foundation"];
+
+    public IReadOnlyCollection<string> EffectiveTrustedPublishers
+        => TrustedPublishers.Length > 0 ? TrustedPublishers : DefaultTrustedPublishers;
 }

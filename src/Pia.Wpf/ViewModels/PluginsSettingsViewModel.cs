@@ -86,7 +86,7 @@ public partial class PluginsSettingsViewModel : UiThreadViewModel
         {
             var settings = await _settingsService.GetSettingsAsync();
             var serverUrl = settings.ServerUrl;
-            var configs = _pluginService.GetAllPluginConfigs();
+            var configs = _pluginService.GetVisiblePluginConfigs();
             var items = configs
                 .OrderByDescending(p => p.IsPreloaded)
                 .ThenBy(p => p.Name)

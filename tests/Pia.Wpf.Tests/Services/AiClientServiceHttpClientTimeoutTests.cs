@@ -12,7 +12,7 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// The HttpClient handed to a provider must not carry HttpClient's 100s default timeout: the per-method
+/// The HttpClient handed to a provider must not carry HttpClient's 100s default timeout: the service's own
 /// timeoutCts is the only timeout authority on LLM calls, and a transport timeout firing first surfaces as
 /// a bare TaskCanceledException instead of the LlmTimeoutException every catch downstream understands.
 /// </summary>

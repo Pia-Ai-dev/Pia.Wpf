@@ -133,7 +133,8 @@ public class FilesToolHandlerDocxXlsxWriteTests : IDisposable
     [Theory]
     [InlineData("thread.eml")]
     [InlineData("thread.msg")]
-    public async Task Mail_IsRejected_AtPrepareTime_NoActionCard(string name)
+    [InlineData("paper.pdf")]
+    public async Task ExtractedFormatWithoutAPatcher_IsRejected_AtPrepareTime_NoActionCard(string name)
     {
         var (result, pending) = await Prepare(name, "Subject: x\n===\n\nbody");
 

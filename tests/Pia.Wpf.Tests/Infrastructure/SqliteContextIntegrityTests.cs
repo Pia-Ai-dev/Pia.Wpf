@@ -132,27 +132,22 @@ public class SqliteContextIntegrityTests : IDisposable
         Assert.Equal(1, logger.Integrity(LogLevel.Error));
     }
 
-    /// <summary>Such a file opens and throws on its first statement, so the check must precede the WAL pragma.</summary>
+    /// <summary>No key opens such a file, so it is kept aside for a person and a fresh database takes its place.</summary>
     [Fact]
-    public void AFileThatIsNotADatabaseAtAll_IsStillDiagnosed()
+    public void AFileThatIsNotADatabaseAtAll_IsSetAsideAndReplaced()
     {
         var path = NewDbPath("garbage.db");
-        File.WriteAllBytes(path, Enumerable.Range(0, 8192).Select(i => (byte)(i % 251)).ToArray());
+        var garbage = Enumerable.Range(0, 8192).Select(i => (byte)(i % 251)).ToArray();
+        File.WriteAllBytes(path, garbage);
 
         var logger = new RecordingLogger();
         using var ctx = new SqliteContext(path, logger);
-        try
-        {
-            ctx.GetConnection();
-        }
-        catch
-        {
-            // Expected: the WAL pragma (or the schema pass) cannot proceed on this file. The point is the order.
-        }
+        ctx.GetConnection();
 
-        Assert.Equal(1, logger.Integrity(LogLevel.Warning)); // "could not run", with the SQLite error attached
-        Assert.Null(ctx.IntegrityStatus);                    // no verdict is claimed — none could be reached
-        Assert.Equal(0, logger.Integrity(LogLevel.Information));
+        Assert.Equal("ok", ctx.IntegrityStatus);
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Error && e.Message.Contains("set aside"));
+        var aside = Assert.Single(Directory.GetFiles(_tmpDir, "garbage.db.unreadable-*"), p => !p.EndsWith(".key"));
+        Assert.Equal(garbage, File.ReadAllBytes(aside));
     }
 
     public void Dispose()

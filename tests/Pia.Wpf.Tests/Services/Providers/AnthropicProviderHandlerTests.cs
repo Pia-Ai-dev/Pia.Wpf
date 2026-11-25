@@ -37,4 +37,15 @@ public class AnthropicProviderHandlerTests
     {
         Assert.Equal(AiProviderType.Anthropic, new AnthropicProviderHandler().ProviderType);
     }
+
+    // Encrypted search content is bound to the account that produced it; a model switch on one key keeps the store.
+    [Fact]
+    public void TheNativeStore_IsSharedPerEndpointAndKey_NotAcrossThem()
+    {
+        var handler = new AnthropicProviderHandler();
+
+        Assert.Same(handler.NativeStoreFor("https://api.anthropic.com", "k1"), handler.NativeStoreFor("https://api.anthropic.com", "k1"));
+        Assert.NotSame(handler.NativeStoreFor("https://api.anthropic.com", "k1"), handler.NativeStoreFor("https://api.anthropic.com", "k2"));
+        Assert.NotSame(handler.NativeStoreFor("https://api.anthropic.com", "k1"), handler.NativeStoreFor("https://proxy.example", "k1"));
+    }
 }

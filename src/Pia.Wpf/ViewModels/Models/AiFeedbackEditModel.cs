@@ -11,6 +11,9 @@ public partial class AiFeedbackEditModel : ObservableObject
     [ObservableProperty]
     private bool _includeAnswer = true;
 
+    [ObservableProperty]
+    private bool _privacyConcern;
+
     /// <summary>Decides which privacy note the dialog shows: placeholders replace personal data, or the text goes as shown.</summary>
     public bool PiiTokenizationActive { get; }
 

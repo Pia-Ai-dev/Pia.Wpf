@@ -4,19 +4,8 @@ using Pia.Shared.Models;
 
 namespace Pia.Services.Interfaces;
 
-/// <param name="ServerDeclaredDestructive">
-/// T2-7b — the MCP server said so itself (<c>ToolAnnotations.DestructiveHint</c>), via
-/// <c>McpPluginToolHandler.IsServerDeclaredDestructive</c>, which is this member's only producer. It can only
-/// ever TIGHTEN: it widens <c>ToolPermissionService.IsDeleteLike</c> for this one call, and no value of it can
-/// loosen anything (see that method for why a hint from an untrusted server is safe to believe in exactly one
-/// direction).
-/// <para>
-/// Trailing and defaulted to <c>false</c>, unlike the gate input it feeds: every OTHER handler builds a
-/// built-in tool call, where "the server declared it destructive" is not a fact that exists, and the name
-/// heuristic remains the whole rule. A default here is therefore "no hint available", not an unanswered
-/// question — the question is forced where it matters, at <c>ToolGateInput</c>, whose member is required.
-/// </para>
-/// </param>
+/// <param name="ServerDeclaredDestructive">The MCP server declared the tool destructive; it can only tighten the gate, never loosen it.</param>
+/// <param name="Warning">A caution the handler composed; shown beside any warning the card derives itself, never replacing it.</param>
 public record PluginToolCall(
     string ToolName,
     Guid PluginId,
@@ -26,7 +15,8 @@ public record PluginToolCall(
     Func<Task<object?>> Execute,
     IReadOnlyList<DiffLine>? DiffPreview = null,
     string? TargetPath = null,
-    bool ServerDeclaredDestructive = false);
+    bool ServerDeclaredDestructive = false,
+    string? Warning = null);
 
 public interface IPluginToolHandler
 {

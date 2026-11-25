@@ -56,4 +56,17 @@ public class ToolClassifierTests
         // separate entry point so a gate can never reach it.
         Assert.Equal(ToolClass.External, ToolClassifier.ClassifyPresumedExternal(pluginName));
     }
+
+    [Fact]
+    public void KbManager_IsTheKnowledgeBaseClass_NotExternal()
+    {
+        Assert.Equal(ToolClass.KnowledgeBase, ToolClassifier.Classify("kb-manager", isExternalRoute: false));
+        Assert.Equal(ToolClass.KnowledgeBase, ToolClassifier.ClassifyPresumedExternal("kb-manager"));
+    }
+
+    [Fact]
+    public void KnowledgeBase_KeepsItsPersistedOrdinal()
+    {
+        Assert.Equal(11, (int)ToolClass.KnowledgeBase);
+    }
 }

@@ -2,6 +2,7 @@ namespace Pia.Tests.ViewModels;
 
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
@@ -54,7 +55,8 @@ public class FirstRunWizardViewModelTests
     private FirstRunWizardViewModel CreateSut() => new(
         _settings, _memory, _voice, _loc, _auth, _providers, _sync,
         _deviceMgmt, _policy, _onboardingVm, _e2eeSetupVm,
-        NullLogger<FirstRunWizardViewModel>.Instance);
+        NullLogger<FirstRunWizardViewModel>.Instance,
+        Substitute.For<IDialogService>(), Substitute.For<ILocalDataResetService>());
 
     [Fact]
     public void NotLoggedIn_ShouldNotShowE2EEStep()
@@ -91,7 +93,7 @@ public class FirstRunWizardViewModelTests
     {
         _auth.LoginWithPasswordAsync("a@example.com", "pw").Returns((true, (string?)null));
         _deviceMgmt.CheckE2EEStatusAsync().Returns(new E2EEStatusResponse { IsEnabled = true });
-        _deviceMgmt.IsInitialized().Returns(true);
+        _deviceMgmt.TryRestoreKeyAsync().Returns(true);
 
         var sut = CreateSut();
         sut.LoginEmailInput = "a@example.com";
@@ -126,7 +128,7 @@ public class FirstRunWizardViewModelTests
     {
         _auth.LoginWithPasswordAsync("a@example.com", "pw").Returns((true, (string?)null));
         _deviceMgmt.CheckE2EEStatusAsync().Returns(new E2EEStatusResponse { IsEnabled = true });
-        _deviceMgmt.IsInitialized().Returns(true);
+        _deviceMgmt.TryRestoreKeyAsync().Returns(true);
 
         var sut = CreateSut();
         sut.LoginEmailInput = "a@example.com";
@@ -171,6 +173,72 @@ public class FirstRunWizardViewModelTests
         _e2eeSetupVm.State = E2EESetupState.SavingRecoveryCode;
 
         Assert.False(sut.BackCommand.CanExecute(null));
+    }
+
+    private FirstRunWizardViewModel CreateSutOnTheE2EEStep_WithSetupRefusedAsAlreadyEnabled()
+    {
+        _deviceMgmt.BootstrapFirstDeviceAsync().ThrowsAsync(new E2EEAlreadyEnabledException("already on"));
+        _loc["Wizard_E2EE_AlreadyEnabled"].Returns("Already set up");
+
+        var sut = CreateSut();
+        sut.IsLoggedIn = true;
+        sut.CurrentStep = 2;
+        Assert.True(sut.IsE2EESetupVisible);
+        return sut;
+    }
+
+    [Fact]
+    public async Task RefusedSetup_WhenTheKeyCannotBeRestored_OpensInlineOnboardingWithTheNotice()
+    {
+        var sut = CreateSutOnTheE2EEStep_WithSetupRefusedAsAlreadyEnabled();
+        _deviceMgmt.CheckE2EEStatusAsync().Returns(new E2EEStatusResponse { IsEnabled = true });
+        _deviceMgmt.TryRestoreKeyAsync().Returns(false);
+
+        await sut.NextOrFinishCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, sut.CurrentStep);
+        Assert.True(sut.IsE2EEOnboardingRequired);
+        Assert.True(sut.ShowE2EEAlreadyEnabledNotice);
+        Assert.False(sut.IsE2EESetupVisible);
+        Assert.Null(_e2eeSetupVm.ErrorMessage);
+        Assert.False(sut.NextOrFinishCommand.CanExecute(null));
+        _sync.Received(1).NotifyE2EEOnboardingRequired();
+        _sync.DidNotReceive().StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task RefusedSetup_WhenTheKeyIsRestored_AdvancesPastTheE2EEStep()
+    {
+        var sut = CreateSutOnTheE2EEStep_WithSetupRefusedAsAlreadyEnabled();
+        _deviceMgmt.CheckE2EEStatusAsync().Returns(new E2EEStatusResponse { IsEnabled = true });
+        _deviceMgmt.TryRestoreKeyAsync().Returns(true);
+
+        await sut.NextOrFinishCommand.ExecuteAsync(null);
+
+        Assert.Equal(4, sut.CurrentStep);
+        Assert.False(sut.IsE2EEOnboardingRequired);
+        Assert.False(sut.ShowE2EEAlreadyEnabledNotice);
+        Assert.False(sut.IsE2EESetupVisible);
+        Assert.Null(_e2eeSetupVm.ErrorMessage);
+        await _sync.Received(1).PerformFirstSyncMigrationAsync();
+        _sync.Received(1).StartBackgroundSync();
+    }
+
+    [Fact]
+    public async Task RefusedSetup_WhenTheStatusCannotBeRead_StaysOnTheStepWithTheNotice()
+    {
+        var sut = CreateSutOnTheE2EEStep_WithSetupRefusedAsAlreadyEnabled();
+        _deviceMgmt.CheckE2EEStatusAsync().Returns((E2EEStatusResponse?)null);
+
+        await sut.NextOrFinishCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, sut.CurrentStep);
+        Assert.True(sut.IsE2EESetupVisible);
+        Assert.False(sut.IsE2EEOnboardingRequired);
+        Assert.False(sut.ShowE2EEAlreadyEnabledNotice);
+        Assert.Equal("Already set up", _e2eeSetupVm.ErrorMessage);
+        Assert.Equal(E2EESetupState.Choice, _e2eeSetupVm.State);
+        _sync.DidNotReceive().StartBackgroundSync();
     }
 
     [Fact]

@@ -40,6 +40,6 @@ public partial class RecoveryCodeContentDialog : ContentDialog
         private bool _hasConfirmedRecoveryCode;
 
         [RelayCommand]
-        private Task CopyRecoveryCodeAsync() => _outputService.CopyToClipboardAsync(RecoveryCode);
+        private Task CopyRecoveryCodeAsync() => _outputService.CopySecretToClipboardAsync(RecoveryCode);
     }
 }

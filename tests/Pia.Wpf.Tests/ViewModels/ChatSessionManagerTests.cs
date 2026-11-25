@@ -2147,6 +2147,54 @@ public class ChatSessionManagerTests
         Assert.False(session.Messages[1].IsUser);
     }
 
+    [Theory]
+    [InlineData("interrupted-credit")]
+    [InlineData("interrupted-offline")]
+    [InlineData("interrupted-timeout")]
+    [InlineData("interrupted-provider")]
+    public async Task StartTurnAsync_AgentSendDuringAnInterruptionPark_ResumesWithTheText_AndCreatesNoRun(string token)
+    {
+        var sut = CreateResumingSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        var runId = AttachParkedRun(session, token);
+        _resumeService.ResumeAsync(runId, Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(true);
+
+        await sut.StartTurnAsync(session, "continue", null, planned: true);
+
+        await _resumeService.Received(1).ResumeAsync(runId, "continue", Arg.Any<CancellationToken>());
+        await _runService.DidNotReceive().CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>());
+        var posted = Assert.Single(session.Messages);
+        Assert.True(posted.IsUser);
+        Received.InOrder(() =>
+        {
+            _chatService.SaveMergedAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<CancellationToken>());
+            _resumeService.ResumeAsync(runId, "continue", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ChatSendDuringAnInterruptionPark_StartsAnOrdinaryTurn_AndNeverResumes()
+    {
+        var sut = CreateResumingSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        AttachParkedRun(session, "interrupted-offline");
+
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", null, false, false));
+
+        await sut.StartTurnAsync(session, "meanwhile, what is the weather", null, planned: false);
+
+        await _resumeService.DidNotReceive().ResumeAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _personas.Received(1).ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>());
+        Assert.Equal(2, session.Messages.Count);
+        Assert.False(session.Messages[1].IsUser);
+    }
+
     /// <summary>Typing over a pending plan is a refusal, not an answer — it must never be read as approving it.</summary>
     [Fact]
     public async Task StartTurnAsync_RunParkedForPlanApproval_RefusesTheTurn_WithoutEverResolvingSetup()
@@ -2244,6 +2292,98 @@ public class ChatSessionManagerTests
         // The displayed bubble is untouched; only the AI-visible projection grows.
         Assert.Equal("summarize this", session.Messages[0].Content);
         Assert.Contains(AttachedFileBlock, session.Messages[0].ToChatMessage().Text);
+    }
+
+    private static PendingFileAttachment CutChip(string? savedRelativePath = null) => new()
+    {
+        FullPath = @"C:\work\notes.txt",
+        FileName = "notes.txt",
+        Kind = PendingFileKind.Text,
+        Text = "a\nb\nc",
+        Cut = new AttachmentCut(ShownLines: 3, TotalLines: 900, EndsMidLine: false, ShownPercent: 1),
+        SavedRelativePath = savedRelativePath,
+    };
+
+    private void ArrangeTurn(IList<Microsoft.Extensions.AI.AITool>? tools)
+    {
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant)
+            .Returns(new AiProvider { Name = "Test", Endpoint = "https://example.test" });
+        _composer.PrepareTurn(default!, default!, default!, default)
+            .ReturnsForAnyArgs(new AssistantTurnSetup("system", tools, tools is { Count: > 0 }, false));
+    }
+
+    private static IList<Microsoft.Extensions.AI.AITool> ReadFileTool() =>
+        [Microsoft.Extensions.AI.AIFunctionFactory.Create(() => "", "read_file")];
+
+    [Fact]
+    public async Task StartTurnAsync_ACutFile_PointsAtReadFile_WhenTheTurnOffersIt()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeTurn(ReadFileTool());
+        _files.ToReadFilePath(@"C:\work\notes.txt", Arg.Any<string?>()).Returns("notes.txt");
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip()]);
+
+        Assert.Contains("read it with read_file (path: notes.txt, offset: 4).", session.Messages[0].AttachedFileContext);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ACutSavedFile_PointsAtTheSavedCopy()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeTurn(ReadFileTool());
+        _files.ToReadFilePath("Playground/notes.txt", Arg.Any<string?>()).Returns("notes.txt");
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip("Playground/notes.txt")]);
+
+        Assert.Contains("(path: notes.txt, offset: 4)", session.Messages[0].AttachedFileContext);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_ACutFile_WithoutReadFileOnTheTurn_SaysTheRestWasNotSent()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        ArrangeTurn(tools: null);
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip()]);
+
+        Assert.Contains("The rest was not sent.", session.Messages[0].AttachedFileContext);
+        Assert.DoesNotContain("read_file", session.Messages[0].AttachedFileContext);
+        _files.DidNotReceive().ToReadFilePath(Arg.Any<string>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_WithFiles_SetupFails_KeepsTheFileTextForRegenerate()
+    {
+        var sut = CreateSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        _personas.ResolveActiveAsync(Arg.Any<WindowMode>(), Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "Tester", SystemPrompt = "be helpful" });
+        // No provider configured: setup fails before PrepareTurn.
+
+        await sut.StartTurnAsync(session, "summarize this", null, files: [CutChip()]);
+
+        Assert.Contains("a\nb\nc", session.Messages[0].AttachedFileContext);
+    }
+
+    [Fact]
+    public async Task StartTurnAsync_RunParkedForClarification_WithAStagedFile_StartsAnOrdinaryTurn()
+    {
+        var sut = CreateResumingSut();
+        var session = sut.GetOrCreateActiveForNewChat();
+        AttachParkedRun(session, "needs-goal");
+        ArrangeTurn(tools: null);
+
+        await sut.StartTurnAsync(session, "the printed catalogue", null, files: [CutChip()]);
+
+        await _resumeService.DidNotReceive().ResumeAsync(
+            Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        Assert.Equal(2, session.Messages.Count);
     }
 
     private const string AttachedFileBlock =

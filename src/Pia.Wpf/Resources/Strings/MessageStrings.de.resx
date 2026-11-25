@@ -64,12 +64,12 @@
   <data name="Msg_File_UnsupportedAttachment" xml:space="preserve"><value>„{0}“ kann nicht angehängt werden – Dateityp wird nicht unterstützt.</value></data>
   <data name="Msg_File_DuplicateAttachment" xml:space="preserve"><value>„{0}“ ist bereits angehängt.</value></data>
   <data name="Msg_File_Empty" xml:space="preserve"><value>„{0}“ enthält keinen lesbaren Text.</value></data>
-  <data name="Msg_File_Truncated" xml:space="preserve"><value>„{0}“ wurde gekürzt, damit es in die Nachricht passt.</value></data>
+  <data name="Msg_File_Truncated" xml:space="preserve"><value>Von „{0}“ passen nur etwa {1} % in diese Nachricht.</value></data>
   <data name="Msg_File_Saved" xml:space="preserve"><value>„{0}“ wurde im Arbeitsverzeichnis gespeichert ({1}).</value></data>
   <data name="Msg_File_SaveFailed" xml:space="preserve"><value>„{0}“ konnte nicht im Arbeitsverzeichnis gespeichert werden.</value></data>
   <data name="Msg_File_AttachLimit" xml:space="preserve"><value>Es können höchstens {0} Dateien an eine Nachricht angehängt werden – „{1}“ wurde übersprungen.</value></data>
   <data name="Msg_File_TooLargeAttachment" xml:space="preserve"><value>„{0}“ ist zu groß zum Anhängen – das Limit liegt bei {1}.</value></data>
-  <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Die angehängten Dateien füllen diese Nachricht bereits – „{0}“ wurde übersprungen.</value></data>
+  <data name="Msg_File_AttachBudget" xml:space="preserve"><value>Das Anhang-Budget dieses Chats ist ausgeschöpft – „{0}“ wurde übersprungen. Entferne einen Anhang oder starte einen neuen Chat.</value></data>
   <data name="Msg_File_ImageLimit" xml:space="preserve"><value>Es können höchstens {0} Bilder angehängt werden – „{1}“ wurde ausgelassen.</value></data>
   <data name="Msg_File_ImageBudget" xml:space="preserve"><value>Die angehängten Bilder haben die Größengrenze erreicht – „{0}“ wurde ausgelassen.</value></data>
   <data name="Msg_File_PastedImageName" xml:space="preserve"><value>Eingefügtes Bild</value></data>
@@ -83,17 +83,37 @@
   <data name="Msg_Tts_NoVoiceLoaded" xml:space="preserve"><value>Kein Sprachmodell geladen. Wähle in den Einstellungen eine Stimme aus, um Vorlesen zu nutzen.</value></data>
   <data name="Msg_Tts_NoVoiceLoaded_OpenSettings" xml:space="preserve"><value>Einstellungen öffnen</value></data>
   <!-- Assistant messages -->
+  <data name="Msg_Assistant_ConfirmNewChatTitle" xml:space="preserve"><value>Neuen Chat starten?</value></data>
+  <data name="Msg_Assistant_ConfirmNewChatMessage" xml:space="preserve"><value>Deine noch nicht gesendete Nachricht wird verworfen.</value></data>
   <data name="Msg_Assistant_Copied" xml:space="preserve"><value>Kopiert</value></data>
   <data name="Msg_Assistant_CurrentValue" xml:space="preserve"><value>Aktueller Wert:</value></data>
   <data name="Msg_Assistant_MemoryUpdated" xml:space="preserve"><value>Gedächtnis aktualisiert</value></data>
   <data name="Msg_Assistant_MessageCopied" xml:space="preserve"><value>Nachricht in die Zwischenablage kopiert.</value></data>
   <data name="Msg_Assistant_NewValue" xml:space="preserve"><value>Neuer Wert:</value></data>
   <data name="Msg_Assistant_NoProviderConfigured" xml:space="preserve"><value>Kein KI-Anbieter für den Assistentenmodus konfiguriert. Bitte füge einen in den Einstellungen hinzu.</value></data>
+  <data name="Msg_Assistant_ProviderBlockedByPolicy" xml:space="preserve"><value>Die Richtlinie deiner Organisation erlaubt diesen KI-Anbieter nicht. Wähle in Einstellungen → Anbieter einen anderen.</value></data>
   <data name="Msg_Assistant_NoProviderInline" xml:space="preserve"><value>Kein KI-Anbieter konfiguriert. Bitte füge einen in den Einstellungen hinzu.</value></data>
   <data name="Msg_Assistant_PermanentDeleteMemory" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_PermanentDeleteReminder" xml:space="preserve"><value>Diese Erinnerung wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_PermanentDeleteTodo" xml:space="preserve"><value>Diese Aufgabe wird dauerhaft gelöscht.</value></data>
   <data name="Msg_Assistant_PermanentDeleteFile" xml:space="preserve"><value>Diese Datei wird dauerhaft gelöscht.</value></data>
+  <data name="Msg_Assistant_PermanentDeleteKbDocument" xml:space="preserve"><value>Das Dokument wird für alle entfernt, die diese Wissensdatenbank durchsuchen.</value></data>
+  <data name="Msg_Assistant_StatusReadingKnowledgeBase" xml:space="preserve"><value>Wissensdatenbank wird gelesen...</value></data>
+  <data name="Msg_Assistant_StatusUpdatingKnowledgeBase" xml:space="preserve"><value>Wissensdatenbank wird aktualisiert...</value></data>
+  <data name="Msg_Assistant_KnowledgeBaseUpdated" xml:space="preserve"><value>Wissensdatenbank aktualisiert</value></data>
+  <data name="Msg_KbManager_SharedWarning" xml:space="preserve"><value>Diese Wissensdatenbank wird auch von anderen Gruppen genutzt.</value></data>
+  <data name="Msg_KbManager_UnencryptedWarning" xml:space="preserve"><value>Der Inhalt wird unverschlüsselt auf dem Server gespeichert und ist für alle auffindbar, deren Gruppe diese Wissensdatenbank nutzt.</value></data>
+  <data name="Msg_KbManager_Detail_KnowledgeBase" xml:space="preserve"><value>Wissensdatenbank</value></data>
+  <data name="Msg_KbManager_Detail_Document" xml:space="preserve"><value>Dokument</value></data>
+  <data name="Msg_KbManager_Detail_File" xml:space="preserve"><value>Datei</value></data>
+  <data name="Msg_KbManager_Detail_Size" xml:space="preserve"><value>Größe</value></data>
+  <data name="Msg_KbManager_Detail_Prompt" xml:space="preserve"><value>Beschreibung</value></data>
+  <data name="Msg_KbManager_Summary_Upload" xml:space="preserve"><value>„{0}“ zu {1} hinzufügen</value></data>
+  <data name="Msg_KbManager_Summary_Update" xml:space="preserve"><value>Text von „{0}“ in {1} ersetzen</value></data>
+  <data name="Msg_KbManager_Summary_Delete" xml:space="preserve"><value>„{0}“ aus {1} entfernen</value></data>
+  <data name="Msg_KbManager_Summary_Prompt" xml:space="preserve"><value>Beschreibung von {0} ändern</value></data>
+  <data name="Msg_KbManager_Summary_PromptClear" xml:space="preserve"><value>Beschreibung von {0} löschen</value></data>
+  <data name="Msg_KbManager_Detail_PromptRemoved" xml:space="preserve"><value>(wird entfernt)</value></data>
   <data name="Msg_Assistant_PermanentDeleteExternal" xml:space="preserve"><value>Dieses externe Tool kann Daten dauerhaft ändern oder löschen. Bitte sorgfältig prüfen.</value></data>
   <data name="Msg_Assistant_GitSwitchWarning" xml:space="preserve"><value>Das Wechseln von Branches kann nicht committete Änderungen verwerfen oder überlagern.</value></data>
   <data name="Msg_Assistant_GitRestoreWarning" xml:space="preserve"><value>Dies verwirft Änderungen und kann nicht rückgängig gemacht werden.</value></data>
@@ -456,6 +476,7 @@
   <data name="Tool_Routine_Exec_NotOwner" xml:space="preserve"><value>Routine {0} wird von einem anderen Gerät geplant; nur dieses Gerät darf sie ausführen.</value></data>
   <data name="Tool_Routine_Exec_AlreadyRunning" xml:space="preserve"><value>Ein Lauf der Routine {0} läuft bereits.</value></data>
   <data name="Tool_Routine_Exec_NotFound" xml:space="preserve"><value>Routine {0} existiert nicht mehr.</value></data>
+  <data name="Tool_Routine_Exec_ResetPending" xml:space="preserve"><value>Routine {0} wurde nicht gestartet: Pia hat das Entfernen der lokalen Daten noch nicht abgeschlossen. Bitte den Nutzer, Pia zuerst neu zu starten.</value></data>
   <!-- ResearchHistoryToolHandler -->
   <data name="Tool_ResearchHistory_Search_Description" xml:space="preserve"><value>Frühere Rechercheergebnisse durchsuchen</value></data>
   <data name="Tool_ResearchHistory_Get_Description" xml:space="preserve"><value>Rechercheeintrag per ID abrufen</value></data>
@@ -505,6 +526,8 @@
   <data name="Msg_Assistant_FeedbackSent_Title" xml:space="preserve"><value>Danke</value></data>
   <data name="Msg_Assistant_FeedbackSent" xml:space="preserve"><value>Ihr Feedback wurde an das Pia-Cloud-Team gesendet.</value></data>
   <data name="Msg_Assistant_FeedbackFailed" xml:space="preserve"><value>Das Feedback konnte nicht gesendet werden. Prüfen Sie die Pia-Cloud-Verbindung und versuchen Sie es erneut.</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly_Title" xml:space="preserve"><value>Meldung gespeichert</value></data>
+  <data name="Msg_Assistant_FeedbackStoredOnly" xml:space="preserve"><value>Ihre Meldung ist beim Betreiber gespeichert, benachrichtigt wurde aber niemand.</value></data>
   <data name="Msg_Screen_TargetGone" xml:space="preserve"><value>Dieses Fenster oder dieser Bildschirm ist nicht mehr verfügbar.</value></data>
   <data name="Msg_Screen_Minimized" xml:space="preserve"><value>Das Fenster ist minimiert. Bitte zuerst wiederherstellen — Pia verschiebt keine Fenster von selbst.</value></data>
   <data name="Msg_Screen_Cloaked" xml:space="preserve"><value>Das Fenster wird von Windows ausgeblendet (anderer virtueller Desktop oder angehaltene App).</value></data>

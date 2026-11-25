@@ -17,6 +17,22 @@ public class PersonaEditModelModelTypeTests
     }
 
     [Theory]
+    [InlineData("budget")]
+    [InlineData("overthink")]
+    [InlineData("plan")]
+    public void ModelTypeOptions_OfferRoutingType(string modelType)
+    {
+        Assert.Contains(modelType, new PersonaEditModel().ModelTypeOptions);
+    }
+
+    [Fact]
+    public void ModelTypeOptions_AreSortedByName()
+    {
+        var options = new PersonaEditModel().ModelTypeOptions;
+        Assert.Equal(options.Order(StringComparer.OrdinalIgnoreCase), options);
+    }
+
+    [Theory]
     [InlineData("private", true)]
     [InlineData("Private", true)]
     [InlineData("  private  ", true)]

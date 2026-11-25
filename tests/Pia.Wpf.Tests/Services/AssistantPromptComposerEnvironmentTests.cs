@@ -109,9 +109,9 @@ public class AssistantPromptComposerEnvironmentTests
     [Fact]
     public void AtCommandTurn_StillCarriesTheBatchingRuleAndTheEnvBlock()
     {
-        // An @-command turn skips "## Tool Selection", so anything placed there would vanish on exactly
-        // the turns that batch the most. The at-command hint trails the env block, hence Contains.
-        var prompt = AtFilesTurn().SystemPrompt;
+        // A narrowing @-command turn skips "## Tool Selection", so anything placed there would vanish on
+        // exactly the turns that batch the most. The at-command hint trails the env block, hence Contains.
+        var prompt = AtTodoTurn().SystemPrompt;
 
         Assert.DoesNotContain("## Tool Selection", prompt, StringComparison.Ordinal);
         Assert.Contains(BatchingRule, prompt, StringComparison.Ordinal);
@@ -150,6 +150,14 @@ public class AssistantPromptComposerEnvironmentTests
         Assert.NotNull(tools);
         Assert.Contains(tools, t => t.Name == "find_files");
     }
+
+    private static AssistantTurnSetup AtTodoTurn() =>
+        Composer().PrepareTurn(
+            Persona(),
+            Provider(),
+            [new AtCommand { Domain = AtCommandDomain.Todo }],
+            tokenizationEnabled: false,
+            environmentRoot: Root);
 
     private static AssistantTurnSetup AtFilesTurn() =>
         Composer().PrepareTurn(

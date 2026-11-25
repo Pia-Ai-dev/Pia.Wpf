@@ -2,6 +2,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pia.Services;
@@ -157,6 +158,55 @@ public class PiaCloudChatClientToolCallTests
         var calls = response.Messages.SelectMany(m => m.Contents).OfType<FunctionCallContent>().ToList();
         Assert.Equal(2, calls.Count);
         Assert.Equal(["A.cs", "B.cs"], calls.Select(Path));
+    }
+
+    // The server's native-content store matches on the toolu_ id alone, so round 2 must send it back byte-for-byte.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnAnthropicId_GoesBackVerbatim_InTheNextRoundsRequest(bool streaming)
+    {
+        const string first = "toolu_01AbC-dEf_9";
+        const string second = "toolu_01XyZ";
+        var round1 = streaming
+            ? """data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"toolu_01AbC-dEf_9","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"A.cs\"}"}},{"index":1,"id":"toolu_01XyZ","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"B.cs\"}"}}]}}]}""" + "\n\n" +
+              """data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}""" + "\n\n" +
+              "data: [DONE]\n\n"
+            : """{"model":"m","choices":[{"message":{"role":"assistant","tool_calls":[{"id":"toolu_01AbC-dEf_9","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"A.cs\"}"}},{"id":"toolu_01XyZ","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"B.cs\"}"}}]},"finish_reason":"tool_calls"}]}""";
+        const string round2 = """{"model":"m","choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}""";
+        var handler = new SequenceHandler((round1, streaming ? "text/event-stream" : "application/json"), (round2, "application/json"));
+        var client = new PiaCloudChatClient(
+            new HttpClient(handler), "https://cloud.pia", (_, _) => Task.FromResult<string?>("token"), NullLogger.Instance);
+        var ct = TestContext.Current.CancellationToken;
+        List<ChatMessage> history = [new(ChatRole.User, "hi")];
+
+        var response = streaming
+            ? await client.GetStreamingResponseAsync(history, cancellationToken: ct).ToChatResponseAsync(ct)
+            : await client.GetResponseAsync(history, cancellationToken: ct);
+        history.AddRange(response.Messages);
+        history.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent(first, "a")]));
+        history.Add(new ChatMessage(ChatRole.Tool, [new FunctionResultContent(second, "b")]));
+        await client.GetResponseAsync(history, cancellationToken: ct);
+
+        var messages = (JsonArray)JsonNode.Parse(handler.Bodies[1])!["messages"]!;
+        var assistant = messages.Single(m => (string?)m!["role"] == "assistant")!;
+        Assert.Equal([first, second], ((JsonArray)assistant["tool_calls"]!).Select(c => (string?)c!["id"]));
+        Assert.Equal([first, second],
+            messages.Where(m => (string?)m!["role"] == "tool").Select(m => (string?)m!["tool_call_id"]));
+    }
+
+    private sealed class SequenceHandler(params (string Body, string MediaType)[] responses) : HttpMessageHandler
+    {
+        public List<string> Bodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Bodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
+            var (body, mediaType) = responses[Bodies.Count - 1];
+            var content = new StringContent(body, Encoding.UTF8);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        }
     }
 
     private sealed class StubHandler : HttpMessageHandler

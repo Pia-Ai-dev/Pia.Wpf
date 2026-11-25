@@ -8,6 +8,7 @@ using NSubstitute;
 using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
 using Pia.Shared.Sync;
@@ -29,10 +30,10 @@ public class SyncClientServiceE2EEWindowTests
     private readonly IPluginService _pluginService = Substitute.For<IPluginService>();
     private readonly IScheduledJobService _scheduledJobService = Substitute.For<IScheduledJobService>();
 
-    private SyncClientService CreateSut()
+    private SyncClientService CreateSut(IE2EEService? e2ee = null)
     {
         var dpapiHelper = Substitute.For<DpapiHelper>(NullLogger<DpapiHelper>.Instance);
-        var mapper = new SyncMapper(dpapiHelper);
+        var mapper = new SyncMapper(dpapiHelper, e2ee);
         var deleteTracker = new SyncDeleteTrackerService(Path.GetTempPath(), NullLogger<SyncDeleteTrackerService>.Instance);
 
         // Empty local stores so the push/migration request builds cleanly.
@@ -53,6 +54,7 @@ public class SyncClientServiceE2EEWindowTests
             NullLogger<SyncClientService>.Instance,
             deleteTracker,
             scheduledJobService: _scheduledJobService,
+            e2ee: e2ee,
             pluginService: _pluginService);
     }
 
@@ -132,6 +134,40 @@ public class SyncClientServiceE2EEWindowTests
         // The migration request is now gzipped; CapturingHandler decompresses it back to JSON,
         // which must carry the scheduled job.
         Assert.Contains(jobId.ToString(), handler.LastPushBody!);
+    }
+
+    // Chats travel on their own endpoint, so after an encrypted first sync they are the one kind the push left
+    // behind; a plaintext first sync has nothing to hand them.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AFirstSync_HandsTheChatsOn_OnlyWhenItPushedEncrypted(bool encrypted)
+    {
+        var e2ee = Substitute.For<IE2EEService>();
+        e2ee.IsReady().Returns(encrypted);
+        e2ee.EncryptRecord(Arg.Any<object>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+            .Returns(("payload", "dek"));
+        var sut = CreateSut(e2ee);
+
+        var okBody = System.Text.Json.JsonSerializer.Serialize(new SyncPushResponse { ServerTimestamp = DateTime.UtcNow });
+        var handler = new CapturingHandler(HttpStatusCode.OK, okBody);
+        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
+        _authService.IsLoggedIn.Returns(true);
+        _authService.GetAccessTokenAsync().Returns("token");
+        _settingsService.GetSettingsAsync().Returns(new AppSettings
+        {
+            SyncEnabled = true,
+            ServerUrl = "http://test",
+            SyncUserId = "user-1",
+            IsE2EEEnabled = encrypted,
+        });
+        var handedOn = 0;
+        sut.EncryptedMigrationCompleted += (_, _) => handedOn++;
+
+        await sut.PerformFirstSyncMigrationAsync();
+
+        Assert.Equal(1, handler.PushCount);
+        Assert.Equal(encrypted ? 1 : 0, handedOn);
     }
 
     private sealed class CapturingHandler(HttpStatusCode status, string body) : HttpMessageHandler

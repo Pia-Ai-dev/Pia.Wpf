@@ -52,6 +52,17 @@
                     PlaceholderText="http://localhost:11434/v1"
                     Margin="0,0,0,16"
                     AutomationProperties.AutomationId="WizardProvider_Endpoint" />
+        <TextBlock Text="{loc:Str Dialog_ProviderEdit_EndpointBlocked}"
+                   Visibility="{Binding IsProviderEndpointBlocked, Converter={StaticResource BooleanToVisibilityConverter}}"
+                   AutomationProperties.AutomationId="WizardProvider_EndpointBlocked"
+                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                   TextWrapping="Wrap"
+                   Margin="0,-12,0,16" />
+        <Border Style="{StaticResource PiaFieldNoticeStyle}" Margin="0,-8,0,16">
+          <TextBlock Text="{loc:Str Dialog_ProviderEdit_RecipientNotice}"
+                     AutomationProperties.AutomationId="WizardProvider_RecipientNotice"
+                     TextWrapping="Wrap" />
+        </Border>
       </StackPanel>
 
       <!-- API Key (not for Ollama or PiaCloud) -->

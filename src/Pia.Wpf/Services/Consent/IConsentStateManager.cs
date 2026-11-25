@@ -65,18 +65,9 @@ public interface IConsentStateManager
     /// </summary>
     void Grant(string speakerLabel, string? extractedName, ConsentEvidence evidence);
 
-    /// <summary>
-    /// <see cref="ConsentState.Granted"/> becomes <see cref="ConsentState.Revoked"/>. The grant evidence
-    /// is PRESERVED — a revocation must not destroy the proof that consent once existed. No-op when the
-    /// label is not currently Granted.
-    /// </summary>
-    /// <returns>
-    /// <c>true</c> when this call performed the Granted -&gt; Revoked transition; <c>false</c> when it was
-    /// a no-op. Decided INSIDE the lock: a caller that probes <see cref="CurrentState"/> first and then
-    /// revokes has a window in which a concurrent grant lands between the two, so the probe's answer
-    /// cannot be used to decide whether an audit event and a persisted revocation record are owed.
-    /// </returns>
-    bool Revoke(string speakerLabel);
+    /// <summary>Granted becomes Revoked at <paramref name="revokedAt"/>; the grant evidence is kept as proof.</summary>
+    /// <returns>Whether this call made the transition; decided under the lock, so it can gate the audit.</returns>
+    bool Revoke(string speakerLabel, DateTimeOffset revokedAt);
 
     /// <summary>
     /// Moves the entry to a new key, preserving state and evidence. Raises NO

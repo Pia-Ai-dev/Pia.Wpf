@@ -32,7 +32,7 @@ public sealed class OpenRouterProviderHandler : IAiProviderHandler
         // replaced with OpenRouter's nested `reasoning: { effort: ... }` shape.
         var rewrite = new OpenRouterReasoningHandler(
             provider.ReasoningEffort ?? Pia.Models.ReasoningEffort.None,
-            provider.EnableWebSearch)
+            provider.UsesWebSearch)
         {
             InnerHandler = new HttpClientHandler(),
         };

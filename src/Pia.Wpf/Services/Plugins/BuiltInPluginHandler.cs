@@ -300,6 +300,27 @@ public class BuiltInPluginHandler : IPluginToolHandler
             isAvailable: () => handler.IsAvailable);
     }
 
+    /// <summary>Availability is the server probe, so the tools and the prompt exist only for a knowledge-base manager.</summary>
+    public static BuiltInPluginHandler FromKnowledgeManagerHandler(
+        IKnowledgeManagerToolHandler handler, SyncPlugin config)
+    {
+        return new BuiltInPluginHandler(
+            config.Id,
+            config.Name,
+            handler.GetTools,
+            async (toolCall, ct) =>
+            {
+                var (result, pending) = await handler.HandleToolCallAsync(toolCall, ct);
+                if (pending is null) return (result, null);
+                return (null, new PluginToolCall(
+                    pending.ToolName, config.Id, config.Name, pending.Description, pending.Details,
+                    pending.Execute, DiffPreview: null, TargetPath: null, Warning: pending.Warning));
+            },
+            async pluginCall => await pluginCall.Execute(),
+            GetSystemPromptFromConfig(config.ConfigJson),
+            isAvailable: () => handler.IsAvailable);
+    }
+
     private static string? GetSystemPromptFromConfig(string configJson)
     {
         try

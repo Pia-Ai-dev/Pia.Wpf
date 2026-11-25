@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
+             xmlns:behaviors="clr-namespace:Pia.Behaviors"
              xmlns:localSettings="clr-namespace:Pia.Views.SettingsViews">
   <!-- Cloud Sync (single pane; the inner tab strip was flattened away) -->
   <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -221,6 +222,59 @@
             </TextBlock>
           </StackPanel>
         </Border>
+
+        <StackPanel Margin="0,0,0,12"
+                    Visibility="{Binding HasCredits, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <TextBlock Text="{loc:Str Settings_Credits_Title}"
+                     Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+          <Border Style="{StaticResource PiaSettingsCardStyle}"
+                  Padding="16">
+            <StackPanel>
+              <TextBlock Text="{loc:Str Settings_Credits_Suspended}"
+                         TextWrapping="Wrap"
+                         FontSize="12"
+                         Foreground="{DynamicResource WarnBrush}"
+                         Margin="0,0,0,8"
+                         AutomationProperties.AutomationId="Settings_Account_Credits_Suspended"
+                         Visibility="{Binding IsCreditTierSuspended, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+              <ItemsControl ItemsSource="{Binding CreditMeters}"
+                            AutomationProperties.AutomationId="Settings_Account_Credits"
+                            behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Grid Margin="0,0,0,10">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                      </Grid.RowDefinitions>
+                      <TextBlock Text="{Binding Label}"
+                                 FontSize="13"
+                                 Foreground="{DynamicResource TextDefaultBrush}"
+                                 AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Label_{0}'}"/>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding Caption}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource TextMutedBrush}"
+                                 AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Caption_{0}'}"/>
+                      <ProgressBar Grid.Row="1" Grid.ColumnSpan="2"
+                                   Value="{Binding Value, Mode=OneWay}"
+                                   Maximum="{Binding Maximum, Mode=OneWay}"
+                                   Height="4"
+                                   Margin="0,6,0,0"
+                                   AutomationProperties.AutomationId="{Binding Key, StringFormat='Settings_Account_Credits_Bar_{0}'}"
+                                   AutomationProperties.Name="{Binding Label}"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
         <!-- Sync status -->
         <StackPanel Margin="0,0,0,12">
           <TextBlock FontSize="12"
@@ -254,13 +308,68 @@
           </StackPanel>
         </StackPanel>
 
-        <ui:Button Content="{loc:Str Sync_SignOut}"
-                   Command="{Binding SyncLogoutCommand}"
-                   AutomationProperties.AutomationId="Settings_Account_SyncLogout"
-                   Appearance="Secondary"
-                   Foreground="{DynamicResource PiaDangerBrush}"
-                   HorizontalAlignment="Left"/>
+        <StackPanel Orientation="Horizontal"
+                    IsEnabled="{Binding IsSigningOut, Converter={StaticResource InverseBooleanConverter}}">
+          <ui:Button Content="{loc:Str Sync_ExportData}"
+                     Icon="{ui:SymbolIcon ArrowDownload24}"
+                     Command="{Binding ExportAccountDataCommand}"
+                     behaviors:FocusHandoffBehavior.MoveFocusWhenDisabled="True"
+                     AutomationProperties.AutomationId="Settings_Account_ExportData"
+                     Appearance="Secondary"
+                     Margin="0,0,8,0"/>
+          <ui:ProgressRing IsIndeterminate="True"
+                           Width="16" Height="16"
+                           Margin="0,0,8,0"
+                           Visibility="{Binding ExportAccountDataCommand.IsRunning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+          <ui:Button Content="{loc:Str Sync_SignOut}"
+                     Command="{Binding SyncLogoutCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_SyncLogout"
+                     Appearance="Secondary"
+                     Foreground="{DynamicResource PiaDangerBrush}"
+                     Margin="0,0,8,0"/>
+          <ui:Button Content="{loc:Str Sync_DeleteAccount}"
+                     Icon="{ui:SymbolIcon Delete24}"
+                     Command="{Binding DeleteAccountCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_DeleteAccount"
+                     Appearance="Secondary"
+                     Foreground="{DynamicResource PiaDangerBrush}"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal"
+                    Margin="0,12,0,0"
+                    Visibility="{Binding IsSigningOut, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <ui:ProgressRing IsIndeterminate="True"
+                           Width="16" Height="16"
+                           Margin="0,0,8,0"/>
+          <TextBlock Text="{Binding SignOutProgressText}"
+                     AutomationProperties.AutomationId="Settings_Account_SignOutProgress"
+                     VerticalAlignment="Center"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"/>
+        </StackPanel>
       </StackPanel>
+
+      <Border Style="{StaticResource PiaFieldNoticeStyle}"
+              Margin="0,0,0,20"
+              Visibility="{Binding IsE2EEDowngradeDetected, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <StackPanel>
+          <TextBlock Text="{loc:Str E2EE_Downgrade_Title}"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource PiaDangerBrush}"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,4"/>
+          <TextBlock Text="{loc:Str E2EE_Downgrade_Message}"
+                     AutomationProperties.AutomationId="Settings_Account_E2EEDowngradeNotice"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextDefaultBrush}"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,8"/>
+          <ui:Button Content="{loc:Str E2EE_Downgrade_Allow}"
+                     Appearance="Secondary"
+                     Foreground="{DynamicResource PiaDangerBrush}"
+                     Command="{Binding AllowUnencryptedSyncCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_E2EEDowngrade_AllowUnencrypted"/>
+        </StackPanel>
+      </Border>
 
       <!-- E2EE Onboarding -->
       <localSettings:E2EEOnboardingView
@@ -285,6 +394,35 @@
         </StackPanel.Style>
         <TextBlock Text="{loc:Str Settings_E2EE_Title}"
                    Style="{StaticResource PiaSettingsSectionLabelStyle}"/>
+        <!-- A Border/TextBlock rather than ui:InfoBar, which renders but exposes no automation peer. -->
+        <Border Style="{StaticResource PiaFieldNoticeStyle}"
+                Margin="0,0,0,10"
+                Visibility="{Binding IsE2EEOffNoticeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <StackPanel>
+            <TextBlock Text="{loc:Str Settings_E2EE_OffNotice_Title}"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextDefaultBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,4"/>
+            <TextBlock Text="{loc:Str Settings_E2EE_OffNotice_Message}"
+                       AutomationProperties.AutomationId="Settings_Account_E2EEOffNotice"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextDefaultBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,8"/>
+            <StackPanel Orientation="Horizontal">
+              <ui:Button Content="{loc:Str Settings_E2EE_OffNotice_Enable}"
+                         Appearance="Primary"
+                         Command="{Binding EnableE2EEFromNoticeCommand}"
+                         AutomationProperties.AutomationId="Settings_Account_E2EEOffNotice_Enable"
+                         Margin="0,0,8,0"/>
+              <ui:Button Content="{loc:Str Settings_E2EE_OffNotice_Dismiss}"
+                         Appearance="Secondary"
+                         Command="{Binding DismissE2EEOffNoticeCommand}"
+                         AutomationProperties.AutomationId="Settings_Account_E2EEOffNotice_Dismiss"/>
+            </StackPanel>
+          </StackPanel>
+        </Border>
         <TextBlock Text="{loc:Str Settings_E2EE_Description}"
                    FontSize="12"
                    Foreground="{DynamicResource TextMutedBrush}"
@@ -317,7 +455,7 @@
                    Foreground="{DynamicResource TextMutedBrush}"
                    Margin="0,0,0,8">
           <Run Text="{loc:Str Settings_E2EE_FingerprintLabel}"/>
-          <Run Text="{Binding DeviceFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaMonoFont}"/>
+          <Run Text="{Binding DeviceFingerprint, Mode=OneWay}" FontFamily="{StaticResource PiaFingerprintFont}"/>
         </TextBlock>
         <ui:Button Visibility="{Binding IsE2EEEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
                    Content="{loc:Str Settings_E2EE_CheckDeviceRequests}"
@@ -327,6 +465,20 @@
                    AutomationProperties.AutomationId="Settings_Account_CheckForPendingDevices"
                    HorizontalAlignment="Left"
                    Margin="0,0,0,8"/>
+        <StackPanel Visibility="{Binding IsPreviousInstallationVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <TextBlock Text="{loc:Str Settings_E2EE_PreviousInstallation_Text}"
+                     FontSize="12"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     TextWrapping="Wrap"
+                     Margin="0,0,0,8"/>
+          <ui:Button Content="{loc:Str Settings_E2EE_RemovePreviousInstallation}"
+                     Icon="{ui:SymbolIcon Delete24}"
+                     Appearance="Secondary"
+                     Command="{Binding RemovePreviousInstallationCommand}"
+                     AutomationProperties.AutomationId="Settings_Account_RemovePreviousInstallation"
+                     HorizontalAlignment="Left"
+                     Margin="0,0,0,8"/>
+        </StackPanel>
       </StackPanel>
     </StackPanel>
   </ScrollViewer>

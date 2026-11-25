@@ -266,6 +266,11 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
                 return; // vanished mid-flight; the Deleted event / next reconcile cleans up
             }
 
+            if (SourceIngestMarker.IsHeld(FullPath(sourceRef)))
+            {
+                return;
+            }
+
             if (await IsStillIngestedAsync(await _state.GetAsync(sourceRef), hash))
             {
                 return; // unchanged — never re-spend the LLM calls
@@ -442,10 +447,12 @@ public sealed class AutoIngestService : IIngestScheduler, IDisposable
         return hits;
     }
 
+    private string FullPath(string sourceRef) =>
+        Path.Combine(_paths.VaultRoot, sourceRef.Replace('/', Path.DirectorySeparatorChar));
+
     private string? TryHashFile(string sourceRef)
     {
-        var full = Path.Combine(
-            _paths.VaultRoot, sourceRef.Replace('/', Path.DirectorySeparatorChar));
+        var full = FullPath(sourceRef);
         try
         {
             using var stream = File.OpenRead(full);

@@ -70,7 +70,7 @@ public sealed class MistralProviderHandler : IAiProviderHandler
         };
 
         DelegatingHandler outerHandler = responseFilter;
-        if (provider.EnableWebSearch && !string.IsNullOrWhiteSpace(provider.MistralAgentId))
+        if (provider.UsesWebSearch && !string.IsNullOrWhiteSpace(provider.MistralAgentId))
             outerHandler = new MistralConversationsHandler(provider.MistralAgentId) { InnerHandler = responseFilter };
 
         var http = new HttpClient(outerHandler, disposeHandler: true);

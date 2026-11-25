@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Pia.Models;
 using Pia.Services;
+using Pia.Services.Credits;
 using Pia.Services.Interfaces;
 using Pia.Services.Screen;
 using Pia.Tests.TestInfrastructure;
@@ -154,7 +155,10 @@ public class SettingsPolicyReloadTests : IDisposable
                 Substitute.For<Pia.Services.E2EE.IDeviceKeyService>(),
                 Substitute.For<Pia.Services.E2EE.IE2EEService>(),
                 Substitute.For<ISyncClientService>(), settings,
-                NullLogger<E2EEOnboardingViewModel>.Instance));
+                NullLogger<E2EEOnboardingViewModel>.Instance),
+            Substitute.For<IAccountDataService>(), Substitute.For<IFileDialogService>(),
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
 
         return new Suite(settings, policy, localization, account, assistant, general, meeting, optimize,
             persona, privacy, providers, templates);
@@ -436,7 +440,11 @@ public class SettingsPolicyReloadTests : IDisposable
             Substitute.For<Pia.Services.IWorkingDirectoryService>(),
             Substitute.For<IDiagnosticsExportService>(),
             EmptyScreenCaptureAllowlist(),
-            Substitute.For<IAdvancedCreationLauncher>());
+            Substitute.For<IAdvancedCreationLauncher>(),
+            Substitute.For<IAccountDataService>(),
+            Substitute.For<IFileDialogService>(),
+            Substitute.For<ICreditStatusService>(),
+            Substitute.For<ILocalDataResetService>());
 
         return new Page(root, settings, policy);
     }

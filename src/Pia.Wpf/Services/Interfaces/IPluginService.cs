@@ -49,6 +49,10 @@ public interface IPluginService
     List<SyncPluginPreference> GetPendingPreferenceChanges();
     void ClearPreferenceChangesAfterSuccessfulPush();
     IReadOnlyList<SyncPlugin> GetAllPluginConfigs();
+
+    /// <summary>What the Plugins settings page lists: every config except a server-gated pack whose surface is hidden.</summary>
+    IReadOnlyList<SyncPlugin> GetVisiblePluginConfigs();
+
     Task ShutdownAllAsync();
 
     /// <summary>MCP servers the user added on this machine, as opposed to the ones an admin pushes down
@@ -59,6 +63,9 @@ public interface IPluginService
 
     /// <summary>Starts the server, lists its tools and shuts it back down, without touching the catalogue.</summary>
     Task<McpProbeResult> ProbeLocalMcpAsync(LocalMcpDefinition definition, CancellationToken ct = default);
+
+    /// <summary>False while the organization's policy keeps local MCP servers off this device.</summary>
+    bool AreLocalMcpServersAllowed { get; }
 
     /// <summary>Adds or replaces a local server, restarting its process. Returns the id, minted when
     /// <paramref name="pluginId"/> is null.</summary>

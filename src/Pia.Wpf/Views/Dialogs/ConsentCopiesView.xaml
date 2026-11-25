@@ -1,0 +1,165 @@
+<UserControl x:Class="Pia.Views.Dialogs.ConsentCopiesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:loc="clr-namespace:Pia.Localization">
+  <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="520">
+    <StackPanel Margin="0,8,0,0" Width="520">
+      <TextBlock Text="{loc:Str ConsentCopies_Intro}"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource TextDefaultBrush}"
+                 Margin="0,0,0,12" />
+
+      <TextBlock Text="{loc:Str ConsentCopies_LogUnreadable}"
+                 Visibility="{Binding CopiesLogUnreadable, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 FontSize="12"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource WarnBrush}"
+                 Margin="0,0,0,12" />
+
+      <TextBlock Text="{loc:Str ConsentCopies_VaultUnchecked}"
+                 Visibility="{Binding VaultUnchecked, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 FontSize="12"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource WarnBrush}"
+                 Margin="0,0,0,12" />
+
+      <StackPanel Visibility="{Binding HasExports, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  Margin="0,0,0,16">
+        <TextBlock Text="{loc:Str ConsentCopies_Exports_Heading}"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4" />
+        <TextBlock Text="{loc:Str ConsentCopies_Exports_Note}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource WarnBrush}"
+                   Margin="0,0,0,6" />
+        <ItemsControl ItemsSource="{Binding Exports}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,3">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Path}"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextDefaultBrush}" />
+                <TextBlock Grid.Column="1"
+                           Text="{Binding SavedAt, StringFormat=g}"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           Margin="12,0,0,0" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <StackPanel Visibility="{Binding HasNotes, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  Margin="0,0,0,16">
+        <Grid Margin="0,0,0,4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0"
+                     Text="{loc:Str ConsentCopies_Notes_Heading}"
+                     FontWeight="SemiBold"
+                     VerticalAlignment="Center" />
+          <ui:Button Grid.Column="1"
+                     Content="{loc:Str ConsentCopies_DeleteAll}"
+                     Icon="{ui:SymbolIcon Delete24}"
+                     Appearance="Danger"
+                     Command="{Binding DeleteAllNotesCommand}"
+                     AutomationProperties.AutomationId="ConsentCopies_NotesDeleteAll" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Notes}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,3">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Reference}"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextDefaultBrush}" />
+                <ui:Button Grid.Column="1"
+                           Content="{loc:Str ConsentCopies_Delete}"
+                           Appearance="Secondary"
+                           Command="{Binding DataContext.DeleteNoteCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                           CommandParameter="{Binding}"
+                           AutomationProperties.AutomationId="{Binding Key, StringFormat='ConsentCopies_NoteDelete_{0}'}"
+                           Margin="12,0,0,0" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="{loc:Str ConsentCopies_Notes_Kept}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   Margin="0,6,0,0" />
+      </StackPanel>
+
+      <StackPanel Visibility="{Binding HasChats, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  Margin="0,0,0,16">
+        <Grid Margin="0,0,0,4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock Grid.Column="0"
+                     Text="{loc:Str ConsentCopies_Chats_Heading}"
+                     FontWeight="SemiBold"
+                     VerticalAlignment="Center" />
+          <ui:Button Grid.Column="1"
+                     Content="{loc:Str ConsentCopies_DeleteAll}"
+                     Icon="{ui:SymbolIcon Delete24}"
+                     Appearance="Danger"
+                     Command="{Binding DeleteAllChatsCommand}"
+                     AutomationProperties.AutomationId="ConsentCopies_ChatsDeleteAll" />
+        </Grid>
+        <ItemsControl ItemsSource="{Binding Chats}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,3">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextDefaultBrush}">
+                  <Run Text="{loc:Str ConsentCopies_Chat_Label}" />
+                  <Run Text="·" />
+                  <Run Text="{Binding SummarizedAt, Mode=OneWay, StringFormat=g}" />
+                </TextBlock>
+                <ui:Button Grid.Column="1"
+                           Content="{loc:Str ConsentCopies_Delete}"
+                           Appearance="Secondary"
+                           Command="{Binding DataContext.DeleteChatCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                           CommandParameter="{Binding}"
+                           AutomationProperties.AutomationId="{Binding ChatId, StringFormat='ConsentCopies_ChatDelete_{0}'}"
+                           Margin="12,0,0,0" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+
+      <TextBlock Text="{loc:Str ConsentCopies_DeleteFailed}"
+                 Visibility="{Binding DeleteFailed, Converter={StaticResource BooleanToVisibilityConverter}}"
+                 FontSize="12"
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource PiaDangerBrush}" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -11,21 +11,26 @@
              x:Name="ChipRoot"
              HorizontalAlignment="Left">
   <Grid>
+    <!-- Accent-outlined so the chat switcher reads as a control, not as a caption. -->
     <ui:Button x:Name="ChipButton"
                Appearance="Secondary"
                CornerRadius="14"
-               Padding="10,4"
+               Padding="12,5"
                Cursor="Hand"
+               Background="{DynamicResource PiaAccentSoftBrush}"
+               BorderBrush="{DynamicResource PiaAccentBrush}"
+               BorderThickness="1"
                Click="ChipButton_Click"
                AutomationProperties.AutomationId="ChatChip_Toggle"
                ToolTip="{loc:Str AssistantChat_Chip_Tooltip}">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
         <ui:SymbolIcon Symbol="Chat24"
-                       FontSize="14"
+                       FontSize="15"
                        Margin="0,0,6,0"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                       Foreground="{DynamicResource PiaAccentBrush}" />
         <TextBlock behaviors:EmojiTextBehavior.Text="{Binding CurrentTitle}"
-                   FontSize="12"
+                   FontSize="13"
+                   FontWeight="SemiBold"
                    TextTrimming="CharacterEllipsis"
                    MaxWidth="240"
                    VerticalAlignment="Center" />
@@ -75,7 +80,7 @@
         <ui:SymbolIcon Symbol="ChevronDown20"
                        FontSize="12"
                        Margin="6,0,0,0"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                       Foreground="{DynamicResource PiaAccentBrush}" />
       </StackPanel>
     </ui:Button>
 

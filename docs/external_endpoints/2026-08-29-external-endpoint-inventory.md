@@ -1,7 +1,7 @@
 # External endpoints Pia.Wpf dials at runtime
 
-**Status:** Current as of 2026-08-29; one endpoint open (§5), and §3 gained a mirror hop that is
-unverified against the live host · **Owner:** Marco Altmann ·
+**Status:** Current as of 2026-09-21; one endpoint open (§5). §3 is served by the mirror alone, whose
+18 keys are verified against the live host · **Owner:** Marco Altmann ·
 **Written:** 2026-08-29 · **Origin:** an audit asked for the full runtime egress list; nothing in the
 repo recorded it, and the sweep turned up a 404 that had been shipping unnoticed
 
@@ -39,8 +39,8 @@ meeting attendee drives a real browser. They are listed as categories in §4.
 | Endpoint | Trigger | Override | What leaves | If down |
 |---|---|---|---|---|
 | `storage.pia-ai.de/f/wpf/` | Update check on startup, then every 4–6 h | `Update:FeedUrl` (`appsettings.json`) | Nothing but a GET | Silent — no updates, nothing surfaced. Serving since 2026-08-30, see §5.1 |
-| `storage.pia-ai.de/f/assets/` | Before every §3 model download that has a mirror key | `Assets:MirrorBaseUrl` (`appsettings.json`); blank goes straight upstream | Nothing but a GET | Silent — falls back to the upstream host in §3, latched per process |
-| `github.com/Pia-Ai-dev/Pia.Wpf` → `api.github.com` | Update check when `FeedUrl` is blank | `Update:GitHubRepoUrl` (`Models/UpdateOptions.cs`) | Nothing but a GET | Same |
+| `storage.pia-ai.de/f/assets/` | Every §3 model download that has a mirror key | `Assets:MirrorBaseUrl` (`appsettings.json`); blank sends every asset upstream instead | Nothing but a GET | The download fails; nothing else is tried. Whether the user sees it is the caller's business — the model and voice pickers report it, the embedding model only logs |
+| `github.com/Pia-Ai-dev/Pia.Wpf` → `api.github.com` | Update check when `FeedUrl` is blank | `Update:GitHubRepoUrl` (`Models/UpdateOptions.cs`) | Nothing but a GET | Silent — no updates, nothing surfaced |
 | `cloud.pia-ai.de` | Login, sync, cloud chat, E2EE device management, policy, capabilities, assignments, plugin CABs + icons + trusted certs, AI feedback | `PIA_CLOUD_SERVER_URL`, else `AppSettings.ServerUrl`; default in `Bootstrapper.cs` | Bearer token; chat and prompt content (E2EE-wrapped on the sync path); device keys; assignment payloads | Hard fail for the cloud persona, sync and assignments |
 | `cloud.pia-ai.de/auth/{register,forgot-password}.html` | Button in account settings / first-run wizard | same | Opens the default browser | Cosmetic |
 | `127.0.0.1:{ephemeral}` | OAuth loopback redirect (`Services/AuthService.cs`) | none | Nothing — loopback | Login blocked |
@@ -50,19 +50,19 @@ meeting attendee drives a real browser. They are listed as categories in §4.
 
 Fetched once on first use and cached under `%LOCALAPPDATA%\Pia`. All GET-only, no credentials.
 
-**`storage.pia-ai.de/f/assets/` is tried first for every row below that carries a mirror key.** One
-service — `Services/Assets/AssetDownloader.cs` — owns the order: our mirror, then the upstream host
-named here if that fails for any reason other than the caller cancelling. `Assets:MirrorBaseUrl` in
-`appsettings.json` moves it, and blank goes straight upstream, which is the switch for a deployment
-that runs no mirror of its own. The keys live in `Services/Assets/RuntimeAsset.cs` and are uploaded by
+**`storage.pia-ai.de/f/assets/` serves every row below that carries a mirror key, and serves it
+alone.** One service — `Services/Assets/AssetDownloader.cs` — picks the source: the mirror when
+`Assets:MirrorBaseUrl` names one, and a mirror that fails fails the download. Blank sends every asset
+to the upstream host named here instead, which is the switch for a deployment that runs no mirror of
+its own. The keys live in `Services/Assets/RuntimeAsset.cs` and are uploaded by
 `scripts/Publish-RuntimeAssets.ps1`; `RuntimeAssetCatalogTests` pins those two lists against each other.
 
-Because the fallback is silent, **every row here stays a live dependency** — the mirror is a control
-and latency path, not a replacement. Verified against the real host on 2026-08-30: all 11 mirror
-keys then in the catalogue answer `200` and every `Content-Length` matches its upstream byte for
-byte, so the mirror is now the path that actually serves (§5.1 closed the TLS failure that had made
-it unreachable). The nine `tts/` voice keys were added afterwards and still 404 on the mirror, so
-every voice download falls back upstream until `Publish-RuntimeAssets.ps1 -Include TtsVoices` runs.
+So **the mirrored rows below are a live dependency only for a deployment that configures no
+mirror** — with the shipped `appsettings.json` a firewall may allow `storage.pia-ai.de` and, of the
+hosts here, only `cdn.playwright.dev` (the one row with no mirror key). A gap in the mirror is then a
+broken feature rather than a silent third-party fetch, which makes the mirror's completeness
+load-bearing: verified against the real host on 2026-09-21, all 18 keys in the catalogue answer, the
+nine `tts/` voices included.
 
 | Endpoint | Trigger | Override | Cached in |
 |---|---|---|---|

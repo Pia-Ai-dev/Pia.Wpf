@@ -29,7 +29,7 @@ public class SyncMapper
         _logger = logger ?? NullLogger<SyncMapper>.Instance;
     }
 
-    private bool IsE2EEActive => _e2ee?.IsReady() == true;
+    internal bool IsE2EEActive => _e2ee?.IsReady() == true;
 
     /// <summary>
     /// True when the row carries ciphertext this client can decrypt; false when it carries none.

@@ -10,8 +10,10 @@ public class LocalizationService : ILocalizationService
 {
     private readonly ILogger<LocalizationService> _logger;
     private TargetLanguage _currentLanguage = TargetLanguage.EN;
+    private CultureInfo _culture = CultureInfo.GetCultureInfo("en");
 
     public TargetLanguage CurrentLanguage => _currentLanguage;
+    public CultureInfo Culture => _culture;
     public event EventHandler<TargetLanguage>? LanguageChanged;
 
     public LocalizationService(ILogger<LocalizationService> logger)
@@ -39,6 +41,7 @@ public class LocalizationService : ILocalizationService
         };
 
         var culture = new CultureInfo(cultureName);
+        _culture = culture;
         Thread.CurrentThread.CurrentUICulture = culture;
         Thread.CurrentThread.CurrentCulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;

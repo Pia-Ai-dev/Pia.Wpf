@@ -49,8 +49,8 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.GeneralView), 35, 5, "")]
     [InlineData(typeof(Pia.Views.SettingsViews.AssistantView), 48, 6, "McpServersView,PersonaGlyph,PersonasView,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.SettingsViews.ProvidersView), 6, 3, "")]
-    // AccountView declares no DataTemplate, so it is the one view with no per-item floor to hold.
-    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 14, 0, "E2EEOnboardingView")]
+    // AccountView's one DataTemplate (the credit rows) holds no interactive control, so no per-item floor.
+    [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 20, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 4, 0, "TemplatesView")]
     [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 13, 0, "PiaEmptyState")]
     [InlineData(typeof(Pia.Views.AssistantView), 34, 7,
@@ -62,7 +62,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.RoutinesView), 36, 1,
         "PiaEmptyState,PiaHelpHint,PiaRoutinesSearchBar,PiaWorkingDirectoryPicker")]
     [InlineData(typeof(Pia.Views.SettingsViews.PersonasView), 26, 2, "PersonaGlyph,PiaEmptyState")]
-    [InlineData(typeof(Pia.Views.SettingsViews.McpServersView), 18, 2, "PiaEmptyState,PiaHelpHint")]
+    [InlineData(typeof(Pia.Views.SettingsViews.McpServersView), 19, 2, "PiaEmptyState,PiaHelpHint")]
     [InlineData(typeof(Pia.Views.MeetingAttendeeOverlay), 8, 1, "ListeningIndicator")]
     [InlineData(typeof(Pia.Views.Dialogs.Overlay.AdvancedCreationOverlayPanel), 12, 5, "PersonaGlyph")]
     [InlineData(typeof(Pia.Controls.Cards.CardDecisionBar), 1, 1, "")]
@@ -120,13 +120,14 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.OptimizeView), 12, 0, "TodoPanelControl")]
     [InlineData(typeof(Pia.Views.SettingsViews.PluginsView), 2, 1, "")]
     [InlineData(typeof(Pia.Views.SettingsViews.AboutView), 5, 0, "")]
-    [InlineData(typeof(Pia.Views.SettingsViews.E2EEOnboardingView), 8, 0, "")]
+    [InlineData(typeof(Pia.Views.SettingsViews.E2EEOnboardingView), 10, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.WelcomeStep), 1, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.UserProfileStep), 8, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.ProviderSetupStep), 7, 0, "")]
     [InlineData(typeof(Pia.Views.WizardSteps.AccountSetupStep), 10, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.WizardSteps.E2EESetupStep), 5, 0, "")]
     [InlineData(typeof(Pia.Views.Dialogs.ScreenCapturePickerView), 3, 2, "")]
+    [InlineData(typeof(Pia.Views.Dialogs.ConsentCopiesView), 4, 2, "")]
     public void EveryInteractiveControl_CarriesAnAutomationId(
         Type viewType, int minimumInspected, int minimumPerItemIds, string expectedNestedViews)
     {

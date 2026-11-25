@@ -10,11 +10,7 @@ using ReasoningEffort = Pia.Models.ReasoningEffort;
 
 namespace Pia.Tests.Services;
 
-/// <summary>
-/// The spine's own turns carry no user persona, so they used to reach Pia Cloud with no mode at all and
-/// resolved to the server's global default model. They route as Assistant-mode traffic of the spine's
-/// model type instead, which is what puts them under the group's persona-type mapping.
-/// </summary>
+/// <summary>The persona-less spine turns route as Assistant mode so the group's persona-type mapping applies.</summary>
 public sealed class AgentTurnRoutingTests
 {
     private readonly IAiClientService _ai = Substitute.For<IAiClientService>();
@@ -99,11 +95,11 @@ public sealed class AgentTurnRoutingTests
 
     // The literals, never AgentTurnRouting's own constants: asserting the constant the call site passes
     // would still pass with the routing gutted.
-    private void AssertSpineRouting(int expectedTurns)
+    private void AssertSpineRouting(int expectedTurns, string expectedModelType)
     {
         Assert.Equal(expectedTurns, _toolTurnModes.Count);
         Assert.All(_toolTurnModes, m => Assert.Equal("Assistant", m));
-        Assert.All(_toolTurnModelTypes, t => Assert.Equal("fast", t));
+        Assert.All(_toolTurnModelTypes, t => Assert.Equal(expectedModelType, t));
     }
 
     [Fact]
@@ -112,7 +108,7 @@ public sealed class AgentTurnRoutingTests
         await BuildPlanner().PlanAsync(
             "ship the widget catalogue", Ctx(), RunPersona(), Provider(), TestContext.Current.CancellationToken);
 
-        AssertSpineRouting(expectedTurns: 2); // first attempt + firm retry
+        AssertSpineRouting(expectedTurns: 2, expectedModelType: "plan"); // first attempt + firm retry
     }
 
     [Fact]
@@ -121,7 +117,7 @@ public sealed class AgentTurnRoutingTests
         await BuildPlanner().ReplanAsync(
             Ctx(), "boom", RunPersona(), Provider(), TestContext.Current.CancellationToken);
 
-        AssertSpineRouting(expectedTurns: 2);
+        AssertSpineRouting(expectedTurns: 2, expectedModelType: "plan");
     }
 
     [Fact]
@@ -130,7 +126,7 @@ public sealed class AgentTurnRoutingTests
         await BuildVerifier().VerifyAsync(
             Ctx(), RunPersona(), Provider(), TestContext.Current.CancellationToken);
 
-        AssertSpineRouting(expectedTurns: 2);
+        AssertSpineRouting(expectedTurns: 2, expectedModelType: "fast");
     }
 
     [Fact]
@@ -143,7 +139,7 @@ public sealed class AgentTurnRoutingTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal("Assistant", _reasoningMode);
-        Assert.Equal("fast", _reasoningModelType);
+        Assert.Equal("plan", _reasoningModelType);
     }
 
     /// <summary>

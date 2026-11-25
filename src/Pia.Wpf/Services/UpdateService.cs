@@ -1,8 +1,10 @@
+using System.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
+using Pia.Services.Updates;
 using Velopack;
 using Velopack.Sources;
 
@@ -22,7 +24,7 @@ public class UpdateService : IUpdateService
     {
         _logger = logger;
 
-        _updateManager = new UpdateManager(CreateSource(options.Value, logger));
+        _updateManager = new VerifyingUpdateManager(CreateSource(options.Value, logger), options.Value, logger);
 
         CurrentVersion = _updateManager.IsInstalled
             ? _updateManager.CurrentVersion?.ToString()
@@ -83,5 +85,79 @@ public class UpdateService : IUpdateService
 
         _logger.LogInformation("Applying update and restarting...");
         _updateManager.ApplyUpdatesAndRestart(_targetAsset);
+    }
+
+    /// <summary>Velopack only compares the feed's own checksum; this adds Authenticode before the package is moved into place.</summary>
+    private sealed class VerifyingUpdateManager(IUpdateSource source, AutoUpdateOptions options, ILogger logger)
+        : UpdateManager(source)
+    {
+        private readonly Lazy<bool> _enforce = new(() => RunningBuildIsSigned(logger));
+
+        // Runs before the move, and the move is what lets Velopack install the package's Update.exe.
+        protected override async Task VerifyPackageChecksumAsync(VelopackAsset release, string? filePathOverride = null)
+        {
+            await base.VerifyPackageChecksumAsync(release, filePathOverride).ConfigureAwait(false);
+            var packagePath = filePathOverride ?? Path.Combine(Locator.PackagesDir ?? string.Empty, release.FileName);
+
+            await AuditCatalogAsync(release, packagePath).ConfigureAwait(false);
+            if (release.Type == VelopackAssetType.Full)
+                EnforceSignatures(packagePath);
+        }
+
+        // Velopack checksums each delta but never the package it patches together from them.
+        protected override async Task DownloadAndApplyDeltaUpdates(
+            UpdateInfo updates, string targetFile, Action<int> progress, CancellationToken cancelToken)
+        {
+            await base.DownloadAndApplyDeltaUpdates(updates, targetFile, progress, cancelToken).ConfigureAwait(false);
+            EnforceSignatures(targetFile);
+        }
+
+        private void EnforceSignatures(string packagePath)
+        {
+            if (!_enforce.Value)
+                return;
+
+            UpdatePackageVerifier.VerifyBinaries(packagePath, options.EffectiveTrustedPublishers);
+            logger.LogInformation("Update package binaries are signed by trusted publishers");
+        }
+
+        // Audit only: the catalog is new to the release pipeline, so a miss is logged rather than blocking updates.
+        private async Task AuditCatalogAsync(VelopackAsset release, string packagePath)
+        {
+            var catalogPath = Path.Combine(Path.GetTempPath(), $"pia-release-{Guid.NewGuid():N}.cat");
+            try
+            {
+                try
+                {
+                    var catalog = release with { FileName = $"{release.PackageId}-{release.Version}.cat" };
+                    await Source.DownloadReleaseEntry(Log, catalog, catalogPath, _ => { }, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Release catalog download failed");
+                }
+
+                var verdict = UpdatePackageVerifier.CheckCatalog(catalogPath, packagePath, options.EffectiveTrustedPublishers);
+                if (verdict == UpdatePackageVerifier.CatalogVerdict.Verified)
+                    logger.LogInformation("Release catalog vouches for {Package}", release.FileName);
+                else
+                    logger.LogWarning("Release catalog check for {Package}: {Verdict} (not enforced yet)", release.FileName, verdict);
+            }
+            finally
+            {
+                try { File.Delete(catalogPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+        }
+
+        private static bool RunningBuildIsSigned(ILogger logger)
+        {
+            if (Environment.ProcessPath is { } exe && UpdatePackageVerifier.PublisherOf(exe) is not null)
+                return true;
+
+            // A local unsigned build has no signature of its own to hold an update to.
+            logger.LogWarning("This build is not Authenticode-signed, so update signatures are not enforced");
+            return false;
+        }
     }
 }

@@ -399,7 +399,7 @@ public sealed class AgentPlanner : IAgentPlanner
         {
             var response = await _ai.GetChatResponseAsync(
                 BuildReasoningMessages(goal, persona), provider, tools: null, mode: AgentTurnRouting.Mode,
-                personaModelType: AgentTurnRouting.ModelType, cancellationToken: ct).ConfigureAwait(false);
+                personaModelType: AgentTurnRouting.PlanModelType, cancellationToken: ct).ConfigureAwait(false);
 
             var usage = response.Usage;          // paid for regardless of what came back
             var text = response.Text?.Trim();
@@ -700,7 +700,7 @@ public sealed class AgentPlanner : IAgentPlanner
         UsageDetails? usage = null;
         await foreach (var item in _ai.GetChatCompletionWithToolsAsync(
             messages, provider, [tool], toolHandler, mode: AgentTurnRouting.Mode,
-            personaModelType: AgentTurnRouting.ModelType, cancellationToken: ct).ConfigureAwait(false))
+            personaModelType: AgentTurnRouting.PlanModelType, cancellationToken: ct).ConfigureAwait(false))
         {
             // Drain the whole stream; the plan itself is captured in the handler, but the USAGE only
             // ever surfaces on the yielded Finished items — mirror the verifier and keep it (I1).

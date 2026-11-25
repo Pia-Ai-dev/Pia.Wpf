@@ -14,6 +14,7 @@ namespace Pia.Controls.Markdown;
 
 internal sealed class CodeColorizer : CodeColorizerBase
 {
+    private static readonly ILanguage _yaml = new YamlLanguage();
     private static readonly ILanguageParser _parser = BuildParser();
 
     private readonly List<Run> _runs = new();
@@ -129,7 +130,7 @@ internal sealed class CodeColorizer : CodeColorizerBase
 
     private static ILanguageParser BuildParser()
     {
-        var languageDict = Languages.All.ToDictionary(l => l.Id, StringComparer.OrdinalIgnoreCase);
+        var languageDict = Languages.All.Append(_yaml).ToDictionary(l => l.Id, StringComparer.OrdinalIgnoreCase);
         var repository = new LanguageRepository(languageDict);
         var compiler = new LanguageCompiler(new Dictionary<string, CompiledLanguage>(StringComparer.OrdinalIgnoreCase), new ReaderWriterLockSlim());
         return new LanguageParser(compiler, repository);
@@ -153,8 +154,11 @@ internal sealed class CodeColorizer : CodeColorizerBase
             "ps" or "ps1" or "pwsh" or "powershell" => "powershell",
             "c++" => "cpp",
             "vb" or "vbnet" => "vb.net",
+            "yml" => "yaml",
             _ => normalized,
         };
+
+        if (alias == _yaml.Id) return _yaml;
 
         return Languages.FindById(alias) ?? Languages.FindById(normalized);
     }

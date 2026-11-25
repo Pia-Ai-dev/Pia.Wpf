@@ -63,6 +63,7 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     private readonly Services.MeetingAttendee.IScheduledMeetingRecorder _meetingRecorder;
     private readonly Services.MeetingAttendee.IBackgroundMeetingSessions _meetingSessions;
     private readonly ILogger<ScheduledJobBackgroundService> _logger;
+    private readonly ILocalDataResetIndicator? _resetIndicator;
 
     /// <summary>
     /// Serializes THIS service's own <see cref="IScheduledJobService"/> calls, and nothing else. It is what
@@ -195,7 +196,8 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         IAgentRunService runService,
         Services.MeetingAttendee.IScheduledMeetingRecorder meetingRecorder,
         Services.MeetingAttendee.IBackgroundMeetingSessions meetingSessions,
-        ILogger<ScheduledJobBackgroundService> logger)
+        ILogger<ScheduledJobBackgroundService> logger,
+        ILocalDataResetIndicator? resetIndicator = null)
     {
         _jobs = jobs;
         _scopeFactory = scopeFactory;
@@ -207,13 +209,10 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
         _meetingRecorder = meetingRecorder;
         _meetingSessions = meetingSessions;
         _logger = logger;
+        _resetIndicator = resetIndicator;
 
-        // T0-1(b). The launch path books its outcome from a continuation on the handle; the RESUME path hands
-        // out no handle at all, so a scheduled run that parked at its budget and was later continued to
-        // completion booked nothing onto the job. This is that missing continuation, delivered as a callback.
-        // Subscribed in the ctor rather than in ExecuteAsync because a resume can happen before the first tick,
-        // and dropped again in Dispose so a test that builds several services over one launcher does not fan one
-        // resume into N bookings.
+        // A resumed run hands out no handle to continue from, so its outcome arrives here; subscribed in the
+        // ctor because a resume can land before the first tick.
         _launcher.ResumedRunSettled += OnResumedRunSettled;
     }
 
@@ -289,6 +288,13 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     /// <inheritdoc />
     public async Task<ScheduledJobRunNowResult> RunNowAsync(Guid jobId, CancellationToken ct = default)
     {
+        // Startup holds the scheduler while a clear is pending, and a manual run must not get round that.
+        if (_resetIndicator?.IsResetPending == true)
+        {
+            _logger.LogInformation("Run-now refused for job {Id}: a local-data clear is pending", jobId);
+            return ScheduledJobRunNowResult.ResetPending;
+        }
+
         var job = await LockedAsync(() => _jobs.GetAsync(jobId));
         if (job is null)
         {
@@ -296,29 +302,22 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             return ScheduledJobRunNowResult.NotFound;
         }
 
-        // The owner rule is asked of the service rather than re-derived here, so this cannot drift from the
-        // SQL predicate GetDueJobsAsync uses. A manual run must not be able to do what this device's own
-        // scheduler is forbidden to do.
+        // Asked of the service, not re-derived, so it cannot drift from the predicate GetDueJobsAsync uses.
         if (!await LockedAsync(() => _jobs.IsOwnedByThisDeviceAsync(jobId)))
         {
             _logger.LogInformation("Run-now refused for job {Id}: another device owns its schedule", jobId);
             return ScheduledJobRunNowResult.NotOwner;
         }
 
-        // The guard's clearest case: a manual fire racing a tick's own run of the same job. Nothing else can
-        // catch it — the schedule advancing at dispatch is about the DUE query, and this path never consults
-        // it. And unlike the tick's refusal below, this one leaves the schedule alone: a manual fire that was
-        // refused must not consume the occurrence the tick is still going to fire.
+        // Catches a manual fire racing the tick's own run; unlike the tick's refusal, it leaves the schedule alone
+        // so the refused fire does not consume the occurrence the tick will still fire.
         if (await IsAlreadyExecutingAsync(job, ct))
         {
             _logger.LogInformation("Run-now refused for job {Id}: a run of it is already executing", jobId);
             return ScheduledJobRunNowResult.AlreadyRunning;
         }
 
-        // ExecuteJobAsync, not RunJobAsync: the latter's grace check asks the user whether a LATE job should
-        // still run, which is meaningless for a run they just requested — and would pop a dialog for any job
-        // whose NextFireAt is in the past, which is exactly the settled/overdue rows most likely to be run
-        // manually.
+        // ExecuteJobAsync, not RunJobAsync: the missed-run prompt has no meaning for a run the user just asked for.
         _logger.LogInformation("Run-now dispatching scheduled job {Id} ({Kind})", jobId, job.Kind);
         await ExecuteJobAsync(job, ct);
         return ScheduledJobRunNowResult.Dispatched;
@@ -552,7 +551,9 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
             return;
         }
 
-        TrackDispatch(RunMeetingAsync(job, lease, ct));
+        // Stamped as local time by the routine editor, so the local offset is the right one.
+        var hostAcknowledgedAt = new DateTimeOffset(job.MeetingConsentAckAt!.Value);
+        TrackDispatch(RunMeetingAsync(job, lease, hostAcknowledgedAt, ct));
     }
 
     private string? ClassifyMeetingRefusal(ScheduledJob job, AppSettings settings)
@@ -569,14 +570,17 @@ public class ScheduledJobBackgroundService : BackgroundService, IScheduledJobRun
     }
 
     private async Task RunMeetingAsync(
-        ScheduledJob job, Services.MeetingAttendee.BackgroundMeetingLease lease, CancellationToken ct)
+        ScheduledJob job,
+        Services.MeetingAttendee.BackgroundMeetingLease lease,
+        DateTimeOffset hostAcknowledgedAt,
+        CancellationToken ct)
     {
         // The lease IS the meeting: disposing it tears the browser and the models down and hands the slot
         // back, so it has to outlive the recording and nothing else may end it early.
         await using var _ = lease;
         try
         {
-            var result = await _meetingRecorder.RecordAsync(lease.Attendee, job.MeetingUrl!, job.Name, ct);
+            var result = await _meetingRecorder.RecordAsync(lease.Attendee, job.MeetingUrl!, job.Name, hostAcknowledgedAt, ct);
 
             if (result.Outcome is Services.MeetingAttendee.MeetingRecordingOutcome.Saved)
             {

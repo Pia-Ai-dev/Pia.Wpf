@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Pia.Logging;
 using Pia.Paths;
 using Pia.Services.Interfaces;
 using Pia.Shared.Models;
@@ -74,6 +75,13 @@ public class CabManagerService
             if (SigningRequired && !await VerifySignatureAsync(cabBytes, ct))
             {
                 _logger.LogError("Cab signature verification failed for plugin {Name}", plugin.Name);
+                return null;
+            }
+
+            if (CabEntryNameParser.FindUnsafeEntry(cabBytes) is { } unsafeEntry)
+            {
+                _logger.LogError("Cab for plugin {Name} has an entry outside its folder; not extracting", plugin.Name);
+                _logger.SensitiveDebug("Unsafe cab entry for plugin {Name}: {Entry}", plugin.Name, unsafeEntry);
                 return null;
             }
 

@@ -8,9 +8,7 @@ using Xunit;
 namespace Pia.Tests.Services;
 
 /// <summary>
-/// R7/G1: the <c>suggest_agent_mode</c> tool is injected into a turn's tool list ONLY when it is an
-/// eligible interactive Chat turn on a tool-capable provider with no @-commands. Every other shape
-/// (ineligible, ToolScope==None, @-command narrowed) leaves the tool out so those turns stay byte-stable.
+/// <c>suggest_agent_mode</c> joins the tool list only on an eligible, tool-capable turn with no @-commands.
 /// </summary>
 public class AssistantPromptComposerAgentSuggestTests
 {

@@ -39,7 +39,8 @@ public class FirstRunWizardBusinessProfileTests
         new E2EESetupStepViewModel(
             _deviceMgmt, _deviceKeys, _sync, Substitute.For<IOutputService>(),
             NullLogger<E2EESetupStepViewModel>.Instance),
-        NullLogger<FirstRunWizardViewModel>.Instance);
+        NullLogger<FirstRunWizardViewModel>.Instance,
+        Substitute.For<IDialogService>(), Substitute.For<ILocalDataResetService>());
 
     private async Task<FirstRunWizardViewModel> SignedInSut(bool declarationOutstanding)
     {
