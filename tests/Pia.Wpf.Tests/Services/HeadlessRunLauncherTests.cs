@@ -2474,6 +2474,71 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 
+    /// <summary>A queued dispatch never reaches the run loop, so the launcher settles it with the same reason.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ACancelWhileQueued_SettlesTheLaunchWithItsReason(bool superseded)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource();
+        var (launcher, planner) = BuildLauncher(
+            onPlan: () => gate.Task, appSettings: new AppSettings { MaxParallelBackgroundRuns = 1 });
+        var busy = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await WaitForConcurrencyAsync(planner, 1);
+
+        var queued = await launcher.LaunchAsync(new HeadlessRunRequest("b", AgentRunTrigger.User), ct);
+        if (superseded)
+            await launcher.CancelAsync(queued.RunId, AgentRunOrchestrator.SupersededFailureReason);
+        else
+            Assert.True(await launcher.CancelRunAsync(queued.RunId, ct));
+        await queued.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var final = await _runs.GetAsync(queued.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(superseded ? AgentRunOrchestrator.SupersededFailureReason : null,
+            AgentRunService.ReadFailureReason(final.ExtraJson));
+        Assert.Equal(1, planner.Concurrent); // it never left the queue
+
+        gate.SetResult();
+        await busy.Completion.WaitAsync(TimeSpan.FromSeconds(20), ct);
+        await launcher.StopAsync(CancellationToken.None);
+        TempPath.Remove(Path.Combine(_runsBase, busy.RunId.ToString()));
+        TempPath.Remove(Path.Combine(_runsBase, queued.RunId.ToString()));
+    }
+
+    [Fact]
+    public async Task ASupersedeWhileAResumeIsQueued_SettlesItInsteadOfReParking()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource();
+        var (launcher, planner) = BuildLauncher(
+            onPlan: () => gate.Task, appSettings: new AppSettings { MaxParallelBackgroundRuns = 1 });
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+        var busy = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await WaitForConcurrencyAsync(planner, 1);
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
+        await launcher.CancelAsync(parked.Id, AgentRunOrchestrator.SupersededFailureReason);
+
+        // Polled rather than AwaitRunSettledAsync, whose StopAsync would wait out the held run.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var final = await _runs.GetAsync(parked.Id, ct);
+        while (final!.State is not AgentRunState.Cancelled && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20, ct);
+            final = await _runs.GetAsync(parked.Id, ct);
+        }
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(AgentRunOrchestrator.SupersededFailureReason, AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        gate.SetResult();
+        await busy.Completion.WaitAsync(TimeSpan.FromSeconds(20), ct);
+        await launcher.StopAsync(CancellationToken.None);
+        TempPath.Remove(Path.Combine(_runsBase, busy.RunId.ToString()));
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
+    }
+
     [Fact]
     public async Task UserStop_MidStep_SettlesTheRunWithNoFailureReason()
     {

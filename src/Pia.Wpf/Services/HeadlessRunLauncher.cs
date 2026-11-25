@@ -108,9 +108,23 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// <summary>Cancelled once at shutdown; every run CTS is linked to it.</summary>
     private readonly CancellationTokenSource _shutdownCts = new();
 
-    private readonly ConcurrentDictionary<Guid, (CancellationTokenSource Cts, Task Task)> _inflight = new();
+    private readonly ConcurrentDictionary<Guid, InflightDispatch> _inflight = new();
 
-    private readonly ConcurrentDictionary<Guid, string> _cancelReasons = new();
+    private sealed class InflightDispatch(CancellationTokenSource cts)
+    {
+        private string? _cancelReason;
+
+        public CancellationTokenSource Cts { get; } = cts;
+
+        public Task Completion { get; set; } = Task.CompletedTask;
+
+        // Written before the cancel fires, so the unwinding dispatch reads it.
+        public string? CancelReason
+        {
+            get => Volatile.Read(ref _cancelReason);
+            set => Volatile.Write(ref _cancelReason, value);
+        }
+    }
 
     /// <summary>chat id → run ids launched this session, for same-session workspace cleanup on chat delete.</summary>
     private readonly ConcurrentDictionary<Guid, HashSet<Guid>> _runsByChat = new();
@@ -331,21 +345,16 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                workspaceRootOverride: parentWorkspaceRoot, personaIdOverride: personaId, ct);
 
     /// <inheritdoc />
-    public Task CancelAsync(Guid runId, string reason)
-    {
-        if (_inflight.ContainsKey(runId))
-            _cancelReasons[runId] = reason;
-        return CancelAsync(runId);
-    }
-
-    // Null means the user stopped the run.
-    private string? CancelReasonFor(Guid runId) =>
-        _cancelReasons.TryGetValue(runId, out var reason) ? reason
-        : _shutdownCts.IsCancellationRequested ? ShutdownInterruptedFailure
-        : null;
+    public Task CancelAsync(Guid runId) => CancelInflight(runId, reason: null);
 
     /// <inheritdoc />
-    public Task CancelAsync(Guid runId)
+    public Task CancelAsync(Guid runId, string reason) => CancelInflight(runId, reason);
+
+    // Null means the user stopped the run.
+    private string? CancelReasonFor(InflightDispatch dispatch) =>
+        dispatch.CancelReason ?? (_shutdownCts.IsCancellationRequested ? ShutdownInterruptedFailure : null);
+
+    private Task CancelInflight(Guid runId, string? reason)
     {
         // Best-effort by design: only a run THIS PROCESS is dispatching is in _inflight, so a child parked in
         // a previous process is simply not here and the caller falls back to settling its row. RemoveInflight
@@ -355,6 +364,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         {
             if (_inflight.TryGetValue(runId, out var entry))
             {
+                if (reason is not null)
+                    entry.CancelReason = reason;
                 entry.Cts.Cancel();
                 _logger.LogInformation("Cancelled in-flight run {RunId}", runId);
             }
@@ -566,6 +577,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         // the parent pool's setting, but the ordering belongs to whichever pool this dispatch will queue on, and
         // a child's chain must stay separate from its parent's.
         var ticket = slots.TakeTicket();
+        var dispatch = new InflightDispatch(runCts);
         var completion = Task.Run(async () =>
         {
             var acquired = false;
@@ -600,7 +612,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 _executingRuns.Register(chatId, run.Id);
 
                 await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token,
-                    cancelReason: () => CancelReasonFor(run.Id)).ConfigureAwait(false);
+                    cancelReason: () => CancelReasonFor(dispatch)).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -610,9 +622,10 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 {
                     try
                     {
+                        var reason = CancelReasonFor(dispatch);
                         await _agentRunService.FailAsync(
-                            run.Id, ShutdownInterruptedFailure, cancelled: true, CancellationToken.None,
-                            FailureMapper.ForReason(ShutdownInterruptedFailure)).ConfigureAwait(false);
+                            run.Id, reason, cancelled: true, CancellationToken.None,
+                            FailureMapper.ForReason(reason)).ConfigureAwait(false);
                     }
                     catch (Exception ex) { _logger.LogWarning(ex, "Failed to settle interrupted headless run {RunId}", run.Id); }
                 }
@@ -653,7 +666,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             }
         }, CancellationToken.None);
 
-        _inflight[run.Id] = (runCts, completion);
+        dispatch.Completion = completion;
+        _inflight[run.Id] = dispatch;
         return new HeadlessRunHandle(run.Id, chatId, completion);
     }
 
@@ -785,10 +799,12 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 declineToolApproval && !chatJob ? null : approvedTool,
                 ReplayOnce: chatJob && approvedTool is not null && !declineToolApproval,
                 ReplayDeclined: chatJob && approvedTool is not null && declineToolApproval);
+            var dispatch = new InflightDispatch(runCts);
             var completion = Task.Run(
-                () => RunResumedDispatchAsync(plan, runCts, ticket, steerCancel), CancellationToken.None);
+                () => RunResumedDispatchAsync(plan, dispatch, ticket, steerCancel), CancellationToken.None);
 
-            _inflight[run.Id] = (runCts, completion);
+            dispatch.Completion = completion;
+            _inflight[run.Id] = dispatch;
             return true;
         }
         catch (Exception ex)
@@ -1057,9 +1073,10 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// <summary>The resumed dispatch itself: re-acquire a slot, build the scope, and hand the run to the
     /// orchestrator. Every exit re-parks or settles the row, so a claimed run never dangles Running.</summary>
     private async Task RunResumedDispatchAsync(
-        ResumeDispatchPlan plan, CancellationTokenSource runCts, RunSlotPool.Ticket? ticket, Action steerCancel)
+        ResumeDispatchPlan plan, InflightDispatch dispatch, RunSlotPool.Ticket? ticket, Action steerCancel)
     {
         var run = plan.Run;
+        var runCts = dispatch.Cts;
         var acquired = false;
         var started = false;
         try
@@ -1094,7 +1111,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // only way it can get there, since the claim already NULLed the envelope it came from.
             await orchestrator.RunAsync(run, executor, plan.Persona, plan.Provider, plan.Budget, runCts.Token,
                     resume: true, nudge: plan.Nudge, parkReason: plan.ParkReason,
-                    cancelReason: () => CancelReasonFor(run.Id))
+                    cancelReason: () => CancelReasonFor(dispatch))
                 .ConfigureAwait(false); // resume:true → drains the Pending remainder; re-plans only for
                                         // A needs-goal park with no step rows
         }
@@ -1102,7 +1119,17 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         {
             // Cancel during resume before entering the orchestrator: the run was CAS'd to Running by
             // the claim, so re-park it (rather than leave it dangling Running) — it stays resumable.
-            if (!started)
+            // A cancel that names its reason, a supersede, is terminal instead.
+            if (!started && dispatch.CancelReason is { } reason)
+            {
+                try
+                {
+                    await _agentRunService.FailAsync(run.Id, reason, cancelled: true, CancellationToken.None,
+                        FailureMapper.ForReason(reason)).ConfigureAwait(false);
+                }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to settle cancelled resume {RunId}", run.Id); }
+            }
+            else if (!started)
                 await ReParkInterruptedResumeAsync(run.Id, plan.ParkReason).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1296,7 +1323,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
         try { _shutdownCts.Cancel(); }
         catch (Exception ex) { _logger.LogWarning(ex, "Headless launcher shutdown cancel threw"); }
 
-        var tasks = _inflight.Values.Select(v => v.Task).ToArray();
+        var tasks = _inflight.Values.Select(v => v.Completion).ToArray();
         if (tasks.Length == 0) return;
 
         try
@@ -1504,7 +1531,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             {
                 // No linked shutdown token deliberately: this races _shutdownCts's own disposal, and StopAsync
                 // already awaits every _inflight task, so a shutdown cannot be left waiting on this one.
-                await entry.Task.WaitAsync(_unwindBeforeTeardown).ConfigureAwait(false);
+                await entry.Completion.WaitAsync(_unwindBeforeTeardown).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -1548,9 +1575,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// </summary>
     private void RemoveInflight(Guid runId, CancellationTokenSource ownCts)
     {
-        if (_inflight.TryGetValue(runId, out var entry) && ReferenceEquals(entry.Cts, ownCts)
-            && _inflight.TryRemove(new KeyValuePair<Guid, (CancellationTokenSource Cts, Task Task)>(runId, entry)))
-            _cancelReasons.TryRemove(runId, out _);
+        if (_inflight.TryGetValue(runId, out var entry) && ReferenceEquals(entry.Cts, ownCts))
+            _inflight.TryRemove(new KeyValuePair<Guid, InflightDispatch>(runId, entry));
     }
 
     /// <summary>
