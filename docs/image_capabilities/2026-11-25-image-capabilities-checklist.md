@@ -17,7 +17,7 @@ little standalone value, unblocks a High.
 
 ## Steps
 
-- [ ] **0 · Image gate reads the turn's provider** — `AssistantProviderTakesImagesAsync` resolves the
+- [x] **0 · Image gate reads the turn's provider** — `AssistantProviderTakesImagesAsync` resolves the
   active persona and then `AssistantTurnProvider.ResolveAsync`, with tests for a persona pinned to a
   bring-your-own-key provider. Plan Task 1.
   *Deps:* none · *Effort:* XS · *Value:* High

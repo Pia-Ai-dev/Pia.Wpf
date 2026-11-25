@@ -30,6 +30,7 @@ public sealed class AssistantViewModelScreenCaptureTests
     private readonly IChatSessionManager _manager = Substitute.For<IChatSessionManager>();
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IProviderService _providers = Substitute.For<IProviderService>();
+    private readonly IPersonaService _personas = Substitute.For<IPersonaService>();
     private readonly ILocalizationService _localization = Substitute.For<ILocalizationService>();
     private readonly IDialogService _dialogs = Substitute.For<IDialogService>();
     private readonly Wpf.Ui.ISnackbarService _snackbar = Substitute.For<Wpf.Ui.ISnackbarService>();
@@ -472,6 +473,56 @@ public sealed class AssistantViewModelScreenCaptureTests
         await _dialogs.DidNotReceive().ShowScreenCapturePickerDialogAsync(Arg.Any<ScreenCapturePickerViewModel>());
     }
 
+    [Fact]
+    public async Task Availability_FollowsThePersonasPinnedProvider_NotTheModeDefault()
+    {
+        UsePinnedByokPersona();
+        var vm = CreateSut();
+        await vm.PendingScreenCaptureAvailabilityRefresh;
+        Assert.False(vm.IsScreenCaptureAvailable);
+    }
+
+    [Fact]
+    public async Task Availability_RefreshesWhenThePersonaSwitchIsSaved()
+    {
+        var vm = CreateSut();
+        await vm.PendingScreenCaptureAvailabilityRefresh;
+        Assert.True(vm.IsScreenCaptureAvailable);
+
+        UsePinnedByokPersona();
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(_settings, new AppSettings());
+        await vm.PendingScreenCaptureAvailabilityRefresh;
+        Assert.False(vm.IsScreenCaptureAvailable);
+    }
+
+    [Fact]
+    public async Task Availability_RefreshesWhenTheActivePersonaIsEdited()
+    {
+        var vm = CreateSut();
+        await vm.PendingScreenCaptureAvailabilityRefresh;
+
+        UsePinnedByokPersona();
+        _personas.PersonasChanged += Raise.Event();
+        await vm.PendingScreenCaptureAvailabilityRefresh;
+        Assert.False(vm.IsScreenCaptureAvailable);
+    }
+
+    [Fact]
+    public async Task Send_WithAnImage_AfterSwitchingToAPersonaPinnedToByok_IsRefused_AndKeepsTheImage()
+    {
+        var vm = CreateSut();
+        await vm.PendingScreenCaptureAvailabilityRefresh;
+        vm.PendingAttachments.Add(Attachment());
+        vm.InputText = "what is this?";
+        UsePinnedByokPersona();
+
+        await vm.SendMessageCommand.ExecuteAsync(null);
+
+        _ = _localization.Received(1)["Msg_File_ImageProviderUnsupported"];
+        Assert.Single(vm.PendingAttachments);
+        await _manager.DidNotReceiveWithAnyArgs().StartTurnAsync(default!, default!, default);
+    }
+
     // ---- the provider gate at send time --------------------------------------------------------
 
     [Fact]
@@ -542,6 +593,19 @@ public sealed class AssistantViewModelScreenCaptureTests
                 return pending.Task;
             });
         return cancelled;
+    }
+
+    private void UsePinnedByokPersona()
+    {
+        var byokId = Guid.NewGuid();
+        _providers.GetProviderAsync(byokId).Returns(new AiProvider
+        {
+            Name = "Byok",
+            Endpoint = "https://example.invalid",
+            ProviderType = AiProviderType.OpenAI,
+        });
+        _personas.ResolveActiveAsync(WindowMode.Assistant, Arg.Any<UserOperatingMode>())
+            .Returns(new Persona { Name = "P", SystemPrompt = "", PreferredProviderId = byokId });
     }
 
     private void UsePiaCloud() => _providers.GetDefaultProviderForModeAsync(WindowMode.Assistant).Returns(PiaCloud());
@@ -651,7 +715,7 @@ public sealed class AssistantViewModelScreenCaptureTests
             _logger,
             Substitute.For<IAiClientService>(),
             _providers,
-            Substitute.For<IPersonaService>(),
+            _personas,
             _settings,
             Substitute.For<IOutputService>(),
             Substitute.For<IPluginService>(),

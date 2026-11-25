@@ -1011,8 +1011,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
     // Deliberately does NOT re-seed the lever: the sync pull loop raises this on every cycle, and a re-seed
     // there undoes the run-settled fall-back to Chat minutes after it happened.
-    private void OnPersonasChanged(object? sender, EventArgs e) =>
+    private void OnPersonasChanged(object? sender, EventArgs e)
+    {
         LoadPersonasAsync().SafeFireAndForget(_logger);
+        StartScreenCaptureAvailabilityRefresh();
+    }
 
     // Set by the withdrawal event, consumed by the very next LoadPersonasAsync. Deliberately not
     // persisted: clearing the dangling per-mode selection inside
@@ -2226,10 +2229,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         AiProvider? provider = null;
         try
         {
-            var settings = await _settingsService.GetSettingsAsync();
-            var persona = await _personaService.ResolveActiveAsync(
-                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
-            provider = await AssistantTurnProvider.ResolveAsync(persona, _providerService);
+            provider = await ResolveTurnProviderAsync();
         }
         catch (Exception ex)
         {
@@ -2328,7 +2328,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         try
         {
-            var provider = await _providerService.GetDefaultProviderForModeAsync(WindowMode.Assistant);
+            var provider = await ResolveTurnProviderAsync();
             return provider?.ProviderType == AiProviderType.PiaCloud;
         }
         catch (Exception ex)
@@ -2336,6 +2336,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             _logger.LogWarning("Could not resolve the Assistant provider for an image ({Type})", ex.GetType().Name);
             return false;
         }
+    }
+
+    private async Task<AiProvider?> ResolveTurnProviderAsync()
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        var persona = await _personaService.ResolveActiveAsync(
+            WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+        return await AssistantTurnProvider.ResolveAsync(persona, _providerService);
     }
 
     private void WarnImageProviderUnsupported() =>
