@@ -31,7 +31,14 @@
   <resheader name="version"><value>1.3</value></resheader>
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="JobTools_QueuedChanges" xml:space="preserve"><value>{0} change(s) from the chat wait for the next step.</value></data>
+  <data name="JobTools_ChangedFromChat" xml:space="preserve"><value>Changed in chat</value></data>
   <!-- Navigation -->
+  <data name="RunReplies_StateStopped" xml:space="preserve"><value>Stopped</value></data>
+  <data name="RunReplies_StoppedNote" xml:space="preserve"><value>You stopped this job.</value></data>
+  <data name="RunReplies_EarlierAttempts" xml:space="preserve"><value>Earlier attempts ({0})</value></data>
+  <data name="RunRegenerate_BlockedTitle" xml:space="preserve"><value>Stop the job first</value></data>
+  <data name="RunRegenerate_BlockedPaused" xml:space="preserve"><value>A paused job sits below this answer. Stop the job, then regenerate.</value></data>
   <data name="Memory_Charter" xml:space="preserve"><value>What this knowledge base is about</value></data>
   <data name="Memory_CharterDraft" xml:space="preserve"><value>Draft one for me</value></data>
   <data name="Memory_CharterDrafting" xml:space="preserve"><value>Reading your sources…</value></data>
@@ -136,7 +143,6 @@
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Send (Enter)</value></data>
   <data name="Assistant_Working_Tooltip" xml:space="preserve"><value>Working on the last message…</value></data>
-  <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Run in background</value></data>
   <data name="Assistant_RunActive_Hint" xml:space="preserve"><value>A run is writing to this chat. Sending resumes when it finishes.</value></data>
   <data name="Assistant_PlanApprovalActive_Hint" xml:space="preserve"><value>Approve or reject the proposed plan before sending another message.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>This looks too short to run as a goal. Add a few more words so it can be planned.</value></data>
@@ -1202,6 +1208,14 @@
   <!-- Batch 08 G8: the header Pause button and its in-flight label. -->
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pause</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Pausing…</value></data>
+  <data name="Run_Action_Stop" xml:space="preserve"><value>Stop</value></data>
+  <data name="Run_Stop_Error_Refused" xml:space="preserve"><value>This job could not be stopped from here.</value></data>
+  <data name="Run_Check_Title" xml:space="preserve"><value>Check the result</value></data>
+  <data name="Run_Check_Checking" xml:space="preserve"><value>Checking…</value></data>
+  <data name="Run_Check_Passed" xml:space="preserve"><value>Passed</value></data>
+  <data name="Run_Check_Unverified" xml:space="preserve"><value>Not confirmed</value></data>
+  <data name="Run_Check_NotRun" xml:space="preserve"><value>Not run</value></data>
+  <data name="Assistant_LiveRunActivity_Tooltip" xml:space="preserve"><value>Show the job in the chat</value></data>
   <!-- Batch 06: promotion. A clean run's files are published automatically before it is marked complete; a
        failed or cancelled one keeps them in its workspace and offers them here. In worktree mode nothing is
        copied at all — the run branch IS the deliverable, so the panel says where it is. -->
@@ -1856,4 +1870,49 @@
   <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Your Pia Cloud account has been deleted. Do you also want to remove its data from this device? Clearing restarts Pia. This cannot be undone.</value></data>
   <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Clear this device</value></data>
   <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Keep on this device</value></data>
+  <data name="RunStepDetail_Outcome_Ok" xml:space="preserve"><value>ok</value></data>
+  <data name="RunStepDetail_Loading" xml:space="preserve"><value>Loading…</value></data>
+  <data name="RunStepDetail_Input" xml:space="preserve"><value>Input</value></data>
+  <data name="RunStepDetail_Result" xml:space="preserve"><value>Result</value></data>
+  <data name="RunStepDetail_NoInput" xml:space="preserve"><value>No input.</value></data>
+  <data name="RunStepDetail_State_Truncated" xml:space="preserve"><value>Shortened: only the start was kept.</value></data>
+  <data name="RunStepDetail_State_Omitted" xml:space="preserve"><value>Too large: not kept.</value></data>
+  <data name="RunStepDetail_State_Missing" xml:space="preserve"><value>No result was recorded.</value></data>
+  <data name="RunStepDetail_NotRecordedRound" xml:space="preserve"><value>Not kept: this round came after the job reached its detail limit.</value></data>
+  <data name="RunStepDetail_NoRecord" xml:space="preserve"><value>No details were kept for this call.</value></data>
+  <data name="RunStepDetail_ReadFailed" xml:space="preserve"><value>The details could not be read.</value></data>
+  <data name="RunAsk_Tool_Question" xml:space="preserve">
+    <value>Allow {0}?</value>
+  </data>
+  <data name="RunAsk_AllowOnce" xml:space="preserve">
+    <value>Allow once</value>
+  </data>
+  <data name="RunAsk_AllowForSession" xml:space="preserve">
+    <value>Allow for this session</value>
+  </data>
+  <data name="RunAsk_AlwaysAllow" xml:space="preserve">
+    <value>Always allow</value>
+  </data>
+  <data name="RunAsk_Deny" xml:space="preserve">
+    <value>Deny</value>
+  </data>
+  <data name="RunAsk_Activity_Waiting" xml:space="preserve">
+    <value>Waiting for your decision on {0}</value>
+  </data>
+  <data name="RunAsk_Flow_Body" xml:space="preserve">
+    <value>A running job is waiting for your decision.</value>
+  </data>
+  <data name="RunAsk_Question_Label" xml:space="preserve">
+    <value>The job asks</value>
+  </data>
+  <data name="RunAsk_Answer_Placeholder" xml:space="preserve">
+    <value>Your answer</value>
+  </data>
+  <data name="RunAsk_SendAnswer" xml:space="preserve">
+    <value>Answer</value>
+  </data>
+  <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>More send options</value></data>
+  <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Run as a background task in a new chat</value></data>
+  <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Here is a plan for this:</value></data>
+  <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>The plan could not be saved.</value></data>
 </root>

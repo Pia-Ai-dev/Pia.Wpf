@@ -259,6 +259,12 @@ public interface IAgentRunService
     /// </summary>
     Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default);
 
+    /// <summary>Resume claim that also fails when the park envelope is no longer the one the caller read.</summary>
+    Task<bool> TryClaimParkAsync(Guid runId, AgentRunState from, string? expectedExtraJson, CancellationToken ct = default);
+
+    /// <summary>Settle a parked run as Cancelled; loses to any writer that moved it off the park first.</summary>
+    Task<bool> TryCancelParkedAsync(Guid runId, CancellationToken ct = default);
+
     /// <summary>Reject a plan-approval park: CAS straight to <see cref="AgentRunState.Cancelled"/>, gated on the
     /// pause reason as well as the state so a stale click cannot hit a run that re-parked on another question.</summary>
     Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default);
@@ -406,9 +412,8 @@ public interface IAgentRunService
     /// omits is DROPPED (there is no delete verb — dropping is what omission means, and D3's UI submits the
     /// whole list).
     /// <para>
-    /// GATED ON <see cref="AgentRunState.Paused"/> — one state, never a set and never a range (D7). That gate
-    /// is the design, not an accident of the UI: it removes D3's mutation-versus-drain race BY CONSTRUCTION,
-    /// because the only writer of a paused run's plan is the user. A mutation landing between the loop's
+    /// GATED ON <see cref="AgentRunState.Paused"/> or a plan-approval park — the two states where nothing
+    /// drains the plan, which removes the mutation-versus-drain race BY CONSTRUCTION. A mutation landing between the loop's
     /// <c>NextPendingStepAsync</c> and its step execution would otherwise run a step that is no longer in the
     /// plan, and one landing during the step's terminal write would delete the in-flight row so the write
     /// silently updates 0 rows — no ledger entry, no event, no log.
@@ -439,6 +444,9 @@ public interface IAgentRunService
     /// </summary>
     Task<PlanMutationResult> ApplyPlanMutationAsync(
         Guid runId, IReadOnlyList<PlanStepEdit> pendingSteps, CancellationToken ct = default);
+
+    /// <summary>Stops or restarts the ledger's worked-time clock while a running step waits on the user.</summary>
+    void SetWorkClockRunning(Guid runId, bool running) { }
 
     /// <summary>For 1.4 UI/Flow; no consumers in 1.1.</summary>
     event EventHandler<AgentRunChangedEventArgs> RunChanged;

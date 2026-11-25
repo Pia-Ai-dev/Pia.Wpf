@@ -31,7 +31,7 @@ public class McpToolAnnotationHintTests
                IsTopLevelUserRun: topLevelUserRun,
                // An MCP tool is never the scratch arm's business: it is ToolClass.External, which that arm
                // excludes outright.
-               IsScratchTarget: false);
+               IsScratchTarget: false, IsChatJob: false);
 
     // ---- the extraction: which annotation shapes count ------------------------------------------------
 
@@ -173,7 +173,7 @@ public class McpToolAnnotationHintTests
             IsAllowlisted: false, HasSessionGrant: true, HasStandingGrant: false,
             IsNamedGrant: false, HasNamedDenial: false,
             Policy: new RunAutonomyPolicy([ToolClass.External]), CanPark: true, IsTopLevelUserRun: true,
-            IsScratchTarget: false));
+            IsScratchTarget: false, IsChatJob: false));
 
         // Neither the policy, nor the session tier, nor the park will take it.
         Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);

@@ -19,7 +19,7 @@ namespace Pia.Tests.Services;
 
 /// <summary>Parking an ungranted call is for tools a human could legitimately approve, so every guard here is written to red if
 /// the park gets greedier. Only the provider stream, the plugin route and the planner are doubles.</summary>
-public sealed class UnattendedApprovalParkTests : IDisposable
+public sealed partial class UnattendedApprovalParkTests : IDisposable
 {
     private readonly string _dir;
     private readonly string _runsBase;
@@ -115,6 +115,110 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.Equal(AgentRunState.WaitingForInput, run.State);
         Assert.Equal("write_file", PauseMember(run, "tool"));
 
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ApprovingAChatJobsPark_KeepsTheChatJobMark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, dispatchScript: [[new("write_file")], []]);
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False((await GetRunAsync(handle.RunId)).IsChatJob());
+        await _runs.UpdatePolicyJsonAsync(
+            handle.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var run = await GetRunAsync(handle.RunId);
+        Assert.True(probe.Executed);
+        Assert.DoesNotContain("write_file", HeadlessRunLauncher.TryRestoreGrantEnvelope(run.PolicyJson)!);
+        Assert.True(run.IsChatJob());
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AChatJobResumedFromAToolApproval_QueuesForASlotLikeOtherRuns()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, dispatchScript: [[new("write_file")], []]);
+
+        var job = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await job.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+
+        var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
+            .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(launcher)!;
+        var held = slots.Width;
+        for (var i = 0; i < held; i++)
+            await slots.WaitAsync(ct);
+
+        try
+        {
+            Assert.True(await launcher.ResumeAsync(job.RunId, ct: ct));
+            await Task.Delay(300, ct);
+            Assert.Single(probe.Dispatches);
+            Assert.Equal(AgentRunState.Running, (await GetRunAsync(job.RunId)).State);
+        }
+        finally
+        {
+            for (var i = 0; i < held; i++)
+                slots.Release();
+        }
+
+        await AwaitSettledAsync(job.RunId);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(job.RunId)).State);
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AnApprovedChatJob_StartsWithoutAFreeSlot_WhileAnotherRunKeepsQueueing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, dispatchScript: [[new("write_file")], [new("write_file")], [], []]);
+
+        var job = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.User, GrantedWrites: []), ct);
+        await job.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        var routine = await launcher.LaunchAsync(new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await routine.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await _runs.UpdatePolicyJsonAsync(
+            job.RunId, HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, chatJob: true), ct);
+        await _runs.PauseAsync(job.RunId, AgentRunOrchestrator.PlanApprovalReason, ct);
+
+        var slots = (RunSlotPool)typeof(HeadlessRunLauncher)
+            .GetField("_slots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(launcher)!;
+        var held = slots.Width;
+        for (var i = 0; i < held; i++)
+            await slots.WaitAsync(ct);
+
+        try
+        {
+            Assert.True(await launcher.ResumeAsync(routine.RunId, ct: ct));
+            Assert.True(await launcher.ResumeAsync(job.RunId, ct: ct));
+            await AwaitSettledAsync(job.RunId);
+
+            Assert.Equal(AgentRunState.Completed, (await GetRunAsync(job.RunId)).State);
+            Assert.Equal(AgentRunState.Running, (await GetRunAsync(routine.RunId)).State);
+        }
+        finally
+        {
+            for (var i = 0; i < held; i++)
+                slots.Release();
+        }
+
+        await AwaitSettledAsync(routine.RunId);
+        Assert.Equal(AgentRunState.Completed, (await GetRunAsync(routine.RunId)).State);
         await launcher.StopAsync(CancellationToken.None);
     }
 
@@ -357,7 +461,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
         await AwaitSettledAsync(handle.RunId);
 
-        // The park's dispatch, then the re-run's. Both snapshots predate the terminal purge.
+        // The park's dispatch, then the re-run's. Both snapshots predate the settle's approval-record purge.
         Assert.Equal(2, probe.Dispatches.Count);
         Assert.Equal(0, probe.Dispatches[0].ExecutedCount);
         var resumed = probe.Dispatches[1];
@@ -384,6 +488,105 @@ public sealed class UnattendedApprovalParkTests : IDisposable
             "the seeded content must be capped, not the persisted 200 000 chars: " + seededContent.Length);
         Assert.Contains(content, row.ArgumentsJson!, StringComparison.Ordinal);
 
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AnApprovedCallParkedInAnotherStep_IsDiscarded_NotReplayedIntoTheStepAboutToRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.False(probe.Executed);
+
+        // Stands in for a plan change that removed the parked step: its rows now belong to no step that runs.
+        using (var connection = new SqliteConnection(_ctx.ConnectionString))
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "UPDATE AgentToolExchanges SET StepId = @StepId WHERE Kind IN (3, 4);";
+            cmd.Parameters.AddWithValue("@StepId", Guid.NewGuid().ToString());
+            cmd.ExecuteNonQuery();
+        }
+
+        Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
+        await AwaitSettledAsync(handle.RunId);
+
+        var resumed = probe.Dispatches[1];
+        Assert.Equal(0, resumed.ExecutedCount);
+        var row = Assert.Single(resumed.Rows, r => r.Kind == AgentToolExchangeKind.ParkedCall);
+        Assert.Null(row.ReplayedAt);
+        Assert.NotNull(row.SupersededAt);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AResumeThatMayOnlyAnswerAQuestion_DoesNotClaimAToolApprovalPark()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        Assert.False(await launcher.ResumeAsync(handle.RunId, "yes", ct,
+            parkReasonAllowed: r => r == AgentRunOrchestrator.NeedsInputReason));
+        var run = await GetRunAsync(handle.RunId);
+        Assert.Equal(AgentRunState.WaitingForInput, run.State);
+        Assert.Equal(AgentRunOrchestrator.ToolApprovalReason, RunPauseEnvelope.ReadReason(run));
+        Assert.False(probe.Executed);
+
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StoppingAParkedRun_SettlesItCancelled_AndPurgesItsParkedCalls()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        Assert.Single(await _exchanges!.GetReplayableAsync(handle.RunId, "write_file", ct));
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+
+        Assert.Equal(AgentRunState.Cancelled, (await GetRunAsync(handle.RunId)).State);
+        Assert.Empty(await _exchanges.GetReplayableAsync(handle.RunId, "write_file", ct));
+        await launcher.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StoppingARunBetweenAResumeClaimAndItsDispatch_StillStopsIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new ToolProbe("write_file");
+        var (launcher, _) = Build(probe, firstPath: "report.md");
+
+        var handle = await launcher.LaunchAsync(
+            new HeadlessRunRequest("g", AgentRunTrigger.Schedule, GrantedWrites: []), ct);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(15), ct);
+
+        // Claimed but not yet registered: Running with no dispatch entry, then re-parked by its failed start.
+        Assert.True(await _runs.TryBeginResumeAsync(handle.RunId, ct));
+        var repark = Task.Run(async () =>
+        {
+            await Task.Delay(200, ct);
+            await _runs.PauseAsync(handle.RunId, "step-cap", ct);
+        }, ct);
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+        await repark;
+        Assert.Equal(AgentRunState.Cancelled, (await GetRunAsync(handle.RunId)).State);
         await launcher.StopAsync(CancellationToken.None);
     }
 
@@ -627,7 +830,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         Assert.True(await launcher.ResumeAsync(handle.RunId, ct: ct));
         await AwaitSettledAsync(handle.RunId);
 
-        // Off the re-run's snapshot: the terminal purge takes the rows before the test could read them.
+        // Off the re-run's snapshot: the settle purges the parked rows before the test could read them.
         var resumed = probe.Dispatches[1];
         Assert.NotNull(Assert.Single(resumed.Rows, r => r.ToolName == "write_file").ReplayedAt);
 
@@ -1587,7 +1790,7 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         bool faultOnExecute = false, string executeResult = ExecuteResult, ITokenMapService? tokenMap = null,
         IReadOnlyList<IReadOnlyList<ScriptedCall>>? dispatchScript = null,
         string? pluginName = null, string description = "desc", string? warning = null,
-        bool recordRounds = false, Exception? faultAfterFirstCallWith = null)
+        bool recordRounds = false, Exception? faultAfterFirstCallWith = null, IRunAskBroker? askBroker = null)
     {
         List<ScriptedCall> everyDispatch = [new(probe.ToolName, firstPath, firstContent)];
         if (secondToolName is not null)
@@ -1604,8 +1807,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
                 cancellationToken: Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
-                // Snapshotted per dispatch: the terminal EndRunAsync purges the rows, so a settled run has none
-                // left to read, and the request captured HERE is the one the replay had to land ahead of.
+                // Snapshotted per dispatch: the terminal EndRunAsync purges the parked rows, so a settled run has
+                // none left to read, and the request captured HERE is the one the replay had to land ahead of.
                 probe.Dispatches.Add(new DispatchSnapshot(
                     [.. ci.ArgAt<IList<ChatMessage>>(0)], ReadExchangeRows(), probe.ExecutedNames.Count));
                 // Resolved here rather than inside the iterator, so the dispatch number is the one that was
@@ -1685,6 +1888,8 @@ public sealed class UnattendedApprovalParkTests : IDisposable
         if (sessionGrants is not null)
             services.AddSingleton(sessionGrants);
         services.AddSingleton(permissions ?? Substitute.For<IToolPermissionService>());
+        if (askBroker is not null)
+            services.AddSingleton(askBroker);
         // Real wiring, like the audit sink above: what a park leaves behind for a Continue press to replay is
         // one of the facts, and the executor resolves this off the container.
         _exchanges = new AgentToolExchangeStore(_ctx, NullLogger<AgentToolExchangeStore>.Instance);

@@ -32,6 +32,9 @@ public enum RunProgressState
     /// with the spinner LIT (children are working) and offers no Continue: the run is not parked for the
     /// user, and <c>TryBeginResumeAsync</c> would not accept it anyway.</summary>
     WaitingForChildren,
+
+    // Cancelled by the user; a cancel that carries a reason (a child failed, shutdown) stays Failed.
+    Stopped,
 }
 
 /// <summary>
@@ -98,6 +101,8 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(ShowPauseButton))]
     [NotifyPropertyChangedFor(nameof(ShowPauseFirstNote))]
     [NotifyPropertyChangedFor(nameof(CanMutatePlan))]
+    [NotifyPropertyChangedFor(nameof(CanStop))]
+    [NotifyPropertyChangedFor(nameof(ShowStopButton))]
     [NotifyCanExecuteChangedFor(nameof(ContinueCommand))]
     // DeclineToolCommand is deliberately NOT here: its answer keys off IsToolApprovalPause (set in Project
     // on the same RunChanged that moves State), and notifying it on a bare State flip that leaves the park
@@ -124,17 +129,26 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private bool _wasLive;
 
+    private bool _couldStop;
+
     partial void OnStateChanged(RunProgressState value)
     {
         var terminal = value is RunProgressState.Completed or RunProgressState.TruncatedCompleted
-            or RunProgressState.Failed;
+            or RunProgressState.Failed or RunProgressState.Stopped;
         if (terminal && _wasLive)
         {
             RunSettled?.Invoke();
-            // Not Failed: the failure note and its fix action sit in the body the chevron folds.
-            if (value != RunProgressState.Failed) IsCardExpanded = false;
+            // Not Failed or Stopped: their note sits in the body the chevron folds.
+            if (value is not (RunProgressState.Failed or RunProgressState.Stopped)) IsCardExpanded = false;
         }
         _wasLive = !terminal;
+
+        // Only on a real flip: Running and Paused are both stoppable, and a no-op notify reads as a change.
+        if (CanStop != _couldStop)
+        {
+            _couldStop = CanStop;
+            StopCommand.NotifyCanExecuteChanged();
+        }
 
         // Running, not Planning too: a planning turn records nothing under a step, so opening there would
         // flash "nothing was recorded" before the first step starts.
@@ -222,7 +236,109 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(ShowNudgeBox))]
     [NotifyPropertyChangedFor(nameof(ContinueLabel))]
     [NotifyCanExecuteChangedFor(nameof(RejectPlanCommand))]
+    [NotifyPropertyChangedFor(nameof(ShowStopButton))]
+    [NotifyPropertyChangedFor(nameof(CanStop))]
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     private bool _isPlanApprovalPause;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanStop))]
+    [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    private bool _isStopping;
+
+    [ObservableProperty]
+    private string? _stopNote;
+
+    // A plan-approval park already offers Discard, which is the stop for a run that has not started.
+    private bool IsStoppableState =>
+        !IsPlanApprovalPause
+        && State is RunProgressState.Planning or RunProgressState.Running or RunProgressState.WaitingForChildren
+            or RunProgressState.WaitingForInput or RunProgressState.Paused;
+
+    public bool ShowStopButton => IsStoppableState;
+
+    public bool CanStop => IsStoppableState && !IsStopping;
+
+    /// <summary>Cancels a step running on the live session, which the headless cancel cannot reach.</summary>
+    public Func<bool>? LiveStopFallback { get; set; }
+
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private async Task Stop()
+    {
+        StopNote = null;
+        IsStopping = true;
+        try
+        {
+            if (await _resumeService.CancelRunAsync(_runId) || LiveStopFallback?.Invoke() == true)
+                return; // the row's move to a terminal state clears IsStopping
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Run {RunId} stop failed from panel", _runId);
+        }
+
+        StopNote = _localization["Run_Stop_Error_Refused"];
+        IsStopping = false;
+    }
+
+    [ObservableProperty]
+    private Guid? _firstMessageId;
+
+    [ObservableProperty]
+    private Guid? _lastMessageId;
+
+    [ObservableProperty]
+    private DateTime? _runCreatedAt;
+
+    [ObservableProperty]
+    private bool _showCheckRow;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCheckPending))]
+    [NotifyPropertyChangedFor(nameof(IsChecking))]
+    [NotifyPropertyChangedFor(nameof(HasCheckGlyph))]
+    private AgentStepStatus _checkStatus;
+
+    [ObservableProperty]
+    private string? _checkOutcome;
+
+    public bool IsCheckPending => CheckStatus == AgentStepStatus.Pending;
+
+    public bool IsChecking => CheckStatus == AgentStepStatus.Running;
+
+    public bool HasCheckGlyph => CheckStatus is AgentStepStatus.Done or AgentStepStatus.Failed or AgentStepStatus.Skipped;
+
+    // The check row carries the publish result, so the loose note line only speaks for a run without one.
+    public bool ShowLoosePublishNote => PublishNote is not null && !ShowCheckRow;
+
+    public string? CheckPublishNote => ShowCheckRow ? PublishNote : null;
+
+    partial void OnShowCheckRowChanged(bool value) => NotifyPublishNoteSlots();
+
+    partial void OnPublishNoteChanged(string? value) => NotifyPublishNoteSlots();
+
+    private void NotifyPublishNoteSlots()
+    {
+        OnPropertyChanged(nameof(ShowLoosePublishNote));
+        OnPropertyChanged(nameof(CheckPublishNote));
+    }
+
+    // The verifier skips a one-step plan without an artifact, so only longer plans get a row that promises a check.
+    private void ProjectCheckRow(AgentRun run, (bool Truncated, string? Reason) truncation)
+    {
+        ShowCheckRow = run.RunShape == RunShape.Planned && run.Plan.Count >= 2;
+        (CheckStatus, CheckOutcome) = run.State switch
+        {
+            AgentRunState.Verifying => (AgentStepStatus.Running, _localization["Run_Check_Checking"]),
+            AgentRunState.Completed when !truncation.Truncated =>
+                (AgentStepStatus.Done, _localization["Run_Check_Passed"]),
+            AgentRunState.Completed when truncation.Reason == AgentRunOrchestrator.UnverifiedTruncationReason =>
+                (AgentStepStatus.Failed, _localization["Run_Check_Unverified"]),
+            AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled =>
+                (AgentStepStatus.Skipped, _localization["Run_Check_NotRun"]),
+            _ => (AgentStepStatus.Pending, null),
+        };
+    }
 
     public bool CanDeclineTool => IsToolApprovalPause && !IsResuming;
 
@@ -238,7 +354,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// collapsed element. The in-flight window is not a flicker: <see cref="IsPausing"/> stays true until
     /// <see cref="Project"/> observes the run actually leaving the pausable state.
     /// </summary>
-    public bool ShowDenyButton => IsToolApprovalPause;
+    public bool ShowDenyButton => IsToolApprovalPause && !IsParkedToolAsk;
 
     /// <summary>Mutually exclusive with <see cref="ShowDenyButton"/> by construction: a run parks on one reason.</summary>
     public bool ShowRejectPlanButton => IsPlanApprovalPause;
@@ -257,7 +373,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>See <see cref="ShowDenyButton"/>: visibility is the state gate, enabledness the in-flight one.
     /// <see cref="ShowNudgeBox"/> rides on this too, so a resume in flight does not yank the box out from under a
     /// note the user is still reading (<c>Continue</c> keeps <see cref="NudgeText"/> unless the resume started).</summary>
-    public bool ShowContinueButton => IsResumableState;
+    public bool ShowContinueButton => IsResumableState && !IsParkedToolAsk && !ShowUserInputAsk;
 
     /// <summary><c>Run_Action_ApprovePlan</c> is a separate key from <c>Run_Action_Approve</c>, which is the Flow
     /// surface's tool-approval label ("Allow").</summary>
@@ -267,7 +383,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     /// <summary>A steering note scoped to "the rest of THIS run" is meaningless before any step ran, and Approve
     /// would otherwise ship whatever sits in the box into <see cref="IAgentRunResumeService.ResumeAsync"/>.</summary>
-    public bool ShowNudgeBox => ShowContinueButton && !IsPlanApprovalPause;
+    public bool ShowNudgeBox => ShowContinueButton && !IsPlanApprovalPause && !ShowUserInputAsk;
 
     /// <summary>True while a user pause request is in flight — gates the Pause button against a double-click
     /// the same way <see cref="IsResuming"/> gates Continue. Cleared only once <see cref="Project"/> observes
@@ -320,7 +436,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// the OTHER, independent half: it greys out a settled row's buttons even while this is true. The
     /// service's own state read is the hard guard; this is the UI-visible affordance.
     /// </summary>
-    public bool CanMutatePlan => State == RunProgressState.Paused;
+    public bool CanMutatePlan => State == RunProgressState.Paused || IsEditableApprovalPark;
 
     /// <summary>
     /// gates the "Pause the run to change its plan." note. It used to be the INVERSE of
@@ -504,7 +620,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string? _toolActivity;
 
-    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity);
+    public bool HasToolActivity => !string.IsNullOrEmpty(ToolActivity) || IsAskingInPlace;
 
     /// <summary>The band opens itself once, when the run starts executing; re-opening it later would overrule
     /// a user who closed it mid-run.</summary>
@@ -750,8 +866,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         INavigationService? navigation = null,
         // The parked call's stored payload, for the approval disclosure — LAST again, same discipline.
         // Null ⇒ no detail ever loads, i.e. the panel is byte-identical to one without the store.
-        IAgentToolExchangeStore? toolCalls = null)
+        IAgentToolExchangeStore? toolCalls = null,
+        IRunAskBroker? askBroker = null,
+        IRunToolAnswerService? toolAnswers = null)
     {
+        _askBroker = askBroker;
+        _toolAnswers = toolAnswers;
+        AttachAsking();
         _toolCalls = toolCalls;
         _navigation = navigation;
         _themeService = themeService;
@@ -1044,8 +1165,17 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private void Project(AgentRun run, IReadOnlyList<AgentRun>? children = null)
     {
+        if (_disposed) return;
         var truncation = ReadTruncation(run);
         (State, IsTruncated) = MapState(run, truncation.Truncated);
+        FirstMessageId = run.FirstMessageId;
+        LastMessageId = run.LastMessageId;
+        RunCreatedAt = run.CreatedAt;
+        ProjectCheckRow(run, truncation);
+        if (State is RunProgressState.Completed or RunProgressState.TruncatedCompleted or RunProgressState.Failed
+            or RunProgressState.Stopped)
+            IsStopping = false;
+        StoppedNote = State == RunProgressState.Stopped ? _localization["RunReplies_StoppedNote"] : null;
 
         // Clear a pending user-pause request only once the run has left the state it was requested FROM —
         // CanPause's own explicit set, not a bare `State != Running`: a WaitingForChildren parent's cascade
@@ -1068,7 +1198,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // in ApplyWorkspaceOutcomeAsync); here the guard is simpler because ONLY a successful mutation clears
         // it otherwise, and a run that has since resumed and moved on has nothing left to say about a plan
         // edit that happened, or didn't, in a state it no longer occupies.
-        if (State != RunProgressState.Paused)
+        if (State != RunProgressState.Paused && !(State == RunProgressState.WaitingForInput && PlanEditableAtApproval))
             PlanMutationNote = null;
 
         TruncationNote = IsTruncated ? DescribeTruncation(truncation.Reason) : null;
@@ -1084,6 +1214,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         FailureLayerName = DescribeFailureLayer(_failureLayer);
         FailureActionLabel = DescribeFailureAction(_failureLayer);
         SyncSteps(run.Plan);
+        ApplyJobOverlay();
         CurrentActivity = ComputeActivity(run);
 
         // The deny beside Continue exists only for a tool-approval park — the one pause whose question a
@@ -1101,6 +1232,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
             _approvalDetailRead = false;
         }
         RefreshApprovalDerivation();
+        ProjectAsking(run);
 
         IsPlanApprovalPause = run.State == AgentRunState.WaitingForInput
             && RunPauseEnvelope.ReadReason(run) == AgentRunOrchestrator.PlanApprovalReason;
@@ -1128,6 +1260,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         // Here and not on the state change: a step advance leaves State on Running, and the next timeline row
         // only lands once step N+1's first call RETURNS — so the line would carry step N's tally until then.
         RefreshToolActivity();
+        ApplyReplies();
     }
 
     /// <summary>
@@ -1156,6 +1289,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 break;
 
             case RunProgressState.Failed:
+            case RunProgressState.Stopped:
                 // StoppedStepOrdinal, not CurrentStepOrdinal: a run that failed with every step already settled
                 // (the verify pass rejected the result) has no step to point at, and CurrentStepOrdinal's
                 // all-settled fallback would have the card claim "Stopped at step 4 of 4" over a plan that
@@ -1328,14 +1462,13 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     // R12 mapping. Verifying intentionally folds into Running here (keeps the spinner lit) while
     // ComputeActivity supplies its own "Checking the work…" line; WaitingForInput/Paused now render
-    // as their own distinct (non-spinning) states with a Continue affordance. Cancelled folds into
-    // the Failed-family visual.
+    // as their own distinct (non-spinning) states with a Continue affordance.
     private static (RunProgressState, bool) MapState(AgentRun run, bool truncated) => run.State switch
     {
         AgentRunState.Planning => (RunProgressState.Planning, false),
         AgentRunState.Running => (RunProgressState.Running, false),
         AgentRunState.Failed => (RunProgressState.Failed, false),
-        AgentRunState.Cancelled => (RunProgressState.Failed, false),
+        AgentRunState.Cancelled => (ReadFailureReason(run) is null ? RunProgressState.Stopped : RunProgressState.Failed, false),
         AgentRunState.WaitingForInput => (RunProgressState.WaitingForInput, false), // budget pause — offer Continue
         AgentRunState.Paused => (RunProgressState.Paused, false),                   // reserved user pause (Phase 4)
         // 07 an EXPLICIT arm, not the default. Falling through would render a delegating parent as the
@@ -1805,6 +1938,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     {
         _uiContext.Post(_ =>
         {
+            if (_disposed) return;
             // A resume that landed mid-read posts Project — which clears — ahead of this, so without the
             // re-check the box would reappear on a run that is no longer asking.
             if (!IsToolApprovalPause || !string.Equals(ApprovalToolName, toolName, StringComparison.Ordinal))
@@ -1881,6 +2015,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
                 RenderTimelineRows();
                 ApplyDecisionSummary(VisibleTimelineEvents().ToList());
                 RefreshToolActivity();
+                ApplyStepToolRows();
                 HasNoTimeline = !readFailed && Timeline.Count == 0;
             }
             finally
@@ -2413,7 +2548,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
     /// <summary>Only while the RUN is working. A run parked on the user must not tick: that would count
     /// their think time as latency, which is the reading the whole analysis warns against.</summary>
     private bool IsClockRunning => State is RunProgressState.Planning or RunProgressState.Running
-        or RunProgressState.WaitingForChildren;
+        or RunProgressState.WaitingForChildren && !IsAskingInPlace;
 
     // Only the sub-line is recomposed: it is the one surface carrying a number that moves without an event.
     // Internal so the advance can be driven without a Dispatcher to pump the timer.
@@ -2428,6 +2563,7 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
 
     private void SyncElapsedTimer()
     {
+        if (_disposed) return;
         _elapsedBaseMs = WallClockMs;
         _elapsedBaseAt = DateTime.UtcNow;
         _displayElapsedMs = WallClockMs;
@@ -2440,9 +2576,12 @@ public sealed partial class RunProgressViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
         _elapsedTimer.Dispose();
+        DetachAsking();
+        DetachJobSteering();
         _runService.RunChanged -= OnRunChanged;
         if (_timelineWatcher is not null)
             _timelineWatcher.TimelineAppended -= OnTimelineAppended;
+        DetachStepDetail();
         // The theme service is a singleton and outlives this VM, so a leaked handler would keep a whole projected
         // run, and every row in it, alive for the process's life.
         if (_themeService is not null)

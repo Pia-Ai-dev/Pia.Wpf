@@ -107,6 +107,15 @@ public partial class AssistantView : UserControl
             DispatcherPriority.ContextIdle);
     }
 
+    private void SendOptionsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { ContextMenu: { } menu } button)
+            return;
+        menu.PlacementTarget = button;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+        menu.IsOpen = true;
+    }
+
     private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         // ExtentHeight is only right once the new text has been measured.
@@ -338,6 +347,18 @@ public partial class AssistantView : UserControl
 
         var atBottom = e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 1;
         IsAutoScrollEnabled = atBottom;
+    }
+
+    // Scrolled by offset: the list's RequestBringIntoView handler swallows requests while auto-scroll is paused.
+    private void LiveRunActivity_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel?.ActiveRunProgress is not { } block
+            || MessageItemsControl.ItemContainerGenerator.ContainerFromItem(block) is not FrameworkElement container)
+            return;
+
+        IsAutoScrollEnabled = false;
+        var top = container.TransformToAncestor(MessageScrollViewer).Transform(new Point(0, 0)).Y;
+        MessageScrollViewer.ScrollToVerticalOffset(MessageScrollViewer.VerticalOffset + top);
     }
 
     private void MessageItemsControl_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)

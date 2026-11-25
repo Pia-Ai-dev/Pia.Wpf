@@ -32,9 +32,10 @@ public class ToolAutonomyTests
         bool serverDeclaredDestructive = false,
         bool namedDenial = false,
         bool topLevelUserRun = false,
-        bool scratchTarget = false)
+        bool scratchTarget = false,
+        bool chatJob = false)
         => new(surface, toolName, toolClass, serverDeclaredDestructive, allowlisted, sessionGrant, standingGrant,
-               namedGrant, namedDenial, policy, canPark, topLevelUserRun, scratchTarget);
+               namedGrant, namedDenial, policy, canPark, topLevelUserRun, scratchTarget, chatJob);
 
     /// <summary>Nested loops in one Fact, not a ~3.5k-case Theory, to keep the cross product out of the suite total.</summary>
     [Fact]
@@ -939,5 +940,92 @@ public class ToolAutonomyTests
     public void TheSettingsPreset_DoesNotCoverKnowledgeBase()
     {
         Assert.DoesNotContain(ToolClass.KnowledgeBase, RunAutonomyPolicy.PresetClasses);
+    }
+
+    /// <summary>Unattended, a root run that may park: chat job or not, per class, per grant kind.</summary>
+    [Theory]
+    [InlineData(true, ToolClass.External, true, ToolGateOutcome.AutoRun)]
+    [InlineData(false, ToolClass.External, true, ToolGateOutcome.Refuse)]
+    [InlineData(true, ToolClass.External, false, ToolGateOutcome.Park)]
+    [InlineData(false, ToolClass.External, false, ToolGateOutcome.Refuse)]
+    [InlineData(true, ToolClass.Screen, true, ToolGateOutcome.Park)]
+    [InlineData(false, ToolClass.Screen, true, ToolGateOutcome.Park)]
+    [InlineData(true, ToolClass.KnowledgeBase, true, ToolGateOutcome.Park)]
+    [InlineData(false, ToolClass.KnowledgeBase, true, ToolGateOutcome.Park)]
+    [InlineData(true, ToolClass.Files, true, ToolGateOutcome.AutoRun)]
+    [InlineData(false, ToolClass.Files, true, ToolGateOutcome.AutoRun)]
+    [InlineData(true, ToolClass.Files, false, ToolGateOutcome.Park)]
+    [InlineData(false, ToolClass.Files, false, ToolGateOutcome.Park)]
+    public void ChatJob_SessionGrantsAndAsking_OnlyWidenForMcpTools(
+        bool chatJob, ToolClass toolClass, bool sessionGrant, ToolGateOutcome expected)
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "do_thing", toolClass, canPark: true, sessionGrant: sessionGrant,
+            topLevelUserRun: true, chatJob: chatJob));
+
+        Assert.Equal(expected, verdict.Outcome);
+    }
+
+    [Theory]
+    [InlineData(ToolClass.External)]
+    [InlineData(ToolClass.Screen)]
+    [InlineData(ToolClass.KnowledgeBase)]
+    public void ChatJob_StandingGrant_StillRunsEveryClass(ToolClass toolClass)
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "do_thing", toolClass, canPark: true, standingGrant: true, chatJob: true));
+
+        Assert.Equal(ToolGateOutcome.AutoRun, verdict.Outcome);
+    }
+
+    [Fact]
+    public void ChatJob_WithoutPark_ChangesNothing()
+    {
+        var verdict = ToolAutonomy.Resolve(Input(
+            ToolGateSurface.Unattended, "do_thing", ToolClass.External, canPark: false, chatJob: true));
+
+        Assert.Equal(ToolGateOutcome.Refuse, verdict.Outcome);
+    }
+
+    [Fact]
+    public void ChatJob_ChangesTheVerdictOnlyForUnattendedMcpCalls()
+    {
+        foreach (var surface in AllSurfaces)
+        foreach (var toolClass in AllClasses)
+        foreach (var name in new[] { "do_thing", "delete_thing" })
+        foreach (var policy in new RunAutonomyPolicy?[] { null, EveryClassPolicy })
+        foreach (var standing in new[] { false, true })
+        foreach (var named in new[] { false, true })
+        foreach (var canPark in new[] { false, true })
+        foreach (var session in new[] { false, true })
+        foreach (var denial in new[] { false, true })
+        foreach (var topLevel in new[] { false, true })
+        {
+            var off = ToolAutonomy.Resolve(Input(surface, name, toolClass, policy, standingGrant: standing,
+                namedGrant: named, canPark: canPark, sessionGrant: session, namedDenial: denial,
+                topLevelUserRun: topLevel));
+            var on = ToolAutonomy.Resolve(Input(surface, name, toolClass, policy, standingGrant: standing,
+                namedGrant: named, canPark: canPark, sessionGrant: session, namedDenial: denial,
+                topLevelUserRun: topLevel, chatJob: true));
+            if (off != on)
+            {
+                Assert.Equal(ToolGateSurface.Unattended, surface);
+                Assert.Equal(ToolClass.External, toolClass);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(ToolGateSurface.Interactive)]
+    [InlineData(ToolGateSurface.Voice)]
+    public void ChatJob_LeavesTheOtherSurfacesAlone(ToolGateSurface surface)
+    {
+        foreach (var toolClass in AllClasses)
+        foreach (var session in new[] { false, true })
+        {
+            var off = ToolAutonomy.Resolve(Input(surface, "do_thing", toolClass, sessionGrant: session));
+            var on = ToolAutonomy.Resolve(Input(surface, "do_thing", toolClass, sessionGrant: session, chatJob: true));
+            Assert.Equal(off, on);
+        }
     }
 }

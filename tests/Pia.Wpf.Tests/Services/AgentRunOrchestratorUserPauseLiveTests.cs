@@ -528,7 +528,7 @@ public sealed class AgentRunOrchestratorUserPauseLiveTests
         Assert.Equal(AgentRunState.Cancelled, final!.State);  // Stop wins over an unconsumed pause
         Assert.NotNull(final.CompletedAt);                    // …terminally: FailAsync stamped it
         Assert.Null(RunPauseEnvelope.ReadReason(final));      // no pause envelope was ever written
-        Assert.Equal(AgentStepStatus.Failed, Assert.Single(final.Plan, s => s.Title == "s1").Status);
+        Assert.Equal(AgentStepStatus.Pending, Assert.Single(final.Plan, s => s.Title == "s1").Status);
         Assert.False(h.Store.TryConsumePauseRequest(run.Id), "the request must be gone, not merely unread");
     }
 

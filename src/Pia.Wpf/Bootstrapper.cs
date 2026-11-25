@@ -657,12 +657,17 @@ public static class Bootstrapper
         // The per-run tool-exchange store. Singleton for AgentTimelineService's reason: it owns a
         // dedicated SQLite connection.
         services.AddSingleton<IAgentToolExchangeStore, AgentToolExchangeStore>();
+        services.AddSingleton<IChatAttendance, WindowChatAttendanceService>();
+        services.AddSingleton<IRunAskBroker, RunAskCoordinator>();
+        services.AddSingleton<IRunToolAnswerService, RunToolAnswerService>();
+        services.AddSingleton<IRunMessageRecordStore, RunMessageRecordStore>();
         // The run panel live-updates its tool-activity section through this broker (T2-G1's first consumer).
         // Further observers (OTel exporter, file trace) still register ADDITIVELY right here; never TryAdd,
         // which would let the first registration silently exclude the second.
         services.AddSingleton<RunTimelineWatcher>();
         services.AddSingleton<ITimelineWatcher>(sp => sp.GetRequiredService<RunTimelineWatcher>());
         services.AddSingleton<IRunObserver>(sp => sp.GetRequiredService<RunTimelineWatcher>());
+        services.AddSingleton<IRunLiveTextWatcher, RunLiveTextWatcher>();
         // Assistant turn collaborators (extracted from AssistantViewModel).
         services.AddTransient<IAssistantPromptComposer, AssistantPromptComposer>();
         services.AddTransient<IChatTitleService, ChatTitleService>();
@@ -711,6 +716,8 @@ public static class Bootstrapper
         // in a per-run scope, so a scoped registration would give the pause command and the loop two different
         // maps. Holds no state that outlives a dispatch.
         services.AddSingleton<IRunSteeringStore, RunSteeringStore>();
+        services.AddSingleton<IJobSteeringStore, JobSteeringStore>();
+        services.AddSingleton<IChatJobToolService, ChatJobToolService>();
         // The command surface over that registry. Never writes a run row: the row moves to Paused from inside
         // the loop, through the CAS, after the aborted step has been given back to the plan.
         services.AddSingleton<IAgentRunSteeringService, AgentRunSteeringService>();

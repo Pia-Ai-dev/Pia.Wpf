@@ -31,7 +31,14 @@
   <resheader name="version"><value>1.3</value></resheader>
   <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
   <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <data name="JobTools_QueuedChanges" xml:space="preserve"><value>{0} Änderung(en) aus dem Chat warten auf den nächsten Schritt.</value></data>
+  <data name="JobTools_ChangedFromChat" xml:space="preserve"><value>Im Chat geändert</value></data>
   <!-- Navigation -->
+  <data name="RunReplies_StateStopped" xml:space="preserve"><value>Gestoppt</value></data>
+  <data name="RunReplies_StoppedNote" xml:space="preserve"><value>Du hast diesen Auftrag gestoppt.</value></data>
+  <data name="RunReplies_EarlierAttempts" xml:space="preserve"><value>Frühere Versuche ({0})</value></data>
+  <data name="RunRegenerate_BlockedTitle" xml:space="preserve"><value>Erst den Auftrag stoppen</value></data>
+  <data name="RunRegenerate_BlockedPaused" xml:space="preserve"><value>Unter dieser Antwort steht ein pausierter Auftrag. Stoppe ihn, dann kannst du neu generieren.</value></data>
   <data name="Memory_Charter" xml:space="preserve"><value>Worum es in dieser Wissensbasis geht</value></data>
   <data name="Memory_CharterDraft" xml:space="preserve"><value>Entwurf erstellen</value></data>
   <data name="Memory_CharterDrafting" xml:space="preserve"><value>Quellen werden gelesen…</value></data>
@@ -136,7 +143,6 @@
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
   <data name="Assistant_Send_Tooltip" xml:space="preserve"><value>Senden (Eingabe)</value></data>
   <data name="Assistant_Working_Tooltip" xml:space="preserve"><value>Die letzte Nachricht wird bearbeitet…</value></data>
-  <data name="Assistant_RunInBackground_Tooltip" xml:space="preserve"><value>Im Hintergrund ausführen</value></data>
   <data name="Assistant_RunActive_Hint" xml:space="preserve"><value>Eine Ausführung schreibt in diesen Chat. Senden ist wieder möglich, sobald sie fertig ist.</value></data>
   <data name="Assistant_PlanApprovalActive_Hint" xml:space="preserve"><value>Genehmigen oder lehnen Sie den vorgeschlagenen Plan ab, bevor Sie eine weitere Nachricht senden.</value></data>
   <data name="Assistant_GoalTooShort_Hint" xml:space="preserve"><value>Das ist als Ziel zu kurz, um ausgeführt zu werden. Ergänze ein paar Wörter, damit es sich planen lässt.</value></data>
@@ -1235,6 +1241,14 @@
   <data name="Run_Action_RejectPlan" xml:space="preserve"><value>Ablehnen</value></data>
   <data name="Run_Action_Pause" xml:space="preserve"><value>Pausieren</value></data>
   <data name="Run_Action_Pausing" xml:space="preserve"><value>Wird pausiert…</value></data>
+  <data name="Run_Action_Stop" xml:space="preserve"><value>Stoppen</value></data>
+  <data name="Run_Stop_Error_Refused" xml:space="preserve"><value>Dieser Auftrag lässt sich hier nicht stoppen.</value></data>
+  <data name="Run_Check_Title" xml:space="preserve"><value>Ergebnis prüfen</value></data>
+  <data name="Run_Check_Checking" xml:space="preserve"><value>Wird geprüft…</value></data>
+  <data name="Run_Check_Passed" xml:space="preserve"><value>Bestanden</value></data>
+  <data name="Run_Check_Unverified" xml:space="preserve"><value>Nicht bestätigt</value></data>
+  <data name="Run_Check_NotRun" xml:space="preserve"><value>Nicht ausgeführt</value></data>
+  <data name="Assistant_LiveRunActivity_Tooltip" xml:space="preserve"><value>Auftrag im Chat anzeigen</value></data>
   <data name="Run_Action_Publish" xml:space="preserve"><value>Dateien veröffentlichen</value></data>
   <data name="Run_Publish_Pending" xml:space="preserve"><value>Die Dateien dieser Ausführung liegen noch in ihrem Arbeitsbereich.</value></data>
   <data name="Run_Publish_Done" xml:space="preserve"><value>{0} Datei(en) veröffentlicht.</value></data>
@@ -1846,4 +1860,49 @@
   <data name="LocalReset_Deleted_Message" xml:space="preserve"><value>Dein Pia-Cloud-Konto wurde gelöscht. Möchtest du auch dessen Daten von diesem Gerät entfernen? Beim Entfernen wird Pia neu gestartet. Das lässt sich nicht rückgängig machen.</value></data>
   <data name="LocalReset_Deleted_Clear" xml:space="preserve"><value>Dieses Gerät leeren</value></data>
   <data name="LocalReset_Deleted_Keep" xml:space="preserve"><value>Auf diesem Gerät behalten</value></data>
+  <data name="RunStepDetail_Outcome_Ok" xml:space="preserve"><value>ok</value></data>
+  <data name="RunStepDetail_Loading" xml:space="preserve"><value>Wird geladen…</value></data>
+  <data name="RunStepDetail_Input" xml:space="preserve"><value>Eingabe</value></data>
+  <data name="RunStepDetail_Result" xml:space="preserve"><value>Ergebnis</value></data>
+  <data name="RunStepDetail_NoInput" xml:space="preserve"><value>Keine Eingabe.</value></data>
+  <data name="RunStepDetail_State_Truncated" xml:space="preserve"><value>Gekürzt: nur der Anfang wurde behalten.</value></data>
+  <data name="RunStepDetail_State_Omitted" xml:space="preserve"><value>Zu groß: nicht behalten.</value></data>
+  <data name="RunStepDetail_State_Missing" xml:space="preserve"><value>Es wurde kein Ergebnis aufgezeichnet.</value></data>
+  <data name="RunStepDetail_NotRecordedRound" xml:space="preserve"><value>Nicht behalten: Diese Runde kam, nachdem der Auftrag seine Detailgrenze erreicht hatte.</value></data>
+  <data name="RunStepDetail_NoRecord" xml:space="preserve"><value>Zu diesem Aufruf wurden keine Details behalten.</value></data>
+  <data name="RunStepDetail_ReadFailed" xml:space="preserve"><value>Die Details konnten nicht gelesen werden.</value></data>
+  <data name="RunAsk_Tool_Question" xml:space="preserve">
+    <value>{0} erlauben?</value>
+  </data>
+  <data name="RunAsk_AllowOnce" xml:space="preserve">
+    <value>Einmal erlauben</value>
+  </data>
+  <data name="RunAsk_AllowForSession" xml:space="preserve">
+    <value>Für diese Sitzung erlauben</value>
+  </data>
+  <data name="RunAsk_AlwaysAllow" xml:space="preserve">
+    <value>Immer erlauben</value>
+  </data>
+  <data name="RunAsk_Deny" xml:space="preserve">
+    <value>Ablehnen</value>
+  </data>
+  <data name="RunAsk_Activity_Waiting" xml:space="preserve">
+    <value>Wartet auf Ihre Entscheidung zu {0}</value>
+  </data>
+  <data name="RunAsk_Flow_Body" xml:space="preserve">
+    <value>Ein laufender Auftrag wartet auf Ihre Entscheidung.</value>
+  </data>
+  <data name="RunAsk_Question_Label" xml:space="preserve">
+    <value>Der Auftrag fragt</value>
+  </data>
+  <data name="RunAsk_Answer_Placeholder" xml:space="preserve">
+    <value>Ihre Antwort</value>
+  </data>
+  <data name="RunAsk_SendAnswer" xml:space="preserve">
+    <value>Antworten</value>
+  </data>
+  <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>Weitere Sendeoptionen</value></data>
+  <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Als Hintergrundaufgabe in einem neuen Chat ausführen</value></data>
+  <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Hier ist ein Plan dafür:</value></data>
+  <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>Der Plan konnte nicht gespeichert werden.</value></data>
 </root>

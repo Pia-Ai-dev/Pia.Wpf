@@ -360,8 +360,8 @@ public class TokenizingAiClientServiceTests
         }
     }
 
-    /// <summary>A carried tool exchange is what the NEXT step is built from, so it must cross the decorator
-    /// unchanged — and unflushed text must not overtake it either.</summary>
+    /// <summary>A carried tool exchange is what the NEXT step is built from, so its messages cross the decorator
+    /// unchanged, with only a real-name copy added beside them — and unflushed text must not overtake it.</summary>
     [Fact]
     public async Task ToolRoundExchange_CrossesTheDecoratorUntouched()
     {
@@ -410,9 +410,12 @@ public class TokenizingAiClientServiceTests
         }
 
         var relayed = Assert.Single(items.OfType<ToolRoundExchange>());
-        Assert.Same(sent, relayed);
+        Assert.Same(sent.Messages, relayed.Messages);
+        Assert.Same(sent.Sent, relayed.Sent);
         Assert.Equal("the date is [Phone_9]",
             relayed.Messages[1].Contents.OfType<FunctionResultContent>().Single().Result);
+        Assert.Equal("the date is 2026-03-27",
+            relayed.Readable![1].Contents.OfType<FunctionResultContent>().Single().Result);
     }
 
     /// <summary>The handler needs the real value to write it to disk; the message the loop keeps must not get it,

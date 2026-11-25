@@ -4,6 +4,7 @@
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:loc="clr-namespace:Pia.Localization"
              xmlns:chat="clr-namespace:Pia.Controls.Chat"
+             xmlns:assistant="clr-namespace:Pia.Controls.Assistant"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              x:Name="Root">
   <!-- Run-progress card. The SIGNAL BAND at the top is the single carrier of run state: its tint, its icon and
@@ -190,6 +191,11 @@
                        TextTrimming="CharacterEllipsis"
                        Foreground="{Binding State, Converter={StaticResource RunStateToSubLineBrushConverter}}"
                        Visibility="{Binding HasToolActivity, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <TextBlock Text="{Binding QueuedChangesLine}" Margin="0,2,0,0"
+                       FontSize="{StaticResource RunMetaSize}"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSubtleBrush}"
+                       Visibility="{Binding HasQueuedChangesLine, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Sub-line: state, plan position, elapsed. The full token figure hangs off it as a tooltip rather
                  than taking a slot beside the actions — it is the number a reader wants least often. -->
             <TextBlock Text="{Binding SubLine}" Margin="0,2,0,0"
@@ -225,8 +231,13 @@
             <ui:Button Content="{Binding PauseLabel}" Command="{Binding PauseCommand}"
                        Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
-                       AutomationProperties.AutomationId="Run_Pause"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_Pause_{0}'}"
                        Visibility="{Binding ShowPauseButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            <ui:Button Content="{loc:Str Run_Action_Stop}" Command="{Binding StopCommand}"
+                       Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
+                       FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_Stop_{0}'}"
+                       Visibility="{Binding ShowStopButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Budget-pause / user-pause Continue: the one sanctioned mutation on this read-only panel.
                  CanContinue hides it off both states; CanExecute also disables it (IsResuming) so a double-click
                  cannot launch two resumes. CanPause and CanContinue are mutually exclusive by construction, so at
@@ -234,21 +245,21 @@
             <ui:Button Content="{Binding ContinueLabel}" Command="{Binding ContinueCommand}"
                        Appearance="Primary" Padding="15,7" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
-                       AutomationProperties.AutomationId="Run_Continue"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_Continue_{0}'}"
                        Visibility="{Binding ShowContinueButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- The deny beside Continue, only on a tool-approval park: the one pause whose question has a
                  "no". Declining resumes the run with the tool recorded as denied; the re-run step adapts. -->
             <ui:Button Content="{loc:Str Run_Action_Deny}" Command="{Binding DeclineToolCommand}"
                        Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
-                       AutomationProperties.AutomationId="Run_DenyTool"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_DenyTool_{0}'}"
                        Visibility="{Binding ShowDenyButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Reject beside Approve on a plan-approval park; settles the run to Cancelled with no re-dispatch,
                  so redirecting means an ordinary chat message afterward rather than an in-place edit. -->
             <ui:Button Content="{loc:Str Run_Action_RejectPlan}" Command="{Binding RejectPlanCommand}"
                        Appearance="Secondary" Padding="13,6" Margin="0,0,6,0"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
-                       AutomationProperties.AutomationId="Run_RejectPlan"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_RejectPlan_{0}'}"
                        Visibility="{Binding ShowRejectPlanButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
             <!-- Batch 06 / plan D3: a failed or cancelled run's work is still in its workspace, so the panel
                  offers to publish it rather than promoting behind the user's back. A clean run never shows this —
@@ -256,14 +267,14 @@
             <ui:Button Content="{loc:Str Run_Action_Publish}" Command="{Binding PublishCommand}"
                        Appearance="Secondary" Padding="13,6"
                        FontSize="{StaticResource RunMetaSize}" FontWeight="SemiBold"
-                       AutomationProperties.AutomationId="Run_Publish"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_Publish_{0}'}"
                        Visibility="{Binding ShowPublishButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
           </StackPanel>
 
           <!-- The card's disclosure, last in the band so the actions keep their slot beside the text. -->
           <ToggleButton Grid.Column="4" Style="{StaticResource RunCardCollapseStyle}"
                         IsChecked="{Binding IsCardExpanded}" Margin="6,0,0,0"
-                        AutomationProperties.AutomationId="Run_CardToggle" />
+                        AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_CardToggle_{0}'}" />
         </Grid>
       </Border>
 
@@ -306,7 +317,7 @@
              count reads as one more section, and an Expander folds its content out of the logical tree. -->
         <Button Style="{StaticResource RunFoldRowStyle}" Margin="14,10,14,0"
                 Command="{Binding ToggleApprovalDetailCommand}"
-                AutomationProperties.AutomationId="Run_ApprovalDetailToggle"
+                AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_ApprovalDetailToggle_{0}'}"
                 Visibility="{Binding HasApprovalDetail, Converter={StaticResource BooleanToVisibilityConverter}}">
           <StackPanel Orientation="Horizontal">
             <ui:SymbolIcon FontSize="12" Width="16" Margin="0,0,9,0" VerticalAlignment="Center"
@@ -348,6 +359,7 @@
           </StackPanel>
         </Border>
 
+        <assistant:RunAskPanel />
         <!-- ==================== Region D · steering note ==================== -->
         <!-- Batch 08 D4. Offered only while a resume is available, and never on a plan-approval park — see
              ShowNudgeBox. SENSITIVE (user content): bound only, never logged; Continue() carries it to the
@@ -362,7 +374,7 @@
                        Foreground="{DynamicResource PiaAccentBrush}" />
             <ui:TextBox Text="{Binding NudgeText, UpdateSourceTrigger=PropertyChanged}"
                         PlaceholderText="{loc:Str Run_Nudge_Placeholder}" PlaceholderEnabled="True"
-                        AutomationProperties.AutomationId="Run_NudgeText"
+                        AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_NudgeText_{0}'}"
                         MinHeight="30" FontSize="12" TextWrapping="Wrap" AcceptsReturn="True" />
             <TextBlock Text="{loc:Str Run_Nudge_Scope_Note}" Margin="0,5,0,0"
                        FontSize="10.5" TextWrapping="Wrap"
@@ -375,7 +387,7 @@
           <!-- Fold row. A long plan windows to the running step ±1 so the card cannot push the transcript off
                screen; clicking either fold unfolds the whole list in place. -->
           <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
-                  AutomationProperties.AutomationId="Run_ShowEarlierSteps"
+                  AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_ShowEarlierSteps_{0}'}"
                   Visibility="{Binding EarlierFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
@@ -461,6 +473,10 @@
 
                       <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="9,0,0,0"
                                   VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Str JobTools_ChangedFromChat}" Margin="0,0,6,0"
+                                   FontSize="{StaticResource RunMetaSize}" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                   Visibility="{Binding IsChangedFromChat, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <!-- Read-mode trailing: the "now" marker, the step's token cost, or "skipped". Hidden while
                              the plan is editable, where the five verbs take the slot instead. -->
                         <StackPanel Orientation="Horizontal"
@@ -538,6 +554,7 @@
                         </StackPanel>
                       </StackPanel>
                     </Grid>
+                    <assistant:RunStepDetailView Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
 
                     <!-- Batch 08 D3: the inline editor — embedded, never a dialog (the panel lives inside a chat).
                          Title/Intent only; every other column of the row (Ordinal, persona, ExtraJson) is carried
@@ -591,6 +608,7 @@
                                    CommandParameter="{Binding}" />
                       </Grid>
                     </Border>
+                    <assistant:RunStepReplies />
                   </StackPanel>
                 </Border>
               </DataTemplate>
@@ -598,7 +616,7 @@
           </ItemsControl>
 
           <Button Style="{StaticResource RunFoldRowStyle}" Command="{Binding ExpandStepWindowCommand}"
-                  AutomationProperties.AutomationId="Run_ShowLaterSteps"
+                  AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_ShowLaterSteps_{0}'}"
                   Visibility="{Binding LaterFoldCount, Converter={StaticResource IntToVisibilityConverter}}">
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="MoreVertical24" FontSize="12" Width="16" Margin="0,0,9,0"
@@ -616,6 +634,46 @@
           <ItemsControl ItemsSource="{Binding LastStepView}"
                         ItemTemplate="{Binding ItemTemplate, ElementName=StepsList}"
                         Visibility="{Binding HasLastStepRow, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <assistant:RunEarlierAttempts />
+
+          <!-- "Check the result": not a Steps entry, so it never counts toward the tally, folds or the edit verbs. -->
+          <Grid MinHeight="28" Margin="-2,0,0,1"
+                AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_CheckRow_{0}'}"
+                Visibility="{Binding ShowCheckRow, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid Grid.Column="0" Width="16" Margin="0,0,9,0" VerticalAlignment="Center">
+              <Ellipse Width="7" Height="7" StrokeThickness="1.5"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Stroke="{DynamicResource TextGhostBrush}"
+                       Visibility="{Binding IsCheckPending, Converter={StaticResource BooleanToVisibilityConverter}}" />
+              <Ellipse Width="8" Height="8" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Style="{StaticResource RunPulseStyle}"
+                       Fill="{DynamicResource PiaAccentBrush}"
+                       Visibility="{Binding IsChecking, Converter={StaticResource BooleanToVisibilityConverter}}" />
+              <ui:SymbolIcon FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"
+                             Symbol="{Binding CheckStatus, Converter={StaticResource StepStatusToGlyphConverter}}"
+                             Foreground="{Binding CheckStatus, Converter={StaticResource StepStatusToBrushConverter}}"
+                             Visibility="{Binding HasCheckGlyph, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </Grid>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="{loc:Str Run_Check_Title}"
+                         FontSize="{StaticResource RunBodySize}"
+                         TextTrimming="CharacterEllipsis"
+                         Foreground="{Binding CheckStatus, Converter={StaticResource StepStatusToTitleBrush}}" />
+              <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding CheckPublishNote}"
+                         AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_CheckPublishNote_{0}'}"
+                         Visibility="{Binding CheckPublishNote, Converter={StaticResource NullToVisibilityConverter}}" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Margin="9,0,0,0" VerticalAlignment="Center"
+                       Text="{Binding CheckOutcome}"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_CheckOutcome_{0}'}"
+                       FontSize="{StaticResource RunMicroSize}"
+                       Foreground="{DynamicResource TextSubtleBrush}" />
+          </Grid>
 
           <!-- WHY the run failed, first in this block because on a failed card it outranks every other note.
                The reason has always been persisted and never shown; the panel used to say only "Ended with an
@@ -625,6 +683,7 @@
                May contain the model's own words or an exception message, so it wraps and is never logged. -->
           <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding FailureNote}"
                      Visibility="{Binding FailureNote, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding StoppedNote}" Visibility="{Binding StoppedNote, Converter={StaticResource NullToVisibilityConverter}}" />
 
           <!-- WHICH layer failed, and the one thing to do about it. Both are absent unless the descriptor
                named a layer, so an unclassified failure renders exactly as it did before they existed. The
@@ -632,11 +691,11 @@
           <StackPanel Margin="0,3,0,0" Orientation="Horizontal"
                       Visibility="{Binding FailureLayerName, Converter={StaticResource NullToVisibilityConverter}}">
             <TextBlock Style="{StaticResource RunNoteLineStyle}" VerticalAlignment="Center"
-                       AutomationProperties.AutomationId="Run_FailureLayer"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_FailureLayer_{0}'}"
                        Text="{Binding FailureLayerName}" />
             <ui:Button Margin="10,0,0,0" Padding="8,2" VerticalAlignment="Center"
                        Appearance="Secondary"
-                       AutomationProperties.AutomationId="Run_FailureAction"
+                       AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_FailureAction_{0}'}"
                        Command="{Binding RunFailureActionCommand}"
                        Content="{Binding FailureActionLabel}"
                        FontSize="11"
@@ -652,7 +711,9 @@
                      Text="{loc:Str Run_Publish_Pending}"
                      Visibility="{Binding ShowPublishButton, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding PublishNote}"
-                     Visibility="{Binding PublishNote, Converter={StaticResource NullToVisibilityConverter}}" />
+                     Visibility="{Binding ShowLoosePublishNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding StopNote}"
+                     Visibility="{Binding StopNote, Converter={StaticResource NullToVisibilityConverter}}" />
           <TextBlock Style="{StaticResource RunNoteLineStyle}" Text="{Binding OutputBranchNote}"
                      Visibility="{Binding HasOutputBranch, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
@@ -667,6 +728,8 @@
                palette: it is something the user asked for that did not happen. -->
           <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PlanMutationNote}"
                      Visibility="{Binding PlanMutationNote, Converter={StaticResource NullToVisibilityConverter}}" />
+          <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding WeakProviderNote}"
+                     Visibility="{Binding ShowWeakProviderNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
           <!-- Batch 08 F6: a pause the service REFUSED. Separate from PlanMutationNote because that one is wiped by
                every projection that is not Paused, which is every projection a refused pause can be followed by. -->
           <TextBlock Style="{StaticResource RunWarnLineStyle}" Text="{Binding PauseNote}"
@@ -687,7 +750,7 @@
                  opens a section, which no test in the suite reaches. That is also why the empty state binds the
                  VM's own HasNoTimeline bool instead of introducing an inverse converter. -->
             <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
-                          AutomationProperties.AutomationId="Run_TimelineToggle"
+                          AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_TimelineToggle_{0}'}"
                           IsChecked="{Binding IsTimelineExpanded}">
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -810,7 +873,7 @@
                     Visibility="{Binding HasChildren, Converter={StaticResource BooleanToVisibilityConverter}}">
               <StackPanel>
                 <ToggleButton Style="{StaticResource RunSectionHeaderStyle}"
-                              AutomationProperties.AutomationId="Run_ChildrenToggle"
+                              AutomationProperties.AutomationId="{Binding RunId, StringFormat='Run_ChildrenToggle_{0}'}"
                               IsChecked="{Binding IsChildrenExpanded}">
                   <StackPanel Orientation="Horizontal">
                     <TextBlock Text="{loc:Str Run_Children_Header}" VerticalAlignment="Center"

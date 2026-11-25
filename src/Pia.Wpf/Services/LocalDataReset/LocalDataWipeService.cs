@@ -25,6 +25,7 @@ public sealed class LocalDataWipeService(
         "DELETE FROM Personas",
         "DELETE FROM ManagedPersonas",
         "DELETE FROM Sessions",
+        "DELETE FROM AgentRunMessages",
         "DELETE FROM AgentToolExchanges",
         "DELETE FROM AgentTimelineEvents",
         "DELETE FROM AgentSteps",

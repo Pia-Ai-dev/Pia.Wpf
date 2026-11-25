@@ -96,6 +96,8 @@ public class BackgroundAssistantTurnRunnerTests
                 .Returns((string?)null);
             Chats.SaveAsync(Arg.Do<SyncAssistantChat>(c => { Saved = c; AllSaved.Add(c); }), Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
+            Chats.UpsertMessagesAsync(Arg.Do<SyncAssistantChat>(c => { Saved = c; AllSaved.Add(c); }), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+                .Returns(true);
 
             Runs.CreateAsync(Arg.Any<AgentRunCreateRequest>(), Arg.Any<CancellationToken>())
                 .Returns(ci => Task.FromResult(new AgentRun
@@ -726,8 +728,75 @@ public class BackgroundAssistantTurnRunnerTests
         Assert.Equal("Reports", h.AmbientSubpath);
     }
 
-    /// <summary>Each save here is a full replace, so the stub row and the answer chat must BOTH carry the
-    /// folder — one that missed it would null the column on the next write.</summary>
+    [Fact]
+    public async Task RunAsync_WritesTheAnswerAsRows_NotAFullReplace()
+    {
+        var h = new Harness();
+        var runner = h.Build([]);
+
+        await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), Title = "Mine" }, CancellationToken.None);
+
+        await h.Chats.Received(1).SaveAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 0), Arg.Any<CancellationToken>());
+        await h.Chats.Received(1).UpsertMessagesAsync(
+            Arg.Is<SyncAssistantChat>(c => c.Messages.Count == 2), false, Arg.Any<CancellationToken>());
+        await h.Chats.DidNotReceive().SetTitleAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ATitleFaultAfterTheRowsAreSaved_DoesNotFailTheTurnOrAppendAFailureRow()
+    {
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var runner = h.Build([]);
+        h.Chats.SetTitleAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new InvalidOperationException("database is locked"));
+
+        var result = await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        await h.Chats.Received(1).SetTitleAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await h.Chats.Received(1).UpsertMessagesAsync(
+            Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AFailureAfterTheRowsAreSaved_OverwritesTheTurnsRows_UnderTheSameIds()
+    {
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var saved = new List<List<Guid>>();
+        var runner = h.Build([]);
+        h.Chats.UpsertMessagesAsync(Arg.Any<SyncAssistantChat>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                saved.Add(ci.Arg<SyncAssistantChat>().Messages.Select(m => m.Id).ToList());
+                if (saved.Count == 1)
+                    throw new InvalidOperationException("database is locked");
+                return true;
+            });
+
+        var result = await runner.RunAsync(
+            new BackgroundTurnRequest { Prompt = "go", Provider = Provider(), Title = "Mine" }, CancellationToken.None);
+
+        Assert.Equal(2, saved.Count);
+        Assert.False(result.Succeeded);
+        Assert.Equal(saved[0], saved[1]);
+    }
+
+    [Fact]
+    public async Task AFailedTurnWithoutACallerTitle_StillTitlesItsChat()
+    {
+        var h = new Harness { Localization = KeyEchoLocalizer() };
+        var runner = h.Build([], answer: "");
+
+        await runner.RunAsync(new BackgroundTurnRequest { Prompt = "summarize the logs", Provider = Provider() },
+            CancellationToken.None);
+
+        await h.Chats.Received(1).SetTitleAsync(Arg.Any<Guid>(), Arg.Is<string>(t => t.Contains("summarize")),
+            Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task RunAsync_StampsTheSubpathOnEveryChatItSaves()
     {

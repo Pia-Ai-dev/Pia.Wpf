@@ -125,12 +125,13 @@ public class SqliteContextTests : IDisposable
     public void AgentToolExchanges_HasExactlyTheseColumns()
     {
         // This table's contract is the INVERSE of AgentTimelineEvents' metadata-only one: it is
-        // payload-bearing on purpose, device-local, and purged with the run. Do not align the two.
+        // payload-bearing on purpose, device-local, and kept until the chat-retention cutoff. Do not align the two.
         string[] expected =
         [
             "Id", "SchemaVersion", "RunId", "StepId", "MessageSeq", "Seq", "Round", "Role", "Kind", "CallId",
             "ToolName", "PluginId", "ArgumentsJson", "ArgsOmitted", "DisplayArgs", "ResultKind", "ResultText",
-            "Chars", "AnchorMessageId", "CreatedAt", "ReplayedAt", "SupersededAt",
+            "Chars", "AnchorMessageId", "CreatedAt", "ReplayedAt", "SupersededAt", "ReadableArgumentsJson",
+            "ReadableResultText",
         ];
 
         using var cmd = _ctx.GetConnection().CreateCommand();
@@ -160,7 +161,46 @@ public class SqliteContextTests : IDisposable
         Assert.True(IndexExists(upgradedConn, "IX_AgentToolExchanges_CreatedAt"));
     }
 
+    [Fact]
+    public void EnsureSchema_AddsAgentRunMessages_ToAnOlderDatabase()
+    {
+        using (var drop = _ctx.GetConnection().CreateCommand())
+        {
+            drop.CommandText = "DROP TABLE AgentRunMessages";
+            drop.ExecuteNonQuery();
+        }
+
+        using var upgraded = new SqliteContext(_dbPath);
+        var upgradedConn = upgraded.GetConnection();
+        Assert.True(TableExists(upgradedConn, "AgentRunMessages"));
+        Assert.True(IndexExists(upgradedConn, "IX_AgentRunMessages_RunId"));
+    }
+
     /// <summary>Only this covers the ALTER path; the column-list test above covers the fresh CREATE TABLE.</summary>
+    [Fact]
+    public void EnsureSchema_AddsTheReadableCopyColumns_ToAnExistingExchangeTable()
+    {
+        var conn = _ctx.GetConnection();
+        foreach (var col in new[] { "ReadableArgumentsJson", "ReadableResultText" })
+        {
+            using var drop = conn.CreateCommand();
+            drop.CommandText = $"ALTER TABLE AgentToolExchanges DROP COLUMN {col}";
+            drop.ExecuteNonQuery();
+        }
+
+        _ctx.Dispose();
+
+        using var reopened = new SqliteContext(_dbPath);
+        var columns = new List<string>();
+        using var pragma = reopened.GetConnection().CreateCommand();
+        pragma.CommandText = "PRAGMA table_info(AgentToolExchanges)";
+        using var r = pragma.ExecuteReader();
+        while (r.Read()) columns.Add(r.GetString(1));
+
+        Assert.Contains("ReadableArgumentsJson", columns);
+        Assert.Contains("ReadableResultText", columns);
+    }
+
     [Fact]
     public void EnsureSchema_AddsTheCorrelationColumns_ToAPreT214Database()
     {

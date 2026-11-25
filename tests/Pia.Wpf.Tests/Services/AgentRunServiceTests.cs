@@ -209,6 +209,10 @@ public sealed class AgentRunServiceTests : IDisposable
         Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(running.Id, ct))!.State);
         Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(verifying.Id, ct))!.State);
         Assert.NotNull((await _service.GetAsync(planning.Id, ct))!.CompletedAt);
+        // Pia closed under them, so none of them may read as stopped by the user.
+        Assert.Equal(HeadlessRunLauncher.ShutdownInterruptedFailure,
+            AgentRunService.ReadFailureReason((await _service.GetAsync(running.Id, ct))!.ExtraJson));
+        Assert.Equal(FailureLayer.Cancelled, PiaFailure.FromJson((await _service.GetAsync(running.Id, ct))!.FailureJson)?.Layer);
         // A budget park is deliberate, so it survives the sweep resumable.
         Assert.Equal(AgentRunState.WaitingForInput, (await _service.GetAsync(waiting.Id, ct))!.State);
         Assert.Equal(AgentRunState.Paused, (await _service.GetAsync(paused.Id, ct))!.State);

@@ -206,6 +206,39 @@ public sealed class AgentRunServiceUserPauseTests : IDisposable
     }
 
     [Fact]
+    public async Task TryClaimPark_LosesWhenThePark_ChangedSinceItWasRead()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        await _service.PauseAsync(run.Id, "needs-input", ct);
+        var read = (await _service.GetAsync(run.Id, ct))!;
+        await _service.PauseAsync(run.Id, AgentRunOrchestrator.ToolApprovalReason, ct, approvalTool: "delete_file");
+
+        Assert.False(await _service.TryClaimParkAsync(run.Id, read.State, read.ExtraJson, ct));
+        var still = (await _service.GetAsync(run.Id, ct))!;
+        Assert.Equal(AgentRunState.WaitingForInput, still.State);
+
+        Assert.True(await _service.TryClaimParkAsync(run.Id, still.State, still.ExtraJson, ct));
+        Assert.Equal(AgentRunState.Running, (await _service.GetAsync(run.Id, ct))!.State);
+    }
+
+    [Fact]
+    public async Task TryCancelParked_SettlesAPark_ButNeverARunSomeoneResumed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var parked = await NewRunAsync(ct);
+        await _service.PauseAsync(parked.Id, "step-cap", ct);
+        Assert.True(await _service.TryCancelParkedAsync(parked.Id, ct));
+        Assert.Equal(AgentRunState.Cancelled, (await _service.GetAsync(parked.Id, ct))!.State);
+
+        var resumed = await NewRunAsync(ct);
+        await _service.PauseAsync(resumed.Id, "step-cap", ct);
+        Assert.True(await _service.TryBeginResumeAsync(resumed.Id, ct));
+        Assert.False(await _service.TryCancelParkedAsync(resumed.Id, ct));
+        Assert.Equal(AgentRunState.Running, (await _service.GetAsync(resumed.Id, ct))!.State);
+    }
+
+    [Fact]
     public async Task TryRejectParkedPlanAsync_CancelsAPlanApprovalPark()
     {
         var ct = TestContext.Current.CancellationToken;

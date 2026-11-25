@@ -138,61 +138,245 @@ public class AssistantChatService : IAssistantChatService, IDisposable
             OnChatsChanged(chat.Id, AssistantChatChangeKind.Upserted);
     }
 
-    /// <summary>
-    /// W2b: the read, the merge and the write under ONE hold of <see cref="_gate"/>. See
-    /// <see cref="IAssistantChatService.SaveMergedAsync"/> for the contract; this is the atomicity the
-    /// caller cannot get by pairing <see cref="GetAsync"/> with <see cref="SaveAsync"/>, because that pair
-    /// releases the gate in between and any writer committing in the gap is still deleted by the replace.
-    /// </summary>
-    public async Task<int> SaveMergedAsync(SyncAssistantChat chat, CancellationToken ct = default)
+    public async Task<bool> UpsertMessagesAsync(SyncAssistantChat chat, bool writeHeader, CancellationToken ct = default)
     {
-        var absorbed = 0;
         await _gate.WaitAsync(ct);
         try
         {
-            if (_disposed) return 0;
+            if (_disposed) return false;
 
             var connection = Connection();
-            var stored = await GetMessagesAsync(connection, chat.Id, ct);
+            using var transaction = connection.BeginTransaction();
 
-            var messages = chat.Messages;
-            if (stored.Count > 0)
-            {
-                var known = chat.Messages.Select(m => m.Id).ToHashSet();
-                var merged = new List<SyncAssistantChatMessage>(chat.Messages);
-                foreach (var row in stored)
-                {
-                    if (!known.Add(row.Id))
-                        continue;
-                    merged.Add(row);
-                    absorbed++;
-                }
+            var chatExists = writeHeader
+                ? await UpsertHeaderAsync(connection, transaction, chat, ct)
+                : await TouchHeaderAsync(connection, transaction, chat.Id, chat.UpdatedAt, chat.LastAccessedAt, ct);
+            if (!chatExists)
+                return false;
 
-                // Merge CHRONOLOGICALLY, not by append order: Ordinal is renumbered from the list index
-                // below, so appending an absorbed row at the tail would make "the agent's step reply comes
-                // before the question the user asked mid-run" durable. Timestamp is set by every writer that
-                // creates a row. OrderBy is a stable sort, so rows sharing a timestamp keep the caller's
-                // order and an all-equal-timestamp list is left exactly as it came in.
-                if (absorbed > 0)
-                    messages = [.. merged.OrderBy(m => m.Timestamp)];
-            }
+            var nextOrdinal = await NextOrdinalAsync(connection, transaction, chat.Id, ct);
+            foreach (var msg in chat.Messages)
+                await UpsertMessageAsync(connection, transaction, chat.Id, msg, nextOrdinal++, ct);
 
-            await SaveUnderGateAsync(chat, messages, fromRemote: false, ct);
+            await RenumberByTimestampAsync(connection, transaction, chat.Id, ct);
+            await RebuildFtsRowAsync(connection, transaction, chat.Id, ct);
+            transaction.Commit();
         }
         finally
         {
             _gate.Release();
         }
 
-        // Outside the gate — subscribers re-enter this service.
         OnChatsChanged(chat.Id, AssistantChatChangeKind.Upserted);
-        return absorbed;
+        return true;
     }
 
-    /// <param name="messages">
-    /// The rows to persist. Passed separately from <paramref name="chat"/> so <see cref="SaveMergedAsync"/>
-    /// can write a merged list without mutating the caller's snapshot.
-    /// </param>
+    public async Task<int> DeleteMessagesAsync(Guid chatId, IReadOnlyCollection<Guid> messageIds, CancellationToken ct = default)
+    {
+        if (messageIds.Count == 0)
+            return 0;
+
+        var deleted = 0;
+        await _gate.WaitAsync(ct);
+        try
+        {
+            if (_disposed) return 0;
+
+            var connection = Connection();
+            using var transaction = connection.BeginTransaction();
+            foreach (var id in messageIds.Distinct())
+            {
+                using var delete = connection.CreateCommand();
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM AssistantChatMessages WHERE ChatId = @ChatId AND Id = @Id";
+                delete.Parameters.AddWithValue("@ChatId", chatId.ToString());
+                delete.Parameters.AddWithValue("@Id", id.ToString());
+                if (await delete.ExecuteNonQueryAsync(ct) == 0)
+                    continue;
+                deleted++;
+
+                using var deleteRecord = connection.CreateCommand();
+                deleteRecord.Transaction = transaction;
+                deleteRecord.CommandText = "DELETE FROM AgentRunMessages WHERE MessageId = @Id";
+                deleteRecord.Parameters.AddWithValue("@Id", id.ToString());
+                await deleteRecord.ExecuteNonQueryAsync(ct);
+            }
+
+            if (deleted > 0)
+            {
+                var now = DateTime.UtcNow;
+                await TouchHeaderAsync(connection, transaction, chatId, now, now, ct);
+                await RenumberByTimestampAsync(connection, transaction, chatId, ct);
+                await RebuildFtsRowAsync(connection, transaction, chatId, ct);
+            }
+            transaction.Commit();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        if (deleted > 0)
+            OnChatsChanged(chatId, AssistantChatChangeKind.Upserted);
+        return deleted;
+    }
+
+    // Only the columns a writer can change; the star and ExtraJson stay with their owners.
+    private static async Task<bool> UpsertHeaderAsync(
+        SqliteConnection connection, SqliteTransaction transaction, SyncAssistantChat chat, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO AssistantChats
+                (Id, SchemaVersion, Title, CreatedAt, UpdatedAt, LastAccessedAt, WindowMode, ProviderId, WorkingDirectory, AgentContextMode, IsFavorite, ExtraJson)
+            VALUES
+                (@Id, @SchemaVersion, @Title, @CreatedAt, @UpdatedAt, @LastAccessedAt, @WindowMode, @ProviderId, @WorkingDirectory, @AgentContextMode, @IsFavorite, @ExtraJson)
+            ON CONFLICT(Id) DO UPDATE SET
+                SchemaVersion = excluded.SchemaVersion,
+                Title = COALESCE(excluded.Title, AssistantChats.Title),
+                UpdatedAt = excluded.UpdatedAt,
+                LastAccessedAt = excluded.LastAccessedAt,
+                WindowMode = excluded.WindowMode,
+                ProviderId = excluded.ProviderId,
+                WorkingDirectory = excluded.WorkingDirectory,
+                AgentContextMode = excluded.AgentContextMode,
+                ExtraJson = COALESCE(excluded.ExtraJson, AssistantChats.ExtraJson)
+            """;
+        command.Parameters.AddWithValue("@Id", chat.Id.ToString());
+        command.Parameters.AddWithValue("@SchemaVersion", chat.SchemaVersion);
+        command.Parameters.AddWithValue("@Title", (object?)chat.Title ?? DBNull.Value);
+        command.Parameters.AddWithValue("@CreatedAt", chat.CreatedAt.ToString("O"));
+        command.Parameters.AddWithValue("@UpdatedAt", chat.UpdatedAt.ToString("O"));
+        command.Parameters.AddWithValue("@LastAccessedAt", chat.LastAccessedAt.ToString("O"));
+        command.Parameters.AddWithValue("@WindowMode", chat.WindowMode);
+        command.Parameters.AddWithValue("@ProviderId", (object?)chat.ProviderId?.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@WorkingDirectory", (object?)chat.WorkingDirectory ?? DBNull.Value);
+        command.Parameters.AddWithValue("@AgentContextMode", (object?)chat.AgentContextMode ?? DBNull.Value);
+        command.Parameters.AddWithValue("@IsFavorite", chat.IsFavorite ? 1 : 0);
+        command.Parameters.AddWithValue("@ExtraJson", (object?)SerializeExtensionData(chat.ExtensionData) ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(ct);
+        return true;
+    }
+
+    private static async Task<bool> TouchHeaderAsync(
+        SqliteConnection connection, SqliteTransaction transaction, Guid chatId,
+        DateTime updatedAt, DateTime lastAccessedAt, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE AssistantChats
+            SET UpdatedAt = @UpdatedAt, LastAccessedAt = max(LastAccessedAt, @LastAccessedAt)
+            WHERE Id = @Id
+            """;
+        command.Parameters.AddWithValue("@UpdatedAt", updatedAt.ToUniversalTime().ToString("O"));
+        command.Parameters.AddWithValue("@LastAccessedAt", lastAccessedAt.ToUniversalTime().ToString("O"));
+        command.Parameters.AddWithValue("@Id", chatId.ToString());
+        return await command.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    private static async Task<int> NextOrdinalAsync(
+        SqliteConnection connection, SqliteTransaction transaction, Guid chatId, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COALESCE(MAX(Ordinal), -1) + 1 FROM AssistantChatMessages WHERE ChatId = @ChatId";
+        command.Parameters.AddWithValue("@ChatId", chatId.ToString());
+        return Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+    }
+
+    // The ChatId guard keeps an id collision with another chat from rewriting that chat's row.
+    private static async Task UpsertMessageAsync(
+        SqliteConnection connection, SqliteTransaction transaction, Guid chatId,
+        SyncAssistantChatMessage msg, int ordinal, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO AssistantChatMessages
+                (Id, ChatId, Ordinal, Role, Content, ThinkingContent, Timestamp, Tokens, ModelName, PersonaId, PersonaName, PersonaEmoji, ProviderName, IsProtectedRoute, AttachedFiles)
+            VALUES
+                (@Id, @ChatId, @Ordinal, @Role, @Content, @ThinkingContent, @Timestamp, @Tokens, @ModelName, @PersonaId, @PersonaName, @PersonaEmoji, @ProviderName, @IsProtectedRoute, @AttachedFiles)
+            ON CONFLICT(Id) DO UPDATE SET
+                Role = excluded.Role,
+                Content = excluded.Content,
+                ThinkingContent = excluded.ThinkingContent,
+                Timestamp = excluded.Timestamp,
+                Tokens = excluded.Tokens,
+                ModelName = excluded.ModelName,
+                PersonaId = excluded.PersonaId,
+                PersonaName = excluded.PersonaName,
+                PersonaEmoji = excluded.PersonaEmoji,
+                ProviderName = excluded.ProviderName,
+                IsProtectedRoute = excluded.IsProtectedRoute,
+                AttachedFiles = excluded.AttachedFiles
+            WHERE AssistantChatMessages.ChatId = excluded.ChatId
+            """;
+        command.Parameters.AddWithValue("@Id", msg.Id.ToString());
+        command.Parameters.AddWithValue("@ChatId", chatId.ToString());
+        command.Parameters.AddWithValue("@Ordinal", ordinal);
+        command.Parameters.AddWithValue("@Role", msg.Role);
+        command.Parameters.AddWithValue("@Content", msg.Content);
+        command.Parameters.AddWithValue("@ThinkingContent", (object?)msg.ThinkingContent ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Timestamp", msg.Timestamp.ToString("O"));
+        command.Parameters.AddWithValue("@Tokens", (object?)msg.Tokens ?? DBNull.Value);
+        command.Parameters.AddWithValue("@ModelName", (object?)msg.ModelName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@PersonaId", (object?)msg.Persona?.Id.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@PersonaName", (object?)msg.Persona?.Name ?? DBNull.Value);
+        command.Parameters.AddWithValue("@PersonaEmoji", (object?)msg.Persona?.Emoji ?? DBNull.Value);
+        command.Parameters.AddWithValue("@ProviderName", (object?)msg.ProviderName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@IsProtectedRoute", msg.IsProtectedRoute ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "@AttachedFiles", (object?)SerializeAttachedFiles(msg.AttachedFiles) ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    // Parsed rather than compared as text: a row written with a local offset would sort wrong lexically.
+    private static async Task RenumberByTimestampAsync(
+        SqliteConnection connection, SqliteTransaction transaction, Guid chatId, CancellationToken ct)
+    {
+        var rows = new List<(string Id, DateTime Timestamp, int Ordinal)>();
+        using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = "SELECT Id, Timestamp, Ordinal FROM AssistantChatMessages WHERE ChatId = @ChatId";
+            select.Parameters.AddWithValue("@ChatId", chatId.ToString());
+            using var reader = await select.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                rows.Add((reader.GetString(0), DateTime.Parse(reader.GetString(1)).ToUniversalTime(), reader.GetInt32(2)));
+        }
+
+        var ordered = rows.OrderBy(r => r.Timestamp).ThenBy(r => r.Ordinal).ToList();
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            if (ordered[i].Ordinal == i)
+                continue;
+            using var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = "UPDATE AssistantChatMessages SET Ordinal = @Ordinal WHERE Id = @Id";
+            update.Parameters.AddWithValue("@Ordinal", i);
+            update.Parameters.AddWithValue("@Id", ordered[i].Id);
+            await update.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task RebuildFtsRowAsync(
+        SqliteConnection connection, SqliteTransaction transaction, Guid chatId, CancellationToken ct)
+    {
+        string title;
+        using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            select.CommandText = "SELECT Title FROM AssistantChats WHERE Id = @Id";
+            select.Parameters.AddWithValue("@Id", chatId.ToString());
+            title = await select.ExecuteScalarAsync(ct) as string ?? string.Empty;
+        }
+
+        var body = await ReadFtsBodyAsync(connection, transaction, chatId, ct);
+        await ReplaceFtsRowAsync(connection, transaction, chatId, title, body, ct);
+    }
+
     private async Task SaveUnderGateAsync(
         SyncAssistantChat chat,
         IReadOnlyList<SyncAssistantChatMessage> messages,
@@ -1125,15 +1309,7 @@ public class AssistantChatService : IAssistantChatService, IDisposable
                 Role = reader.GetString(1),
                 Content = reader.GetString(2),
                 ThinkingContent = reader.IsDBNull(3) ? null : reader.GetString(3),
-                // ToUniversalTime is REQUIRED, not cosmetic. The column holds ISO-8601 UTC ("O", so
-                // "...Z"), and DateTime.Parse on a "Z" string returns Kind=Local with the offset
-                // ALREADY APPLIED — 09:02Z comes back as 11:02 Local under CEST. SaveMergedAsync then
-                // sorts these DB-read rows against the caller's own Kind=Utc rows, comparing shifted
-                // ticks against unshifted ones, and every absorbed row lands after every caller row.
-                // That is exactly the "step reply printed before the question the user typed mid-run"
-                // ordering the merge exists to prevent, and it reproduces on any machine east of UTC.
-                // Matches the ToUniversalTime already used by GetMaxUpdatedAtAsync above; the display
-                // layer calls .ToLocalTime() everywhere, which was silently a no-op until now.
+                // DateTime.Parse turns a "Z" string into Kind=Local with the offset applied; callers compare against Utc.
                 Timestamp = DateTime.Parse(reader.GetString(4)).ToUniversalTime(),
                 Tokens = reader.IsDBNull(5) ? null : reader.GetInt32(5),
                 ModelName = reader.IsDBNull(6) ? null : reader.GetString(6),

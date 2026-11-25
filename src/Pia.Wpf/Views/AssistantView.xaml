@@ -101,6 +101,15 @@
       </StackPanel>
     </DataTemplate>
 
+    <!-- A run's block among the messages. Never a message itself: those are saved, sent to the model and
+         windowed. -->
+    <DataTemplate x:Key="RunBlockTemplate">
+      <!-- Wrapped so the panel is a nested view that owns its ids, not the template root. -->
+      <Border Margin="0,0,0,12">
+        <assistant:RunProgressPanel AutomationProperties.AutomationId="{Binding RunId, StringFormat='Assistant_RunBlock_{0}'}" />
+      </Border>
+    </DataTemplate>
+
     <DataTemplate x:Key="AssistantMessageTemplate">
       <!-- Grid rather than a horizontal StackPanel, so the width constraint propagates into the markdown
            body instead of letting long content and code blocks render at their natural width. -->
@@ -211,11 +220,6 @@
       </Border>
       <assistant:PiaChatTitleChip DataContext="{Binding ChatTitleChip}"
                                   Margin="0,12,0,0" />
-      <!-- Read-only run-progress panel (1.4). Embedded when the active chat has a live/selected run.
-           DataContext = ActiveRunProgress; visibility resolves against the VM via the root UserControl. -->
-      <assistant:RunProgressPanel Margin="0,8,0,0"
-                                  DataContext="{Binding ActiveRunProgress}"
-                                  Visibility="{Binding DataContext.ActiveRunProgress, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource NullToVisibilityConverter}}" />
     </StackPanel>
 
     <!-- Empty state -->
@@ -403,65 +407,80 @@
                 AutomationProperties.AutomationId="Assistant_LoadOlderMessages"
                 ToolTip="{loc:Str Assistant_LoadOlderMessages_Tooltip}" />
         <ItemsControl x:Name="MessageItemsControl"
-                      ItemsSource="{Binding VisibleMessages}"
+                      ItemsSource="{Binding TranscriptItems}"
                       behaviors:AutomationPeerRefreshBehavior.RefreshOnContainersGenerated="True"
                       RequestBringIntoView="MessageItemsControl_RequestBringIntoView">
           <ItemsControl.ItemTemplateSelector>
             <local:MessageRoleTemplateSelector UserTemplate="{StaticResource UserMessageTemplate}"
-                                               AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
+                                               AssistantTemplate="{StaticResource AssistantMessageTemplate}"
+                                               RunBlockTemplate="{StaticResource RunBlockTemplate}" />
           </ItemsControl.ItemTemplateSelector>
         </ItemsControl>
-        <!-- A headless step writes its reply only when it ENDS, so the transcript would otherwise sit still
-             for the whole step. Rendered here rather than as a message: anything inside Messages would be
-             persisted, replayed into the model's context and windowed with the transcript. Its text is the
-             run panel's, so the two surfaces cannot drift apart. -->
-        <Grid x:Name="LiveRunActivity"
-              AutomationProperties.AutomationId="Assistant_LiveRunActivity"
-              Margin="0,0,0,12">
-          <Grid.Style>
-            <Style TargetType="Grid">
-              <Setter Property="Visibility" Value="Collapsed" />
-              <Style.Triggers>
-                <MultiDataTrigger>
-                  <MultiDataTrigger.Conditions>
-                    <Condition Binding="{Binding ForeignRunActive}" Value="True" />
-                    <Condition Binding="{Binding ActiveRunProgress.HasToolActivity}" Value="True" />
-                  </MultiDataTrigger.Conditions>
-                  <Setter Property="Visibility" Value="Visible" />
-                </MultiDataTrigger>
-              </Style.Triggers>
-            </Style>
-          </Grid.Style>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
-          <ui:ProgressRing Grid.Column="0"
-                           Width="14" Height="14"
-                           IsIndeterminate="True"
-                           Margin="9,3,13,0"
-                           VerticalAlignment="Top" />
-          <!-- The ids live on the TextBlocks, not on the Grid above: a layout panel is outside UIA's control
-               view, so an id there is unreachable to a script even while the line is on screen. -->
-          <StackPanel Grid.Column="1">
-            <TextBlock Text="{Binding ActiveRunProgress.CurrentActivity}"
-                       AutomationProperties.AutomationId="Assistant_LiveRunActivity_Step"
-                       FontSize="12"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource TextSubtleBrush}" />
-            <TextBlock Text="{Binding ActiveRunProgress.ToolActivity}"
-                       AutomationProperties.AutomationId="Assistant_LiveRunActivity_Tools"
-                       FontSize="12"
-                       FontStyle="Italic"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="{DynamicResource TextMutedBrush}" />
-          </StackPanel>
-        </Grid>
       </StackPanel>
     </ScrollViewer>
 
     <!-- Input area -->
-    <Border Grid.Row="2" Padding="20,8,20,16">
+    <DockPanel Grid.Row="2">
+      <!-- Pinned above the composer so it stays in view while the transcript is scrolled; its text is the
+           run panel's, and clicking it scrolls to the run's block. -->
+      <Button x:Name="LiveRunActivity"
+              AutomationProperties.AutomationId="Assistant_LiveRunActivity"
+              DockPanel.Dock="Top"
+              Margin="20,8,20,0"
+              MaxWidth="{StaticResource TranscriptMaxWidth}"
+              Cursor="Hand"
+              HorizontalContentAlignment="Stretch"
+              ToolTip="{loc:Str Assistant_LiveRunActivity_Tooltip}"
+              Click="LiveRunActivity_Click">
+        <Button.Template>
+          <ControlTemplate TargetType="Button">
+            <Border Background="Transparent">
+              <ContentPresenter />
+            </Border>
+          </ControlTemplate>
+        </Button.Template>
+        <Button.Style>
+          <Style TargetType="Button">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding ForeignRunActive}" Value="True" />
+                  <Condition Binding="{Binding ActiveRunProgress.HasToolActivity}" Value="True" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Visibility" Value="Visible" />
+              </MultiDataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Button.Style>
+        <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <ui:ProgressRing Grid.Column="0"
+                         Width="14" Height="14"
+                         IsIndeterminate="True"
+                         Margin="9,3,13,0"
+                         VerticalAlignment="Top" />
+        <!-- The ids live on the TextBlocks, not on the Grid above: a layout panel is outside UIA's control
+             view, so an id there is unreachable to a script even while the line is on screen. -->
+        <StackPanel Grid.Column="1">
+          <TextBlock Text="{Binding ActiveRunProgress.CurrentActivity}"
+                     AutomationProperties.AutomationId="Assistant_LiveRunActivity_Step"
+                     FontSize="12"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource TextSubtleBrush}" />
+          <TextBlock Text="{Binding ActiveRunProgress.ToolActivity}"
+                     AutomationProperties.AutomationId="Assistant_LiveRunActivity_Tools"
+                     FontSize="12"
+                     FontStyle="Italic"
+                     TextTrimming="CharacterEllipsis"
+                     Foreground="{DynamicResource TextMutedBrush}" />
+        </StackPanel>
+        </Grid>
+      </Button>
+    <Border Padding="20,8,20,16">
       <Border Style="{StaticResource PiaComposerCardStyle}"
               MaxWidth="{StaticResource TranscriptMaxWidth}">
         <StackPanel Margin="8">
@@ -964,6 +983,7 @@
                       CornerRadius="{StaticResource SmallRadius}"
                       Padding="2"
                       VerticalAlignment="Center"
+                      Visibility="{Binding IsChatAgentLeverVisible, Converter={StaticResource BooleanToVisibilityConverter}}"
                       ToolTipService.ShowOnDisabled="True"
                       IsEnabled="{Binding ActivePersona.ToolScope, Converter={StaticResource ToolScopeToBoolConverter}, FallbackValue=False}">
                 <Border.Style>
@@ -998,23 +1018,31 @@
               </Border>
             </StackPanel>
 
-            <!-- Send / Run-in-background buttons -->
+            <!-- Send and its options menu -->
             <Grid Grid.Column="1">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
               </Grid.ColumnDefinitions>
-              <!-- Run in background: Agent mode only. Deliberately quieter than Send's Primary fill, so the
-                   two sends never read as one control; the tooltip names what the icon detaches. -->
               <ui:Button Grid.Column="0"
-                         Command="{Binding RunInBackgroundCommand}"
                          Appearance="Secondary"
-                         Padding="10,4" Margin="0,0,4,0"
-                         AutomationProperties.Name="{loc:Str Assistant_RunInBackground_Tooltip}"
-                         AutomationProperties.AutomationId="Assistant_RunInBackground"
-                         ToolTip="{loc:Str Assistant_RunInBackground_Tooltip}"
-                         Visibility="{Binding AgentModeEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <ui:SymbolIcon Symbol="WindowNew20" FontSize="16" />
+                         Padding="4,4" Margin="0,0,2,0"
+                         Click="SendOptionsButton_Click"
+                         AutomationProperties.Name="{loc:Str Assistant_SendOptions_Tooltip}"
+                         AutomationProperties.AutomationId="Assistant_SendOptions"
+                         ToolTip="{loc:Str Assistant_SendOptions_Tooltip}">
+                <ui:SymbolIcon Symbol="ChevronDown20" FontSize="12" />
+                <ui:Button.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="{loc:Str Assistant_RunInBackground_MenuItem}"
+                              Command="{Binding RunInBackgroundCommand}"
+                              AutomationProperties.AutomationId="Assistant_RunInBackground">
+                      <MenuItem.Icon>
+                        <ui:SymbolIcon Symbol="WindowNew20" />
+                      </MenuItem.Icon>
+                    </MenuItem>
+                  </ContextMenu>
+                </ui:Button.ContextMenu>
               </ui:Button>
               <!-- Send. While a turn is in flight the command can't execute, and the greyed-out Primary
                    button read as nothing at all — so a busy pill covers it for the whole turn (covers,
@@ -1065,7 +1093,7 @@
 
           <!-- W2 composer hint: a headless run owns this chat's writes, so Send stays disabled until it
                stops. The pinned run-progress panel in row 0 shows the run, but nothing there attributes the
-               dead Send to it. Bound to ForeignRunActive alone, so it never appears for the streaming or
+               dead Send to it. Bound to ShowRunActiveHint alone, so it never appears for the streaming or
                empty-composer disabled states. Collapsed costs zero height in this StackPanel (the composer
                row is Auto), so the layout does not shift when the hint is hidden. -->
           <TextBlock Text="{loc:Str Assistant_RunActive_Hint}"
@@ -1073,7 +1101,7 @@
                      FontSize="12"
                      TextWrapping="Wrap"
                      Foreground="{DynamicResource TextSubtleBrush}"
-                     Visibility="{Binding ForeignRunActive, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                     Visibility="{Binding ShowRunActiveHint, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
           <!-- A sibling rather than a shared control: both the text and the condition differ, and the two
                states are mutually exclusive anyway (a parked run is not executing). -->
@@ -1087,6 +1115,7 @@
         </StackPanel>
       </Border>
     </Border>
+    </DockPanel>
     </Grid>
 
     <!-- Todo panel overlay (right side) -->

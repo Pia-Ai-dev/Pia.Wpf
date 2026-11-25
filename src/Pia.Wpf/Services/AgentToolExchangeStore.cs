@@ -23,7 +23,7 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
     private const string ColumnList =
         "Id, SchemaVersion, RunId, StepId, MessageSeq, Seq, Round, Role, Kind, CallId, ToolName, PluginId, " +
         "ArgumentsJson, ArgsOmitted, DisplayArgs, ResultKind, ResultText, Chars, AnchorMessageId, CreatedAt, " +
-        "ReplayedAt, SupersededAt";
+        "ReplayedAt, SupersededAt, ReadableArgumentsJson, ReadableResultText";
 
     private readonly string _connectionString;
     private readonly ILogger<AgentToolExchangeStore> _logger;
@@ -65,7 +65,8 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
     }
 
     public Task RecordAsync(
-        Guid runId, Guid? stepId, int round, IReadOnlyList<ChatMessage> messages, CancellationToken ct = default)
+        Guid runId, Guid? stepId, int round, IReadOnlyList<ChatMessage> messages, CancellationToken ct = default,
+        IReadOnlyList<ChatMessage>? readable = null)
     {
         if (ct.IsCancellationRequested || messages.Count == 0)
             return Task.CompletedTask;
@@ -80,17 +81,27 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
                 using var transaction = connection.BeginTransaction();
 
                 var totals = ReadTotals(connection, transaction, runId);
+                var now = DateTime.UtcNow;
                 var rows = AgentToolExchangeSerializer.ToRows(
-                    runId, stepId, round, totals.MaxSeq, totals.MaxMessageSeq, messages, DateTime.UtcNow);
+                    runId, stepId, round, totals.MaxSeq, totals.MaxMessageSeq, messages, now);
                 if (rows.Count == 0)
                     return Task.CompletedTask;
 
-                var batchChars = rows.Sum(r => (long)r.Chars);
+                if (readable is not null)
+                {
+                    rows = AgentToolExchangeSerializer.WithReadable(rows, AgentToolExchangeSerializer.ToRows(
+                        runId, stepId, round, totals.MaxSeq, totals.MaxMessageSeq, readable, now));
+                }
+
+                var batchChars = rows.Sum(r => (long)r.Chars
+                    + (r.ReadableArgumentsJson?.Length ?? 0) + (r.ReadableResultText?.Length ?? 0));
                 if (totals.CarriedRows + rows.Count > MaxRowsPerRun ||
                     totals.CarriedChars + batchChars > MaxCharsPerRun)
                 {
-                    // All-or-nothing: a partial batch would store a call with no result.
-                    transaction.Rollback();
+                    // All-or-nothing: a partial batch would store a call with no result. The marker row is what
+                    // lets the step detail say the round was not kept.
+                    Insert(connection, transaction, NotRecordedRow(runId, stepId, round, totals.MaxSeq + 1, now));
+                    transaction.Commit();
                     if (_capNoted.Add(runId))
                     {
                         _logger.LogInformation(
@@ -275,6 +286,37 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         }
     }
 
+    public Task<int> SupersedeStepUnreplayedAsync(Guid runId, Guid? stepId, CancellationToken ct = default)
+    {
+        if (ct.IsCancellationRequested)
+            return Task.FromResult(0);
+
+        try
+        {
+            lock (_gate)
+            {
+                if (_disposed) return Task.FromResult(0);
+
+                using var cmd = Connection().CreateCommand();
+                cmd.CommandText = """
+                    UPDATE AgentToolExchanges
+                    SET SupersededAt = @Now
+                    WHERE RunId = @RunId AND StepId IS @StepId
+                      AND Kind IN (3, 4) AND ReplayedAt IS NULL AND SupersededAt IS NULL;
+                    """;
+                cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+                cmd.Parameters.AddWithValue("@RunId", runId.ToString());
+                cmd.Parameters.AddWithValue("@StepId", (object?)stepId?.ToString() ?? DBNull.Value);
+                return Task.FromResult(cmd.ExecuteNonQuery());
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Tool-exchange step supersede failed for run {RunId}", runId);
+            return Task.FromResult(0);
+        }
+    }
+
     public Task<bool> TryMarkReplayedAsync(Guid id, DateTime replayedAt, CancellationToken ct = default)
     {
         if (ct.IsCancellationRequested)
@@ -352,6 +394,7 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
                     UPDATE AgentToolExchanges
                     SET ResultKind = @ResultKind,
                         ResultText = @ResultText,
+                        ReadableResultText = NULL,
                         Chars = COALESCE(LENGTH(ArgumentsJson), 0) + COALESCE(LENGTH(@ResultText), 0)
                     WHERE RunId = @RunId AND Kind = 2 AND CallId = @CallId;
                     """;
@@ -407,7 +450,7 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         }
     }
 
-    public Task<int> PurgeRunAsync(Guid runId, CancellationToken ct = default)
+    public Task<int> PurgeApprovalRecordsAsync(Guid runId, CancellationToken ct = default)
     {
         if (ct.IsCancellationRequested)
             return Task.FromResult(0);
@@ -419,13 +462,13 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
                 if (_disposed) return Task.FromResult(0);
 
                 using var cmd = Connection().CreateCommand();
-                cmd.CommandText = "DELETE FROM AgentToolExchanges WHERE RunId = @RunId;";
+                cmd.CommandText = "DELETE FROM AgentToolExchanges WHERE RunId = @RunId AND Kind IN (3, 4);";
                 cmd.Parameters.AddWithValue("@RunId", runId.ToString());
                 var deleted = cmd.ExecuteNonQuery();
                 _capNoted.Remove(runId);
 
                 if (deleted > 0)
-                    _logger.LogInformation("Purged {Count} tool-exchange rows for run {RunId}", deleted, runId);
+                    _logger.LogInformation("Purged {Count} approval-record rows for run {RunId}", deleted, runId);
 
                 return Task.FromResult(deleted);
             }
@@ -449,13 +492,12 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
                 if (_disposed) return Task.FromResult(0);
 
                 using var cmd = Connection().CreateCommand();
-                // The terminal set is explicit and never a range: WaitingForChildren sits ABOVE the terminal
-                // band. The second clause has no age filter — it is what catches a run whose process died
-                // before its own purge ran.
+                // The terminal set is explicit, not a range: WaitingForChildren sits above it. The second clause
+                // catches the approval records of a run whose process died before its own purge ran.
                 cmd.CommandText = """
                     DELETE FROM AgentToolExchanges
                     WHERE CreatedAt < @Cutoff
-                       OR RunId IN (SELECT Id FROM AgentRuns WHERE State IN (5, 6, 7));
+                       OR (Kind IN (3, 4) AND RunId IN (SELECT Id FROM AgentRuns WHERE State IN (5, 6, 7)));
                     """;
                 cmd.Parameters.AddWithValue("@Cutoff", cutoff.ToString("O"));
                 var deleted = cmd.ExecuteNonQuery();
@@ -473,6 +515,102 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         }
     }
 
+    public Task<AgentStepCallDetails> GetStepCallsAsync(Guid runId, Guid? stepId, CancellationToken ct = default)
+    {
+        var rows = Query(
+            $"""
+            SELECT {ColumnList} FROM AgentToolExchanges
+            WHERE RunId = @RunId AND Kind IN (1, 2, 5)
+              AND (StepId = @StepId OR (@StepId IS NULL AND StepId IS NULL))
+            ORDER BY Seq;
+            """,
+            cmd =>
+            {
+                cmd.Parameters.AddWithValue("@RunId", runId.ToString());
+                cmd.Parameters.AddWithValue("@StepId", (object?)stepId?.ToString() ?? DBNull.Value);
+            },
+            runId,
+            ct);
+
+        return Task.FromResult(rows.Count == 0 ? AgentStepCallDetails.Empty : ToDetails(rows));
+    }
+
+    internal static AgentStepCallDetails ToDetails(IReadOnlyList<AgentToolExchangeRow> rows)
+    {
+        var notRecorded = rows
+            .Where(r => r.Kind == AgentToolExchangeKind.NotRecorded && r.Round is not null)
+            .Select(r => r.Round!.Value)
+            .Distinct()
+            .ToList();
+
+        var results = rows.Where(r => r.Kind == AgentToolExchangeKind.Result).ToList();
+        var used = new HashSet<Guid>();
+        var calls = new List<AgentToolCallDetail>();
+
+        foreach (var call in rows.Where(r => r.Kind == AgentToolExchangeKind.Call))
+        {
+            // The first unused later result with the same id; empty ids, from a provider that gives none, pair in order.
+            var result = results.FirstOrDefault(r => !used.Contains(r.Id) && r.Seq > call.Seq && r.CallId == call.CallId);
+            if (result is not null)
+                used.Add(result.Id);
+
+            var (resultText, resultState) = DescribeResult(result);
+            calls.Add(new AgentToolCallDetail(
+                call.CallId,
+                call.ToolName,
+                call.Round,
+                call.CreatedAt,
+                call.ArgsOmitted ? null : call.ReadableArgumentsJson ?? call.ArgumentsJson,
+                call.ArgsOmitted ? AgentToolDetailState.Omitted : AgentToolDetailState.Kept,
+                resultText,
+                resultState));
+        }
+
+        return new AgentStepCallDetails(calls, notRecorded);
+    }
+
+    private static (string? Text, AgentToolDetailState State) DescribeResult(AgentToolExchangeRow? result)
+    {
+        if (result is null)
+            return (null, AgentToolDetailState.Missing);
+
+        var text = result.ReadableResultText ?? result.ResultText;
+        var suffix = AgentToolExchangeSerializer.TruncationSuffix;
+        // The stored length as well as the suffix, so a tool whose own output ends that way is not flagged.
+        var cutLength = result.ResultText?.Length - suffix.Length;
+        if (result.ResultKind == AgentToolExchangeResult.Text && text is not null
+            && text.EndsWith(suffix, StringComparison.Ordinal)
+            && cutLength is AgentToolCarryover.MaxCarriedResultChars or AgentToolExchangeSerializer.MaxRowChars)
+        {
+            return (text[..^suffix.Length], AgentToolDetailState.Truncated);
+        }
+
+        return (text, AgentToolDetailState.Kept);
+    }
+
+    private static AgentToolExchangeRow NotRecordedRow(Guid runId, Guid? stepId, int round, long seq, DateTime now) => new(
+        Id: Guid.NewGuid(),
+        RunId: runId,
+        StepId: stepId,
+        MessageSeq: 0,
+        Seq: seq,
+        Round: round,
+        Role: "assistant",
+        Kind: AgentToolExchangeKind.NotRecorded,
+        CallId: string.Empty,
+        ToolName: null,
+        PluginId: null,
+        ArgumentsJson: null,
+        ArgsOmitted: false,
+        DisplayArgs: null,
+        ResultKind: AgentToolExchangeResult.None,
+        ResultText: null,
+        Chars: 0,
+        AnchorMessageId: null,
+        CreatedAt: now,
+        ReplayedAt: null,
+        SupersededAt: null);
+
     /// <summary>Maxima over ALL kinds; counts and char sums over Call/Result only, because the cap is theirs.</summary>
     private static Totals ReadTotals(SqliteConnection connection, SqliteTransaction transaction, Guid runId)
     {
@@ -482,7 +620,9 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
             SELECT COALESCE(MAX(Seq), 0),
                    COALESCE(MAX(MessageSeq), 0),
                    COUNT(CASE WHEN Kind IN (1, 2) THEN 1 END),
-                   COALESCE(SUM(CASE WHEN Kind IN (1, 2) THEN Chars END), 0)
+                   COALESCE(SUM(CASE WHEN Kind IN (1, 2) THEN Chars
+                       + COALESCE(LENGTH(ReadableArgumentsJson), 0)
+                       + COALESCE(LENGTH(ReadableResultText), 0) END), 0)
             FROM AgentToolExchanges
             WHERE RunId = @RunId;
             """;
@@ -506,7 +646,8 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
             VALUES
                 (@Id, @SchemaVersion, @RunId, @StepId, @MessageSeq, @Seq, @Round, @Role, @Kind, @CallId,
                  @ToolName, @PluginId, @ArgumentsJson, @ArgsOmitted, @DisplayArgs, @ResultKind, @ResultText,
-                 @Chars, @AnchorMessageId, @CreatedAt, @ReplayedAt, @SupersededAt);
+                 @Chars, @AnchorMessageId, @CreatedAt, @ReplayedAt, @SupersededAt, @ReadableArgumentsJson,
+                 @ReadableResultText);
             """;
         cmd.Parameters.AddWithValue("@Id", row.Id.ToString());
         cmd.Parameters.AddWithValue("@SchemaVersion", row.SchemaVersion);
@@ -530,6 +671,8 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         cmd.Parameters.AddWithValue("@CreatedAt", row.CreatedAt.ToString("O"));
         cmd.Parameters.AddWithValue("@ReplayedAt", (object?)row.ReplayedAt?.ToString("O") ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@SupersededAt", (object?)row.SupersededAt?.ToString("O") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ReadableArgumentsJson", (object?)row.ReadableArgumentsJson ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ReadableResultText", (object?)row.ReadableResultText ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
@@ -590,6 +733,8 @@ public sealed class AgentToolExchangeStore : IAgentToolExchangeStore, IDisposabl
         SupersededAt: r.IsDBNull(21) ? null : ParseTimestamp(r.GetString(21)))
     {
         SchemaVersion = r.GetInt32(1),
+        ReadableArgumentsJson = r.IsDBNull(22) ? null : r.GetString(22),
+        ReadableResultText = r.IsDBNull(23) ? null : r.GetString(23),
     };
 
     private static DateTime ParseTimestamp(string value) =>

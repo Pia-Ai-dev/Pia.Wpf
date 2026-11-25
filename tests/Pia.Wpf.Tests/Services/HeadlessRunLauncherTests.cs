@@ -1703,6 +1703,45 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         Assert.Contains(chat!.Messages, m => m.Content == "Run_PlanRejected_ChatNote");
     }
 
+    [Fact]
+    public async Task CancelRunAsync_SettlesAParkedRunAsCancelled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync("step-cap");
+
+        Assert.True(await launcher.CancelRunAsync(parked.Id, ct));
+
+        var after = await _runs.GetAsync(parked.Id, ct);
+        Assert.Equal(AgentRunState.Cancelled, after!.State);
+        Assert.NotNull(after.CompletedAt);
+    }
+
+    // Not dispatched by this process and not parked: nothing here can stop it, so the caller must be told.
+    [Fact]
+    public async Task CancelRunAsync_RefusesARunThisProcessIsNotDispatching()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync("step-cap");
+        await _runs.SetStateAsync(parked.Id, AgentRunState.Running, ct);
+
+        Assert.False(await launcher.CancelRunAsync(parked.Id, ct));
+        Assert.Equal(AgentRunState.Running, (await _runs.GetAsync(parked.Id, ct))!.State);
+    }
+
+    [Fact]
+    public async Task CancelRunAsync_RefusesAFinishedRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (launcher, _) = BuildLauncher();
+        var parked = await ParkRunWithNoStepsAsync("step-cap");
+        await _runs.CompleteAsync(parked.Id, ct: ct);
+
+        Assert.False(await launcher.CancelRunAsync(parked.Id, ct));
+        Assert.Equal(AgentRunState.Completed, (await _runs.GetAsync(parked.Id, ct))!.State);
+    }
+
     /// <summary>Reject answers a plan-approval park only; on any other park there is no plan to say no to.</summary>
     [Fact]
     public async Task RejectPlanAsync_ReturnsFalse_WhenRunIsNotParkedOnPlanApproval()
@@ -2390,6 +2429,135 @@ public sealed class HeadlessRunLauncherTests : IDisposable
         var next = await _runs.NextPendingStepAsync(handle.RunId, ct);
         Assert.Equal("S0", next!.Title);                                                     // …and is drainable
 
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
+    }
+
+    [Fact]
+    public async Task Shutdown_MidStep_SettlesTheRunAsInterrupted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher(stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.Steps = 2;
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        await launcher.StopAsync(CancellationToken.None);
+
+        var final = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(HeadlessRunLauncher.ShutdownInterruptedFailure, AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
+    }
+
+    [Fact]
+    public async Task CancelWithAReason_MidStep_SettlesTheRunWithThatReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher(stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.Steps = 2;
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        await launcher.CancelAsync(handle.RunId, AgentRunOrchestrator.SupersededFailureReason);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var final = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(AgentRunOrchestrator.SupersededFailureReason, AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        await launcher.StopAsync(CancellationToken.None);
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
+    }
+
+    /// <summary>A queued dispatch never reaches the run loop, so the launcher settles it with the same reason.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ACancelWhileQueued_SettlesTheLaunchWithItsReason(bool superseded)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource();
+        var (launcher, planner) = BuildLauncher(
+            onPlan: () => gate.Task, appSettings: new AppSettings { MaxParallelBackgroundRuns = 1 });
+        var busy = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await WaitForConcurrencyAsync(planner, 1);
+
+        var queued = await launcher.LaunchAsync(new HeadlessRunRequest("b", AgentRunTrigger.User), ct);
+        if (superseded)
+            await launcher.CancelAsync(queued.RunId, AgentRunOrchestrator.SupersededFailureReason);
+        else
+            Assert.True(await launcher.CancelRunAsync(queued.RunId, ct));
+        await queued.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var final = await _runs.GetAsync(queued.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(superseded ? AgentRunOrchestrator.SupersededFailureReason : null,
+            AgentRunService.ReadFailureReason(final.ExtraJson));
+        Assert.Equal(1, planner.Concurrent); // it never left the queue
+
+        gate.SetResult();
+        await busy.Completion.WaitAsync(TimeSpan.FromSeconds(20), ct);
+        await launcher.StopAsync(CancellationToken.None);
+        TempPath.Remove(Path.Combine(_runsBase, busy.RunId.ToString()));
+        TempPath.Remove(Path.Combine(_runsBase, queued.RunId.ToString()));
+    }
+
+    [Fact]
+    public async Task ASupersedeWhileAResumeIsQueued_SettlesItInsteadOfReParking()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var gate = new TaskCompletionSource();
+        var (launcher, planner) = BuildLauncher(
+            onPlan: () => gate.Task, appSettings: new AppSettings { MaxParallelBackgroundRuns = 1 });
+        var parked = await ParkRunWithPendingStepAsync(policyJson: null);
+        var busy = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await WaitForConcurrencyAsync(planner, 1);
+
+        Assert.True(await launcher.ResumeAsync(parked.Id, ct: ct));
+        await launcher.CancelAsync(parked.Id, AgentRunOrchestrator.SupersededFailureReason);
+
+        // Polled rather than AwaitRunSettledAsync, whose StopAsync would wait out the held run.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var final = await _runs.GetAsync(parked.Id, ct);
+        while (final!.State is not AgentRunState.Cancelled && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20, ct);
+            final = await _runs.GetAsync(parked.Id, ct);
+        }
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(AgentRunOrchestrator.SupersededFailureReason, AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        gate.SetResult();
+        await busy.Completion.WaitAsync(TimeSpan.FromSeconds(20), ct);
+        await launcher.StopAsync(CancellationToken.None);
+        TempPath.Remove(Path.Combine(_runsBase, busy.RunId.ToString()));
+        TempPath.Remove(Path.Combine(_runsBase, parked.Id.ToString()));
+    }
+
+    [Fact]
+    public async Task UserStop_MidStep_SettlesTheRunWithNoFailureReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher(stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.Steps = 2;
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        Assert.True(await launcher.CancelRunAsync(handle.RunId, ct));
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var final = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Null(AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        await launcher.StopAsync(CancellationToken.None);
         TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
     }
 

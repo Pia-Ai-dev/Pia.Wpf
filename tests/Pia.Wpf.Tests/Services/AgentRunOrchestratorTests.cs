@@ -179,6 +179,8 @@ public sealed class AgentRunOrchestratorTests
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => _inner.TryBeginResumeAsync(runId, ct);
         public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default) => _inner.TryPauseUserAsync(runId, ct);
         public Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default) => _inner.TryResumeFromPauseAsync(runId, ct);
+        public Task<bool> TryClaimParkAsync(Guid runId, AgentRunState from, string? expectedExtraJson, CancellationToken ct = default) => _inner.TryClaimParkAsync(runId, from, expectedExtraJson, ct);
+        public Task<bool> TryCancelParkedAsync(Guid runId, CancellationToken ct = default) => _inner.TryCancelParkedAsync(runId, ct);
         public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default) => _inner.TryRejectParkedPlanAsync(runId, ct);
         public Task BeginChildWaitAsync(Guid runId, int childCount, CancellationToken ct = default) => _inner.BeginChildWaitAsync(runId, childCount, ct);
         public Task<bool> TryEndChildWaitAsync(Guid runId, CancellationToken ct = default) => _inner.TryEndChildWaitAsync(runId, ct);
@@ -491,6 +493,59 @@ public sealed class AgentRunOrchestratorTests
         Assert.Equal(AgentRunState.Cancelled, final!.State);
         Assert.True(exec.EndCalled);
         Assert.True(exec.EndCancelled);
+    }
+
+    /// <summary>The executors report a cancel as the error "cancelled"; stored as the run's reason it made a stopped
+    /// job read as failed.</summary>
+    [Fact]
+    public async Task Run_StepCancelled_SettlesWithNoFailureReason_AndTheStepNotDone()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1"), ("B", "s2")), false));
+        var exec = new RecordingExecutor(step => step.Intent == "s2" ? Cancel() : Ok());
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Null(AgentRunService.ReadFailureReason(final.ExtraJson));
+        Assert.Equal(AgentStepStatus.Done, Assert.Single(final.Plan, s => s.Intent == "s1").Status);
+        Assert.Equal(AgentStepStatus.Pending, Assert.Single(final.Plan, s => s.Intent == "s2").Status);
+    }
+
+    [Fact]
+    public async Task Run_FallbackTurnCancelled_SettlesWithNoFailureReason()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(PlanResult.Fallback);
+        var exec = new RecordingExecutor(_ => Ok()) { FallbackResult = Cancel() };
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Null(AgentRunService.ReadFailureReason(final.ExtraJson));
+    }
+
+    [Fact]
+    public async Task Run_StepCancelledForAReason_SettlesWithThatReason()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
+        var exec = new RecordingExecutor(_ => Cancel());
+
+        await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive,
+            TestContext.Current.CancellationToken, cancelReason: () => HeadlessRunLauncher.ShutdownInterruptedFailure);
+
+        var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(HeadlessRunLauncher.ShutdownInterruptedFailure, AgentRunService.ReadFailureReason(final.ExtraJson));
     }
 
     [Fact]

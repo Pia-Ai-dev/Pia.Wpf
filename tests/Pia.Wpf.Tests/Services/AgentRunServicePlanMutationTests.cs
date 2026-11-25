@@ -60,6 +60,32 @@ public sealed class AgentRunServicePlanMutationTests : IDisposable
         Assert.Equal(before, PlanSnapshot(run.Id));
     }
 
+    [Theory]
+    [InlineData(AgentRunOrchestrator.PlanApprovalReason, true)]
+    [InlineData("step-cap", false)]
+    public async Task Mutation_AtAPark_IsAllowedOnlyWhileThePlanWaitsForApproval(string reason, bool allowed)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var run = await NewRunAsync(ct);
+        await SeedPlanAsync(run.Id, ct, ("s1", AgentStepStatus.Pending), ("s2", AgentStepStatus.Pending));
+        await _service.PauseAsync(run.Id, reason, ct);
+        AgentRunState? raised = null;
+        _service.RunChanged += (_, e) => raised = e.State;
+
+        var pending = await PendingAsync(run.Id, ct);
+        var result = await _service.ApplyPlanMutationAsync(
+            run.Id, [new PlanStepEdit(pending[1].Id, "second", null, null), new PlanStepEdit(pending[0].Id, "first", null, null)], ct);
+
+        Assert.Equal(allowed ? PlanMutationOutcome.Applied : PlanMutationOutcome.NotPaused, result.Outcome);
+        if (allowed)
+        {
+            Assert.Equal(new[] { "second", "first" }, (await PendingAsync(run.Id, ct)).Select(s => s.Title));
+            // The real state, so a listener does not read the edit as the park having ended.
+            Assert.Equal(AgentRunState.WaitingForInput, raised);
+            Assert.Equal(AgentRunState.WaitingForInput, (await _service.GetAsync(run.Id, ct))!.State);
+        }
+    }
+
     // An edit rebuilds the row, so the planner-owned columns it does not touch have to be carried across.
     [Fact]
     public async Task Edit_RewritesTitleAndIntent_PreservingTheStepId()

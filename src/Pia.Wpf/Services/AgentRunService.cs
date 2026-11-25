@@ -488,6 +488,15 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         return Task.FromResult(affected > 0);
     }
 
+    public void SetWorkClockRunning(Guid runId, bool running)
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            MoveLedgerClock(runId, running ? LedgerClock.OpenSegment : LedgerClock.CloseSegment);
+        }
+    }
+
     public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default)
     {
         int affected;
@@ -583,6 +592,69 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
         {
             _logger.LogInformation("Run {RunId} resume claimed from Paused → Running", runId);
             RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        }
+        return Task.FromResult(affected > 0);
+    }
+
+    public Task<bool> TryClaimParkAsync(
+        Guid runId, AgentRunState from, string? expectedExtraJson, CancellationToken ct = default)
+    {
+        if (!AgentRunStates.IsParked(from))
+            return Task.FromResult(false);
+
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, UpdatedAt=@Now, ExtraJson=NULL "
+                + "WHERE Id=@Id AND State=@Expected AND ExtraJson IS @Extra";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Running);
+            cmd.Parameters.AddWithValue("@Now", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@Expected", (int)from);
+            cmd.Parameters.AddWithValue("@Extra", ToParam(expectedExtraJson));
+            affected = cmd.ExecuteNonQuery();
+
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.OpenSegment);
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} resume claimed from {State} on an unchanged park → Running", runId, from);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Running));
+        }
+        return Task.FromResult(affected > 0);
+    }
+
+    public Task<bool> TryCancelParkedAsync(Guid runId, CancellationToken ct = default)
+    {
+        int affected;
+        lock (_gate)
+        {
+            if (_disposed) return Task.FromResult(false);
+
+            var now = DateTime.UtcNow.ToString("O");
+            using var cmd = Connection().CreateCommand();
+            cmd.CommandText = "UPDATE AgentRuns SET State=@New, CompletedAt=@Now, UpdatedAt=@Now, ExtraJson=NULL, "
+                + "FailureJson=NULL WHERE Id=@Id AND State IN (@S1,@S2)";
+            cmd.Parameters.AddWithValue("@New", (int)AgentRunState.Cancelled);
+            cmd.Parameters.AddWithValue("@Now", now);
+            cmd.Parameters.AddWithValue("@Id", runId.ToString());
+            cmd.Parameters.AddWithValue("@S1", (int)AgentRunState.WaitingForInput);
+            cmd.Parameters.AddWithValue("@S2", (int)AgentRunState.Paused);
+            affected = cmd.ExecuteNonQuery();
+
+            if (affected > 0)
+                MoveLedgerClock(runId, LedgerClock.CloseSegment);
+        }
+
+        if (affected > 0)
+        {
+            _logger.LogInformation("Run {RunId} → Cancelled from a park", runId);
+            RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Cancelled));
         }
         return Task.FromResult(affected > 0);
     }
@@ -721,9 +793,15 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             // would otherwise re-publish stale items at startup).
             using (var cmd = connection.CreateCommand())
             {
-                cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now WHERE State < @Terminal";
+                // Pia closed under these runs; with no reason they would read as stopped by the user.
+                cmd.CommandText = "UPDATE AgentRuns SET State=@State, CompletedAt=@Now, UpdatedAt=@Now, ExtraJson=@Extra, " +
+                    "FailureJson=@Failure WHERE State < @Terminal";
                 cmd.Parameters.AddWithValue("@State", (int)AgentRunState.Cancelled);
                 cmd.Parameters.AddWithValue("@Now", now.ToString("O"));
+                cmd.Parameters.AddWithValue("@Extra",
+                    JsonSerializer.Serialize(new { error = HeadlessRunLauncher.ShutdownInterruptedFailure }, JsonOptions));
+                cmd.Parameters.AddWithValue("@Failure",
+                    ToParam(FailureMapper.ForReason(HeadlessRunLauncher.ShutdownInterruptedFailure)?.ToJson()));
                 cmd.Parameters.AddWithValue("@Terminal", (int)AgentRunState.WaitingForInput);
                 cancelled = cmd.ExecuteNonQuery();
             }
@@ -1067,6 +1145,7 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
     {
         int applied;
         int inserted = 0, skipped = 0;
+        var mutatedState = AgentRunState.Paused;
         List<AgentStep> rows;
         lock (_gate)
         {
@@ -1081,19 +1160,23 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
             // rather than a separate outcome — from the caller's side "there is nothing pausable to mutate"
             // is the same answer.
             AgentRunState state;
+            string? extraJson;
             using (var read = connection.CreateCommand())
             {
-                read.CommandText = "SELECT State FROM AgentRuns WHERE Id=@Id";
+                read.CommandText = "SELECT State, ExtraJson FROM AgentRuns WHERE Id=@Id";
                 read.Parameters.AddWithValue("@Id", runId.ToString());
-                var raw = read.ExecuteScalar();
-                if (raw is null or DBNull)
+                using var reader = read.ExecuteReader();
+                if (!reader.Read())
                     return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.NotPaused, 0));
-                state = (AgentRunState)Convert.ToInt32(raw);
+                state = (AgentRunState)Convert.ToInt32(reader.GetValue(0));
+                extraJson = reader.IsDBNull(1) ? null : reader.GetString(1);
             }
 
             var persisted = LoadSteps(connection, runId);
-            if (state != AgentRunState.Paused)
+            // A plan waiting for approval is not draining either, so it is as safe to rewrite as a paused one.
+            if (!IsPlanMutable(state, extraJson))
                 return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.NotPaused, persisted.Count));
+            mutatedState = state;
 
             // The immutable prefix: everything already settled — Done, Skipped AND Failed. Kept in persisted
             // ordinal order with its ORIGINAL Ids, which is what keeps its per-step ledger entries (keyed by
@@ -1225,9 +1308,14 @@ public sealed class AgentRunService : IAgentRunService, IDisposable
 
         // The panel refreshes from RunChanged and from nothing else (ReplaceStepsAsync raises none, which is
         // why the replan path cannot repaint a row either). Step-less: the change is the plan, not a step.
-        RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, AgentRunState.Paused));
+        RunChanged?.Invoke(this, new AgentRunChangedEventArgs(runId, mutatedState));
         return Task.FromResult(new PlanMutationResult(PlanMutationOutcome.Applied, applied));
     }
+
+    private static bool IsPlanMutable(AgentRunState state, string? extraJson) =>
+        state == AgentRunState.Paused
+        || (state == AgentRunState.WaitingForInput
+            && RunPauseEnvelope.ReadReason(new AgentRun { ExtraJson = extraJson }) == AgentRunOrchestrator.PlanApprovalReason);
 
     public Task<AgentStep?> NextPendingStepAsync(Guid runId, CancellationToken ct = default)
     {

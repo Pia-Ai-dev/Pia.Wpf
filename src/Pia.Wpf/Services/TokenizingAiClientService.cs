@@ -216,6 +216,10 @@ public class TokenizingAiClientService : IAiClientService
                 }
                 yield return item;
             }
+            else if (item is ToolRoundExchange round)
+            {
+                yield return round with { Readable = DetokenizeRound(round.Messages) };
+            }
             else
             {
                 // Any other stream item (or future type) passes through untouched.
@@ -356,6 +360,25 @@ public class TokenizingAiClientService : IAiClientService
                 element.WriteTo(writer);
                 break;
         }
+    }
+
+    private List<ChatMessage> DetokenizeRound(IReadOnlyList<ChatMessage> messages)
+    {
+        var tokenMap = TryGetTokenMapService()!;
+        var readable = new List<ChatMessage>(messages.Count);
+        foreach (var message in messages)
+        {
+            var contents = message.Contents.Select(content => content switch
+            {
+                FunctionCallContent call => DetokenizeToolCallArguments(call),
+                FunctionResultContent { Result: string text } result =>
+                    new FunctionResultContent(result.CallId, tokenMap.Detokenize(text)),
+                _ => content,
+            }).ToList();
+            readable.Add(new ChatMessage(message.Role, contents));
+        }
+
+        return readable;
     }
 
     private FunctionCallContent DetokenizeToolCallArguments(FunctionCallContent toolCall)

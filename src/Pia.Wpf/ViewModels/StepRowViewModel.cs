@@ -123,6 +123,7 @@ public sealed partial class StepRowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPending));
         OnPropertyChanged(nameof(HasStatusGlyph));
         OnPropertyChanged(nameof(IsSkipped));
+        if (value != AgentStepStatus.Running) ClearLive();
     }
 
     /// <summary>True while this row's inline editor is open. Inline, never a dialog — the panel is embedded in

@@ -105,6 +105,49 @@ public class HeadlessRunLauncherPolicyTests
     }
 
     [Fact]
+    public void TheChatJobFallbackLiteralIsTheDocumentTheSerializerProduces()
+    {
+        Assert.Equal(
+            HeadlessRunLauncher.ChatJobEmptyEnvelopeJson,
+            HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, policy: null, chatJob: true));
+        Assert.True(HeadlessRunLauncher.TryRestoreChatJob(HeadlessRunLauncher.ChatJobEmptyEnvelopeJson));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not json")]
+    [InlineData(PreBatch04Envelope)]
+    [InlineData("""{"v":2,"grantedWrites":[],"chatJob":true}""")]
+    [InlineData("""{"v":1,"chatJob":true}""")]
+    public void AnEnvelopeWithoutAReadableChatJobMember_IsNotAChatJob(string? json)
+    {
+        Assert.False(HeadlessRunLauncher.TryRestoreChatJob(json));
+        Assert.False(new AgentRun { PolicyJson = json }.IsChatJob());
+    }
+
+    [Fact]
+    public void AChatJobFlagRoundTrips_AndANonChatJobOmitsTheMember()
+    {
+        var job = HeadlessRunLauncher.SerializeGrantEnvelope(["write_file"], AgentRunTrigger.User, chatJob: true);
+        Assert.True(new AgentRun { PolicyJson = job }.IsChatJob());
+
+        var background = HeadlessRunLauncher.SerializeGrantEnvelope(["write_file"], AgentRunTrigger.User);
+        Assert.DoesNotContain("chatJob", background, StringComparison.Ordinal);
+        Assert.False(new AgentRun { PolicyJson = background }.IsChatJob());
+    }
+
+    [Fact]
+    public void AChildOfAChatJob_IsNotAChatJob()
+    {
+        var parent = HeadlessRunLauncher.SerializeGrantEnvelope(["write_file"], AgentRunTrigger.User, chatJob: true);
+
+        var child = HeadlessRunLauncher.TrySerializeChildEnvelope(parent, AgentRunTrigger.User);
+
+        Assert.False(HeadlessRunLauncher.TryRestoreChatJob(child));
+    }
+
+    [Fact]
     public void SerializeWithNoPolicy_OmitsTheMember()
     {
         // Not "policy":null — omitted, so an older reader sees an unchanged document byte for byte.

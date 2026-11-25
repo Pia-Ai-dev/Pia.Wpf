@@ -71,6 +71,9 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         var chatId = Guid.NewGuid();
         AgentRun? run = null;
         Persona? persona = null;
+        // These stable Ids delimit the run's transcript slice; a failure write reuses them to overwrite, not append.
+        var userMsgId = Guid.NewGuid();
+        var assistantMsgId = Guid.NewGuid();
         try
         {
             // The AgentRuns FK requires its AssistantChats parent row first, and FK enforcement is ON, so the
@@ -105,9 +108,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 _logger.LogWarning(ex, "Run bookkeeping (create) failed for chat {ChatId}", chatId);
             }
 
-            // Open the composer bracket: the SaveAsync below is a FULL REPLACE with no merge, so a user who
-            // opens this chat from history mid-turn and Sends would otherwise have their message deleted
-            // outright. Registered only once the run row exists — the release keys off RunChanged, which every
+            // Open the composer bracket. Registered only once the run row exists — the release keys off RunChanged, which every
             // `run is not null` guard suppresses for a run-less turn, so a surrogate key could never be cleared
             // and would strand a dead composer. A run-less turn therefore fails OPEN, the recoverable direction.
             if (run is { } registeredRun)
@@ -211,14 +212,12 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     }
                     catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (fail/empty) failed for {RunId}", run.Id); }
                 }
-                await PersistFailedTurnAsync(chatId, request, persona, AgentStepTools.EmptyResponseFailure, ct);
+                await PersistFailedTurnAsync(
+                    chatId, userMsgId, assistantMsgId, request, persona, AgentStepTools.EmptyResponseFailure, ct);
                 return new BackgroundTurnResult(chatId, false, "Empty response");
             }
 
             var now = DateTime.UtcNow;
-            // These stable Ids delimit the run's transcript slice (First/LastMessageId).
-            var userMsgId = Guid.NewGuid();
-            var assistantMsgId = Guid.NewGuid();
             var chat = new SyncAssistantChat
             {
                 Id = chatId,
@@ -264,7 +263,7 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             if (string.IsNullOrWhiteSpace(chat.Title))
                 chat.Title = DeriveTitle(request.Prompt);
 
-            await _chatService.SaveAsync(chat, ct);
+            await SaveOwnRowsAsync(chat, setTitle: string.IsNullOrWhiteSpace(request.Title), ct);
             _logger.LogInformation("Background turn persisted assistant chat {ChatId} ({MessageCount} messages)",
                 chatId, chat.Messages.Count);
             _logger.SensitiveDebug("Background chat {ChatId} title: {Title}", chatId, chat.Title);
@@ -303,7 +302,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 }
                 catch (Exception bk) { _logger.LogWarning(bk, "Run bookkeeping (fail) failed for {RunId}", run.Id); }
             }
-            await PersistFailedTurnAsync(chatId, request, persona, ex.Message, CancellationToken.None);
+            await PersistFailedTurnAsync(
+                chatId, userMsgId, assistantMsgId, request, persona, ex.Message, CancellationToken.None);
             return new BackgroundTurnResult(chatId, false, ex.Message);
         }
         finally
@@ -353,7 +353,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         HashSet<string>? deniedWrites = null,
         // Non-null ONLY when the caller wants the rounds persisted. Written per ROUND rather than per turn:
         // a park returns above the caller's own transcript append, so a per-turn write records nothing.
-        AgentToolExchangeScope? exchanges = null)
+        AgentToolExchangeScope? exchanges = null,
+        Action<RunLiveTextKind, string>? onLiveText = null)
     {
         var textBuffer = new StringBuilder();
         int? tokens = null;
@@ -384,15 +385,20 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                         textBuffer.Append("\n\n");
                     pendingRoundBreak = false;
                     textBuffer.Append(td.Text);
+                    onLiveText?.Invoke(RunLiveTextKind.Text, td.Text);
+                    break;
+                case ReasoningDelta rd:
+                    onLiveText?.Invoke(RunLiveTextKind.Reasoning, rd.Text);
                     break;
                 case ToolRoundCompleted:
                     pendingRoundBreak = true;
+                    onLiveText?.Invoke(RunLiveTextKind.RoundBreak, string.Empty);
                     break;
                 case ToolRoundExchange round:
                     toolExchanges.AddRange(round.Messages);
                     sentRounds.AddRange(round.Sent);
                     if (exchanges is not null)
-                        await exchanges.RecordAsync(round.Round, round.Messages).ConfigureAwait(false);
+                        await exchanges.RecordAsync(round.Round, round.Messages, round.Readable).ConfigureAwait(false);
                     break;
                 case FinalAnswer final:
                     finalAnswer = final.Messages;
@@ -594,7 +600,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             // Riding on the same store and for the same reason: read ambiently it would tell a CHILD run that
             // somebody is watching it. A null store is false, i.e. delete-like stays a hard denial.
             IsTopLevelUserRun: approvals?.IsTopLevelUserRun == true,
-            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pending.TargetPath)));
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pending.TargetPath),
+            IsChatJob: approvals?.IsChatJob == true));
 
         return new UnattendedGateResolution(toolClass, askedAt, verdict, DateTime.UtcNow);
     }
@@ -615,39 +622,21 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
             case ToolGateOutcome.AutoRun:
                 _logger.LogInformation("Background turn executing {ToolName} ({Decision})",
                     pending.ToolName, verdict.Decision);
-                // Only Execute() is bracketed for the timeline; a fault anywhere else is not this tool's
-                // outcome. The rethrow keeps a throwing tool's effect on the turn unchanged.
-                var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
-                object? executed;
-                try
-                {
-                    executed = await pending.Execute();
-                }
-                catch
-                {
-                    timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                        verdict.Decision, AgentTimelineOutcome.Error,
-                        toolCallId: toolCall.CallId, round: dispatch.Round,
-                        requestedAt: askedAt, decidedAt: resolvedAt,
-                        argsChars, resultChars: null,
-                        durationMs: AgentTimelineScope.ElapsedMs(startedAt));
-                    throw;
-                }
-
-                timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
-                    verdict.Decision, AgentTimelineOutcome.Ok,
-                    toolCallId: toolCall.CallId, round: dispatch.Round,
-                    requestedAt: askedAt, decidedAt: resolvedAt,
-                    argsChars,
-                    resultChars: (executed as string)?.Length,
-                    durationMs: AgentTimelineScope.ElapsedMs(startedAt));
-                return executed;
+                return await ExecuteGatedAsync(
+                    pending, toolCall, dispatch, toolClass, verdict.Decision, askedAt, resolvedAt, timeline, argsChars);
 
             // The resolver decided a human could legitimately approve this call, so the run stops and asks
             // instead of denying. Nothing is executed or granted here: the store carries the tool NAME out to
             // the executor, which abandons the step, and the orchestrator parks the run naming it. The model is
             // told because it is still mid-exchange — a plain "stop" beats letting it improvise a workaround.
             case ToolGateOutcome.Park:
+                if (approvals?.Ask is { } ask)
+                {
+                    var answered = await AskInPlaceAsync(pending, toolCall, dispatch, ask, toolClass, timeline, argsChars);
+                    if (answered.Asked)
+                        return answered.Result;
+                }
+
                 dispatch.Stop?.RequestStop();
                 // The arguments ride along so the Continue card can name what it is about to allow. NOT logged
                 // anywhere on this path — a path is user content, and the count is what the audit row carries.
@@ -708,6 +697,81 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
         }
     }
 
+    private async Task<object?> ExecuteGatedAsync(
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, ToolClass toolClass,
+        ToolGateDecision decision, DateTime requestedAt, DateTime decidedAt, AgentTimelineScope? timeline,
+        int? argsChars)
+    {
+        // Only Execute() is bracketed for the timeline; a fault anywhere else is not this tool's
+        // outcome. The rethrow keeps a throwing tool's effect on the turn unchanged.
+        var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        object? executed;
+        try
+        {
+            executed = await pending.Execute();
+        }
+        catch
+        {
+            timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                decision, AgentTimelineOutcome.Error,
+                toolCallId: toolCall.CallId, round: dispatch.Round,
+                requestedAt: requestedAt, decidedAt: decidedAt,
+                argsChars, resultChars: null,
+                durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+            throw;
+        }
+
+        timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+            decision, AgentTimelineOutcome.Ok,
+            toolCallId: toolCall.CallId, round: dispatch.Round,
+            requestedAt: requestedAt, decidedAt: decidedAt,
+            argsChars,
+            resultChars: (executed as string)?.Length,
+            durationMs: AgentTimelineScope.ElapsedMs(startedAt));
+        return executed;
+    }
+
+    /// <summary>Asked = false means nobody answered on the block, and the caller parks the run.</summary>
+    private async Task<(bool Asked, object? Result)> AskInPlaceAsync(
+        PluginToolCall pending, FunctionCallContent toolCall, ToolDispatchContext dispatch, RunAskContext ask,
+        ToolClass toolClass, AgentTimelineScope? timeline, int? argsChars)
+    {
+        // A job's gate ignores a session grant for these classes, so offering one would only widen other chats.
+        var offersSessionGrant = toolClass is not (ToolClass.Screen or ToolClass.KnowledgeBase);
+        var question = new RunToolQuestion(Guid.NewGuid(), ask.RunId, ask.ChatId, ask.StepId, pending.ToolName,
+            pending.PluginId, ParkedHeading(pending) ?? ToolApprovalArguments.Describe(toolCall), offersSessionGrant);
+        var shownAt = DateTime.UtcNow;
+        var answer = await ask.Broker.AskAsync(question, ask.SetClockRunning, ask.Ct).ConfigureAwait(false);
+
+        if (answer is not { } decision)
+            return (false, null);
+
+        // An Allow that raced Stop or Pause must not run the call.
+        ask.Ct.ThrowIfCancellationRequested();
+        if (decision == ToolDecision.AllowForSession && !offersSessionGrant)
+            decision = ToolDecision.AllowOnce;
+
+        var decidedAt = DateTime.UtcNow;
+        var gateDecision = await ToolDecisionGrants.ApplyAsync(_permissions, decision, pending.PluginId, pending.ToolName)
+            .ConfigureAwait(false);
+        if (gateDecision == ToolGateDecision.DeclinedByUser)
+        {
+            _logger.LogInformation("User declined {ToolName} on the run block", pending.ToolName);
+            timeline?.Emit(ToolGateSurface.Unattended, pending.ToolName, toolClass, pending.PluginId,
+                gateDecision, AgentTimelineOutcome.NotExecuted,
+                toolCallId: toolCall.CallId, round: dispatch.Round,
+                requestedAt: shownAt, decidedAt: decidedAt,
+                argsChars);
+            return (true, $"User declined the {pending.ToolName} operation. Do not retry. "
+                          + "Finish the step without it and say what was left undone.");
+        }
+
+        _logger.LogInformation("User answered {ToolName} on the run block ({Decision})", pending.ToolName, gateDecision);
+        return (true, await ExecuteGatedAsync(
+            pending, toolCall, dispatch, toolClass, gateDecision, shownAt, decidedAt, timeline, argsChars)
+            .ConfigureAwait(false));
+    }
+
     /// <summary>
     /// The gate-side record of a call it did not run. <c>pending.ToolName</c>, never <c>toolCall.Name</c>: that
     /// is the one spelling the pause envelope, the grant list and the re-route all key on.
@@ -753,7 +817,8 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
     /// <summary>Prompt plus the failed-response message an interactive turn shows, written over the stub chat
     /// so it is not blank. Best-effort, like the run bookkeeping beside it.</summary>
     private async Task PersistFailedTurnAsync(
-        Guid chatId, BackgroundTurnRequest request, Persona? persona, string reason, CancellationToken ct)
+        Guid chatId, Guid userMsgId, Guid assistantMsgId, BackgroundTurnRequest request, Persona? persona,
+        string reason, CancellationToken ct)
     {
         try
         {
@@ -773,14 +838,14 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                 [
                     new SyncAssistantChatMessage
                     {
-                        Id = Guid.NewGuid(),
+                        Id = userMsgId,
                         Role = "user",
                         Content = request.Prompt,
                         Timestamp = now,
                     },
                     new SyncAssistantChatMessage
                     {
-                        Id = Guid.NewGuid(),
+                        Id = assistantMsgId,
                         Role = "assistant",
                         Content = FailedResponseText(reason),
                         Timestamp = now,
@@ -790,12 +855,27 @@ public sealed class BackgroundAssistantTurnRunner : IBackgroundAssistantTurnRunn
                     },
                 ],
             };
-            await _chatService.SaveAsync(chat, ct);
+            await SaveOwnRowsAsync(chat, setTitle: string.IsNullOrWhiteSpace(request.Title), ct);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to persist the failed background turn for chat {ChatId}", chatId);
         }
+    }
+
+    // Only this turn's rows and, when it chose one, its title: a user may have opened the chat and written to it.
+    private async Task SaveOwnRowsAsync(SyncAssistantChat chat, bool setTitle, CancellationToken ct)
+    {
+        if (!await _chatService.UpsertMessagesAsync(chat, writeHeader: false, ct))
+        {
+            await _chatService.UpsertMessagesAsync(chat, writeHeader: true, ct);
+            return;
+        }
+        if (!setTitle || string.IsNullOrWhiteSpace(chat.Title))
+            return;
+        // The rows are saved; a title fault must not turn the turn into a failure.
+        try { await _chatService.SetTitleAsync(chat.Id, chat.Title, CancellationToken.None); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Could not set the title of background chat {ChatId}", chat.Id); }
     }
 
     // English only when no localizer was supplied, i.e. a hand-built test harness.

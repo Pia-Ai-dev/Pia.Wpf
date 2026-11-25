@@ -58,6 +58,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private readonly IDialogService _dialogService;
     private readonly IFileDialogService? _fileDialogService;
     private readonly IAgentToolExchangeStore? _toolCalls;
+    private readonly IRunLiveTextWatcher? _liveText;
     private readonly IAiFeedbackService? _aiFeedback;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IVolatileWorkStore? _volatileWork;
@@ -201,6 +202,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// <summary>False hides the toolbar toggle; policy can remove either meeting feature on its own.</summary>
     [ObservableProperty]
     private bool _isMeetingAttendeeAvailable = true;
+
+    [ObservableProperty]
+    private bool _isChatAgentLeverVisible = true;
 
     public DirectTranscriptionViewModel DirectTranscription { get; }
 
@@ -398,8 +402,19 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // Trailing and defaulted, same discipline; null ⇒ the elevated-session hint never appears.
         IElevationService? elevation = null,
         // Trailing and defaulted, same discipline; null ⇒ only the main window probes the knowledge-base surface.
-        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null)
+        IKnowledgeManagerSurfaceCache? kbManagerSurfaceCache = null,
+        IRunLiveTextWatcher? liveText = null,
+        IRunAskBroker? runAsk = null,
+        IRunToolAnswerService? runToolAnswers = null,
+        IRunMessageRecordStore? runMessageRecords = null,
+        IJobSteeringStore? jobSteering = null)
     {
+        _jobSteering = jobSteering;
+        _liveText = liveText;
+        _runAsk = runAsk;
+        _runToolAnswers = runToolAnswers;
+        _runMessageRecords = runMessageRecords;
+        InitRunReplies();
         _logger = logger;
         _aiClientService = aiClientService;
         _providerService = providerService;
@@ -497,6 +512,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         // The field initializer's collection never goes through OnMessagesChanged, so an un-started chat
         // would mutate outside the window until the first session attach re-points it.
         Messages.CollectionChanged += OnMessagesCollectionChanged;
+        VisibleMessages.CollectionChanged += OnVisibleMessagesChanged;
         PendingFiles.CollectionChanged += OnPendingFilesChanged;
         PendingAttachments.CollectionChanged += OnPendingAttachmentsChanged;
         MeetingAttendee.CloseRequested += OnMeetingAttendeeCloseRequested;
@@ -525,6 +541,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         _providerService.ProvidersChanged += OnProvidersChangedForScreenCapture;
         _settingsService.SettingsChanged += OnSettingsChangedForScreenCapture;
+        _settingsService.SettingsChanged += OnSettingsChangedForUnifiedFlow;
         StartScreenCaptureAvailabilityRefresh();
 
         // Always mirror a live session so send/cancel never null-ref on a fresh
@@ -546,6 +563,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         await _uiDispatcher.PostAsync(() =>
         {
             IsMeetingAttendeeAvailable = settings.MeetingAttendeeEnabled;
+            IsChatAgentLeverVisible = !settings.UnifiedAssistantFlowEnabled;
             IsDirectTranscriptionAvailable = settings.DirectTranscriptionEnabled;
         });
     }
@@ -597,9 +615,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             prev.ForeignRunActiveChanged -= OnForeignRunActiveChanged;
             prev.AgentModeChanged -= OnSessionAgentModeChanged;
             prev.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
+            prev.EarlierRunsChanged -= OnEarlierRunsChanged;
+        }
+        if (switchedChat)
+        {
+            SyncRunProgress(null);
+            DisposeEarlierBlocks();
         }
 
         _subscribedSession = session;
+        session.EarlierRunsChanged += OnEarlierRunsChanged;
         session.StateChanged += OnActiveSessionStateChanged;
         session.TurnCompleted += OnActiveSessionTurnCompleted;
         session.ToolSucceeded += OnActiveSessionToolSucceeded;
@@ -609,8 +634,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         session.AgentModeChanged += OnSessionAgentModeChanged;
         session.PlanApprovalParkActiveChanged += OnPlanApprovalParkActiveChanged;
         SyncRunProgress(session.ActiveRunId); // embed the panel if this session already has a run
+        SyncEarlierBlocks();
+        if (switchedChat || _replyRecordsChatId != session.Id)
+            LoadReplyRecordsAsync(session.Id).SafeFireAndForget(_logger);
+        if (switchedChat)
+            ChatJobComposerOpen = false;
         ForeignRunActive = session.ForeignRunActive; // late attach: read the flag the manager already seeded
-        PlanApprovalParkActive = session.PlanApprovalParkActive;
+        RefreshChatJobComposerAsync().SafeFireAndForget(_logger);
+        PlanApprovalParkActive = LocksSendAtPlanApproval(session.PlanApprovalParkActive);
 
         // An attachment was staged for the chat the user was in, so it does not follow them to another one —
         // sending it into the wrong conversation is the worse failure, and it is a file they can re-drop.
@@ -637,7 +668,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // The session raises ActiveRunChanged on the UI thread (its Planned branch runs there), but marshal
     // defensively so a future off-thread caller can't touch the bound RunProgressViewModel cross-thread.
     private void OnActiveRunChanged(object? sender, Guid? runId) =>
-        _uiDispatcher.Post(() => SyncRunProgress(runId));
+        _uiDispatcher.Post(() =>
+        {
+            SyncRunProgress(runId);
+            RefreshChatJobComposerAsync().SafeFireAndForget(_logger);
+        });
 
     // The manager already marshals the flip to the UI thread (G3); marshal defensively anyway, for the same
     // reason OnActiveRunChanged does — this sets a bound property and re-evaluates a command.
@@ -645,7 +680,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _uiDispatcher.Post(() => ForeignRunActive = active);
 
     private void OnPlanApprovalParkActiveChanged(object? sender, bool active) =>
-        _uiDispatcher.Post(() => PlanApprovalParkActive = active);
+        _uiDispatcher.Post(() => PlanApprovalParkActive = LocksSendAtPlanApproval(active));
 
     // Unguarded, like the run-settled fall-back: the write back to the session is a no-op at the same value,
     // and the rest of the handler is what clears the Agent-mode hint and the weak-provider adorner for a
@@ -658,25 +693,145 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         if (_runProgress?.RunId == runId)
             return;
-        if (_runProgress is not null)
+        if (_runProgress is { } previous)
         {
-            _runProgress.RunSettled -= OnRunProgressSettled;
-            _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
-            _runProgress.Dispose(); // unsubscribes the prior RunChanged handler
+            previous.RunSettled -= OnRunProgressSettled;
+            previous.PropertyChanged -= OnRunProgressPropertyChanged;
+            previous.LiveStopFallback = null;
+            // A new run in the same chat keeps the replaced one's block; a chat switch clears to null first.
+            if (runId is not null && !_earlierBlocks.ContainsKey(previous.RunId))
+            {
+                _earlierBlocks[previous.RunId] = previous;
+            }
+            else
+            {
+                previous.PropertyChanged -= OnRunBlockAnchorChanged;
+                previous.Dispose(); // unsubscribes the prior RunChanged handler
+            }
         }
-        _runProgress = runId is { } id
-            ? new RunProgressViewModel(_agentRunService, id, _localizationService, _resumeService, _logger,
-                _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
-                _navigationService, _toolCalls)
-            : null;
+
+        if (runId is { } id && _earlierBlocks.Remove(id, out var demoted))
+            _runProgress = demoted;
+        else
+            _runProgress = runId is { } newId ? CreateRunBlock(newId) : null;
+
         if (_runProgress is not null)
         {
             _runProgress.RunSettled += OnRunProgressSettled;
             _runProgress.PropertyChanged += OnRunProgressPropertyChanged;
+            _runProgress.LiveStopFallback = StopLiveRunTurn;
         }
         ActiveRunProgress = _runProgress;
+        SyncTranscriptItems();
         RefreshAgentContextBanner();
     }
+
+    private RunProgressViewModel CreateRunBlock(Guid runId)
+    {
+        var block = new RunProgressViewModel(_agentRunService, runId, _localizationService, _resumeService, _logger,
+            _agentTimelineService, _runWorkspaces, _personaService, _steering, _themeService, _timelineWatcher,
+            _navigationService, _toolCalls, _runAsk, _runToolAnswers);
+        block.AttachLiveText(_liveText);
+        ConfigureForUnifiedFlow(block);
+        block.AttachJobSteering(_jobSteering);
+        block.PropertyChanged += OnRunBlockAnchorChanged;
+        return block;
+    }
+
+    private bool StopLiveRunTurn()
+    {
+        if (!IsStreaming)
+            return false;
+        ExecuteCancelStreaming();
+        return true;
+    }
+
+    private readonly Dictionary<Guid, RunProgressViewModel> _earlierBlocks = [];
+    private readonly IRunAskBroker? _runAsk;
+    private readonly IRunToolAnswerService? _runToolAnswers;
+    private readonly IJobSteeringStore? _jobSteering;
+
+    /// <summary>The transcript as rendered: the message window with each run's block placed among it.</summary>
+    public ObservableCollection<object> TranscriptItems { get; } = [];
+
+    private void OnEarlierRunsChanged(object? sender, EventArgs e) => _uiDispatcher.Post(SyncEarlierBlocks);
+
+    internal void SyncEarlierBlocks()
+    {
+        if (_subscribedSession is not { } session)
+            return;
+        foreach (var id in session.EarlierRunIds)
+        {
+            if (id != _runProgress?.RunId && !_earlierBlocks.ContainsKey(id))
+                _earlierBlocks[id] = CreateRunBlock(id);
+        }
+        SyncTranscriptItems();
+    }
+
+    private void DisposeEarlierBlocks()
+    {
+        foreach (var block in _earlierBlocks.Values)
+        {
+            block.PropertyChanged -= OnRunBlockAnchorChanged;
+            block.Dispose();
+        }
+        _earlierBlocks.Clear();
+    }
+
+    private void OnRunBlockAnchorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(RunProgressViewModel.FirstMessageId)
+            or nameof(RunProgressViewModel.LastMessageId) or nameof(RunProgressViewModel.RunCreatedAt)
+            or nameof(RunProgressViewModel.HasProjected) or nameof(RunProgressViewModel.State))
+        {
+            SyncTranscriptItems();
+        }
+    }
+
+    private void OnVisibleMessagesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) =>
+        SyncTranscriptItems();
+
+    internal void SyncTranscriptItems()
+    {
+        var visibleIds = VisibleMessages.Select(m => m.Id).ToHashSet();
+        var (allPlaced, allTrailing) = PlaceRunBlocks();
+        var (placed, trailing) = RunBlockPlacement.TrailUnloadedLive(allPlaced, allTrailing, visibleIds,
+            b => b is RunProgressViewModel { HasProjected: true } run && !IsSettled(run.State));
+        // A block whose anchor is outside the loaded window is not drawn, so it cannot take its replies either.
+        var hidden = ApplyRunReplies(placed
+            .Where(p => p.Slot is { } slot && visibleIds.Contains(slot.MessageId))
+            .Select(p => p.Block).Concat(trailing).OfType<RunProgressViewModel>());
+        RunBlockPlacement.Apply(TranscriptItems, RunBlockPlacement.Interleave(VisibleMessages, placed, trailing, hidden));
+    }
+
+    private (List<(object Block, RunBlockSlot? Slot)> Placed, List<object> Trailing) PlaceRunBlocks()
+    {
+        var placed = new List<(object Block, RunBlockSlot? Slot)>();
+        var trailing = new List<object>();
+        foreach (var block in _earlierBlocks.Values.OrderBy(b => b.RunCreatedAt ?? DateTime.MaxValue))
+        {
+            if (RunBlockPlacement.Place(block.FirstMessageId, block.LastMessageId, block.RunCreatedAt,
+                    allowTimeFallback: false, Messages) is { } slot)
+                placed.Add((block, slot));
+        }
+        if (_runProgress is { } active)
+        {
+            // A finished job whose messages were all removed (a regenerate) is not shown.
+            var emptied = _regenerateEmptiedRuns.Contains(active.RunId)
+                || (IsSettled(active.State) && (active.FirstMessageId ?? active.LastMessageId) is not null);
+            var slot = RunBlockPlacement.Place(active.FirstMessageId, active.LastMessageId, active.RunCreatedAt,
+                allowTimeFallback: !emptied, Messages);
+            if (slot is not null)
+                placed.Add((active, slot));
+            else if (!emptied)
+                trailing.Add(active);
+        }
+        return (placed, trailing);
+    }
+
+    private static bool IsSettled(RunProgressState state) =>
+        state is RunProgressState.Completed or RunProgressState.TruncatedCompleted or RunProgressState.Failed
+            or RunProgressState.Stopped;
 
     // Not RunSettled: that event arms itself on a non-terminal State CHANGE, and Planning is the field's
     // default — so a run that fails while planning never raises it, and the offer the gate below suppressed
@@ -739,6 +894,8 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     {
         OlderMessageCount = Messages.Count - VisibleMessages.Count;
         HasOlderMessages = OlderMessageCount > 0;
+        // An anchor can leave the transcript without the window changing.
+        SyncTranscriptItems();
     }
 
     [RelayCommand]
@@ -952,7 +1109,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     internal void SeedAgentMode(ChatSession session, AppSettings settings)
     {
         _isLoadingAgentMode = true;
-        try { AgentModeEnabled = session.AgentModeEnabled ?? settings.AssistantNewChatAgentMode; }
+        try { AgentModeEnabled = !settings.UnifiedAssistantFlowEnabled && (session.AgentModeEnabled ?? settings.AssistantNewChatAgentMode); }
         finally { _isLoadingAgentMode = false; }
     }
 
@@ -1261,7 +1418,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // headless executor that is mid-run — the live full replace deletes the run's step rows, and the run's
     // own model context never sees the typed message, so the transcript would be garbled even without loss.
     private bool CanExecuteSendMessage() =>
-        !IsStreaming && !ForeignRunActive && !PlanApprovalParkActive && !AgentContextChoicePending
+        !IsStreaming && (!ForeignRunActive || ChatJobComposerOpen) && !PlanApprovalParkActive && !AgentContextChoicePending
         && (!string.IsNullOrWhiteSpace(InputText) || PendingAttachments.Count > 0 || PendingFiles.Count > 0);
 
     /// <summary>Nothing typed, attached or in flight — the hotkey may tuck the window away.</summary>
@@ -1320,7 +1477,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // Never offers more than Send: the same availability gate, plus real text (it ignores the image, unlike
     // Send), a non-refused goal, and no attached file — a detached run has no way to carry one.
     private bool CanExecuteRunInBackground() =>
-        CanExecuteSendMessage() && HasCandidateGoalText() && PendingFiles.Count == 0
+        CanExecuteSendMessage() && !ForeignRunActive && HasCandidateGoalText() && PendingFiles.Count == 0
         && !GoalPreflight.IsRefused(InputText);
 
     private async Task ExecuteSendMessage()
@@ -1349,10 +1506,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
 
-        // Defence in depth on the lever: a no-tools persona can never plan, and neither can an attached
-        // file — the planner sees only the goal string, and an approved plan resumes headless without it.
-        var planned = files.Length == 0
-            && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
+        var planned = LeverPlansSend(hasFiles: files.Length > 0);
 
         // Awaited so the AsyncRelayCommand's running-state blocks re-entry; StartTurnAsync
         // returns once the turn is fire-and-forgotten.
@@ -1482,7 +1636,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     /// </summary>
     private void RevokeAnyPendingPause()
     {
-        if (_chatSessionManager.ActiveSession?.ActiveRunId is { } runId)
+        if (!ChatJobComposerOpen && _chatSessionManager.ActiveSession?.ActiveRunId is { } runId)
             _runSteering?.RevokePauseRequest(runId);
     }
 
@@ -1664,20 +1818,16 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private Task ExecuteRegenerateStyled(RegenerateRequest? request) =>
         request is null ? Task.CompletedTask : RegenerateCore(request.Message, request.Style);
 
-    /// <summary>
-    /// Re-runs the user prompt that produced <paramref name="message"/>, optionally appending a style
-    /// instruction (Shorter / More detailed / Export-ready). Removes the prior answer and anything after
-    /// it, then starts a fresh turn directly via the session manager — bypassing the composer round-trip
-    /// so it never clobbers whatever the user has typed. The style instruction is injected AI-side only,
-    /// so the re-sent user bubble stays the original prompt.
-    /// </summary>
+    // Starts the turn through the session manager, not the composer, so whatever the user has typed survives.
+    // A no-tools persona can never plan, and neither can an attached file: the planner sees only the goal
+    // string, and an approved plan resumes headless without it.
+    private bool LeverPlansSend(bool hasFiles) =>
+        !hasFiles && AgentModeEnabled && ActivePersona?.ToolScope != PersonaToolScope.None;
+
     private async Task RegenerateCore(AssistantMessage? message, RegenerateStyle style)
     {
-        // W2c: ForeignRunActive blocks this for the same reason it blocks Send — the turn below writes THIS
-        // chat, and the persist at the end of it is a full replace built from session.Messages, so it would
-        // delete every row the headless run has appended since. Regenerate is worse than Send, in fact: it
-        // also truncates the transcript the run is still extending.
-        if (message is null || IsStreaming || ForeignRunActive || PlanApprovalParkActive) return;
+        // Regenerate truncates the transcript a running job may still be extending.
+        if (message is null || IsStreaming || ForeignRunActive) return;
 
         var idx = Messages.IndexOf(message);
         if (idx <= 0) return;
@@ -1687,6 +1837,14 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         if (string.IsNullOrWhiteSpace(prior.Content) && prior.Attachments.Count == 0
             && string.IsNullOrEmpty(prior.AttachedFileContext)) return;
 
+        var (proceed, discardedRuns) = await ClearJobsForRegenerateAsync(idx - 1);
+        if (!proceed) return;
+        var strayIds = _chatSessionManager.ActiveSession?.Id is { } chatId
+            ? await UnpulledDiscardNotesAsync(chatId, discardedRuns)
+            : [];
+        idx = Messages.IndexOf(message);
+        if (idx <= 0 || IsStreaming) return;
+
         CancelPendingActionCards(message);
 
         var prompt = prior.Content;
@@ -1694,6 +1852,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         var attachedFileContext = prior.AttachedFileContext;
         // Captured before the removal below, which takes the answer a styled instruction has to quote.
         var previousAnswer = message.Content;
+        var removedIds = Messages.Skip(idx - 1).Select(m => m.Id).Concat(strayIds).ToList();
         for (var i = Messages.Count - 1; i >= idx - 1; i--)
             Messages.RemoveAt(i);
 
@@ -1701,9 +1860,11 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
 
         var session = _chatSessionManager.ActiveSession
             ?? _chatSessionManager.GetOrCreateActiveForNewChat();
+        await _chatSessionManager.DeleteMessagesAsync(session, removedIds);
 
         await _chatSessionManager.StartTurnAsync(
             session, prompt, attachments, RegenerateInstructions.For(style, previousAnswer),
+            planned: LeverPlansSend(hasFiles: !string.IsNullOrEmpty(attachedFileContext)),
             attachedFileContext: attachedFileContext);
     }
 
@@ -2253,6 +2414,9 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     private void OnProvidersChangedForScreenCapture(object? sender, EventArgs e) =>
         StartScreenCaptureAvailabilityRefresh();
 
+    private void OnSettingsChangedForUnifiedFlow(object? sender, AppSettings settings) =>
+        _uiDispatcher.Post(() => IsChatAgentLeverVisible = !settings.UnifiedAssistantFlowEnabled);
+
     private void OnSettingsChangedForScreenCapture(object? sender, AppSettings settings) =>
         StartScreenCaptureAvailabilityRefresh();
 
@@ -2593,7 +2757,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
     // offer return, so the NEXT run in the chat still gets asked.
     private bool RunNotYetSettled =>
         _runProgress is { State: not (RunProgressState.Completed or RunProgressState.TruncatedCompleted
-            or RunProgressState.Failed) };
+            or RunProgressState.Failed or RunProgressState.Stopped) };
 
     /// <summary>Evaluated on the lever toggle AND on chat load: agent mode is frequently already on without
     /// a toggle, so a toggle-only trigger would never fire for a regular agent user.</summary>
@@ -2871,7 +3035,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
                 IsTopLevelUserRun: false,
                 // The honest lookup, like HasSessionGrant above: Resolve's scratch arm excludes voice, and the
                 // reason stays there rather than being hardcoded into a false here.
-                IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
+                IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath), IsChatJob: false));
 
             if (verdict.Outcome != ToolGateOutcome.AutoRun)
             {
@@ -2935,6 +3099,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _disposed = true;
         // Before anything else: a report left behind would defer the restart overlay for the whole process.
         _volatileWork?.Forget(this);
+        DisposeRunReplies();
         VoiceMode?.Dispose();
         VoiceMode = null;
         MeetingAttendee.CloseRequested -= OnMeetingAttendeeCloseRequested;
@@ -2950,6 +3115,7 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
         _personaService.ManagedPersonaWithdrawn -= OnManagedPersonaWithdrawn;
         _providerService.ProvidersChanged -= OnProvidersChangedForScreenCapture;
         _settingsService.SettingsChanged -= OnSettingsChangedForScreenCapture;
+        _settingsService.SettingsChanged -= OnSettingsChangedForUnifiedFlow;
         PropertyChanged -= OnPropertyChanged;
         _goalHintGeneration++;
         _agentHintGeneration++;
@@ -2971,13 +3137,18 @@ public partial class AssistantViewModel : ObservableObject, INavigationAware, ID
             session.AgentModeChanged -= OnSessionAgentModeChanged;
             session.PlanApprovalParkActiveChanged -= OnPlanApprovalParkActiveChanged;
         }
+        if (_subscribedSession is { } earlierOwner)
+            earlierOwner.EarlierRunsChanged -= OnEarlierRunsChanged;
         if (_runProgress is not null)
         {
             _runProgress.RunSettled -= OnRunProgressSettled;
             _runProgress.PropertyChanged -= OnRunProgressPropertyChanged;
+            _runProgress.PropertyChanged -= OnRunBlockAnchorChanged;
             _runProgress.Dispose(); // unsubscribes the last RunChanged handler off the singleton
         }
+        DisposeEarlierBlocks();
         Messages.CollectionChanged -= OnMessagesCollectionChanged;
+        VisibleMessages.CollectionChanged -= OnVisibleMessagesChanged;
         PendingFiles.CollectionChanged -= OnPendingFilesChanged;
         PendingAttachments.CollectionChanged -= OnPendingAttachmentsChanged;
 

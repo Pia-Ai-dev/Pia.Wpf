@@ -244,6 +244,14 @@ public sealed class AgentRunOrchestratorFanOutTests
             }
         }
 
+        public List<(Guid RunId, string Reason)> CancelReasons { get; } = new();
+
+        public Task CancelAsync(Guid runId, string reason)
+        {
+            CancelReasons.Add((runId, reason));
+            return CancelAsync(runId);
+        }
+
         public Task CancelAsync(Guid runId)
         {
             Cancelled.Add(runId);
@@ -700,6 +708,25 @@ public sealed class AgentRunOrchestratorFanOutTests
         // Non-vacuity: the new generation really did dispatch, and it is not the stale run.
         Assert.Equal(2, launcher.Dispatches.Count);
         Assert.DoesNotContain(stale.Id, launcher.Dispatches.Select(d => d.ChildRunId));
+    }
+
+    /// <summary>A running child settles in its own loop, so the reason travels with the cancel.</summary>
+    [Fact]
+    public async Task APreviousGenerationsRunningChildIsCancelledAsSuperseded()
+    {
+        using var h = new Harness();
+        var run = await h.NewRunAsync("goal");
+        var stale = await h.NewRunAsync("stale child", parentRunId: run.Id);
+        await h.Runs.SetStateAsync(stale.Id, AgentRunState.Running, TestContext.Current.CancellationToken);
+
+        var launcher = new FakeChildLauncher(h.Runs, h.Chats);
+        var planner = new FakePlanner();
+        planner.Plans.Enqueue(new PlanResult(MakeSteps(("a", 1), ("b", 1)), false));
+
+        await h.BuildOrchestrator(planner, childLauncher: launcher).RunAsync(
+            run, new RecordingExecutor(), Persona(), Provider(), RunProfile.Interactive, TestContext.Current.CancellationToken);
+
+        Assert.Contains((stale.Id, AgentRunOrchestrator.SupersededFailureReason), launcher.CancelReasons);
     }
 
     // The wall clock is halved because the scheduled-job lock is held for the parent's wall clock plus every

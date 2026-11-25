@@ -17,7 +17,7 @@ internal static class AgentToolExchangeSerializer
     internal const int MaxSeedValueChars = 400;
 
     /// <summary>A truncated JSON is not parseable, so an oversize object result is downgraded to text.</summary>
-    private const string TruncationSuffix = "\n[truncated]";
+    internal const string TruncationSuffix ="\n[truncated]";
 
     private const string AssistantRole = "assistant";
     private const string ToolRole = "tool";
@@ -62,6 +62,36 @@ internal static class AgentToolExchangeSerializer
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Attach the real-name copy of the same round. Kept only where it differs from what the model saw, and
+    /// dropped whole when its shape does not line up with <paramref name="rows"/>.
+    /// </summary>
+    internal static IReadOnlyList<AgentToolExchangeRow> WithReadable(
+        IReadOnlyList<AgentToolExchangeRow> rows, IReadOnlyList<AgentToolExchangeRow> readable)
+    {
+        if (readable.Count != rows.Count)
+            return rows;
+
+        var merged = new List<AgentToolExchangeRow>(rows.Count);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var copy = readable[i];
+            if (copy.Kind != row.Kind || copy.CallId != row.CallId)
+                return rows;
+
+            merged.Add(row with
+            {
+                ReadableArgumentsJson = row.ArgsOmitted || copy.ArgsOmitted || copy.ArgumentsJson == row.ArgumentsJson
+                    ? null
+                    : copy.ArgumentsJson,
+                ReadableResultText = copy.ResultText == row.ResultText ? null : copy.ResultText,
+            });
+        }
+
+        return merged;
     }
 
     private static AgentToolExchangeRow CallRow(

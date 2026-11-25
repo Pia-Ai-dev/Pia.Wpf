@@ -5,6 +5,7 @@ using Pia.Navigation;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Pia.Services.MeetingAttendee;
+using Pia.Shared.Models;
 using Pia.Tests.Services;
 using Pia.ViewModels;
 using Pia.ViewModels.Models;
@@ -24,13 +25,18 @@ public class AssistantViewModelLeverTests
     private readonly IPersonaService _personas = Substitute.For<IPersonaService>();
     private readonly IWorkingDirectoryService _workingDir = Substitute.For<IWorkingDirectoryService>();
 
-    private AssistantViewModel CreateSut(IAgentRunService? runs = null)
+    private readonly IAgentRunResumeService _resume = Substitute.For<IAgentRunResumeService>();
+    private readonly IAssistantChatService _chats = Substitute.For<IAssistantChatService>();
+    private readonly IRunMessageRecordStore _records = Substitute.For<IRunMessageRecordStore>();
+    private readonly global::Wpf.Ui.ISnackbarService _snackbar = Substitute.For<global::Wpf.Ui.ISnackbarService>();
+
+    private AssistantViewModel CreateSut(IAgentRunService? runs = null, AppSettings? settings = null)
     {
         // ChatTitleChipViewModel (built in the ctor) requires a captured SynchronizationContext.
         if (System.Threading.SynchronizationContext.Current is null)
             System.Threading.SynchronizationContext.SetSynchronizationContext(new System.Threading.SynchronizationContext());
 
-        _settings.GetSettingsAsync().Returns(new AppSettings());
+        _settings.GetSettingsAsync().Returns(settings ?? new AppSettings());
         // The real manager never hands back null here, and a command that writes to the session it gets would
         // null-ref against a bare substitute.
         _manager.GetOrCreateActiveForNewChat().Returns(SessionWithTranscript());
@@ -72,26 +78,27 @@ public class AssistantViewModelLeverTests
             Substitute.For<IAudioRecordingService>(),
             Substitute.For<ITranscriptionService>(),
             NullLoggerFactory.Instance,
-            Substitute.For<global::Wpf.Ui.ISnackbarService>(),
+            _snackbar,
             Substitute.For<ILocalizationService>(),
             Substitute.For<ITokenMapService>(),
             Substitute.For<IAutocompleteService>(),
             Substitute.For<INavigationService>(),
             Substitute.For<ISuggestionService>(),
-            Substitute.For<IAssistantChatService>(),
+            _chats,
             meeting,
             directTranscription,
             Substitute.For<IAssistantPromptComposer>(),
             _capability,
             runs ?? Substitute.For<IAgentRunService>(),
-            Substitute.For<IAgentRunResumeService>(),
+            _resume,
             _manager,
             _workingDir,
             Substitute.For<IFilesToolHandler>(),
             Substitute.For<IMarkdownExportService>(),
             Substitute.For<IDialogService>(),
             new InlineUiDispatcher(),
-            Substitute.For<IToolPermissionService>());
+            Substitute.For<IToolPermissionService>(),
+            runMessageRecords: _records);
     }
 
     private static Persona PersonaWith(PersonaToolScope scope) =>
@@ -104,6 +111,33 @@ public class AssistantViewModelLeverTests
     {
         var vm = CreateSut();
         Assert.False(vm.AgentModeEnabled);
+    }
+
+    [Fact]
+    public void TheLeverIsVisible_WhileTheUnifiedFlowIsOff()
+    {
+        var vm = CreateSut();
+        Assert.True(vm.IsChatAgentLeverVisible);
+    }
+
+    [Fact]
+    public void TheLeverIsHidden_WhenTheUnifiedFlowIsOn()
+    {
+        var vm = CreateSut(settings: new AppSettings { UnifiedAssistantFlowEnabled = true });
+        Assert.False(vm.IsChatAgentLeverVisible);
+    }
+
+    [Fact]
+    public void TheLeverFollowsTheSettingWhenItChanges()
+    {
+        var vm = CreateSut();
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(
+            _settings, new AppSettings { UnifiedAssistantFlowEnabled = true });
+        Assert.False(vm.IsChatAgentLeverVisible);
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(_settings, new AppSettings());
+        Assert.True(vm.IsChatAgentLeverVisible);
     }
 
     [Fact]
@@ -346,6 +380,263 @@ public class AssistantViewModelLeverTests
         runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Completed, null));
 
         Assert.False(vm.AgentModeEnabled);
+    }
+
+    [Fact]
+    public void TheRunBlock_IsATranscriptItem_ButNeverAMessage()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var run = new AgentRun { Id = runId, State = AgentRunState.Running, Plan = [], CreatedAt = created };
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var vm = CreateSut(runs);
+        var goal = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.User, "goal",
+            created.AddSeconds(-5).ToLocalTime());
+        vm.Messages.Add(goal);
+        vm.SyncRunProgress(runId);
+
+        var block = vm.ActiveRunProgress!;
+        Assert.Equal([goal, block], vm.TranscriptItems);
+        Assert.DoesNotContain(vm.Messages, m => (object)m == block);
+
+        // The job's first reply lands below the block, and pinning it as the anchor keeps the block in place.
+        var reply = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "r",
+            created.AddSeconds(5).ToLocalTime());
+        vm.Messages.Add(reply);
+        run.FirstMessageId = reply.Id;
+        runs.RunChanged += Raise.EventWith(new AgentRunChangedEventArgs(runId, AgentRunState.Running, null));
+
+        Assert.Equal([goal, block, reply], vm.TranscriptItems);
+    }
+
+    [Fact]
+    public void ASecondRun_KeepsTheFirstRunsBlock()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var runs = Substitute.For<IAgentRunService>();
+        var reply = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "r",
+            created.AddSeconds(5).ToLocalTime());
+        runs.GetAsync(firstId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+            { Id = firstId, State = AgentRunState.Completed, Plan = [], CreatedAt = created, FirstMessageId = reply.Id });
+        runs.GetAsync(secondId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+            { Id = secondId, State = AgentRunState.Running, Plan = [], CreatedAt = created.AddMinutes(1) });
+
+        var vm = CreateSut(runs);
+        vm.Messages.Add(reply);
+        vm.SyncRunProgress(firstId);
+        var firstBlock = vm.ActiveRunProgress!;
+
+        vm.SyncRunProgress(secondId);
+
+        Assert.Contains(firstBlock, vm.TranscriptItems);
+        Assert.Equal(secondId, vm.ActiveRunProgress!.RunId);
+    }
+
+    private static AgentStep Step(Guid runId, int ordinal) =>
+        new() { Id = Guid.NewGuid(), RunId = runId, Ordinal = ordinal, Title = "s" + ordinal, Status = AgentStepStatus.Done };
+
+    private void Record(AssistantMessage message, Guid runId, Guid? stepId) =>
+        _records.Recorded += Raise.Event<EventHandler<RunMessageRecord>>(
+            _records, new RunMessageRecord(message.Id, runId, stepId, 0, DateTime.UtcNow));
+
+    [Fact]
+    public void AJobsStepReplies_MoveIntoTheirRows_AndItsLastReplyStaysTheResult()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var (stepA, stepB) = (Step(runId, 0), Step(runId, 1));
+        var goal = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.User, "goal", created.AddSeconds(-5).ToLocalTime());
+        var a = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "a", created.AddSeconds(5).ToLocalTime());
+        var b = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "b", created.AddSeconds(9).ToLocalTime());
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = runId, State = AgentRunState.Completed, Plan = [stepA, stepB], CreatedAt = created,
+            FirstMessageId = a.Id, LastMessageId = b.Id,
+        });
+
+        var vm = CreateSut(runs);
+        vm.Messages.Add(goal);
+        vm.Messages.Add(a);
+        vm.Messages.Add(b);
+        vm.SyncRunProgress(runId);
+        var block = vm.ActiveRunProgress!;
+        Assert.Equal([goal, block, a, b], vm.TranscriptItems);   // no record yet: ordinary bubbles
+
+        Record(a, runId, stepA.Id);
+        Record(b, runId, stepB.Id);
+
+        Assert.Equal([goal, block, b], vm.TranscriptItems);
+        Assert.Equal([a], block.Steps.Single(s => s.StepId == stepA.Id).Replies);
+        Assert.Empty(block.Steps.Single(s => s.StepId == stepB.Id).Replies);
+        Assert.False(block.HasEarlierAttempts);
+    }
+
+    [Fact]
+    public void AReplyOfAReplacedStep_IsShownUnderEarlierAttempts()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var kept = Step(runId, 0);
+        var a = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "a", created.AddSeconds(5).ToLocalTime());
+        var b = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "b", created.AddSeconds(9).ToLocalTime());
+        var c = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "c", created.AddSeconds(12).ToLocalTime());
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = runId, State = AgentRunState.Completed, Plan = [kept], CreatedAt = created, FirstMessageId = a.Id,
+        });
+
+        var vm = CreateSut(runs);
+        vm.Messages.Add(a);
+        vm.Messages.Add(b);
+        vm.Messages.Add(c);
+        vm.SyncRunProgress(runId);
+        Record(a, runId, kept.Id);
+        Record(b, runId, Guid.NewGuid());   // its step was replaced by a re-plan
+        Record(c, runId, kept.Id);
+
+        var block = vm.ActiveRunProgress!;
+        Assert.Equal([block, c], vm.TranscriptItems);
+        Assert.Equal([b], block.EarlierAttemptReplies);
+        Assert.True(block.HasEarlierAttempts);
+        Assert.False(block.IsEarlierAttemptsExpanded);
+    }
+
+    [Fact]
+    public async Task Regenerate_DiscardsAWaitingPlanFirst_ThenRuns()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var session = SessionWithTranscript();
+        var runId = Guid.NewGuid();
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = runId, State = AgentRunState.WaitingForInput, Plan = [], CreatedAt = DateTime.UtcNow.AddMinutes(1),
+            ExtraJson = $$"""{"paused":true,"reason":"{{AgentRunOrchestrator.PlanApprovalReason}}"}""",
+        });
+        _resume.RejectPlanAsync(runId, Arg.Any<CancellationToken>()).Returns(true);
+        var chatId = Guid.NewGuid();
+        session.SetIdentity(chatId, DateTime.UtcNow, null, "t", false);
+        var note = new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "rejected", Timestamp = DateTime.UtcNow };
+        // Another writer's unpulled row: not this regenerate's to delete.
+        var foreign = new SyncAssistantChatMessage { Id = Guid.NewGuid(), Role = "assistant", Content = "job", Timestamp = DateTime.UtcNow };
+        _chats.GetAsync(chatId, Arg.Any<CancellationToken>()).Returns(new SyncAssistantChat
+        {
+            Id = chatId,
+            Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto), note, foreign],
+        });
+        _records.GetByChatAsync(chatId, Arg.Any<CancellationToken>()).Returns(
+            [new RunMessageRecord(note.Id, runId, null, null, DateTime.UtcNow)]);
+        var removed = session.Messages.Select(m => m.Id).Append(note.Id).ToList();
+        var vm = CreateSut(runs);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+        vm.SyncRunProgress(runId);
+        var block = vm.ActiveRunProgress!;
+        Assert.True(block.IsPlanApprovalPause);
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _resume.Received(1).RejectPlanAsync(runId, Arg.Any<CancellationToken>());
+        // The discard's note is removed with the rest, or the turn-end pull would put it below the new answer.
+        await _manager.Received(1).DeleteMessagesAsync(
+            session, Arg.Is<IReadOnlyList<Guid>>(ids => ids.Order().SequenceEqual(removed.Order())));
+        await _manager.Received(1).StartTurnAsync(
+            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
+        Assert.DoesNotContain(block, vm.TranscriptItems);
+    }
+
+    [Fact]
+    public void StepReplies_StayBubbles_WhileTheirBlockIsOutsideTheLoadedWindow()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var runId = Guid.NewGuid();
+        var created = DateTime.UtcNow;
+        var step = Step(runId, 0);
+        var t = created.ToLocalTime();
+        var first = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "first", t.AddSeconds(1));
+        var transcript = new System.Collections.ObjectModel.ObservableCollection<AssistantMessage> { first };
+        for (var i = 0; i < MessageWindow.Size + 5; i++)
+            transcript.Add(new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.User, "u" + i, t.AddSeconds(2 + i)));
+        var middle = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "middle", t.AddMinutes(5));
+        var last = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "last", t.AddMinutes(6));
+        transcript.Add(middle);
+        transcript.Add(last);
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+            { Id = runId, State = AgentRunState.Completed, Plan = [step], CreatedAt = created, FirstMessageId = first.Id });
+
+        var vm = CreateSut(runs);
+        vm.Messages = transcript;
+        vm.SyncRunProgress(runId);
+        Record(first, runId, step.Id);
+        Record(middle, runId, step.Id);
+        Record(last, runId, step.Id);
+
+        Assert.DoesNotContain(vm.ActiveRunProgress!, vm.TranscriptItems);
+        Assert.Contains(middle, vm.TranscriptItems);
+    }
+
+    [Theory]
+    [InlineData(AgentRunState.Paused)]
+    [InlineData(AgentRunState.WaitingForInput)]
+    public async Task Regenerate_IsBlockedByAParkedJobBelowIt_AndSaysWhy(AgentRunState state)
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var session = SessionWithTranscript();
+        var runId = Guid.NewGuid();
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+            { Id = runId, State = state, Plan = [], CreatedAt = DateTime.UtcNow.AddMinutes(1) });
+        var vm = CreateSut(runs);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+        vm.SyncRunProgress(runId);
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _manager.DidNotReceive().StartTurnAsync(
+            Arg.Any<ChatSession>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
+        Assert.Equal(2, vm.Messages.Count);
+        _snackbar.Received(1).Show(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Wpf.Ui.Controls.ControlAppearance>(),
+            Arg.Any<Wpf.Ui.Controls.IconElement?>(), Arg.Any<TimeSpan>());
+    }
+
+    [Fact]
+    public async Task Regenerate_OfAFinishedJob_RemovesIt_AndAnEmptiedBlockIsNotShown()
+    {
+        SynchronizationContext.SetSynchronizationContext(new InlineSyncContext());
+        var session = SessionWithTranscript();
+        var reply = new AssistantMessage(Guid.NewGuid(), Microsoft.Extensions.AI.ChatRole.Assistant, "job reply",
+            DateTime.Now.AddMinutes(2));
+        session.Messages.Add(reply);
+        var runId = Guid.NewGuid();
+        var runs = Substitute.For<IAgentRunService>();
+        runs.GetAsync(runId, Arg.Any<CancellationToken>()).Returns(new AgentRun
+        {
+            Id = runId, State = AgentRunState.Completed, Plan = [], CreatedAt = DateTime.UtcNow.AddMinutes(1),
+            FirstMessageId = reply.Id,
+        });
+        var vm = CreateSut(runs);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+        vm.SyncRunProgress(runId);
+        Assert.Contains(vm.ActiveRunProgress!, vm.TranscriptItems);
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _manager.Received(1).StartTurnAsync(
+            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
+        Assert.DoesNotContain(vm.ActiveRunProgress!, vm.TranscriptItems);
     }
 
     /// <summary>The same settle folds the run card, so the answer is what the eye lands on.</summary>
@@ -699,10 +990,32 @@ public class AssistantViewModelLeverTests
         _manager.ActiveSession.Returns(session);
         Activate(session);
 
+        var removedIds = session.Messages.Select(m => m.Id).ToList();
+
+        await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
+
+        await _manager.Received(1).DeleteMessagesAsync(
+            session, Arg.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(removedIds)));
+        await _manager.Received(1).StartTurnAsync(
+            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Regenerate_SendsAPlannedTurn_WhenTheLeverIsOnAgent(bool agent)
+    {
+        var vm = CreateSut();
+        var session = SessionWithTranscript(foreignRunActive: false);
+        _manager.ActiveSession.Returns(session);
+        Activate(session);
+        vm.AgentModeEnabled = agent;
+
         await vm.RegenerateMessageCommand.ExecuteAsync(vm.Messages[1]);
 
         await _manager.Received(1).StartTurnAsync(
-            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), Arg.Any<bool>());
+            session, "summarize the repo", Arg.Any<IReadOnlyList<ImageAttachment>?>(), Arg.Any<string?>(), agent,
+            Arg.Any<string?>(), Arg.Any<IReadOnlyList<AttachedFileRef>?>(), Arg.Any<IReadOnlyList<PendingFileAttachment>?>());
     }
 
     [Fact]
@@ -779,5 +1092,46 @@ public class AssistantViewModelLeverTests
         session.SetActiveRun(Guid.NewGuid());   // null -> an id, so this really does raise
 
         Assert.Null(vm.ActiveRunProgress);
+    }
+
+    [Fact]
+    public void WithTheUnifiedFlowOn_APlanWaitingForApproval_LeavesTheComposerOpen()
+    {
+        var vm = CreateSut(settings: new AppSettings { UnifiedAssistantFlowEnabled = true });
+        vm.InputText = "drop step 3";
+
+        Activate(SessionWithTranscript(planApprovalParkActive: true));
+
+        Assert.False(vm.PlanApprovalParkActive);
+        Assert.True(vm.SendMessageCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void TurningTheUnifiedFlowOn_ReleasesTheLockOfAWaitingPlan_AndOffRestoresIt()
+    {
+        var vm = CreateSut();
+        Activate(SessionWithTranscript(planApprovalParkActive: true));
+        Assert.True(vm.PlanApprovalParkActive);
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(
+            _settings, new AppSettings { UnifiedAssistantFlowEnabled = true });
+        Assert.False(vm.PlanApprovalParkActive);
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(_settings, new AppSettings());
+        Assert.True(vm.PlanApprovalParkActive);
+    }
+
+    [Fact]
+    public void WithTheUnifiedFlowOn_AChatStoredInAgentMode_SeedsChat_AndKeepsTheStoredLever()
+    {
+        var vm = CreateSut(settings: new AppSettings { UnifiedAssistantFlowEnabled = true });
+        var session = SessionWithTranscript();
+        session.AgentModeEnabled = true;
+
+        vm.SeedAgentMode(session, new AppSettings { UnifiedAssistantFlowEnabled = true, AssistantNewChatAgentMode = true });
+
+        Assert.False(vm.AgentModeEnabled);
+        Assert.False(vm.AgentContextChoicePending);
+        Assert.True(session.AgentModeEnabled);
     }
 }

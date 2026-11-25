@@ -144,14 +144,15 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
     [Fact]
     public async Task SingleTurnRun_HoldsTheComposerBracket_AcrossItsFullReplaceWrite()
     {
-        // The terminal SaveAsync is a full replace, so a user message landing while it is in flight is deleted
-        // outright; the bracket must span that write and be gone once RunAsync returns.
+        // The bracket must span the terminal write and be gone once RunAsync returns.
         var store = new ExecutingRunStore();
         var bracketOpenAtWrite = new List<bool>();
 
         var chats = Substitute.For<IAssistantChatService>();
         chats.SaveAsync(Arg.Do<SyncAssistantChat>(c => bracketOpenAtWrite.Add(store.IsExecuting(c.Id))), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
+        chats.UpsertMessagesAsync(Arg.Do<SyncAssistantChat>(c => bracketOpenAtWrite.Add(store.IsExecuting(c.Id))), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(true);
 
         // Load-bearing: unconfigured, NSubstitute yields a null run, no bracket is registered, and every
         // assertion below passes vacuously.
@@ -171,7 +172,7 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
             new BackgroundTurnRequest { Prompt = "go", Provider = Provider() }, TestContext.Current.CancellationToken);
 
         Assert.True(result.Succeeded);
-        // Two writes: the FK stub, which has nothing to lose, then the terminal full replace.
+        // Two writes: the FK stub, then the terminal row upsert.
         Assert.Collection(bracketOpenAtWrite,
             stub => Assert.False(stub),
             terminal => Assert.True(terminal));
@@ -336,6 +337,8 @@ public sealed class BackgroundAssistantTurnRunnerRunSpineTests
         public Task<bool> TryBeginResumeAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryPauseUserAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryResumeFromPauseAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
+        public Task<bool> TryClaimParkAsync(Guid runId, AgentRunState from, string? expectedExtraJson, CancellationToken ct = default) => throw new InvalidOperationException("boom");
+        public Task<bool> TryCancelParkedAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryRejectParkedPlanAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task BeginChildWaitAsync(Guid runId, int childCount, CancellationToken ct = default) => throw new InvalidOperationException("boom");
         public Task<bool> TryEndChildWaitAsync(Guid runId, CancellationToken ct = default) => throw new InvalidOperationException("boom");

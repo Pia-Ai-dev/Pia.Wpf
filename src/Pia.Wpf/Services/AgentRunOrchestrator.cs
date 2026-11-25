@@ -27,7 +27,9 @@ public sealed class AgentRunOrchestrator
     private readonly IRunWorkspaceService? _workspaces;
     private readonly IHeadlessRunLauncher? _childLauncher;
     private readonly IAssistantChatService? _chats;
+    private readonly IRunMessageRecordStore? _messageRecords;
     private readonly IRunSteeringStore? _steering;
+    private readonly IJobSteeringStore? _jobSteering;
     private readonly ILocalizationService? _localization;
     private readonly IAiClientService? _ai;
 
@@ -139,8 +141,12 @@ public sealed class AgentRunOrchestrator
         IAssistantChatService? chats = null,
         IRunSteeringStore? steering = null,
         ILocalizationService? localization = null,
-        IAiClientService? ai = null)
+        IAiClientService? ai = null,
+        IRunMessageRecordStore? messageRecords = null,
+        IJobSteeringStore? jobSteering = null)
     {
+        _jobSteering = jobSteering;
+        _messageRecords = messageRecords;
         _runService = runService;
         _planner = planner;
         _verifier = verifier;
@@ -170,7 +176,8 @@ public sealed class AgentRunOrchestrator
         CancellationToken externalToken,
         bool resume = false,
         string? nudge = null,
-        string? parkReason = null)
+        string? parkReason = null,
+        Func<string?>? cancelReason = null)
     {
         // EVERY line this dispatch writes — from this loop, from the planner and verifier it awaits, and
         // from the tool handlers inside a step turn — carries the run id. That is what makes a log readable at
@@ -272,7 +279,7 @@ public sealed class AgentRunOrchestrator
 
                 if (plan.FallBackToSingleTurn) // R10
                 {
-                    await RunDegradedSingleTurnAsync(executor, run, ctx, cts.Token).ConfigureAwait(false);
+                    await RunDegradedSingleTurnAsync(executor, run, ctx, cts.Token, cancelReason).ConfigureAwait(false);
                     return;
                 }
 
@@ -349,8 +356,16 @@ public sealed class AgentRunOrchestrator
             {
                 // Re-query the persisted Pending list each iteration — a foreach over a snapshot
                 // would never run replanned steps.
-                while (await _runService.NextPendingStepAsync(run.Id, cts.Token).ConfigureAwait(false) is { } step)
+                while (await NextStepAtLoopTopAsync(run.Id, ctx, nudge, cts.Token).ConfigureAwait(false) is ({ } step, var pauseAfterStep))
                 {
+                    if (pauseAfterStep)
+                    {
+                        await PinRange().ConfigureAwait(false);
+                        await SafePauseUser(run.Id).ConfigureAwait(false);
+                        await SafeOnPaused(executor, run, ctx).ConfigureAwait(false);
+                        return;
+                    }
+
                     if (ctx.StepBudgetExceeded || ctx.WallClockExceeded) // R5: both checks, never silent
                     {
                         await ParkAtBudgetAsync(executor, run, ctx, runFirst, runLast, cts.Token).ConfigureAwait(false);
@@ -385,7 +400,7 @@ public sealed class AgentRunOrchestrator
                         {
                             cancelled = true;
                             await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                            await SafeFail(run.Id, children.Error, cancelled: true).ConfigureAwait(false);
+                            await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
                             break;
                         }
 
@@ -562,7 +577,7 @@ public sealed class AgentRunOrchestrator
                     {
                         cancelled = true;
                         await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                        await SafeFail(run.Id, r.Error, cancelled: true).ConfigureAwait(false);
+                        await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
                         break;
                     }
 
@@ -581,6 +596,10 @@ public sealed class AgentRunOrchestrator
                 // leave the outer loop; the terminal-settle block's else-branch runs EndRun only.
                 if (cancelled || failed)
                     break;
+
+                // A change queued after the last loop-top read was promised to the user: drain again to apply it.
+                if (_jobSteering?.PeekPlanChanges(run.Id).Count > 0)
+                    continue;
 
                 // Clean drain → the terminal critic pass (both executors; executor-agnostic like the planner).
                 await SafeSetState(run.Id, AgentRunState.Verifying, cts.Token).ConfigureAwait(false);
@@ -649,7 +668,7 @@ public sealed class AgentRunOrchestrator
             // the executed-so-far slice first so a transcript-producing run never settles Cancelled with a
             // null range (mirrors the step-cancel path above; SetRunMessageRange ignores the cancelled ct).
             await PinRange().ConfigureAwait(false);
-            await SafeFail(run.Id, null, cancelled: true).ConfigureAwait(false);
+            await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
             await SafeEndRun(executor, run, ctx, cancelled: true, failed: false).ConfigureAwait(false);
         }
         catch (Exception ex) // planner-cannot-plan (threw) / executor crash — critical path, fail the run
@@ -665,6 +684,61 @@ public sealed class AgentRunOrchestrator
     /// terminal path (success, truncation, cancel, fail) so a run that executed steps never keeps a null range —
     /// symmetric with the clean-success path.
     /// </summary>
+    /// <summary>The one place a chat's queued plan changes are written while the job runs: no step is in flight here.</summary>
+    private async Task<(AgentStep? Step, bool PauseAfterStep)> NextStepAtLoopTopAsync(
+        Guid runId, RunContext ctx, string? nudge, CancellationToken ct)
+    {
+        if (_jobSteering is { } jobs)
+        {
+            await ApplyQueuedPlanChangesAsync(jobs, runId, ct).ConfigureAwait(false);
+            ctx.SetNudge(JobPlanChanges.ComposeNote(nudge, jobs.Notes(runId)));
+        }
+
+        var step = await _runService.NextPendingStepAsync(runId, ct).ConfigureAwait(false);
+        if (step is null || _jobSteering is null)
+            return (step, false);
+
+        if (_jobSteering.TryConsumePauseAfterStep(runId))
+            return (step, true);
+
+        _jobSteering.UnmarkChanged(runId, step.Id);
+        return (step, false);
+    }
+
+    private async Task ApplyQueuedPlanChangesAsync(IJobSteeringStore jobs, Guid runId, CancellationToken ct)
+    {
+        var changes = jobs.TakePlanChanges(runId);
+        if (changes.Count == 0)
+            return;
+
+        try
+        {
+            var run = await _runService.GetAsync(runId, ct).ConfigureAwait(false);
+            if (run is null)
+                return;
+
+            var (tail, touched, dropped) = JobPlanChanges.Apply(runId, JobPlanChanges.PendingTail(run), changes);
+            var rows = JobPlanChanges.Compose(run.Plan, tail);
+            if (rows.Count == 0 || rows.Count > RunProfile.MaxStepsCap)
+            {
+                jobs.RecordDropped(runId, changes.Count);
+                _logger.LogInformation("Run {RunId}: queued plan changes refused ({Count} steps)", runId, rows.Count);
+                return;
+            }
+
+            await _runService.ReplaceStepsAsync(runId, rows, ct).ConfigureAwait(false);
+            jobs.MarkChanged(runId, touched);
+            jobs.RecordDropped(runId, dropped);
+            _logger.LogInformation("Run {RunId}: applied {Applied} queued plan change(s), dropped {Dropped}",
+                runId, changes.Count - dropped, dropped);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            jobs.RecordDropped(runId, changes.Count);
+            _logger.LogWarning(ex, "Run {RunId}: applying queued plan changes failed", runId);
+        }
+    }
+
     private async Task PinRangeAsync(Guid runId, Guid? runFirst, Guid runLast, CancellationToken ct)
     {
         if (runFirst is { } first)
@@ -755,7 +829,7 @@ public sealed class AgentRunOrchestrator
     /// <summary>the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —
     /// this arm never reaches the terminal-settle block.</summary>
     private async Task RunDegradedSingleTurnAsync(
-        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct)
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct, Func<string?>? cancelReason)
     {
         var cancelled = false;
         var failed = false;
@@ -768,7 +842,7 @@ public sealed class AgentRunOrchestrator
         if (fr.Cancelled)
         {
             cancelled = true;
-            await SafeFail(run.Id, fr.Error, cancelled: true).ConfigureAwait(false);
+            await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
         }
         else if (!fr.Succeeded)
         {
@@ -902,7 +976,7 @@ public sealed class AgentRunOrchestrator
 
         // Reuses the same post-and-mirror call the plan-time decline makes, so the two parks
         // can't drift apart.
-        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, userInputQuestion)
+        await PostAndMirrorClarificationQuestionAsync(executor, run, ctx, persona, userInputQuestion, step)
             .ConfigureAwait(false);
     }
 
@@ -1633,7 +1707,7 @@ public sealed class AgentRunOrchestrator
                 // that child park instead — it would then be neither superseded nor re-dispatched.
                 _steering?.RevokePauseRequest(old.Id);
 
-                await launcher.CancelAsync(old.Id).ConfigureAwait(false);
+                await launcher.CancelAsync(old.Id, SupersededFailureReason).ConfigureAwait(false);
 
                 // A parked child is the one shape the cancel above cannot reach across a restart: states at or
                 // above WaitingForInput are never swept, on purpose (a parked run must survive a restart), so
@@ -1776,7 +1850,7 @@ public sealed class AgentRunOrchestrator
         try
         {
             await _runService.RecordStepResultAsync(stepId,
-                r.Succeeded ? AgentStepStatus.Done : AgentStepStatus.Failed,
+                r.Succeeded ? AgentStepStatus.Done : r.Cancelled ? AgentStepStatus.Pending : AgentStepStatus.Failed,
                 r.FirstMessageId, r.LastMessageId, r.Usage, ct, r.Outcome?.ArtifactRef).ConfigureAwait(false);
         }
         catch (Exception ex) { _logger.LogWarning(ex, "Run bookkeeping (record step) failed for {StepId}", stepId); }
@@ -1812,42 +1886,37 @@ public sealed class AgentRunOrchestrator
     /// order), since a live session's pull keys on the id to decide which stored rows it's missing — two ids for
     /// one question would render it twice.</summary>
     private async Task PostAndMirrorClarificationQuestionAsync(
-        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona, string? question)
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, Persona persona, string? question,
+        AgentStep? askingStep = null)
     {
         var questionId = Guid.NewGuid();
-        await SafePostClarificationQuestionAsync(run, persona, questionId, question).ConfigureAwait(false);
+        await SafePostClarificationQuestionAsync(run, persona, questionId, question, askingStep).ConfigureAwait(false);
         await SafeMirrorClarificationQuestion(executor, run, ctx, persona, questionId, question).ConfigureAwait(false);
     }
 
-    /// <summary>Posts the clarification question into the run's own chat as an assistant message, using
-    /// <see cref="IAssistantChatService.SaveMergedAsync"/> rather than a blind replace so a concurrent writer's
-    /// rows are never dropped. A blank <paramref name="question"/> is a no-op, not a fabricated placeholder.</summary>
+    /// <summary>A blank <paramref name="question"/> is a no-op, not a fabricated placeholder.</summary>
     /// <param name="messageId">Must match the id the caller's live mirror uses for the same question.</param>
     private async Task SafePostClarificationQuestionAsync(
-        AgentRun run, Persona persona, Guid messageId, string? question)
+        AgentRun run, Persona persona, Guid messageId, string? question, AgentStep? askingStep = null)
     {
         if (_chats is null || string.IsNullOrWhiteSpace(question))
             return; // no chat service wired, or a decline that worded no question
 
         try
         {
-            var chat = await _chats.GetAsync(run.ChatId, CancellationToken.None).ConfigureAwait(false);
-            if (chat is null)
-                return; // the stub row is gone (e.g. its chat was deleted underneath the run) — nothing to post into
-
             var now = DateTime.UtcNow;
-            var snapshot = new SyncAssistantChat
+            // A question asked before any step ran belongs to no step and stays a bubble.
+            if (_messageRecords is not null)
             {
-                Id = chat.Id,
-                SchemaVersion = chat.SchemaVersion,
-                Title = chat.Title,
-                CreatedAt = chat.CreatedAt,
+                await _messageRecords.RecordAsync(
+                    new RunMessageRecord(messageId, run.Id, askingStep?.Id, askingStep?.Ordinal, now)).ConfigureAwait(false);
+            }
+
+            var appended = await _chats.UpsertMessagesAsync(new SyncAssistantChat
+            {
+                Id = run.ChatId,
                 UpdatedAt = now,
                 LastAccessedAt = now,
-                WindowMode = chat.WindowMode,
-                ProviderId = chat.ProviderId,
-                WorkingDirectory = chat.WorkingDirectory,
-                AgentContextMode = chat.AgentContextMode,
                 Messages =
                 [
                     new SyncAssistantChatMessage
@@ -1859,8 +1928,9 @@ public sealed class AgentRunOrchestrator
                         Persona = new SyncMessagePersona { Id = persona.Id, Name = persona.Name, Emoji = persona.Emoji },
                     },
                 ],
-            };
-            await _chats.SaveMergedAsync(snapshot, CancellationToken.None).ConfigureAwait(false);
+            }, writeHeader: false, CancellationToken.None).ConfigureAwait(false);
+            if (!appended)
+                return; // the stub row is gone (e.g. its chat was deleted underneath the run) — nothing to post into
             _logger.LogInformation(
                 "Run {RunId}: posted the clarification question into chat {ChatId}", run.Id, run.ChatId);
         }
@@ -2053,6 +2123,10 @@ public sealed class AgentRunOrchestrator
             return true;
         }
     }
+
+    // A step reports its cancel as the error "cancelled", which is no reason: a user's stop stores none.
+    private Task SafeFailCancelled(Guid runId, Func<string?>? cancelReason) =>
+        SafeFail(runId, cancelReason?.Invoke(), cancelled: true);
 
     private async Task SafeFail(Guid runId, string? error, bool cancelled, PiaFailure? failure = null)
     {

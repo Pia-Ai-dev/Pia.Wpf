@@ -140,6 +140,24 @@ public class AssistantChatServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task AHeaderWriteWithoutATitle_KeepsTheStoredTitle()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var chat = MakeChat(title: "renamed in history", body: "the one message");
+        await _service.SaveAsync(chat, ct);
+        _createdIds.Add(chat.Id);
+
+        chat.Title = null;
+        chat.WorkingDirectory = "Reports";
+        chat.Messages = [];
+        Assert.True(await _service.UpsertMessagesAsync(chat, writeHeader: true, ct));
+
+        var after = await _service.GetAsync(chat.Id, ct);
+        Assert.Equal("renamed in history", after!.Title);
+        Assert.Equal("Reports", after.WorkingDirectory);
+    }
+
+    [Fact]
     public async Task SetTitleAsync_PreservesMessagesAppendedByAnotherWriter()
     {
         // The rename's snapshot is taken before the title LLM call, so by the time it writes a headless step

@@ -24,7 +24,7 @@ namespace Pia.ViewModels.Models;
 /// <c>ConfigureAwait(false)</c>, so every continuation (streaming writes,
 /// collection mutations) resumes on the captured UI <c>SynchronizationContext</c>.
 /// </summary>
-public sealed class ChatSession : IDisposable
+public sealed partial class ChatSession : IDisposable
 {
     private readonly IAiClientService _aiClientService;
     private readonly IPluginService _pluginService;
@@ -151,6 +151,22 @@ public sealed class ChatSession : IDisposable
     /// </summary>
     internal event EventHandler? PersistRequested;
 
+    /// <summary>Messages removed from the transcript that the store must delete too.</summary>
+    internal event EventHandler<IReadOnlyList<Guid>>? MessagesDropped;
+
+    // What this session last wrote or read per message, so a persist rewrites only rows it changed.
+    internal Dictionary<Guid, string> StoredRowFingerprints { get; } = new();
+
+    internal string? StoredHeaderFingerprint { get; set; }
+
+    // Removed here, so a pull must not bring them back, even from a read taken before the delete.
+    internal HashSet<Guid> DroppedMessageIds { get; } = [];
+
+    // Dropped ids whose store delete has not been confirmed; the next persist retries them.
+    internal HashSet<Guid> PendingDeleteIds { get; } = [];
+
+    private IChatJobToolService? _jobTools;
+
     public ChatSession(
         ITokenMapService tokenMap,
         IAiClientService aiClientService,
@@ -207,8 +223,34 @@ public sealed class ChatSession : IDisposable
     {
         if (ActiveRunId == runId)
             return;
+        // The replaced run keeps its block in the transcript.
+        if (ActiveRunId is { } previous && runId is not null && !_earlierRunIds.Contains(previous))
+        {
+            _earlierRunIds.Add(previous);
+            EarlierRunsChanged?.Invoke(this, EventArgs.Empty);
+        }
         ActiveRunId = runId;
         ActiveRunChanged?.Invoke(this, runId);
+    }
+
+    private readonly List<Guid> _earlierRunIds = [];
+
+    /// <summary>Runs of this chat other than <see cref="ActiveRunId"/> whose block the transcript shows.</summary>
+    public IReadOnlyList<Guid> EarlierRunIds => _earlierRunIds;
+
+    public event EventHandler? EarlierRunsChanged;
+
+    public void AddEarlierRuns(IEnumerable<Guid> runIds)
+    {
+        var added = false;
+        foreach (var id in runIds)
+        {
+            if (id == ActiveRunId || _earlierRunIds.Contains(id)) continue;
+            _earlierRunIds.Add(id);
+            added = true;
+        }
+        if (added)
+            EarlierRunsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -346,6 +388,8 @@ public sealed class ChatSession : IDisposable
         var injectedFileContext = request.InjectedFileContext;
         var regenerationInstruction = request.RegenerationInstruction;
         var tokenizationEnabled = request.TokenizationEnabled;
+        _proposePlan = request.ProposePlan;
+        _jobTools = request.JobTurn is null ? null : request.JobTools;
 
         // Reuse the CTS created by BeginTurn() (so a cancel during the manager's
         // setup-await window is honored — open-question C1). Fall back to creating one
@@ -426,7 +470,7 @@ public sealed class ChatSession : IDisposable
                     // (the persisted/displayed text) is unchanged, so history never bloats and the user's
                     // bubble stays clean.
                     var stripped = atCommands.Count > 0 ? AtCommandParser.SubstituteCommands(msg.Content) : msg.Content;
-                    var parts = new[] { stripped, injectedFileContext, regenerationInstruction }
+                    var parts = new[] { stripped, injectedFileContext, request.JobTurn?.Block, regenerationInstruction }
                         .Where(p => !string.IsNullOrEmpty(p));
                     var visible = AssistantPromptComposer.AppendTimeNote(string.Join("\n\n", parts));
                     // ToChatMessage(overrideText) preserves an image attachment — the prior text-only
@@ -505,9 +549,9 @@ public sealed class ChatSession : IDisposable
             _logger.LogWarning("Provider rejected image attachment (vision disabled)");
             var localized = _localizationService["Msg_Assistant_ProviderNoVision"];
             assistantMessage.Content = localized;
-            // Session-local: drop the message pair (operates on this session's own list).
             Messages.Remove(assistantMessage);
             Messages.Remove(userMessage);
+            MessagesDropped?.Invoke(this, [userMessage.Id, assistantMessage.Id]);
             SetState(ChatState.Error);
             RunFailed?.Invoke(this, new RunFailedEventArgs
             {
@@ -554,6 +598,7 @@ public sealed class ChatSession : IDisposable
             var emptyResponse = emptyResponseMessage is not null;
 
             // Per-run terminal finalize — stays inline in RunTurnAsync only.
+            _proposePlan = null;
             Cts?.Dispose();
             Cts = null;
 
@@ -986,6 +1031,7 @@ public sealed class ChatSession : IDisposable
             Messages.Remove(assistantMessage);
             _stepToolExchanges.Remove(assistantMessage.Id);
             _answeredSteps.Remove(assistantMessage.Id);
+            MessagesDropped?.Invoke(this, [assistantMessage.Id]);
             return new StepTurnResult(
                 Succeeded: false, Cancelled: false, Error: error, VisibleText: string.Empty,
                 Usage: usage, FirstMessageId: Guid.Empty, LastMessageId: Guid.Empty,
@@ -1176,6 +1222,8 @@ public sealed class ChatSession : IDisposable
         Debug.WriteLine($"[Tool Args] {toolCall.Name}: {JsonSerializer.Serialize(toolCall.Arguments)}");
 #endif
 
+        if (_jobTools is { } jobTools && jobTools.Handles(toolCall.Name) && Id is { } jobChatId) return await jobTools.HandleAsync(jobChatId, toolCall.Name, toolCall.Arguments);
+
         // suggest_agent_mode: pre-route special-case. RouteToolCallAsync would return null for this
         // unknown tool and dead-end at "Unknown tool.", so intercept BEFORE routing. Records a typed chip
         // on the streaming message + returns a short ack; never gated, always succeeds; every other
@@ -1193,6 +1241,8 @@ public sealed class ChatSession : IDisposable
             }
             return "Noted — offered Agent mode to the user.";
         }
+
+        if (await TryHandleProposePlanAsync(toolCall, message, tokenizationEnabled, dispatch) is { } proposed) return proposed;
 
         // emit_step_result: the second pre-route special case, for the same structural reason as
         // the one above — no plugin, no GUID, no _toolNameRoutes entry, so routing would miss it, log a
@@ -1367,13 +1417,13 @@ public sealed class ChatSession : IDisposable
                 // THE MIDDLE TIER. Execute now and remember for the rest of this app session — nothing reaches
                 // AppSettings, so the grant dies with the process.
                 case ToolDecision.AllowForSession:
-                    _permissions.GrantForSession(pluginId, tool);
+                    await ToolDecisionGrants.ApplyAsync(_permissions, card.Decision, pluginId, tool);
                     _logger.LogInformation(
                         "User granted session approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedForSession, card.ShownAt, card.DecidedAt);
 
                 case ToolDecision.AlwaysAllow:
-                    await _permissions.GrantAsync(pluginId, tool);
+                    await ToolDecisionGrants.ApplyAsync(_permissions, card.Decision, pluginId, tool);
                     _logger.LogInformation("User granted standing approval for {ToolName} (plugin {PluginId})", tool, pluginId);
                     return await ExecuteAndReport(ToolGateDecision.ApprovedAlways, card.ShownAt, card.DecidedAt);
 
@@ -1452,7 +1502,7 @@ public sealed class ChatSession : IDisposable
             // Only the park reads it, and this surface never parks. False keeps the input honest about
             // what it is answering rather than about what happens to be reachable from here.
             IsTopLevelUserRun: false,
-            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath)));
+            IsScratchTarget: RunScratchFolder.IsGateAutoApprovable(toolClass, pendingAction.TargetPath), IsChatJob: false));
 
         return new ToolGateResolution(
             pluginId, tool, toolClass, askedAt, verdict, DateTime.UtcNow);

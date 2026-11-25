@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Pia.Helpers;
@@ -23,7 +24,7 @@ namespace Pia.ViewModels.Models;
 /// Services-must-not-depend-on-ViewModels layer rule, while still depending only
 /// on service interfaces.
 /// </summary>
-public sealed class ChatSessionManager : IChatSessionManager, IDisposable
+public sealed partial class ChatSessionManager : IChatSessionManager, IDisposable
 {
     private readonly ILogger<ChatSessionManager> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -73,6 +74,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     /// <summary>Resume entry point for an answer typed into the composer; null means the send falls back to an ordinary chat turn.</summary>
     private readonly IAgentRunResumeService? _resumeService;
+    private readonly IChatJobToolService? _jobTools;
 
     private readonly SynchronizationContext _syncContext;
 
@@ -166,8 +168,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // "a live run cannot be paused", which is the pre-Batch-08 behaviour, not a broken manager.
         IRunSteeringStore? steering = null,
         // Null means an answer starts an ordinary chat turn instead of resuming a parked run.
-        IAgentRunResumeService? resumeService = null)
+        IAgentRunResumeService? resumeService = null,
+        IChatJobToolService? jobTools = null)
     {
+        _jobTools = jobTools;
         _logger = logger;
         _loggerFactory = loggerFactory;
         _chatService = chatService;
@@ -384,6 +388,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         session.TurnCompleted += OnSessionTurnCompleted;
         // E2: and every completed step of an in-flight Planned run (persist-only, no terminal settle).
         session.PersistRequested += OnSessionPersistRequested;
+        session.MessagesDropped += OnSessionMessagesDropped;
+        session.IdentityAssigned += OnSessionIdentityAssigned;
         _allSessions.Add(session);
         return session;
     }
@@ -402,7 +408,58 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         // Persist on every terminal state (matches today's finally-persist, which
         // saved error turns too). Follow-up/TTS gating lives in the active VM.
         if (sender is ChatSession session)
-            PersistAsync(session).SafeFireAndForget(_logger);
+            PersistThenPullAsync(session).SafeFireAndForget(_logger);
+    }
+
+    // Rows a job wrote while this turn streamed were skipped by the pull; fetch them now.
+    private async Task PersistThenPullAsync(ChatSession session)
+    {
+        await PersistAsync(session);
+        if (session.Id is { } chatId)
+            await PullMissingTranscriptRowsAsync(chatId);
+    }
+
+    // Activation published a null id for a chat that had none yet; this is when it gets one.
+    private void OnSessionIdentityAssigned(object? sender, EventArgs e)
+    {
+        if (sender is ChatSession session && ReferenceEquals(session, ActiveSession))
+            _windowManager.SetActiveAssistantChatId(session.Id);
+    }
+
+    private void OnSessionMessagesDropped(object? sender, IReadOnlyList<Guid> messageIds)
+    {
+        if (sender is ChatSession session)
+            DeleteMessagesAsync(session, messageIds).SafeFireAndForget(_logger);
+    }
+
+    public async Task DeleteMessagesAsync(ChatSession session, IReadOnlyList<Guid> messageIds)
+    {
+        foreach (var id in messageIds)
+        {
+            session.StoredRowFingerprints.Remove(id);
+            session.DroppedMessageIds.Add(id);
+            session.PendingDeleteIds.Add(id);
+        }
+
+        await DeletePendingRowsAsync(session);
+    }
+
+    private async Task DeletePendingRowsAsync(ChatSession session)
+    {
+        if (session.Id is not { } chatId || session.PendingDeleteIds.Count == 0)
+            return;
+
+        var ids = session.PendingDeleteIds.ToList();
+        try
+        {
+            var deleted = await _chatService.DeleteMessagesAsync(chatId, ids);
+            session.PendingDeleteIds.ExceptWith(ids);
+            _logger.LogInformation("Chat {ChatId}: deleted {Count} message row(s)", chatId, deleted);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete {Count} message row(s) of chat {ChatId}", ids.Count, chatId);
+        }
     }
 
     /// <summary>
@@ -532,6 +589,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         session.StateChanged -= OnSessionStateChanged;
         session.TurnCompleted -= OnSessionTurnCompleted;
         session.PersistRequested -= OnSessionPersistRequested;
+        session.MessagesDropped -= OnSessionMessagesDropped;
+        session.IdentityAssigned -= OnSessionIdentityAssigned;
         _allSessions.Remove(session);
         if (session.Id is { } id
             && _sessions.TryGetValue(id, out var keyed)
@@ -579,7 +638,13 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         var session = CreateSession();
         foreach (var dto in chat.Messages)
-            session.Messages.Add(AssistantMessageMapper.FromDto(dto));
+        {
+            var loaded = AssistantMessageMapper.FromDto(dto);
+            session.Messages.Add(loaded);
+            // Fingerprinted after the round trip, which is not byte-stable, so an untouched row stays unwritten.
+            session.StoredRowFingerprints[dto.Id] = Fingerprint(AssistantMessageMapper.ToDto(loaded));
+        }
+        session.StoredHeaderFingerprint = HeaderFingerprint(chat);
 
         session.SetIdentity(chat.Id, chat.CreatedAt, chat.ProviderId, chat.Title, autoTitleApplied: true);
         session.SetWorkingDirectory(chat.WorkingDirectory);
@@ -624,28 +689,27 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return session;
     }
 
-    /// <summary>
-    /// C2: re-attach the chat's newest NON-terminal <see cref="RunShape.Planned"/> run to a freshly
-    /// hydrated session, so the run-progress panel — and with it the Continue command of a run parked at
-    /// its budget — comes back after an app restart (it also gives Flow's <c>OpenRun</c> a panel to open in
-    /// a later session). Contract:
-    /// <list type="bullet">
-    /// <item>Failure-isolated (guardrail 1): a lookup fault logs a warning and leaves the chat panel-less
-    /// rather than failing the activation.</item>
-    /// <item>Off the hot path: <see cref="IAgentRunService"/> is a synchronous lock-holding store, so the
-    /// read happens on a pool thread — a live headless run holding that lock must never stall the UI.
-    /// At most TWO queries per activation (the lookup, then the parked run's pause reason), and none at all
-    /// once a session carries a run.</item>
-    /// <item>A terminal run (Completed/Failed/Cancelled) is never resurrected, and an already-attached run
-    /// is never replaced (re-checked after the await).</item>
-    /// </list>
-    /// UI-affine on purpose (no <c>ConfigureAwait(false)</c>): the continuation resumes on the
-    /// SynchronizationContext the activation was invoked on, so the <c>ActiveRunChanged</c> that
-    /// <see cref="ChatSession.SetActiveRun"/> raises reaches the view model on the UI thread (G3).
-    /// </summary>
+    // A finished job none of whose messages are left in the chat has nothing to anchor to.
+    internal static IEnumerable<Guid> FinishedRunsToShow(IReadOnlyList<AgentRun>? runs, IReadOnlyList<AssistantMessage> messages)
+    {
+        if (runs is null)
+            return [];
+        var ids = messages.Select(m => m.Id).ToHashSet();
+        return runs
+            .Where(r => r.RunShape == RunShape.Planned && r.ParentRunId is null
+                        && r.State is AgentRunState.Completed or AgentRunState.Failed or AgentRunState.Cancelled
+                        && ((r.FirstMessageId is { } first && ids.Contains(first))
+                            || (r.LastMessageId is { } last && ids.Contains(last))))
+            .OrderBy(r => r.CreatedAt)
+            .Select(r => r.Id)
+            .ToList();
+    }
+
+    /// <summary>Restores a hydrated chat's finished blocks and re-attaches its newest unfinished planned run;
+    /// the read runs on a pool thread, the continuation on the caller's UI context.</summary>
     internal async Task RestoreActiveRunAsync(ChatSession session)
     {
-        if (session.Id is not { } chatId || session.ActiveRunId is not null)
+        if (session.Id is not { } chatId)
             return;
 
         IReadOnlyList<AgentRun>? runs;
@@ -658,6 +722,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             _logger.LogWarning(ex, "Failed to look up a resumable run for chat {ChatId}", chatId);
             return;
         }
+
+        if (_disposed)
+            return;
+        session.AddEarlierRuns(FinishedRunsToShow(runs, session.Messages));
 
         var resumable = runs?
             .Where(r => r.RunShape == RunShape.Planned
@@ -724,13 +792,22 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             ? await ReadParkReasonAsync(activeRunId)
             : null;
 
+        // With the unified flow every send is a conversation turn, whatever the chat's stored lever says.
+        var unifiedFlow = await IsUnifiedFlowOnAsync();
+        planned &= !unifiedFlow;
+
         // A refusal, not an answer: typing over a pending plan must never be read as approving or rejecting it.
-        if (parkReason == AgentRunOrchestrator.PlanApprovalReason)
+        if (parkReason == AgentRunOrchestrator.PlanApprovalReason && !unifiedFlow)
         {
             _logger.LogInformation(
                 "Chat {ChatId}: refusing a new turn while a plan-approval park is active", session.Id);
             return false;
         }
+
+        // Only a turn that carries tools can offer job_answer; otherwise the typed text answers the park directly.
+        if (parkReason is not null && session.ActiveRunId is { } parkedRunId && _jobTools is not null
+            && await _jobTools.TypedMessageIsTurnAsync(parkedRunId) && await ActiveTurnCarriesToolsAsync())
+            parkReason = null;
 
         // Must run before anything below mutates the session: a send to a run parked on a question or an
         // interruption continues that run rather than starting a new turn.
@@ -872,6 +949,10 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 // No folder named for a Planned dispatch: its steps run against an isolated workspace
                 // that is not provisioned until below, so naming this one would point them outside it.
                 environmentRoot: plannedRun ? null : _filesToolHandler.DescribeEffectiveRoot(session.WorkingDirectory));
+            turnSetup = await WithProposePlanAsync(turnSetup, unifiedFlow, session.Cts!.Token);
+            var jobTurn = plannedRun || _jobTools is null ? null : await _jobTools.PrepareTurnAsync(session.Id, session.Cts!.Token);
+            if (jobTurn is not null && turnSetup.SupportsTools) turnSetup = turnSetup with { SystemPrompt = turnSetup.SystemPrompt + jobTurn.PromptAddition, Tools = [.. turnSetup.Tools ?? [], .. jobTurn.Tools] };
+
             // Provider name is a user-named item (CLAUDE.md) — keep it out of the
             // release-surviving log; surface IDs/counts at Info, the name only in DEBUG.
             _logger.LogInformation("SendMessage: provider={ProviderId}, supportsTools={SupportsTools}, toolCount={ToolCount}, atCommandCount={AtCommandCount}",
@@ -901,6 +982,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 InjectedFileContext = injectedFileContext,
                 RegenerationInstruction = regenerationInstruction,
                 TokenizationEnabled = tokenizationEnabled,
+                ProposePlan = ProposePlanHandlerFor(session, persona, turnSetup),
+                JobTurn = jobTurn,
+                JobTools = _jobTools,
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -957,11 +1041,11 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             // launch granted (nothing), and this batch makes the document richer, i.e. likelier to fault. The
             // fallback deliberately carries no policy either — narrower on fault is the only safe direction.
             string? policyJson;
-            try { policyJson = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, policy); }
+            try { policyJson = HeadlessRunLauncher.SerializeGrantEnvelope([], AgentRunTrigger.User, policy, chatJob: true); }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to serialize the interactive run's grant envelope");
-                policyJson = HeadlessRunLauncher.InteractiveEmptyEnvelopeJson;
+                policyJson = HeadlessRunLauncher.ChatJobEmptyEnvelopeJson;
             }
 
             // This run's resume runs unattended through the launcher (see above), so the persona has to travel
@@ -1086,6 +1170,24 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
     /// <summary>Answers a run parked on a question, or continues an interrupted one from an Agent-mode send; never
     /// a regeneration, image, file or blank send, which a resume (a text nudge only) would drop silently.</summary>
+    private async Task<bool> ActiveTurnCarriesToolsAsync()
+    {
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            var persona = await _personaService.ResolveActiveAsync(
+                WindowMode.Assistant, settings.UserOperatingMode ?? UserOperatingMode.Personal);
+            var provider = await AssistantTurnProvider.ResolveAsync(persona, _providerService);
+            return provider is not null
+                && AssistantPromptComposer.ShouldUseTools(provider.SupportsToolCalling, persona.ToolScope);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Resolving the turn's tool support failed");
+            return false;
+        }
+    }
+
     private async Task<bool> TryAnswerParkedRunAsync(
         ChatSession session, string userText, IReadOnlyList<ImageAttachment>? attachments,
         string? regenerationInstruction, string? attachedFileContext, bool hasFiles, string? parkReason,
@@ -1155,12 +1257,7 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         return run is { State: AgentRunState.WaitingForInput } ? RunPauseEnvelope.ReadReason(run) : null;
     }
 
-    /// <summary>
-    /// Refreshes an open session's transcript with rows a headless dispatch wrote to the store (a parked
-    /// run's question, a background or resumed run's step replies), since a headless dispatch has no live
-    /// session to mirror its writes into directly. Append-only and keyed on message id, so it can never
-    /// resurrect a row the user deleted or double-add one a live turn already holds.
-    /// </summary>
+    /// <summary>Adds rows another writer stored for an open chat; append-only and keyed on message id.</summary>
     internal async Task PullMissingTranscriptRowsAsync(Guid chatId)
     {
         if (_disposed)
@@ -1168,8 +1265,8 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
 
         // The session this chat is open in, if any; no live session means nothing to render into.
         var session = _allSessions.FirstOrDefault(s => s.Id == chatId);
-        // A streaming session's live executor owns its transcript — never pull into it.
-        if (session is null || session.ActiveRunId is not { } runId || session.IsStreaming)
+        // A streaming session's live executor owns its transcript; its turn end pulls again.
+        if (session is null || session.IsStreaming)
             return;
 
         SyncAssistantChat? chat;
@@ -1186,6 +1283,9 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         if (chat is null)
             return;
 
+        if (!_disposed && session.Id == chatId)
+            AdoptStoredTitle(session, chat.Title);
+
         // Re-checked after the await: the session may have changed state while this was off-thread.
         if (_disposed || session.IsStreaming || session.Id != chatId)
             return;
@@ -1194,25 +1294,22 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
         var added = 0;
         foreach (var dto in chat.Messages)
         {
-            if (!known.Add(dto.Id))
+            if (session.DroppedMessageIds.Contains(dto.Id) || !known.Add(dto.Id))
                 continue;
-            session.Messages.Add(AssistantMessageMapper.FromDto(dto));
+            var pulled = AssistantMessageMapper.FromDto(dto);
+            session.Messages.Add(pulled);
+            session.StoredRowFingerprints[dto.Id] = Fingerprint(AssistantMessageMapper.ToDto(pulled));
             added++;
         }
 
         if (added > 0)
         {
-            // The row contents are user-derived payload and never go on a log line (Privacy-First Logging).
             _logger.LogInformation(
-                "Chat {ChatId}: pulled {Count} row(s) written to the store by run {RunId} while the chat was open",
-                chatId, added, runId);
+                "Chat {ChatId}: pulled {Count} row(s) written to the store while the chat was open",
+                chatId, added);
         }
     }
 
-    /// <summary>
-    /// Persists one appended message via the append-only merge save rather than a full-replace persist, so it
-    /// can never clobber rows a concurrent headless resume already wrote to the same chat.
-    /// </summary>
     private async Task AppendAnswerDurablyAsync(ChatSession session, AssistantMessage answer)
     {
         try
@@ -1223,30 +1320,15 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
                 return;
             }
 
-            var chat = await _chatService.GetAsync(chatId);
-            if (chat is null)
-            {
-                await PersistAsync(session);
-                return;
-            }
-
             var now = DateTime.UtcNow;
-            await _chatService.SaveMergedAsync(new SyncAssistantChat
-            {
-                Id = chat.Id,
-                SchemaVersion = chat.SchemaVersion,
-                Title = chat.Title,
-                CreatedAt = chat.CreatedAt,
-                UpdatedAt = now,
-                LastAccessedAt = now,
-                WindowMode = chat.WindowMode,
-                ProviderId = chat.ProviderId,
-                WorkingDirectory = chat.WorkingDirectory,
-                AgentContextMode = chat.AgentContextMode,
-                // Same message instance as session.Messages, so a later full-replace persist updates this row
-                // instead of duplicating it.
-                Messages = [AssistantMessageMapper.ToDto(answer)],
-            });
+            var dto = AssistantMessageMapper.ToDto(answer);
+            var appended = await _chatService.UpsertMessagesAsync(
+                new SyncAssistantChat { Id = chatId, UpdatedAt = now, LastAccessedAt = now, Messages = [dto] },
+                writeHeader: false);
+            if (appended)
+                session.StoredRowFingerprints[dto.Id] = Fingerprint(dto);
+            else
+                await PersistAsync(session);
         }
         catch (Exception ex)
         {
@@ -1374,13 +1456,46 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             Messages = [.. session.Messages.Select(AssistantMessageMapper.ToDto)],
         };
 
+        var changed = chat.Messages
+            .Select(dto => (Dto: dto, Print: Fingerprint(dto)))
+            .Where(r => !session.StoredRowFingerprints.TryGetValue(r.Dto.Id, out var stored) || stored != r.Print)
+            .ToList();
+        var header = HeaderFingerprint(chat);
+        var writeHeader = header != session.StoredHeaderFingerprint;
+        var payload = new SyncAssistantChat
+        {
+            Id = chat.Id,
+            SchemaVersion = chat.SchemaVersion,
+            // Null keeps the stored title, which a History rename or a job may have changed meanwhile.
+            Title = TitleChangedSinceStored(session, chat.Title) ? chat.Title : null,
+            CreatedAt = chat.CreatedAt,
+            UpdatedAt = chat.UpdatedAt,
+            LastAccessedAt = chat.LastAccessedAt,
+            WindowMode = chat.WindowMode,
+            ProviderId = chat.ProviderId,
+            WorkingDirectory = chat.WorkingDirectory,
+            AgentContextMode = chat.AgentContextMode,
+            Messages = [.. changed.Select(r => r.Dto)],
+        };
+
         try
         {
-            await _chatService.SaveAsync(chat);
+            if (!await _chatService.UpsertMessagesAsync(payload, writeHeader))
+            {
+                // The row is gone (deleted or never written): recreate it with the whole transcript.
+                payload.Messages = chat.Messages;
+                payload.Title = chat.Title;
+                changed = [.. chat.Messages.Select(dto => (dto, Fingerprint(dto)))];
+                await _chatService.UpsertMessagesAsync(payload, writeHeader: true);
+            }
+            foreach (var (dto, print) in changed)
+                session.StoredRowFingerprints[dto.Id] = print;
+            session.StoredHeaderFingerprint = header;
+            await DeletePendingRowsAsync(session);
             session.SetTitle(chat.Title);
             RaiseTitleChanged(session, chat.Title);
-            _logger.LogInformation("Persisted assistant chat {ChatId} ({MessageCount} messages)",
-                chat.Id, chat.Messages.Count);
+            _logger.LogInformation("Persisted assistant chat {ChatId} ({Changed} of {MessageCount} messages written)",
+                chat.Id, changed.Count, chat.Messages.Count);
             _logger.SensitiveDebug("Chat {ChatId} title: {Title}", chat.Id, chat.Title);
         }
         catch (Exception ex)
@@ -1511,9 +1626,40 @@ public sealed class ChatSessionManager : IChatSessionManager, IDisposable
             session.StateChanged -= OnSessionStateChanged;
             session.TurnCompleted -= OnSessionTurnCompleted;
             session.PersistRequested -= OnSessionPersistRequested;
+            session.MessagesDropped -= OnSessionMessagesDropped;
+            session.IdentityAssigned -= OnSessionIdentityAssigned;
             session.Dispose();
         }
         _allSessions.Clear();
         _sessions.Clear();
+    }
+
+    private static string Fingerprint(SyncAssistantChatMessage dto) => JsonSerializer.Serialize(dto);
+
+    private static string HeaderFingerprint(SyncAssistantChat chat) =>
+        string.Join('\u001f', chat.Title, chat.ProviderId, chat.WorkingDirectory, chat.AgentContextMode);
+
+    private static bool TitleChangedSinceStored(ChatSession session, string? title) =>
+        session.StoredHeaderFingerprint is not { } stored || stored.Split('\u001f')[0] != (title ?? string.Empty);
+
+    private static string SessionHeaderFingerprint(ChatSession session, string? title) =>
+        string.Join('\u001f', title, session.ProviderId, session.WorkingDirectory, session.AgentContextMode?.ToString());
+
+    // A title another writer stored (a job's late one) becomes the session's, so the next header write keeps it.
+    private void AdoptStoredTitle(ChatSession session, string? storedTitle)
+    {
+        if (string.IsNullOrWhiteSpace(storedTitle) || storedTitle == session.Title)
+            return;
+
+        var persistedTitle = string.IsNullOrWhiteSpace(session.Title) ? DeriveChatTitle(session) : session.Title;
+        // A header change of this session's own that is not stored yet wins.
+        if (session.StoredHeaderFingerprint != SessionHeaderFingerprint(session, persistedTitle))
+            return;
+
+        session.SetTitle(storedTitle);
+        session.AutoTitleApplied = true;
+        session.StoredHeaderFingerprint = SessionHeaderFingerprint(session, storedTitle);
+        RaiseTitleChanged(session, storedTitle);
+        _logger.LogInformation("Chat {ChatId}: adopted the stored title", session.Id);
     }
 }

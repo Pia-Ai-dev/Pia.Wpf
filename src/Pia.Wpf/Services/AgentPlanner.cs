@@ -55,7 +55,7 @@ public sealed class AgentPlanner : IAgentPlanner
     /// </summary>
     private readonly Func<StepPersonaResolver>? _personas;
 
-    private static readonly JsonSerializerOptions PlanJson = new(JsonSerializerDefaults.Web);
+    internal static readonly JsonSerializerOptions PlanJson = new(JsonSerializerDefaults.Web);
 
     /// <summary>
     /// Cap on the analysis text folded into the constrained turn. That turn sends exactly two messages and
@@ -714,23 +714,32 @@ public sealed class AgentPlanner : IAgentPlanner
         return new PlanTurn(captured, cannotGround, question, usage);
     }
 
-    /// <summary>Semantic validation (§13.3): non-empty; ≤ MaxSteps; every step has a title+intent; no duplicate titles.</summary>
-    private static bool ValidatePlan(IReadOnlyList<PlanStepArg> steps, int maxSteps)
+    private static bool ValidatePlan(IReadOnlyList<PlanStepArg> steps, int maxSteps) =>
+        DescribePlanDefect(steps, maxSteps) is null;
+
+    /// <summary>Null when the plan is valid; otherwise a model-facing reason.</summary>
+    internal static string? DescribePlanDefect(IReadOnlyList<PlanStepArg> steps, int maxSteps)
     {
-        if (steps.Count == 0 || steps.Count > maxSteps) return false;
+        if (steps.Count == 0) return "The plan has no steps.";
+        if (steps.Count > maxSteps) return $"The plan has {steps.Count} steps; at most {maxSteps} are allowed.";
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var s in steps)
+        for (var i = 0; i < steps.Count; i++)
         {
+            var s = steps[i];
             if (s is null || string.IsNullOrWhiteSpace(s.Title) || string.IsNullOrWhiteSpace(s.Intent))
-                return false;
+                return $"Step {i + 1} needs both a title and an intent.";
             if (!seen.Add(s.Title.Trim()))
-                return false;
+                return $"Step {i + 1} repeats the title of an earlier step; every title must be distinct.";
         }
-        return true;
+        return null;
     }
 
-    private IReadOnlyList<AgentStep> BuildSteps(IReadOnlyList<PlanStepArg> steps, IReadOnlyList<Persona> roster)
+    private IReadOnlyList<AgentStep> BuildSteps(IReadOnlyList<PlanStepArg> steps, IReadOnlyList<Persona> roster) =>
+        BuildSteps(steps, roster, _logger);
+
+    internal static IReadOnlyList<AgentStep> BuildSteps(
+        IReadOnlyList<PlanStepArg> steps, IReadOnlyList<Persona> roster, ILogger logger)
     {
         var result = new List<AgentStep>(steps.Count);
         var dropped = 0;
@@ -758,7 +767,7 @@ public sealed class AgentPlanner : IAgentPlanner
         {
             // COUNT only. The key ECHOES a persona name, which is user-named content, so the key itself must
             // never reach the log (07 D2) — same shape as the launcher's dropped-policy-class count.
-            _logger.LogInformation(
+            logger.LogInformation(
                 "Plan assigned {DroppedCount} step(s) to an unknown persona; those steps use the run persona", dropped);
         }
         return result;
@@ -832,7 +841,7 @@ public sealed class AgentPlanner : IAgentPlanner
     /// one on the system message.
     /// </para>
     /// </summary>
-    private static void AppendRoster(StringBuilder sb, IReadOnlyList<Persona> roster)
+    internal static void AppendRoster(StringBuilder sb, IReadOnlyList<Persona> roster)
     {
         if (roster.Count == 0)
             return;

@@ -67,4 +67,7 @@ public interface IChatSessionManager
 
     /// <summary>Persist the given session to the chat store (no-op when it has no messages).</summary>
     Task PersistAsync(ChatSession session);
+
+    /// <summary>Delete messages the user removed from the transcript, so no later persist or pull brings them back.</summary>
+    Task DeleteMessagesAsync(ChatSession session, IReadOnlyList<Guid> messageIds);
 }
