@@ -14,6 +14,9 @@ public class SentenceChunkerTests
     [InlineData("No. I won't.", new[] { "No.", "I won't." })]
     [InlineData("Wait… What?", new[] { "Wait…", "What?" })]
     [InlineData("Nimm ein Werkzeug (z. B. grep). Fertig.", new[] { "Nimm ein Werkzeug (z. B. grep).", "Fertig." })]
+    [InlineData("Er sagte: „Hallo.“ Dann ging er.", new[] { "Er sagte: „Hallo.“", "Dann ging er." })]
+    [InlineData("He said \"Stop!\" Then left.", new[] { "He said \"Stop!\"", "Then left." })]
+    [InlineData("(Siehe oben.) Weiter.", new[] { "(Siehe oben.)", "Weiter." })]
     public void Split_KeepsAbbreviationsAndOrdinalsInsideTheSentence(string text, string[] expected)
         => Assert.Equal(expected, SentenceChunker.Split(text));
 
@@ -28,6 +31,14 @@ public class SentenceChunkerTests
         Assert.Empty(chunker.AddToken("Pi is 3."));
         Assert.Equal(["Pi is 3.14."], chunker.AddToken("14. Next"));
         Assert.Equal("Next", chunker.Flush());
+    }
+
+    [Fact]
+    public void AddToken_Streamed_AClosingQuoteAtTheEndOfTheBufferWaitsForTheNextToken()
+    {
+        var chunker = new SentenceChunker();
+        Assert.Empty(chunker.AddToken("Er sagte: „Hallo.“"));
+        Assert.Equal(["Er sagte: „Hallo.“"], chunker.AddToken(" Dann ging er."));
     }
 
     [Fact]

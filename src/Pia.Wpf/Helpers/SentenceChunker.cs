@@ -15,6 +15,7 @@ public class SentenceChunker
     };
 
     private const string OpeningPunctuation = "([\"'„“«";
+    private const string ClosingMarks = "\"'”“’»)]";
     private const string ClauseMarks = ";:,—–";
 
     private readonly StringBuilder _buffer = new();
@@ -70,13 +71,19 @@ public class SentenceChunker
             if (c == '\n')
                 return (i, i + 1);
 
-            // An ender at the very end of the buffer waits: the next token may continue it ("3." + "14").
-            if (c is '.' or '!' or '?' or '…'
-                && i + 1 < text.Length
-                && char.IsWhiteSpace(text[i + 1])
+            if (c is not ('.' or '!' or '?' or '…'))
+                continue;
+
+            var end = i + 1;
+            while (end < text.Length && ClosingMarks.Contains(text[end]))
+                end++;
+
+            // At the end of the buffer the next token may continue the sentence ("3." + "14").
+            if (end < text.Length
+                && char.IsWhiteSpace(text[end])
                 && !(c == '.' && EndsAbbreviation(text, i)))
             {
-                return (i + 1, SkipWhitespace(text, i + 1));
+                return (end, SkipWhitespace(text, end));
             }
         }
 
