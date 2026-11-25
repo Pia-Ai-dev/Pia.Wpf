@@ -52,7 +52,8 @@ public partial class ImageViewerOverlay : UserControl
             DataContext = null;
             _viewModel = null;
 
-            if (previousFocus != null)
+            if (previousFocus is DependencyObject { } target && PresentationSource.FromDependencyObject(target) != null
+                && previousFocus.Focusable && previousFocus.IsEnabled)
                 Keyboard.Focus(previousFocus);
         }
     }
@@ -100,6 +101,11 @@ public partial class ImageViewerOverlay : UserControl
     {
         if (_panStart is not { } start)
             return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            EndPan();
+            return;
+        }
 
         var delta = e.GetPosition(ImageScroller) - start;
         ImageScroller.ScrollToHorizontalOffset(_panStartOffset.X - delta.X);
@@ -111,6 +117,8 @@ public partial class ImageViewerOverlay : UserControl
         EndPan();
         e.Handled = true;
     }
+
+    private void OnImageLostMouseCapture(object sender, MouseEventArgs e) => _panStart = null;
 
     private void EndPan()
     {

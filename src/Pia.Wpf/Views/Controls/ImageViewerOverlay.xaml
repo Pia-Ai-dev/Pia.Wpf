@@ -53,6 +53,7 @@
              RenderOptions.BitmapScalingMode="HighQuality"
              MouseLeftButtonDown="OnImageMouseLeftButtonDown"
              MouseMove="OnImageMouseMove"
+             LostMouseCapture="OnImageLostMouseCapture"
              MouseLeftButtonUp="OnImageMouseLeftButtonUp">
         <Image.Style>
           <Style TargetType="Image">

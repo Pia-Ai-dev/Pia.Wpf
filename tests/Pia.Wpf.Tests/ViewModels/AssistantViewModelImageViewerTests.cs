@@ -44,6 +44,27 @@ public sealed class AssistantViewModelImageViewerTests
     }
 
     [Fact]
+    public void ThumbnailCommands_StayEnabledWhileTheViewerIsOpen()
+    {
+        var vm = CreateSut();
+        var pending = Attachment();
+        vm.PendingAttachments.Add(pending);
+        var message = new AssistantMessage(ChatRole.User, "look");
+        var sent = Attachment();
+        message.Attachments.Add(sent);
+        vm.Messages.Add(message);
+        var open = new TaskCompletionSource();
+        _dialogs.ShowImageViewerAsync(Arg.Any<IReadOnlyList<ImageAttachment>>(), Arg.Any<int>()).Returns(open.Task);
+
+        _ = vm.OpenPendingImageCommand.ExecuteAsync(pending);
+        _ = vm.OpenSentImageCommand.ExecuteAsync(sent);
+
+        Assert.True(vm.OpenPendingImageCommand.CanExecute(pending));
+        Assert.True(vm.OpenSentImageCommand.CanExecute(sent));
+        open.SetResult();
+    }
+
+    [Fact]
     public async Task OpenSentImage_ShowsThatMessagesImages_AtThatImage()
     {
         var vm = CreateSut();

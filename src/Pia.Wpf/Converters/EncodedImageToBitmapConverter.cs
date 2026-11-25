@@ -21,12 +21,27 @@ public class EncodedImageToBitmapConverter : IValueConverter
             bitmap.StreamSource = stream;
             bitmap.EndInit();
             bitmap.Freeze();
-            return bitmap;
+            return At96Dpi(bitmap);
         }
         catch (Exception ex) when (ex is NotSupportedException or FileFormatException or ArgumentException or IOException)
         {
             return null;
         }
+    }
+
+    // The viewer's zoom is in pixels, so a non-96 DPI image must not render at a DPI-scaled natural size.
+    private static BitmapSource At96Dpi(BitmapSource bitmap)
+    {
+        if (Math.Abs(bitmap.DpiX - 96) < 0.01 && Math.Abs(bitmap.DpiY - 96) < 0.01)
+            return bitmap;
+
+        var stride = (bitmap.PixelWidth * bitmap.Format.BitsPerPixel + 7) / 8;
+        var pixels = new byte[stride * bitmap.PixelHeight];
+        bitmap.CopyPixels(pixels, stride, 0);
+        var normalized = BitmapSource.Create(bitmap.PixelWidth, bitmap.PixelHeight, 96, 96,
+            bitmap.Format, bitmap.Palette, pixels, stride);
+        normalized.Freeze();
+        return normalized;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

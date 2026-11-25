@@ -29,6 +29,25 @@ public class EncodedImageToBitmapConverterTests
         Assert.Equal(3, bitmap.PixelHeight);
     }
 
+    [Fact]
+    public void HighDpiJpeg_ComesBackAt96DpiWithItsPixelSize()
+    {
+        var pixels = new byte[12 * 6 * 4];
+        var source = BitmapSource.Create(12, 6, 192, 192, PixelFormats.Bgra32, null, pixels, 12 * 4);
+        var encoder = new JpegBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(source));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+
+        var bitmap = Assert.IsAssignableFrom<BitmapSource>(Convert(stream.ToArray()));
+
+        Assert.True(bitmap.IsFrozen);
+        Assert.Equal(96, bitmap.DpiX, 3);
+        Assert.Equal(96, bitmap.DpiY, 3);
+        Assert.Equal(12, bitmap.PixelWidth);
+        Assert.Equal(6, bitmap.PixelHeight);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData(new byte[0])]
