@@ -148,6 +148,9 @@ public interface IHeadlessRunLauncher
     /// </summary>
     Task CancelAsync(Guid runId);
 
+    /// <summary>As <see cref="CancelAsync(Guid)"/>, and the run settles with <paramref name="reason"/> rather than as stopped by the user.</summary>
+    Task CancelAsync(Guid runId, string reason) => CancelAsync(runId);
+
     /// <summary>Cancel every in-flight run and bounded-await their settle (app shutdown, G-4).</summary>
     Task StopAsync(CancellationToken ct);
 

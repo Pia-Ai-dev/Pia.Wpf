@@ -2453,6 +2453,28 @@ public sealed class HeadlessRunLauncherTests : IDisposable
     }
 
     [Fact]
+    public async Task CancelWithAReason_MidStep_SettlesTheRunWithThatReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var (launcher, planner) = BuildLauncher(stream: token => HoldInsideTheStep(stepEntered, token));
+        planner.Steps = 2;
+
+        var handle = await launcher.LaunchAsync(new HeadlessRunRequest("a", AgentRunTrigger.User), ct);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        await launcher.CancelAsync(handle.RunId, AgentRunOrchestrator.SupersededFailureReason);
+        await handle.Completion.WaitAsync(TimeSpan.FromSeconds(10), ct);
+
+        var final = await _runs.GetAsync(handle.RunId, ct);
+        Assert.Equal(AgentRunState.Cancelled, final!.State);
+        Assert.Equal(AgentRunOrchestrator.SupersededFailureReason, AgentRunService.ReadFailureReason(final.ExtraJson));
+
+        await launcher.StopAsync(CancellationToken.None);
+        TempPath.Remove(Path.Combine(_runsBase, handle.RunId.ToString()));
+    }
+
+    [Fact]
     public async Task UserStop_MidStep_SettlesTheRunWithNoFailureReason()
     {
         var ct = TestContext.Current.CancellationToken;

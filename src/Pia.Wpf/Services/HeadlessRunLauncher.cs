@@ -110,6 +110,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
 
     private readonly ConcurrentDictionary<Guid, (CancellationTokenSource Cts, Task Task)> _inflight = new();
 
+    private readonly ConcurrentDictionary<Guid, string> _cancelReasons = new();
+
     /// <summary>chat id → run ids launched this session, for same-session workspace cleanup on chat delete.</summary>
     private readonly ConcurrentDictionary<Guid, HashSet<Guid>> _runsByChat = new();
     private readonly object _runsByChatLock = new();
@@ -327,6 +329,20 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                // its parent's, with every delete-like name stripped (G9's NarrowForChild, Phase 3 R13).
                TrySerializeChildEnvelope(parentPolicyJson, req.Trigger, _logger),
                workspaceRootOverride: parentWorkspaceRoot, personaIdOverride: personaId, ct);
+
+    /// <inheritdoc />
+    public Task CancelAsync(Guid runId, string reason)
+    {
+        if (_inflight.ContainsKey(runId))
+            _cancelReasons[runId] = reason;
+        return CancelAsync(runId);
+    }
+
+    // Null means the user stopped the run.
+    private string? CancelReasonFor(Guid runId) =>
+        _cancelReasons.TryGetValue(runId, out var reason) ? reason
+        : _shutdownCts.IsCancellationRequested ? ShutdownInterruptedFailure
+        : null;
 
     /// <inheritdoc />
     public Task CancelAsync(Guid runId)
@@ -584,7 +600,7 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
                 _executingRuns.Register(chatId, run.Id);
 
                 await orchestrator.RunAsync(run, executor, persona, provider, budget, runCts.Token,
-                    hostShutdown: _shutdownCts.Token).ConfigureAwait(false);
+                    cancelReason: () => CancelReasonFor(run.Id)).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -1077,7 +1093,8 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
             // ParkReason carries the pre-claim token down to the orchestrator's planning guard — the
             // only way it can get there, since the claim already NULLed the envelope it came from.
             await orchestrator.RunAsync(run, executor, plan.Persona, plan.Provider, plan.Budget, runCts.Token,
-                    resume: true, nudge: plan.Nudge, parkReason: plan.ParkReason, hostShutdown: _shutdownCts.Token)
+                    resume: true, nudge: plan.Nudge, parkReason: plan.ParkReason,
+                    cancelReason: () => CancelReasonFor(run.Id))
                 .ConfigureAwait(false); // resume:true → drains the Pending remainder; re-plans only for
                                         // A needs-goal park with no step rows
         }
@@ -1531,8 +1548,9 @@ public sealed partial class HeadlessRunLauncher : IHeadlessRunLauncher, IAgentRu
     /// </summary>
     private void RemoveInflight(Guid runId, CancellationTokenSource ownCts)
     {
-        if (_inflight.TryGetValue(runId, out var entry) && ReferenceEquals(entry.Cts, ownCts))
-            _inflight.TryRemove(new KeyValuePair<Guid, (CancellationTokenSource Cts, Task Task)>(runId, entry));
+        if (_inflight.TryGetValue(runId, out var entry) && ReferenceEquals(entry.Cts, ownCts)
+            && _inflight.TryRemove(new KeyValuePair<Guid, (CancellationTokenSource Cts, Task Task)>(runId, entry)))
+            _cancelReasons.TryRemove(runId, out _);
     }
 
     /// <summary>

@@ -177,7 +177,7 @@ public sealed class AgentRunOrchestrator
         bool resume = false,
         string? nudge = null,
         string? parkReason = null,
-        CancellationToken hostShutdown = default)
+        Func<string?>? cancelReason = null)
     {
         // EVERY line this dispatch writes — from this loop, from the planner and verifier it awaits, and
         // from the tool handlers inside a step turn — carries the run id. That is what makes a log readable at
@@ -279,7 +279,7 @@ public sealed class AgentRunOrchestrator
 
                 if (plan.FallBackToSingleTurn) // R10
                 {
-                    await RunDegradedSingleTurnAsync(executor, run, ctx, cts.Token, hostShutdown).ConfigureAwait(false);
+                    await RunDegradedSingleTurnAsync(executor, run, ctx, cts.Token, cancelReason).ConfigureAwait(false);
                     return;
                 }
 
@@ -400,7 +400,7 @@ public sealed class AgentRunOrchestrator
                         {
                             cancelled = true;
                             await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                            await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
+                            await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
                             break;
                         }
 
@@ -577,7 +577,7 @@ public sealed class AgentRunOrchestrator
                     {
                         cancelled = true;
                         await PinRange().ConfigureAwait(false); // R3: keep the executed-so-far slice
-                        await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
+                        await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
                         break;
                     }
 
@@ -668,7 +668,7 @@ public sealed class AgentRunOrchestrator
             // the executed-so-far slice first so a transcript-producing run never settles Cancelled with a
             // null range (mirrors the step-cancel path above; SetRunMessageRange ignores the cancelled ct).
             await PinRange().ConfigureAwait(false);
-            await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
+            await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
             await SafeEndRun(executor, run, ctx, cancelled: true, failed: false).ConfigureAwait(false);
         }
         catch (Exception ex) // planner-cannot-plan (threw) / executor crash — critical path, fail the run
@@ -829,7 +829,7 @@ public sealed class AgentRunOrchestrator
     /// <summary>the planner degraded, so the goal runs as ONE ordinary chat turn and the run settles here —
     /// this arm never reaches the terminal-settle block.</summary>
     private async Task RunDegradedSingleTurnAsync(
-        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct, CancellationToken hostShutdown)
+        IAgentTurnExecutor executor, AgentRun run, RunContext ctx, CancellationToken ct, Func<string?>? cancelReason)
     {
         var cancelled = false;
         var failed = false;
@@ -842,7 +842,7 @@ public sealed class AgentRunOrchestrator
         if (fr.Cancelled)
         {
             cancelled = true;
-            await SafeFailCancelled(run.Id, hostShutdown).ConfigureAwait(false);
+            await SafeFailCancelled(run.Id, cancelReason).ConfigureAwait(false);
         }
         else if (!fr.Succeeded)
         {
@@ -1707,7 +1707,7 @@ public sealed class AgentRunOrchestrator
                 // that child park instead — it would then be neither superseded nor re-dispatched.
                 _steering?.RevokePauseRequest(old.Id);
 
-                await launcher.CancelAsync(old.Id).ConfigureAwait(false);
+                await launcher.CancelAsync(old.Id, SupersededFailureReason).ConfigureAwait(false);
 
                 // A parked child is the one shape the cancel above cannot reach across a restart: states at or
                 // above WaitingForInput are never swept, on purpose (a parked run must survive a restart), so
@@ -2125,9 +2125,8 @@ public sealed class AgentRunOrchestrator
     }
 
     // A step reports its cancel as the error "cancelled", which is no reason: a user's stop stores none.
-    private Task SafeFailCancelled(Guid runId, CancellationToken hostShutdown) =>
-        SafeFail(runId, hostShutdown.IsCancellationRequested ? HeadlessRunLauncher.ShutdownInterruptedFailure : null,
-            cancelled: true);
+    private Task SafeFailCancelled(Guid runId, Func<string?>? cancelReason) =>
+        SafeFail(runId, cancelReason?.Invoke(), cancelled: true);
 
     private async Task SafeFail(Guid runId, string? error, bool cancelled, PiaFailure? failure = null)
     {

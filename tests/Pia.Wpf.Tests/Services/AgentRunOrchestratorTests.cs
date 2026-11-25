@@ -532,18 +532,16 @@ public sealed class AgentRunOrchestratorTests
     }
 
     [Fact]
-    public async Task Run_StepCancelledByShutdown_SettlesAsInterrupted()
+    public async Task Run_StepCancelledForAReason_SettlesWithThatReason()
     {
         using var h = new Harness();
         var run = await h.NewRunAsync("goal");
         var planner = new FakePlanner();
         planner.Plans.Enqueue(new PlanResult(MakeSteps(("A", "s1")), false));
         var exec = new RecordingExecutor(_ => Cancel());
-        using var shutdown = new CancellationTokenSource();
-        shutdown.Cancel();
 
         await h.BuildOrchestrator(planner).RunAsync(run, exec, Persona(), Provider(), RunProfile.Interactive,
-            TestContext.Current.CancellationToken, hostShutdown: shutdown.Token);
+            TestContext.Current.CancellationToken, cancelReason: () => HeadlessRunLauncher.ShutdownInterruptedFailure);
 
         var final = await h.Runs.GetAsync(run.Id, TestContext.Current.CancellationToken);
         Assert.Equal(AgentRunState.Cancelled, final!.State);
