@@ -82,6 +82,40 @@ public sealed class PlaybackSlotTests
     }
 
     [Fact]
+    public async Task End_OfTheOldOwner_RacingANewOwnersStart_LeavesTheNewOwnerPlaying()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var timeout = TimeSpan.FromSeconds(10);
+
+        for (var i = 0; i < 500; i++)
+        {
+            var slot = new PlaybackSlot();
+            var a = slot.Begin(ct);
+            slot.Start(a);
+            CancellationTokenSource? b = null;
+            using var barrier = new Barrier(2);
+
+            var endA = Task.Run(() =>
+            {
+                Assert.True(barrier.SignalAndWait(timeout, ct));
+                slot.End(a);
+            }, ct);
+            var startB = Task.Run(() =>
+            {
+                Assert.True(barrier.SignalAndWait(timeout, ct));
+                b = slot.Begin(ct);
+                Assert.True(slot.Start(b));
+            }, ct);
+
+            await Task.WhenAll(endA, startB).WaitAsync(timeout, ct);
+
+            Assert.True(slot.IsPlaying, $"iteration {i}");
+            Assert.True(slot.End(b!));
+            Assert.False(slot.IsPlaying);
+        }
+    }
+
+    [Fact]
     public void Cancel_ReportsNotPlaying()
     {
         var slot = new PlaybackSlot();

@@ -8,42 +8,56 @@ public sealed class PlayingIndicatorTests
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
-    public async Task A_StaleFalseBlockedInDelivery_IsFollowedByTheNewerTrue()
+    public async Task A_StaleReadParkedBeforeDelivery_CannotOutliveTheNewerTrue()
     {
+        var ct = TestContext.Current.CancellationToken;
         var state = true;
-        var observed = new List<bool>();
-        using var deliveringFalse = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
+        var parkNextRead = 0;
+        var delivered = new List<bool>();
+        using var aParked = new ManualResetEventSlim();
+        using var releaseA = new ManualResetEventSlim();
+        using var bEntered = new ManualResetEventSlim();
 
         var indicator = new PlayingIndicator(
-            () => Volatile.Read(ref state),
+            () =>
+            {
+                var value = Volatile.Read(ref state);
+                if (Interlocked.Exchange(ref parkNextRead, 0) == 1)
+                {
+                    aParked.Set();
+                    Assert.True(releaseA.Wait(Timeout));
+                }
+                return value;
+            },
             playing =>
             {
-                lock (observed)
-                    observed.Add(playing);
-                if (!playing)
-                {
-                    deliveringFalse.Set();
-                    Assert.True(release.Wait(Timeout));
-                }
+                lock (delivered)
+                    delivered.Add(playing);
             });
 
         indicator.Notify();
 
         Volatile.Write(ref state, false);
-        var a = Task.Run(indicator.Notify, TestContext.Current.CancellationToken);
-        Assert.True(deliveringFalse.Wait(Timeout, TestContext.Current.CancellationToken));
+        Volatile.Write(ref parkNextRead, 1);
+        var a = Task.Run(indicator.Notify, ct);
+        Assert.True(aParked.Wait(Timeout, ct));
 
         Volatile.Write(ref state, true);
-        var b = Task.Run(indicator.Notify, TestContext.Current.CancellationToken);
-
-        release.Set();
-        await Task.WhenAll(a, b).WaitAsync(Timeout, TestContext.Current.CancellationToken);
-
-        lock (observed)
+        var b = Task.Run(() =>
         {
-            Assert.Equal([true, false, true], observed);
-            Assert.Equal(Volatile.Read(ref state), observed[^1]);
+            bEntered.Set();
+            indicator.Notify();
+        }, ct);
+        Assert.True(bEntered.Wait(Timeout, ct));
+        await Task.Delay(100, ct);
+
+        releaseA.Set();
+        await Task.WhenAll(a, b).WaitAsync(Timeout, ct);
+
+        lock (delivered)
+        {
+            Assert.True(delivered[^1]);
+            Assert.Equal(Volatile.Read(ref state), delivered[^1]);
         }
     }
 
