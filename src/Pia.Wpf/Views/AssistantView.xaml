@@ -39,10 +39,20 @@
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Image Source="{Binding Thumbnail}"
-                         MaxWidth="140" MaxHeight="140"
-                         Stretch="Uniform"
-                         Margin="0,0,6,6" />
+                  <ui:Button Command="{Binding DataContext.OpenSentImageCommand,
+                                       RelativeSource={RelativeSource AncestorType=UserControl}}"
+                             CommandParameter="{Binding}"
+                             Appearance="Transparent"
+                             Padding="0"
+                             Margin="0,0,6,6"
+                             Cursor="Hand"
+                             AutomationProperties.Name="{loc:Str Assistant_OpenImage_Tooltip}"
+                             AutomationProperties.AutomationId="{Binding Id, StringFormat='Assistant_OpenSentImage_{0}'}"
+                             ToolTip="{loc:Str Assistant_OpenImage_Tooltip}">
+                    <Image Source="{Binding Thumbnail}"
+                           MaxWidth="140" MaxHeight="140"
+                           Stretch="Uniform" />
+                  </ui:Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -662,11 +672,29 @@
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
                   <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
-                    <Image Source="{Binding Thumbnail}"
-                           MaxWidth="64" MaxHeight="64"
-                           Stretch="Uniform"
-                           Margin="0,0,4,0"
-                           ToolTip="{Binding SourcePath}" />
+                    <ui:Button Command="{Binding DataContext.OpenPendingImageCommand,
+                                         RelativeSource={RelativeSource AncestorType=UserControl}}"
+                               CommandParameter="{Binding}"
+                               Appearance="Transparent"
+                               Padding="0"
+                               Margin="0,0,4,0"
+                               Cursor="Hand"
+                               AutomationProperties.Name="{loc:Str Assistant_OpenImage_Tooltip}"
+                               AutomationProperties.AutomationId="{Binding Id, StringFormat='Assistant_OpenPendingImage_{0}'}">
+                      <ui:Button.Style>
+                        <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                          <Setter Property="ToolTip" Value="{Binding SourcePath}" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding SourcePath}" Value="{x:Null}">
+                              <Setter Property="ToolTip" Value="{loc:Str Assistant_OpenImage_Tooltip}" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </ui:Button.Style>
+                      <Image Source="{Binding Thumbnail}"
+                             MaxWidth="64" MaxHeight="64"
+                             Stretch="Uniform" />
+                    </ui:Button>
                     <ui:Button Command="{Binding DataContext.RemoveAttachmentCommand,
                                          RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                CommandParameter="{Binding}"

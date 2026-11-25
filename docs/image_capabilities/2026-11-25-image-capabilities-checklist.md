@@ -29,7 +29,7 @@ little standalone value, unblocks a High.
   keyboard zoom, drag to pan, previous/next, copy, save as, Esc, `ImageViewer_*` ids and en/de/fr
   strings. Plan Tasks 2 and 3.
   *Deps:* none · *Effort:* M · *Value:* Enabler
-- [ ] **A2 · Enlarge input images** — composer and sent-bubble thumbnails open A1, with per-item ids
+- [x] **A2 · Enlarge input images** — composer and sent-bubble thumbnails open A1, with per-item ids
   `Assistant_OpenPendingImage_{id}` and `Assistant_OpenSentImage_{id}`. Plan Task 4.
   *Deps:* A1 · *Effort:* S · *Value:* High
 - [ ] **A3 · Show tool-fetched images** — `screen_capture` and `read_file` pictures become clickable

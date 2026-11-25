@@ -53,7 +53,7 @@ public class ViewAutomationIdTests
     [InlineData(typeof(Pia.Views.SettingsViews.AccountView), 20, 0, "E2EEOnboardingView")]
     [InlineData(typeof(Pia.Views.SettingsViews.OptimizeView), 4, 0, "TemplatesView")]
     [InlineData(typeof(Pia.Views.SettingsViews.TemplatesView), 13, 0, "PiaEmptyState")]
-    [InlineData(typeof(Pia.Views.AssistantView), 34, 7,
+    [InlineData(typeof(Pia.Views.AssistantView), 36, 9,
         "AutocompletePopup,DirectTranscriptionOverlay,MeetingAttendeeOverlay,PersonaGlyph,PiaAssistantMessage," +
         "PiaChatQuickSwitcher,PiaChatTitleChip,PiaCollapsibleMessageText,PiaPersonaAvatar," +
         "PiaWorkingDirectoryPicker,RunProgressPanel,TodoPanelControl,VoiceModeOverlay")]

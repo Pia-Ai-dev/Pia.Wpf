@@ -138,6 +138,7 @@
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Datei anhängen</value></data>
   <data name="Assistant_RunAssignment_Tooltip" xml:space="preserve"><value>Als Hintergrundauftrag an Ihren Pia-Server übergeben</value></data>
   <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Anhang entfernen</value></data>
+  <data name="Assistant_OpenImage_Tooltip" xml:space="preserve"><value>Bild öffnen</value></data>
   <data name="Assistant_RemovePendingFile_Tooltip" xml:space="preserve"><value>Datei entfernen</value></data>
   <data name="Assistant_PendingFilesBlockRun_Hint" xml:space="preserve"><value>Eine angehängte Datei kann nur mit einer Chatnachricht mitgehen. Die Hintergrundausführung ist deaktiviert, und diese Runde wird nicht als Agentenlauf geplant.</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
