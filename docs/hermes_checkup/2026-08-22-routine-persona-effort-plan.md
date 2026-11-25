@@ -59,7 +59,7 @@ dropped until a submodule bump + entity + EF migration + deploy all land.
 (`ScheduledJobService.cs:668-697`) writes its whole SET list **unconditionally**, and the pull-apply at
 `SyncClientService.cs:1532` uses `>=` so a tie favours remote. A synced-but-server-dropped field
 therefore returns null and **NULLs the user's own pin on their own machine** — which is exactly the
-documented Persona `OutputFormat` bug ([`../sync-e2ee-overview.md`](../sync-e2ee-overview.md), line 48:
+documented Persona `OutputFormat` bug ([`../sync_e2ee/sync-e2ee-overview.md`](../sync_e2ee/sync-e2ee-overview.md), line 48:
 "the originating device wiped its own local value after one push→pull cycle"), fixed only by a server
 DTO/entity/mapper change plus `AddPersonaOutputFormat`.
 
