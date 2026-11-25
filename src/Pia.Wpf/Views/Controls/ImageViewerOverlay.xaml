@@ -30,7 +30,7 @@
     <Border Background="#E6000000" />
 
     <ScrollViewer x:Name="ImageScroller"
-                  Margin="64,56,64,16"
+                  Margin="96,88,96,16"
                   Focusable="False"
                   SizeChanged="OnScrollerSizeChanged"
                   PreviewMouseWheel="OnScrollerPreviewMouseWheel">
@@ -78,7 +78,7 @@
     <ui:Button Style="{StaticResource ViewerButton}"
                HorizontalAlignment="Left"
                VerticalAlignment="Center"
-               Margin="12,0,0,0"
+               Margin="42,0,0,0"
                Command="{Binding PreviousCommand}"
                Visibility="{Binding HasMany, Converter={StaticResource BoolToVisibility}}"
                AutomationProperties.AutomationId="ImageViewer_Previous"
@@ -90,7 +90,7 @@
     <ui:Button Style="{StaticResource ViewerButton}"
                HorizontalAlignment="Right"
                VerticalAlignment="Center"
-               Margin="0,0,12,0"
+               Margin="0,0,42,0"
                Command="{Binding NextCommand}"
                Visibility="{Binding HasMany, Converter={StaticResource BoolToVisibility}}"
                AutomationProperties.AutomationId="ImageViewer_Next"
@@ -99,7 +99,7 @@
       <ui:SymbolIcon Symbol="ChevronRight24" FontSize="28" />
     </ui:Button>
 
-    <DockPanel VerticalAlignment="Top" Margin="16,8">
+    <DockPanel VerticalAlignment="Top" Margin="16,44,16,8">
       <TextBlock DockPanel.Dock="Left"
                  VerticalAlignment="Center"
                  Foreground="White"

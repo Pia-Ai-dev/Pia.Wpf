@@ -23,7 +23,9 @@ little standalone value, unblocks a High.
   *Deps:* none · *Effort:* XS · *Value:* High
 - [ ] **0b · Earlier images follow the turn's provider** — sent images ride every later turn
   (`AssistantMessage.BuildChatMessage`), so a switch to a non-Pia-Cloud provider mid-chat still
-  carries them. The turn must refuse or strip them. Not planned yet; see gate G1.
+  carries them. A planned (Agent-mode) run can also hand a step to a persona pinned to another
+  provider, and that step's request carries the goal's images (`LiveTurnExecutor` substitutes the
+  step persona's provider). The turn must refuse or strip them. Not planned yet; see gate G1.
   *Deps:* 0 · *Effort:* S · *Value:* High
 - [x] **A1 · Image viewer overlay** — a full-window `ImageViewerOverlay` with fit, 100 %, wheel and
   keyboard zoom, drag to pan, previous/next, copy, save as, Esc, `ImageViewer_*` ids and en/de/fr
