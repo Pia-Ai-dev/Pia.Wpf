@@ -19,8 +19,8 @@ standalone value, unblocks a High.
 
 | Gate | Question | Blocks |
 |------|----------|--------|
-| G1 | Server keeps the per-call password model (PR 5002/5003) or builds the #7963 grant model? Owner decides; grace for old clients ends 2026-12-01. | B1–B4 |
-| G2 | How do SSO accounts confirm account delete / device revoke under the chosen model? | B3 |
+| G1 | Server keeps the per-call password model (PR 5002/5003) or builds the #7963 grant model? **Answered 2026-11-26: keep the password model (a+)**; add the check to session revoke, passkey remove, team writes; TOTP with the password when MFA is on; password on device revoke too (contract pending from server). | B1–B4 |
+| G2 | How do SSO accounts confirm account delete / device revoke under the chosen model? **Answered: SSO account delete stays token-only as an accepted residual; an identity-provider spike decides a browser step-up later.** | B3 |
 | G3 | When the server reports E2EE off while this device holds the key: stop sync until the user decides (proposed), never drop the key on the server's word. | A2 |
 
 ## A — #7902
@@ -43,3 +43,7 @@ standalone value, unblocks a High.
 ## Suggested order
 
 B1 (done by inspection) → B4 → A3 → A5 → A2 → A4 → A6 → A1/A7 on a build → B2/B3 once G1 is answered.
+
+## Owner decisions
+
+- 2026-11-26: device-signature enforcement on device revoke and re-wraps of an existing wrapped key stays at 2026-12-01; released clients (up to v1.4.355) do not sign these calls.
