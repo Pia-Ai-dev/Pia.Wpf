@@ -91,6 +91,17 @@ public class SyncClientService : ISyncClientService, IDisposable
     private int _consecutiveIdleCycles;
     private int _deviceCheckCounter;
     private bool _hasVerifiedServerE2EEStatus;
+
+    public bool IsPlaintextSyncConfirmed => (_deviceMgmt is null || _hasVerifiedServerE2EEStatus) && !IsE2EEDowngradeDetected;
+
+    public event EventHandler? PlaintextSyncConfirmed;
+
+    private void ConfirmPlaintextSync()
+    {
+        if (_hasVerifiedServerE2EEStatus) return;
+        _hasVerifiedServerE2EEStatus = true;
+        PlaintextSyncConfirmed?.Invoke(this, EventArgs.Empty);
+    }
     // Push and pull may both report the same removal in one cycle.
     private bool _revokedNoticeRaised;
     // Bumped on every Start/Stop so a sync cycle in flight during a Stop+Start cannot re-arm
@@ -173,6 +184,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         await _settingsService.SaveSettingsAsync(settings);
         _e2ee?.ClearCachedUmk();
         _logger.LogWarning("User allowed unencrypted sync for an account that previously required E2EE");
+        ConfirmPlaintextSync();
         ClearE2EEDowngrade();
         return true;
     }
@@ -501,7 +513,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     return null;
                 }
 
-                _hasVerifiedServerE2EEStatus = true;
+                ConfirmPlaintextSync();
             }
 
             var accessToken = await GetAccessTokenPastE2EEGateAsync();
@@ -606,7 +618,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return;
             }
 
-            if (await BlocksMarkedAccountWithoutKeyAsync(settings))
+            if (await BlocksKeyHeldAccountResetAsync(settings) || await BlocksMarkedAccountWithoutKeyAsync(settings))
                 return;
 
             // Local E2EE off is not proof the account's is: a restored device has not activated yet.
@@ -623,6 +635,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                         NotifyE2EEOnboardingRequired();
                     return;
                 }
+                ConfirmPlaintextSync();
             }
 
             var accessToken = await GetAccessTokenPastE2EEGateAsync();

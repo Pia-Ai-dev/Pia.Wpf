@@ -385,6 +385,39 @@ public class AssistantChatSyncServiceTests
         Assert.Empty(_handler.RequestsByUri);
     }
 
+    [Fact]
+    public async Task SendUpsert_PlaintextBeforeTheServerConfirmedE2EEOff_SendsNothing()
+    {
+        _syncClient.IsPlaintextSyncConfirmed.Returns(false);
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
+    public async Task SendUpsert_WithTheKey_WhileADowngradeIsDetected_SendsNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            IsE2EEEnabled = true,
+        });
+        _syncClient.IsE2EEDowngradeDetected.Returns(true);
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewE2EEMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Null(_handler.LastPutBody);
+    }
+
     [Theory]
     [InlineData(ServerUrl, "someone-else")]
     [InlineData("https://staging.local", UserId)]
@@ -558,7 +591,7 @@ public class AssistantChatSyncServiceTests
 
         var sut = new AssistantChatSyncService(
             _chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
-            Substitute.For<ISyncClientService>(), NullLogger<AssistantChatSyncService>.Instance,
+            PlaintextConfirmedSyncClient(), NullLogger<AssistantChatSyncService>.Instance,
             startupDelayOverride: TimeSpan.Zero, backfillRetryIntervalOverride: TimeSpan.FromMilliseconds(20));
 
         int Passes() => _chatService.ReceivedCalls()
@@ -621,7 +654,7 @@ public class AssistantChatSyncServiceTests
             .Returns(_ => (IReadOnlyList<Guid>)(marksCleared ? [chat.Id] : []));
         _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.OK, "{}");
-        var syncClient = Substitute.For<ISyncClientService>();
+        var syncClient = PlaintextConfirmedSyncClient();
 
         var sut = new AssistantChatSyncService(
             _chatService, _capabilities, _auth, _settings, _clientFactory, NewE2EEMapper(),
@@ -705,7 +738,7 @@ public class AssistantChatSyncServiceTests
             .Returns(new List<Guid> { chat.Id }.AsReadOnly());
         _chatService.GetAsync(chat.Id, Arg.Any<CancellationToken>()).Returns(chat);
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.TooManyRequests, "");
-        var syncClient = Substitute.For<ISyncClientService>();
+        var syncClient = PlaintextConfirmedSyncClient();
 
         var sut = new AssistantChatSyncService(
             _chatService, _capabilities, _auth, _settings, _clientFactory, NewE2EEMapper(),
@@ -1060,7 +1093,7 @@ public class AssistantChatSyncServiceTests
         };
         stored.MarkE2EERequiredForAccount();
         _settings.GetSettingsAsync().Returns(stored);
-        var syncClient = Substitute.For<ISyncClientService>();
+        var syncClient = PlaintextConfirmedSyncClient();
         var sut = new AssistantChatSyncService(
             _chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
             syncClient, NullLogger<AssistantChatSyncService>.Instance,
@@ -1099,7 +1132,7 @@ public class AssistantChatSyncServiceTests
         _settings.GetSettingsAsync().Returns(stored);
         _chatService.GetUnbackfilledIdsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<Guid> { chat.Id }.AsReadOnly());
-        var syncClient = Substitute.For<ISyncClientService>();
+        var syncClient = PlaintextConfirmedSyncClient();
         var sut = new AssistantChatSyncService(
             _chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
             syncClient, NullLogger<AssistantChatSyncService>.Instance,
@@ -1168,7 +1201,7 @@ public class AssistantChatSyncServiceTests
 
     private AssistantChatSyncService CreateWorker(TimeSpan startupDelay) =>
         new(_chatService, _capabilities, _auth, _settings, _clientFactory, NewPlainMapper(),
-            Substitute.For<ISyncClientService>(), NullLogger<AssistantChatSyncService>.Instance,
+            PlaintextConfirmedSyncClient(), NullLogger<AssistantChatSyncService>.Instance,
             startupDelayOverride: startupDelay, backfillRetryIntervalOverride: TimeSpan.FromMinutes(10));
 
     private void SignOut()
@@ -1192,9 +1225,18 @@ public class AssistantChatSyncServiceTests
         return (Task)m.Invoke(sut, [ct])!;
     }
 
+    private readonly ISyncClientService _syncClient = PlaintextConfirmedSyncClient();
+
+    private static ISyncClientService PlaintextConfirmedSyncClient()
+    {
+        var client = Substitute.For<ISyncClientService>();
+        client.IsPlaintextSyncConfirmed.Returns(true);
+        return client;
+    }
+
     private AssistantChatSyncService CreateSut(SyncMapper mapper) =>
         new(_chatService, _capabilities, _auth, _settings, _clientFactory, mapper,
-            Substitute.For<ISyncClientService>(),
+            _syncClient,
             NullLogger<AssistantChatSyncService>.Instance);
 
     private static SyncMapper NewPlainMapper()

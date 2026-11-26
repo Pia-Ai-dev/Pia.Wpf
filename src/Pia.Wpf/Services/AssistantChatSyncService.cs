@@ -98,7 +98,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatsChanged += OnChatsChanged;
         _chatService.ChatAccessed += OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted += OnEncryptedMigrationCompleted;
-        _syncClient.E2EEDowngradeChanged += OnE2EEDowngradeChanged;
+        _syncClient.E2EEDowngradeChanged += OnHeldChatsMayGo;
+        _syncClient.PlaintextSyncConfirmed += OnHeldChatsMayGo;
         return base.StartAsync(cancellationToken);
     }
 
@@ -107,7 +108,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatsChanged -= OnChatsChanged;
         _chatService.ChatAccessed -= OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted -= OnEncryptedMigrationCompleted;
-        _syncClient.E2EEDowngradeChanged -= OnE2EEDowngradeChanged;
+        _syncClient.E2EEDowngradeChanged -= OnHeldChatsMayGo;
+        _syncClient.PlaintextSyncConfirmed -= OnHeldChatsMayGo;
         try
         {
             await base.StopAsync(cancellationToken);
@@ -151,7 +153,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     // Allowing unencrypted sync releases the chats the missing-key hold dropped, live or backfill; nothing else would
     // retry them.
-    private void OnE2EEDowngradeChanged(object? sender, EventArgs e)
+    private void OnHeldChatsMayGo(object? sender, EventArgs e)
     {
         if (_syncClient.IsE2EEDowngradeDetected) return;
         _requeueHeldRequested = true;
@@ -500,15 +502,32 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         }
     }
 
-    // Without the key the mapper would send the chat in plaintext; it goes out encrypted after onboarding.
+    // Plaintext waits for the sync client's server check; ciphertext waits out a reported reset, which it would undo.
     private async Task<bool> HoldsForMissingKeyAsync(Guid chatId)
     {
-        var settings = await _settingsService.GetSettingsAsync();
-        if (_mapper.IsE2EEActive || !(settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount()))
+        if (_syncClient.IsE2EEDowngradeDetected)
+        {
+            _logger.LogInformation("Holding chat {ChatId}: the server reports E2EE off for this account", chatId);
+            return true;
+        }
+
+        if (_mapper.IsE2EEActive)
             return false;
 
-        _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chatId);
-        return true;
+        var settings = await _settingsService.GetSettingsAsync();
+        if (settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount())
+        {
+            _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chatId);
+            return true;
+        }
+
+        if (!_syncClient.IsPlaintextSyncConfirmed)
+        {
+            _logger.LogInformation("Holding chat {ChatId}: the server has not yet confirmed E2EE is off", chatId);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
