@@ -494,7 +494,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 if (errorBody.Contains(E2EEErrorCodes.E2EENotEnrolled))
                 {
                     _logger.LogWarning("Server refused chat {ChatId}: the account was reset", chat.Id);
-                    await _syncClient.NotifyE2EENotEnrolledAsync();
+                    await _syncClient.NotifyE2EENotEnrolledAsync(userId);
                     return false;
                 }
             }

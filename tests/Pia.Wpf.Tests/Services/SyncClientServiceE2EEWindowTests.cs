@@ -105,6 +105,62 @@ public class SyncClientServiceE2EEWindowTests
     }
 
     [Fact]
+    public async Task PerformFirstSyncMigration_On403E2EENotEnrolled_HoldsSyncAsAReset()
+    {
+        var sut = CreateSut();
+        var handler = new CapturingHandler(HttpStatusCode.Forbidden, """{"error":"e2ee_not_enrolled"}""");
+        _httpClientFactory.CreateClient(Arg.Any<string>()).Returns(new HttpClient(handler));
+        _authService.IsLoggedIn.Returns(true);
+        _authService.GetAccessTokenAsync().Returns("token");
+        var settings = new AppSettings { SyncEnabled = true, ServerUrl = "http://test" };
+        _settingsService.GetSettingsAsync().Returns(settings);
+
+        await Assert.ThrowsAsync<HttpRequestException>(sut.PerformFirstSyncMigrationAsync);
+
+        Assert.True(sut.IsE2EEDowngradeDetected);
+        Assert.True(settings.E2EEDeviceRemovedNoticePending);
+    }
+
+    [Fact]
+    public async Task NotifyE2EENotEnrolled_ForAnotherAccount_IsIgnored()
+    {
+        var settings = new AppSettings { SyncUserId = "user-2" };
+        _settingsService.GetSettingsAsync().Returns(settings);
+        var sut = CreateSut();
+
+        await sut.NotifyE2EENotEnrolledAsync("user-1");
+
+        Assert.False(sut.IsE2EEDowngradeDetected);
+        Assert.False(settings.E2EEDeviceRemovedNoticePending);
+    }
+
+    [Fact]
+    public async Task NotifyE2EENotEnrolled_ForTheCurrentAccount_HoldsSync()
+    {
+        var settings = new AppSettings { SyncUserId = "user-1" };
+        _settingsService.GetSettingsAsync().Returns(settings);
+        var sut = CreateSut();
+
+        await sut.NotifyE2EENotEnrolledAsync("user-1");
+
+        Assert.True(sut.IsE2EEDowngradeDetected);
+        Assert.True(settings.E2EEDeviceRemovedNoticePending);
+    }
+
+    [Fact]
+    public async Task NotifyE2EENotEnrolled_AfterTheNoticeWasDismissed_DoesNotRaiseItAgain()
+    {
+        var settings = new AppSettings { SyncUserId = "user-1", E2EEResetNoticeAcknowledged = true };
+        _settingsService.GetSettingsAsync().Returns(settings);
+        var sut = CreateSut();
+
+        await sut.NotifyE2EENotEnrolledAsync("user-1");
+
+        Assert.True(sut.IsE2EEDowngradeDetected);
+        Assert.False(settings.E2EEDeviceRemovedNoticePending);
+    }
+
+    [Fact]
     public async Task PushChanges_PrefsOnly_OnSuccess_PushesAndClearsPrefs()
     {
         var sut = CreateSut();

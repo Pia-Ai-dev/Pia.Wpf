@@ -434,7 +434,7 @@ public class AssistantChatSyncServiceTests
         var sut = CreateSut(NewE2EEMapper());
         await InvokeSendUpsertAsync(sut, chat);
 
-        await _syncClient.Received(1).NotifyE2EENotEnrolledAsync();
+        await _syncClient.Received(1).NotifyE2EENotEnrolledAsync(UserId);
         _syncClient.DidNotReceive().NotifyE2EEOnboardingRequired();
     }
 

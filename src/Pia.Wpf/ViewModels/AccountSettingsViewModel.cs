@@ -847,6 +847,24 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
     }
 
     [RelayCommand]
+    private async Task SetUpE2EEAfterResetAsync()
+    {
+        var accountId = (await _settingsService.GetSettingsAsync()).SyncUserId;
+        if (accountId is null || !_syncClientService.IsE2EEDowngradeDetected || !IsE2EEEnabled)
+            return;
+
+        await _syncClientService.StopBackgroundSyncAndWaitAsync();
+        if (!await _syncClientService.ReleaseHeldKeyForNewSetupAsync(accountId))
+        {
+            _syncClientService.StartBackgroundSync();
+            return;
+        }
+
+        // The toggle stays on: EnableE2EEAsync is its "on" path and turns it back off on failure.
+        await EnableE2EEAsync();
+    }
+
+    [RelayCommand]
     private async Task DeleteAccountAsync()
     {
         var requiresPassword = _authService.Provider == "local";

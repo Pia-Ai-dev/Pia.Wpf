@@ -500,6 +500,8 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         {
             var settings = await _settingsService.GetSettingsAsync();
             settings.E2EEDeviceRemovedNoticePending = false;
+            // A held key still polls an "off" server, which would raise the notice again for the same reset.
+            settings.E2EEResetNoticeAcknowledged = settings.IsE2EEEnabled;
             await _settingsService.SaveSettingsAsync(settings);
         }
         catch (Exception ex)

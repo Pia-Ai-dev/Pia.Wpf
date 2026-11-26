@@ -1046,6 +1046,7 @@
   <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Chiffrement désactivé sur le serveur</value></data>
   <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>Ce compte utilisait le chiffrement de bout en bout, mais le serveur le signale désormais comme non chiffré. La synchronisation est suspendue pour que vos données ne soient pas envoyées en clair. Si personne n'a réinitialisé volontairement le chiffrement de ce compte, n'allez pas plus loin et contactez votre administrateur.</value></data>
   <data name="E2EE_Downgrade_Allow" xml:space="preserve"><value>Synchroniser sans chiffrement</value></data>
+  <data name="E2EE_Downgrade_SetUpAgain" xml:space="preserve"><value>Configurer à nouveau le chiffrement</value></data>
   <data name="E2EE_Downgrade_Confirm_Title" xml:space="preserve"><value>Synchroniser sans chiffrement ?</value></data>
   <data name="E2EE_Downgrade_Confirm_Message" xml:space="preserve"><value>Ne continuez que si le chiffrement de ce compte a été réinitialisé volontairement. Vos données seront alors envoyées au serveur sans chiffrement de bout en bout, et cet appareil ne vous avertira plus.</value></data>
   <data name="Settings_E2EE_ApproveDevice_Title" xml:space="preserve"><value>Un nouvel appareil demande l'accès</value></data>

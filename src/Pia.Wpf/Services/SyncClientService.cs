@@ -192,6 +192,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         settings.ForgetE2EEKey();
         settings.UnmarkE2EERequiredForAccount();
+        settings.E2EEResetNoticeAcknowledged = false;
         await _settingsService.SaveSettingsAsync(settings);
         _e2ee?.ClearCachedUmk();
         _logger.LogWarning("User allowed unencrypted sync for an account that previously required E2EE");
@@ -211,6 +212,11 @@ public class SyncClientService : ISyncClientService, IDisposable
         ThrowIfAccountChanged();
         if (serverStatus is { IsEnabled: true })
         {
+            if (settings.E2EEResetNoticeAcknowledged)
+            {
+                settings.E2EEResetNoticeAcknowledged = false;
+                await _settingsService.SaveSettingsAsync(settings);
+            }
             ClearE2EEDowngrade();
             ConfirmServerE2EE(true);
             return false;
@@ -219,6 +225,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         // Unknown is not "on": a push now could re-enable E2EE behind a reset this device has not yet seen.
         if (serverStatus is null)
         {
+            _confirmedServerE2EE = null;
             _logger.LogWarning("Could not determine server E2EE status while holding the key; skipping this sync cycle");
             return true;
         }
@@ -228,21 +235,71 @@ public class SyncClientService : ISyncClientService, IDisposable
         return true;
     }
 
-    public async Task NotifyE2EENotEnrolledAsync()
+    public async Task NotifyE2EENotEnrolledAsync(string? accountId)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (accountId is null || !string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Ignoring a refused encrypted write: it was sent for another account");
+            return;
+        }
+        await HoldForEncryptedWriteRefusalAsync(settings);
+    }
+
+    private async Task HoldForEncryptedWriteRefusalAsync(AppSettings settings)
     {
         _logger.LogWarning("Server refused an encrypted write: the account has no enrolled device; holding sync for the user");
-        await HoldForAccountResetAsync(await _settingsService.GetSettingsAsync());
+        await HoldForAccountResetAsync(settings);
     }
 
     private async Task HoldForAccountResetAsync(AppSettings settings)
     {
         _confirmedServerE2EE = null;
-        if (!settings.E2EEDeviceRemovedNoticePending)
+        if (!settings.E2EEDeviceRemovedNoticePending && !settings.E2EEResetNoticeAcknowledged)
         {
             settings.E2EEDeviceRemovedNoticePending = true;
             await _settingsService.SaveSettingsAsync(settings);
         }
         NotifyE2EEDowngradeDetected();
+    }
+
+    public async Task<bool> ReleaseHeldKeyForNewSetupAsync(string accountId)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (!IsE2EEDowngradeDetected || !settings.IsE2EEEnabled
+            || !string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("New E2EE setup not started: the reset hold has cleared or the account changed");
+            return false;
+        }
+
+        var server = settings.ServerUrl;
+        var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
+        settings = await _settingsService.GetSettingsAsync();
+        if (!string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(settings.ServerUrl, server, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("New E2EE setup not started: the account changed during the status check");
+            return false;
+        }
+        if (serverStatus is not { IsEnabled: false })
+        {
+            if (serverStatus is not null)
+                ClearE2EEDowngrade();
+            _logger.LogInformation("New E2EE setup not started: the server did not confirm E2EE is off");
+            return false;
+        }
+
+        // Keeps the account marked, so plaintext stays held until the new key exists.
+        settings.ForgetE2EEKey();
+        settings.E2EEDeviceRemovedNoticePending = false;
+        settings.E2EEResetNoticeAcknowledged = false;
+        await _settingsService.SaveSettingsAsync(settings);
+        _e2ee?.ClearCachedUmk();
+        _confirmedServerE2EE = null;
+        _logger.LogWarning("Dropped the key of a reset account so this device can set up encryption again");
+        ClearE2EEDowngrade();
+        return true;
     }
 
     private async Task<bool> BlocksMarkedAccountWithoutKeyAsync(AppSettings settings)
@@ -561,7 +618,8 @@ public class SyncClientService : ISyncClientService, IDisposable
             using var client = CreateAuthenticatedClient(accessToken);
 
             var (pushedCount, pushSucceeded, pushSentChanges) = await PushChangesAsync(client, serverUrl, settings);
-            if (PendingDeviceRevocation is not null)
+            // A reset hold must stop the cycle before the device-list check forgets the key.
+            if (PendingDeviceRevocation is not null || IsE2EEDowngradeDetected)
                 return null;
 
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);
@@ -761,7 +819,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 using var response = await PostPushAsync(client, serverUrl, request);
                 batchSendTimes.Enqueue(DateTime.UtcNow);
                 ThrowIfAccountChanged();
-                await EnsureSuccessAsync(response, $"First-sync push (batch {batch + 1}/{batchCount})");
+                await EnsurePushSuccessAsync(response, $"First-sync push (batch {batch + 1}/{batchCount})", settings);
 
                 _logger.LogInformation("First-sync push batch {Batch}/{BatchCount} completed (settingsIncluded: {SettingsIncluded}, templates: {Templates}, personas: {Personas}, providers: {Providers}, sessions: {Sessions}, memories: {Memories}, kanbanColumns: {KanbanColumns}, todos: {Todos}, scheduledJobs: {Jobs})",
                     batch + 1, batchCount, request.Settings is not null,
@@ -770,7 +828,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     request.KanbanColumns.Upserted.Count, request.Todos.Upserted.Count, request.ScheduledJobs.Upserted.Count);
             }
 
-            // Only after every batch landed (EnsureSuccessAsync throws), or failed settings hide behind the hash.
+            // Only after every batch landed (EnsurePushSuccessAsync throws), or failed settings hide behind the hash.
             await PersistSettingsHashIfChangedAsync(settings, settingsHash, settingsChanged);
 
             if (isE2EE)
@@ -1099,21 +1157,7 @@ public class SyncClientService : ISyncClientService, IDisposable
             var body = await response.Content.ReadAsStringAsync();
             _logger.LogWarning("Push failed with status {Status}", response.StatusCode);
             _logger.SensitiveDebug("Push failure body: {Body}", body);
-            var code = ReadErrorCodeFromBody(body);
-            if (code == E2EEErrorCodes.DeviceRevoked)
-            {
-                await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
-            }
-            else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EERequired)
-            {
-                // A plaintext push to an E2EE account never succeeds on retry, so onboarding is the only way out.
-                _logger.LogWarning("Server requires E2EE for this account; onboarding required");
-                NotifyE2EEOnboardingRequired();
-            }
-            else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EENotEnrolled)
-            {
-                await NotifyE2EENotEnrolledAsync();
-            }
+            await HandlePushRefusalAsync(response, body, settings);
             // Failed, not idle: backoff would slow the retry of changes that are still pending.
             return (0, false, false);
         }
@@ -1982,17 +2026,33 @@ public class SyncClientService : ISyncClientService, IDisposable
         return (false, true, pulledCount, decryptionErrors, pullResponse.ServerTimestamp, pullResponse.HasMore == true, settingsUndecryptable);
     }
 
-    private async Task EnsureSuccessAsync(HttpResponseMessage response, string operation)
+    private async Task HandlePushRefusalAsync(HttpResponseMessage response, string body, AppSettings settings)
+    {
+        var code = ReadErrorCodeFromBody(body);
+        if (code == E2EEErrorCodes.DeviceRevoked)
+        {
+            await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
+        }
+        else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EERequired)
+        {
+            // A plaintext push to an E2EE account never succeeds on retry, so onboarding is the only way out.
+            _logger.LogWarning("Server requires E2EE for this account; onboarding required");
+            NotifyE2EEOnboardingRequired();
+        }
+        else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EENotEnrolled)
+        {
+            await HoldForEncryptedWriteRefusalAsync(settings);
+        }
+    }
+
+    private async Task EnsurePushSuccessAsync(HttpResponseMessage response, string operation, AppSettings settings)
     {
         if (response.IsSuccessStatusCode) return;
 
         var body = await response.Content.ReadAsStringAsync();
         _logger.LogError("{Operation} failed ({Status})", operation, (int)response.StatusCode);
         _logger.SensitiveDebug("{Operation} failure body: {Body}", operation, body);
-        if (ReadErrorCodeFromBody(body) == E2EEErrorCodes.DeviceRevoked)
-        {
-            await RaiseCurrentDeviceRevokedAsync(wasRevoked: true);
-        }
+        await HandlePushRefusalAsync(response, body, settings);
         throw new HttpRequestException(
             $"{operation} failed ({(int)response.StatusCode}): {body}");
     }

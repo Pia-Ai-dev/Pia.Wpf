@@ -321,6 +321,22 @@ public class MainWindowViewModelTests
         await _settings.Received().SaveSettingsAsync(_stored);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DismissingTheNotice_AcknowledgesTheReset_OnlyWhileTheKeyIsHeld(bool keyHeld)
+    {
+        _stored.E2EEDeviceRemovedNoticePending = true;
+        _stored.IsE2EEEnabled = keyHeld;
+        _assignments.GetSurfaceAsync(Arg.Any<CancellationToken>()).Returns(AssignmentSurface.Hidden);
+        var vm = CreateSut(WindowMode.Assistant);
+        await InitializeAsync(vm);
+
+        await vm.DismissE2EEDeviceRemovedNoticeCommand.ExecuteAsync(null);
+
+        Assert.Equal(keyHeld, _stored.E2EEResetNoticeAcknowledged);
+    }
+
     [Fact]
     public void ARevocationSavedWhileRunning_ShowsTheNotice()
     {
