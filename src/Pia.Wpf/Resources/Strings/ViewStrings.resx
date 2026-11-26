@@ -138,6 +138,7 @@
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Attach file</value></data>
   <data name="Assistant_RunAssignment_Tooltip" xml:space="preserve"><value>Hand this to your Pia server as a background assignment</value></data>
   <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Remove attachment</value></data>
+  <data name="Assistant_OpenImage_Tooltip" xml:space="preserve"><value>Open image</value></data>
   <data name="Assistant_RemovePendingFile_Tooltip" xml:space="preserve"><value>Remove file</value></data>
   <data name="Assistant_PendingFilesBlockRun_Hint" xml:space="preserve"><value>An attached file can only ride a chat message. Run in background is off, and this turn won't be planned as an agent run.</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Voice conversation</value></data>
@@ -1913,6 +1914,15 @@
   </data>
   <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>More send options</value></data>
   <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Run as a background task in a new chat</value></data>
+  <data name="ImageViewer_Close_Tooltip" xml:space="preserve"><value>Close (Esc)</value></data>
+  <data name="ImageViewer_Previous_Tooltip" xml:space="preserve"><value>Previous image</value></data>
+  <data name="ImageViewer_Next_Tooltip" xml:space="preserve"><value>Next image</value></data>
+  <data name="ImageViewer_ZoomIn_Tooltip" xml:space="preserve"><value>Zoom in</value></data>
+  <data name="ImageViewer_ZoomOut_Tooltip" xml:space="preserve"><value>Zoom out</value></data>
+  <data name="ImageViewer_ActualSize_Tooltip" xml:space="preserve"><value>Actual size (100 %)</value></data>
+  <data name="ImageViewer_Fit_Tooltip" xml:space="preserve"><value>Fit to window</value></data>
+  <data name="ImageViewer_Copy_Tooltip" xml:space="preserve"><value>Copy image</value></data>
+  <data name="ImageViewer_Save_Tooltip" xml:space="preserve"><value>Save image as…</value></data>
   <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Here is a plan for this:</value></data>
   <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>The plan could not be saved.</value></data>
 </root>

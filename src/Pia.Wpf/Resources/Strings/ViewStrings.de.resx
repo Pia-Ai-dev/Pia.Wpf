@@ -138,6 +138,7 @@
   <data name="Assistant_Attach_Tooltip" xml:space="preserve"><value>Datei anhängen</value></data>
   <data name="Assistant_RunAssignment_Tooltip" xml:space="preserve"><value>Als Hintergrundauftrag an Ihren Pia-Server übergeben</value></data>
   <data name="Assistant_RemoveAttachment_Tooltip" xml:space="preserve"><value>Anhang entfernen</value></data>
+  <data name="Assistant_OpenImage_Tooltip" xml:space="preserve"><value>Bild öffnen</value></data>
   <data name="Assistant_RemovePendingFile_Tooltip" xml:space="preserve"><value>Datei entfernen</value></data>
   <data name="Assistant_PendingFilesBlockRun_Hint" xml:space="preserve"><value>Eine angehängte Datei kann nur mit einer Chatnachricht mitgehen. Die Hintergrundausführung ist deaktiviert, und diese Runde wird nicht als Agentenlauf geplant.</value></data>
   <data name="Assistant_VoiceConversation_Tooltip" xml:space="preserve"><value>Sprachunterhaltung</value></data>
@@ -1903,6 +1904,15 @@
   </data>
   <data name="Assistant_SendOptions_Tooltip" xml:space="preserve"><value>Weitere Sendeoptionen</value></data>
   <data name="Assistant_RunInBackground_MenuItem" xml:space="preserve"><value>Als Hintergrundaufgabe in einem neuen Chat ausführen</value></data>
+  <data name="ImageViewer_Close_Tooltip" xml:space="preserve"><value>Schließen (Esc)</value></data>
+  <data name="ImageViewer_Previous_Tooltip" xml:space="preserve"><value>Vorheriges Bild</value></data>
+  <data name="ImageViewer_Next_Tooltip" xml:space="preserve"><value>Nächstes Bild</value></data>
+  <data name="ImageViewer_ZoomIn_Tooltip" xml:space="preserve"><value>Vergrößern</value></data>
+  <data name="ImageViewer_ZoomOut_Tooltip" xml:space="preserve"><value>Verkleinern</value></data>
+  <data name="ImageViewer_ActualSize_Tooltip" xml:space="preserve"><value>Originalgröße (100 %)</value></data>
+  <data name="ImageViewer_Fit_Tooltip" xml:space="preserve"><value>An Fenster anpassen</value></data>
+  <data name="ImageViewer_Copy_Tooltip" xml:space="preserve"><value>Bild kopieren</value></data>
+  <data name="ImageViewer_Save_Tooltip" xml:space="preserve"><value>Bild speichern unter…</value></data>
   <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Hier ist ein Plan dafür:</value></data>
   <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>Der Plan konnte nicht gespeichert werden.</value></data>
 </root>

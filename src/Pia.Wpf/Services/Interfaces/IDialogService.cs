@@ -63,6 +63,8 @@ public interface IDialogService
     /// <paramref name="work"/> runs, then closes it. Used by the assistant-folder relocation flow.
     /// </summary>
     Task ShowFolderMoveDialogAsync(IProgress<FolderMoveProgress> progress, Func<Task> work);
+
+    Task ShowImageViewerAsync(IReadOnlyList<ImageAttachment> images, int startIndex);
 }
 
 public record ModelDownloadResult(bool Completed, bool Cancelled);

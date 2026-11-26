@@ -8,4 +8,7 @@ public interface IClipboardService
 {
     /// <summary>Places UTF-16 text on the clipboard. May throw if the clipboard is locked.</summary>
     void SetText(string text);
+
+    /// <summary>Decodes the image and places it as a bitmap. May throw if the clipboard is locked.</summary>
+    void SetImage(byte[] encodedImage);
 }

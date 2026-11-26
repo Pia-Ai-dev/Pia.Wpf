@@ -24,6 +24,10 @@ public class DialogService : IDialogService
     private readonly ILocalizationService _localizationService;
     private readonly IScreenCaptureService _screenCapture;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly IClipboardService _clipboard;
+    private readonly IFileDialogService _fileDialogs;
+    private readonly ISnackbarService _snackbar;
+    private readonly IImageViewerHost _imageViewerHost;
 
     public DialogService(
         IContentDialogService contentDialogService,
@@ -32,7 +36,11 @@ public class DialogService : IDialogService
         IAudioRecordingService audioRecordingService,
         ILocalizationService localizationService,
         IScreenCaptureService screenCapture,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IClipboardService clipboard,
+        IFileDialogService fileDialogs,
+        ISnackbarService snackbar,
+        IImageViewerHost imageViewerHost)
     {
         _contentDialogService = contentDialogService;
         _overlayService = overlayService;
@@ -41,6 +49,26 @@ public class DialogService : IDialogService
         _localizationService = localizationService;
         _screenCapture = screenCapture;
         _loggerFactory = loggerFactory;
+        _clipboard = clipboard;
+        _fileDialogs = fileDialogs;
+        _snackbar = snackbar;
+        _imageViewerHost = imageViewerHost;
+    }
+
+    public async Task ShowImageViewerAsync(IReadOnlyList<ImageAttachment> images, int startIndex)
+    {
+        if (images.Count == 0)
+            return;
+
+        var viewModel = new ImageViewerViewModel(
+            images,
+            startIndex,
+            _clipboard,
+            _fileDialogs,
+            _localizationService,
+            _snackbar,
+            _loggerFactory.CreateLogger<ImageViewerViewModel>());
+        await _imageViewerHost.GetHost().ShowAsync(viewModel);
     }
 
     public async Task<bool> ShowProviderEditDialogAsync(ProviderEditModel provider, IProviderService providerService)

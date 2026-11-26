@@ -23,13 +23,15 @@ little standalone value, unblocks a High.
   *Deps:* none · *Effort:* XS · *Value:* High
 - [ ] **0b · Earlier images follow the turn's provider** — sent images ride every later turn
   (`AssistantMessage.BuildChatMessage`), so a switch to a non-Pia-Cloud provider mid-chat still
-  carries them. The turn must refuse or strip them. Not planned yet; see gate G1.
+  carries them. A planned (Agent-mode) run can also hand a step to a persona pinned to another
+  provider, and that step's request carries the goal's images (`LiveTurnExecutor` substitutes the
+  step persona's provider). The turn must refuse or strip them. Not planned yet; see gate G1.
   *Deps:* 0 · *Effort:* S · *Value:* High
-- [ ] **A1 · Image viewer overlay** — a full-window `ImageViewerOverlay` with fit, 100 %, wheel and
+- [x] **A1 · Image viewer overlay** — a full-window `ImageViewerOverlay` with fit, 100 %, wheel and
   keyboard zoom, drag to pan, previous/next, copy, save as, Esc, `ImageViewer_*` ids and en/de/fr
   strings. Plan Tasks 2 and 3.
   *Deps:* none · *Effort:* M · *Value:* Enabler
-- [ ] **A2 · Enlarge input images** — composer and sent-bubble thumbnails open A1, with per-item ids
+- [x] **A2 · Enlarge input images** — composer and sent-bubble thumbnails open A1, with per-item ids
   `Assistant_OpenPendingImage_{id}` and `Assistant_OpenSentImage_{id}`. Plan Task 4.
   *Deps:* A1 · *Effort:* S · *Value:* High
 - [ ] **A3 · Show tool-fetched images** — `screen_capture` and `read_file` pictures become clickable
