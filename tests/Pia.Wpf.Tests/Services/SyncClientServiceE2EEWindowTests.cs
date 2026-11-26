@@ -86,6 +86,25 @@ public class SyncClientServiceE2EEWindowTests
     }
 
     [Fact]
+    public async Task PushChanges_On403E2EENotEnrolled_HoldsSyncAsAReset()
+    {
+        var settings = new AppSettings();
+        _settingsService.GetSettingsAsync().Returns(settings);
+        var sut = CreateSut();
+        _pluginService.GetPendingPreferenceChanges().Returns(
+            [new SyncPluginPreference { PluginId = Guid.NewGuid(), IsEnabled = true }]);
+        var handler = new CapturingHandler(HttpStatusCode.Forbidden, """{"error":"e2ee_not_enrolled"}""");
+        using var client = new HttpClient(handler);
+
+        var result = await InvokePushChangesAsync(sut, client, settings);
+
+        Assert.False(result.PushSucceeded);
+        Assert.True(sut.IsE2EEDowngradeDetected);
+        Assert.True(settings.E2EEDeviceRemovedNoticePending);
+        _pluginService.DidNotReceive().ClearPreferenceChangesAfterSuccessfulPush();
+    }
+
+    [Fact]
     public async Task PushChanges_PrefsOnly_OnSuccess_PushesAndClearsPrefs()
     {
         var sut = CreateSut();

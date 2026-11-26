@@ -224,13 +224,25 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         _logger.LogWarning("Server reports E2EE off while this device holds the key; holding sync for the user");
+        await HoldForAccountResetAsync(settings);
+        return true;
+    }
+
+    public async Task NotifyE2EENotEnrolledAsync()
+    {
+        _logger.LogWarning("Server refused an encrypted write: the account has no enrolled device; holding sync for the user");
+        await HoldForAccountResetAsync(await _settingsService.GetSettingsAsync());
+    }
+
+    private async Task HoldForAccountResetAsync(AppSettings settings)
+    {
+        _confirmedServerE2EE = null;
         if (!settings.E2EEDeviceRemovedNoticePending)
         {
             settings.E2EEDeviceRemovedNoticePending = true;
             await _settingsService.SaveSettingsAsync(settings);
         }
         NotifyE2EEDowngradeDetected();
-        return true;
     }
 
     private async Task<bool> BlocksMarkedAccountWithoutKeyAsync(AppSettings settings)
@@ -1097,6 +1109,10 @@ public class SyncClientService : ISyncClientService, IDisposable
                 // A plaintext push to an E2EE account never succeeds on retry, so onboarding is the only way out.
                 _logger.LogWarning("Server requires E2EE for this account; onboarding required");
                 NotifyE2EEOnboardingRequired();
+            }
+            else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EENotEnrolled)
+            {
+                await NotifyE2EENotEnrolledAsync();
             }
             // Failed, not idle: backoff would slow the retry of changes that are still pending.
             return (0, false, false);

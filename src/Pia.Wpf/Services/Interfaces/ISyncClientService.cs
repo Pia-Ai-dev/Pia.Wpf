@@ -58,6 +58,9 @@ public interface ISyncClientService
     /// </summary>
     void NotifyE2EEOnboardingRequired();
 
+    /// <summary>The server refused an encrypted write because the account was reset; holds sync as a downgrade.</summary>
+    Task NotifyE2EENotEnrolledAsync();
+
     /// <summary>
     /// Raised when the sync cycle detects a pending device waiting for approval.
     /// Only fires on an active device with E2EE ready.

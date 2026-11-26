@@ -419,6 +419,26 @@ public class AssistantChatSyncServiceTests
     }
 
     [Fact]
+    public async Task SendUpsert_On403E2EENotEnrolled_ReportsTheReset()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            IsE2EEEnabled = true,
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Forbidden, """{"error":"e2ee_not_enrolled"}""");
+
+        var sut = CreateSut(NewE2EEMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        await _syncClient.Received(1).NotifyE2EENotEnrolledAsync();
+        _syncClient.DidNotReceive().NotifyE2EEOnboardingRequired();
+    }
+
+    [Fact]
     public async Task SendUpsert_WithTheKey_WhileADowngradeIsDetected_SendsNothing()
     {
         _settings.GetSettingsAsync().Returns(new AppSettings

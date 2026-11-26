@@ -9,6 +9,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pia.Services.Interfaces;
+using Pia.Shared.E2EE;
 using Pia.Shared.Models;
 
 namespace Pia.Services;
@@ -488,6 +489,12 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                         "Server requires E2EE for this account; chat {ChatId} not pushed, onboarding required",
                         chat.Id);
                     _syncClient.NotifyE2EEOnboardingRequired();
+                    return false;
+                }
+                if (errorBody.Contains(E2EEErrorCodes.E2EENotEnrolled))
+                {
+                    _logger.LogWarning("Server refused chat {ChatId}: the account was reset", chat.Id);
+                    await _syncClient.NotifyE2EENotEnrolledAsync();
                     return false;
                 }
             }
