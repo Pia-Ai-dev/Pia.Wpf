@@ -99,7 +99,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatAccessed += OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted += OnEncryptedMigrationCompleted;
         _syncClient.E2EEDowngradeChanged += OnHeldChatsMayGo;
-        _syncClient.PlaintextSyncConfirmed += OnHeldChatsMayGo;
+        _syncClient.ServerE2EEStateConfirmed += OnHeldChatsMayGo;
         return base.StartAsync(cancellationToken);
     }
 
@@ -109,7 +109,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatAccessed -= OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted -= OnEncryptedMigrationCompleted;
         _syncClient.E2EEDowngradeChanged -= OnHeldChatsMayGo;
-        _syncClient.PlaintextSyncConfirmed -= OnHeldChatsMayGo;
+        _syncClient.ServerE2EEStateConfirmed -= OnHeldChatsMayGo;
         try
         {
             await base.StopAsync(cancellationToken);
@@ -449,7 +449,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
             if (response.StatusCode == HttpStatusCode.Conflict && !retried)
             {
                 var serverWire = await TryReadAsync(response, ct);
-                if (serverWire is not null)
+                if (serverWire is not null && serverWire.Id == chat.Id)
                 {
                     // Decrypt server response into plaintext space so the merge can
                     // reason about Title / Messages / ProviderId.
@@ -511,19 +511,19 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
             return true;
         }
 
-        if (_mapper.IsE2EEActive)
-            return false;
-
-        var settings = await _settingsService.GetSettingsAsync();
-        if (settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount())
+        if (!_mapper.IsE2EEActive)
         {
-            _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chatId);
-            return true;
+            var settings = await _settingsService.GetSettingsAsync();
+            if (settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount())
+            {
+                _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chatId);
+                return true;
+            }
         }
 
-        if (!_syncClient.IsPlaintextSyncConfirmed)
+        if (!_syncClient.IsServerE2EEStateConfirmed)
         {
-            _logger.LogInformation("Holding chat {ChatId}: the server has not yet confirmed E2EE is off", chatId);
+            _logger.LogInformation("Holding chat {ChatId}: the server has not yet confirmed the account's E2EE state", chatId);
             return true;
         }
 

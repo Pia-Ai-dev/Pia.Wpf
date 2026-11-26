@@ -388,11 +388,31 @@ public class AssistantChatSyncServiceTests
     [Fact]
     public async Task SendUpsert_PlaintextBeforeTheServerConfirmedE2EEOff_SendsNothing()
     {
-        _syncClient.IsPlaintextSyncConfirmed.Returns(false);
+        _syncClient.IsServerE2EEStateConfirmed.Returns(false);
         var chat = SampleChat();
         _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
 
         var sut = CreateSut(NewPlainMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        Assert.Null(_handler.LastPutBody);
+    }
+
+    [Fact]
+    public async Task SendUpsert_WithTheKey_BeforeTheServerConfirmedE2EE_SendsNothing()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            IsE2EEEnabled = true,
+        });
+        _syncClient.IsServerE2EEStateConfirmed.Returns(false);
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Created, "{}");
+
+        var sut = CreateSut(NewE2EEMapper());
         await InvokeSendUpsertAsync(sut, chat);
 
         Assert.Null(_handler.LastPutBody);
@@ -1230,7 +1250,7 @@ public class AssistantChatSyncServiceTests
     private static ISyncClientService PlaintextConfirmedSyncClient()
     {
         var client = Substitute.For<ISyncClientService>();
-        client.IsPlaintextSyncConfirmed.Returns(true);
+        client.IsServerE2EEStateConfirmed.Returns(true);
         return client;
     }
 

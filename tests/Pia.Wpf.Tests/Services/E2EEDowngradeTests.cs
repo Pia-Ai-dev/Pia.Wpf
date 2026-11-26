@@ -260,20 +260,92 @@ public class E2EEDowngradeTests
         await _syncAuth.DidNotReceive().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(null)]
-    public async Task SyncNow_KeyHeld_ServerOnOrUnknown_KeepsSyncing(bool? enabled)
+    [Fact]
+    public async Task SyncNow_KeyHeld_ServerOn_KeepsSyncingAndConfirmsTheState()
     {
         HoldKey();
-        ServerSays(enabled);
+        ServerSays(true);
         _syncAuth.GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>()).Returns("token");
         var sut = CreateSync();
 
         await sut.SyncNowAsync(TestContext.Current.CancellationToken);
 
         Assert.False(sut.IsE2EEDowngradeDetected);
+        Assert.True(sut.IsServerE2EEStateConfirmed);
         await _syncAuth.Received().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task SyncNow_KeyHeld_StatusUnknown_SendsNothing()
+    {
+        HoldKey();
+        ServerSays(null);
+        var sut = CreateSync();
+
+        Assert.Null(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
+
+        Assert.False(sut.IsServerE2EEStateConfirmed);
+        Assert.Equal(0, _syncServer.Requests);
+        await _syncAuth.DidNotReceive().GetAccessTokenAsync(Arg.Any<bool>(), Arg.Any<string?>());
+    }
+
+    [Fact]
+    public async Task SyncNow_KeyHeld_OffThenUnknown_KeepsTheDowngradeAndSendsNothing()
+    {
+        HoldKey();
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
+        ServerSays(null);
+
+        Assert.Null(await sut.SyncNowAsync(TestContext.Current.CancellationToken));
+
+        Assert.True(sut.IsE2EEDowngradeDetected);
+        Assert.Equal(0, _syncServer.Requests);
+    }
+
+    [Fact]
+    public async Task SyncNow_KeyHeld_ServerSaysOff_PersistsTheNotice()
+    {
+        HoldKey();
+        ServerSays(false);
+        var sut = CreateSync();
+
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(_syncStored.E2EEDeviceRemovedNoticePending);
+    }
+
+    [Fact]
+    public async Task AllowUnencryptedSync_WhenTheAccountChangesDuringTheCheck_ChangesNothing()
+    {
+        HoldKey();
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
+        _deviceMgmt.CheckE2EEStatusAsync().Returns(_ =>
+        {
+            _syncStored.SyncUserId = "0f8fad5b-d9cb-469f-a165-70867728950e";
+            return new E2EEStatusResponse { IsEnabled = false };
+        });
+
+        Assert.False(await sut.AllowUnencryptedSyncAsync(Account));
+
+        Assert.True(_syncStored.IsE2EEEnabled);
+        Assert.Equal([Marked], _syncStored.E2EERequiredAccountIds);
+    }
+
+    [Fact]
+    public async Task ARequiredE2EESignal_DropsAnEarlierPlaintextConfirmation()
+    {
+        ServerSays(false);
+        var sut = CreateSync();
+        await sut.SyncNowAsync(TestContext.Current.CancellationToken);
+        Assert.True(sut.IsServerE2EEStateConfirmed);
+
+        sut.NotifyE2EEOnboardingRequired();
+
+        Assert.False(sut.IsServerE2EEStateConfirmed);
     }
 
     [Fact]

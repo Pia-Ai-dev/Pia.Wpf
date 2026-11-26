@@ -90,17 +90,19 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     private int _consecutiveIdleCycles;
     private int _deviceCheckCounter;
-    private bool _hasVerifiedServerE2EEStatus;
+    // The account's E2EE state the server last confirmed this session; null until a conclusive answer.
+    private bool? _confirmedServerE2EE;
 
-    public bool IsPlaintextSyncConfirmed => (_deviceMgmt is null || _hasVerifiedServerE2EEStatus) && !IsE2EEDowngradeDetected;
+    public bool IsServerE2EEStateConfirmed =>
+        !IsE2EEDowngradeDetected && (_deviceMgmt is null || _confirmedServerE2EE == (_e2ee?.IsReady() == true));
 
-    public event EventHandler? PlaintextSyncConfirmed;
+    public event EventHandler? ServerE2EEStateConfirmed;
 
-    private void ConfirmPlaintextSync()
+    private void ConfirmServerE2EE(bool enabled)
     {
-        if (_hasVerifiedServerE2EEStatus) return;
-        _hasVerifiedServerE2EEStatus = true;
-        PlaintextSyncConfirmed?.Invoke(this, EventArgs.Empty);
+        if (_confirmedServerE2EE == enabled) return;
+        _confirmedServerE2EE = enabled;
+        ServerE2EEStateConfirmed?.Invoke(this, EventArgs.Empty);
     }
     // Push and pull may both report the same removal in one cycle.
     private bool _revokedNoticeRaised;
@@ -128,6 +130,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
     public void NotifyE2EEOnboardingRequired()
     {
+        if (_confirmedServerE2EE == false) _confirmedServerE2EE = null;
         if (IsE2EEOnboardingRequired) return;
         IsE2EEOnboardingRequired = true;
         E2EEOnboardingRequired?.Invoke(this, EventArgs.Empty);
@@ -166,8 +169,16 @@ public class SyncClientService : ISyncClientService, IDisposable
             return false;
         }
 
+        var server = settings.ServerUrl;
         // Asked again: the server may have turned E2EE back on while the user read the warning.
         var serverStatus = _deviceMgmt is null ? null : await _deviceMgmt.CheckE2EEStatusAsync();
+        settings = await _settingsService.GetSettingsAsync();
+        if (!string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(settings.ServerUrl, server, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Unencrypted sync not allowed: the account changed during the status check");
+            return false;
+        }
         if (serverStatus is not { IsEnabled: false })
         {
             if (serverStatus is not null)
@@ -184,7 +195,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         await _settingsService.SaveSettingsAsync(settings);
         _e2ee?.ClearCachedUmk();
         _logger.LogWarning("User allowed unencrypted sync for an account that previously required E2EE");
-        ConfirmPlaintextSync();
+        ConfirmServerE2EE(false);
         ClearE2EEDowngrade();
         return true;
     }
@@ -198,13 +209,26 @@ public class SyncClientService : ISyncClientService, IDisposable
 
         var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
         ThrowIfAccountChanged();
-        if (serverStatus is not { IsEnabled: false })
+        if (serverStatus is { IsEnabled: true })
         {
             ClearE2EEDowngrade();
+            ConfirmServerE2EE(true);
             return false;
         }
 
+        // Unknown is not "on": a push now could re-enable E2EE behind a reset this device has not yet seen.
+        if (serverStatus is null)
+        {
+            _logger.LogWarning("Could not determine server E2EE status while holding the key; skipping this sync cycle");
+            return true;
+        }
+
         _logger.LogWarning("Server reports E2EE off while this device holds the key; holding sync for the user");
+        if (!settings.E2EEDeviceRemovedNoticePending)
+        {
+            settings.E2EEDeviceRemovedNoticePending = true;
+            await _settingsService.SaveSettingsAsync(settings);
+        }
         NotifyE2EEDowngradeDetected();
         return true;
     }
@@ -299,7 +323,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         if (!isLoggedIn)
         {
-            _hasVerifiedServerE2EEStatus = false;
+            _confirmedServerE2EE = null;
             NotifyE2EEOnboardingCompleted();
             return;
         }
@@ -360,7 +384,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _syncGeneration++; // invalidate any in-flight cycle's pending re-arm
         _syncTimer?.Dispose();
         _syncTimer = null;
-        _hasVerifiedServerE2EEStatus = false;
+        _confirmedServerE2EE = null;
         _logger.LogInformation("Background sync stopped");
     }
 
@@ -496,7 +520,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             // E2EE may be on for the account from another device. Latch only a conclusive "off": an onboarding
             // device or an unreachable server must keep skipping cycles rather than pull ciphertext it cannot read.
-            if (!_hasVerifiedServerE2EEStatus && _deviceMgmt is not null && !settings.IsE2EEEnabled)
+            if (_confirmedServerE2EE != false && _deviceMgmt is not null && !settings.IsE2EEEnabled)
             {
                 var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
                 ThrowIfAccountChanged();
@@ -513,7 +537,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                     return null;
                 }
 
-                ConfirmPlaintextSync();
+                ConfirmServerE2EE(false);
             }
 
             var accessToken = await GetAccessTokenPastE2EEGateAsync();
@@ -635,7 +659,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                         NotifyE2EEOnboardingRequired();
                     return;
                 }
-                ConfirmPlaintextSync();
+                ConfirmServerE2EE(false);
             }
 
             var accessToken = await GetAccessTokenPastE2EEGateAsync();

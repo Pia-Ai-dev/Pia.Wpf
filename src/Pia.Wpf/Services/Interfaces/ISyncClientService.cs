@@ -35,11 +35,11 @@ public interface ISyncClientService
     /// <summary>The server reports E2EE off for an account this device knows required it; sync is held.</summary>
     bool IsE2EEDowngradeDetected { get; }
 
-    /// <summary>The server confirmed this session that the account's E2EE is off, so plaintext may go out.</summary>
-    bool IsPlaintextSyncConfirmed { get; }
+    /// <summary>The server confirmed this session the E2EE state this device syncs in (key held: on; no key: off).</summary>
+    bool IsServerE2EEStateConfirmed { get; }
 
-    /// <summary>Raised when <see cref="IsPlaintextSyncConfirmed"/> becomes true.</summary>
-    event EventHandler? PlaintextSyncConfirmed;
+    /// <summary>Raised when the server confirms an E2EE state.</summary>
+    event EventHandler? ServerE2EEStateConfirmed;
 
     /// <summary>Forgets that this account required E2EE, on the user's confirmation; false when the downgrade has since cleared.</summary>
     Task<bool> AllowUnencryptedSyncAsync(string accountId);
