@@ -11,6 +11,7 @@ using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
 using Xunit;
+using Pia.Shared.Auth;
 
 public class AccountDataServiceTests : IDisposable
 {
@@ -151,7 +152,7 @@ public class AccountDataServiceTests : IDisposable
     {
         _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
 
-        var outcome = await CreateSut().DeleteAsync("s3cret", Ct);
+        var outcome = await CreateSut().DeleteAsync(new ReauthenticationFields("s3cret"), Ct);
 
         Assert.Equal(AccountDeletionOutcome.Deleted, outcome);
         Assert.Equal(HttpMethod.Post, _handler.LastMethod);
@@ -159,6 +160,39 @@ public class AccountDataServiceTests : IDisposable
         using var body = JsonDocument.Parse(_handler.LastBody!);
         Assert.Equal("DELETE", body.RootElement.GetProperty("confirm").GetString());
         Assert.Equal("s3cret", body.RootElement.GetProperty("password").GetString());
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WithACode_SendsItBesideThePassword_AndNoEmptyRecoveryCode()
+    {
+        _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
+
+        await CreateSut().DeleteAsync(new ReauthenticationFields("pw", Code: "123456"), Ct);
+
+        using var body = JsonDocument.Parse(_handler.LastBody!);
+        Assert.Equal("123456", body.RootElement.GetProperty("code").GetString());
+        Assert.False(body.RootElement.TryGetProperty("recoveryCode", out _));
+    }
+
+    [Theory]
+    [InlineData("second_factor_required", AccountDeletionOutcome.SecondFactorRequired)]
+    [InlineData("code_already_used", AccountDeletionOutcome.CodeAlreadyUsed)]
+    [InlineData("invalid_code", AccountDeletionOutcome.InvalidCode)]
+    public async Task DeleteAsync_ReportsEachRecheckAnswer(string code, AccountDeletionOutcome expected)
+    {
+        _handler.Respond(HttpStatusCode.Unauthorized, Json($$"""{"error":"{{code}}","message":"m"}"""));
+
+        Assert.Equal(expected, await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
+    }
+
+    [Theory]
+    [InlineData("account_locked", AccountDeletionOutcome.AccountLocked)]
+    [InlineData("rate_limited", AccountDeletionOutcome.RateLimited)]
+    public async Task DeleteAsync_ReportsALockout(string code, AccountDeletionOutcome expected)
+    {
+        _handler.Respond(HttpStatusCode.TooManyRequests, Json($$"""{"error":"{{code}}","message":"m"}"""));
+
+        Assert.Equal(expected, await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
     }
 
     [Fact]
@@ -178,7 +212,7 @@ public class AccountDataServiceTests : IDisposable
         _handler.Respond(HttpStatusCode.Unauthorized,
             Json("""{"error":"invalid_password","message":"Incorrect password."}"""));
 
-        Assert.Equal(AccountDeletionOutcome.InvalidPassword, await CreateSut().DeleteAsync("wrong", Ct));
+        Assert.Equal(AccountDeletionOutcome.InvalidPassword, await CreateSut().DeleteAsync(new ReauthenticationFields("wrong"), Ct));
     }
 
     [Fact]
@@ -186,7 +220,7 @@ public class AccountDataServiceTests : IDisposable
     {
         _handler.Respond(HttpStatusCode.NotFound, Json("""{"error":"user_not_found"}"""));
 
-        Assert.Equal(AccountDeletionOutcome.Deleted, await CreateSut().DeleteAsync("pw", Ct));
+        Assert.Equal(AccountDeletionOutcome.Deleted, await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
     }
 
     [Fact]
@@ -194,7 +228,7 @@ public class AccountDataServiceTests : IDisposable
     {
         _handler.Respond(HttpStatusCode.NotFound, Json("""{"error":"user_not_found"}"""));
 
-        await CreateSut().DeleteAsync("pw", Ct);
+        await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct);
 
         Assert.DoesNotContain(_logger.Entries, e => e.Level >= LogLevel.Warning);
         Assert.Contains(_logger.Entries, e => e.Level == LogLevel.Information && e.Message.Contains("treating it as deleted"));
@@ -205,7 +239,7 @@ public class AccountDataServiceTests : IDisposable
     {
         _handler.Respond(HttpStatusCode.BadRequest, Json("""{"error":"invalid_password"}"""));
 
-        await CreateSut().DeleteAsync("wrong", Ct);
+        await CreateSut().DeleteAsync(new ReauthenticationFields("wrong"), Ct);
 
         Assert.Contains(_logger.Entries, e => e.Level == LogLevel.Warning && e.Message.Contains("refused: 400 invalid_password"));
     }
@@ -217,7 +251,7 @@ public class AccountDataServiceTests : IDisposable
     {
         _handler.Respond(status, Json(body));
 
-        Assert.Equal(AccountDeletionOutcome.Failed, await CreateSut().DeleteAsync("pw", Ct));
+        Assert.Equal(AccountDeletionOutcome.Failed, await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
     }
 
     [Theory]
@@ -228,7 +262,7 @@ public class AccountDataServiceTests : IDisposable
         _handler.FailNext(timedOut ? new TaskCanceledException("timed out") : new HttpRequestException("connection reset"));
         _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
 
-        var outcome = await CreateSut().DeleteAsync("pw", Ct);
+        var outcome = await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct);
 
         Assert.Equal(AccountDeletionOutcome.Deleted, outcome);
         Assert.Equal(2, _handler.Requests);
@@ -240,7 +274,7 @@ public class AccountDataServiceTests : IDisposable
         _handler.FailNext(new HttpRequestException("offline"));
         _handler.FailNext(new HttpRequestException("offline"));
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => CreateSut().DeleteAsync("pw", Ct));
+        await Assert.ThrowsAsync<HttpRequestException>(() => CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
         Assert.Equal(2, _handler.Requests);
     }
 

@@ -859,10 +859,29 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         var wasSyncing = _syncClientService.IsSyncActive;
         await _syncClientService.StopBackgroundSyncAndWaitAsync();
 
-        AccountDeletionOutcome outcome;
+        var outcome = AccountDeletionOutcome.Failed;
         try
         {
-            outcome = await _accountData.DeleteAsync(requiresPassword ? dialog.Password : null);
+            if (requiresPassword)
+            {
+                var (result, _) = await ReauthenticationFlow.RunAsync(
+                    _dialogService, _localizationService,
+                    async fields =>
+                    {
+                        outcome = await _accountData.DeleteAsync(fields);
+                        return AccountDeletionOutcomes.ToErrorCode(outcome);
+                    },
+                    dialog.Password);
+                if (result == ReauthenticationOutcome.Cancelled)
+                {
+                    if (wasSyncing) _syncClientService.StartBackgroundSync();
+                    return;
+                }
+            }
+            else
+            {
+                outcome = await _accountData.DeleteAsync(null);
+            }
         }
         catch (Exception ex)
         {
@@ -879,9 +898,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         }
 
         if (wasSyncing) _syncClientService.StartBackgroundSync();
-        var reason = outcome == AccountDeletionOutcome.InvalidPassword
-            ? "Sync_DeleteAccount_InvalidPassword"
-            : "Sync_DeleteAccount_Failed";
+        var reason = outcome switch
+        {
+            AccountDeletionOutcome.InvalidPassword => "Sync_DeleteAccount_InvalidPassword",
+            AccountDeletionOutcome.AccountLocked => "Reauth_AccountLocked",
+            AccountDeletionOutcome.RateLimited => "Reauth_RateLimited",
+            _ => "Sync_DeleteAccount_Failed",
+        };
         ShowAccountSnackbar("Sync_DeleteAccount", reason, Wpf.Ui.Controls.ControlAppearance.Danger);
     }
 
@@ -971,6 +994,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
             var name = DeviceNameDisplay.Sanitize(device.DeviceName);
             var displayName = name.Text.Length > 0 ? name.Text : _localizationService["Settings_E2EE_UnnamedDevice"];
+            var rejecting = false;
             try
             {
                 var fingerprint = _deviceKeys.ComputeFingerprint(device.AgreementPublicKey);
@@ -993,7 +1017,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                         _localizationService["Settings_E2EE_RejectDevice_Message"]);
                     if (reject)
                     {
-                        await _deviceManagement.RevokeDeviceAsync(device.DeviceId);
+                        rejecting = true;
+                        await RevokeWithReauthenticationAsync(device.DeviceId);
                     }
                 }
             }
@@ -1011,12 +1036,43 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                 {
                     DeviceRegistrationRejectedException rejection => rejection.UserMessage,
                     DeviceSignatureRefusedException => _localizationService["Settings_E2EE_SignatureRefused_Message"],
-                    _ => _localizationService.Format("Settings_E2EE_PendingDevices_ApproveFailed_Message", displayName),
+                    _ => _localizationService.Format(
+                        rejecting ? "Settings_E2EE_PendingDevices_RejectFailed_Message" : "Settings_E2EE_PendingDevices_ApproveFailed_Message",
+                        displayName),
                 };
                 await _dialogService.ShowMessageDialogAsync(
-                    _localizationService["Settings_E2EE_PendingDevices_ApproveFailed_Title"], message);
+                    _localizationService[rejecting ? "Settings_E2EE_PendingDevices_RejectFailed_Title" : "Settings_E2EE_PendingDevices_ApproveFailed_Title"],
+                    message);
             }
         }
+    }
+
+    private async Task RevokeWithReauthenticationAsync(string deviceId)
+    {
+        if (_authService.Provider != "local")
+        {
+            await _deviceManagement.RevokeDeviceAsync(deviceId);
+            return;
+        }
+
+        var (outcome, code) = await ReauthenticationFlow.RunAsync(
+            _dialogService, _localizationService,
+            async fields =>
+            {
+                try
+                {
+                    await _deviceManagement.RevokeDeviceAsync(deviceId, fields);
+                    return null;
+                }
+                catch (ReauthenticationRefusedException ex)
+                {
+                    return ex.Code;
+                }
+            });
+        if (outcome == ReauthenticationOutcome.Refused)
+            await _dialogService.ShowMessageDialogAsync(
+                _localizationService["Settings_E2EE_PendingDevices_RejectFailed_Title"],
+                ReauthenticationFlow.RefusalMessage(_localizationService, code));
     }
 
     // CanApprove is false once this device is no longer Active or signed in; Device is null when that request is settled.

@@ -11,6 +11,7 @@ using Pia.Services.Interfaces;
 using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
+using Pia.Shared.Auth;
 
 public class AccountSettingsAccountDataTests
 {
@@ -69,7 +70,7 @@ public class AccountSettingsAccountDataTests
     public async Task DeleteAccount_OnceTheServerDeleted_SignsOutAndStopsSyncing()
     {
         ConfirmDialogWith(password: "");
-        _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _accountData.DeleteAsync(Arg.Any<ReauthenticationFields?>(), Arg.Any<CancellationToken>())
             .Returns(AccountDeletionOutcome.Deleted);
 
         await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
@@ -77,7 +78,7 @@ public class AccountSettingsAccountDataTests
         Received.InOrder(() =>
         {
             _sync.StopBackgroundSyncAndWaitAsync();
-            _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+            _accountData.DeleteAsync(Arg.Any<ReauthenticationFields?>(), Arg.Any<CancellationToken>());
             _auth.LogoutAsync();
         });
         _sync.DidNotReceive().StartBackgroundSync();
@@ -91,7 +92,7 @@ public class AccountSettingsAccountDataTests
         _auth.Provider.Returns("local");
         _sync.IsSyncActive.Returns(true);
         ConfirmDialogWith(password: "wrong");
-        _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>()).Returns(outcome);
+        _accountData.DeleteAsync(Arg.Any<ReauthenticationFields?>(), Arg.Any<CancellationToken>()).Returns(outcome);
 
         await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
 
@@ -104,7 +105,7 @@ public class AccountSettingsAccountDataTests
     {
         _sync.IsSyncActive.Returns(true);
         ConfirmDialogWith(password: "");
-        _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _accountData.DeleteAsync(Arg.Any<ReauthenticationFields?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("offline"));
 
         await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
@@ -118,7 +119,7 @@ public class AccountSettingsAccountDataTests
     {
         _sync.IsSyncActive.Returns(false);
         ConfirmDialogWith(password: "");
-        _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _accountData.DeleteAsync(Arg.Any<ReauthenticationFields?>(), Arg.Any<CancellationToken>())
             .Returns(AccountDeletionOutcome.Failed);
 
         await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
@@ -135,7 +136,7 @@ public class AccountSettingsAccountDataTests
         await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
 
         Assert.True(dialog()!.RequiresPassword);
-        await _accountData.Received(1).DeleteAsync("s3cret", Arg.Any<CancellationToken>());
+        await _accountData.Received(1).DeleteAsync(Arg.Is<ReauthenticationFields?>(f => f != null && f.Password == "s3cret"), Arg.Any<CancellationToken>());
     }
 
     [Fact]

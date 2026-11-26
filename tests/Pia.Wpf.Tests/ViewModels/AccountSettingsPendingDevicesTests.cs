@@ -13,6 +13,7 @@ using Pia.Shared.E2EE;
 using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
+using Pia.Shared.Auth;
 
 /// <summary>The approval prompts stop once this device cannot approve, skip settled requests, and show failures from any view.</summary>
 public class AccountSettingsPendingDevicesTests
@@ -126,7 +127,82 @@ public class AccountSettingsPendingDevicesTests
         await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
 
         await _dialogs.Received(1).ShowMessageDialogAsync(
-            "Settings_E2EE_PendingDevices_ApproveFailed_Title", "Settings_E2EE_SignatureRefused_Message");
+            "Settings_E2EE_PendingDevices_RejectFailed_Title", "Settings_E2EE_SignatureRefused_Message");
+    }
+
+    [Fact]
+    public async Task RejectingFromALocalAccount_ConfirmsWithThePassword()
+    {
+        _auth.Provider.Returns("local");
+        _dialogs.ShowDeviceApprovalDialogAsync(Arg.Any<DeviceApprovalPrompt>()).Returns(false);
+        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _dialogs.ShowReauthenticationDialogAsync(Arg.Any<ReauthenticationViewModel>()).Returns(ci =>
+        {
+            ci.Arg<ReauthenticationViewModel>().Password = "pw";
+            return true;
+        });
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active), Device("a", DeviceStatus.Pending)));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).RevokeDeviceAsync("a", new ReauthenticationFields("pw"));
+        await _dialogs.DidNotReceive().ShowMessageDialogAsync(Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task RejectingFromALocalAccount_CancelledConfirmation_RevokesNothing()
+    {
+        _auth.Provider.Returns("local");
+        _dialogs.ShowDeviceApprovalDialogAsync(Arg.Any<DeviceApprovalPrompt>()).Returns(false);
+        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _dialogs.ShowReauthenticationDialogAsync(Arg.Any<ReauthenticationViewModel>()).Returns(false);
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active), Device("a", DeviceStatus.Pending)));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.DidNotReceiveWithAnyArgs().RevokeDeviceAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task RejectingFromALocalAccount_WhenLocked_SaysSoAndDoesNotSignOut()
+    {
+        _auth.Provider.Returns("local");
+        _dialogs.ShowDeviceApprovalDialogAsync(Arg.Any<DeviceApprovalPrompt>()).Returns(false);
+        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _dialogs.ShowReauthenticationDialogAsync(Arg.Any<ReauthenticationViewModel>()).Returns(ci =>
+        {
+            ci.Arg<ReauthenticationViewModel>().Password = "pw";
+            return true;
+        });
+        _deviceMgmt.RevokeDeviceAsync("a", Arg.Any<ReauthenticationFields?>())
+            .ThrowsAsync(new ReauthenticationRefusedException(ReauthenticationErrorCodes.AccountLocked));
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active), Device("a", DeviceStatus.Pending)));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowMessageDialogAsync(
+            "Settings_E2EE_PendingDevices_RejectFailed_Title", "Reauth_AccountLocked");
+        await _auth.DidNotReceive().LogoutAsync();
+    }
+
+    [Fact]
+    public async Task AFailedRejection_SaysTheRejectionFailed_NotTheApproval()
+    {
+        _loc.Format("Settings_E2EE_PendingDevices_RejectFailed_Message", Arg.Any<object[]>())
+            .Returns("reject-failed-body");
+        _dialogs.ShowDeviceApprovalDialogAsync(Arg.Any<DeviceApprovalPrompt>()).Returns(false);
+        _dialogs.ShowConfirmationDialogAsync(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+        _deviceMgmt.GetDevicesAsync().Returns(List(Device(OwnId, DeviceStatus.Active), Device("a", DeviceStatus.Pending)));
+        _deviceMgmt.RevokeDeviceAsync("a").ThrowsAsync(new HttpRequestException("500 Internal Server Error"));
+        var sut = CreateSut();
+
+        await sut.CheckForPendingDevicesCommand.ExecuteAsync(null);
+
+        await _dialogs.Received(1).ShowMessageDialogAsync(
+            "Settings_E2EE_PendingDevices_RejectFailed_Title", "reject-failed-body");
     }
 
     [Fact]

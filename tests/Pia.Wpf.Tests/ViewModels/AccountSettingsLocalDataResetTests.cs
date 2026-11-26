@@ -10,6 +10,7 @@ using Pia.Services.Interfaces;
 using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
+using Pia.Shared.Auth;
 
 public class AccountSettingsLocalDataResetTests
 {
@@ -136,7 +137,7 @@ public class AccountSettingsLocalDataResetTests
     public async Task DeletedAccount_SignsOutThenOffersClear()
     {
         _dialogs.ShowAccountDeletionDialogAsync(Arg.Any<AccountDeletionViewModel>()).Returns(true);
-        _accountData.DeleteAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _accountData.DeleteAsync(Arg.Any<ReauthenticationFields?>(), Arg.Any<CancellationToken>())
             .Returns(AccountDeletionOutcome.Deleted);
         Answer("LocalReset_Deleted_Title", DialogChoice.Secondary);
         var sut = CreateSut();

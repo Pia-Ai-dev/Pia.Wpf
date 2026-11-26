@@ -1,3 +1,4 @@
+using Pia.Shared.Auth;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -64,10 +65,14 @@ public sealed class AccountDataService : IAccountDataService
         }
     }
 
-    public async Task<AccountDeletionOutcome> DeleteAsync(string? password, CancellationToken ct = default)
+    public async Task<AccountDeletionOutcome> DeleteAsync(ReauthenticationFields? reauth, CancellationToken ct = default)
     {
+        var body = new Dictionary<string, string?> { ["confirm"] = "DELETE", ["password"] = reauth?.Password };
+        if (reauth?.Code is { } totp) body["code"] = totp;
+        if (reauth?.RecoveryCode is { } recoveryCode) body["recoveryCode"] = recoveryCode;
+
         using var client = await CreateAuthorizedClientAsync(TimeSpan.FromSeconds(30));
-        using var response = await PostDeleteAsync(client, new { confirm = "DELETE", password }, ct);
+        using var response = await PostDeleteAsync(client, body, ct);
 
         if (response.IsSuccessStatusCode)
             return AccountDeletionOutcome.Deleted;
@@ -80,7 +85,7 @@ public sealed class AccountDataService : IAccountDataService
         }
 
         _logger.LogWarning("Account deletion refused: {Status} {Code}", (int)response.StatusCode, code);
-        return code == "invalid_password" ? AccountDeletionOutcome.InvalidPassword : AccountDeletionOutcome.Failed;
+        return AccountDeletionOutcomes.FromErrorCode(code);
     }
 
     private async Task<HttpResponseMessage> PostDeleteAsync(HttpClient client, object body, CancellationToken ct)

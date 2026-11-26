@@ -9,6 +9,7 @@ using NSubstitute;
 using Pia.Models;
 using Pia.Services.E2EE;
 using Pia.Services.Interfaces;
+using Pia.Shared.Auth;
 using Pia.Shared.E2EE;
 using Xunit;
 
@@ -26,6 +27,50 @@ public class DeviceManagementServiceSignedCallsTests
 
         await _signer.Received(1).SendAsync(
             Arg.Any<HttpClient>(), HttpMethod.Post, "api/e2ee/devices/dev-x/revoke", null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RevokingWithARecheck_SignsThePasswordAndCodeAsTheBody()
+    {
+        Answer(HttpStatusCode.OK);
+        byte[]? sent = null;
+        _signer.SendAsync(
+                Arg.Any<HttpClient>(), HttpMethod.Post, "api/e2ee/devices/dev-x/revoke",
+                Arg.Do<byte[]?>(b => sent = b), Arg.Any<CancellationToken>())
+            .Returns(_ => new HttpResponseMessage(HttpStatusCode.OK));
+
+        await CreateSut().RevokeDeviceAsync("dev-x", new ReauthenticationFields("pw", Code: "123456"));
+
+        using var body = JsonDocument.Parse(sent!);
+        Assert.Equal("pw", body.RootElement.GetProperty("password").GetString());
+        Assert.Equal("123456", body.RootElement.GetProperty("code").GetString());
+        Assert.False(body.RootElement.TryGetProperty("recoveryCode", out _));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, ReauthenticationErrorCodes.InvalidPassword)]
+    [InlineData(HttpStatusCode.Unauthorized, ReauthenticationErrorCodes.SecondFactorRequired)]
+    [InlineData(HttpStatusCode.Unauthorized, ReauthenticationErrorCodes.CodeAlreadyUsed)]
+    [InlineData(HttpStatusCode.Unauthorized, ReauthenticationErrorCodes.InvalidCode)]
+    [InlineData(HttpStatusCode.TooManyRequests, ReauthenticationErrorCodes.AccountLocked)]
+    [InlineData(HttpStatusCode.TooManyRequests, ReauthenticationErrorCodes.RateLimited)]
+    public async Task Revoking_RefusedByTheRecheck_SaysWhich(HttpStatusCode status, string code)
+    {
+        Answer(status, code);
+
+        var ex = await Assert.ThrowsAsync<ReauthenticationRefusedException>(
+            () => CreateSut().RevokeDeviceAsync("dev-x", new ReauthenticationFields("pw")));
+
+        Assert.Equal(code, ex.Code);
+    }
+
+    [Fact]
+    public async Task Revoking_ABare401_StaysAnHttpFailure()
+    {
+        Answer(HttpStatusCode.Unauthorized);
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => CreateSut().RevokeDeviceAsync("dev-x", new ReauthenticationFields("pw")));
     }
 
     [Theory]
