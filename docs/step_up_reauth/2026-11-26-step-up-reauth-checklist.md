@@ -36,13 +36,18 @@ standalone value, unblocks a High.
 ## B — confirming protected calls (re-scope after G1)
 
 - [x] **B1 Sync reset.** Confirmed: the client never calls `DELETE /api/sync/reset`; nothing to wire. *Deps:* — · *Effort:* XS · *Value:* Med
-- [ ] **B2 Password where the server asks.** Send the password on every password-guarded call and handle 401 (wrong) / 429 (locked) / 403 (SSO) without signing out. *Deps:* G1 · *Effort:* S–M · *Value:* High
+- [x] **B2 Password where the server asks.** Send the password on every password-guarded call and handle 401 (wrong) / 429 (locked) / 403 (SSO) without signing out. *Deps:* G1 · *Effort:* S–M · *Value:* High
 - [ ] **B3 SSO confirmation.** Per G2. *Deps:* G1, G2 · *Effort:* M–L · *Value:* High
-- [ ] **B4 Refused revoke message.** A refused device revoke no longer reports "approve failed". *Deps:* — · *Effort:* XS · *Value:* Med
+- [x] **B4 Refused revoke message.** A refused device revoke no longer reports "approve failed". *Deps:* — · *Effort:* XS · *Value:* Med
 
 ## Suggested order
 
 B1 (done by inspection) → B4 → A3 → A5 → A2 → A4 → A6 → A1/A7 on a build → B2/B3 once G1 is answered.
+
+## Branches
+
+- Group A: `feature/e2ee-reset-plaintext-paths`.
+- B2 and B4: `feature/reauth-password-confirm`; ships in the same client release as the device-request signer.
 
 ## Owner decisions
 
