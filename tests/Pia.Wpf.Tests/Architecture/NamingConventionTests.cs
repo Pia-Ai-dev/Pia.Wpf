@@ -34,7 +34,7 @@ public class NamingConventionTests
             "Indexer", "Watcher", "Renderer", "Clusterer", "Extractor", "Collector",
             "Planner", "Orchestrator", "Coordinator", "Verifier", "Launcher", "Executor", "Context",
             "Provisioner", "Session", "Sessions", "Resampler", "Reconciler", "Pool", "Throttle", "Cache",
-            "Lease", "Recorder", "Numbering", "Downloader",
+            "Lease", "Slot", "Recorder", "Numbering", "Downloader",
             // An audit trail and a user-facing state signal are named for what they are; "…LogService" would
             // name the layer instead of the thing.
             "Log", "Indicator",
