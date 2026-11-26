@@ -1,7 +1,10 @@
-﻿using System.IO;
+﻿using System.Diagnostics;
+using System.IO;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
+using Pia.Helpers;
+using Pia.Logging;
 using Pia.Models;
 using Pia.Paths;
 using Pia.Services.Assets;
@@ -117,10 +120,10 @@ public class TtsService : ITtsService, IDisposable
     private readonly Random _random = new();
 
     private OfflineTts? _tts;
-    private CancellationTokenSource? _playbackCts;
+    private readonly PlaybackSlot _playback = new();
     private string? _currentVoiceKey;
     private bool _isReady;
-    private bool _isPlaying;
+    private readonly PlayingIndicator _playingIndicator;
     private bool _disposed;
 
     // Filler support
@@ -133,18 +136,10 @@ public class TtsService : ITtsService, IDisposable
     public bool HasFillers => _currentVoiceKey is not null && _fillerCache.ContainsKey(_currentVoiceKey)
                               && _fillerCache[_currentVoiceKey].Count > 0;
 
-    public bool IsPlaying
-    {
-        get => _isPlaying;
-        private set
-        {
-            if (_isPlaying != value)
-            {
-                _isPlaying = value;
-                IsPlayingChanged?.Invoke(this, value);
-            }
-        }
-    }
+    public bool IsPlaying => _playback.IsPlaying;
+
+    // Delivered under the indicator's lock; the only subscriber just assigns a property.
+    private void RaiseIsPlayingChanged() => _playingIndicator.Notify();
 
     public event EventHandler<bool>? IsPlayingChanged;
 
@@ -153,6 +148,8 @@ public class TtsService : ITtsService, IDisposable
         _logger = logger;
         _settingsService = settingsService;
         _downloader = downloader;
+        _playingIndicator = new PlayingIndicator(
+            () => _playback.IsPlaying, playing => IsPlayingChanged?.Invoke(this, playing));
 
         Directory.CreateDirectory(TtsVoiceCatalog.VoicesDirectory);
     }
@@ -222,7 +219,9 @@ public class TtsService : ITtsService, IDisposable
 
     public async Task SpeakAsync(string text, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        var stopwatch = Stopwatch.StartNew();
+        var sentences = SentenceChunker.Split(SpeakableText.FromMarkdown(text ?? string.Empty));
+        if (sentences.Count == 0)
             return;
 
         if (!_isReady)
@@ -236,34 +235,11 @@ public class TtsService : ITtsService, IDisposable
 
         Stop();
 
-        _playbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var token = _playbackCts.Token;
-
-        try
-        {
-            IsPlaying = true;
-
-            var audioBytes = await SynthesizeAsync(text, token);
-
-            if (token.IsCancellationRequested)
-                return;
-
-            await PlayWavBytesAsync(audioBytes, token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected when Stop() is called
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "TTS playback failed");
-        }
-        finally
-        {
-            _playbackCts?.Dispose();
-            _playbackCts = null;
-            IsPlaying = false;
-        }
+        var characters = sentences.Sum(s => s.Length);
+        await PlaySentencesAsync(sentences.ToAsyncEnumerable(), cancellationToken, () =>
+            _logger.LogInformation(
+                "Read aloud: {SentenceCount} sentences, {CharacterCount} chars, first chunk after {FirstChunkMs} ms",
+                sentences.Count, characters, stopwatch.ElapsedMilliseconds));
     }
 
     public async Task SpeakChunkedAsync(IAsyncEnumerable<string> sentences, CancellationToken cancellationToken = default)
@@ -274,11 +250,23 @@ public class TtsService : ITtsService, IDisposable
             return;
         }
 
-        // Only stop previous speech playback, keep filler running
-        _playbackCts?.Cancel();
+        // The filler keeps running until the first chunk is ready.
+        await PlaySentencesAsync(sentences, cancellationToken, onFirstChunk: null);
+    }
 
-        _playbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var token = _playbackCts.Token;
+    private Task PlaySentencesAsync(
+        IAsyncEnumerable<string> sentences, CancellationToken cancellationToken, Action? onFirstChunk) =>
+        PlaySentencesAsync(sentences, cancellationToken, onFirstChunk, SynthesizeAsync, PlayWavBytesAsync);
+
+    internal async Task PlaySentencesAsync(
+        IAsyncEnumerable<string> sentences,
+        CancellationToken cancellationToken,
+        Action? onFirstChunk,
+        Func<string, CancellationToken, Task<byte[]>> synthesize,
+        Func<byte[], CancellationToken, Task> play)
+    {
+        var mine = _playback.Begin(cancellationToken);
+        var token = mine.Token;
 
         var channel = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(3)
         {
@@ -287,12 +275,13 @@ public class TtsService : ITtsService, IDisposable
             SingleWriter = true
         });
 
+        Task? producerTask = null;
         try
         {
-            IsPlaying = true;
+            _playback.Start(mine);
+            RaiseIsPlayingChanged();
 
-            // Producer: synthesize sentences to WAV bytes and write to channel
-            var producerTask = Task.Run(async () =>
+            producerTask = Task.Run(async () =>
             {
                 try
                 {
@@ -301,7 +290,8 @@ public class TtsService : ITtsService, IDisposable
                         if (string.IsNullOrWhiteSpace(sentence))
                             continue;
 
-                        var audioBytes = await SynthesizeAsync(sentence, token);
+                        _logger.SensitiveDebug("TTS synthesizing sentence: {Sentence}", sentence);
+                        var audioBytes = await synthesize(sentence, token);
                         await channel.Writer.WriteAsync(audioBytes, token);
                     }
                 }
@@ -316,25 +306,23 @@ public class TtsService : ITtsService, IDisposable
                 }
             }, token);
 
-            // Consumer: play WAV bytes sequentially
             var isFirstChunk = true;
             await foreach (var audioBytes in channel.Reader.ReadAllAsync(token))
             {
                 if (isFirstChunk)
                 {
-                    // Stop filler right when the first response audio is ready
                     _fillerCts?.Cancel();
+                    onFirstChunk?.Invoke();
                     isFirstChunk = false;
                 }
 
-                await PlayWavBytesAsync(audioBytes, token);
+                await play(audioBytes, token);
             }
 
             await producerTask;
         }
         catch (OperationCanceledException)
         {
-            // Expected when Stop() is called
         }
         catch (Exception ex)
         {
@@ -342,9 +330,24 @@ public class TtsService : ITtsService, IDisposable
         }
         finally
         {
-            _playbackCts?.Dispose();
-            _playbackCts = null;
-            IsPlaying = false;
+            // A failed playback leaves the producer blocked on the full channel unless it is cancelled here.
+            mine.Cancel();
+            await ObserveProducerAsync(producerTask);
+            _playback.End(mine);
+            RaiseIsPlayingChanged();
+        }
+    }
+
+    private static async Task ObserveProducerAsync(Task? producerTask)
+    {
+        if (producerTask is null)
+            return;
+        try
+        {
+            await producerTask;
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -538,9 +541,9 @@ public class TtsService : ITtsService, IDisposable
 
     public void Stop()
     {
-        _playbackCts?.Cancel();
+        _playback.Cancel();
         _fillerCts?.Cancel();
-        IsPlaying = false;
+        RaiseIsPlayingChanged();
     }
 
     public Task<IReadOnlyList<TtsVoice>> GetAvailableVoicesAsync(CancellationToken cancellationToken = default)
