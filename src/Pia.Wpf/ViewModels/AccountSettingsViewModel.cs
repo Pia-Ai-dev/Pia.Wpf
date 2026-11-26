@@ -924,7 +924,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
 
         try
         {
-            await _deviceManagement.RevokeDeviceAsync(previous);
+            if (!await RevokeWithReauthenticationAsync(previous, "Settings_E2EE_RemovePreviousInstallation_Failed_Title"))
+                return;
         }
         catch (System.Net.Http.HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -1018,7 +1019,7 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
                     if (reject)
                     {
                         rejecting = true;
-                        await RevokeWithReauthenticationAsync(device.DeviceId);
+                        await RevokeWithReauthenticationAsync(device.DeviceId, "Settings_E2EE_PendingDevices_RejectFailed_Title");
                     }
                 }
             }
@@ -1047,12 +1048,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
         }
     }
 
-    private async Task RevokeWithReauthenticationAsync(string deviceId)
+    // False when the user cancelled or the re-check refused; the refusal has been shown under failureTitleKey.
+    private async Task<bool> RevokeWithReauthenticationAsync(string deviceId, string failureTitleKey)
     {
         if (_authService.Provider != "local")
         {
             await _deviceManagement.RevokeDeviceAsync(deviceId);
-            return;
+            return true;
         }
 
         var (outcome, code) = await ReauthenticationFlow.RunAsync(
@@ -1071,8 +1073,8 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             });
         if (outcome == ReauthenticationOutcome.Refused)
             await _dialogService.ShowMessageDialogAsync(
-                _localizationService["Settings_E2EE_PendingDevices_RejectFailed_Title"],
-                ReauthenticationFlow.RefusalMessage(_localizationService, code));
+                _localizationService[failureTitleKey], ReauthenticationFlow.RefusalMessage(_localizationService, code));
+        return outcome == ReauthenticationOutcome.Succeeded;
     }
 
     // CanApprove is false once this device is no longer Active or signed in; Device is null when that request is settled.

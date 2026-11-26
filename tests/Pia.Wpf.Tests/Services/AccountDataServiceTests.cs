@@ -262,10 +262,22 @@ public class AccountDataServiceTests : IDisposable
         _handler.FailNext(timedOut ? new TaskCanceledException("timed out") : new HttpRequestException("connection reset"));
         _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
 
-        var outcome = await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct);
+        var outcome = await CreateSut().DeleteAsync(null, Ct);
 
         Assert.Equal(AccountDeletionOutcome.Deleted, outcome);
         Assert.Equal(2, _handler.Requests);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WithARecheck_IsNeverResent()
+    {
+        _handler.FailNext(new HttpRequestException("connection reset"));
+        _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => CreateSut().DeleteAsync(new ReauthenticationFields("pw", Code: "123456"), Ct));
+
+        Assert.Equal(1, _handler.Requests);
     }
 
     [Fact]
@@ -274,7 +286,7 @@ public class AccountDataServiceTests : IDisposable
         _handler.FailNext(new HttpRequestException("offline"));
         _handler.FailNext(new HttpRequestException("offline"));
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
+        await Assert.ThrowsAsync<HttpRequestException>(() => CreateSut().DeleteAsync(null, Ct));
         Assert.Equal(2, _handler.Requests);
     }
 

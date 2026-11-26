@@ -72,7 +72,7 @@ public sealed class AccountDataService : IAccountDataService
         if (reauth?.RecoveryCode is { } recoveryCode) body["recoveryCode"] = recoveryCode;
 
         using var client = await CreateAuthorizedClientAsync(TimeSpan.FromSeconds(30));
-        using var response = await PostDeleteAsync(client, body, ct);
+        using var response = await PostDeleteAsync(client, body, replayOnNoAnswer: reauth is null, ct);
 
         if (response.IsSuccessStatusCode)
             return AccountDeletionOutcome.Deleted;
@@ -88,18 +88,28 @@ public sealed class AccountDataService : IAccountDataService
         return AccountDeletionOutcomes.FromErrorCode(code);
     }
 
-    private async Task<HttpResponseMessage> PostDeleteAsync(HttpClient client, object body, CancellationToken ct)
+    // A replayed re-check would count a wrong password twice or burn a used code, so only a bare delete is resent.
+    private async Task<HttpResponseMessage> PostDeleteAsync(
+        HttpClient client, object body, bool replayOnNoAnswer, CancellationToken ct)
     {
         try
         {
-            return await client.PostAsJsonAsync("auth/account/delete", body, ct);
+            return await client.SendAsync(DeleteRequest(body), ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (replayOnNoAnswer
+            && ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             // Deleting twice is harmless, and the second answer says whether the first went through.
             _logger.LogWarning(ex, "Account deletion got no answer; sending it once more");
-            return await client.PostAsJsonAsync("auth/account/delete", body, ct);
+            return await client.SendAsync(DeleteRequest(body), ct);
         }
+    }
+
+    private static HttpRequestMessage DeleteRequest(object body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "auth/account/delete") { Content = JsonContent.Create(body) };
+        request.Options.Set(Infrastructure.RateLimitRetryHandler.SendOnce, true);
+        return request;
     }
 
     private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response, CancellationToken ct)

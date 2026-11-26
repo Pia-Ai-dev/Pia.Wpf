@@ -19,6 +19,9 @@ public class RateLimitRetryHandler : DelegatingHandler
     // has never answered 429, and an agent run pays it once per LLM round.
     private static readonly TimeSpan MinRequestInterval = TimeSpan.FromMilliseconds(100);
 
+    /// <summary>Set on a request that must go out once: a credential re-check or a single-use device signature.</summary>
+    public static readonly HttpRequestOptionsKey<bool> SendOnce = new("Pia.SendOnce");
+
     public RateLimitRetryHandler(ILogger<RateLimitRetryHandler> logger)
     {
         _logger = logger;
@@ -31,6 +34,13 @@ public class RateLimitRetryHandler : DelegatingHandler
 
         // Proactive throttle: enforce a minimum gap between requests to the same endpoint group
         await ThrottleAsync(lane, cancellationToken);
+
+        if (request.Options.TryGetValue(SendOnce, out var once) && once)
+        {
+            var single = await base.SendAsync(request, cancellationToken);
+            _lastRequestTime[lane] = DateTime.UtcNow;
+            return single;
+        }
 
         // Buffer request content for potential retries
         var (contentBytes, contentType) = await BufferRequestAsync(request);

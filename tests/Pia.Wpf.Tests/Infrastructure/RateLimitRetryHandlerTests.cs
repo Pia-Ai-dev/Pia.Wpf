@@ -62,6 +62,20 @@ public class RateLimitRetryHandlerTests
         Assert.Equal(2, inner.Attempts);
     }
 
+    [Fact]
+    public async Task SendAsync_ASendOnceRequest_IsNotReplayedOn429()
+    {
+        var inner = new RateLimitedOnceHandler(TimeSpan.FromMilliseconds(10));
+        var invoker = CreateInvoker(inner);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"https://{UniqueHost()}/auth/account/delete");
+        request.Options.Set(RateLimitRetryHandler.SendOnce, true);
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
+        Assert.Equal(1, inner.Attempts);
+    }
+
     /// <summary>The measured failure: a burst of background sync PUTs queued ahead of one interactive LLM
     /// call through a single per-host FIFO, and the call timed out before it was ever sent.</summary>
     [Fact]
