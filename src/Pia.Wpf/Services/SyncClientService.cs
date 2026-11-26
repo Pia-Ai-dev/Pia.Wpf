@@ -148,7 +148,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     public async Task<bool> AllowUnencryptedSyncAsync(string accountId)
     {
         var settings = await _settingsService.GetSettingsAsync();
-        if (!IsE2EEDowngradeDetected || settings.IsE2EEEnabled || !settings.IsE2EERequiredForAccount()
+        if (!IsE2EEDowngradeDetected || !(settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount())
             || !string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation("Unencrypted sync not allowed: the downgrade has cleared or the account changed");
@@ -168,10 +168,32 @@ public class SyncClientService : ISyncClientService, IDisposable
             return false;
         }
 
+        settings.ForgetE2EEKey();
         settings.UnmarkE2EERequiredForAccount();
         await _settingsService.SaveSettingsAsync(settings);
+        _e2ee?.ClearCachedUmk();
         _logger.LogWarning("User allowed unencrypted sync for an account that previously required E2EE");
         ClearE2EEDowngrade();
+        return true;
+    }
+
+    // A server-side reset deletes the account's E2EE state while this device still holds the key; an
+    // encrypted push would then silently re-enable E2EE with a key no other device has.
+    private async Task<bool> BlocksKeyHeldAccountResetAsync(AppSettings settings)
+    {
+        if (!settings.IsE2EEEnabled || _e2ee?.IsReady() != true || _deviceMgmt is null)
+            return false;
+
+        var serverStatus = await _deviceMgmt.CheckE2EEStatusAsync();
+        ThrowIfAccountChanged();
+        if (serverStatus is not { IsEnabled: false })
+        {
+            ClearE2EEDowngrade();
+            return false;
+        }
+
+        _logger.LogWarning("Server reports E2EE off while this device holds the key; holding sync for the user");
+        NotifyE2EEDowngradeDetected();
         return true;
     }
 
@@ -457,7 +479,7 @@ public class SyncClientService : ISyncClientService, IDisposable
                 return null;
             }
 
-            if (await BlocksMarkedAccountWithoutKeyAsync(settings))
+            if (await BlocksKeyHeldAccountResetAsync(settings) || await BlocksMarkedAccountWithoutKeyAsync(settings))
                 return null;
 
             // E2EE may be on for the account from another device. Latch only a conclusive "off": an onboarding

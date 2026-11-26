@@ -26,7 +26,7 @@ standalone value, unblocks a High.
 ## A — #7902
 
 - [ ] **A1 Reproduce.** Run the SySS scenario (reset from another session, server says off) on a current build and record the result on #7902. *Deps:* — · *Effort:* XS · *Value:* Enabler
-- [ ] **A2 Status while the key is held.** Ask `api/e2ee/status` on a cadence also while the key is held; `false` stops pushes and raises the notice until the user decides. *Deps:* G3 · *Effort:* S · *Value:* High
+- [x] **A2 Status while the key is held.** Ask `api/e2ee/status` on a cadence also while the key is held; `false` stops pushes and raises the notice until the user decides. *Deps:* G3 · *Effort:* S · *Value:* High
 - [x] **A3 Mark before forgetting.** `RaiseCurrentDeviceRevokedAsync` marks the account E2EE-required before it forgets the key. *Deps:* — · *Effort:* XS · *Value:* High
 - [ ] **A4 Unknown status holds plaintext.** First-sync migration and chat sync hold plaintext for an unmarked account while the server status is unknown or `false` after this device held a key. *Deps:* A3 · *Effort:* S · *Value:* High
 - [x] **A5 Refuse inbound plaintext.** With the key held, a pulled plaintext settings row or assistant chat is refused, not applied. *Deps:* — · *Effort:* S · *Value:* High
