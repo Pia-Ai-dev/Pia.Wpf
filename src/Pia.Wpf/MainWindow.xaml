@@ -227,7 +227,6 @@
 
     <controls:DialogOverlayHost x:Name="RootDialogOverlayHost"
                                 Panel.ZIndex="20" />
-    <controls:ImageViewerOverlay x:Name="RootImageViewer" Visibility="Collapsed" />
     <ui:ContentDialogHost x:Name="RootContentDialogPresenter" />
     <ui:SnackbarPresenter x:Name="RootSnackbarPresenter"
                           HorizontalAlignment="Left"
@@ -235,12 +234,25 @@
                           Margin="0,36,0,0"
                           Panel.ZIndex="17" />
     <flow:FlowView x:Name="RootFlowView" Panel.ZIndex="16" />
+    <!-- Same ZIndex as the flow rail; document order puts it above the rail and below the title bar. -->
+    <controls:ImageViewerOverlay x:Name="RootImageViewer" Visibility="Collapsed" Panel.ZIndex="16" />
     <ui:TitleBar x:Name="TitleBar"
+                 Panel.ZIndex="16"
                  Title="{Binding WindowTitle}"
                  CloseWindowByDoubleClickOnIcon="True">
       <ui:TitleBar.Icon>
         <piactl:PiaTileImageIcon Source="{StaticResource PiaMarkImage}"
-                                 Width="18" Height="18" />
+                                 Width="18" Height="18">
+          <piactl:PiaTileImageIcon.Style>
+            <Style TargetType="piactl:PiaTileImageIcon">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding Visibility, ElementName=RootImageViewer}" Value="Visible">
+                  <Setter Property="Visibility" Value="Hidden" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </piactl:PiaTileImageIcon.Style>
+        </piactl:PiaTileImageIcon>
       </ui:TitleBar.Icon>
     </ui:TitleBar>
   </Grid>
