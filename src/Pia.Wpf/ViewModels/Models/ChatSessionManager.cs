@@ -910,6 +910,25 @@ public sealed partial class ChatSessionManager : IChatSessionManager, IDisposabl
                 return true;
             }
 
+            // The composer's gate saw an earlier provider; this is the one the request is built with.
+            if (attachments is { Count: > 0 } && provider.ProviderType != AiProviderType.PiaCloud)
+            {
+                _logger.LogInformation(
+                    "Chat {ChatId}: refusing {ImageCount} image(s) for provider {ProviderId} of type {ProviderType}",
+                    session.Id, attachments.Count, provider.Id, provider.ProviderType);
+                assistantMessage.Content = _localizationService["Msg_File_ImageProviderUnsupported"];
+                assistantMessage.IsStreaming = false;
+                session.SetState(ChatState.Error);
+                session.RaiseRunFailed(new RunFailedEventArgs
+                {
+                    Kind = RunFailureKind.Generic,
+                    Title = _localizationService["Msg_Error"],
+                    Message = _localizationService["Msg_File_ImageProviderUnsupported"],
+                });
+                await FinalizeFailedSetupAsync(session);
+                return true;
+            }
+
             if (persona.ReasoningEffort.HasValue)
             {
                 provider = provider.Clone();
