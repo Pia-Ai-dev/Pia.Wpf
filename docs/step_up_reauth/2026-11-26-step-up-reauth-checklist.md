@@ -27,15 +27,15 @@ standalone value, unblocks a High.
 
 - [ ] **A1 Reproduce.** Run the SySS scenario (reset from another session, server says off) on a current build and record the result on #7902. *Deps:* — · *Effort:* XS · *Value:* Enabler
 - [ ] **A2 Status while the key is held.** Ask `api/e2ee/status` on a cadence also while the key is held; `false` stops pushes and raises the notice until the user decides. *Deps:* G3 · *Effort:* S · *Value:* High
-- [ ] **A3 Mark before forgetting.** `RaiseCurrentDeviceRevokedAsync` marks the account E2EE-required before it forgets the key. *Deps:* — · *Effort:* XS · *Value:* High
+- [x] **A3 Mark before forgetting.** `RaiseCurrentDeviceRevokedAsync` marks the account E2EE-required before it forgets the key. *Deps:* — · *Effort:* XS · *Value:* High
 - [ ] **A4 Unknown status holds plaintext.** First-sync migration and chat sync hold plaintext for an unmarked account while the server status is unknown or `false` after this device held a key. *Deps:* A3 · *Effort:* S · *Value:* High
-- [ ] **A5 Refuse inbound plaintext.** With the key held, a pulled plaintext settings row or assistant chat is refused, not applied. *Deps:* — · *Effort:* S · *Value:* High
+- [x] **A5 Refuse inbound plaintext.** With the key held, a pulled plaintext settings row or assistant chat is refused, not applied. *Deps:* — · *Effort:* S · *Value:* High
 - [ ] **A6 Main-window notice.** A notice naming the cause ("account reset or device removed"), independent of the settings view model, that survives a restart until acknowledged. *Deps:* A2 · *Effort:* M · *Value:* High
 - [ ] **A7 Onboarding after reset.** Verify the dead end (new registration auto-activated, no wrap) and fix or rule it out. *Deps:* A1 · *Effort:* S · *Value:* Med
 
 ## B — confirming protected calls (re-scope after G1)
 
-- [ ] **B1 Sync reset.** Confirmed: the client never calls `DELETE /api/sync/reset`; nothing to wire. *Deps:* — · *Effort:* XS · *Value:* Med
+- [x] **B1 Sync reset.** Confirmed: the client never calls `DELETE /api/sync/reset`; nothing to wire. *Deps:* — · *Effort:* XS · *Value:* Med
 - [ ] **B2 Password where the server asks.** Send the password on every password-guarded call and handle 401 (wrong) / 429 (locked) / 403 (SSO) without signing out. *Deps:* G1 · *Effort:* S–M · *Value:* High
 - [ ] **B3 SSO confirmation.** Per G2. *Deps:* G1, G2 · *Effort:* M–L · *Value:* High
 - [ ] **B4 Refused revoke message.** A refused device revoke no longer reports "approve failed". *Deps:* — · *Effort:* XS · *Value:* Med

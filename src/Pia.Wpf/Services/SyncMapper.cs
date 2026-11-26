@@ -901,6 +901,10 @@ public class SyncMapper
             return;
         }
 
+        // A server that switched the account to plaintext must not be able to write this device's settings.
+        if (IsE2EEActive)
+            throw new CryptographicException("Incoming settings are plaintext while E2EE is active; refused.");
+
         target.DefaultOutputAction = (OutputAction)sync.DefaultOutputAction;
         target.DefaultTemplateId = sync.DefaultTemplateId;
         target.WhisperModel = (WhisperModelSize)sync.WhisperModel;
@@ -1156,6 +1160,9 @@ public class SyncMapper
     /// (E2EE inactive, missing userId). The sync service catches this and skips the row
     /// rather than persisting an empty plaintext chat to local storage.
     /// </exception>
+    internal bool IsPlaintextRefused(SyncAssistantChat wire) =>
+        IsE2EEActive && (wire.EncryptedPayload is null || wire.WrappedDek is null);
+
     public SyncAssistantChat FromSyncAssistantChat(SyncAssistantChat wire, string? userId = null)
     {
         if (wire.EncryptedPayload is not null && wire.WrappedDek is not null)
@@ -1189,6 +1196,9 @@ public class SyncMapper
                 // EncryptedPayload / WrappedDek deliberately null — local store holds plaintext.
             };
         }
+
+        if (IsPlaintextRefused(wire))
+            throw new InvalidOperationException("Incoming chat is plaintext while E2EE is active; refused.");
 
         return new SyncAssistantChat
         {

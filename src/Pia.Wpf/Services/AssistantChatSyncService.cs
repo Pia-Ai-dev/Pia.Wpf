@@ -451,7 +451,18 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                 {
                     // Decrypt server response into plaintext space so the merge can
                     // reason about Title / Messages / ProviderId.
-                    var serverChat = _mapper.FromSyncAssistantChat(serverWire, userId);
+                    // A plaintext server copy while E2EE is active is refused content: keep only its bookkeeping.
+                    var serverChat = _mapper.IsPlaintextRefused(serverWire)
+                        ? new SyncAssistantChat
+                        {
+                            Id = serverWire.Id,
+                            SchemaVersion = serverWire.SchemaVersion,
+                            CreatedAt = serverWire.CreatedAt,
+                            UpdatedAt = serverWire.UpdatedAt,
+                            LastAccessedAt = serverWire.LastAccessedAt,
+                            WindowMode = serverWire.WindowMode,
+                        }
+                        : _mapper.FromSyncAssistantChat(serverWire, userId);
                     var merged = MergeForConflict(serverChat, chat);
                     _logger.LogInformation(
                         "Cloud upsert 409 for chat {ChatId}; merging and retrying", chat.Id);
