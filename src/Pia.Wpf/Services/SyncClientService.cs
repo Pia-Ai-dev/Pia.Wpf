@@ -1982,6 +1982,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         {
             var settings = await _settingsService.GetSettingsAsync();
             settings.ForgetE2EEKey();
+            settings.E2EEDeviceRemovedNoticePending = true;
             await _settingsService.SaveSettingsAsync(settings);
         }
         finally

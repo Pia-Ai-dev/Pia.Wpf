@@ -30,13 +30,15 @@ public class MainWindowViewModelTests
     private readonly IPolicyService _policy = Substitute.For<IPolicyService>();
     private readonly ITourTargetCollector _tourTargets = Substitute.For<ITourTargetCollector>();
     private readonly IClipboardService _clipboard = Substitute.For<IClipboardService>();
+    private readonly ISyncClientService _sync = Substitute.For<ISyncClientService>();
+    private readonly AppSettings _stored = new();
 
     private MainWindowViewModel CreateSut(WindowMode mode, ILogger<MainWindowViewModel>? logger = null)
     {
         if (SynchronizationContext.Current is null)
             SynchronizationContext.SetSynchronizationContext(new SynchronizationContext());
 
-        _settings.GetSettingsAsync().Returns(new AppSettings());
+        _settings.GetSettingsAsync().Returns(_stored);
 
         return new MainWindowViewModel(
             logger ?? NullLogger<MainWindowViewModel>.Instance,
@@ -47,7 +49,7 @@ public class MainWindowViewModelTests
             Substitute.For<IUpdateService>(),
             Substitute.For<IProviderService>(),
             _auth,
-            Substitute.For<ISyncClientService>(),
+            _sync,
             new AssignmentSurfaceCache(_assignments, TimeProvider.System,
                 NullLogger<AssignmentSurfaceCache>.Instance),
             Substitute.For<IKnowledgeManagerSurfaceCache>(),
@@ -289,4 +291,44 @@ public class MainWindowViewModelTests
         Assert.DoesNotContain("Anna", warning.Message);
     }
 #endif
+
+    [Fact]
+    public async Task APendingDeviceRemovedNotice_ShowsAfterARestart_InsteadOfTheGenericSetupBar()
+    {
+        _stored.E2EEDeviceRemovedNoticePending = true;
+        _sync.IsE2EEOnboardingRequired.Returns(true);
+        _assignments.GetSurfaceAsync(Arg.Any<CancellationToken>()).Returns(AssignmentSurface.Hidden);
+        var vm = CreateSut(WindowMode.Assistant);
+
+        await InitializeAsync(vm);
+
+        Assert.True(vm.IsE2EEDeviceRemovedNoticeVisible);
+        Assert.False(vm.ShowE2EEOnboardingBar);
+    }
+
+    [Fact]
+    public async Task DismissingTheDeviceRemovedNotice_ClearsItForGood()
+    {
+        _stored.E2EEDeviceRemovedNoticePending = true;
+        _assignments.GetSurfaceAsync(Arg.Any<CancellationToken>()).Returns(AssignmentSurface.Hidden);
+        var vm = CreateSut(WindowMode.Assistant);
+        await InitializeAsync(vm);
+
+        await vm.DismissE2EEDeviceRemovedNoticeCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsE2EEDeviceRemovedNoticeVisible);
+        Assert.False(_stored.E2EEDeviceRemovedNoticePending);
+        await _settings.Received().SaveSettingsAsync(_stored);
+    }
+
+    [Fact]
+    public void ARevocationSavedWhileRunning_ShowsTheNotice()
+    {
+        var vm = CreateSut(WindowMode.Assistant);
+
+        _settings.SettingsChanged += Raise.Event<EventHandler<AppSettings>>(_settings,
+            new AppSettings { E2EEDeviceRemovedNoticePending = true });
+
+        Assert.True(SpinWait.SpinUntil(() => vm.IsE2EEDeviceRemovedNoticeVisible, TimeSpan.FromSeconds(5)));
+    }
 }

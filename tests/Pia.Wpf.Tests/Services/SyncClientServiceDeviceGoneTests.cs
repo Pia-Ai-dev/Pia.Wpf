@@ -72,6 +72,7 @@ public class SyncClientServiceDeviceGoneTests
         Assert.Null(stored.E2EEEncryptedUmk);
         Assert.Equal(0, stored.E2EEUmkVersion);
         Assert.False(stored.E2EERecoveryConfigured);
+        Assert.True(stored.E2EEDeviceRemovedNoticePending);
         Assert.Equal(new byte[32], cached);
         Assert.True(sut.PendingDeviceRevocation?.WasRevoked);
         Assert.True(sut.IsE2EEOnboardingRequired);

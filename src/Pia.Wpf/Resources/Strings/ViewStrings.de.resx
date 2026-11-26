@@ -1039,7 +1039,9 @@
   <data name="Settings_E2EE_OffNotice_Message" xml:space="preserve"><value>Was du mit diesem Konto synchronisierst, liegt unverschlüsselt auf dem Pia-Server. Aktiviere die Ende-zu-Ende-Verschlüsselung, damit nur deine Geräte die Inhalte lesen können.</value></data>
   <data name="Settings_E2EE_OffNotice_Enable" xml:space="preserve"><value>Verschlüsselung aktivieren</value></data>
   <data name="Settings_E2EE_OffNotice_Dismiss" xml:space="preserve"><value>Nicht jetzt</value></data>
-  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Synchronisierung angehalten: Laut Server ist dieses Konto nicht mehr Ende-zu-Ende-verschlüsselt.</value></data>
+  <data name="E2EE_Downgrade_Bar_Message" xml:space="preserve"><value>Synchronisierung angehalten: Laut Server ist dieses Konto nicht mehr Ende-zu-Ende-verschlüsselt. Es wurde möglicherweise aus einer anderen Sitzung zurückgesetzt.</value></data>
+  <data name="E2EE_DeviceRemoved_Bar_Message" xml:space="preserve"><value>Dieses Gerät wurde aus deinem Konto entfernt, oder das Konto wurde zurückgesetzt. Die Synchronisierung ist angehalten, bis du die Verschlüsselung neu einrichtest.</value></data>
+  <data name="E2EE_DeviceRemoved_Bar_Dismiss" xml:space="preserve"><value>Ausblenden</value></data>
   <data name="E2EE_Downgrade_Bar_Action" xml:space="preserve"><value>Prüfen</value></data>
   <data name="E2EE_Downgrade_Title" xml:space="preserve"><value>Verschlüsselung auf dem Server ausgeschaltet</value></data>
   <data name="E2EE_Downgrade_Message" xml:space="preserve"><value>Dieses Konto war Ende-zu-Ende-verschlüsselt, der Server meldet es jetzt aber als unverschlüsselt. Die Synchronisierung ist angehalten, damit deine Daten nicht im Klartext gesendet werden. Wenn niemand die Verschlüsselung dieses Kontos absichtlich zurückgesetzt hat, mach nicht weiter und wende dich an deine Administration.</value></data>

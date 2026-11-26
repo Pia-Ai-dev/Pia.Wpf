@@ -66,6 +66,10 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
     private bool _isE2EEDowngradeDetected;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowE2EEOnboardingBar))]
+    private bool _isE2EEDeviceRemovedNoticeVisible;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowSetupOverlay))]
     private bool _isSetupRequired;
 
@@ -84,7 +88,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
 
     public bool ShowUpdateBar => IsUpdateReady && !IsUpdateBarDismissed;
 
-    public bool ShowE2EEOnboardingBar => IsE2EEOnboardingRequired;
+    public bool ShowE2EEOnboardingBar => IsE2EEOnboardingRequired && !IsE2EEDeviceRemovedNoticeVisible;
 
     public string WindowTitle => $"Pia AI Assistant (v{AppVersion})";
 
@@ -178,6 +182,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
 
         Theme = settings.Theme;
         _themeService.ApplyTheme(Theme);
+        IsE2EEDeviceRemovedNoticeVisible = settings.E2EEDeviceRemovedNoticePending;
 
         UpdateHotkeyHints(settings);
 
@@ -261,6 +266,7 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
             }
 
             UpdateHotkeyHints(settings);
+            IsE2EEDeviceRemovedNoticeVisible = settings.E2EEDeviceRemovedNoticePending;
 
             // Provider defaults may have changed — re-check setup state
             _ = RefreshSetupRequiredAsync();
@@ -485,6 +491,22 @@ public partial class MainWindowViewModel : UiThreadViewModel, IDisposable
         }
     }
 #endif
+
+    [RelayCommand]
+    private async Task DismissE2EEDeviceRemovedNoticeAsync()
+    {
+        IsE2EEDeviceRemovedNoticeVisible = false;
+        try
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            settings.E2EEDeviceRemovedNoticePending = false;
+            await _settingsService.SaveSettingsAsync(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save the dismissed device-removed notice");
+        }
+    }
 
     [RelayCommand]
     private void OpenE2EEOnboarding()

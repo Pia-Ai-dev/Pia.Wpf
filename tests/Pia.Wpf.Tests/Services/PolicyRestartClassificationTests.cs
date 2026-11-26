@@ -118,6 +118,7 @@ public class PolicyRestartClassificationTests
         nameof(AppSettings.DefaultProviderId),
         nameof(AppSettings.DraftText),
         nameof(AppSettings.E2EEDeviceId),
+        nameof(AppSettings.E2EEDeviceRemovedNoticePending),
         nameof(AppSettings.E2EEEncryptedUmk),
         nameof(AppSettings.E2EERecoveryConfigured),
         nameof(AppSettings.E2EERequiredAccountIds),
@@ -192,7 +193,7 @@ public class PolicyRestartClassificationTests
     {
         Assert.True(
             LiveAlready.Length == 52 &&LiveWithWork.Length == 24
-                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 32,
+                && RestartRequired.Length == 13 && NoRuntimeEffect.Length == 33,
             "the four sets are written out in full, found "
                 + $"{LiveAlready.Length}/{LiveWithWork.Length}/{RestartRequired.Length}/{NoRuntimeEffect.Length}");
 
