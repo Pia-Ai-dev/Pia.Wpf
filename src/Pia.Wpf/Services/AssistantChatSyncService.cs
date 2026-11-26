@@ -497,6 +497,12 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                     await _syncClient.NotifyE2EENotEnrolledAsync(userId);
                     return false;
                 }
+                if (errorBody.Contains(E2EEErrorCodes.E2EEDeviceNotActive))
+                {
+                    _logger.LogWarning("Server refused chat {ChatId}: this device is not active for the account", chat.Id);
+                    await _syncClient.NotifyE2EEDeviceNotActiveAsync(userId);
+                    return false;
+                }
             }
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)

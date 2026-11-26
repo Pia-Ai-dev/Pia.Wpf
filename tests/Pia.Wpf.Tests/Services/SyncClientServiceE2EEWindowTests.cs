@@ -86,6 +86,27 @@ public class SyncClientServiceE2EEWindowTests
     }
 
     [Fact]
+    public async Task PushChanges_On403E2EEDeviceNotActive_DropsTheKeyAndAsksToRejoin()
+    {
+        var settings = new AppSettings { IsE2EEEnabled = true };
+        _settingsService.GetSettingsAsync().Returns(settings);
+        var sut = CreateSut();
+        _pluginService.GetPendingPreferenceChanges().Returns(
+            [new SyncPluginPreference { PluginId = Guid.NewGuid(), IsEnabled = true }]);
+        var handler = new CapturingHandler(HttpStatusCode.Forbidden, """{"error":"e2ee_device_not_active"}""");
+        using var client = new HttpClient(handler);
+
+        var result = await InvokePushChangesAsync(sut, client, settings);
+
+        Assert.False(result.PushSucceeded);
+        Assert.False(settings.IsE2EEEnabled);
+        Assert.NotNull(sut.PendingDeviceRevocation);
+        Assert.False(sut.PendingDeviceRevocation!.WasRevoked);
+        Assert.True(sut.IsE2EEOnboardingRequired);
+        Assert.False(sut.IsE2EEDowngradeDetected);
+    }
+
+    [Fact]
     public async Task PushChanges_On403E2EENotEnrolled_HoldsSyncAsAReset()
     {
         var settings = new AppSettings();

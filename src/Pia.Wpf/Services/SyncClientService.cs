@@ -246,6 +246,24 @@ public class SyncClientService : ISyncClientService, IDisposable
         await HoldForEncryptedWriteRefusalAsync(settings);
     }
 
+    public async Task NotifyE2EEDeviceNotActiveAsync(string? accountId)
+    {
+        var settings = await _settingsService.GetSettingsAsync();
+        if (accountId is null || !string.Equals(settings.SyncUserId, accountId, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Ignoring a refused encrypted write: it was sent for another account");
+            return;
+        }
+        await RaiseDeviceNotActiveAsync();
+    }
+
+    // Another device holds the account's current key, so this one rejoins by approval or recovery code, not a new setup.
+    private async Task RaiseDeviceNotActiveAsync()
+    {
+        _logger.LogWarning("Server refused an encrypted write: this device is not active for the account; rejoin required");
+        await RaiseCurrentDeviceRevokedAsync(wasRevoked: false);
+    }
+
     private async Task HoldForEncryptedWriteRefusalAsync(AppSettings settings)
     {
         _logger.LogWarning("Server refused an encrypted write: the account has no enrolled device; holding sync for the user");
@@ -2042,6 +2060,10 @@ public class SyncClientService : ISyncClientService, IDisposable
         else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EENotEnrolled)
         {
             await HoldForEncryptedWriteRefusalAsync(settings);
+        }
+        else if ((int)response.StatusCode == 403 && code == E2EEErrorCodes.E2EEDeviceNotActive)
+        {
+            await RaiseDeviceNotActiveAsync();
         }
     }
 

@@ -419,6 +419,26 @@ public class AssistantChatSyncServiceTests
     }
 
     [Fact]
+    public async Task SendUpsert_On403E2EEDeviceNotActive_ReportsIt()
+    {
+        _settings.GetSettingsAsync().Returns(new AppSettings
+        {
+            ServerUrl = ServerUrl,
+            SyncUserId = UserId,
+            SyncEnabled = true,
+            IsE2EEEnabled = true,
+        });
+        var chat = SampleChat();
+        _handler.SetPut("/api/v1/chats/" + chat.Id, HttpStatusCode.Forbidden, """{"error":"e2ee_device_not_active"}""");
+
+        var sut = CreateSut(NewE2EEMapper());
+        await InvokeSendUpsertAsync(sut, chat);
+
+        await _syncClient.Received(1).NotifyE2EEDeviceNotActiveAsync(UserId);
+        await _syncClient.DidNotReceive().NotifyE2EENotEnrolledAsync(Arg.Any<string?>());
+    }
+
+    [Fact]
     public async Task SendUpsert_On403E2EENotEnrolled_ReportsTheReset()
     {
         _settings.GetSettingsAsync().Returns(new AppSettings

@@ -61,6 +61,9 @@ public interface ISyncClientService
     /// <summary>The server refused an encrypted write sent for <paramref name="accountId"/>; ignored once another account is current.</summary>
     Task NotifyE2EENotEnrolledAsync(string? accountId);
 
+    /// <summary>The server refused an encrypted write because this device is not active; ignored once another account is current.</summary>
+    Task NotifyE2EEDeviceNotActiveAsync(string? accountId);
+
     /// <summary>Drops the key of an account the server confirms reset, so first-device setup can run; false otherwise.</summary>
     Task<bool> ReleaseHeldKeyForNewSetupAsync(string accountId);
 
