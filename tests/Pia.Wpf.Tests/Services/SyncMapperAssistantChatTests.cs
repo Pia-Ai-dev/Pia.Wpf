@@ -266,4 +266,34 @@ public class SyncMapperAssistantChatTests
         Assert.Throws<InvalidOperationException>(
             () => mapper.FromSyncAssistantChat(wire, UserId));
     }
+
+    [Fact]
+    public void FromSync_RefusesPlaintextChat_WhileE2EEActive()
+    {
+        var mapper = E2EEMapper();
+
+        Assert.Throws<InvalidOperationException>(
+            () => mapper.FromSyncAssistantChat(SampleChat(), UserId));
+    }
+
+    [Fact]
+    public void ApplySyncSettings_RefusesPlaintextSettings_WhileE2EEActive()
+    {
+        var mapper = E2EEMapper();
+        var target = new AppSettings { AssistantDefaultWorkingDirectory = @"D:\mine" };
+        var injected = new SyncSettings { AssistantDefaultWorkingDirectory = @"C:\" };
+
+        Assert.Throws<System.Security.Cryptography.CryptographicException>(
+            () => mapper.ApplySyncSettings(injected, target, UserId));
+        Assert.Equal(@"D:\mine", target.AssistantDefaultWorkingDirectory);
+    }
+
+    [Fact]
+    public void ApplySyncSettings_AcceptsPlaintextSettings_WithoutE2EE()
+    {
+        var target = new AppSettings();
+        PlainMapper().ApplySyncSettings(new SyncSettings { AssistantDefaultWorkingDirectory = @"C:\work" }, target);
+
+        Assert.Equal(@"C:\work", target.AssistantDefaultWorkingDirectory);
+    }
 }

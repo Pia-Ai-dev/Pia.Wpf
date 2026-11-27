@@ -119,6 +119,47 @@
           </Grid>
         </Border>
 
+        <Border Background="{DynamicResource SystemFillColorCriticalBrush}"
+                Padding="12,6"
+                Visibility="{Binding IsE2EEDeviceRemovedNoticeVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:SymbolIcon Grid.Column="0"
+                           Symbol="ShieldError24"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0"/>
+
+            <TextBlock Grid.Column="1"
+                       VerticalAlignment="Center"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       AutomationProperties.AutomationId="E2EE_DeviceRemoved_Message"
+                       Text="{loc:Str E2EE_DeviceRemoved_Bar_Message}"/>
+
+            <ui:Button Grid.Column="2"
+                       Content="{loc:Str E2EE_Onboarding_Bar_Action}"
+                       Command="{Binding OpenE2EEOnboardingCommand}"
+                       AutomationProperties.AutomationId="E2EE_DeviceRemoved_SetUp"
+                       Appearance="Danger"
+                       Margin="8,0,0,0"
+                       Padding="12,4"/>
+
+            <ui:Button Grid.Column="3"
+                       Content="{loc:Str E2EE_DeviceRemoved_Bar_Dismiss}"
+                       Command="{Binding DismissE2EEDeviceRemovedNoticeCommand}"
+                       AutomationProperties.AutomationId="E2EE_DeviceRemoved_Dismiss"
+                       Appearance="Secondary"
+                       Margin="8,0,0,0"
+                       Padding="12,4"/>
+          </Grid>
+        </Border>
+
         <!-- E2EE onboarding required bar -->
         <Border Background="{DynamicResource SystemFillColorCautionBrush}"
                 Padding="12,6"

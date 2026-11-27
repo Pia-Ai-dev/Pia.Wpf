@@ -29,6 +29,12 @@ public static class E2EEErrorCodes
     /// <summary>The account is E2EE-enabled, so plaintext writes are refused.</summary>
     public const string E2EERequired = "e2ee_required";
 
+    /// <summary>The account has E2EE off and no Active device, so an encrypted write would follow a reset.</summary>
+    public const string E2EENotEnrolled = "e2ee_not_enrolled";
+
+    /// <summary>The account has an Active device but this one is not it, so it must rejoin before writing encrypted data.</summary>
+    public const string E2EEDeviceNotActive = "e2ee_device_not_active";
+
     /// <summary>The onboarding session is spent, invalid or expired.</summary>
     public const string InvalidOnboardingSession = "invalid_onboarding_session";
 

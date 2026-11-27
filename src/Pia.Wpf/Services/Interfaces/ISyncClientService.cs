@@ -35,6 +35,12 @@ public interface ISyncClientService
     /// <summary>The server reports E2EE off for an account this device knows required it; sync is held.</summary>
     bool IsE2EEDowngradeDetected { get; }
 
+    /// <summary>The server confirmed this session the E2EE state this device syncs in (key held: on; no key: off).</summary>
+    bool IsServerE2EEStateConfirmed { get; }
+
+    /// <summary>Raised when the server confirms an E2EE state.</summary>
+    event EventHandler? ServerE2EEStateConfirmed;
+
     /// <summary>Forgets that this account required E2EE, on the user's confirmation; false when the downgrade has since cleared.</summary>
     Task<bool> AllowUnencryptedSyncAsync(string accountId);
 
@@ -51,6 +57,15 @@ public interface ISyncClientService
     /// the first sync cycle.
     /// </summary>
     void NotifyE2EEOnboardingRequired();
+
+    /// <summary>The server refused an encrypted write sent for <paramref name="accountId"/>; ignored once another account is current.</summary>
+    Task NotifyE2EENotEnrolledAsync(string? accountId);
+
+    /// <summary>The server refused an encrypted write because this device is not active; ignored once another account is current.</summary>
+    Task NotifyE2EEDeviceNotActiveAsync(string? accountId);
+
+    /// <summary>Drops the key of an account the server confirms reset, so first-device setup can run; false otherwise.</summary>
+    Task<bool> ReleaseHeldKeyForNewSetupAsync(string accountId);
 
     /// <summary>
     /// Raised when the sync cycle detects a pending device waiting for approval.

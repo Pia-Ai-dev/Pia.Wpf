@@ -9,6 +9,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pia.Services.Interfaces;
+using Pia.Shared.E2EE;
 using Pia.Shared.Models;
 
 namespace Pia.Services;
@@ -98,7 +99,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatsChanged += OnChatsChanged;
         _chatService.ChatAccessed += OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted += OnEncryptedMigrationCompleted;
-        _syncClient.E2EEDowngradeChanged += OnE2EEDowngradeChanged;
+        _syncClient.E2EEDowngradeChanged += OnHeldChatsMayGo;
+        _syncClient.ServerE2EEStateConfirmed += OnHeldChatsMayGo;
         return base.StartAsync(cancellationToken);
     }
 
@@ -107,7 +109,8 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         _chatService.ChatsChanged -= OnChatsChanged;
         _chatService.ChatAccessed -= OnChatAccessed;
         _syncClient.EncryptedMigrationCompleted -= OnEncryptedMigrationCompleted;
-        _syncClient.E2EEDowngradeChanged -= OnE2EEDowngradeChanged;
+        _syncClient.E2EEDowngradeChanged -= OnHeldChatsMayGo;
+        _syncClient.ServerE2EEStateConfirmed -= OnHeldChatsMayGo;
         try
         {
             await base.StopAsync(cancellationToken);
@@ -151,7 +154,7 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
 
     // Allowing unencrypted sync releases the chats the missing-key hold dropped, live or backfill; nothing else would
     // retry them.
-    private void OnE2EEDowngradeChanged(object? sender, EventArgs e)
+    private void OnHeldChatsMayGo(object? sender, EventArgs e)
     {
         if (_syncClient.IsE2EEDowngradeDetected) return;
         _requeueHeldRequested = true;
@@ -447,11 +450,22 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
             if (response.StatusCode == HttpStatusCode.Conflict && !retried)
             {
                 var serverWire = await TryReadAsync(response, ct);
-                if (serverWire is not null)
+                if (serverWire is not null && serverWire.Id == chat.Id)
                 {
                     // Decrypt server response into plaintext space so the merge can
                     // reason about Title / Messages / ProviderId.
-                    var serverChat = _mapper.FromSyncAssistantChat(serverWire, userId);
+                    // A plaintext server copy while E2EE is active is refused content: keep only its bookkeeping.
+                    var serverChat = _mapper.IsPlaintextRefused(serverWire)
+                        ? new SyncAssistantChat
+                        {
+                            Id = serverWire.Id,
+                            SchemaVersion = serverWire.SchemaVersion,
+                            CreatedAt = serverWire.CreatedAt,
+                            UpdatedAt = serverWire.UpdatedAt,
+                            LastAccessedAt = serverWire.LastAccessedAt,
+                            WindowMode = serverWire.WindowMode,
+                        }
+                        : _mapper.FromSyncAssistantChat(serverWire, userId);
                     var merged = MergeForConflict(serverChat, chat);
                     _logger.LogInformation(
                         "Cloud upsert 409 for chat {ChatId}; merging and retrying", chat.Id);
@@ -477,6 +491,18 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
                     _syncClient.NotifyE2EEOnboardingRequired();
                     return false;
                 }
+                if (errorBody.Contains(E2EEErrorCodes.E2EENotEnrolled))
+                {
+                    _logger.LogWarning("Server refused chat {ChatId}: the account was reset", chat.Id);
+                    await _syncClient.NotifyE2EENotEnrolledAsync(userId);
+                    return false;
+                }
+                if (errorBody.Contains(E2EEErrorCodes.E2EEDeviceNotActive))
+                {
+                    _logger.LogWarning("Server refused chat {ChatId}: this device is not active for the account", chat.Id);
+                    await _syncClient.NotifyE2EEDeviceNotActiveAsync(userId);
+                    return false;
+                }
             }
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
@@ -489,15 +515,32 @@ public sealed class AssistantChatSyncService : BackgroundService, IChatSyncFlush
         }
     }
 
-    // Without the key the mapper would send the chat in plaintext; it goes out encrypted after onboarding.
+    // Plaintext waits for the sync client's server check; ciphertext waits out a reported reset, which it would undo.
     private async Task<bool> HoldsForMissingKeyAsync(Guid chatId)
     {
-        var settings = await _settingsService.GetSettingsAsync();
-        if (_mapper.IsE2EEActive || !(settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount()))
-            return false;
+        if (_syncClient.IsE2EEDowngradeDetected)
+        {
+            _logger.LogInformation("Holding chat {ChatId}: the server reports E2EE off for this account", chatId);
+            return true;
+        }
 
-        _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chatId);
-        return true;
+        if (!_mapper.IsE2EEActive)
+        {
+            var settings = await _settingsService.GetSettingsAsync();
+            if (settings.IsE2EEEnabled || settings.IsE2EERequiredForAccount())
+            {
+                _logger.LogInformation("Holding chat {ChatId}: the account requires E2EE and this device has no key", chatId);
+                return true;
+            }
+        }
+
+        if (!_syncClient.IsServerE2EEStateConfirmed)
+        {
+            _logger.LogInformation("Holding chat {ChatId}: the server has not yet confirmed the account's E2EE state", chatId);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

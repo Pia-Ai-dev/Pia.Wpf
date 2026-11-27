@@ -368,6 +368,12 @@
                      Foreground="{DynamicResource PiaDangerBrush}"
                      Command="{Binding AllowUnencryptedSyncCommand}"
                      AutomationProperties.AutomationId="Settings_Account_E2EEDowngrade_AllowUnencrypted"/>
+          <ui:Button Content="{loc:Str E2EE_Downgrade_SetUpAgain}"
+                     Appearance="Primary"
+                     Margin="0,8,0,0"
+                     Command="{Binding SetUpE2EEAfterResetCommand}"
+                     Visibility="{Binding IsE2EEEnabled, Converter={StaticResource BooleanToVisibilityConverter}}"
+                     AutomationProperties.AutomationId="Settings_Account_E2EEDowngrade_SetUpAgain"/>
         </StackPanel>
       </Border>
 

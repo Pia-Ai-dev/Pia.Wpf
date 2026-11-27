@@ -573,6 +573,12 @@ public class AppSettings
     public int E2EEUmkVersion { get; set; }
     public bool E2EERecoveryConfigured { get; set; }
 
+    // Kept until the user dismisses it, so the cause survives a restart.
+    public bool E2EEDeviceRemovedNoticePending { get; set; }
+
+    // The user dismissed the notice for the current reset; cleared once the server reports E2EE on again.
+    public bool E2EEResetNoticeAcknowledged { get; set; }
+
     /// <summary>Drops this device's copy of the account key and the state that says it can be used.</summary>
     public void ForgetE2EEKey()
     {
@@ -635,6 +641,8 @@ public class AppSettings
     {
         // First, while the account id still names the key's owner; the server keeps this device's wrapped copy.
         ForgetE2EEKey();
+        E2EEDeviceRemovedNoticePending = false;
+        E2EEResetNoticeAcknowledged = false;
         SyncEnabled = false;
         EncryptedAccessToken = null;
         EncryptedRefreshToken = null;
