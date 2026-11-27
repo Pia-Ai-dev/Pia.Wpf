@@ -1,9 +1,11 @@
+using Pia.Shared.Auth;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Pia.Infrastructure;
 using Pia.Logging;
 using Pia.Services.Interfaces;
@@ -64,37 +66,66 @@ public sealed class AccountDataService : IAccountDataService
         }
     }
 
-    public async Task<AccountDeletionOutcome> DeleteAsync(string? password, CancellationToken ct = default)
+    public async Task<AccountDeletionOutcome> DeleteAsync(ReauthenticationFields? reauth, CancellationToken ct = default)
     {
-        using var client = await CreateAuthorizedClientAsync(TimeSpan.FromSeconds(30));
-        using var response = await PostDeleteAsync(client, new { confirm = "DELETE", password }, ct);
+        var body = new Dictionary<string, string?> { ["confirm"] = "DELETE", ["password"] = reauth?.Password };
+        if (reauth?.Code is { } totp) body["code"] = totp;
+        if (reauth?.RecoveryCode is { } recoveryCode) body["recoveryCode"] = recoveryCode;
 
-        if (response.IsSuccessStatusCode)
-            return AccountDeletionOutcome.Deleted;
-
-        var code = await ReadErrorCodeAsync(response, ct);
-        if (code == "user_not_found")
-        {
-            _logger.LogInformation("Account deletion: the server no longer has the account; treating it as deleted");
-            return AccountDeletionOutcome.Deleted;
-        }
-
-        _logger.LogWarning("Account deletion refused: {Status} {Code}", (int)response.StatusCode, code);
-        return code == "invalid_password" ? AccountDeletionOutcome.InvalidPassword : AccountDeletionOutcome.Failed;
-    }
-
-    private async Task<HttpResponseMessage> PostDeleteAsync(HttpClient client, object body, CancellationToken ct)
-    {
+        var hasReauth = reauth is not null;
+        using var client = await CreateAuthorizedClientAsync(
+            TimeSpan.FromSeconds(30), hasReauth ? HttpClientNames.NoRedirect : Options.DefaultName);
+        HttpResponseMessage response;
         try
         {
-            return await client.PostAsJsonAsync("auth/account/delete", body, ct);
+            response = await PostDeleteAsync(client, body, sendOnce: hasReauth, ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
+            _logger.LogWarning(ex, "Account deletion got no answer; its outcome is unknown");
+            return AccountDeletionOutcome.Unknown;
+        }
+
+        using (response)
+        {
+            if (response.IsSuccessStatusCode)
+                return AccountDeletionOutcome.Deleted;
+
+            var code = await ReadErrorCodeAsync(response, ct);
+            if (code == "user_not_found")
+            {
+                _logger.LogInformation("Account deletion: the server no longer has the account; treating it as deleted");
+                return AccountDeletionOutcome.Deleted;
+            }
+
+            _logger.LogWarning("Account deletion refused: {Status} {Code}", (int)response.StatusCode, code);
+            return AccountDeletionOutcomes.FromErrorCode(code);
+        }
+    }
+
+    // A replayed re-check would count a wrong password twice or burn a used code, so only a bare delete is resent.
+    private async Task<HttpResponseMessage> PostDeleteAsync(
+        HttpClient client, object body, bool sendOnce, CancellationToken ct)
+    {
+        try
+        {
+            return await client.SendAsync(DeleteRequest(body, sendOnce), ct);
+        }
+        catch (Exception ex) when (!sendOnce
+            && ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
             // Deleting twice is harmless, and the second answer says whether the first went through.
             _logger.LogWarning(ex, "Account deletion got no answer; sending it once more");
-            return await client.PostAsJsonAsync("auth/account/delete", body, ct);
+            return await client.SendAsync(DeleteRequest(body, sendOnce), ct);
         }
+    }
+
+    private static HttpRequestMessage DeleteRequest(object body, bool sendOnce)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "auth/account/delete") { Content = JsonContent.Create(body) };
+        if (sendOnce)
+            request.Options.Set(RateLimitRetryHandler.SendOnce, true);
+        return request;
     }
 
     private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage response, CancellationToken ct)
@@ -110,13 +141,13 @@ public sealed class AccountDataService : IAccountDataService
         }
     }
 
-    private async Task<HttpClient> CreateAuthorizedClientAsync(TimeSpan timeout)
+    private async Task<HttpClient> CreateAuthorizedClientAsync(TimeSpan timeout, string clientName = "")
     {
         var serverUrl = (await _settings.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(serverUrl))
             throw new InvalidOperationException("Server URL not configured");
 
-        var client = _httpFactory.CreateClient();
+        var client = _httpFactory.CreateClient(clientName);
         // Without the trailing slash a relative request path would replace the URL's last segment.
         client.BaseAddress = new Uri(serverUrl + "/");
         client.DefaultRequestHeaders.Authorization =

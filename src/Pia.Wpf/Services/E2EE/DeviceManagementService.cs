@@ -9,6 +9,7 @@ using Pia.Logging;
 using Pia.Models;
 using Pia.Services.Interfaces;
 using Pia.Shared.E2EE;
+using Pia.Shared.Auth;
 
 namespace Pia.Services.E2EE;
 
@@ -510,14 +511,41 @@ public class DeviceManagementService : IDeviceManagementService
     private static Task<string?> ReadErrorCodeAsync(HttpResponseMessage response) =>
         E2EEErrorBody.ReadCodeAsync(response);
 
-    public async Task RevokeDeviceAsync(string deviceId)
+    public async Task RevokeDeviceAsync(string deviceId, ReauthenticationFields? reauth = null)
     {
-        using var client = await CreateAuthorizedClientAsync();
+        using var client = await CreateAuthorizedClientAsync(
+            reauth is null ? Microsoft.Extensions.Options.Options.DefaultName : Infrastructure.HttpClientNames.NoRedirect);
         using var response = await _signer.SendAsync(
-            client, HttpMethod.Post, $"api/e2ee/devices/{deviceId}/revoke", null);
+            client, HttpMethod.Post, $"api/e2ee/devices/{deviceId}/revoke", ReauthenticationBody(reauth));
         await ThrowIfSignatureRefusedAsync(response);
+        await ThrowIfReauthenticationRefusedAsync(response);
         response.EnsureSuccessStatusCode();
         _logger.LogInformation("Revoked device {DeviceId}", deviceId);
+    }
+
+    private static byte[]? ReauthenticationBody(ReauthenticationFields? reauth)
+    {
+        if (reauth is null)
+            return null;
+        var body = new Dictionary<string, string?> { ["password"] = reauth.Password };
+        if (reauth.Code is { } code) body["code"] = code;
+        if (reauth.RecoveryCode is { } recoveryCode) body["recoveryCode"] = recoveryCode;
+        return JsonSerializer.SerializeToUtf8Bytes(body);
+    }
+
+    // A re-check 401 means the password was wrong, never that the session ended: no refresh, no sign-out.
+    private async Task ThrowIfReauthenticationRefusedAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode is not (HttpStatusCode.Unauthorized or HttpStatusCode.TooManyRequests))
+            return;
+
+        var code = await ReadErrorCodeAsync(response);
+        if (ReauthenticationErrorCodes.IsRecheckAnswer(code)
+            || code is ReauthenticationErrorCodes.AccountLocked or ReauthenticationErrorCodes.RateLimited)
+        {
+            _logger.LogWarning("The server refused the re-check for a device revoke ({Code})", code);
+            throw new ReauthenticationRefusedException(code!);
+        }
     }
 
     private async Task ThrowIfSignatureRefusedAsync(HttpResponseMessage response)
@@ -686,13 +714,13 @@ public class DeviceManagementService : IDeviceManagementService
         }
     }
 
-    private async Task<HttpClient> CreateAuthorizedClientAsync()
+    private async Task<HttpClient> CreateAuthorizedClientAsync(string clientName = "")
     {
         var serverUrl = (await _settings.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(serverUrl))
             throw new InvalidOperationException("Server URL not configured");
 
-        var client = _httpFactory.CreateClient();
+        var client = _httpFactory.CreateClient(clientName);
         // Without the trailing slash a relative request path would replace the URL's last segment.
         client.BaseAddress = new Uri(serverUrl + "/");
         var token = await _auth.GetAccessTokenAsync();

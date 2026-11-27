@@ -103,6 +103,7 @@ public sealed class DeviceRequestSigner : IDeviceRequestSigner
     private static HttpRequestMessage Request(HttpMethod method, string relativePath, byte[]? jsonBody)
     {
         var request = new HttpRequestMessage(method, relativePath);
+        request.Options.Set(Infrastructure.RateLimitRetryHandler.SendOnce, true);
         if (jsonBody is not null)
         {
             request.Content = new ByteArrayContent(jsonBody);

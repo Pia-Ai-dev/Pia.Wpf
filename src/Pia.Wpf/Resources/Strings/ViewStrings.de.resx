@@ -706,6 +706,7 @@
   <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Dein Konto wurde gelöscht, und du bist abgemeldet.</value></data>
   <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>Das Passwort ist falsch. Dein Konto wurde nicht gelöscht.</value></data>
   <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>Das Konto konnte nicht gelöscht werden. Bitte versuche es später erneut.</value></data>
+  <data name="Sync_DeleteAccount_Unknown" xml:space="preserve"><value>Der Server hat nicht geantwortet, daher ist unklar, ob das Konto gelöscht wurde. Die Synchronisierung ist angehalten. Melde dich erneut an, um zu prüfen, ob das Konto noch existiert.</value></data>
   <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Kontodaten speichern</value></data>
   <data name="AccountDeletion_Title" xml:space="preserve"><value>Konto löschen</value></data>
   <data name="AccountDeletion_Intro" xml:space="preserve"><value>Mit der Löschung endet dein Zugriff auf das Konto sofort. Nach Ablauf der Löschfrist des Servers werden die im Konto gespeicherten Daten entfernt; danach lassen sie sich weder exportieren noch wiederherstellen.</value></data>
@@ -1072,6 +1073,8 @@
   <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Abmelden</value></data>
   <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Gerät nicht freigegeben</value></data>
   <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} konnte nicht freigegeben werden. Prüfe deine Verbindung und versuche es unter Einstellungen → Konto erneut.</value></data>
+  <data name="Settings_E2EE_PendingDevices_RejectFailed_Title" xml:space="preserve"><value>Gerät nicht abgelehnt</value></data>
+  <data name="Settings_E2EE_PendingDevices_RejectFailed_Message" xml:space="preserve"><value>{0} konnte nicht abgelehnt werden. Prüfe deine Verbindung und versuche es unter Einstellungen → Konto erneut.</value></data>
   <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>Keine Anfragen</value></data>
   <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>Kein Gerät wartet auf Freigabe.</value></data>
   <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Prüfung fehlgeschlagen</value></data>
@@ -1918,4 +1921,16 @@
   <data name="ImageViewer_Save_Tooltip" xml:space="preserve"><value>Bild speichern unter…</value></data>
   <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Hier ist ein Plan dafür:</value></data>
   <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>Der Plan konnte nicht gespeichert werden.</value></data>
+  <data name="Reauth_Title" xml:space="preserve"><value>Bestätige, dass du es bist</value></data>
+  <data name="Reauth_Intro" xml:space="preserve"><value>Gib dein Pia-Passwort ein, um fortzufahren.</value></data>
+  <data name="Reauth_Confirm" xml:space="preserve"><value>Bestätigen</value></data>
+  <data name="Reauth_Password_Label" xml:space="preserve"><value>Passwort</value></data>
+  <data name="Reauth_Code_Label" xml:space="preserve"><value>Code aus deiner Authenticator-App oder ein Wiederherstellungscode</value></data>
+  <data name="Reauth_InvalidPassword" xml:space="preserve"><value>Falsches Passwort.</value></data>
+  <data name="Reauth_InvalidCode" xml:space="preserve"><value>Falscher Code.</value></data>
+  <data name="Reauth_CodeAlreadyUsed" xml:space="preserve"><value>Dieser Code wurde schon verwendet. Warte auf den nächsten Code deiner Authenticator-App.</value></data>
+  <data name="Reauth_AccountLocked" xml:space="preserve"><value>Zu viele Fehlversuche. Dein Konto ist vorübergehend gesperrt; versuche es später erneut.</value></data>
+  <data name="Reauth_RateLimited" xml:space="preserve"><value>Zu viele Versuche. Warte eine Minute und versuche es erneut.</value></data>
+  <data name="Reauth_Unavailable" xml:space="preserve"><value>Die Bestätigung per Passwort ist für diese Anmeldemethode nicht verfügbar.</value></data>
+  <data name="Reauth_Failed" xml:space="preserve"><value>Die Bestätigung hat nicht geklappt. Versuche es später erneut.</value></data>
 </root>

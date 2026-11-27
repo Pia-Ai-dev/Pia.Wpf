@@ -1,4 +1,5 @@
 using Pia.Shared.E2EE;
+using Pia.Shared.Auth;
 
 namespace Pia.Services.E2EE;
 
@@ -40,10 +41,8 @@ public interface IDeviceManagementService
     /// <summary>Uploads the recovery proof key an existing account lacks, once per account and app run; never throws.</summary>
     Task EnsureRecoveryProofKeyAsync();
 
-    /// <summary>
-    /// Revoke a device by its deviceId.
-    /// </summary>
-    Task RevokeDeviceAsync(string deviceId);
+    /// <summary>Signed revoke; local accounts send a re-check, which throws <see cref="ReauthenticationRefusedException"/> when refused.</summary>
+    Task RevokeDeviceAsync(string deviceId, ReauthenticationFields? reauth = null);
 
     /// <summary>Gives this computer a new device id after its keys were lost, then signs out for a fresh session.</summary>
     Task ReplaceLostDeviceAsync();

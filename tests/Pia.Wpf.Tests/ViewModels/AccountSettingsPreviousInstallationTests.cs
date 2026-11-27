@@ -14,6 +14,7 @@ using Pia.Shared.E2EE;
 using Pia.Tests.TestInfrastructure;
 using Pia.ViewModels;
 using Xunit;
+using Pia.Shared.Auth;
 
 // After its keys were lost this computer joined under a new id; the old id is revoked from here, signed by the new one.
 public class AccountSettingsPreviousInstallationTests
@@ -99,6 +100,36 @@ public class AccountSettingsPreviousInstallationTests
             "Settings_E2EE_RemovePreviousInstallation_Failed_Title", "Settings_E2EE_SignatureRefused_Message");
         Assert.Equal("old-id", _stored.PreviousInstallationToRemove());
         Assert.True(sut.IsPreviousInstallationVisible);
+    }
+
+    [Fact]
+    public async Task ALocalAccount_ConfirmsWithThePasswordBeforeRemoving()
+    {
+        _auth.Provider.Returns("local");
+        _dialogs.ShowReauthenticationDialogAsync(Arg.Any<ReauthenticationViewModel>()).Returns(ci =>
+        {
+            ci.Arg<ReauthenticationViewModel>().Password = "pw";
+            return true;
+        });
+        var sut = await InitializedSutAsync();
+
+        await sut.RemovePreviousInstallationCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.Received(1).RevokeDeviceAsync("old-id", new ReauthenticationFields("pw"));
+        Assert.Null(_stored.PreviousInstallationToRemove());
+    }
+
+    [Fact]
+    public async Task ALocalAccount_CancellingTheConfirmation_KeepsTheOffer()
+    {
+        _auth.Provider.Returns("local");
+        _dialogs.ShowReauthenticationDialogAsync(Arg.Any<ReauthenticationViewModel>()).Returns(false);
+        var sut = await InitializedSutAsync();
+
+        await sut.RemovePreviousInstallationCommand.ExecuteAsync(null);
+
+        await _deviceMgmt.DidNotReceiveWithAnyArgs().RevokeDeviceAsync(default!, default);
+        Assert.Equal("old-id", _stored.PreviousInstallationToRemove());
     }
 
     [Fact]

@@ -17,6 +17,8 @@ public interface IDialogService
     Task<AnswerExportDestination> ShowAnswerExportDialogAsync(AnswerExportEditModel export);
     /// <summary>True when the user confirmed the deletion; the caller then sends it with the dialog's password.</summary>
     Task<bool> ShowAccountDeletionDialogAsync(AccountDeletionViewModel viewModel);
+    /// <summary>True when the user confirmed; the view model then holds the password and any code.</summary>
+    Task<bool> ShowReauthenticationDialogAsync(ReauthenticationViewModel viewModel);
     Task<bool> ShowConfirmationDialogAsync(string title, string message);
     Task<bool> ShowDeviceApprovalDialogAsync(DeviceApprovalPrompt prompt);
 

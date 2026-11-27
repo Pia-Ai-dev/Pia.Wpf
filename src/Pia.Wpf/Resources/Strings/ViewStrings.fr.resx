@@ -706,6 +706,7 @@
   <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Votre compte a été supprimé et vous êtes déconnecté.</value></data>
   <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>Le mot de passe est incorrect. Votre compte n'a pas été supprimé.</value></data>
   <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>Le compte n'a pas pu être supprimé. Veuillez réessayer plus tard.</value></data>
+  <data name="Sync_DeleteAccount_Unknown" xml:space="preserve"><value>Le serveur n'a pas répondu ; on ne sait donc pas si le compte a été supprimé. La synchronisation est suspendue. Reconnectez-vous pour vérifier si le compte existe encore.</value></data>
   <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Enregistrer les données du compte</value></data>
   <data name="AccountDeletion_Title" xml:space="preserve"><value>Supprimer le compte</value></data>
   <data name="AccountDeletion_Intro" xml:space="preserve"><value>La suppression met fin immédiatement à votre accès au compte. À l'expiration du délai de suppression du serveur, les données enregistrées dans le compte sont effacées ; elles ne peuvent ensuite être ni exportées ni restaurées.</value></data>
@@ -1072,6 +1073,8 @@
   <data name="Settings_E2EE_Gone_SignOut" xml:space="preserve"><value>Se déconnecter</value></data>
   <data name="Settings_E2EE_PendingDevices_ApproveFailed_Title" xml:space="preserve"><value>Appareil non approuvé</value></data>
   <data name="Settings_E2EE_PendingDevices_ApproveFailed_Message" xml:space="preserve"><value>{0} n'a pas pu être approuvé. Vérifiez votre connexion et réessayez depuis Paramètres → Compte.</value></data>
+  <data name="Settings_E2EE_PendingDevices_RejectFailed_Title" xml:space="preserve"><value>Appareil non refusé</value></data>
+  <data name="Settings_E2EE_PendingDevices_RejectFailed_Message" xml:space="preserve"><value>{0} n'a pas pu être refusé. Vérifiez votre connexion et réessayez depuis Paramètres → Compte.</value></data>
   <data name="Settings_E2EE_PendingDevices_None_Title" xml:space="preserve"><value>Aucune demande</value></data>
   <data name="Settings_E2EE_PendingDevices_None_Message" xml:space="preserve"><value>Aucun appareil n'attend d'approbation.</value></data>
   <data name="Settings_E2EE_PendingDevices_CheckFailed_Title" xml:space="preserve"><value>Vérification impossible</value></data>
@@ -1918,4 +1921,16 @@
   <data name="ImageViewer_Save_Tooltip" xml:space="preserve"><value>Enregistrer l'image sous…</value></data>
   <data name="ProposePlan_LeadIn" xml:space="preserve"><value>Voici un plan pour cela :</value></data>
   <data name="Run_Failed_ProposePlan" xml:space="preserve"><value>Le plan n’a pas pu être enregistré.</value></data>
+  <data name="Reauth_Title" xml:space="preserve"><value>Confirmez qu'il s'agit bien de vous</value></data>
+  <data name="Reauth_Intro" xml:space="preserve"><value>Saisissez votre mot de passe Pia pour continuer.</value></data>
+  <data name="Reauth_Confirm" xml:space="preserve"><value>Confirmer</value></data>
+  <data name="Reauth_Password_Label" xml:space="preserve"><value>Mot de passe</value></data>
+  <data name="Reauth_Code_Label" xml:space="preserve"><value>Code de votre application d'authentification, ou un code de récupération</value></data>
+  <data name="Reauth_InvalidPassword" xml:space="preserve"><value>Mot de passe incorrect.</value></data>
+  <data name="Reauth_InvalidCode" xml:space="preserve"><value>Code incorrect.</value></data>
+  <data name="Reauth_CodeAlreadyUsed" xml:space="preserve"><value>Ce code a déjà été utilisé. Attendez le code suivant de votre application d'authentification.</value></data>
+  <data name="Reauth_AccountLocked" xml:space="preserve"><value>Trop de tentatives échouées. Votre compte est temporairement bloqué ; réessayez plus tard.</value></data>
+  <data name="Reauth_RateLimited" xml:space="preserve"><value>Trop de tentatives. Attendez une minute et réessayez.</value></data>
+  <data name="Reauth_Unavailable" xml:space="preserve"><value>La confirmation par mot de passe n'est pas disponible pour ce mode de connexion.</value></data>
+  <data name="Reauth_Failed" xml:space="preserve"><value>La confirmation n'a pas abouti. Réessayez plus tard.</value></data>
 </root>
