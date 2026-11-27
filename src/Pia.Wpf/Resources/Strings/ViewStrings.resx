@@ -669,6 +669,7 @@
   <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Your account has been deleted and you are signed out.</value></data>
   <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>The password is incorrect. Your account was not deleted.</value></data>
   <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>The account could not be deleted. Please try again later.</value></data>
+  <data name="Sync_DeleteAccount_Unknown" xml:space="preserve"><value>The server did not answer, so it is unclear whether the account was deleted. Sync is paused. Sign in again to check whether the account still exists.</value></data>
   <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Save account data</value></data>
   <data name="AccountDeletion_Title" xml:space="preserve"><value>Delete account</value></data>
   <data name="AccountDeletion_Intro" xml:space="preserve"><value>Deleting your account ends your access to it immediately. Once the server's deletion period has passed, it removes the data stored in the account; after that, the data can neither be exported nor restored.</value></data>

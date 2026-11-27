@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Pia.Infrastructure;
 using Pia.Models;
 using Pia.Services;
 using Pia.Services.Interfaces;
@@ -18,6 +19,7 @@ public class AccountDataServiceTests : IDisposable
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private readonly StubHandler _handler = new();
+    private readonly List<string> _clientNames = [];
     private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
     private readonly IAuthService _auth = Substitute.For<IAuthService>();
     private readonly CapturingLogger<AccountDataService> _logger = new();
@@ -269,25 +271,78 @@ public class AccountDataServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteAsync_WithARecheck_IsNeverResent()
+    public async Task DeleteAsync_WithARecheck_IsNeverResent_AndReportsAnUnknownOutcome()
     {
         _handler.FailNext(new HttpRequestException("connection reset"));
         _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
 
-        await Assert.ThrowsAsync<HttpRequestException>(
-            () => CreateSut().DeleteAsync(new ReauthenticationFields("pw", Code: "123456"), Ct));
+        var outcome = await CreateSut().DeleteAsync(new ReauthenticationFields("pw", Code: "123456"), Ct);
 
+        Assert.Equal(AccountDeletionOutcome.Unknown, outcome);
         Assert.Equal(1, _handler.Requests);
     }
 
     [Fact]
-    public async Task DeleteAsync_WhenTheServerStaysUnreachable_Throws()
+    public async Task DeleteAsync_WithARecheck_TimingOut_ReportsAnUnknownOutcome()
+    {
+        _handler.FailNext(new TaskCanceledException("timed out"));
+
+        Assert.Equal(AccountDeletionOutcome.Unknown, await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
+        Assert.Equal(1, _handler.Requests);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenTheServerStaysUnreachable_ReportsAnUnknownOutcome()
     {
         _handler.FailNext(new HttpRequestException("offline"));
         _handler.FailNext(new HttpRequestException("offline"));
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => CreateSut().DeleteAsync(null, Ct));
+        Assert.Equal(AccountDeletionOutcome.Unknown, await CreateSut().DeleteAsync(null, Ct));
         Assert.Equal(2, _handler.Requests);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WhenTheCallerCancels_Throws()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        _handler.FailNext(new TaskCanceledException("cancelled"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreateSut().DeleteAsync(null, cts.Token));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WithARecheck_IsSentOnce_OverTheNoRedirectClient()
+    {
+        _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
+
+        await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct);
+
+        Assert.True(_handler.LastSendOnce);
+        Assert.Equal([HttpClientNames.NoRedirect], _clientNames);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_WithoutARecheck_KeepsTheRateLimitRetry()
+    {
+        _handler.Respond(HttpStatusCode.OK, Json("""{"deleted":true}"""));
+
+        await CreateSut().DeleteAsync(null, Ct);
+
+        Assert.False(_handler.LastSendOnce);
+        Assert.Equal([""], _clientNames);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    [InlineData(HttpStatusCode.PermanentRedirect)]
+    [InlineData(HttpStatusCode.Found)]
+    public async Task DeleteAsync_ARedirectAnswer_ReportsFailed(HttpStatusCode status)
+    {
+        _handler.Respond(status, new StringContent(""));
+
+        Assert.Equal(AccountDeletionOutcome.Failed, await CreateSut().DeleteAsync(new ReauthenticationFields("pw"), Ct));
+        Assert.Equal(1, _handler.Requests);
     }
 
     private void UseServerUrl(string? serverUrl) =>
@@ -304,7 +359,11 @@ public class AccountDataServiceTests : IDisposable
     private AccountDataService CreateSut()
     {
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(Arg.Any<string>()).Returns(_ => new HttpClient(_handler, disposeHandler: false));
+        factory.CreateClient(Arg.Any<string>()).Returns(call =>
+        {
+            _clientNames.Add(call.Arg<string>());
+            return new HttpClient(_handler, disposeHandler: false);
+        });
         return new AccountDataService(_settings, _auth, factory, _logger);
     }
 
@@ -319,6 +378,7 @@ public class AccountDataServiceTests : IDisposable
         public string? LastUri { get; private set; }
         public string? LastAuthorization { get; private set; }
         public string? LastBody { get; private set; }
+        public bool LastSendOnce { get; private set; }
 
         public void Respond(HttpStatusCode status, HttpContent content)
         {
@@ -334,6 +394,7 @@ public class AccountDataServiceTests : IDisposable
             Requests++;
             LastMethod = request.Method;
             LastUri = request.RequestUri?.ToString();
+            LastSendOnce = request.Options.TryGetValue(RateLimitRetryHandler.SendOnce, out var once) && once;
             LastAuthorization = request.Headers.Authorization?.ToString();
             if (request.Content is not null)
                 LastBody = await request.Content.ReadAsStringAsync(cancellationToken);

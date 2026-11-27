@@ -24,6 +24,7 @@ public class AccountSettingsAccountDataTests
     private readonly IDialogService _dialogs = Substitute.For<IDialogService>();
     private readonly IAccountDataService _accountData = Substitute.For<IAccountDataService>();
     private readonly IFileDialogService _fileDialogs = Substitute.For<IFileDialogService>();
+    private readonly global::Wpf.Ui.ISnackbarService _snackbars = Substitute.For<global::Wpf.Ui.ISnackbarService>();
 
     public AccountSettingsAccountDataTests()
     {
@@ -114,6 +115,25 @@ public class AccountSettingsAccountDataTests
         _sync.Received(1).StartBackgroundSync();
     }
 
+    [Theory]
+    [InlineData("local")]
+    [InlineData("google")]
+    public async Task DeleteAccount_WhenTheOutcomeIsUnknown_StaysSignedInWithSyncStoppedAndSaysToCheck(string provider)
+    {
+        _auth.Provider.Returns(provider);
+        _sync.IsSyncActive.Returns(true);
+        ConfirmDialogWith(password: provider == "local" ? "pw" : "");
+        _accountData.DeleteAsync(Arg.Any<ReauthenticationFields?>(), Arg.Any<CancellationToken>())
+            .Returns(AccountDeletionOutcome.Unknown);
+
+        await CreateSut().DeleteAccountCommand.ExecuteAsync(null);
+
+        await _auth.DidNotReceive().LogoutAsync();
+        _sync.DidNotReceive().StartBackgroundSync();
+        _snackbars.Received(1).Show(Arg.Any<string>(), "Sync_DeleteAccount_Unknown",
+            Arg.Any<global::Wpf.Ui.Controls.ControlAppearance>(), Arg.Any<global::Wpf.Ui.Controls.IconElement?>(), Arg.Any<TimeSpan>());
+    }
+
     [Fact]
     public async Task DeleteAccount_WhenRefused_LeavesAStoppedSyncStopped()
     {
@@ -195,7 +215,7 @@ public class AccountSettingsAccountDataTests
 
         return new AccountSettingsViewModel(
             NullLogger<SettingsViewModel>.Instance, _settings, _dialogs,
-            Substitute.For<global::Wpf.Ui.ISnackbarService>(), _auth, _sync, _loc, deviceMgmt,
+            _snackbars, _auth, _sync, _loc, deviceMgmt,
             deviceKeys, Substitute.For<IMemoryService>(), Substitute.For<IPolicyService>(),
             new E2EEOnboardingViewModel(
                 deviceMgmt, deviceKeys, Substitute.For<IE2EEService>(), _sync, _settings,

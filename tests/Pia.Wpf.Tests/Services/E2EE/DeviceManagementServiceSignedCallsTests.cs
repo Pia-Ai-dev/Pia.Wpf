@@ -17,6 +17,7 @@ using Xunit;
 public class DeviceManagementServiceSignedCallsTests
 {
     private readonly IDeviceRequestSigner _signer = Substitute.For<IDeviceRequestSigner>();
+    private readonly List<string> _clientNames = [];
 
     [Fact]
     public async Task Revoking_IsASignedBodylessPost()
@@ -85,6 +86,37 @@ public class DeviceManagementServiceSignedCallsTests
             () => CreateSut().RevokeDeviceAsync("dev-x"));
 
         Assert.Equal(code, ex.Code);
+    }
+
+    [Fact]
+    public async Task RevokingWithARecheck_GoesOverTheNoRedirectClient()
+    {
+        Answer(HttpStatusCode.OK);
+
+        await CreateSut().RevokeDeviceAsync("dev-x", new ReauthenticationFields("pw"));
+
+        Assert.Equal([Pia.Infrastructure.HttpClientNames.NoRedirect], _clientNames);
+    }
+
+    [Fact]
+    public async Task RevokingWithoutARecheck_GoesOverTheDefaultClient()
+    {
+        Answer(HttpStatusCode.OK);
+
+        await CreateSut().RevokeDeviceAsync("dev-x");
+
+        Assert.Equal([""], _clientNames);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TemporaryRedirect)]
+    [InlineData(HttpStatusCode.PermanentRedirect)]
+    public async Task RevokingWithARecheck_ARedirectAnswer_IsAnHttpFailure(HttpStatusCode status)
+    {
+        Answer(status);
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => CreateSut().RevokeDeviceAsync("dev-x", new ReauthenticationFields("pw")));
     }
 
     [Fact]
@@ -169,7 +201,7 @@ public class DeviceManagementServiceSignedCallsTests
         var settings = Substitute.For<ISettingsService>();
         settings.GetSettingsAsync().Returns(new AppSettings { ServerUrl = "https://sync.example" });
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(Arg.Any<string>())
+        factory.CreateClient(Arg.Do<string>(name => _clientNames.Add(name)))
             .Returns(_ => server is null ? new HttpClient() : new HttpClient(server, disposeHandler: false));
         var auth = Substitute.For<IAuthService>();
         auth.GetAccessTokenAsync().Returns("token-1");

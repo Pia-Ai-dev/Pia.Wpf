@@ -26,6 +26,8 @@ public enum AccountDeletionOutcome
     InvalidCode,
     AccountLocked,
     RateLimited,
+    // The request went out but no answer came back, so the account may or may not be gone.
+    Unknown,
 }
 
 public static class AccountDeletionOutcomes

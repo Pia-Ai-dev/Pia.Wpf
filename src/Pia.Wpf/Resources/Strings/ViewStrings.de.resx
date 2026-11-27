@@ -706,6 +706,7 @@
   <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Dein Konto wurde gelöscht, und du bist abgemeldet.</value></data>
   <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>Das Passwort ist falsch. Dein Konto wurde nicht gelöscht.</value></data>
   <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>Das Konto konnte nicht gelöscht werden. Bitte versuche es später erneut.</value></data>
+  <data name="Sync_DeleteAccount_Unknown" xml:space="preserve"><value>Der Server hat nicht geantwortet, daher ist unklar, ob das Konto gelöscht wurde. Die Synchronisierung ist angehalten. Melde dich erneut an, um zu prüfen, ob das Konto noch existiert.</value></data>
   <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Kontodaten speichern</value></data>
   <data name="AccountDeletion_Title" xml:space="preserve"><value>Konto löschen</value></data>
   <data name="AccountDeletion_Intro" xml:space="preserve"><value>Mit der Löschung endet dein Zugriff auf das Konto sofort. Nach Ablauf der Löschfrist des Servers werden die im Konto gespeicherten Daten entfernt; danach lassen sie sich weder exportieren noch wiederherstellen.</value></data>

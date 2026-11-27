@@ -706,6 +706,7 @@
   <data name="Sync_DeleteAccount_Done" xml:space="preserve"><value>Votre compte a été supprimé et vous êtes déconnecté.</value></data>
   <data name="Sync_DeleteAccount_InvalidPassword" xml:space="preserve"><value>Le mot de passe est incorrect. Votre compte n'a pas été supprimé.</value></data>
   <data name="Sync_DeleteAccount_Failed" xml:space="preserve"><value>Le compte n'a pas pu être supprimé. Veuillez réessayer plus tard.</value></data>
+  <data name="Sync_DeleteAccount_Unknown" xml:space="preserve"><value>Le serveur n'a pas répondu ; on ne sait donc pas si le compte a été supprimé. La synchronisation est suspendue. Reconnectez-vous pour vérifier si le compte existe encore.</value></data>
   <data name="AccountExport_DialogTitle" xml:space="preserve"><value>Enregistrer les données du compte</value></data>
   <data name="AccountDeletion_Title" xml:space="preserve"><value>Supprimer le compte</value></data>
   <data name="AccountDeletion_Intro" xml:space="preserve"><value>La suppression met fin immédiatement à votre accès au compte. À l'expiration du délai de suppression du serveur, les données enregistrées dans le compte sont effacées ; elles ne peuvent ensuite être ni exportées ni restaurées.</value></data>

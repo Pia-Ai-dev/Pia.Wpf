@@ -897,6 +897,13 @@ public partial class AccountSettingsViewModel : UiThreadViewModel, IDisposable
             return;
         }
 
+        if (outcome == AccountDeletionOutcome.Unknown)
+        {
+            // Sync stays stopped: resuming could push data into an account that is already gone.
+            ShowAccountSnackbar("Sync_DeleteAccount", "Sync_DeleteAccount_Unknown", Wpf.Ui.Controls.ControlAppearance.Caution);
+            return;
+        }
+
         if (wasSyncing) _syncClientService.StartBackgroundSync();
         var reason = outcome switch
         {

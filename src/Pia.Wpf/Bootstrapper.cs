@@ -516,6 +516,8 @@ public static class Bootstrapper
                 return handler;
             });
         });
+        services.AddHttpClient(HttpClientNames.NoRedirect)
+            .ConfigurePrimaryHttpMessageHandler((handler, _) => ((HttpClientHandler)handler).AllowAutoRedirect = false);
 
         // WPF-UI Services - Scoped (per-window)
         services.AddScoped<IContentDialogService, ContentDialogService>();

@@ -513,7 +513,8 @@ public class DeviceManagementService : IDeviceManagementService
 
     public async Task RevokeDeviceAsync(string deviceId, ReauthenticationFields? reauth = null)
     {
-        using var client = await CreateAuthorizedClientAsync();
+        using var client = await CreateAuthorizedClientAsync(
+            reauth is null ? Microsoft.Extensions.Options.Options.DefaultName : Infrastructure.HttpClientNames.NoRedirect);
         using var response = await _signer.SendAsync(
             client, HttpMethod.Post, $"api/e2ee/devices/{deviceId}/revoke", ReauthenticationBody(reauth));
         await ThrowIfSignatureRefusedAsync(response);
@@ -713,13 +714,13 @@ public class DeviceManagementService : IDeviceManagementService
         }
     }
 
-    private async Task<HttpClient> CreateAuthorizedClientAsync()
+    private async Task<HttpClient> CreateAuthorizedClientAsync(string clientName = "")
     {
         var serverUrl = (await _settings.GetSettingsAsync()).ServerUrl?.TrimEnd('/');
         if (string.IsNullOrWhiteSpace(serverUrl))
             throw new InvalidOperationException("Server URL not configured");
 
-        var client = _httpFactory.CreateClient();
+        var client = _httpFactory.CreateClient(clientName);
         // Without the trailing slash a relative request path would replace the URL's last segment.
         client.BaseAddress = new Uri(serverUrl + "/");
         var token = await _auth.GetAccessTokenAsync();
