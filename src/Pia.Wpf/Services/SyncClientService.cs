@@ -106,6 +106,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     }
     // Push and pull may both report the same removal in one cycle.
     private bool _revokedNoticeRaised;
+    private bool _deviceNotActive;
     // Bumped on every Start/Stop so a sync cycle in flight during a Stop+Start cannot re-arm
     // the newly-started timer with a stale (non-InitialSyncDelay) period.
     private int _syncGeneration;
@@ -257,11 +258,15 @@ public class SyncClientService : ISyncClientService, IDisposable
         await RaiseDeviceNotActiveAsync();
     }
 
-    // Another device holds the account's current key, so this one rejoins by approval or recovery code, not a new setup.
-    private async Task RaiseDeviceNotActiveAsync()
+    // Rejoin by approval or recovery code. The key stays: it may be the account's only copy.
+    private Task RaiseDeviceNotActiveAsync()
     {
         _logger.LogWarning("Server refused an encrypted write: this device is not active for the account; rejoin required");
-        await RaiseCurrentDeviceRevokedAsync(wasRevoked: false);
+        _deviceNotActive = true;
+        _confirmedServerE2EE = null;
+        StopBackgroundSync();
+        NotifyE2EEOnboardingRequired();
+        return Task.CompletedTask;
     }
 
     private async Task HoldForEncryptedWriteRefusalAsync(AppSettings settings)
@@ -352,6 +357,7 @@ public class SyncClientService : ISyncClientService, IDisposable
     {
         PendingDeviceRevocation = null;
         _revokedNoticeRaised = false;
+        _deviceNotActive = false;
         ClearE2EEDowngrade();
         if (!IsE2EEOnboardingRequired) return;
         IsE2EEOnboardingRequired = false;
@@ -416,6 +422,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         }
 
         _revokedNoticeRaised = false;
+        _deviceNotActive = false;
         PendingDeviceRevocation = null;
     }
 
@@ -450,6 +457,7 @@ public class SyncClientService : ISyncClientService, IDisposable
         _consecutiveIdleCycles = 0;
         _deviceCheckCounter = 0;
         _revokedNoticeRaised = false;
+        _deviceNotActive = false;
         var generation = ++_syncGeneration;
 
         // One-shot, re-armed by each cycle; the closure pins timer and generation so a cycle racing a
@@ -637,7 +645,7 @@ public class SyncClientService : ISyncClientService, IDisposable
 
             var (pushedCount, pushSucceeded, pushSentChanges) = await PushChangesAsync(client, serverUrl, settings);
             // A reset hold must stop the cycle before the device-list check forgets the key.
-            if (PendingDeviceRevocation is not null || IsE2EEDowngradeDetected)
+            if (PendingDeviceRevocation is not null || IsE2EEDowngradeDetected || _deviceNotActive)
                 return null;
 
             var (pulled, decryptErrors, pullOk, serverTimestamp, settingsUndecryptable) = await PullChangesAsync(client, serverUrl, settings);

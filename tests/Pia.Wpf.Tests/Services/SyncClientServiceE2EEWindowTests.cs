@@ -86,7 +86,7 @@ public class SyncClientServiceE2EEWindowTests
     }
 
     [Fact]
-    public async Task PushChanges_On403E2EEDeviceNotActive_DropsTheKeyAndAsksToRejoin()
+    public async Task PushChanges_On403E2EEDeviceNotActive_KeepsTheKeyAndAsksToRejoin()
     {
         var settings = new AppSettings { IsE2EEEnabled = true };
         _settingsService.GetSettingsAsync().Returns(settings);
@@ -99,9 +99,8 @@ public class SyncClientServiceE2EEWindowTests
         var result = await InvokePushChangesAsync(sut, client, settings);
 
         Assert.False(result.PushSucceeded);
-        Assert.False(settings.IsE2EEEnabled);
-        Assert.NotNull(sut.PendingDeviceRevocation);
-        Assert.False(sut.PendingDeviceRevocation!.WasRevoked);
+        Assert.True(settings.IsE2EEEnabled);
+        Assert.Null(sut.PendingDeviceRevocation);
         Assert.True(sut.IsE2EEOnboardingRequired);
         Assert.False(sut.IsE2EEDowngradeDetected);
     }
